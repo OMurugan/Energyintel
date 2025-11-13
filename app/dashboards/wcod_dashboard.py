@@ -639,129 +639,142 @@ def create_wcod_dashboard(server, url_base_pathname):
     @callback(
         [Output('current-submenu', 'data', allow_duplicate=True),
          Output('submenu-container', 'children', allow_duplicate=True)],
-        Input({'type': 'submenu-button', 'index': dash.dependencies.MATCH}, 'n_clicks'),
-        [State({'type': 'submenu-button', 'index': dash.dependencies.MATCH}, 'id'),
+        Input({'type': 'submenu-button', 'index': dash.dependencies.ALL}, 'n_clicks'),
+        [State({'type': 'submenu-button', 'index': dash.dependencies.ALL}, 'id'),
          State('main-tabs', 'value')],
         prevent_initial_call=True
     )
-    def update_submenu_selection(n_clicks, button_id, active_tab):
+    def update_submenu_selection(n_clicks_list, button_ids, active_tab):
         """Handle sub-menu item clicks and update button styles"""
-        if n_clicks and button_id:
-            selected_value = button_id['index']
-            
-            # Rebuild submenu with active state
-            submenus = {
-                'country-tab': [
-                    {'label': 'Country Overview', 'value': 'country-overview'},
-                    {'label': 'Country Profile', 'value': 'country-profile'},
-                ],
-                'crude-tab': [
-                    {'label': 'Crude Overview', 'value': 'crude-overview'},
-                    {'label': 'Crude Profile', 'value': 'crude-profile'},
-                    {'label': 'Crude Comparison', 'value': 'crude-comparison'},
-                    {'label': 'Crude Quality Comparison', 'value': 'crude-quality'},
-                    {'label': 'Crude Carbon Intensity', 'value': 'crude-carbon'},
-                ],
-                'trade-tab': [
-                    {'label': 'Imports - Country Detail', 'value': 'imports-detail'},
-                    {'label': 'Imports - Country Comparison', 'value': 'imports-comparison'},
-                    {'label': 'Global Exports', 'value': 'global-exports'},
-                    {'label': 'Russian Exports by Terminal and Exporting Company', 'value': 'russian-exports'},
-                ],
-                'prices-tab': [
-                    {'label': 'Global Crude Prices', 'value': 'global-prices'},
-                    {'label': 'Price Scorecard for Key World Oil Grades', 'value': 'price-scorecard'},
-                    {'label': 'Gross Product Worth and Margins', 'value': 'gpw-margins'},
-                ],
-                'projects-tab': [
-                    {'label': 'Projects by Country', 'value': 'projects-country'},
-                    {'label': 'Projects by Company', 'value': 'projects-company'},
-                    {'label': 'Projects by Time', 'value': 'projects-time'},
-                    {'label': 'Projects by Status', 'value': 'projects-status'},
-                    {'label': 'Latest Updates', 'value': 'projects-latest'},
-                ],
-                'methodology-tab': [
-                    {'label': 'Upstream Oil Projects Tracker', 'value': 'projects-tracker'},
-                    {'label': 'Carbon Intensity', 'value': 'projects-carbon'},
-                ]
-            }
-            
-            menu_items = submenus.get(active_tab, [])
-            url_paths = {
-                'country-overview': '/wcod/',
-                'country-profile': '/wcod-country-overview',
-                'crude-overview': '/wcod/crude-overview',
-                'crude-profile': '/wcod-crude-profile',
-                'crude-comparison': '/wcod-crude-comparison',
-                'crude-quality': '/wcod-crude-quality-comparison',
-                'crude-carbon': '/wcod-crude-carbon-intensity',
-                'imports-detail': '/wcod/trade/imports-country-detail',
-                'imports-comparison': '/wcod/trade/imports-country-comparison',
-                'global-exports': '/wcod/trade/global-exports',
-                'russian-exports': '/wcod/trade/russian-exports-by-terminal-and-exporting-company',
-                'global-prices': '/wcod/prices/global-crude-prices',
-                'price-scorecard': '/wcod/prices/price-scorecard-for-key-world-oil-grades',
-                'gpw-margins': '/wcod/prices/gross-product-worth-and-margins',
-                'projects-country': '/wcod/upstream-projects/projects-by-country',
-                'projects-company': '/wcod/upstream-projects/projects-by-company',
-                'projects-time': '/wcod/upstream-projects/projects-by-time',
-                'projects-status': '/wcod-upstream-projects/projects-by-status',
-                'projects-latest': '/wcod-upstream-projects-related-articles',
-                'projects-tracker': '/wcod-upstream-oil-projects-tracker-methodology',
-                'projects-carbon': '/wcod-carbon-intensity-methodology',
-            }
-            
-            # Icons for submenu items
-            submenu_icons = {
-                'country-overview': '📋',
-                'country-profile': '📄',
-                'crude-overview': '🛢️',
-                'crude-profile': '📊',
-                'crude-comparison': '⚖️',
-                'crude-quality': '🔬',
-                'crude-carbon': '🌱',
-                'imports-detail': '📥',
-                'imports-comparison': '📊',
-                'global-exports': '🌍',
-                'russian-exports': '🇷🇺',
-                'global-prices': '💰',
-                'price-scorecard': '📈',
-                'gpw-margins': '💵',
-                'projects-country': '🗺️',
-                'projects-company': '🏢',
-                'projects-time': '📅',
-                'projects-status': '📊',
-                'projects-latest': '🆕',
-                'projects-tracker': '📊',
-                'projects-carbon': '🌱'
-            }
-            
-            # Horizontal oval buttons for submenu - matching Energy Intelligence design
-            submenu_html = html.Div([
-                dcc.Link(
-                    html.Span(item['label'], style={'fontSize': '14px'}),
-                    href=url_paths.get(item['value'], '/wcod/'),
-                    id={'type': 'submenu-button', 'index': item['value']},
-                    style={
-                        'textDecoration': 'none',
-                        'display': 'inline-block',
-                        'padding': '8px 20px',
-                        'margin': '0 8px 8px 0',
-                        'background': '#007bff' if item['value'] == selected_value else '#f8f9fa',
-                        'color': 'white' if item['value'] == selected_value else '#2c3e50',
-                        'border': '1px solid #007bff' if item['value'] == selected_value else '1px solid #e0e0e0',
-                        'borderRadius': '20px',
-                        'cursor': 'pointer',
-                        'transition': 'all 0.3s',
-                        'fontWeight': '500' if item['value'] == selected_value else 'normal',
-                        'whiteSpace': 'nowrap'
-                    }
-                )
-                for item in menu_items
-            ], style={'display': 'flex', 'flexWrap': 'wrap', 'marginBottom': '10px'})
-            
-            return selected_value, submenu_html
-        return dash.no_update, dash.no_update
+        ctx = dash.callback_context
+        if not ctx.triggered_id:
+            return dash.no_update, dash.no_update
+
+        selected_value = None
+        if isinstance(ctx.triggered_id, dict):
+            triggered_index = ctx.triggered_id.get('index')
+            if triggered_index is not None and button_ids:
+                for idx, btn in enumerate(button_ids):
+                    if btn.get('index') == triggered_index:
+                        if n_clicks_list and idx < len(n_clicks_list) and n_clicks_list[idx]:
+                            selected_value = triggered_index
+                        break
+
+        if not selected_value:
+            return dash.no_update, dash.no_update
+
+        # Rebuild submenu with active state
+        submenus = {
+            'country-tab': [
+                {'label': 'Country Overview', 'value': 'country-overview'},
+                {'label': 'Country Profile', 'value': 'country-profile'},
+            ],
+            'crude-tab': [
+                {'label': 'Crude Overview', 'value': 'crude-overview'},
+                {'label': 'Crude Profile', 'value': 'crude-profile'},
+                {'label': 'Crude Comparison', 'value': 'crude-comparison'},
+                {'label': 'Crude Quality Comparison', 'value': 'crude-quality'},
+                {'label': 'Crude Carbon Intensity', 'value': 'crude-carbon'},
+            ],
+            'trade-tab': [
+                {'label': 'Imports - Country Detail', 'value': 'imports-detail'},
+                {'label': 'Imports - Country Comparison', 'value': 'imports-comparison'},
+                {'label': 'Global Exports', 'value': 'global-exports'},
+                {'label': 'Russian Exports by Terminal and Exporting Company', 'value': 'russian-exports'},
+            ],
+            'prices-tab': [
+                {'label': 'Global Crude Prices', 'value': 'global-prices'},
+                {'label': 'Price Scorecard for Key World Oil Grades', 'value': 'price-scorecard'},
+                {'label': 'Gross Product Worth and Margins', 'value': 'gpw-margins'},
+            ],
+            'projects-tab': [
+                {'label': 'Projects by Country', 'value': 'projects-country'},
+                {'label': 'Projects by Company', 'value': 'projects-company'},
+                {'label': 'Projects by Time', 'value': 'projects-time'},
+                {'label': 'Projects by Status', 'value': 'projects-status'},
+                {'label': 'Latest Updates', 'value': 'projects-latest'},
+            ],
+            'methodology-tab': [
+                {'label': 'Upstream Oil Projects Tracker', 'value': 'projects-tracker'},
+                {'label': 'Carbon Intensity', 'value': 'projects-carbon'},
+            ]
+        }
+        
+        menu_items = submenus.get(active_tab, [])
+        url_paths = {
+            'country-overview': '/wcod/',
+            'country-profile': '/wcod-country-overview',
+            'crude-overview': '/wcod/crude-overview',
+            'crude-profile': '/wcod-crude-profile',
+            'crude-comparison': '/wcod-crude-comparison',
+            'crude-quality': '/wcod-crude-quality-comparison',
+            'crude-carbon': '/wcod-crude-carbon-intensity',
+            'imports-detail': '/wcod/trade/imports-country-detail',
+            'imports-comparison': '/wcod/trade/imports-country-comparison',
+            'global-exports': '/wcod/trade/global-exports',
+            'russian-exports': '/wcod/trade/russian-exports-by-terminal-and-exporting-company',
+            'global-prices': '/wcod/prices/global-crude-prices',
+            'price-scorecard': '/wcod/prices/price-scorecard-for-key-world-oil-grades',
+            'gpw-margins': '/wcod/prices/gross-product-worth-and-margins',
+            'projects-country': '/wcod/upstream-projects/projects-by-country',
+            'projects-company': '/wcod/upstream-projects/projects-by-company',
+            'projects-time': '/wcod/upstream-projects/projects-by-time',
+            'projects-status': '/wcod-upstream-projects/projects-by-status',
+            'projects-latest': '/wcod-upstream-projects-related-articles',
+            'projects-tracker': '/wcod-upstream-oil-projects-tracker-methodology',
+            'projects-carbon': '/wcod-carbon-intensity-methodology',
+        }
+        
+        # Icons for submenu items
+        submenu_icons = {
+            'country-overview': '📋',
+            'country-profile': '📄',
+            'crude-overview': '🛢️',
+            'crude-profile': '📊',
+            'crude-comparison': '⚖️',
+            'crude-quality': '🔬',
+            'crude-carbon': '🌱',
+            'imports-detail': '📥',
+            'imports-comparison': '📊',
+            'global-exports': '🌍',
+            'russian-exports': '🇷🇺',
+            'global-prices': '💰',
+            'price-scorecard': '📈',
+            'gpw-margins': '💵',
+            'projects-country': '🗺️',
+            'projects-company': '🏢',
+            'projects-time': '📅',
+            'projects-status': '📊',
+            'projects-latest': '🆕',
+            'projects-tracker': '📊',
+            'projects-carbon': '🌱'
+        }
+        
+        # Horizontal oval buttons for submenu - matching Energy Intelligence design
+        submenu_html = html.Div([
+            dcc.Link(
+                html.Span(item['label'], style={'fontSize': '14px'}),
+                href=url_paths.get(item['value'], '/wcod/'),
+                id={'type': 'submenu-button', 'index': item['value']},
+                style={
+                    'textDecoration': 'none',
+                    'display': 'inline-block',
+                    'padding': '8px 20px',
+                    'margin': '0 8px 8px 0',
+                    'background': '#007bff' if item['value'] == selected_value else '#f8f9fa',
+                    'color': 'white' if item['value'] == selected_value else '#2c3e50',
+                    'border': '1px solid #007bff' if item['value'] == selected_value else '1px solid #e0e0e0',
+                    'borderRadius': '20px',
+                    'cursor': 'pointer',
+                    'transition': 'all 0.3s',
+                    'fontWeight': '500' if item['value'] == selected_value else 'normal',
+                    'whiteSpace': 'nowrap'
+                }
+            )
+            for item in menu_items
+        ], style={'display': 'flex', 'flexWrap': 'wrap', 'marginBottom': '10px'})
+        
+        return selected_value, submenu_html
     
     # Render functions for each view - now using individual modules
     def render_country_overview():
