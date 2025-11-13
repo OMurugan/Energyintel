@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Energy Intelligence{% endblock %}
+
+{% block content %}
+<div class="hero-section">
+    <div class="container text-center">
+        <h1 class="display-4 mb-4">Energy Intelligence</h1>
+        <p class="lead mb-4">Comprehensive global energy data and analysis</p>
+        <a href="{{ url_for('main.wcod') }}" class="btn btn-light btn-lg">Explore WCoD Dashboards</a>
+    </div>
+</div>
+
+<div class="container my-5">
+    <div class="row mb-5">
+        <div class="col-md-12 text-center">
+            <h2 class="mb-4">World Crude Oil Data</h2>
+            <p class="lead text-muted">Access comprehensive dashboards for production, exports, reserves, and more</p>
+        </div>
+    </div>
+    
+    <div class="row g-4">
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Production Dashboard</h5>
+                    <p class="card-text">Analyze global crude oil production trends, regional breakdowns, and country-level insights.</p>
+                    <a href="/production/" class="btn btn-primary">View Dashboard</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Exports Dashboard</h5>
+                    <p class="card-text">Track export volumes, trade flows, and market dynamics across countries and regions.</p>
+                    <a href="/exports/" class="btn btn-primary">View Dashboard</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Country Profiles</h5>
+                    <p class="card-text">Detailed country-level analysis with production, exports, imports, and reserves data.</p>
+                    <a href="/country-profile/" class="btn btn-primary">View Dashboard</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mt-5">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">Main WCoD Dashboard</h5>
+                    <p class="card-text">Comprehensive overview with KPIs, interactive charts, and filters.</p>
+                    <a href="/wcod/" class="btn btn-primary btn-lg">Open WCoD Dashboard</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

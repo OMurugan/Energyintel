@@ -1,0 +1,24 @@
+{% extends "wcod_base.html" %}
+
+{% block submenu_items %}
+<li class="wcod-submenu-item">
+    <a href="/wcod/" class="wcod-submenu-link">Country Overview</a>
+</li>
+<li class="wcod-submenu-item">
+    <a href="/wcod-country-overview" class="wcod-submenu-link">Country Profile</a>
+</li>
+{% endblock %}
+
+{% block wcod_content %}
+<div id="dash-container"></div>
+<script>
+    // Load Dash app in iframe or embed
+    const dashFrame = document.createElement('iframe');
+    dashFrame.src = '/wcod/_dash-layout';
+    dashFrame.style.width = '100%';
+    dashFrame.style.height = '800px';
+    dashFrame.style.border = 'none';
+    document.getElementById('dash-container').appendChild(dashFrame);
+</script>
+{% endblock %}
+

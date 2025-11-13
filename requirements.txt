@@ -1,0 +1,11 @@
+Flask==3.0.0
+dash==2.14.2
+plotly==5.18.0
+pandas==2.1.4
+SQLAlchemy==2.0.23
+psycopg2-binary==2.9.9
+flask-caching==2.1.0
+python-dotenv==1.0.0
+gunicorn==21.2.0
+werkzeug==3.0.1
+

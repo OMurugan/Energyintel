@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Data - Energy Intelligence{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <h1 class="mb-4">Data</h1>
+    <p class="lead">Access comprehensive energy data through our interactive dashboards</p>
+    
+    <div class="row g-4 mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">World Crude Oil Data</h5>
+                    <p class="card-text">Production, exports, imports, and reserves data.</p>
+                    <a href="{{ url_for('main.wcod') }}" class="btn btn-primary">View WCoD</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

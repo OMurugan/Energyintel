@@ -1,0 +1,23 @@
+{% extends "wcod_base.html" %}
+
+{% block submenu_items %}
+<li class="wcod-submenu-item">
+    <a href="/wcod-upstream-oil-projects-tracker-methodology" class="wcod-submenu-link">Upstream Oil Projects Tracker</a>
+</li>
+<li class="wcod-submenu-item">
+    <a href="/wcod-carbon-intensity-methodology" class="wcod-submenu-link active">Carbon Intensity</a>
+</li>
+{% endblock %}
+
+{% block wcod_content %}
+<div id="dash-container"></div>
+<script>
+    const dashFrame = document.createElement('iframe');
+    dashFrame.src = '/wcod/_dash-layout';
+    dashFrame.style.width = '100%';
+    dashFrame.style.height = '800px';
+    dashFrame.style.border = 'none';
+    document.getElementById('dash-container').appendChild(dashFrame);
+</script>
+{% endblock %}
+

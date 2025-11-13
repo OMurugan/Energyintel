@@ -1,0 +1,20 @@
+# Django settings
+DATABASE_URL=postgresql://energyuser:energypass@localhost/energyintel
+SECRET_KEY=your-secret-key-change-this-in-production
+FLASK_ENV=development
+FLASK_DEBUG=True
+HOST=localhost
+PORT=5432
+
+
+DEBUG=True
+
+
+# Database settings
+#DB_ENGINE=django.db.backends.postgresql
+#DB_NAME=health_care1
+#DB_USER=postgres
+#DB_PASSWORD=lifo@123
+#DB_HOST=localhost
+#DB_PORT=5432
+
