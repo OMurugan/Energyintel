@@ -28,11 +28,12 @@ def data():
     return render_template('data.html')
 
 
-@main_bp.route('/wcod')
-@main_bp.route('/wcod/')
-def wcod():
-    """World Crude Oil Data (WCoD) - Country Overview"""
-    return render_template('wcod/country_overview.html')
+# Removed /wcod route - Dash app handles this directly at /wcod/
+# @main_bp.route('/wcod')
+# @main_bp.route('/wcod/')
+# def wcod():
+#     """World Crude Oil Data (WCoD) - Country Overview"""
+#     return render_template('wcod/country_overview.html')
 
 
 
