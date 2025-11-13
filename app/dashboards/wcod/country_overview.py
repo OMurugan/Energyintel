@@ -5,8 +5,9 @@ Replicates Energy Intelligence WCoD Country Overview functionality
 from dash import dcc, html, Input, Output, State, callback, dash_table, dash
 import plotly.graph_objects as go
 import pandas as pd
+import os
 
-CSV_PATH = '/var/www/projects/energyintel/SOURCES/Table_Country_Profile_data.csv'
+CSV_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Table_Country_Profile_data.csv')
 
 # Load data from CSV once during module import
 try:
