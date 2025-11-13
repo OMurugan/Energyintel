@@ -152,7 +152,7 @@ def create_layout():
                     # Time dimension controls inside chart area - first row with icons at top right
                     html.Div([
                         html.Div([
-                            html.Span("Year of Year", style={'fontSize': '12px', 'color': '#2c3e50'}),
+                            html.Span("Year of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
                             html.Button(
                                 '−',
                                 id='toggle-year-btn',
@@ -169,16 +169,16 @@ def create_layout():
                                     'fontSize': '14px',
                                     'fontWeight': 'bold',
                                     'lineHeight': '1',
-                                    'display': 'inline-flex',
+                                    'display': 'flex',
                                     'alignItems': 'center',
                                     'justifyContent': 'center',
-                                    'float': 'right',
-                                    'marginLeft': '8px'
+                                    'marginLeft': '8px',
+                                    'flexShrink': '0'
                                 }
                             )
-                        ], style={'display': 'inline-block', 'marginRight': '20px', 'width': '120px', 'position': 'relative'}),
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '120px'}),
                         html.Div([
-                            html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50'}),
+                            html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
                             html.Button(
                                 '+',
                                 id='toggle-quarter-btn',
@@ -195,16 +195,16 @@ def create_layout():
                                     'fontSize': '14px',
                                     'fontWeight': 'bold',
                                     'lineHeight': '1',
-                                    'display': 'inline-flex',
+                                    'display': 'flex',
                                     'alignItems': 'center',
                                     'justifyContent': 'center',
-                                    'float': 'right',
-                                    'marginLeft': '8px'
+                                    'marginLeft': '8px',
+                                    'flexShrink': '0'
                                 }
                             )
-                        ], style={'display': 'inline-block', 'marginRight': '20px', 'width': '130px', 'position': 'relative'}),
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '130px'}),
                         html.Div([
-                            html.Span("Month of Year", style={'fontSize': '12px', 'color': '#2c3e50'}),
+                            html.Span("Month of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
                             html.Button(
                                 '+',
                                 id='toggle-month-btn',
@@ -221,16 +221,16 @@ def create_layout():
                                     'fontSize': '14px',
                                     'fontWeight': 'bold',
                                     'lineHeight': '1',
-                                    'display': 'inline-flex',
+                                    'display': 'flex',
                                     'alignItems': 'center',
                                     'justifyContent': 'center',
-                                    'float': 'right',
-                                    'marginLeft': '8px'
+                                    'marginLeft': '8px',
+                                    'flexShrink': '0'
                                 }
                             )
-                        ], style={'display': 'inline-block', 'marginRight': '20px', 'width': '130px', 'position': 'relative'}),
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '130px'}),
                         html.Div([
-                            html.Span("Day of Year", style={'fontSize': '12px', 'color': '#2c3e50'}),
+                            html.Span("Day of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
                             html.Button(
                                 '+',
                                 id='toggle-day-btn',
@@ -247,14 +247,14 @@ def create_layout():
                                     'fontSize': '14px',
                                     'fontWeight': 'bold',
                                     'lineHeight': '1',
-                                    'display': 'inline-flex',
+                                    'display': 'flex',
                                     'alignItems': 'center',
                                     'justifyContent': 'center',
-                                    'float': 'right',
-                                    'marginLeft': '8px'
+                                    'marginLeft': '8px',
+                                    'flexShrink': '0'
                                 }
                             )
-                        ], style={'display': 'inline-block', 'width': '120px', 'position': 'relative'})
+                        ], style={'display': 'flex', 'alignItems': 'center', 'width': '120px'})
                     ], style={'padding': '10px 20px', 'borderBottom': '1px solid #dee2e6', 'background': '#f8f9fa', 'display': 'flex', 'justifyContent': 'flex-start', 'alignItems': 'center'}),
                     dcc.Graph(
                         id='exports-ranking-chart',
