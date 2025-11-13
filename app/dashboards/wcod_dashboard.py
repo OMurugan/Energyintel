@@ -118,45 +118,47 @@ def create_wcod_dashboard(server, url_base_pathname):
         # Location component for URL routing
         dcc.Location(id='url', refresh=False),
         
-        # Header Navigation
-        html.Nav([
-            html.Div([
-                html.A(
-                    "Energy Intelligence",
-                    href="/",
-                    className="navbar-brand",
-                    style={
-                        'fontWeight': '600',
-                        'fontSize': '1.5rem',
-                        'color': '#fff',
-                        'textDecoration': 'none'
-                    }
-                ),
+        # Header Navigation (hidden for country profile iframe)
+        html.Div(id='header-container', children=[
+            html.Nav([
                 html.Div([
-                    html.A("Home", href="/", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                    html.A("News", href="/news", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                    html.A("Data", href="/data", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                    html.A("WCoD", href="/wcod/", className="nav-link", style={'color': '#fff', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontWeight': '600'}),
-                    html.A("Research", href="/research", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                    html.A("Services", href="/services", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                    html.A("About", href="/about", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                    html.A("Contact", href="/contact", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                ], style={'display': 'flex', 'alignItems': 'center', 'marginLeft': 'auto'})
-            ], style={'display': 'flex', 'alignItems': 'center', 'width': '100%', 'maxWidth': '1200px', 'margin': '0 auto', 'padding': '0 20px'})
-        ], style={'background': '#1a1a1a', 'padding': '1rem 0', 'marginBottom': '0'}),
-        
-        # Page Header
-        html.Div([
-            html.H1(
-                "World Crude Oil Data",
-                className="mb-2",
-                style={'color': '#2c3e50', 'fontWeight': '600', 'fontSize': '32px'}
-            ),
-            html.P(
-                "Crude fundamentals, including production, trade, quality and pricing data.",
-                style={'color': '#7f8c8d', 'marginBottom': '20px', 'fontSize': '16px'}
-            )
-        ], className="container-fluid", style={'padding': '30px', 'background': 'white', 'marginBottom': '0'}),
+                    html.A(
+                        "Energy Intelligence",
+                        href="/",
+                        className="navbar-brand",
+                        style={
+                            'fontWeight': '600',
+                            'fontSize': '1.5rem',
+                            'color': '#fff',
+                            'textDecoration': 'none'
+                        }
+                    ),
+                    html.Div([
+                        html.A("Home", href="/", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
+                        html.A("News", href="/news", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
+                        html.A("Data", href="/data", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
+                        html.A("WCoD", href="/wcod/", className="nav-link", style={'color': '#fff', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontWeight': '600'}),
+                        html.A("Research", href="/research", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
+                        html.A("Services", href="/services", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
+                        html.A("About", href="/about", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
+                        html.A("Contact", href="/contact", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginLeft': 'auto'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'width': '100%', 'maxWidth': '1200px', 'margin': '0 auto', 'padding': '0 20px'})
+            ], style={'background': '#1a1a1a', 'padding': '1rem 0', 'marginBottom': '0'}),
+            
+            # Page Header
+            html.Div([
+                html.H1(
+                    "World Crude Oil Data",
+                    className="mb-2",
+                    style={'color': '#2c3e50', 'fontWeight': '600', 'fontSize': '32px'}
+                ),
+                html.P(
+                    "Crude fundamentals, including production, trade, quality and pricing data.",
+                    style={'color': '#7f8c8d', 'marginBottom': '20px', 'fontSize': '16px'}
+                )
+            ], className="container-fluid", style={'padding': '30px', 'background': 'white', 'marginBottom': '0'})
+        ]),  # Close header-container
         
         # Filter & Search heading - above main tabs (matching Energy Intelligence design)
         html.Div([
@@ -280,33 +282,49 @@ def create_wcod_dashboard(server, url_base_pathname):
         # Store for current sub-menu selection
         dcc.Store(id='current-submenu', data='country-overview'),
         
-        # Footer
-        html.Footer([
-            html.Div([
+        # Footer (hidden for country profile iframe)
+        html.Div(id='footer-container', children=[
+            html.Footer([
                 html.Div([
-                    html.H5("Energy Intelligence", style={'color': '#fff', 'marginBottom': '15px'}),
-                    html.P("Comprehensive energy data and analysis platform.", style={'color': '#b0b0b0', 'fontSize': '14px'})
-                ], className='col-md-4'),
+                    html.Div([
+                        html.H5("Energy Intelligence", style={'color': '#fff', 'marginBottom': '15px'}),
+                        html.P("Comprehensive energy data and analysis platform.", style={'color': '#b0b0b0', 'fontSize': '14px'})
+                    ], className='col-md-4'),
+                    html.Div([
+                        html.H5("Quick Links", style={'color': '#fff', 'marginBottom': '15px'}),
+                        html.Ul([
+                            html.Li(html.A("Data", href="/data", style={'color': '#b0b0b0', 'textDecoration': 'none'})),
+                            html.Li(html.A("WCoD", href="/wcod/", style={'color': '#b0b0b0', 'textDecoration': 'none'})),
+                            html.Li(html.A("Research", href="/research", style={'color': '#b0b0b0', 'textDecoration': 'none'})),
+                        ], style={'listStyle': 'none', 'padding': '0'})
+                    ], className='col-md-4'),
+                    html.Div([
+                        html.H5("Contact", style={'color': '#fff', 'marginBottom': '15px'}),
+                        html.P("info@energyintel.com", style={'color': '#b0b0b0', 'fontSize': '14px'})
+                    ], className='col-md-4'),
+                ], className='row', style={'maxWidth': '1200px', 'margin': '0 auto', 'padding': '0 20px'}),
+                html.Hr(style={'background': '#333', 'margin': '2rem 0 1rem', 'border': 'none', 'height': '1px'}),
                 html.Div([
-                    html.H5("Quick Links", style={'color': '#fff', 'marginBottom': '15px'}),
-                    html.Ul([
-                        html.Li(html.A("Data", href="/data", style={'color': '#b0b0b0', 'textDecoration': 'none'})),
-                        html.Li(html.A("WCoD", href="/wcod/", style={'color': '#b0b0b0', 'textDecoration': 'none'})),
-                        html.Li(html.A("Research", href="/research", style={'color': '#b0b0b0', 'textDecoration': 'none'})),
-                    ], style={'listStyle': 'none', 'padding': '0'})
-                ], className='col-md-4'),
-                html.Div([
-                    html.H5("Contact", style={'color': '#fff', 'marginBottom': '15px'}),
-                    html.P("info@energyintel.com", style={'color': '#b0b0b0', 'fontSize': '14px'})
-                ], className='col-md-4'),
-            ], className='row', style={'maxWidth': '1200px', 'margin': '0 auto', 'padding': '0 20px'}),
-            html.Hr(style={'background': '#333', 'margin': '2rem 0 1rem', 'border': 'none', 'height': '1px'}),
-            html.Div([
-                html.P("© 2024 Energy Intelligence. All rights reserved.", 
-                       style={'color': '#b0b0b0', 'textAlign': 'center', 'fontSize': '14px', 'margin': '0'})
-            ])
-        ], style={'background': '#1a1a1a', 'color': '#b0b0b0', 'padding': '3rem 0 1rem', 'marginTop': '4rem'})
+                    html.P("© 2024 Energy Intelligence. All rights reserved.", 
+                           style={'color': '#b0b0b0', 'textAlign': 'center', 'fontSize': '14px', 'margin': '0'})
+                ])
+            ], style={'background': '#1a1a1a', 'color': '#b0b0b0', 'padding': '3rem 0 1rem', 'marginTop': '4rem'})
+        ])
     ], style={'background': '#f5f5f5', 'minHeight': '100vh'})
+    
+    # Callback to hide header and footer for country profile iframe
+    @callback(
+        [Output('header-container', 'style'),
+         Output('footer-container', 'style')],
+        Input('url', 'pathname'),
+        prevent_initial_call=False
+    )
+    def toggle_header_footer(pathname):
+        """Hide header and footer when country profile is loaded in iframe"""
+        # Check if this is the country profile page
+        if pathname and ('/wcod-country-overview' in pathname or pathname == '/wcod-country-overview'):
+            return {'display': 'none'}, {'display': 'none'}
+        return {'display': 'block'}, {'display': 'block'}
     
     # Callback to handle URL routing - runs on initial load to set correct tab/submenu from URL
     @callback(
