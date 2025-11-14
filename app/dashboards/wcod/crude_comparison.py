@@ -45,11 +45,6 @@ def get_sample():
 # LOAD CSV (SAFE, AUTO-DELIMITER, SKIP BAD LINES)
 # ------------------------------------------------------------------------------
 def load_crude_data(mode):
-    """
-    mode = 'production' or 'exports'
-    Load correct CSV and clean fully.
-    """
-
     if mode == "production":
         csv_path = "/home/lifo/Documents/Energy/Energyintel/app/dashboards/data/production-crude-comparison.csv"
     else:
@@ -61,14 +56,13 @@ def load_crude_data(mode):
 
     encoding = detect_encoding(csv_path)
 
-    # SAFE CSV reading
     try:
         df = pd.read_csv(
             csv_path,
             encoding=encoding,
-            sep=None,            # auto-detect delimiter
-            engine="python",     # safe parser
-            on_bad_lines="skip", # skip corrupted rows
+            sep=None,
+            engine="python",
+            on_bad_lines="skip",
             header=None
         )
         print(f"Loaded {mode} CSV using encoding: {encoding}")
@@ -86,11 +80,8 @@ def load_crude_data(mode):
     # 1️⃣ Remove blank rows
     df = df.dropna(how="all")
 
-    # 2️⃣ Detect header row (first row containing the word "crude")
-    header_row_index = df[
-        df.apply(lambda row: "crude" in " ".join(row.astype(str)).lower(), axis=1)
-    ].index
-
+    # 2️⃣ Detect header row
+    header_row_index = df[df.apply(lambda row: "crude" in " ".join(row.astype(str)).lower(), axis=1)].index
     header_row = header_row_index[0] if len(header_row_index) else 0
     df.columns = df.iloc[header_row].astype(str).str.strip()
     df = df[df.index > header_row]
@@ -107,13 +98,11 @@ def load_crude_data(mode):
     if "profile_url" in df.columns:
         df = df.drop(columns=["profile_url"])
 
-    # 5️⃣ Clean up - Drop rows where ALL columns are empty/NaN
-    df = df.dropna(how="all")
-    
-    # Also drop rows where all values are empty strings
-    df = df[~df.apply(lambda row: all(str(x).strip() == "" for x in row), axis=1)]
-    
-    df = df.fillna("")
+    # Remove columns that are completely empty
+    df = df.dropna(axis=1, how='all')
+
+    # 5️⃣ Clean up
+    df = df.dropna(how="all").fillna("")
     df.columns = [c.strip() for c in df.columns]
 
     # -----------------------------
@@ -130,7 +119,7 @@ def load_crude_data(mode):
     ]
 
 # ------------------------------------------------------------------------------
-# INITIAL LOAD (Default → Production)
+# INITIAL LOAD
 # ------------------------------------------------------------------------------
 crude_data, columns = load_crude_data("production")
 
@@ -140,7 +129,6 @@ crude_data, columns = load_crude_data("production")
 def create_layout(server):
     return html.Div(
         children=[
-            # ----------------- Dropdown -----------------
             html.Div([
                 html.Label(
                     "Select Export/Production",
@@ -169,12 +157,10 @@ def create_layout(server):
                 ),
             ], style={"marginBottom": "25px", "width": "100%"}),
 
-            # ----------------- Heading -----------------
             html.Div(id="crude-heading", style={"textAlign": "center"}),
 
             html.Hr(style={"margin": "10px 0", "border": "1px solid #ccc"}),
 
-            # ----------------- Table -----------------
             dash_table.DataTable(
                 id="crude-comparison-table",
                 data=crude_data,
@@ -182,16 +168,18 @@ def create_layout(server):
                 style_table={
                     "overflowX": "auto",
                     "overflowY": "auto",
-                    "maxHeight": "630px",
+                    "maxHeight": "500px",  # reduced table height
                     "border": "1px solid #d9d9d9",
                     "backgroundColor": "white",
                 },
                 style_cell={
                     "textAlign": "center",
-                    "padding": "6px",
+                    "padding": "2px 4px",    # reduced padding
                     "fontSize": "12px",
                     "fontFamily": "Arial",
                     "border": "1px solid #e2e2e2",
+                    "whiteSpace": "normal",
+                    "height": "28px",         # reduced row height
                 },
                 style_header={
                     "backgroundColor": "#f2f2f2",
@@ -204,11 +192,13 @@ def create_layout(server):
                     {
                         "if": {"column_id": "CrudeOil"},
                         "textAlign": "left",
-                        "fontWeight": "600",
+                        "fontWeight"    : "600",
                         "minWidth": "160px",
-                        "backgroundColor": "#fafafa",
+                        "backgroundColor": "#FFFFFF",
                         "borderRight": "2px solid #d0d0d0",
                         "paddingLeft": "10px",
+                        "paddingTop": "8px",   # push text slightly down
+                        "paddingBottom": "2px" # reduce bottom padding to keep row compact
                     }
                 ],
                 style_data_conditional=[
@@ -220,7 +210,6 @@ def create_layout(server):
                 filter_action="none",
             ),
 
-            # ----------------- Data Source -----------------
             html.Div([
                 html.P(
                     "Data source: Energy Intelligence",
