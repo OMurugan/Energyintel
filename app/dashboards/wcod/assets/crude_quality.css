@@ -1,0 +1,190 @@
+/* RangeSlider Custom Styling - D-shaped handles and gray selected range */
+/* Exact styling to match the image */
+
+/* Base handle styling - white with dark gray border */
+.rc-slider-handle {
+    width: 20px !important;
+    height: 20px !important;
+    border: 2px solid #666 !important;
+    background-color: white !important;
+    margin-top: -10px !important;
+    box-shadow: none !important;
+    cursor: pointer !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+/* Left handle - D shape: half circle on left, flat edge on right (facing inward) */
+/* The flat side faces right (toward center of slider) */
+.rc-slider .rc-slider-handle:first-child,
+.rc-slider-handle:first-of-type,
+div[id*="range-slider"] .rc-slider-handle:first-child,
+.rc-slider-handle[aria-valuenow]:nth-of-type(1) {
+    /* Create half circle on left using border-radius */
+    border-radius: 50% 0 0 50% !important;
+    /* Clip right half to create flat edge - this creates the D-shape */
+    clip-path: inset(0 50% 0 0) !important;
+    /* Ensure the border is visible on the curved side */
+    border-right: none !important;
+}
+
+/* Right handle - D shape: half circle on right, flat edge on left (facing inward) */
+/* The flat side faces left (toward center of slider) */
+.rc-slider .rc-slider-handle:last-child,
+.rc-slider-handle:last-of-type,
+div[id*="range-slider"] .rc-slider-handle:last-child,
+.rc-slider-handle[aria-valuenow]:nth-of-type(2) {
+    /* Create half circle on right using border-radius */
+    border-radius: 0 50% 50% 0 !important;
+    /* Clip left half to create flat edge - this creates the D-shape */
+    clip-path: inset(0 0 0 50%) !important;
+    /* Ensure the border is visible on the curved side */
+    border-left: none !important;
+}
+
+/* Handle focus, hover, and active states */
+.rc-slider-handle:focus {
+    box-shadow: none !important;
+    border-color: #666 !important;
+    outline: none !important;
+}
+
+.rc-slider-handle:hover {
+    border-color: #333 !important;
+}
+
+.rc-slider-handle:active {
+    border-color: #333 !important;
+    box-shadow: none !important;
+}
+
+/* Selected range track - GRAY color (not blue, matching image) */
+.rc-slider-track,
+.rc-slider-track-1,
+.rc-slider-track-2,
+.rc-slider .rc-slider-track,
+div[id*="range-slider"] .rc-slider-track {
+    background-color: #d3d3d3 !important;
+    background: #d3d3d3 !important;
+    height: 4px !important;
+}
+
+/* Unselected range track - light gray (matching image) */
+.rc-slider-rail,
+.rc-slider .rc-slider-rail,
+div[id*="range-slider"] .rc-slider-rail {
+    background-color: #e0e0e0 !important;
+    background: #e0e0e0 !important;
+    height: 4px !important;
+}
+
+/* Override any default blue colors that might be applied */
+.rc-slider-track[style*="blue"],
+.rc-slider-track[style*="rgb"],
+.rc-slider-track[style*="#4a90e2"],
+.rc-slider-track[style*="#1890ff"] {
+    background-color: #d3d3d3 !important;
+    background: #d3d3d3 !important;
+}
+
+/* Tooltip styling - dark text displayed above handles */
+.rc-slider-tooltip {
+    color: #1a1a1a !important;
+    font-size: 12px !important;
+}
+
+.rc-slider-tooltip-inner {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    color: #1a1a1a !important;
+}
+
+/* Hide tooltip arrow if present */
+.rc-slider-tooltip-arrow {
+    display: none !important;
+}
+
+/* Plotly hover tooltip styling - static white background, matching image format */
+/* Target all possible Plotly tooltip containers */
+.hoverlayer,
+.js-plotly-plot .hoverlayer,
+.plotly .hoverlayer,
+div[class*="hoverlayer"] {
+    pointer-events: none !important;
+}
+
+/* Target the actual tooltip text element - exact styles as provided */
+.hovertext,
+.js-plotly-plot .hoverlayer .hovertext,
+.plotly .hovertext,
+.hoverlayer .hovertext,
+div[class*="hovertext"],
+.hoverlabel,
+.js-plotly-plot .hoverlabel,
+.plotly .hoverlabel {
+    font-family: "Benton Sans Low-DPI", Arial, Helvetica, sans-serif !important;
+    font-size: 12px !important;
+    padding: 12px !important;
+    overflow: hidden !important;
+    user-select: text !important;
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    opacity: 1 !important;
+    border: 1px solid #999999 !important;
+    border-radius: 4px !important;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25) !important;
+    color: #000000 !important;
+    pointer-events: none !important;
+    transition: none !important;
+    z-index: 1000 !important;
+}
+
+/* Ensure all text inside tooltip is visible */
+.hovertext *,
+.hoverlabel *,
+.hovertext,
+.hoverlabel {
+    color: #000000 !important;
+    opacity: 1 !important;
+}
+
+/* Style bold labels in tooltip */
+.hovertext b,
+.hoverlabel b,
+.hovertext strong,
+.hoverlabel strong {
+    font-weight: 600 !important;
+    color: #000000 !important;
+    opacity: 1 !important;
+}
+
+/* Ensure all text elements are visible */
+.hovertext span,
+.hoverlabel span,
+.hovertext div,
+.hoverlabel div {
+    color: #000000 !important;
+    opacity: 1 !important;
+}
+
+/* Remove all transitions and animations */
+.hovertext *,
+.hoverlabel * {
+    transition: none !important;
+    animation: none !important;
+}
+
+/* Ensure hoverlabel doesn't change on hover */
+.hoverlabel:hover,
+.hovertext:hover {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    font-family: "Benton Sans Low-DPI", Arial, Helvetica, sans-serif !important;
+    -webkit-tap-highlight-color: transparent !important;
+    font-size: 12px !important;
+    padding: 12px !important;
+    overflow: hidden !important;
+    user-select: text !important;
+}

@@ -12,7 +12,7 @@ def create_layout(server):
     with server.app_context():
         crudes = Crude.query.order_by(Crude.name).all()
         crude_options = [{'label': f"{c.name} ({c.country.name if c.country else 'Unknown'})", 'value': c.id} for c in crudes]
-    
+
     return html.Div([
         html.H3("Crude Comparison", style={'marginBottom': '20px'}),
         html.Div([
@@ -41,7 +41,7 @@ def create_layout(server):
 
 def register_callbacks(dash_app, server):
     """Register all callbacks for Crude Comparison"""
-    
+
     @callback(
         Output('crude-comparison-content', 'children'),
         [Input('crude-compare-1', 'value'),
@@ -51,14 +51,14 @@ def register_callbacks(dash_app, server):
         """Update crude comparison content"""
         if not crude1_id or not crude2_id:
             return html.Div("Please select both crudes to compare")
-        
+
         with server.app_context():
             crude1 = Crude.query.get(crude1_id)
             crude2 = Crude.query.get(crude2_id)
-            
+
             if not crude1 or not crude2:
                 return html.Div("One or both crudes not found")
-        
+
         comparison_data = [
             {'Property': 'Name', f'{crude1.name}': crude1.name, f'{crude2.name}': crude2.name},
             {'Property': 'Country', f'{crude1.name}': crude1.country.name if crude1.country else 'N/A', f'{crude2.name}': crude2.country.name if crude2.country else 'N/A'},
@@ -67,7 +67,7 @@ def register_callbacks(dash_app, server):
             {'Property': 'Sulfur Content (%)', f'{crude1.name}': crude1.sulfur_content or 'N/A', f'{crude2.name}': crude2.sulfur_content or 'N/A'},
             {'Property': 'Carbon Intensity', f'{crude1.name}': crude1.carbon_intensity or 'N/A', f'{crude2.name}': crude2.carbon_intensity or 'N/A'},
         ]
-        
+
         return html.Div([
             dash_table.DataTable(
                 data=comparison_data,
@@ -79,4 +79,3 @@ def register_callbacks(dash_app, server):
                 style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold'}
             )
         ])
-
