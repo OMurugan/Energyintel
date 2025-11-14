@@ -1,82 +1,278 @@
-"""
-Crude Comparison View
-Compare two crude types side by side
-"""
-from dash import dcc, html, Input, Output, callback, dash_table
-from app import db
-from app.models import Crude
+from dash import dcc, html, Input, Output, dash_table
+import pandas as pd
+import os
+import chardet
 
+# ------------------------------------------------------------------------------
+# DETECT ENCODING
+# ------------------------------------------------------------------------------
+def detect_encoding(file_path):
+    with open(file_path, "rb") as f:
+        raw = f.read()
+        enc = chardet.detect(raw)
+        return enc["encoding"]
 
+# ------------------------------------------------------------------------------
+# REMOVE FOOTER ROWS
+# ------------------------------------------------------------------------------
+def remove_footer_rows(df):
+    not_fully_empty = ~df.apply(lambda row: all(str(x).strip() == "" for x in row), axis=1)
+
+    footer_keywords = [
+        "copyright",
+        "energy intelligence",
+        "source",
+    ]
+
+    def is_footer(row):
+        return any(
+            any(keyword in str(cell).lower() for keyword in footer_keywords)
+            for cell in row
+        )
+
+    not_footer = ~df.apply(is_footer, axis=1)
+    return df[not_fully_empty & not_footer]
+
+# ------------------------------------------------------------------------------
+# SAMPLE DATA IF CSV IS MISSING
+# ------------------------------------------------------------------------------
+def get_sample():
+    sample = [{"CrudeOil": "Sample Oil", "2024": 10, "2023": 8, "2022": 6}]
+    cols = [{"name": c, "id": c, "presentation": "markdown"} if c=="CrudeOil" else {"name": c, "id": c} for c in sample[0].keys()]
+    return sample, cols
+
+# ------------------------------------------------------------------------------
+# LOAD CSV (SAFE, AUTO-DELIMITER, SKIP BAD LINES)
+# ------------------------------------------------------------------------------
+def load_crude_data(mode):
+    """
+    mode = 'production' or 'exports'
+    Load correct CSV and clean fully.
+    """
+
+    if mode == "production":
+        csv_path = "/home/lifo/Documents/Energy/Energyintel/app/dashboards/data/production-crude-comparison.csv"
+    else:
+        csv_path = "/home/lifo/Documents/Energy/Energyintel/app/dashboards/data/exports-crude-comparison.csv"
+
+    if not os.path.exists(csv_path):
+        print(f"❌ File missing: {csv_path}. Using sample.")
+        return get_sample()
+
+    encoding = detect_encoding(csv_path)
+
+    # SAFE CSV reading
+    try:
+        df = pd.read_csv(
+            csv_path,
+            encoding=encoding,
+            sep=None,            # auto-detect delimiter
+            engine="python",     # safe parser
+            on_bad_lines="skip", # skip corrupted rows
+            header=None
+        )
+        print(f"Loaded {mode} CSV using encoding: {encoding}")
+    except Exception as e:
+        print("Retrying CSV read with latin-1:", e)
+        df = pd.read_csv(
+            csv_path,
+            encoding="latin-1",
+            sep=None,
+            engine="python",
+            on_bad_lines="skip",
+            header=None
+        )
+
+    # 1️⃣ Remove blank rows
+    df = df.dropna(how="all")
+
+    # 2️⃣ Detect header row (first row containing the word "crude")
+    header_row_index = df[
+        df.apply(lambda row: "crude" in " ".join(row.astype(str)).lower(), axis=1)
+    ].index
+
+    header_row = header_row_index[0] if len(header_row_index) else 0
+    df.columns = df.iloc[header_row].astype(str).str.strip()
+    df = df[df.index > header_row]
+
+    # 3️⃣ Remove footer
+    df = remove_footer_rows(df)
+
+    # 4️⃣ Remove unwanted columns
+    df = df.loc[:, ~df.columns.str.contains("Unnamed")]
+    df = df.loc[:, ~df.columns.str.contains("Source", case=False)]
+    df = df.loc[:, df.columns.notnull()]
+
+    # Remove profile_url column if exists
+    if "profile_url" in df.columns:
+        df = df.drop(columns=["profile_url"])
+
+    # 5️⃣ Clean up
+    df = df.dropna(how="all").fillna("")
+    df.columns = [c.strip() for c in df.columns]
+
+    # -----------------------------
+    # Convert CrudeOil to clickable URLs
+    # -----------------------------
+    if "CrudeOil" in df.columns:
+        df["CrudeOil"] = df["CrudeOil"].apply(
+            lambda x: f"[{x}](https://www.energyintel.com/wcod/crude-profile/{x.replace(' ', '-')})"
+        )
+
+    return df.to_dict("records"), [
+        {"name": c, "id": c, "presentation": "markdown"} if c=="CrudeOil" else {"name": c, "id": c} 
+        for c in df.columns
+    ]
+
+# ------------------------------------------------------------------------------
+# INITIAL LOAD (Default → Production)
+# ------------------------------------------------------------------------------
+crude_data, columns = load_crude_data("production")
+
+# ------------------------------------------------------------------------------
+# LAYOUT
+# ------------------------------------------------------------------------------
 def create_layout(server):
-    """Create the Crude Comparison layout"""
-    with server.app_context():
-        crudes = Crude.query.order_by(Crude.name).all()
-        crude_options = [{'label': f"{c.name} ({c.country.name if c.country else 'Unknown'})", 'value': c.id} for c in crudes]
-    
-    return html.Div([
-        html.H3("Crude Comparison", style={'marginBottom': '20px'}),
-        html.Div([
+    return html.Div(
+        children=[
+            # ----------------- Dropdown -----------------
             html.Div([
-                html.Label("Select Crude 1:", style={'fontWeight': '500', 'marginBottom': '8px'}),
+                html.Label(
+                    "Select Export/Production",
+                    style={
+                        "fontSize": "20px",
+                        "color": "#d65a00",
+                        "fontWeight": "bold",
+                        "marginBottom": "10px",
+                        "display": "block",
+                        "fontFamily": "Arial",
+                    }
+                ),
                 dcc.Dropdown(
-                    id='crude-compare-1',
-                    options=crude_options if crude_options else [],
+                    id="export-production-dropdown",
+                    options=[
+                        {"label": "Production", "value": "production"},
+                        {"label": "Exports", "value": "exports"},
+                    ],
+                    value="production",
                     clearable=False,
-                    style={'marginBottom': '20px'}
-                )
-            ], className='col-md-6'),
-            html.Div([
-                html.Label("Select Crude 2:", style={'fontWeight': '500', 'marginBottom': '8px'}),
-                dcc.Dropdown(
-                    id='crude-compare-2',
-                    options=crude_options if crude_options else [],
-                    clearable=False,
-                    style={'marginBottom': '20px'}
-                )
-            ], className='col-md-6'),
-        ], className='row'),
-        html.Div(id='crude-comparison-content')
-    ], className='tab-content')
+                    style={
+                        "width": "100%",
+                        "fontSize": "14px",
+                        "fontFamily": "Arial",
+                    }
+                ),
+            ], style={"marginBottom": "25px", "width": "100%"}),
 
+            # ----------------- Heading -----------------
+            html.Div(id="crude-heading", style={"textAlign": "center"}),
 
-def register_callbacks(dash_app, server):
-    """Register all callbacks for Crude Comparison"""
-    
-    @callback(
-        Output('crude-comparison-content', 'children'),
-        [Input('crude-compare-1', 'value'),
-         Input('crude-compare-2', 'value')]
-    )
-    def update_crude_comparison(crude1_id, crude2_id):
-        """Update crude comparison content"""
-        if not crude1_id or not crude2_id:
-            return html.Div("Please select both crudes to compare")
-        
-        with server.app_context():
-            crude1 = Crude.query.get(crude1_id)
-            crude2 = Crude.query.get(crude2_id)
-            
-            if not crude1 or not crude2:
-                return html.Div("One or both crudes not found")
-        
-        comparison_data = [
-            {'Property': 'Name', f'{crude1.name}': crude1.name, f'{crude2.name}': crude2.name},
-            {'Property': 'Country', f'{crude1.name}': crude1.country.name if crude1.country else 'N/A', f'{crude2.name}': crude2.country.name if crude2.country else 'N/A'},
-            {'Property': 'Grade', f'{crude1.name}': crude1.grade or 'N/A', f'{crude2.name}': crude2.grade or 'N/A'},
-            {'Property': 'API Gravity', f'{crude1.name}': crude1.api_gravity or 'N/A', f'{crude2.name}': crude2.api_gravity or 'N/A'},
-            {'Property': 'Sulfur Content (%)', f'{crude1.name}': crude1.sulfur_content or 'N/A', f'{crude2.name}': crude2.sulfur_content or 'N/A'},
-            {'Property': 'Carbon Intensity', f'{crude1.name}': crude1.carbon_intensity or 'N/A', f'{crude2.name}': crude2.carbon_intensity or 'N/A'},
-        ]
-        
-        return html.Div([
+            html.Hr(style={"margin": "10px 0", "border": "1px solid #ccc"}),
+
+            # ----------------- Table -----------------
             dash_table.DataTable(
-                data=comparison_data,
-                columns=[{'name': 'Property', 'id': 'Property'}, 
-                        {'name': crude1.name, 'id': f'{crude1.name}'},
-                        {'name': crude2.name, 'id': f'{crude2.name}'}],
-                style_table={'overflowX': 'auto'},
-                style_cell={'textAlign': 'left', 'padding': '10px'},
-                style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold'}
-            )
-        ])
+                id="crude-comparison-table",
+                data=crude_data,
+                columns=columns,
+                style_table={
+                    "overflowX": "auto",
+                    "overflowY": "auto",
+                    "maxHeight": "630px",
+                    "border": "1px solid #d9d9d9",
+                    "backgroundColor": "white",
+                },
+                style_cell={
+                    "textAlign": "center",
+                    "padding": "6px",
+                    "fontSize": "12px",
+                    "fontFamily": "Arial",
+                    "border": "1px solid #e2e2e2",
+                },
+                style_header={
+                    "backgroundColor": "#f2f2f2",
+                    "fontWeight": "bold",
+                    "fontSize": "12px",
+                    "color": "#444",
+                    "border": "1px solid #d0d0d0",
+                },
+                style_cell_conditional=[
+                    {
+                        "if": {"column_id": "CrudeOil"},
+                        "textAlign": "left",
+                        "fontWeight": "600",
+                        "minWidth": "160px",
+                        "backgroundColor": "#fafafa",
+                        "borderRight": "2px solid #d0d0d0",
+                        "paddingLeft": "10px",
+                    }
+                ],
+                style_data_conditional=[
+                    {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"}
+                ],
+                fixed_rows={"headers": True},
+                page_action="none",
+                sort_action="none",
+                filter_action="none",
+            ),
 
+            # ----------------- Data Source -----------------
+            html.Div([
+                html.P(
+                    "Data source: Energy Intelligence",
+                    style={
+                        "fontSize": "11px",
+                        "fontStyle": "italic",
+                        "color": "#777",
+                        "textAlign": "right",
+                        "marginTop": "8px",
+                        "fontFamily": "Arial",
+                    },
+                )
+            ]),
+        ],
+        style={
+            "padding": "25px",
+            "backgroundColor": "white",
+            "maxWidth": "1500px",
+            "margin": "0 auto",
+        }
+    )
+
+# ------------------------------------------------------------------------------
+# CALLBACKS
+# ------------------------------------------------------------------------------
+def register_callbacks(app):
+
+    @app.callback(
+        Output("crude-heading", "children"),
+        Input("export-production-dropdown", "value"),
+    )
+    def update_header(selected):
+        title = "Exports ('000 b/d)" if selected == "exports" else "Production ('000 b/d)"
+        return html.H2(
+            title,
+            style={
+                "color": "#d65a00",
+                "fontSize": "22px",
+                "fontWeight": "bold",
+                "fontFamily": "Arial",
+                "marginBottom": "10px",
+                "textAlign": "center",
+            },
+        )
+
+    @app.callback(
+        Output("crude-comparison-table", "data"),
+        Input("export-production-dropdown", "value"),
+    )
+    def reload_data(mode):
+        crude_data, _ = load_crude_data(mode)
+        return crude_data
+
+    @app.callback(
+        Output("crude-comparison-table", "columns"),
+        Input("export-production-dropdown", "value"),
+    )
+    def reload_columns(mode):
+        _, columns = load_crude_data(mode)
+        return columns

@@ -19,14 +19,8 @@
 {% endblock %}
 
 {% block wcod_content %}
-<div id="dash-container"></div>
-<script>
-    const dashFrame = document.createElement('iframe');
-    dashFrame.src = '/wcod/_dash-layout';
-    dashFrame.style.width = '100%';
-    dashFrame.style.height = '800px';
-    dashFrame.style.border = 'none';
-    document.getElementById('dash-container').appendChild(dashFrame);
-</script>
+<!-- Dash content will be injected here by Flask -->
+<div id="dash-container">
+    {{ dash_content | safe }}
+</div>
 {% endblock %}
-
