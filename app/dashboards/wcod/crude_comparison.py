@@ -107,8 +107,13 @@ def load_crude_data(mode):
     if "profile_url" in df.columns:
         df = df.drop(columns=["profile_url"])
 
-    # 5️⃣ Clean up
-    df = df.dropna(how="all").fillna("")
+    # 5️⃣ Clean up - Drop rows where ALL columns are empty/NaN
+    df = df.dropna(how="all")
+    
+    # Also drop rows where all values are empty strings
+    df = df[~df.apply(lambda row: all(str(x).strip() == "" for x in row), axis=1)]
+    
+    df = df.fillna("")
     df.columns = [c.strip() for c in df.columns]
 
     # -----------------------------
