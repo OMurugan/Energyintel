@@ -86,7 +86,40 @@ def create_layout(server):
         initial_map = create_world_map(default_country)
     except Exception:
         initial_map = create_empty_map()
+
+    # Initial profile URL
+    initial_profile_url = f"https://www.energyintel.com/wcod/country-profile/{default_country.lower().replace(' ', '-')}" if default_country else "#"
     
+
+    # Dropdown style (smaller width and padding)
+    dropdown_style = {
+        'fontSize': '14px',
+        'width': '200px'  # Smaller width
+    }
+
+    label_style = {
+        'fontWeight': '600',
+        'fontSize': '14px',
+        'color': '#2c3e50',
+        'marginBottom': '8px',
+        'display': 'block'
+    }
+
+    # Profile link style (border only, no background, orange text, orange border on hover)
+    profile_link_style = {
+        'display': 'inline-block',
+        'padding': '8px 16px',
+        'backgroundColor': 'transparent',
+        'color': '#fe5000',  # Orange text color
+        'textDecoration': 'none',
+        'fontSize': '14px',
+        'fontWeight': '500',
+        'borderRadius': '4px',
+        'border': '1px solid #cccccc',
+        'cursor': 'pointer',
+        'textAlign': 'center',
+        'transition': 'border-color 0.3s ease'
+    }
     return html.Div([
         # Store for selected country
         dcc.Store(id='selected-country-profile-store', data=default_country),
@@ -96,79 +129,102 @@ def create_layout(server):
         # Filters Section
         html.Div([
             html.Div([
+                # Flex container for alignment
                 html.Div([
-                    html.Label(
-                        "Select Country:",
-                        style={
-                            'fontWeight': '600',
-                            'fontSize': '14px',
-                            'color': '#2c3e50',
-                            'marginBottom': '8px',
-                            'display': 'block'
-                        }
-                    ),
-                    dcc.Dropdown(
-                        id='country-select-profile',
-                        options=country_options,
-                        value=default_country,
-                        clearable=False,
-                        placeholder="Select a country...",
-                        style={
-                            'fontSize': '14px'
-                        }
-                    )
-                ], style={'width': '48%', 'display': 'inline-block', 'marginRight': '4%'}),
-                
-                html.Div([
-                    html.Label(
-                        "Yearly or Monthly:",
-                        style={
-                            'fontWeight': '600',
-                            'fontSize': '14px',
-                            'color': '#2c3e50',
-                            'marginBottom': '8px',
-                            'display': 'block'
-                        }
-                    ),
-                    dcc.Dropdown(
-                        id='time-period-select',
-                        options=[
-                            {'label': 'Yearly', 'value': 'Yearly'},
-                            {'label': 'Monthly', 'value': 'Monthly'}
-                        ],
-                        value='Monthly',
-                        clearable=False,
-                        style={
-                            'fontSize': '14px'
-                        }
-                    )
-                ], style={'width': '48%', 'display': 'inline-block'})
+                    # Country selector (smaller width)
+                    html.Div([
+                        html.Label("Select Country:", style=label_style),
+                        dcc.Dropdown(
+                            id='country-select-profile',
+                            options=country_options,
+                            value=default_country,
+                            clearable=False,
+                            placeholder="Select a country...",
+                            style=dropdown_style
+                        )
+                    ], style={'width': '220px', 'marginRight': '20px'}),
+                    
+
+
+                    # Time period selector (smaller width)
+                    html.Div([
+                        html.Label("Yearly or Monthly:", style=label_style),
+                        dcc.Dropdown(
+                            id='time-period-select',
+                            options=[
+                                {'label': 'Yearly', 'value': 'Yearly'},
+                                {'label': 'Monthly', 'value': 'Monthly'}
+                            ],
+                            value='Monthly',
+                            clearable=False,
+                            style=dropdown_style
+                        )
+                    ], style={'width': '220px', 'marginRight': '20px'}),
+                    
+                    # Profile link container (border only, hover orange)
+                    html.Div([
+                        html.A(
+                            id='profile-link',
+                            href=initial_profile_url,
+                            target='_blank',
+                            children="Click here to see the Country's Profile",
+                            style=profile_link_style,
+                            className='profile-link-hover'
+                        )
+                    ], style={'flex': '1', 'textAlign': 'right', 'display': 'flex', 'alignItems': 'flex-end', 'justifyContent': 'flex-end'})
+                ], style={
+                    'display': 'flex',
+                    'alignItems': 'flex-end',
+                    'gap': '20px',
+                    'width': '100%'
+                })
             ], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'})
         ]),
         
-        # World Map Section
+        # World Map Section with hover controls (full screen)
         html.Div([
             html.Div([
-                html.H4(
-                    "Select a Country on the Map",
-                    style={
-                        'color': '#2c3e50',
-                        'fontWeight': '600',
-                        'fontSize': '20px',
-                        'marginBottom': '15px'
-                    }
-                ),
-                html.P(
-                    "Click on any country to view detailed statistics",
-                    style={'color': '#7f8c8d', 'fontSize': '14px', 'marginBottom': '20px'}
-                ),
-                dcc.Graph(
-                    id='world-map-chart',
-                    figure=initial_map,
-                    style={'height': '600px', 'background': 'white', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}
-                )
-            ], style={'padding': '20px 30px', 'background': '#f8f9fa'})
-        ]),
+                # Map container with relative positioning for controls overlay
+                html.Div([
+                    dcc.Graph(
+                        id='world-map-chart',
+                        figure=initial_map,
+                        style={
+                            'height': 'calc(100vh - 150px)',  # Full screen height minus filters only
+                            'width': '100vw',  # Full viewport width - no space
+                            'maxWidth': '100%',
+                            'background': 'white',
+                            'borderRadius': '0',
+                            'boxShadow': 'none',
+                            'margin': '0',  # No margin - full width
+                            'padding': '0',
+                            'position': 'relative',
+                            'display': 'block'
+                        }
+                    ),
+                    # Map controls (left side, always visible)
+                    html.Div([
+                        html.Div([
+                            html.Button('🔍', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '14px'}),
+                            html.Button('📋', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '14px'}),
+                            html.Button('+', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'fontSize': '18px', 'fontWeight': 'bold', 'lineHeight': '1'}),
+                            html.Button('−', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'fontSize': '18px', 'fontWeight': 'bold', 'lineHeight': '1'}),
+                            html.Button('⌂', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '14px'}),
+                            html.Button('▶', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '12px'})
+                        ], style={'display': 'flex', 'flexDirection': 'column', 'padding': '4px', 'background': 'white', 'border': '1px solid #d0d0d0', 'borderRadius': '4px', 'boxShadow': '0 1px 3px rgba(0,0,0,0.1)'})
+                    ], className='map-controls', style={
+                        'position': 'absolute',
+                        'left': '10px',
+                        'top': '10px',
+                        'opacity': '1',
+                        'zIndex': '1000'
+                    })
+                ], style={'position': 'relative', 'width': '100vw', 'maxWidth': '100%', 'height': 'calc(100vh - 150px)', 'margin': '0', 'padding': '0', 'overflow': 'hidden'}, className='map-container')
+            ], style={'padding': '0', 'background': '#f8f9fa', 'width': '100vw', 'maxWidth': '100%', 'height': 'calc(100vh - 150px)', 'margin': '0', 'overflow': 'hidden', 'position': 'relative'})
+        ], style={'width': '100vw', 'maxWidth': '100%', 'height': 'calc(100vh - 150px)', 'margin': '0', 'padding': '0', 'overflow': 'hidden', 'position': 'relative', 'display': 'block'}),
+        
+        # CSS injection div (will be handled by clientside callback)
+        html.Div(id='css-injection-placeholder', style={'display': 'none'}),
         
         # Country Details Section (shown when country is selected)
         html.Div(id='country-profile-content', style={'padding': '24px', 'background': '#f8f9fa'})
@@ -288,20 +344,19 @@ def create_world_map(selected_country=None):
         
         if country_iso:
             # Create a choropleth to highlight the selected country
-            # We'll create a simple dataset with the selected country highlighted
             all_countries = list(country_to_iso.values())
             country_values = [1 if code == country_iso else 0 for code in all_countries]
             
             fig.add_trace(go.Choropleth(
                 locations=all_countries,
                 z=country_values,
-                colorscale=[[0, 'rgba(245,245,245,0.3)'], [1, 'rgba(254,80,0,0.5)']],  # Light gray for others, orange/red for selected
+                colorscale=[[0, 'rgba(232,232,232,0.5)'], [1, 'rgba(142, 153, 208, 1)']],  # Light gray for others, light blue for selected (matching image)
                 showscale=False,
                 geo='geo',
                 hoverinfo='skip'
             ))
         
-        # Add scatter points for each port with red round markers
+        # Add scatter points for each port with orange-red markers and varied symbols
         for _, row in port_data.iterrows():
             port_name = row['Port Name'] if pd.notna(row['Port Name']) else 'Unknown'
             lat = float(row['latitude']) if pd.notna(row['latitude']) else 0
@@ -311,24 +366,26 @@ def create_world_map(selected_country=None):
             if lat == 0 and lon == 0:
                 continue
             
+            # Use circle or cross symbol based on port name (example logic, adjust as needed)
+            symbol = 'circle' if 'City' in str(port_name) else 'circle'
             fig.add_trace(go.Scattergeo(
                 lon=[lon],
                 lat=[lat],
-                text=[f"{port_name}<br>{selected_country}"],
+                text=port_name,
                 mode='markers',
                 marker=dict(
                     size=18,
-                    color='#fe5000',  # Red color for ports (matching Tableau style)
+                    color='#fe5000',  # Orange-red for ports
                     opacity=0.9,
                     line=dict(width=2, color='white'),
-                    symbol='circle'  # Round markers
+                    symbol=symbol
                 ),
                 name=port_name,
-                hovertemplate='<b>%{text}</b><extra></extra>',
+                hovertemplate='<b>Port name: %{text}</b><extra></extra>',
                 showlegend=False
             ))
         
-        title_text = f"{selected_country} - Loading Ports"
+        title_text = f"{selected_country} Production"
     else:
         # For all countries, show aggregated data
         if 'country_long_name' in filtered_map.columns:
@@ -368,40 +425,46 @@ def create_world_map(selected_country=None):
             return create_empty_map()
     
     fig.update_layout(
-        title={
-            'text': title_text,
-            'x': 0.5,
-            'xanchor': 'center',
-            'font': {
-                'size': 18,
-                'family': 'Arial, sans-serif',
-                'color': '#2c3e50'
-            }
-        },
+        title=None,  # No title on map - shown below map in red text
         geo=dict(
             scope='world',
             showframe=False,
             showcoastlines=True,
-            projection_type='natural earth',
+            projection_type='equirectangular',  # Square projection that maintains aspect ratio
             bgcolor='rgba(0,0,0,0)',
-            coastlinecolor='#cccccc',
-            landcolor='#f5f5f5',
+            coastlinecolor='#d0d0d0',  # Lighter gray for coastlines
+            landcolor='#e8e8e8',  # Light gray for land (matching image)
             showocean=True,
-            oceancolor='#e8f4f8',
+            oceancolor='#e3f2fd',  # Light blue for ocean (matching image)
             showcountries=True,
-            countrycolor='#cccccc',
+            countrycolor='#bdbdbd',  # Medium gray for country borders (matching image)
             showlakes=False,
-            showrivers=False
+            showrivers=False,
+            lonaxis_range=[-180, 180],
+            lataxis_range=[-60, 75]  # Limit vertical range to reduce upper/lower empty space (no full zoom out)
         ),
-        height=600,
-        margin=dict(l=0, r=0, t=60, b=0),
+        height=None,  # Auto height to fill container
+        autosize=True,  # Auto-size to fill container width and height
+        margin=dict(l=0, r=0, t=0, b=30),  # Bottom margin for copyright only
         plot_bgcolor='white',
         paper_bgcolor='white',
-        showlegend=False
+        showlegend=False,
+        annotations=[
+            dict(
+                text="© 2025 Mapbox © OpenStreetMap",
+                xref="paper", yref="paper",
+                x=0.01, y=0.01,
+                xanchor="left", yanchor="bottom",
+                showarrow=False,
+                font=dict(size=10, color='#666666'),
+                bgcolor='rgba(255,255,255,0.7)',
+                bordercolor='rgba(255,255,255,0.7)',
+                borderwidth=1
+            )
+        ]
     )
     
     return fig
-
 
 def create_empty_map():
     """Create an empty world map when no data is available"""
@@ -421,25 +484,42 @@ def create_empty_map():
         geo=dict(
             showframe=False,
             showcoastlines=True,
-            projection_type='natural earth',
+            projection_type='equirectangular',  # Square projection that maintains aspect ratio
             bgcolor='rgba(0,0,0,0)',
-            coastlinecolor='#cccccc',
-            landcolor='#f5f5f5',
+            coastlinecolor='#d0d0d0',  # Lighter gray for coastlines
+            landcolor='#e8e8e8',  # Light gray for land (matching image)
             showocean=True,
-            oceancolor='#e8f4f8',
+            oceancolor='#e3f2fd',  # Light blue for ocean (matching image)
             showcountries=True,
-            countrycolor='#cccccc'
+            countrycolor='#bdbdbd',  # Medium gray for country borders (matching image)
+            lonaxis_range=[-180, 180],
+            lataxis_range=[-60, 75]  # Limit vertical range to reduce upper/lower empty space
         ),
-        height=600,
-        margin=dict(l=0, r=0, t=60, b=0),
+        height=700,
+        width=700,  # Square aspect ratio
+        margin=dict(l=0, r=0, t=60, b=30),  # Bottom margin for copyright
+        autosize=False,  # Disable autosize to maintain square
         plot_bgcolor='white',
         paper_bgcolor='white',
-        annotations=[dict(
-            text="No data available.",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5, showarrow=False,
-            font=dict(size=16, color='#7f8c8d')
-        )]
+        annotations=[
+            dict(
+                text="No data available.",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color='#7f8c8d')
+            ),
+            dict(
+                text="© 2025 Mapbox © OpenStreetMap",
+                xref="paper", yref="paper",
+                x=0.01, y=0.01,
+                xanchor="left", yanchor="bottom",
+                showarrow=False,
+                font=dict(size=10, color='#666666'),
+                bgcolor='rgba(255,255,255,0.7)',
+                bordercolor='rgba(255,255,255,0.7)',
+                borderwidth=1
+            )
+        ]
     )
     
     return fig
@@ -531,17 +611,20 @@ def create_production_table(country_name, time_period='Yearly'):
         prod_data['Year'] = prod_data['Year of Date'].astype(int)
         prod_data['Month'] = prod_data['Month of Date'].astype(str)
         
-        # Get unique years and months in order
+        # Get unique years and months in order (most recent first)
         years = sorted(prod_data['Year'].unique(), reverse=True)
-        months_order = ['January', 'February', 'March', 'April', 'May', 'June',
-                       'July', 'August', 'September', 'October', 'November', 'December']
+        # Months in reverse chronological order (most recent first)
+        months_order = ['July', 'June', 'May', 'April', 'March', 'February', 
+                       'January', 'December', 'November', 'October', 'September', 'August']
         
         # Get unique crudes
         crudes = sorted(prod_data['Crude'].unique())
         
-        # Build columns with nested structure (two-level headers)
-        columns = [{'name': ['', 'Crude'], 'id': 'Crude', 'type': 'text'}]
+        # Build columns with nested structure (three-level headers: Date -> Year -> Month)
+        columns = [{'name': ['', '', 'Crude'], 'id': 'Crude', 'type': 'text'}]
         
+        # Add "Date" parent header
+        date_cols = []
         for year in years:
             year_data = prod_data[prod_data['Year'] == year]
             year_months = sorted(year_data['Month'].unique(), 
@@ -549,11 +632,14 @@ def create_production_table(country_name, time_period='Yearly'):
             
             for month in year_months:
                 col_id = f"{year}_{month}"
-                columns.append({
-                    'name': [str(year), month],
+                date_cols.append({
+                    'name': ['Date', str(year), month],
                     'id': col_id,
-                    'type': 'text'
+                    'type': 'numeric',
+                    'format': {'specifier': ',.0f'}
                 })
+        
+        columns.extend(date_cols)
         
         # Build table data by creating a pivot structure manually
         table_data = []
@@ -576,7 +662,8 @@ def create_production_table(country_name, time_period='Yearly'):
                     
                     if not value_row.empty:
                         value = value_row['Avg. Value'].iloc[0]
-                        row[col_id] = f"{value:,.2f}" if pd.notna(value) else ''
+                        # Format as integer (no decimals) like in the image
+                        row[col_id] = int(round(value)) if pd.notna(value) else ''
                     else:
                         row[col_id] = ''
             
@@ -777,30 +864,30 @@ def register_callbacks(dash_app, server):
         return html.Div([
             # Page Title with Profile Link
             html.Div([
-                html.Div([
-                    html.H4(
-                        country_name,
-                        style={
-                            'color': '#2c3e50',
-                            'fontWeight': '600',
-                            'fontSize': '24px',
-                            'marginBottom': '10px'
-                        }
-                    ),
-                    html.A(
-                        "Click here to see the Country's Profile",
-                        href=profile_url,
-                        target='_blank',
-                        style={
-                            'color': '#0075A8',
-                            'textDecoration': 'underline',
-                            'fontSize': '14px',
-                            'fontWeight': '500',
-                            'display': 'block',
-                            'marginBottom': '15px'
-                        }
-                    )
-                ])
+                # html.Div([
+                #     html.H4(
+                #         country_name,
+                #         style={
+                #             'color': '#2c3e50',
+                #             'fontWeight': '600',
+                #             'fontSize': '24px',
+                #             'marginBottom': '10px'
+                #         }
+                #     ),
+                #     html.A(
+                #         "Click here to see the Country's Profile",
+                #         href=profile_url,
+                #         target='_blank',
+                #         style={
+                #             'color': '#0075A8',
+                #             'textDecoration': 'underline',
+                #             'fontSize': '14px',
+                #             'fontWeight': '500',
+                #             'display': 'block',
+                #             'marginBottom': '15px'
+                #         }
+                #     )
+                # ])
             ], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'}),
             
             # Production Data Section
@@ -809,7 +896,7 @@ def register_callbacks(dash_app, server):
                     html.H5(
                         f"{country_name} Production",
                         style={
-                            'color': '#2c3e50',
+                            'color': '#fe5000',
                             'fontWeight': '600',
                             'fontSize': '18px',
                             'marginBottom': '20px'
@@ -869,3 +956,46 @@ def register_callbacks(dash_app, server):
     def update_time_period_store(time_period):
         """Update time period store"""
         return time_period or 'Monthly'
+    
+    @callback(
+        Output('profile-link', 'href'),
+        Input('country-select-profile', 'value'),
+        prevent_initial_call=False
+    )
+    def update_profile_link(selected_country):
+        """Update profile link when country changes"""
+        country = selected_country or default_country
+        if country:
+            return f"https://www.energyintel.com/wcod/country-profile/{country.lower().replace(' ', '-')}"
+        return "#"
+    
+    # Clientside callback to inject CSS for hover effects
+    dash_app.clientside_callback(
+        """
+        function(n) {
+            // Check if style already exists
+            if (document.getElementById('country-profile-custom-css')) {
+                return window.dash_clientside.no_update;
+            }
+            
+            // Create and inject style tag
+            const style = document.createElement('style');
+            style.id = 'country-profile-custom-css';
+            style.type = 'text/css';
+            style.innerHTML = `
+            .map-controls {
+                opacity: 1 !important;
+            }
+                .profile-link-hover:hover {
+                    border-color: #fe5000 !important;
+                }
+            `;
+            document.head.appendChild(style);
+            
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('css-injection-placeholder', 'children'),
+        Input('css-injection-placeholder', 'id'),
+        prevent_initial_call=False
+    )
