@@ -179,7 +179,7 @@ def create_layout(server):
                     "fontFamily": "Arial",
                     "border": "1px solid #e2e2e2",
                     "whiteSpace": "normal",
-                    "height": "28px",         # reduced row height
+                    "height": "35px",         # reduced row height
                 },
                 style_header={
                     "backgroundColor": "#f2f2f2",
@@ -197,8 +197,8 @@ def create_layout(server):
                         "backgroundColor": "#FFFFFF",
                         "borderRight": "2px solid #d0d0d0",
                         "paddingLeft": "10px",
-                        "paddingTop": "8px",   # push text slightly down
-                        "paddingBottom": "2px" # reduce bottom padding to keep row compact
+                        "paddingTop": "5px",   # push text slightly down
+                        "paddingBottom": "5px" # reduce bottom padding to keep row compact
                     }
                 ],
                 style_data_conditional=[
