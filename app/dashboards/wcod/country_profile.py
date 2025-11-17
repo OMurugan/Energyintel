@@ -891,7 +891,7 @@ def register_callbacks(dash_app, server):
             ], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'}),
             
             # Production Data Section
-            html.Div([
+                html.Div([
                 html.Div([
                     html.H5(
                         f"{country_name} Production",
@@ -920,7 +920,7 @@ def register_callbacks(dash_app, server):
                             'marginBottom': '20px'
                         }
                     ),
-                    html.Div([
+            html.Div([
                         create_port_details_table(country_name)
                     ], style={'background': 'white', 'padding': '20px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
                 ], className='col-md-12', style={'padding': '15px'})

@@ -4,6 +4,7 @@ Comprehensive dashboard with all tabs and sub-menus matching Energy Intelligence
 """
 import dash
 from dash import dcc, html, Input, Output, State, callback, dash_table
+from urllib.parse import parse_qs
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -117,6 +118,8 @@ def create_wcod_dashboard(server, url_base_pathname):
     dash_app.layout = html.Div([
         # Location component for URL routing
         dcc.Location(id='url', refresh=False),
+        # Store to track whether dashboard is rendered inside an iframe
+        dcc.Store(id='iframe-flag', data=False),
         
         # Header Navigation (hidden for country profile iframe)
         html.Div(id='header-container', children=[
@@ -312,17 +315,56 @@ def create_wcod_dashboard(server, url_base_pathname):
         ])
     ], style={'background': '#f5f5f5', 'minHeight': '100vh'})
     
-    # Callback to hide header and footer for country profile iframe
+    # Detect iframe rendering client-side to avoid showing duplicate headers inside embeds
+    dash_app.clientside_callback(
+        """
+        function(href) {
+            try {
+                return window.self !== window.top;
+            } catch (e) {
+                return true;
+            }
+        }
+        """,
+        Output('iframe-flag', 'data'),
+        Input('url', 'href')
+    )
+    
+    # Callback to hide header and footer when WCoD dashboards are embedded in iframes
     @callback(
         [Output('header-container', 'style'),
          Output('footer-container', 'style')],
-        Input('url', 'pathname'),
+        [Input('url', 'pathname'),
+         Input('url', 'search'),
+         Input('iframe-flag', 'data')],
         prevent_initial_call=False
     )
-    def toggle_header_footer(pathname):
-        """Hide header and footer when country profile is loaded in iframe"""
-        # Check if this is the country profile page
-        if pathname and ('/wcod-country-overview' in pathname or pathname == '/wcod-country-overview'):
+    def toggle_header_footer(pathname, search, is_iframe):
+        """Hide header/footer for specific WCoD iframe routes when rendered inside iframe or via query flag"""
+        pathname_str = str(pathname) if pathname else ''
+        query_params = parse_qs(search.lstrip('?')) if search else {}
+        embed_flag = False
+        for key in ('iframe', 'embed', 'hide_header', 'hideHeader'):
+            if key in query_params:
+                value = query_params[key][0].lower()
+                if value in ('1', 'true', 't', 'yes', 'y'):
+                    embed_flag = True
+                    break
+        
+        iframe_pages = [
+            '/wcod-country-overview',
+            '/wcod/crude-overview',
+            '/wcod-crude-profile',
+            '/wcod-crude-comparison',
+            '/wcod-crude-quality-comparison',
+            '/wcod-crude-carbon-intensity',
+            '/wcod/trade/',
+            '/wcod/prices/',
+            '/wcod/upstream-projects/'
+        ]
+        is_wcod_path = pathname_str.startswith('/wcod') or pathname_str.startswith('/wcod-')
+        should_hide = (bool(is_iframe) or embed_flag) and (is_wcod_path or any(page in pathname_str for page in iframe_pages))
+        if should_hide:
             return {'display': 'none'}, {'display': 'none'}
         return {'display': 'block'}, {'display': 'block'}
     
@@ -331,7 +373,7 @@ def create_wcod_dashboard(server, url_base_pathname):
         [Output('main-tabs', 'value'),
          Output('current-submenu', 'data', allow_duplicate=True)],
         Input('url', 'pathname'),
-        prevent_initial_call='initial_duplicate'
+        prevent_initial_call='initial_duplicate'  # Required when using allow_duplicate=True
     )
     def update_from_url(pathname):
         """Update tabs and submenu based on URL"""
@@ -595,11 +637,17 @@ def create_wcod_dashboard(server, url_base_pathname):
     @callback(
         Output('tab-content', 'children'),
         [Input('current-submenu', 'data'),
-         Input('main-tabs', 'value')],
+         Input('main-tabs', 'value'),
+         Input('url', 'pathname')],
         prevent_initial_call=False
     )
-    def update_tab_content(submenu, main_tab):
+    def update_tab_content(submenu, main_tab, pathname):
         """Update main content area based on sub-menu selection"""
+        # If pathname matches crude-overview, ensure we render it even if submenu isn't set yet
+        pathname_str = str(pathname) if pathname else ''
+        if '/wcod/crude-overview' in pathname_str:
+            return render_crude_overview()
+        
         if main_tab == 'country-tab':
             if submenu == 'country-overview':
                 return render_country_overview()
