@@ -29,6 +29,8 @@ def load_yearly_bar():
     try:
         df = pd.read_csv(BAR_YEARLY_CSV, encoding="utf-8", sep=",")
         df.columns = df.columns.str.strip()
+        print(f"DEBUG: Yearly bar data columns: {df.columns.tolist()}")
+        print(f"DEBUG: Yearly bar data sample:\n{df.head(3)}")
         
         # Filter out rows where Country or CrudeOil is missing
         df = df[(df["Country"].notna()) & (df["CrudeOil"].notna())].copy()
@@ -70,7 +72,10 @@ def load_yearly_bar():
             df_long["month_idx"] = 0
             df_long = df_long[df_long["value"] > 0].copy()
             print(f"DEBUG: Loaded {len(df_long)} yearly bar records from {BAR_YEARLY_CSV}")
-            print(f"DEBUG: Years in data: {sorted(df_long['year'].unique())}")
+            if len(df_long) > 0:
+                print(f"DEBUG: Value range: {df_long['value'].min():.0f} to {df_long['value'].max():.0f}")
+                print(f"DEBUG: Years: {sorted(df_long['year'].unique())}")
+                print(f"DEBUG: Streams: {df_long['Stream'].unique().tolist()}")
     except Exception as e:
         print(f"Error loading yearly bar data: {e}")
         import traceback
@@ -1309,70 +1314,50 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                # Calculate totals and averages for each year to display above bars
-                # Use agg_for_chart but filter out placeholder values (0.0001) for accurate calculations
+                # Calculate totals for each year to display above bars
                 chart_totals_df = agg_for_chart[agg_for_chart["value"] > 0.001].copy()  # Filter out tiny placeholder values
                 if len(chart_totals_df) > 0:
                     year_totals = chart_totals_df.groupby("year")["value"].sum().reset_index()
-                    year_totals_dict = dict(zip(year_totals["year"], year_totals["value"]))
-                    # Calculate average: mean of all stream values for that year
-                    year_averages = chart_totals_df.groupby("year")["value"].mean().reset_index()
-                    year_averages_dict = dict(zip(year_averages["year"], year_averages["value"]))
                 else:
                     # Fallback to original agg if chart data is empty
                     year_totals = agg.groupby("year")["value"].sum().reset_index()
-                    year_totals_dict = dict(zip(year_totals["year"], year_totals["value"]))
-                    year_averages = agg.groupby("year")["value"].mean().reset_index()
-                    year_averages_dict = dict(zip(year_averages["year"], year_averages["value"]))
+                year_totals_dict = dict(zip(year_totals["year"], year_totals["value"]))
                 
                 print(f"DEBUG BREAKDOWN YEARLY: Year totals: {year_totals_dict}")
-                print(f"DEBUG BREAKDOWN YEARLY: Year averages: {year_averages_dict}")
                 
-                # Format traces and add average values above bars
+                max_total = max(year_totals_dict.values()) if year_totals_dict else 12000
+                y_axis_max = max_total * 1.12  # Add space for annotations
+                
+                # Format traces
                 fig.update_traces(
                     marker=dict(line=dict(width=1, color='white')),
                     hovertemplate='<b>%{fullData.name}</b><br>Year: %{x}<br>Production: %{y:,.0f} (\'000 b/d)<extra></extra>'
                 )
                 
-                # Add average production values above each bar with year label, displayed vertically
+                # Add total production values above each bar with year label, displayed vertically
                 annotations_added = 0
                 for year in years_sorted:
-                    # Get average value for this year
-                    avg_value = year_averages_dict.get(year, 0)
-                    # Get total for positioning (to place annotation above the bar)
                     total = year_totals_dict.get(year, 0)
                     
-                    # Only add annotation if there's actual data (total > 0)
-                    if total > 0 and avg_value > 0:
-                        # Format as "Year (avg value)" with line breaks for vertical display
-                        annotation_text = f"{year}<br>({int(avg_value):,})"
+                    if total > 0:
+                        annotation_text = f"{year}<br>{int(total):,}"
                         fig.add_annotation(
                             text=annotation_text,
                             x=year,
-                            y=total,
+                            y=total + (max_total * 0.02),
                             xref="x",
                             yref="y",
                             showarrow=False,
-                            font=dict(size=10, color="#2c3e50", family="Arial, sans-serif"),
-                            yshift=40,  # Position above the bar
-                            bgcolor="rgba(255, 255, 255, 0.9)",  # White background for visibility
+                            font=dict(size=11, color="#2c3e50", family="Arial, sans-serif"),
+                            bgcolor="rgba(255, 255, 255, 0.8)",
                             bordercolor="#2c3e50",
                             borderwidth=1,
-                            borderpad=4,
-                            align="center",
-                            valign="bottom"
+                            borderpad=2,
+                            align="center"
                         )
                         annotations_added += 1
                 
-                print(f"DEBUG BREAKDOWN YEARLY: Added {annotations_added} annotations above bars")
-                print(f"DEBUG BREAKDOWN YEARLY: Years with annotations: {[y for y in years_sorted if year_totals_dict.get(y, 0) > 0]}")
-                
-                # Calculate max value for y-axis range
-                max_total = max(year_totals_dict.values()) if year_totals_dict else 12000
-                
-                # CRITICAL: Ensure X-axis shows ALL years (2006-2024) even if some have no data
-                # We need to explicitly set the category array and tick values
-                print(f"DEBUG BREAKDOWN YEARLY: Configuring X-axis with years: {years_sorted}")
+                print(f"DEBUG BREAKDOWN YEARLY: Added {annotations_added} total value annotations")
                 
                 fig.update_layout(
                     xaxis_title="Year",
@@ -1383,29 +1368,28 @@ def register_callbacks(dash_app, server):
                         gridcolor="#e0e0e0", 
                         type="category",  # Treat as categorical to show all years
                         categoryorder="array",
-                        categoryarray=years_sorted,  # Order years ascending (2006 to 2024) - THIS IS CRITICAL
-                        tickfont=dict(size=9, color="#2c3e50"),
+                        categoryarray=years_sorted,  # Order years ascending (2006 to 2024)
+                        tickfont=dict(size=10, color="#2c3e50"),
                         titlefont=dict(size=12, color="#2c3e50"),
-                        tickangle=0,  # Keep year labels horizontal
+                        tickangle=0,
                         tickmode='array',
-                        tickvals=years_sorted,  # Explicitly set all years - THIS IS CRITICAL
-                        ticktext=years_sorted,  # Explicitly set all year labels - THIS IS CRITICAL
-                        # Ensure all categories are shown even if not in data
-                        range=[-0.5, len(years_sorted) - 0.5]  # Show full range of categories
+                        tickvals=years_sorted,
+                        ticktext=years_sorted,
+                        range=[-0.5, len(years_sorted) - 0.5]
                     ),
                     yaxis=dict(
                         showgrid=True, 
                         gridcolor="#e0e0e0", 
                         title="Production Volume ('000 b/d)", 
-                        range=[0, max_total * 1.15 if max_total > 0 else 12000],
+                        range=[0, y_axis_max],
                         tickfont=dict(size=11, color="#2c3e50"),
                         titlefont=dict(size=12, color="#2c3e50"),
                         tickmode='linear',
                         tick0=0,
-                        dtick=2000,  # Show ticks every 2,000
-                        tickformat=',.0f'  # Format as '0', '2,000', '4,000', etc.
+                        dtick=2000,
+                        tickformat=',.0f'
                     ),
-                    showlegend=False,  # Legend is shown in Profiled Crude Oils section
+                    showlegend=False,
                     plot_bgcolor="white",
                     paper_bgcolor="white",
                     margin=dict(l=70, r=30, t=70, b=80),
@@ -1431,6 +1415,8 @@ def register_callbacks(dash_app, server):
                 
                 print(f"DEBUG BREAKDOWN MONTHLY: Country={country}, Selected Years={selected_years}, Tab={tab}")
                 print(f"DEBUG BREAKDOWN MONTHLY: BAR_LONG_MONTHLY empty={BAR_LONG_MONTHLY.empty}")
+                
+                available_streams = []
                 
                 if selected_years and not BAR_LONG_MONTHLY.empty and "year" in BAR_LONG_MONTHLY.columns:
                     print(f"DEBUG BREAKDOWN MONTHLY: Filtering by years={selected_years}, country={country}")
@@ -1486,15 +1472,17 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                # Month names in order
+                # Month names / mappings for ordering
                 month_names = ["January", "February", "March", "April", "May", "June",
                               "July", "August", "September", "October", "November", "December"]
-                month_map = {name: idx+1 for idx, name in enumerate(month_names)}
+                month_to_idx = {name: idx+1 for idx, name in enumerate(month_names)}
+                idx_to_month = {idx+1: name for idx, name in enumerate(month_names)}
                 
                 if len(df) > 0:
-                    if "month" not in df.columns and "month_idx" in df.columns:
-                        idx_to_month = {v: k for k, v in month_map.items()}
-                        df["month"] = df["month_idx"].map(idx_to_month)
+                    if "month_idx" not in df.columns:
+                        df["month_idx"] = df["month"].map(month_to_idx)
+                    df["month_idx"] = pd.to_numeric(df["month_idx"], errors="coerce")
+                    df["month"] = df["month_idx"].map(idx_to_month)
                     
                     # Apply profiled streams filter if provided
                     if profiled and len(profiled) > 0:
@@ -1505,10 +1493,11 @@ def register_callbacks(dash_app, server):
                         else:
                             print(f"DEBUG BREAKDOWN MONTHLY: No profiled streams found in data, showing all streams")
                     
-                    agg = df.groupby(["year", "month", "Stream"])["value"].sum().reset_index()
+                    agg = df.groupby(["year", "month_idx", "Stream"])["value"].sum().reset_index()
+                    agg["month"] = agg["month_idx"].map(idx_to_month)
                     print(f"DEBUG BREAKDOWN MONTHLY: After grouping by year/month/stream, agg length={len(agg)}")
                 else:
-                    agg = pd.DataFrame(columns=["year", "month", "Stream", "value"])
+                    agg = pd.DataFrame(columns=["year", "month_idx", "Stream", "value", "month"])
                     print(f"DEBUG BREAKDOWN MONTHLY: No data after filtering")
                 
                 if len(agg) == 0:
@@ -1526,6 +1515,63 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
+                selected_years_sorted = sorted(set(selected_years), key=lambda y: int(y))
+                if not selected_years_sorted:
+                    selected_years_sorted = sorted(agg["year"].unique(), key=lambda y: int(y))
+                
+                # Determine which months actually have data for each selected year
+                months_by_year = {}
+                year_has_data = {}
+                for year in selected_years_sorted:
+                    year_data = agg[agg["year"] == year]
+                    if len(year_data) == 0:
+                        months_by_year[str(year)] = []
+                        year_has_data[str(year)] = False
+                        continue
+                    
+                    monthly_totals = year_data.groupby("month_idx")["value"].sum().reset_index()
+                    months_with_data = monthly_totals[monthly_totals["value"] > 0]["month_idx"].tolist()
+                    months_with_data_names = [idx_to_month[idx] for idx in sorted(months_with_data)]
+                    months_by_year[str(year)] = months_with_data_names
+                    year_has_data[str(year)] = len(months_with_data_names) > 0
+                
+                print(f"DEBUG BREAKDOWN MONTHLY: Months by year: {months_by_year}")
+                
+                # Filter out years with no data
+                selected_years_sorted = [y for y in selected_years_sorted if year_has_data.get(str(y), False)]
+                if not selected_years_sorted:
+                    print("DEBUG BREAKDOWN MONTHLY: No years with data after filtering")
+                    fig = go.Figure()
+                    fig.add_annotation(
+                        text="No monthly data available for selected filters and time period",
+                        xref="paper", yref="paper",
+                        x=0.5, y=0.5, showarrow=False,
+                        font=dict(size=14, color='#7f8c8d')
+                    )
+                    fig.update_layout(
+                        height=400,
+                        plot_bgcolor='white',
+                        paper_bgcolor='white',
+                        xaxis=dict(showgrid=False, showticklabels=False),
+                        yaxis=dict(showgrid=False, showticklabels=False)
+                    )
+                    return fig, title_text
+                
+                # Filter agg to only include years and months that have data
+                filtered_agg = []
+                for year in selected_years_sorted:
+                    year_months = months_by_year.get(str(year), [])
+                    month_indices = [month_to_idx[m] for m in year_months]
+                    year_data = agg[(agg["year"] == year) & (agg["month_idx"].isin(month_indices))]
+                    filtered_agg.append(year_data)
+                
+                if filtered_agg:
+                    agg = pd.concat(filtered_agg, ignore_index=True)
+                else:
+                    agg = pd.DataFrame(columns=["year", "month_idx", "Stream", "value", "month"])
+                
+                print(f"DEBUG BREAKDOWN MONTHLY: Final data shape: {agg.shape}")
+                
                 # Get all available streams for consistent coloring
                 streams_in_data = order_streams_list(agg["Stream"].dropna().unique().tolist())
                 all_available_streams = available_streams if available_streams else streams_in_data
@@ -1534,50 +1580,21 @@ def register_callbacks(dash_app, server):
                 if not all_available_streams:
                     all_available_streams = STREAM_ORDER
                 
-                # Create color map using get_stream_color for consistency with yearly view
-                color_map = {}
-                for stream in all_available_streams:
-                    color_map[stream] = get_stream_color(stream, all_available_streams)
-                
+                color_map = {stream: get_stream_color(stream, all_available_streams) for stream in all_available_streams}
                 stream_categories = all_available_streams if all_available_streams else STREAM_ORDER
                 
-                selected_years_sorted = sorted(set(selected_years), key=lambda y: int(y))
-                if not selected_years_sorted:
-                    selected_years_sorted = sorted(agg["year"].unique(), key=lambda y: int(y))
-                
-                # Determine which years actually have data
-                years_with_data = sorted(agg["year"].unique(), key=lambda y: int(y))
-                selected_years_sorted = [y for y in selected_years_sorted if y in years_with_data]
-                if not selected_years_sorted:
-                    selected_years_sorted = years_with_data
-                
                 agg = agg[agg["year"].isin(selected_years_sorted)].copy()
-                
                 agg["Stream"] = pd.Categorical(agg["Stream"], categories=stream_categories, ordered=True)
-                agg["month_order"] = agg["month"].map(month_map)
+                agg["month_order"] = agg["month_idx"]
                 agg = agg.sort_values(["year", "month_order", "Stream"])
                 
-                months_by_year = {}
-                for year in selected_years_sorted:
-                    months_present = (
-                        agg[agg["year"] == year]["month"]
-                        .astype(str)
-                        .unique()
-                        .tolist()
-                    )
-                    months_by_year[str(year)] = [m for m in month_names if m in months_present]
-                
-                agg["Stream"] = pd.Categorical(agg["Stream"], categories=stream_categories, ordered=True)
                 agg["year"] = pd.Categorical(agg["year"], categories=selected_years_sorted, ordered=True)
                 agg["month"] = pd.Categorical(agg["month"], categories=month_names, ordered=True)
                 agg_for_chart = agg.sort_values(["year", "month_order", "Stream"])
                 
-                # Update selected_years_sorted to only include years that still have data
-                selected_years_sorted = [y for y in selected_years_sorted if y in agg_for_chart["year"].unique().tolist()]
-                if not selected_years_sorted:
-                    selected_years_sorted = sorted(agg_for_chart["year"].unique().tolist(), key=lambda y: int(str(y)))
-                
                 print(f"DEBUG BREAKDOWN MONTHLY: Chart data shape: {agg_for_chart.shape}")
+                years_in_chart = agg_for_chart["year"].astype(str).unique().tolist()
+                selected_years_sorted = [y for y in selected_years_sorted if y in years_in_chart]
                 print(f"DEBUG BREAKDOWN MONTHLY: Years in chart: {selected_years_sorted}")
                 
                 fig = px.bar(
