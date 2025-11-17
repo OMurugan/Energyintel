@@ -270,3 +270,5 @@ def register_callbacks(app):
     def reload_columns(mode):
         _, columns = load_crude_data(mode)
         return columns
+
+        
