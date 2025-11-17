@@ -1,16 +1,15 @@
 from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
-from dash import html, dcc, Input, Output
+from dash import html, dcc, Input, Output, callback_context
 from app import create_dash_app
 import os
 import numpy as np
 
 CSV_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'CrossPlot.csv')
 
-
 # ===================================
-#  LOAD CSV (UTF-16 + TAB + PIVOT)
+# LOAD CSV
 # ===================================
 def load_crossplot_data():
 
@@ -51,28 +50,29 @@ def load_crossplot_data():
 
 
 # ===================================
-#  LAYOUT WITH DROPDOWNS + RANGE SLIDERS
+# LAYOUT
 # ===================================
 def create_layout(dash_app=None):
 
     df = load_crossplot_data()
 
     return html.Div([
-        # -------------------------
+
+        # --------------------------------------------------
         # ROW OF DROPDOWNS
-        # -------------------------
+        # --------------------------------------------------
         html.Div([
             html.Div([
-                html.Label("Select X Axis Property", style={'color': '#FF6600', 'fontWeight': 'bold'}),
+                html.Label("Select X Axis Property",
+                    style={'color': '#FF6600', 'fontWeight': 'bold'}),
                 dcc.Dropdown(
                     id="x-axis-dropdown",
-                    options=[
-                        {"label": "Gravity-API at 60 F", "value": "Gravity-API at 60°F"}
-                    ],
+                    options=[{"label": "Gravity-API at 60 F", "value": "Gravity-API at 60°F"}],
                     value="Gravity-API at 60°F",
-                    clearable=False
+                    clearable=False,
                 ),
-                html.Label("X Axis Range", style={'color': '#1a1a1a', 'fontWeight': 'normal', 'marginBottom': '5px'}),
+                html.Label("X Axis Range",
+                    style={'color': '#6E6E6E', 'fontWeight': 'normal', 'marginBottom': '5px'}),
                 dcc.RangeSlider(
                     id="x-range-slider",
                     min=df["Gravity-API at 60°F"].min(),
@@ -80,21 +80,21 @@ def create_layout(dash_app=None):
                     step=0.1,
                     value=[10.7, 68.6],
                     tooltip={"placement": "top", "always_visible": True},
-                    marks=None
-                )
+                    marks=None,
+                ),
             ], style={'width': '32%', 'display': 'inline-block'}),
 
             html.Div([
-                html.Label("Select Y Axis Property", style={'color': '#FF6600', 'fontWeight': 'bold'}),
+                html.Label("Select Y Axis Property",
+                    style={'color': '#FF6600', 'fontWeight': 'bold'}),
                 dcc.Dropdown(
                     id="y-axis-dropdown",
-                    options=[
-                        {"label": "Sulfur Content-% Wt", "value": "Sulfur Content %"}
-                    ],
+                    options=[{"label": "Sulfur Content-% Wt", "value": "Sulfur Content %"}],
                     value="Sulfur Content %",
-                    clearable=False
+                    clearable=False,
                 ),
-                html.Label("Y Axis Range", style={'color': '#1a1a1a', 'fontWeight': 'normal', 'marginBottom': '5px'}),
+                html.Label("Y Axis Range",
+                    style={'color': '#6E6E6E', 'fontWeight': 'normal', 'marginBottom': '5px'}),
                 dcc.RangeSlider(
                     id="y-range-slider",
                     min=df["Sulfur Content %"].min(),
@@ -102,21 +102,21 @@ def create_layout(dash_app=None):
                     step=0.01,
                     value=[0.00, 5.98],
                     tooltip={"placement": "top", "always_visible": True},
-                    marks=None
-                )
+                    marks=None,
+                ),
             ], style={'width': '32%', 'display': 'inline-block', 'marginLeft': '2%'}),
 
             html.Div([
-                html.Label("Select Bubble Size Property", style={'color': '#FF6600', 'fontWeight': 'bold'}),
+                html.Label("Select Bubble Size Property",
+                    style={'color': '#FF6600', 'fontWeight': 'bold'}),
                 dcc.Dropdown(
                     id="bubble-size-dropdown",
-                    options=[
-                        {"label": "Volume-000 b/d", "value": "BubbleSize"}
-                    ],
+                    options=[{"label": "Volume-000 b/d", "value": "BubbleSize"}],
                     value="BubbleSize",
-                    clearable=False
+                    clearable=False,
                 ),
-                html.Label("Bubble Size Range", style={'color': '#1a1a1a', 'fontWeight': 'normal', 'marginBottom': '5px'}),
+                html.Label("Bubble Size Range",
+                    style={'color': '#6E6E6E', 'fontWeight': 'normal', 'marginBottom': '5px'}),
                 dcc.RangeSlider(
                     id="bubble-range-slider",
                     min=0,
@@ -124,62 +124,262 @@ def create_layout(dash_app=None):
                     step=1,
                     value=[0, int(df["BubbleSize"].max())],
                     tooltip={"placement": "top", "always_visible": True},
-                    marks=None
-                )
-            ], style={'width': '32%', 'display': 'inline-block', 'marginLeft': '2%'})
+                    marks=None,
+                ),
+            ], style={'width': '32%', 'display': 'inline-block', 'marginLeft': '2%'}),
+
         ]),
 
         html.Br(),
 
-        dcc.Graph(id='crude-quality-chart')
+        # --------------------------------------------------
+        # MAIN CONTENT (CHART + RIGHT SIDEBAR)
+        # --------------------------------------------------
+        html.Div([
+
+            # Chart
+            html.Div([
+                dcc.Graph(
+                    id='crude-quality-chart',
+                    config={
+                        'displayModeBar': False,
+                        'displaylogo': False,
+                        'modeBarButtonsToRemove': [
+                            'pan2d', 'zoom2d', 'select2d', 'lasso2d',
+                            'autoScale2d', 'resetScale2d',
+                            'hoverClosestCartesian', 'hoverCompareCartesian',
+                            'zoomIn2d', 'zoomOut2d'
+                        ]
+                    }
+                )
+            ], style={'width': '80%', 'display': 'inline-block', 'verticalAlign': 'top'}),
+
+            # Right Sidebar
+            html.Div([
+
+                # Key
+                html.Div([
+                    html.Div("Key",
+                        style={'fontWeight': 'bold', 'marginBottom': '8px',
+                               'fontSize': '14px', 'color': '#1a1a1a'}),
+                    html.Div([
+                        html.Div([
+                            html.Span("", style={
+                                'display': 'inline-block','width': '15px','height': '15px',
+                                'backgroundColor': '#313B49','marginRight': '8px'
+                            }),
+                            "Null"
+                        ], style={'fontSize': '8pt'}),
+
+                        html.Div([
+                            html.Span("", style={
+                                'display': 'inline-block','width': '15px','height': '15px',
+                                'backgroundColor': '#0075A8','marginRight': '8px'
+                            }),
+                            "FSU"
+                        ], style={'fontSize': '8pt'}),
+
+                        html.Div([
+                            html.Span("", style={
+                                'display': 'inline-block','width': '15px','height': '15px',
+                                'backgroundColor': '#595959','marginRight': '8px'
+                            }),
+                            "OECD"
+                        ], style={'fontSize': '8pt'}),
+
+                        html.Div([
+                            html.Span("", style={
+                                'display': 'inline-block','width': '15px','height': '15px',
+                                'backgroundColor': '#7986CB','marginRight': '8px'
+                            }),
+                            "OPEC"
+                        ], style={'fontSize': '8pt'}),
+
+                        html.Div([
+                            html.Span("", style={
+                                'display': 'inline-block','width': '15px','height': '15px',
+                                'backgroundColor': '#FE5000','marginRight': '8px'
+                            }),
+                            "Others"
+                        ], style={'fontSize': '9pt'}),
+
+                    ])
+                ], style={'marginBottom': '15px'}),
+
+                # CrudeOil Filter
+                html.Div([
+                    html.Div("CrudeOil",
+                        style={'fontWeight': 'bold', 'marginBottom': '7px',
+                               'fontSize': '14px', 'color': '#1a1a1a'}),
+                    dcc.Checklist(
+                        id='crude-filter-checklist-all',
+                        options=[{'label': '(All)', 'value': 'all'}],
+                        value=['all'],
+                        style={'fontSize': '12px'}
+                    ),
+                    html.Div([
+                        dcc.Checklist(
+                            id='crude-filter-checklist-items',
+                            options=[],
+                            value=[],
+                            style={'fontSize': '12px'}
+                        )
+                    ], style={'maxHeight': '400px', 'overflowY': 'auto', 'marginTop': '10px'})
+                ])
+
+            ], style={
+                'width': '18%',
+                'display': 'inline-block',
+                'verticalAlign': 'top',
+                'paddingTop': '40px',
+                'marginLeft': '2%'
+            })
+
+        ])
+
     ])
 
 
+# ===================================
+# DASH APP CREATION
+# ===================================
 def create_crude_quality_dashboard(server, url_base_pathname="/dash/crude-quality/"):
-    from pathlib import Path
-    
-    # Get the directory where this file is located
+
     current_dir = Path(__file__).parent
     assets_dir = current_dir / "assets"
-    
-    # Create assets directory if it doesn't exist
     assets_dir.mkdir(exist_ok=True)
-    
+
     dash_app = create_dash_app(server, url_base_pathname)
-    
-    # Set assets folder for this Dash app - Dash will automatically serve CSS files from here
+
     dash_app.assets_folder = str(assets_dir)
-    
-    # Simple index string without inline CSS
-    dash_app.index_string = '''
+
+    # --------------------------------------------------------
+    # INLINE CSS INJECTION — SLIDER + TOOLTIP + HANDLE
+    # --------------------------------------------------------
+    css_injected = """
+        <style>
+        .rc-slider-handle {
+            width: 10px !important;
+            height: 14px !important;
+
+            background-color: #FFFFFF !important;
+            border: 2px solid #6E6E6E !important;
+
+            margin-top: -6px !important;
+            box-shadow: none !important;
+            cursor: pointer !important;
+        }
+
+        .rc-slider-handle-1 {
+            border-radius: 7px 0 0 7px !important;
+        }
+        .rc-slider-handle-2 {
+            border-radius: 0 7px 7px 0 !important;
+        }
+
+        /* Hover */
+        .rc-slider-handle:hover {
+            border-color: #4D4D4D !important;
+        }
+
+        /* Active press */
+        .rc-slider-handle:active {
+            border-color: #3A3A3A !important;
+        }
+
+        .rc-slider-track,
+        .rc-slider-track-1,
+        .rc-slider-track-2,
+        div[class*="rc-slider-track"] {
+            background: #6E6E6E !important;
+            height: 4px !important;
+        }
+
+        .rc-slider-rail {
+            background: #D3D3D3 !important;
+            height: 4px !important;
+        }
+
+        /* Tooltip */
+        .rc-slider-tooltip-inner {
+            background: #ffffff !important;
+            color: black !important;
+            border: 1px solid #999 !important;
+        }
+
+        </style>
+        """
+
+    # Inject CSS into index_string
+    dash_app.index_string = f"""
     <!DOCTYPE html>
     <html>
         <head>
-            {%metas%}
+            {{%metas%}}
             <title>Crude Quality Dashboard</title>
-            {%favicon%}
-            {%css%}
+            {{%favicon%}}
+            {{%css%}}
+            {css_injected}
         </head>
         <body>
-            {%app_entry%}
+            {{%app_entry%}}
             <footer>
-                {%config%}
-                {%scripts%}
-                {%renderer%}
+                {{%config%}}
+                {{%scripts%}}
+                {{%renderer%}}
             </footer>
         </body>
     </html>
-    '''
-    
+    """
+
+    # Layout + callbacks
     dash_app.layout = create_layout(dash_app)
     register_callbacks(dash_app)
+
     return dash_app
 
 
 # ===================================
-#  CALLBACK FOR UPDATED GRAPH
+# CALLBACKS
 # ===================================
 def register_callbacks(dash_app, server=None):
+
+    @dash_app.callback(
+        [
+            Output('crude-filter-checklist-items', 'options'),
+            Output('crude-filter-checklist-items', 'value'),
+            Output('crude-filter-checklist-all', 'value')
+        ],
+        [
+            Input('crude-filter-checklist-all', 'value'),
+            Input('crude-filter-checklist-items', 'value')
+        ],
+        prevent_initial_call=False
+    )
+    def update_crude_filter_list(all_selected, current_selected):
+
+        df = load_crossplot_data()
+        crude_list = sorted(df["Crude"].unique().tolist())
+
+        options = [{'label': crude, 'value': crude} for crude in crude_list]
+
+        ctx = callback_context
+        trigger = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+
+        if trigger == 'crude-filter-checklist-all':
+            if all_selected and 'all' in all_selected:
+                return options, crude_list, ['all']
+            return options, [], []
+
+        if trigger == 'crude-filter-checklist-items':
+            if not current_selected:
+                return options, [], []
+            if len(current_selected) == len(crude_list):
+                return options, current_selected, ['all']
+            return options, current_selected, []
+
+        return options, crude_list, ['all']
+
 
     @dash_app.callback(
         Output('crude-quality-chart', 'figure'),
@@ -190,103 +390,73 @@ def register_callbacks(dash_app, server=None):
             Input("x-range-slider", "value"),
             Input("y-range-slider", "value"),
             Input("bubble-range-slider", "value"),
+            Input('crude-filter-checklist-items', 'value'),
         ]
     )
-    def update_crude_quality(x_col, y_col, size_col, x_range, y_range, size_range):
+    def update_crude_quality(x_col, y_col, size_col, x_range, y_range, size_range, selected_crudes):
 
         df = load_crossplot_data()
-
-        # Convert size column to numeric first
         df[size_col] = pd.to_numeric(df[size_col], errors="coerce").fillna(40)
 
-        # Filter data based on ranges
         df = df[
             (df[x_col] >= x_range[0]) & (df[x_col] <= x_range[1]) &
             (df[y_col] >= y_range[0]) & (df[y_col] <= y_range[1]) &
             (df[size_col] >= size_range[0]) & (df[size_col] <= size_range[1])
         ]
 
+        if not selected_crudes:
+            fig = go.Figure()
+            fig.update_layout(
+                title=dict(text="Crude Oils Compared by Quality", x=0.5, font=dict(color="#FF6600", size=20)),
+                xaxis=dict(title=x_col, range=[10, 65], dtick=5, showgrid=False),
+                yaxis=dict(title=y_col, range=[0, 4.5], dtick=0.5, showgrid=False),
+                height=500, plot_bgcolor="white"
+            )
+            return fig
+
+        df = df[df["Crude"].isin(selected_crudes)]
+
         color_map = {
-            'Null': '#000000',      # Black
-            'FSU': '#008B8B',       # Dark Teal
-            'OECD': '#696969',      # Dark Gray
-            'OPEC': '#9370DB',      # Light Purple/Blue
-            'Others': '#FFA500'     # Orange
+            'Null': '#313B49',
+            'FSU': '#0075A8',
+            'OECD': '#595959',
+            'OPEC': '#7986CB',
+            'Others': '#FE5000'
         }
 
         fig = go.Figure()
 
-        # Only add traces if there's data
-        if len(df) > 0:
-            for region in df["Region"].unique():
-                group = df[df["Region"] == region]
-                
-                if len(group) > 0:
-                    # Format volume values with commas
-                    volume_formatted = group[size_col].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
-                    
-                    fig.add_trace(go.Scatter(
-                        x=group[x_col],
-                        y=group[y_col],
-                        mode="markers",
-                        name=str(region),
-                        text=group["Crude"],
-                        customdata=volume_formatted,
-                        marker=dict(
-                            size=np.sqrt(group[size_col]) * 2,
-                            color=color_map.get(region, "#444"),
-                            opacity=0.80,
-                            line=dict(width=1, color="white")
-                        ),
-                        hovertemplate=(
-                            "<b>Crude:</b> %{text}<br>" +
-                            "<b>Gravity-API at 60 F:</b> %{x:.1f}<br>" +
-                            "<b>Sulfur Content-% Wt:</b> %{y:.2f}<br>" +
-                            "<b>Volume-000 b/d:</b> %{customdata}<extra></extra>"
-                        )
-                    ))
+        for region in df["Region"].unique():
+            grp = df[df["Region"] == region]
+            custom = grp[size_col].apply(lambda x: f"{x:,.0f}")
+            fig.add_trace(go.Scatter(
+                x=grp[x_col], y=grp[y_col],
+                mode="markers",
+                text=grp["Crude"],
+                customdata=custom,
+                marker=dict(
+                    size=np.sqrt(grp[size_col]) * 0.8,
+                    color=color_map.get(region, "#444"),
+                    opacity=0.8,
+                    line=dict(width=1, color="white")
+                ),
+                hovertemplate="<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#787878;font-weight:normal;font-style:normal;text-decoration:none;\">Crude:</span> <span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#000000;font-weight:bold;font-style:normal;text-decoration:none;\">%{text}</span><br>"
+                              "<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#787878;font-weight:normal;font-style:normal;text-decoration:none;\">Gravity:</span> <span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#000000;font-weight:bold;font-style:normal;text-decoration:none;\">%{x:.1f}</span><br>"
+                              "<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#787878;font-weight:normal;font-style:normal;text-decoration:none;\">Sulfur:</span> <span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#000000;font-weight:bold;font-style:normal;text-decoration:none;\">%{y:.2f}</span><br>"
+                              "<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#787878;font-weight:normal;font-style:normal;text-decoration:none;\">Volume:</span> <span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#000000;font-weight:bold;font-style:normal;text-decoration:none;\">%{customdata}</span><extra></extra>"
+            ))
 
         fig.update_layout(
             title=dict(text="Crude Oils Compared by Quality", x=0.5, font=dict(color="#FF6600", size=20)),
-            xaxis=dict(
-                title=x_col,
-                range=[10.0, 65.0],
-                dtick=5,
-                tickmode="linear",
-                showgrid=True,
-                gridcolor="lightgray",
-                gridwidth=1
-            ),
-            yaxis=dict(
-                title=y_col,
-                range=[0.00, 4.50],
-                dtick=0.5,
-                tickmode="linear",
-                showgrid=True,
-                gridcolor="lightgray",
-                gridwidth=1
-            ),
-            height=400,
-            width=900,
-            autosize=False,
-            plot_bgcolor="white",
-            paper_bgcolor="white",
-            hovermode="closest",
+            xaxis=dict(title=x_col, range=[10, 65], dtick=5, showgrid=False, showline=True, linecolor="black", mirror=True),
+            yaxis=dict(title=y_col, range=[0, 4.5], dtick=0.5, showgrid=False, showline=True, linecolor="black", mirror=True),
+            height=500, plot_bgcolor="white", paper_bgcolor="white",
+            showlegend=False,
+            margin=dict(l=60, r=10, t=50, b=50),
             hoverlabel=dict(
-                bgcolor="white",
-                bordercolor="#999999",
-                font_size=12,
-                font_family='"Benton Sans Low-DPI", Arial, Helvetica, sans-serif',
-                font_color="black",
-                align="left"
-            ),
-            margin=dict(l=60, r=40, t=80, b=60),
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.05,
-                xanchor="right",
-                x=1
+                bgcolor="#cbcbcb",
+                font_size=13,
+                font_family="Tahoma, arial, sans-serif"
             )
         )
 

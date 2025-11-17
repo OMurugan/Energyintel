@@ -910,7 +910,7 @@ def create_wcod_dashboard(server, url_base_pathname):
     country_profile.register_callbacks(dash_app, server)
     crude_overview.register_callbacks(dash_app, server)
     crude_profile.register_callbacks(dash_app, server)
-    crude_comparison.register_callbacks(dash_app)
+    crude_comparison.register_callbacks(dash_app, server)
     crude_quality.register_callbacks(dash_app, server)
     crude_carbon.register_callbacks(dash_app, server)
     imports_detail.register_callbacks(dash_app, server)
