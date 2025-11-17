@@ -318,8 +318,22 @@ for year in range(2000, 2026):
         YEAR_MONTHS.append({"label": f"{year}-{month_str}", "value": f"{year}-{month_str}"})
 YEAR_MONTHS.reverse()
 
-# Stream color/ordering requirements (matches Tableau source exactly)
-STREAM_COLOR_ORDER = [
+# Stream color/ordering requirements
+YEARLY_STREAM_COLOR_ORDER = [
+    ("Arco", "#0069aa"),
+    ("Siberian Light", "#313849"),
+    ("Vityaz", "#0069aa"),
+    ("YK Blend", "#595959"),
+    ("Sakhalin Blend", "#4e83bb"),
+    ("Varandey", "#a6a6a6"),
+    ("Novy Port", "#a95b41"),
+    ("Sokol", "#cb4515"),
+    ("Other Crudes - Russia", "#a95b41"),
+    ("Espo Blend", "#20295e"),
+    ("Urals", "#826ecc")
+]
+
+MONTHLY_STREAM_COLOR_ORDER = [
     ("Arco", "#0069aa"),
     ("Cpc Blend - Russia", "#cb4515"),
     ("Espo Blend", "#badf97"),
@@ -331,25 +345,41 @@ STREAM_COLOR_ORDER = [
     ("Urals", "#a95b41"),
     ("Varandey", "#826ecc")
 ]
-STREAM_COLOR_MAP = {name: color for name, color in STREAM_COLOR_ORDER}
-STREAM_ORDER = [name for name, _ in STREAM_COLOR_ORDER]
+
+STREAM_COLOR_ORDERS = {
+    "yearly": YEARLY_STREAM_COLOR_ORDER,
+    "monthly": MONTHLY_STREAM_COLOR_ORDER
+}
+STREAM_COLOR_MAPS = {mode: {name: color for name, color in order} for mode, order in STREAM_COLOR_ORDERS.items()}
+STREAM_ORDERS = {mode: [name for name, _ in order] for mode, order in STREAM_COLOR_ORDERS.items()}
 FALLBACK_COLORS = [
     '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
     '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
     '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5',
     '#c49c94', '#f7b6d3', '#c7c7c7', '#dbdb8d', '#9edae5'
 ]
-COLOR_SEQUENCE = [color for _, color in STREAM_COLOR_ORDER]
-DEFAULT_COLOR_SEQUENCE = COLOR_SEQUENCE + [c for c in FALLBACK_COLORS if c not in COLOR_SEQUENCE]
 
 
-def order_streams_list(streams):
+def get_stream_order(tab="yearly"):
+    return STREAM_ORDERS.get(tab, STREAM_ORDERS["yearly"])
+
+
+def get_stream_color_map(tab="yearly"):
+    return STREAM_COLOR_MAPS.get(tab, STREAM_COLOR_MAPS["yearly"])
+
+
+def get_color_sequence(tab="yearly"):
+    base = [color for _, color in STREAM_COLOR_ORDERS.get(tab, STREAM_COLOR_ORDERS["yearly"])]
+    return base + [c for c in FALLBACK_COLORS if c not in base]
+
+
+def order_streams_list(streams, tab="yearly"):
     """Order streams to match required Tableau order, then append any unknowns"""
     if not streams:
         return []
     seen = set()
     ordered = []
-    for name in STREAM_ORDER:
+    for name in get_stream_order(tab):
         if name in streams and name not in seen:
             ordered.append(name)
             seen.add(name)
@@ -643,7 +673,7 @@ def register_callbacks(dash_app, server):
                     else:
                         # If no Country column, use all streams
                         country_streams = YEARLY_GRADES_DF["Stream"].dropna().unique().tolist()
-                    available_streams = order_streams_list(country_streams)
+                    available_streams = order_streams_list(country_streams, tab="yearly")
                     print(f"DEBUG: Yearly streams for {selected_country}: {len(available_streams)} streams")
             else:
                 # Use monthly grades CSV
@@ -654,7 +684,7 @@ def register_callbacks(dash_app, server):
                     else:
                         # If no Country column, use all streams
                         country_streams = MONTHLY_GRADES_DF["Stream"].dropna().unique().tolist()
-                    available_streams = order_streams_list(country_streams)
+                    available_streams = order_streams_list(country_streams, tab="monthly")
                     print(f"DEBUG: Monthly streams for {selected_country}: {len(available_streams)} streams")
             
             # If no streams from grades CSV, fall back to all streams from bar data
@@ -662,11 +692,11 @@ def register_callbacks(dash_app, server):
                 if tab == "yearly" or tab is None:
                     if not BAR_LONG_YEARLY.empty and "Stream" in BAR_LONG_YEARLY.columns:
                         country_data = BAR_LONG_YEARLY[BAR_LONG_YEARLY["Country"].isin(country)]
-                        available_streams = order_streams_list(country_data["Stream"].dropna().unique().tolist())
+                        available_streams = order_streams_list(country_data["Stream"].dropna().unique().tolist(), tab="yearly")
                 else:
                     if not BAR_LONG_MONTHLY.empty and "Stream" in BAR_LONG_MONTHLY.columns:
                         country_data = BAR_LONG_MONTHLY[BAR_LONG_MONTHLY["Country"].isin(country)]
-                        available_streams = order_streams_list(country_data["Stream"].dropna().unique().tolist())
+                        available_streams = order_streams_list(country_data["Stream"].dropna().unique().tolist(), tab="monthly")
             
             # Create options
             options = [{"label": s, "value": s} for s in available_streams]
@@ -683,10 +713,11 @@ def register_callbacks(dash_app, server):
             traceback.print_exc()
             return [], []
     
-    def get_stream_color(stream, all_streams_list):
+    def get_stream_color(stream, all_streams_list, tab="yearly"):
         """Get consistent color for a stream based on its position in the full streams list"""
-        if stream in STREAM_COLOR_MAP:
-            return STREAM_COLOR_MAP[stream]
+        color_map = get_stream_color_map(tab)
+        if stream in color_map:
+            return color_map[stream]
         if stream in all_streams_list:
             idx = all_streams_list.index(stream)
             return FALLBACK_COLORS[idx % len(FALLBACK_COLORS)]
@@ -696,10 +727,11 @@ def register_callbacks(dash_app, server):
         Output("profiled-streams-container", "children"),
         [Input("profiled-streams", "value"),
          Input("profiled-streams", "options"),
-         Input("production-breakdown-chart", "figure")],
+         Input("production-breakdown-chart", "figure"),
+         Input("crude-main-tabs", "value")],
         prevent_initial_call=False
     )
-    def update_profiled_streams_with_colors(selected_streams, stream_options, chart_figure):
+    def update_profiled_streams_with_colors(selected_streams, stream_options, chart_figure, active_tab):
         """Create combined checklist with checkbox and color badge for each stream - single list with both"""
         if not stream_options:
             return html.Div("No streams available")
@@ -741,7 +773,8 @@ def register_callbacks(dash_app, server):
             if stream in color_map:
                 color = color_map[stream]
             else:
-                color = get_stream_color(stream, all_available_streams)
+                tab_value = active_tab if active_tab in STREAM_COLOR_ORDERS else "yearly"
+                color = get_stream_color(stream, all_available_streams, tab=tab_value)
             
             # Convert color to hex if needed
             color_hex = color
@@ -1102,7 +1135,7 @@ def register_callbacks(dash_app, server):
                     else:
                         print(f"DEBUG BREAKDOWN YEARLY: YEARLY_GRADES_DF is empty or missing Stream column")
                         # Use all streams from data
-                        available_streams = order_streams_list(df["Stream"].dropna().unique().tolist()) if len(df) > 0 else []
+                        available_streams = order_streams_list(df["Stream"].dropna().unique().tolist(), tab="yearly") if len(df) > 0 else []
                 else:
                     df = pd.DataFrame(columns=["Stream", "Country", "year", "value", "month_idx"])
                     print("DEBUG BREAKDOWN YEARLY: BAR_LONG_YEARLY is empty or missing columns")
@@ -1180,20 +1213,20 @@ def register_callbacks(dash_app, server):
                     return fig, title_text
                 
                 # Get all available streams for consistent coloring
-                all_available_streams = available_streams if available_streams else order_streams_list(agg["Stream"].unique().tolist())
+                all_available_streams = available_streams if available_streams else order_streams_list(agg["Stream"].unique().tolist(), tab="yearly")
                 
                 # Create color map - use specific colors for known streams, fallback to palette
-                unique_streams = order_streams_list(agg["Stream"].unique().tolist())
+                unique_streams = order_streams_list(agg["Stream"].unique().tolist(), tab="yearly")
                 color_map = {}
                 for stream in unique_streams:
-                    color_map[stream] = get_stream_color(stream, all_available_streams)
+                    color_map[stream] = get_stream_color(stream, all_available_streams, tab="yearly")
                 
                 print(f"DEBUG BREAKDOWN YEARLY: Color map: {color_map}")
                 
                 # Ensure we have data for all years (even if empty) for proper X-axis display
                 # Create a complete year-stream combination dataframe
                 all_years_list = [str(y) for y in range(2006, 2025)]
-                all_streams_list = order_streams_list(agg["Stream"].unique().tolist())
+                all_streams_list = order_streams_list(agg["Stream"].unique().tolist(), tab="yearly")
                 
                 print(f"DEBUG BREAKDOWN YEARLY: Creating complete combo - years: {len(all_years_list)}, streams: {len(all_streams_list)}")
                 
@@ -1272,7 +1305,7 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                stream_categories = all_streams_list if all_streams_list else STREAM_ORDER
+                stream_categories = all_streams_list if all_streams_list else get_stream_order("yearly")
                 agg_for_chart["Stream"] = pd.Categorical(agg_for_chart["Stream"], categories=stream_categories, ordered=True)
                 agg_for_chart = agg_for_chart.sort_values(["year", "Stream"])
 
@@ -1285,7 +1318,7 @@ def register_callbacks(dash_app, server):
                         y="value",
                         color="Stream",
                         color_discrete_map=color_map,
-                        color_discrete_sequence=DEFAULT_COLOR_SEQUENCE,
+                        color_discrete_sequence=get_color_sequence("yearly"),
                         category_orders={"Stream": stream_categories},
                         labels={"value":"Production Volume ('000 b/d)", "year":"Year", "Stream":"Stream"},
                         barmode="stack"  # Stack streams for each year
@@ -1434,7 +1467,7 @@ def register_callbacks(dash_app, server):
                     # But don't filter if no streams found - show all available data
                     available_streams = []
                     if not MONTHLY_GRADES_DF.empty and "Stream" in MONTHLY_GRADES_DF.columns:
-                        available_streams = order_streams_list(MONTHLY_GRADES_DF["Stream"].dropna().unique().tolist())
+                        available_streams = order_streams_list(MONTHLY_GRADES_DF["Stream"].dropna().unique().tolist(), tab="monthly")
                         print(f"DEBUG BREAKDOWN MONTHLY: Available streams from grades: {len(available_streams)}")
                         # Only filter if we have streams in the grades CSV AND we have matching streams in the data
                         if available_streams:
@@ -1573,15 +1606,15 @@ def register_callbacks(dash_app, server):
                 print(f"DEBUG BREAKDOWN MONTHLY: Final data shape: {agg.shape}")
                 
                 # Get all available streams for consistent coloring
-                streams_in_data = order_streams_list(agg["Stream"].dropna().unique().tolist())
+                streams_in_data = order_streams_list(agg["Stream"].dropna().unique().tolist(), tab="monthly")
                 all_available_streams = available_streams if available_streams else streams_in_data
                 if not all_available_streams:
                     all_available_streams = streams_in_data
                 if not all_available_streams:
-                    all_available_streams = STREAM_ORDER
+                    all_available_streams = get_stream_order("monthly")
                 
-                color_map = {stream: get_stream_color(stream, all_available_streams) for stream in all_available_streams}
-                stream_categories = all_available_streams if all_available_streams else STREAM_ORDER
+                color_map = {stream: get_stream_color(stream, all_available_streams, tab="monthly") for stream in all_available_streams}
+                stream_categories = all_available_streams if all_available_streams else get_stream_order("monthly")
                 
                 agg = agg[agg["year"].isin(selected_years_sorted)].copy()
                 agg["Stream"] = pd.Categorical(agg["Stream"], categories=stream_categories, ordered=True)
@@ -1603,7 +1636,7 @@ def register_callbacks(dash_app, server):
                     y="value",
                     color="Stream",
                     color_discrete_map=color_map,
-                    color_discrete_sequence=DEFAULT_COLOR_SEQUENCE,
+                    color_discrete_sequence=get_color_sequence("monthly"),
                     category_orders={
                         "Stream": stream_categories,
                         "year": selected_years_sorted
