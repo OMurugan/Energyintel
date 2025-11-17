@@ -27,6 +27,57 @@
     dashFrame.style.height = '800px';
     dashFrame.style.border = 'none';
     document.getElementById('dash-container').appendChild(dashFrame);
+    
+    // Prevent treemap zoom on click by intercepting Plotly's click events
+    dashFrame.onload = function() {
+        setTimeout(function() {
+            try {
+                var iframeDoc = dashFrame.contentDocument || dashFrame.contentWindow.document;
+                var graphElement = iframeDoc.getElementById('crude-carbon-chart');
+                if (graphElement && window.Plotly) {
+                    // Intercept click events to prevent zoom
+                    var preventZoom = function(event) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        // Immediately reset layout to prevent zoom
+                        if (graphElement && graphElement.layout) {
+                            Plotly.relayout(graphElement, {
+                                'uirevision': 'constant'
+                            });
+                        }
+                        return false;
+                    };
+                    
+                    // Add event listener in capture phase to intercept early
+                    graphElement.addEventListener('plotly_click', preventZoom, true);
+                    
+                    // Also intercept regular click events
+                    graphElement.addEventListener('click', preventZoom, true);
+                    
+                    // Monitor for layout changes and reset them
+                    var observer = new MutationObserver(function() {
+                        if (graphElement && graphElement.layout) {
+                            // If layout changed, reset it
+                            Plotly.relayout(graphElement, {
+                                'uirevision': 'constant'
+                            });
+                        }
+                    });
+                    
+                    if (graphElement) {
+                        observer.observe(graphElement, {
+                            attributes: true,
+                            attributeFilter: ['class', 'style'],
+                            childList: true,
+                            subtree: true
+                        });
+                    }
+                }
+            } catch (e) {
+                console.log('Could not access iframe content:', e);
+            }
+        }, 1000);
+    };
 </script>
 {% endblock %}
 
