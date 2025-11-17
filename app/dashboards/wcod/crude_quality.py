@@ -440,10 +440,17 @@ def register_callbacks(dash_app, server=None):
                     opacity=0.8,
                     line=dict(width=1, color="white")
                 ),
-                hovertemplate="<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#787878;font-weight:normal;font-style:normal;text-decoration:none;\">Crude:</span> <span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#000000;font-weight:bold;font-style:normal;text-decoration:none;\">%{text}</span><br>"
-                              "<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#787878;font-weight:normal;font-style:normal;text-decoration:none;\">Gravity:</span> <span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#000000;font-weight:bold;font-style:normal;text-decoration:none;\">%{x:.1f}</span><br>"
-                              "<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#787878;font-weight:normal;font-style:normal;text-decoration:none;\">Sulfur:</span> <span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#000000;font-weight:bold;font-style:normal;text-decoration:none;\">%{y:.2f}</span><br>"
-                              "<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#787878;font-weight:normal;font-style:normal;text-decoration:none;\">Volume:</span> <span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#000000;font-weight:bold;font-style:normal;text-decoration:none;\">%{customdata}</span><extra></extra>"
+                hovertemplate = (
+                    "<div style='background:#f8f8f8; padding:10px; border:1px solid #999; "
+                    "border-radius:6px; font-family: Arial, sans-serif; font-size:13px; min-width:180px;'>"
+                    "<b style='color:#333'>%{text}</b><br>"
+                    "<span style='color:#555'>API Gravity:</span> <b>%{x:.1f}</b><br>"
+                    "<span style='color:#555'>Sulfur wt%:</span> <b>%{y:.2f}</b><br>"
+                    "<span style='color:#555'>Volume (000 b/d):</span> <b>%{customdata}</b>"
+                    "</div>"
+                    "<extra></extra>"  # This is the key!
+                )
+
             ))
 
         fig.update_layout(
