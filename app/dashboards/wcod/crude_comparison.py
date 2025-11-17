@@ -4,6 +4,14 @@ import os
 import chardet
 
 # ------------------------------------------------------------------------------
+# PATH CONSTANTS
+# ------------------------------------------------------------------------------
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+PRODUCTION_FILE = os.path.join(DATA_DIR, "production-crude-comparison.csv")
+EXPORTS_FILE = os.path.join(DATA_DIR, "exports-crude-comparison.csv")
+
+# ------------------------------------------------------------------------------
 # DETECT ENCODING
 # ------------------------------------------------------------------------------
 def detect_encoding(file_path):
@@ -45,10 +53,7 @@ def get_sample():
 # LOAD CSV (SAFE, AUTO-DELIMITER, SKIP BAD LINES)
 # ------------------------------------------------------------------------------
 def load_crude_data(mode):
-    if mode == "production":
-        csv_path = "/home/lifo/Documents/Energy/Energyintel/app/dashboards/data/production-crude-comparison.csv"
-    else:
-        csv_path = "/home/lifo/Documents/Energy/Energyintel/app/dashboards/data/exports-crude-comparison.csv"
+    csv_path = PRODUCTION_FILE if mode == "production" else EXPORTS_FILE
 
     if not os.path.exists(csv_path):
         print(f"❌ File missing: {csv_path}. Using sample.")
