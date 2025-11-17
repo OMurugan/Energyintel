@@ -46,9 +46,9 @@ def get_sample():
 # ------------------------------------------------------------------------------
 def load_crude_data(mode):
     if mode == "production":
-        csv_path = "/home/lifo/Documents/Energy/Energyintel/app/dashboards/data/production-crude-comparison1.csv"
+        csv_path = "/home/lifo/Documents/Energy/Energyintel/app/dashboards/data/production-crude-comparison.csv"
     else:
-        csv_path = "/home/lifo/Documents/Energy/Energyintel/app/dashboards/data/exports-crude-comparison1.csv"
+        csv_path = "/home/lifo/Documents/Energy/Energyintel/app/dashboards/data/exports-crude-comparison.csv"
 
     if not os.path.exists(csv_path):
         print(f"❌ File missing: {csv_path}. Using sample.")
