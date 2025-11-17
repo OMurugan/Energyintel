@@ -415,6 +415,11 @@ def create_layout(server=None):
             style={"color":"#d35400","textAlign":"center", "marginTop":"10px"}
         ),
         html.Hr(),
+        html.H4(
+            id="production-breakdown-title",
+            children="",
+            style={"display": "none"}
+        ),
         html.Div([
             html.Div([
                 dcc.Graph(
@@ -469,12 +474,6 @@ def create_layout(server=None):
             ], className='col-md-2', style={'padding': '10px', 'paddingTop': '20px'})
         ], className='row'),
         html.Br(),
-        # Section title for the stacked bar chart (yearly or monthly breakdown)
-        html.H4(
-            id="production-breakdown-title", 
-            children="Production Breakdown", 
-            style={"color":"black", "textAlign":"center"}
-        ),
         html.Div([
             html.Div(
                 dcc.Graph(
@@ -486,7 +485,8 @@ def create_layout(server=None):
                 style={'padding': '15px'}
             ),
             html.Div([
-                # Year of Date filter (only for monthly view, for Production Breakdown chart)
+                # Year of Date filter (only for monthly view, for 
+                # chart)
                 html.Div(
                     id="production-year-filter",
                     style={"display": "none"},
@@ -1554,9 +1554,23 @@ def register_callbacks(dash_app, server):
                 agg = agg[agg["year"].isin(selected_years_sorted)].copy()
                 
                 agg["Stream"] = pd.Categorical(agg["Stream"], categories=stream_categories, ordered=True)
-                agg["month"] = pd.Categorical(agg["month"], categories=month_names, ordered=True)
+                agg["month_order"] = agg["month"].map(month_map)
+                agg = agg.sort_values(["year", "month_order", "Stream"])
+                
+                months_by_year = {}
+                for year in selected_years_sorted:
+                    months_present = (
+                        agg[agg["year"] == year]["month"]
+                        .astype(str)
+                        .unique()
+                        .tolist()
+                    )
+                    months_by_year[str(year)] = [m for m in month_names if m in months_present]
+                
+                agg["Stream"] = pd.Categorical(agg["Stream"], categories=stream_categories, ordered=True)
                 agg["year"] = pd.Categorical(agg["year"], categories=selected_years_sorted, ordered=True)
-                agg_for_chart = agg.sort_values(["year", "month", "Stream"])
+                agg["month"] = pd.Categorical(agg["month"], categories=month_names, ordered=True)
+                agg_for_chart = agg.sort_values(["year", "month_order", "Stream"])
                 
                 # Update selected_years_sorted to only include years that still have data
                 selected_years_sorted = [y for y in selected_years_sorted if y in agg_for_chart["year"].unique().tolist()]
@@ -1589,10 +1603,21 @@ def register_callbacks(dash_app, server):
                     sorted(fig.data, key=lambda trace: order_lookup.get(trace.name, len(order_lookup)))
                 )
                 
+                # Ensure month labels only show months with data for each year
                 fig.update_traces(
                     marker=dict(line=dict(width=1, color='white')),
                     hovertemplate='<b>%{fullData.name}</b><br>Year: %{fullData.facet_col}<br>Month: %{x}<br>Avg. Value: %{y:,.0f} (\'000 b/d)<extra></extra>'
                 )
+                
+                # Apply per-year month ordering to x-axes
+                for idx, year in enumerate(selected_years_sorted, start=1):
+                    axis_key = f"xaxis{idx}" if idx > 1 else "xaxis"
+                    months_for_axis = months_by_year.get(str(year), month_names)
+                    if axis_key in fig.layout and months_for_axis:
+                        fig.layout[axis_key].update(
+                            categoryorder="array",
+                            categoryarray=months_for_axis
+                        )
                 
                 fig.update_yaxes(matches='y')
                 fig.for_each_xaxis(
