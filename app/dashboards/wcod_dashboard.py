@@ -320,9 +320,15 @@ def create_wcod_dashboard(server, url_base_pathname):
         prevent_initial_call=False
     )
     def toggle_header_footer(pathname):
-        """Hide header and footer when country profile is loaded in iframe"""
-        # Check if this is the country profile page
-        if pathname and ('/wcod-country-overview' in pathname or pathname == '/wcod-country-overview'):
+        """Hide header and footer when country profile or crude overview is loaded in iframe"""
+        # Check if this is a page that should hide header/footer
+        # Handle both None and string pathnames
+        pathname_str = str(pathname) if pathname else ''
+        if (
+            '/wcod-country-overview' in pathname_str or pathname_str == '/wcod-country-overview' or
+            '/wcod/crude-overview' in pathname_str or pathname_str == '/wcod/crude-overview' or
+            pathname_str.endswith('/wcod/crude-overview')
+        ):
             return {'display': 'none'}, {'display': 'none'}
         return {'display': 'block'}, {'display': 'block'}
     
@@ -331,7 +337,7 @@ def create_wcod_dashboard(server, url_base_pathname):
         [Output('main-tabs', 'value'),
          Output('current-submenu', 'data', allow_duplicate=True)],
         Input('url', 'pathname'),
-        prevent_initial_call='initial_duplicate'
+        prevent_initial_call='initial_duplicate'  # Required when using allow_duplicate=True
     )
     def update_from_url(pathname):
         """Update tabs and submenu based on URL"""
@@ -595,11 +601,17 @@ def create_wcod_dashboard(server, url_base_pathname):
     @callback(
         Output('tab-content', 'children'),
         [Input('current-submenu', 'data'),
-         Input('main-tabs', 'value')],
+         Input('main-tabs', 'value'),
+         Input('url', 'pathname')],
         prevent_initial_call=False
     )
-    def update_tab_content(submenu, main_tab):
+    def update_tab_content(submenu, main_tab, pathname):
         """Update main content area based on sub-menu selection"""
+        # If pathname matches crude-overview, ensure we render it even if submenu isn't set yet
+        pathname_str = str(pathname) if pathname else ''
+        if '/wcod/crude-overview' in pathname_str:
+            return render_crude_overview()
+        
         if main_tab == 'country-tab':
             if submenu == 'country-overview':
                 return render_country_overview()

@@ -19,14 +19,10 @@
 {% endblock %}
 
 {% block wcod_content %}
-<div id="dash-container"></div>
-<script>
-    const dashFrame = document.createElement('iframe');
-    dashFrame.src = '/wcod/_dash-layout';
-    dashFrame.style.width = '100%';
-    dashFrame.style.height = '800px';
-    dashFrame.style.border = 'none';
-    document.getElementById('dash-container').appendChild(dashFrame);
-</script>
+<iframe
+    src="/wcod/crude-overview"
+    style="width: 100%; height: 100vh; border: none; min-height: 800px;"
+    title="Crude Overview Dashboard">
+</iframe>
 {% endblock %}
 
