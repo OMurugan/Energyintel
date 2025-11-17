@@ -71,8 +71,10 @@ def create_layout(dash_app=None):
                     value="Gravity-API at 60°F",
                     clearable=False,
                 ),
+                html.Br(),
                 html.Label("X Axis Range",
                     style={'color': '#6E6E6E', 'fontWeight': 'normal', 'marginBottom': '5px'}),
+                html.Br(),
                 dcc.RangeSlider(
                     id="x-range-slider",
                     min=df["Gravity-API at 60°F"].min(),
@@ -87,14 +89,17 @@ def create_layout(dash_app=None):
             html.Div([
                 html.Label("Select Y Axis Property",
                     style={'color': '#FF6600', 'fontWeight': 'bold'}),
+                
                 dcc.Dropdown(
                     id="y-axis-dropdown",
                     options=[{"label": "Sulfur Content-% Wt", "value": "Sulfur Content %"}],
                     value="Sulfur Content %",
                     clearable=False,
                 ),
+                html.Br(),
                 html.Label("Y Axis Range",
                     style={'color': '#6E6E6E', 'fontWeight': 'normal', 'marginBottom': '5px'}),
+                html.Br(),
                 dcc.RangeSlider(
                     id="y-range-slider",
                     min=df["Sulfur Content %"].min(),
@@ -109,12 +114,14 @@ def create_layout(dash_app=None):
             html.Div([
                 html.Label("Select Bubble Size Property",
                     style={'color': '#FF6600', 'fontWeight': 'bold'}),
+                html.Br(),
                 dcc.Dropdown(
                     id="bubble-size-dropdown",
                     options=[{"label": "Volume-000 b/d", "value": "BubbleSize"}],
                     value="BubbleSize",
                     clearable=False,
                 ),
+                 html.Br(),
                 html.Label("Bubble Size Range",
                     style={'color': '#6E6E6E', 'fontWeight': 'normal', 'marginBottom': '5px'}),
                 dcc.RangeSlider(
@@ -440,17 +447,16 @@ def register_callbacks(dash_app, server=None):
                     opacity=0.8,
                     line=dict(width=1, color="white")
                 ),
-                hovertemplate = (
-                    "<div style='background:#f8f8f8; padding:10px; border:1px solid #999; "
-                    "border-radius:6px; font-family: Arial, sans-serif; font-size:13px; min-width:180px;'>"
-                    "<b style='color:#333'>%{text}</b><br>"
-                    "<span style='color:#555'>API Gravity:</span> <b>%{x:.1f}</b><br>"
-                    "<span style='color:#555'>Sulfur wt%:</span> <b>%{y:.2f}</b><br>"
-                    "<span style='color:#555'>Volume (000 b/d):</span> <b>%{customdata}</b>"
-                    "</div>"
-                    "<extra></extra>"  # This is the key!
+                hovertemplate=(
+                    f"<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#787878;font-weight:normal;font-style:normal;text-decoration:none;\">Crude:</span> "
+                    f"<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#000000;font-weight:bold;font-style:normal;text-decoration:none;\">%{{text}}</span><br>"
+                    f"<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#787878;font-weight:normal;font-style:normal;text-decoration:none;\">{x_col}:</span> "
+                    f"<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#000000;font-weight:bold;font-style:normal;text-decoration:none;\">%{{x:.1f}}</span><br>"
+                    f"<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#787878;font-weight:normal;font-style:normal;text-decoration:none;\">{y_col}:</span> "
+                    f"<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#000000;font-weight:bold;font-style:normal;text-decoration:none;\">%{{y:.2f}}</span><br>"
+                    f"<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#787878;font-weight:normal;font-style:normal;text-decoration:none;\">{size_col}-000 b/d:</span> "
+                    f"<span style=\"font-family:'Tahoma',arial,sans-serif;font-size:13px;color:#000000;font-weight:bold;font-style:normal;text-decoration:none;\">%{{customdata}}</span><extra></extra>"
                 )
-
             ))
 
         fig.update_layout(
@@ -461,9 +467,11 @@ def register_callbacks(dash_app, server=None):
             showlegend=False,
             margin=dict(l=60, r=10, t=50, b=50),
             hoverlabel=dict(
-                bgcolor="#cbcbcb",
+                bgcolor="white",
+                bordercolor="#999999",
                 font_size=13,
-                font_family="Tahoma, arial, sans-serif"
+                font_family="Tahoma, arial, sans-serif",
+                font_color="#000000"
             )
         )
 
