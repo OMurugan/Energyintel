@@ -168,73 +168,62 @@ def create_layout(server):
 
             html.Hr(style={"margin": "10px 0", "border": "1px solid #ccc"}),
 
-            # Sorting controls (initially hidden)
+            # Sorting controls popup (initially hidden) - SIMPLIFIED
             html.Div([
-                html.Div("Sort order", style={
-                    "fontWeight": "bold", 
-                    "marginBottom": "8px",
-                    "fontSize": "12px"
-                }),
-                
+                # Sort by options section only
                 html.Div([
-                    html.Button("▲ Ascending", id="sort-asc-btn", n_clicks=0, 
-                               style={
-                                   "marginRight": "5px", 
-                                   "padding": "4px 8px", 
-                                   "fontSize": "11px",
-                                   "border": "1px solid #ccc",
-                                   "backgroundColor": "#f8f9fa",
-                                   "cursor": "pointer"
-                               }),
-                    html.Button("▼ Descending", id="sort-desc-btn", n_clicks=0,
-                               style={
-                                   "padding": "4px 8px", 
-                                   "fontSize": "11px",
-                                   "border": "1px solid #ccc",
-                                   "backgroundColor": "#f8f9fa",
-                                   "cursor": "pointer"
-                               }),
-                ], style={"marginBottom": "10px"}),
+                    # Text options instead of dropdown
+                    html.Div("Data source order", id="popup-source-btn", 
+                            style={
+                                "padding": "6px 10px", 
+                                "fontSize": "12px",
+                                "cursor": "pointer",
+                                "borderBottom": "1px solid #eee",
+                                "fontFamily": "Arial",
+                            }),
+                    html.Div("Alphabetic", id="popup-alphabetic-btn",
+                            style={
+                                "padding": "6px 10px", 
+                                "fontSize": "12px",
+                                "cursor": "pointer",
+                                "borderBottom": "1px solid #eee",
+                                "fontFamily": "Arial",
+                            }),
+                    html.Div("Field", id="popup-field-btn",
+                            style={
+                                "padding": "6px 10px", 
+                                "fontSize": "12px",
+                                "cursor": "pointer",
+                                "borderBottom": "1px solid #eee",
+                                "fontFamily": "Arial",
+                            }),
+                    html.Div("Nested", id="popup-nested-btn",
+                            style={
+                                "padding": "6px 10px", 
+                                "fontSize": "12px",
+                                "cursor": "pointer",
+                                "fontFamily": "Arial",
+                            }),
+                ], style={"border": "1px solid #ddd", "borderRadius": "3px"}),
                 
-                html.Div("Sort by:", style={
-                    "fontSize": "11px", 
-                    "marginBottom": "5px",
-                    "color": "#666"
-                }),
-                
-                dcc.Dropdown(
-                    id="sort-options-dropdown",
-                    options=[
-                        {"label": "Data source order", "value": "source"},
-                        {"label": "Alphabetic", "value": "alphabetic"},
-                        {"label": "Field", "value": "field"},
-                        {"label": "Nested", "value": "nested"},
-                    ],
-                    value="source",
-                    clearable=False,
-                    style={
-                        "width": "180px",
-                        "fontSize": "11px",
-                        "fontFamily": "Arial",
-                    }
-                ),
-                
+                # SUM display
                 html.Div(id="sort-sum-display", style={
                     "marginTop": "8px",
                     "fontSize": "10px",
                     "color": "#666",
-                    "fontStyle": "italic"
+                    "fontStyle": "italic",
+                    "fontFamily": "Arial",
                 }),
             ], id="sorting-controls", style={
                 "position": "absolute", 
                 "backgroundColor": "white", 
                 "border": "1px solid #ccc",
-                "padding": "12px",
+                "padding": "10px",
                 "borderRadius": "4px",
                 "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
                 "zIndex": "1000",
                 "display": "none",
-                "minWidth": "200px"
+                "minWidth": "140px"
             }),
 
             dash_table.DataTable(
@@ -389,7 +378,7 @@ def create_layout(server):
                             font-weight: bold;
                         '''
                     },
-                    # Popup menu indicator (three dots)
+                    # Popup menu indicator (down arrow)
                     {
                         'selector': '.dash-header[data-dash-column="CrudeOil"] .popup-menu-indicator',
                         'rule': '''
@@ -415,6 +404,13 @@ def create_layout(server):
                     {
                         'selector': '.dash-cell:not([data-dash-column="CrudeOil"]):not(.dash-header)',
                         'rule': 'cursor: pointer;'
+                    },
+                    # Hover styles for popup options
+                    {
+                        'selector': '.popup-option:hover',
+                        'rule': '''
+                            background-color: #e6f3ff !important;
+                        '''
                     },
                 ],
                 fixed_rows={"headers": True},
@@ -510,14 +506,18 @@ def register_callbacks(app):
         [Input('sort-asc-btn-hidden', 'n_clicks'),
          Input('sort-desc-btn-hidden', 'n_clicks'),
          Input('popup-menu-btn', 'n_clicks'),
-         Input('sort-asc-btn', 'n_clicks'),
-         Input('sort-desc-btn', 'n_clicks'),
-         Input('sort-options-dropdown', 'value')],
+         Input('popup-source-btn', 'n_clicks'),
+         Input('popup-alphabetic-btn', 'n_clicks'),
+         Input('popup-field-btn', 'n_clicks'),
+         Input('popup-nested-btn', 'n_clicks')],
         [State('show-sorting-controls', 'data'),
          State('current-sort-order', 'data')],
         prevent_initial_call=True
     )
-    def handle_header_interactions(asc_clicks, desc_clicks, popup_clicks, popup_asc_clicks, popup_desc_clicks, sort_value, show_controls, current_sort):
+    def handle_header_interactions(asc_clicks, desc_clicks, popup_clicks, 
+                                  popup_source_clicks, popup_alpha_clicks,
+                                  popup_field_clicks, popup_nested_clicks,
+                                  show_controls, current_sort):
         trigger = ctx.triggered_id
         
         if trigger == 'sort-asc-btn-hidden':
@@ -534,28 +534,28 @@ def register_callbacks(app):
                 "position": "absolute", 
                 "backgroundColor": "white", 
                 "border": "1px solid #ccc",
-                "padding": "12px",
+                "padding": "10px",
                 "borderRadius": "4px",
                 "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
                 "zIndex": "1000",
                 "display": "block",
-                "minWidth": "200px",
+                "minWidth": "140px",
                 "top": "200px",
                 "left": "50px"
             }, True, dash.no_update
         
-        elif trigger in ['sort-asc-btn', 'sort-desc-btn', 'sort-options-dropdown']:
+        elif trigger in ['popup-source-btn', 'popup-alphabetic-btn', 'popup-field-btn', 'popup-nested-btn']:
             # Hide after selection
             return {
                 "position": "absolute", 
                 "backgroundColor": "white", 
                 "border": "1px solid #ccc",
-                "padding": "12px",
+                "padding": "10px",
                 "borderRadius": "4px",
                 "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
                 "zIndex": "1000",
                 "display": "none",
-                "minWidth": "200px"
+                "minWidth": "140px"
             }, False, dash.no_update
         
         # Default: hide controls
@@ -563,12 +563,12 @@ def register_callbacks(app):
             "position": "absolute", 
             "backgroundColor": "white", 
             "border": "1px solid #ccc",
-            "padding": "12px",
+            "padding": "10px",
             "borderRadius": "4px",
             "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
             "zIndex": "1000",
             "display": "none",
-            "minWidth": "200px"
+            "minWidth": "140px"
         }, False, dash.no_update
 
     # Apply sorting when sort order changes
@@ -623,14 +623,16 @@ def register_callbacks(app):
     # Show SUM values for Field and Nested options
     @app.callback(
         Output('sort-sum-display', 'children'),
-        [Input('sort-options-dropdown', 'value'),
+        [Input('current-sort-order', 'data'),
          Input('export-production-dropdown', 'value')],
         [State('crude-comparison-table', 'data')]
     )
-    def show_sum_display(sort_type, mode, table_data):
-        if not table_data:
+    def show_sum_display(current_sort, mode, table_data):
+        if not table_data or not current_sort:
             return ""
             
+        sort_type = current_sort.get('type', 'source')
+        
         if sort_type in ['field', 'nested']:
             # Calculate total sum for all data
             df = pd.DataFrame(table_data)
@@ -651,6 +653,75 @@ def register_callbacks(app):
             return f"SUM({mode_text} Value): {total_sum:,.0f}"
         
         return ""
+
+    # Handle sorting from popup menu text options
+    @app.callback(
+        [Output('crude-comparison-table', 'data', allow_duplicate=True),
+         Output('current-sort-order', 'data', allow_duplicate=True)],
+        [Input('popup-source-btn', 'n_clicks'),
+         Input('popup-alphabetic-btn', 'n_clicks'),
+         Input('popup-field-btn', 'n_clicks'),
+         Input('popup-nested-btn', 'n_clicks')],
+        [State('crude-comparison-table', 'data'),
+         State('current-sort-order', 'data'),
+         State('export-production-dropdown', 'value')],
+        prevent_initial_call=True
+    )
+    def handle_popup_sorting(popup_source_clicks, popup_alpha_clicks,
+                           popup_field_clicks, popup_nested_clicks,
+                           current_data, current_sort, mode):
+        if not current_data:
+            return dash.no_update, dash.no_update
+            
+        trigger = ctx.triggered_id
+        
+        # Determine sort type based on which button was clicked
+        if trigger == 'popup-source-btn':
+            sort_type = 'source'
+        elif trigger == 'popup-alphabetic-btn':
+            sort_type = 'alphabetic'
+        elif trigger == 'popup-field-btn':
+            sort_type = 'field'
+        elif trigger == 'popup-nested-btn':
+            sort_type = 'nested'
+        else:
+            return dash.no_update, dash.no_update
+        
+        # Keep the same direction for all sorts
+        direction = current_sort.get('direction', 'asc')
+        
+        # Convert back to DataFrame for sorting
+        df = pd.DataFrame(current_data)
+        
+        if sort_type == 'alphabetic':
+            # Sort by CrudeOil name alphabetically
+            df_sorted = df.sort_values('CrudeOil', ascending=(direction == 'asc'), na_position='last')
+        elif sort_type in ['field', 'nested']:
+            # Calculate sum for Field/Nested sorting
+            numeric_cols = [col for col in df.columns if col != 'CrudeOil']
+            
+            def calculate_sum(row):
+                total = 0
+                for col in numeric_cols:
+                    val = row[col]
+                    if val and str(val).strip() and str(val).strip() != '':
+                        try:
+                            # Remove commas from numbers like "1,000"
+                            clean_val = str(val).replace(',', '')
+                            total += float(clean_val)
+                        except (ValueError, TypeError):
+                            continue
+                return total
+            
+            df['_sum'] = df.apply(calculate_sum, axis=1)
+            df_sorted = df.sort_values('_sum', ascending=(direction == 'asc'))
+            df_sorted = df_sorted.drop('_sum', axis=1)
+        else:  # source order - return to original order
+            # Reload original data to get source order
+            original_data, _ = load_crude_data(mode)
+            df_sorted = pd.DataFrame(original_data)
+        
+        return df_sorted.to_dict('records'), {'type': sort_type, 'direction': direction}
 
     @app.callback(
         [Output('external-url-store', 'data'),
@@ -748,64 +819,6 @@ def register_callbacks(app):
         # Return default styles when no cell is selected
         return default_styles
 
-    # Handle sorting from popup menu
-    @app.callback(
-        [Output('crude-comparison-table', 'data', allow_duplicate=True),
-         Output('current-sort-order', 'data', allow_duplicate=True)],
-        [Input('sort-asc-btn', 'n_clicks'),
-         Input('sort-desc-btn', 'n_clicks'),
-         Input('sort-options-dropdown', 'value')],
-        [State('crude-comparison-table', 'data'),
-         State('current-sort-order', 'data'),
-         State('export-production-dropdown', 'value')],
-        prevent_initial_call=True
-    )
-    def handle_popup_sorting(asc_clicks, desc_clicks, sort_type, current_data, current_sort, mode):
-        if not current_data:
-            return dash.no_update, dash.no_update
-            
-        trigger = ctx.triggered_id
-        
-        if trigger == 'sort-asc-btn':
-            direction = 'asc'
-        elif trigger == 'sort-desc-btn':
-            direction = 'desc'
-        else:
-            direction = current_sort.get('direction', 'asc')
-        
-        # Convert back to DataFrame for sorting
-        df = pd.DataFrame(current_data)
-        
-        if sort_type == 'alphabetic':
-            # Sort by CrudeOil name alphabetically
-            df_sorted = df.sort_values('CrudeOil', ascending=(direction == 'asc'), na_position='last')
-        elif sort_type in ['field', 'nested']:
-            # Calculate sum for Field/Nested sorting
-            numeric_cols = [col for col in df.columns if col != 'CrudeOil']
-            
-            def calculate_sum(row):
-                total = 0
-                for col in numeric_cols:
-                    val = row[col]
-                    if val and str(val).strip() and str(val).strip() != '':
-                        try:
-                            # Remove commas from numbers like "1,000"
-                            clean_val = str(val).replace(',', '')
-                            total += float(clean_val)
-                        except (ValueError, TypeError):
-                            continue
-                return total
-            
-            df['_sum'] = df.apply(calculate_sum, axis=1)
-            df_sorted = df.sort_values('_sum', ascending=(direction == 'asc'))
-            df_sorted = df_sorted.drop('_sum', axis=1)
-        else:  # source order - return to original order
-            # Reload original data to get source order
-            original_data, _ = load_crude_data(mode)
-            df_sorted = pd.DataFrame(original_data)
-        
-        return df_sorted.to_dict('records'), {'type': sort_type, 'direction': direction}
-
     # Client-side callback to open the external URL
     app.clientside_callback(
         """
@@ -856,10 +869,10 @@ def register_callbacks(app):
                     sortContainer.appendChild(aElement);
                     sortContainer.appendChild(zElement);
                     
-                    // Add popup menu indicator (three dots)
+                    // Add popup menu indicator (down arrow)
                     const popupMenu = document.createElement('div');
                     popupMenu.className = 'popup-menu-indicator';
-                    popupMenu.innerHTML = '⋯';
+                    popupMenu.innerHTML = '▼';
                     popupMenu.title = 'Click to show sort options';
                     popupMenu.onclick = function(e) {
                         e.stopPropagation();
