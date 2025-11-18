@@ -13,7 +13,7 @@ import os
 # CSV paths
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Country_Profile')
 MAP_CSV = os.path.join(DATA_DIR, 'Map_data.csv')
-MONTHLY_PRODUCTION_CSV = os.path.join(DATA_DIR, 'Monthly_Production_data.csv')
+MONTHLY_PRODUCTION_CSV = os.path.join(DATA_DIR, 'Monthly_Production.csv')
 PORT_DETAIL_CSV = os.path.join(DATA_DIR, 'Port-Detail_data.csv')
 KEY_FIGURES_CSV = os.path.join(DATA_DIR, 'Key Figures_data.csv')
 
@@ -26,18 +26,30 @@ try:
     # Find the country_long_name column that has actual data (not empty)
     country_cols = [col for col in map_df.columns if 'country_long_name' in col]
     if len(country_cols) > 1:
-        # Use the column that has non-null/non-empty values
+        # Use the column that has the MOST non-null/non-empty values
+        data_col = None
+        max_non_empty = 0
         for col in sorted(country_cols):  # Check in order
             if col in map_df.columns:
-                # Check if column has non-empty values
-                non_empty = map_df[col].dropna()
-                if len(non_empty) > 0 and (non_empty.astype(str).str.strip() != '').any():
-                    map_df['country_long_name'] = map_df[col].astype(str).str.strip()
-                    # Drop duplicate columns
-                    for dup_col in country_cols:
-                        if dup_col != 'country_long_name' and dup_col in map_df.columns:
-                            map_df = map_df.drop(columns=[dup_col])
-                    break
+                # Check if column has non-empty values (not just 'nan' strings)
+                col_values = map_df[col].astype(str).str.strip()
+                non_empty = col_values[~col_values.isin(['', 'nan', 'None', 'NaN'])]
+                non_empty_count = len(non_empty)
+                # Use the column with the most non-empty values
+                if non_empty_count > max_non_empty:
+                    max_non_empty = non_empty_count
+                    data_col = col
+        
+        # If we found a column with data, use it
+        if data_col:
+            map_df['country_long_name'] = map_df[data_col].astype(str).str.strip()
+            # Drop duplicate columns
+            for dup_col in country_cols:
+                if dup_col != 'country_long_name' and dup_col in map_df.columns:
+                    map_df = map_df.drop(columns=[dup_col])
+        else:
+            # If no data found, use the first one
+            map_df['country_long_name'] = map_df[country_cols[0]].astype(str).str.strip()
     elif 'country_long_name' in map_df.columns:
         map_df['country_long_name'] = map_df['country_long_name'].astype(str).str.strip()
     
@@ -59,9 +71,150 @@ except Exception as e:
     default_country = None
 
 try:
-    monthly_prod_df = pd.read_csv(MONTHLY_PRODUCTION_CSV)
-    monthly_prod_df.columns = monthly_prod_df.columns.str.strip()
-except Exception:
+    # The CSV has nested headers: Row 1 = "Date" repeated, Row 2 = Years, Row 3 = "Crude", "Monthly production dynamic title", then months
+    # Try different encodings and separators
+    header_df = None
+    data_df = None
+    
+    # Try different combinations of encoding and separator
+    # UTF-16 with BOM is common for Excel exports
+    encodings = ['utf-16', 'utf-16-le', 'utf-16-be', 'utf-8-sig', 'utf-8', 'latin-1']
+    separators = ['\t', ',', ';']
+    
+    for encoding in encodings:
+        for sep in separators:
+            try:
+                # Read first 3 rows to understand structure
+                try:
+                    header_df = pd.read_csv(MONTHLY_PRODUCTION_CSV, encoding=encoding, sep=sep, nrows=3, header=None, on_bad_lines='skip')
+                except TypeError:
+                    # Older pandas versions don't have on_bad_lines
+                    header_df = pd.read_csv(MONTHLY_PRODUCTION_CSV, encoding=encoding, sep=sep, nrows=3, header=None, error_bad_lines=False)
+                
+                # Read the full data starting from row 4 (index 3)
+                # Skip first 2 rows (row 0 and row 1), use row 2 as header, then read data from row 3 onwards
+                try:
+                    data_df = pd.read_csv(MONTHLY_PRODUCTION_CSV, encoding=encoding, sep=sep, skiprows=2, header=0, on_bad_lines='skip')
+                except TypeError:
+                    # Older pandas versions don't have on_bad_lines
+                    data_df = pd.read_csv(MONTHLY_PRODUCTION_CSV, encoding=encoding, sep=sep, skiprows=2, header=0, error_bad_lines=False)
+                
+                print(f"Successfully loaded CSV with encoding={encoding}, sep='{sep}'")
+                break
+            except Exception as e:
+                continue
+        if header_df is not None and data_df is not None:
+            break
+    
+    if header_df is None or data_df is None:
+        raise Exception("Could not read CSV file with any encoding/separator combination")
+    
+    # Get header rows
+    row1 = header_df.iloc[0].tolist() if len(header_df) > 0 else []
+    row2 = header_df.iloc[1].tolist() if len(header_df) > 1 else []
+    row3 = header_df.iloc[2].tolist() if len(header_df) > 2 else []
+    
+    # Clean column names (remove special characters and whitespace)
+    data_df.columns = data_df.columns.astype(str).str.strip()
+    
+    # Find the "Crude" column (first column) and "Monthly production dynamic title" (second column)
+    crude_col = data_df.columns[0] if len(data_df.columns) > 0 else None
+    title_col = data_df.columns[1] if len(data_df.columns) > 1 else None
+    
+    # Also try to find the title column by name in case column order is different
+    if title_col and 'production' not in title_col.lower() and 'monthly' not in title_col.lower():
+        # Try to find it by searching column names
+        for col in data_df.columns:
+            if 'monthly' in col.lower() and 'production' in col.lower() and 'dynamic' in col.lower():
+                title_col = col
+                break
+    
+    print(f"DEBUG: CSV loading - crude_col='{crude_col}', title_col='{title_col}', total columns={len(data_df.columns)}")
+    
+    # Transform from wide to long format
+    monthly_prod_list = []
+    
+    # Get data columns (skip first 2: Crude and Monthly production dynamic title)
+    data_cols = data_df.columns[2:].tolist() if len(data_df.columns) > 2 else []
+    
+    for idx, row in data_df.iterrows():
+        crude = str(row[crude_col]).strip() if crude_col and pd.notna(row[crude_col]) else ''
+        title = str(row[title_col]).strip() if title_col and pd.notna(row[title_col]) else ''
+        
+        # Skip empty rows
+        if not crude or crude.lower() in ['', 'nan', 'none']:
+            continue
+        
+        # Process each data column
+        for col_idx, col_name in enumerate(data_cols):
+            # Get year from row2 (offset by 2 for first two columns)
+            # data_cols[0] corresponds to data_df.columns[2], which should align with row2[2] and row3[2]
+            year = ''
+            month = ''
+            
+            # The data column index in the original CSV (accounting for first 2 columns: Crude and Title)
+            csv_col_idx = col_idx + 2
+            
+            if csv_col_idx < len(row2):
+                year_val = row2[csv_col_idx]
+                if pd.notna(year_val):
+                    year = str(year_val).strip()
+            
+            if csv_col_idx < len(row3):
+                month_val = row3[csv_col_idx]
+                if pd.notna(month_val):
+                    month = str(month_val).strip()
+            
+            # Skip if year or month is invalid
+            if not year or not year.isdigit() or not month or month.lower() in ['', 'nan', 'none', 'date', 'monthly production dynamic title']:
+                continue
+            
+            # Get value
+            value = row[col_name] if col_name in row.index else None
+            
+            # Convert value to numeric
+            try:
+                if pd.isna(value):
+                    # Allow empty values for some cells (they'll show as empty in table)
+                    # But still create the record so the table structure is correct
+                    value_num = None
+                else:
+                    # Remove commas and convert
+                    value_str = str(value).replace(',', '').strip()
+                    if value_str and value_str.lower() not in ['', 'nan', 'none', 'null']:
+                        value_num = float(value_str)
+                    else:
+                        value_num = None
+                
+                # Add record - use NaN for empty values (pandas handles this better)
+                monthly_prod_list.append({
+                    'Crude': crude,
+                    'Monthly production dynamic title': title,
+                    'Year of Date': int(year),
+                    'Month of Date': month,
+                    'Avg. Value': value_num if value_num is not None else pd.NA
+                })
+            except (ValueError, TypeError) as e:
+                # Skip invalid values
+                continue
+    
+    monthly_prod_df = pd.DataFrame(monthly_prod_list)
+    
+    if monthly_prod_df.empty:
+        print(f"Warning: No production data loaded from {MONTHLY_PRODUCTION_CSV}")
+    else:
+        print(f"Loaded {len(monthly_prod_df)} production records from {MONTHLY_PRODUCTION_CSV}")
+        if 'Monthly production dynamic title' in monthly_prod_df.columns:
+            unique_countries = monthly_prod_df['Monthly production dynamic title'].unique()
+            print(f"Available countries in data: {list(unique_countries)}")
+        if 'Crude' in monthly_prod_df.columns:
+            unique_crudes = monthly_prod_df['Crude'].unique()
+            print(f"Available crudes: {len(unique_crudes)} types (e.g., {list(unique_crudes[:3])})")
+        
+except Exception as e:
+    print(f"Error loading monthly production data: {e}")
+    import traceback
+    traceback.print_exc()
     monthly_prod_df = pd.DataFrame()
 
 try:
@@ -241,12 +394,46 @@ def create_layout(server):
     ])
 
 
+def get_port_details_for_hover(port_name):
+    """Get port details for hover tooltip from port_df"""
+    if port_df.empty or 'Port Name' not in port_df.columns:
+        return {}
+    
+    # Clean port name for matching (case-insensitive)
+    port_name_clean = str(port_name).strip().strip('"').lower()
+    
+    # Find matching port in port_df (case-insensitive matching)
+    port_df_clean = port_df.copy()
+    port_df_clean['Port Name Clean'] = port_df_clean['Port Name'].astype(str).str.strip().str.strip('"').str.lower()
+    
+    matching_ports = port_df_clean[port_df_clean['Port Name Clean'] == port_name_clean]
+    
+    if matching_ports.empty:
+        return {}
+    
+    # Get port details - pivot structure with measure_name and value
+    if 'measure_name' in port_df.columns and 'value' in port_df.columns:
+        port_details = {}
+        for _, row in matching_ports.iterrows():
+            measure = str(row.get('measure_name', '')).strip()
+            value = row.get('value', '')
+            if measure and pd.notna(value):
+                value_str = str(value).strip()
+                if value_str and value_str.lower() not in ['nan', 'none', 'null', '']:
+                    port_details[measure] = value_str
+        
+        return port_details
+    
+    return {}
+
+
 def create_world_map(selected_country=None):
     """Create world map choropleth using Map_data.csv, filtered by selected country"""
     if map_df.empty:
         return create_empty_map()
     
     # Filter by selected country if provided
+    # Note: country_long_name columns are already consolidated during data loading
     if selected_country and 'country_long_name' in map_df.columns:
         # Filter by country name (handle case sensitivity and string conversion)
         filtered_map = map_df[map_df['country_long_name'].astype(str).str.strip() == str(selected_country).strip()].copy()
@@ -264,7 +451,15 @@ def create_world_map(selected_country=None):
     # Group by country to get port counts and locations
     if selected_country:
         # For selected country, show individual ports and highlight the country
-        port_data = filtered_map[['Port Name', 'latitude', 'longitude']].copy()
+        # Include country_long_name and Port if available (already consolidated during data loading)
+        port_cols = ['Port Name', 'latitude', 'longitude']
+        if 'country_long_name' in filtered_map.columns:
+            port_cols.append('country_long_name')
+        if 'Port' in filtered_map.columns:
+            port_cols.append('Port')
+        port_data = filtered_map[port_cols].copy()
+        # Filter out rows with empty Port Name (but keep rows with valid coordinates)
+        port_data = port_data[port_data['Port Name'].astype(str).str.strip() != '']
         port_data = port_data.dropna(subset=['latitude', 'longitude'])
         
         if port_data.empty:
@@ -378,8 +573,25 @@ def create_world_map(selected_country=None):
             if lat == 0 and lon == 0:
                 continue
             
-            # Use circle or cross symbol based on port name (example logic, adjust as needed)
-            symbol = 'circle' if 'City' in str(port_name) else 'circle'
+            # Build hover text - only show port name (matching original format from image)
+            # Format: "Port name: [Port Name]" with port name in bold
+            hover_text = f"Port name: <b>{port_name}</b>"
+            
+            # Determine symbol based on Port value
+            # Port 513 = plus/cross symbol, Port 342 = square, others (171) = circle
+            port_value = None
+            if 'Port' in row and pd.notna(row['Port']):
+                try:
+                    port_value = int(float(row['Port']))
+                except (ValueError, TypeError):
+                    port_value = None
+            
+            if port_value == 513:
+                symbol = 'cross'  # Plus/cross symbol (matches image)
+            elif port_value == 342:
+                symbol = 'square'  # Square symbol (matches image)
+            else:
+                symbol = 'circle'  # Default circle for 171 and others (matches image)
             fig.add_trace(go.Scattergeo(
                 lon=[lon],
                 lat=[lat],
@@ -389,11 +601,11 @@ def create_world_map(selected_country=None):
                     size=18,
                     color='#fe5000',  # Orange-red for ports
                     opacity=0.9,
-                    line=dict(width=2, color='white'),
+                    line=dict(width=0),  # No white border on port markers
                     symbol=symbol
                 ),
                 name=port_name,
-                hovertemplate='<b>Port name: %{text}</b><extra></extra>',
+                hovertemplate=hover_text + '<extra></extra>',
                 showlegend=False
             ))
         
@@ -473,6 +685,13 @@ def create_world_map(selected_country=None):
         paper_bgcolor='white',
         showlegend=False,
         hovermode='closest',  # Enable hover mode for hover effects
+        hoverlabel=dict(
+            bgcolor='white',  # White background for hover tooltip
+            bordercolor='#999999',  # Light gray border
+            font_size=12,
+            font_family='Arial, sans-serif',
+            font_color='#000000'  # Black text
+        ),
         annotations=[
             dict(
                 text="© 2025 Mapbox © OpenStreetMap",
@@ -552,22 +771,30 @@ def create_empty_map():
 def get_production_data(country_name, time_period='Yearly'):
     """Get production data for a country from Monthly_Production_data.csv"""
     if monthly_prod_df.empty:
+        print(f"DEBUG: monthly_prod_df is empty for country: {country_name}")
         return pd.DataFrame()
     
     # Filter by country name (from Monthly production dynamic title column)
     # The column contains format like "United States Production"
     # So we check if country name is in the title
-    if 'Monthly production dynamic title' in monthly_prod_df.columns:
-        # Create a pattern to match: "CountryName Production"
-        pattern = f"{country_name} Production"
-        country_data = monthly_prod_df[
-            monthly_prod_df['Monthly production dynamic title'].str.contains(pattern, case=False, na=False)
-        ].copy()
-    else:
+    if 'Monthly production dynamic title' not in monthly_prod_df.columns:
+        print(f"DEBUG: 'Monthly production dynamic title' column not found. Available columns: {list(monthly_prod_df.columns)}")
         return pd.DataFrame()
     
+    # Create a pattern to match: "CountryName Production"
+    # Handle variations like "United States" matching "United States Production"
+    pattern = f"{country_name} Production"
+    
+    # Try exact match first, then contains
+    country_data = monthly_prod_df[
+        monthly_prod_df['Monthly production dynamic title'].str.contains(pattern, case=False, na=False)
+    ].copy()
+    
     if country_data.empty:
+        print(f"DEBUG: No data found for country '{country_name}' with pattern '{pattern}'. Available titles: {monthly_prod_df['Monthly production dynamic title'].unique()[:5]}")
         return pd.DataFrame()
+    
+    print(f"DEBUG: Found {len(country_data)} records for country '{country_name}'")
     
     if time_period == 'Yearly':
         # Aggregate by year and crude type - sum the monthly values for yearly total
@@ -643,13 +870,19 @@ def create_production_table(country_name, time_period='Yearly'):
         months_order = ['January', 'February', 'March', 'April', 'May', 'June',
                        'July', 'August', 'September', 'October', 'November', 'December']
         
-        # Get unique crudes (sort alphabetically, but Total should be last)
+        # Get unique crudes (sort alphabetically, but Total should be after Thunder Horse)
         crudes = sorted([c for c in prod_data['Crude'].unique() if c != 'Total'])
         if 'Total' in prod_data['Crude'].unique():
-            crudes.append('Total')
+            # Insert Total right after Thunder Horse
+            if 'Thunder Horse' in crudes:
+                thunder_horse_idx = crudes.index('Thunder Horse')
+                crudes.insert(thunder_horse_idx + 1, 'Total')
+            else:
+                # If Thunder Horse not found, append at end
+                crudes.append('Total')
         
         # Build columns with nested structure (three-level headers: Date -> Year -> Month)
-        columns = [{'name': ['', '', 'Crude'], 'id': 'Crude', 'type': 'text'}]
+        columns = [{'name': ['', '', 'Crude'], 'id': 'Crude', 'type': 'text', 'sortable': True}]
         
         # Add "Date" parent header
         date_cols = []
@@ -666,7 +899,8 @@ def create_production_table(country_name, time_period='Yearly'):
                     'name': ['Date', str(year), month],
                     'id': col_id,
                     'type': 'numeric',
-                    'format': {'specifier': ',.0f'}
+                    'format': {'specifier': ',.0f'},
+                    'sortable': False
                 })
         
         columns.extend(date_cols)
@@ -708,16 +942,23 @@ def create_production_table(country_name, time_period='Yearly'):
         years = sorted(prod_data['Year'].unique(), reverse=True)
         crudes = sorted([c for c in prod_data['Crude'].unique() if c != 'Total'])
         if 'Total' in prod_data['Crude'].unique():
-            crudes.append('Total')
+            # Insert Total right after Thunder Horse
+            if 'Thunder Horse' in crudes:
+                thunder_horse_idx = crudes.index('Thunder Horse')
+                crudes.insert(thunder_horse_idx + 1, 'Total')
+            else:
+                # If Thunder Horse not found, append at end
+                crudes.append('Total')
         
-        columns = [{'name': ['', 'Crude'], 'id': 'Crude', 'type': 'text'}]
+        columns = [{'name': ['', 'Crude'], 'id': 'Crude', 'type': 'text', 'sortable': True}]
         for year in years:
             year_id = str(year)
             columns.append({
                 'name': ['Date', year_id],
                 'id': year_id,
                 'type': 'numeric',
-                'format': {'specifier': ',.0f'}
+                'format': {'specifier': ',.0f'},
+                'sortable': False
             })
         
         table_data = []
@@ -736,8 +977,11 @@ def create_production_table(country_name, time_period='Yearly'):
             table_data.append(row)
     
     return dash_table.DataTable(
-        data=table_data,
+        data=table_data, 
         columns=columns,
+        sort_action='native',
+        sort_mode='single',
+        sort_by=[{'column_id': 'Crude', 'direction': 'asc'}],
         style_cell={
             'textAlign': 'center',
             'fontFamily': 'Arial, sans-serif',
@@ -755,7 +999,9 @@ def create_production_table(country_name, time_period='Yearly'):
             'textAlign': 'center',
             'fontSize': '13px',
             'fontFamily': 'Arial, sans-serif',
-            'padding': '8px'
+            'padding': '8px',
+            'pointerEvents': 'none',
+            'cursor': 'default'
         },
         style_data={
             'border': '1px solid #dee2e6',
@@ -786,9 +1032,15 @@ def create_production_table(country_name, time_period='Yearly'):
                 'minWidth': '200px'
             }
         ],
+        style_header_conditional=[
+            {
+                'if': {'column_id': 'Crude'},
+                'pointerEvents': 'auto',
+                'cursor': 'pointer'
+            }
+        ],
         page_action='none',
         filter_action='none',
-        sort_action='none',
         merge_duplicate_headers=True,
         style_table={
             'overflowX': 'auto',
@@ -817,7 +1069,41 @@ def create_production_table(country_name, time_period='Yearly'):
             }
             for row in table_data
         ],
-        tooltip_duration=None
+        tooltip_duration=None,
+        css=[
+            {
+                'selector': '.dash-table-sort',
+                'rule': 'display: none !important;'
+            },
+            {
+                'selector': '.column-header--sort',
+                'rule': 'display: none !important;'
+            },
+            {
+                'selector': 'th.dash-header[data-dash-column="Crude"] .dash-table-sort',
+                'rule': 'display: inline-flex !important;'
+            },
+            {
+                'selector': 'th.dash-header[data-dash-column="Crude"] .column-header--sort',
+                'rule': 'display: inline-flex !important;'
+            },
+            {
+                'selector': '.dash-spreadsheet-container td',
+                'rule': 'transition: opacity 0.2s ease-in-out, background-color 0.2s ease-in-out;'
+            },
+            {
+                'selector': '.dash-spreadsheet-container:focus-within td:not([data-dash-column="Crude"])',
+                'rule': 'opacity: 0.3;'
+            },
+            {
+                'selector': '.dash-spreadsheet-container:focus-within td.dash-cell.focused',
+                'rule': 'opacity: 1 !important; background-color: #f7fbff !important; box-shadow: inset 0 0 0 2px #0075A8 !important; font-weight: 600; color: #1f2d3d;'
+            },
+            {
+                'selector': '.dash-spreadsheet-container:focus-within td[data-dash-column="Crude"]',
+                'rule': 'opacity: 1 !important;'
+            }
+        ]
     )
 
 
@@ -1253,21 +1539,16 @@ def register_callbacks(dash_app, server):
             .profile-link-hover:hover {
                 border-color: #fe5000 !important;
             }
-            /* Add black outline on hover for grey countries (non-selected) */
-            /* Target all choropleth paths on hover */
+            /* Add black outline on hover for ALL countries (including selected) */
+            /* Target all choropleth paths on hover - show black border */
             #world-map-chart .plotly .choroplethlayer path:hover,
-            #world-map-chart .plotly .choroplethlayer path.hover {
+            #world-map-chart .plotly .choroplethlayer path.hover,
+            #world-map-chart .plotly .choropleth path:hover,
+            #world-map-chart .plotly .choropleth path.hover {
                 stroke: black !important;
                 stroke-width: 2px !important;
             }
-            /* Keep selected country (light blue rgba(142, 153, 208)) without outline on hover */
-            /* The selected country is in the choropleth trace, not choroplethlayer */
-            #world-map-chart .plotly .choropleth path:hover,
-            #world-map-chart .plotly .choropleth path.hover {
-                stroke: none !important;
-                stroke-width: 0 !important;
-            }
-            /* Default: no stroke for choropleth paths */
+            /* Default: no stroke for choropleth paths (when not hovering) */
             #world-map-chart .plotly .choroplethlayer path {
                 stroke: none !important;
                 stroke-width: 0 !important;
