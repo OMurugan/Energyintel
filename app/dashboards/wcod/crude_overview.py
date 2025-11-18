@@ -32,13 +32,57 @@ def load_yearly_bar():
         print(f"DEBUG: Yearly bar data columns: {df.columns.tolist()}")
         print(f"DEBUG: Yearly bar data sample:\n{df.head(3)}")
         
+        # Extract year-level ProductionDataValue BEFORE filtering by Country/CrudeOil
+        # ProductionDataValue is a single value per year, not per stream
+        # Note: ProductionDataValue rows may have blank Country/CrudeOil/Crude Color/Avg. ProductionDataValue
+        year_production_data_value = {}
+        if "ProductionDataValue" in df.columns and "Year of YearReported" in df.columns:
+            print(f"DEBUG: Extracting ProductionDataValue from {len(df)} rows")
+            # Get ALL rows with ProductionDataValue (don't filter by Country/CrudeOil yet)
+            year_value_df = df[["Year of YearReported", "ProductionDataValue"]].copy()
+            print(f"DEBUG: ProductionDataValue column sample:\n{year_value_df.head(10)}")
+            print(f"DEBUG: ProductionDataValue non-null count: {year_value_df['ProductionDataValue'].notna().sum()}")
+            
+            # Remove rows where ProductionDataValue is blank/empty/null
+            year_value_df = year_value_df[
+                year_value_df["ProductionDataValue"].notna() & 
+                (year_value_df["ProductionDataValue"].astype(str).str.strip() != "") &
+                (year_value_df["ProductionDataValue"].astype(str).str.strip().str.lower() != "nan")
+            ].copy()
+            print(f"DEBUG: After filtering blanks, {len(year_value_df)} rows with ProductionDataValue")
+            
+            if len(year_value_df) > 0:
+                # Convert to numeric
+                year_value_df["ProductionDataValue"] = pd.to_numeric(
+                    year_value_df["ProductionDataValue"].astype(str).str.replace(',', '').str.replace('$', ''),
+                    errors="coerce"
+                )
+                # Remove any rows that couldn't be converted to numeric
+                year_value_df = year_value_df[year_value_df["ProductionDataValue"].notna()].copy()
+                print(f"DEBUG: After numeric conversion, {len(year_value_df)} valid ProductionDataValue rows")
+                
+                # Group by year and take the first non-null value (should be unique per year)
+                for year, group in year_value_df.groupby("Year of YearReported"):
+                    year_str = str(year).strip()
+                    valid_values = group[group["ProductionDataValue"].notna() & (group["ProductionDataValue"] > 0)]["ProductionDataValue"]
+                    if len(valid_values) > 0:
+                        year_production_data_value[year_str] = float(valid_values.iloc[0])
+                        print(f"DEBUG: Found ProductionDataValue for year {year_str}: {year_production_data_value[year_str]}")
+            else:
+                print(f"DEBUG: WARNING - No valid ProductionDataValue found in CSV!")
+        else:
+            print(f"DEBUG: WARNING - ProductionDataValue or Year of YearReported column not found!")
+            if "ProductionDataValue" not in df.columns:
+                print(f"DEBUG: Available columns: {df.columns.tolist()}")
+        
+        print(f"DEBUG: Final year-level ProductionDataValue dictionary: {year_production_data_value}")
+        
         # Filter out rows where Country or CrudeOil is missing
         df = df[(df["Country"].notna()) & (df["CrudeOil"].notna())].copy()
         df_long = pd.DataFrame()
         
         value_columns = []
-        if "ProductionDataValue" in df.columns:
-            value_columns.append("ProductionDataValue")
+        # For bar chart values, use Avg. ProductionDataValue (NOT ProductionDataValue which is year-level only)
         if "Avg. ProductionDataValue" in df.columns:
             value_columns.append("Avg. ProductionDataValue")
         
@@ -51,14 +95,8 @@ def load_yearly_bar():
                 "Year of YearReported": "year"
             })
             
-            value_source = None
-            if "ProductionDataValue" in df_long.columns:
-                value_source = df_long["ProductionDataValue"]
-                if "Avg. ProductionDataValue" in df_long.columns:
-                    avg_source = df_long["Avg. ProductionDataValue"]
-                    empty_mask = value_source.isna() | (value_source.astype(str).str.strip() == "")
-                    value_source = value_source.mask(empty_mask, avg_source)
-            elif "Avg. ProductionDataValue" in df_long.columns:
+            # Use Avg. ProductionDataValue for bar chart (stream-level values)
+            if "Avg. ProductionDataValue" in df_long.columns:
                 value_source = df_long["Avg. ProductionDataValue"]
             else:
                 value_source = pd.Series([0] * len(df_long), index=df_long.index)
@@ -82,7 +120,8 @@ def load_yearly_bar():
         traceback.print_exc()
         df = pd.DataFrame()
         df_long = pd.DataFrame()
-    return df, df_long
+        year_production_data_value = {}
+    return df, df_long, year_production_data_value
 
 def load_monthly_bar():
     """Load monthly bar data from Monthly Bar - Production_data.csv"""
@@ -297,7 +336,7 @@ def load_table():
     return yearly_df, monthly_df, year_to_month_cols
 
 # Load data once at module import
-BAR_DF_YEARLY, BAR_LONG_YEARLY = load_yearly_bar()
+BAR_DF_YEARLY, BAR_LONG_YEARLY, YEAR_PRODUCTION_DATA_VALUE = load_yearly_bar()
 BAR_DF_MONTHLY, BAR_LONG_MONTHLY = load_monthly_bar()
 MAP_YEARLY_LONG, MAP_MONTHLY_LONG = load_map_data()
 TABLE_DF_YEARLY, TABLE_DF_MONTHLY, YEAR_TO_MONTH_COLS = load_table()
@@ -1347,7 +1386,16 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                # Calculate totals for each year to display above bars
+                # Get year-level ProductionDataValue for annotations (single value per year)
+                # This is different from the bar chart values which are stream-level
+                year_production_values = YEAR_PRODUCTION_DATA_VALUE if YEAR_PRODUCTION_DATA_VALUE else {}
+                
+                print(f"DEBUG BREAKDOWN YEARLY: YEAR_PRODUCTION_DATA_VALUE type: {type(YEAR_PRODUCTION_DATA_VALUE)}")
+                print(f"DEBUG BREAKDOWN YEARLY: YEAR_PRODUCTION_DATA_VALUE content: {YEAR_PRODUCTION_DATA_VALUE}")
+                print(f"DEBUG BREAKDOWN YEARLY: year_production_values: {year_production_values}")
+                print(f"DEBUG BREAKDOWN YEARLY: years_sorted: {years_sorted}")
+                
+                # Calculate max value for Y-axis scaling (use either ProductionDataValue or sum of bars)
                 chart_totals_df = agg_for_chart[agg_for_chart["value"] > 0.001].copy()  # Filter out tiny placeholder values
                 if len(chart_totals_df) > 0:
                     year_totals = chart_totals_df.groupby("year")["value"].sum().reset_index()
@@ -1356,42 +1404,87 @@ def register_callbacks(dash_app, server):
                     year_totals = agg.groupby("year")["value"].sum().reset_index()
                 year_totals_dict = dict(zip(year_totals["year"], year_totals["value"]))
                 
-                print(f"DEBUG BREAKDOWN YEARLY: Year totals: {year_totals_dict}")
-                
-                max_total = max(year_totals_dict.values()) if year_totals_dict else 12000
-                y_axis_max = max_total * 1.12  # Add space for annotations
-                
-                # Format traces
+                # Format traces first
                 fig.update_traces(
                     marker=dict(line=dict(width=1, color='white')),
                     hovertemplate='<b>%{fullData.name}</b><br>Year: %{x}<br>Production: %{y:,.0f} (\'000 b/d)<extra></extra>'
                 )
                 
-                # Add total production values above each bar with year label, displayed vertically
-                annotations_added = 0
+                # Calculate max bar height first (needed for annotation positioning)
+                max_bar_height = max(year_totals_dict.values()) if year_totals_dict else 0
+                
+                # Add ProductionDataValue above each bar - show only the value (no year, since year is on X-axis)
+                # Use year-level ProductionDataValue if available, otherwise use sum of bars
+                annotations_list = []
+                max_annotation_y = 0
+                
+                # Create year to index mapping for categorical X-axis positioning
+                year_to_index = {year: idx for idx, year in enumerate(years_sorted)}
+                
                 for year in years_sorted:
-                    total = year_totals_dict.get(year, 0)
+                    # Prefer ProductionDataValue, fallback to sum of bars
+                    production_value = year_production_values.get(year)
+                    print(f"DEBUG BREAKDOWN YEARLY: Year {year} - ProductionDataValue: {production_value}, Sum of bars: {year_totals_dict.get(year, 0)}")
                     
-                    if total > 0:
-                        annotation_text = f"{year}<br>{int(total):,}"
-                        fig.add_annotation(
-                            text=annotation_text,
-                            x=year,
-                            y=total + (max_total * 0.02),
-                            xref="x",
-                            yref="y",
-                            showarrow=False,
-                            font=dict(size=11, color="#2c3e50", family="Arial, sans-serif"),
-                            bgcolor="rgba(255, 255, 255, 0.8)",
-                            bordercolor="#2c3e50",
-                            borderwidth=1,
-                            borderpad=2,
-                            align="center"
-                        )
-                        annotations_added += 1
+                    if production_value is None or production_value == 0:
+                        production_value = year_totals_dict.get(year, 0)
+                    
+                    # Always show annotation if we have a value (either ProductionDataValue or sum)
+                    if production_value > 0:
+                        # Show only the value (no year, since year is on X-axis)
+                        annotation_text = f"{int(production_value):,}"
+                        # Position annotation above the bar - use bar height + fixed offset
+                        bar_height = year_totals_dict.get(year, 0)
+                        # Position annotation slightly above the bar (5% of max bar height for consistent spacing)
+                        annotation_y = bar_height + (max_bar_height * 0.05) if max_bar_height > 0 else bar_height + 500
+                        max_annotation_y = max(max_annotation_y, annotation_y)
+                        
+                        # Use numeric index for X position (works better with categorical axes)
+                        x_index = year_to_index.get(year, 0)
+                        
+                        print(f"DEBUG BREAKDOWN YEARLY: Adding annotation for year {year} (index {x_index}): text='{annotation_text}', y={annotation_y}, bar_height={bar_height}")
+                        
+                        annotations_list.append({
+                            "text": annotation_text,
+                            "x": x_index,  # Use numeric index for categorical X-axis
+                            "y": annotation_y,
+                            "xref": "x",
+                            "yref": "y",
+                            "xanchor": "center",
+                            "yanchor": "bottom",
+                            "showarrow": False,
+                            "font": dict(size=11, color="#2c3e50", family="Arial, sans-serif"),
+                            "align": "center",
+                            "textangle": -90  # Rotate text 90 degrees counterclockwise (bottom to top)
+                        })
+                    else:
+                        print(f"DEBUG BREAKDOWN YEARLY: Skipping annotation for year {year} - no value")
                 
-                print(f"DEBUG BREAKDOWN YEARLY: Added {annotations_added} total value annotations")
+                print(f"DEBUG BREAKDOWN YEARLY: Created {len(annotations_list)} annotations, max Y: {max_annotation_y}")
                 
+                # Calculate Y-axis max to accommodate annotations
+                # Calculate expected max annotation Y position
+                expected_max_annotation_y = max_bar_height + (max_bar_height * 0.05) if max_bar_height > 0 else 0
+                # Use the larger of actual max annotation Y or expected, then add padding
+                # Ensure we have enough space - use at least 25% padding above the highest point
+                base_max = max(max_annotation_y, expected_max_annotation_y, max_bar_height)
+                y_axis_max = base_max * 1.25  # Add 25% padding above highest point
+                
+                if y_axis_max == 0:
+                    y_axis_max = 12000
+                
+                print(f"DEBUG BREAKDOWN YEARLY: max_bar_height={max_bar_height}, max_annotation_y={max_annotation_y}, expected_max_annotation_y={expected_max_annotation_y}, base_max={base_max}, y_axis_max={y_axis_max}")
+                
+                # Verify all annotations are within Y-axis range
+                for i, ann in enumerate(annotations_list):
+                    if ann.get('y', 0) > y_axis_max:
+                        print(f"DEBUG BREAKDOWN YEARLY: WARNING - Annotation {i} (year {ann.get('x')}) Y position {ann.get('y')} exceeds Y-axis max {y_axis_max}")
+                
+                print(f"DEBUG BREAKDOWN YEARLY: Year-level ProductionDataValue: {year_production_values}")
+                print(f"DEBUG BREAKDOWN YEARLY: Year totals (sum of bars): {year_totals_dict}")
+                print(f"DEBUG BREAKDOWN YEARLY: Max bar height: {max_bar_height}, Max annotation Y: {max_annotation_y}, Y-axis max: {y_axis_max}")
+                
+                # Update layout with annotations included directly
                 fig.update_layout(
                     xaxis_title="Year",
                     yaxis_title="Production Volume ('000 b/d)",
@@ -1426,8 +1519,14 @@ def register_callbacks(dash_app, server):
                     plot_bgcolor="white",
                     paper_bgcolor="white",
                     margin=dict(l=70, r=30, t=70, b=80),
-                    hovermode='closest'
+                    hovermode='closest',
+                    annotations=annotations_list  # Add annotations directly to layout
                 )
+                
+                print(f"DEBUG BREAKDOWN YEARLY: Added {len(annotations_list)} ProductionDataValue annotations to layout")
+                print(f"DEBUG BREAKDOWN YEARLY: Final figure has {len(fig.layout.annotations) if fig.layout.annotations else 0} total annotations")
+                if fig.layout.annotations:
+                    print(f"DEBUG BREAKDOWN YEARLY: First annotation sample: {fig.layout.annotations[0] if len(fig.layout.annotations) > 0 else 'N/A'}")
                 
                 print(f"DEBUG BREAKDOWN YEARLY: Chart layout updated, returning figure")
                 return fig, title_text
