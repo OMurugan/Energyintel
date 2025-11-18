@@ -2,6 +2,7 @@ from dash import dcc, html, Input, Output, dash_table
 import pandas as pd
 import os
 import chardet
+from app import create_dash_app
 
 # ------------------------------------------------------------------------------
 # PATH CONSTANTS
@@ -131,7 +132,7 @@ crude_data, columns = load_crude_data("production")
 # ------------------------------------------------------------------------------
 # LAYOUT
 # ------------------------------------------------------------------------------
-def create_layout(server):
+def create_layout(server=None):
     return html.Div(
         children=[
             html.Div([
@@ -242,9 +243,9 @@ def create_layout(server):
 # ------------------------------------------------------------------------------
 # CALLBACKS
 # ------------------------------------------------------------------------------
-def register_callbacks(app):
+def register_callbacks(dash_app, server=None):
 
-    @app.callback(
+    @dash_app.callback(
         Output("crude-heading", "children"),
         Input("export-production-dropdown", "value"),
     )
@@ -262,7 +263,7 @@ def register_callbacks(app):
             },
         )
 
-    @app.callback(
+    @dash_app.callback(
         Output("crude-comparison-table", "data"),
         Input("export-production-dropdown", "value"),
     )
@@ -270,12 +271,23 @@ def register_callbacks(app):
         crude_data, _ = load_crude_data(mode)
         return crude_data
 
-    @app.callback(
+    @dash_app.callback(
         Output("crude-comparison-table", "columns"),
         Input("export-production-dropdown", "value"),
     )
     def reload_columns(mode):
         _, columns = load_crude_data(mode)
         return columns
+
+
+# ------------------------------------------------------------------------------
+# DASH APP CREATION
+# ------------------------------------------------------------------------------
+def create_crude_comparison_dashboard(server, url_base_pathname="/dash/crude-comparison/"):
+    """Create the Crude Comparison dashboard"""
+    dash_app = create_dash_app(server, url_base_pathname)
+    dash_app.layout = create_layout(server)
+    register_callbacks(dash_app, server)
+    return dash_app
 
 
