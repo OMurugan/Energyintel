@@ -185,12 +185,13 @@ def create_layout(server):
                     "border": "1px solid #e2e2e2",
                     "whiteSpace": "normal",
                     "height": "35px",         # reduced row height
+                    "color": "#1f3263",
                 },
                 style_header={
                     "backgroundColor": "#f2f2f2",
                     "fontWeight": "bold",
                     "fontSize": "12px",
-                    "color": "#444",
+                    "color": "#1f3263",
                     "border": "1px solid #d0d0d0",
                 },
                 style_cell_conditional=[
@@ -203,7 +204,8 @@ def create_layout(server):
                         "borderRight": "2px solid #d0d0d0",
                         "paddingLeft": "10px",
                         "paddingTop": "5px",   # push text slightly down
-                        "paddingBottom": "5px" # reduce bottom padding to keep row compact
+                        "paddingBottom": "5px", # reduce bottom padding to keep row compact
+                        "color": "#1f3263",
                     }
                 ],
                 style_data_conditional=[
