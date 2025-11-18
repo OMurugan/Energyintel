@@ -1486,7 +1486,7 @@ def register_callbacks(dash_app, server):
                 
                 # Update layout with annotations included directly
                 fig.update_layout(
-                    xaxis_title="Year",
+                    xaxis_title="",
                     yaxis_title="Production Volume ('000 b/d)",
                     title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                     xaxis=dict(
@@ -1777,7 +1777,8 @@ def register_callbacks(dash_app, server):
                         tickangle=-45,
                         showline=True,
                         linewidth=1,
-                        linecolor="#c0c0c0"
+                        linecolor="#c0c0c0",
+                        title=""
                     )
                 )
                 fig.for_each_yaxis(
