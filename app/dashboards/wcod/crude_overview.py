@@ -1532,22 +1532,15 @@ def register_callbacks(dash_app, server):
                     ].copy()
                     print(f"DEBUG BREAKDOWN MONTHLY: After country/years filter, df length={len(df)}")
                     
-                    # Get available streams from monthly grades CSV for the selected country
-                    # But don't filter if no streams found - show all available data
+                    # Get available streams from monthly grades CSV for color mapping only
+                    # DO NOT filter the data - show ALL streams from the data
                     available_streams = []
                     if not MONTHLY_GRADES_DF.empty and "Stream" in MONTHLY_GRADES_DF.columns:
                         available_streams = order_streams_list(MONTHLY_GRADES_DF["Stream"].dropna().unique().tolist(), tab="monthly")
-                        print(f"DEBUG BREAKDOWN MONTHLY: Available streams from grades: {len(available_streams)}")
-                        # Only filter if we have streams in the grades CSV AND we have matching streams in the data
-                        if available_streams:
-                            # Check if any streams from grades exist in the data
-                            streams_in_data = df["Stream"].unique().tolist()
-                            matching_streams = [s for s in available_streams if s in streams_in_data]
-                            if matching_streams:
-                                df = df[df["Stream"].isin(matching_streams)].copy()
-                                print(f"DEBUG BREAKDOWN MONTHLY: After stream filter (matching {len(matching_streams)} streams), df length={len(df)}")
-                            else:
-                                print(f"DEBUG BREAKDOWN MONTHLY: No matching streams between grades and data, showing all data")
+                        print(f"DEBUG BREAKDOWN MONTHLY: Available streams from grades (for color mapping only): {len(available_streams)}")
+                    # DO NOT filter df by available_streams - show all streams in the data
+                    all_streams_in_df = sorted(df["Stream"].unique().tolist())
+                    print(f"DEBUG BREAKDOWN MONTHLY: All streams in data (NOT filtered by grades CSV): {all_streams_in_df} ({len(all_streams_in_df)} streams)")
                 else:
                     print(f"DEBUG BREAKDOWN MONTHLY: BAR_LONG_MONTHLY is empty or missing columns")
                     df = pd.DataFrame(columns=["Stream", "Country", "year", "value", "month_idx"])
@@ -1587,13 +1580,26 @@ def register_callbacks(dash_app, server):
                     df["month"] = df["month_idx"].map(idx_to_month)
                     
                     # Apply profiled streams filter if provided
+                    all_streams_before_profiled = sorted(df["Stream"].unique().tolist())
+                    print(f"DEBUG BREAKDOWN MONTHLY: All streams before profiled filter: {all_streams_before_profiled} ({len(all_streams_before_profiled)} streams)")
+                    print(f"DEBUG BREAKDOWN MONTHLY: Profiled filter value: {profiled}")
+                    
                     if profiled and len(profiled) > 0:
-                        profiled_in_data = [s for s in profiled if s in df["Stream"].values]
+                        profiled_list = [str(s).strip() for s in profiled] if isinstance(profiled, (list, tuple)) else [str(profiled).strip()]
+                        df_streams_list = [str(s).strip() for s in df["Stream"].values]
+                        profiled_in_data = [s for s in profiled_list if s in df_streams_list]
+                        missing_profiled = [s for s in profiled_list if s not in df_streams_list]
+                        print(f"DEBUG BREAKDOWN MONTHLY: Profiled streams in data: {profiled_in_data} ({len(profiled_in_data)} streams)")
+                        if missing_profiled:
+                            print(f"DEBUG BREAKDOWN MONTHLY: WARNING - Profiled streams NOT in data: {missing_profiled}")
                         if profiled_in_data:
                             df = df[df["Stream"].isin(profiled_in_data)].copy()
                             print(f"DEBUG BREAKDOWN MONTHLY: After profiled filter ({len(profiled_in_data)} streams), df length={len(df)}")
+                            print(f"DEBUG BREAKDOWN MONTHLY: Streams after profiled filter: {sorted(df['Stream'].unique().tolist())}")
                         else:
                             print(f"DEBUG BREAKDOWN MONTHLY: No profiled streams found in data, showing all streams")
+                    else:
+                        print(f"DEBUG BREAKDOWN MONTHLY: No profiled filter or empty, showing all {len(all_streams_before_profiled)} streams")
                     
                     agg = df.groupby(["year", "month_idx", "Stream"])["value"].sum().reset_index()
                     agg["month"] = agg["month_idx"].map(idx_to_month)
@@ -1660,30 +1666,51 @@ def register_callbacks(dash_app, server):
                     return fig, title_text
                 
                 # Filter agg to only include years and months that have data
+                # This removes blank months from the data before chart creation
                 filtered_agg = []
                 for year in selected_years_sorted:
                     year_months = months_by_year.get(str(year), [])
                     month_indices = [month_to_idx[m] for m in year_months]
                     year_data = agg[(agg["year"] == year) & (agg["month_idx"].isin(month_indices))]
                     filtered_agg.append(year_data)
+                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year}: filtered to {len(year_data)} rows (only months with data: {year_months})")
                 
                 if filtered_agg:
                     agg = pd.concat(filtered_agg, ignore_index=True)
                 else:
                     agg = pd.DataFrame(columns=["year", "month_idx", "Stream", "value", "month"])
                 
-                print(f"DEBUG BREAKDOWN MONTHLY: Final data shape: {agg.shape}")
+                print(f"DEBUG BREAKDOWN MONTHLY: Final data shape after removing blank months: {agg.shape}")
+                # Verify no blank months in final data
+                for year in selected_years_sorted:
+                    year_data = agg[agg["year"] == year]
+                    months_in_data = sorted(year_data["month"].unique().tolist())
+                    expected_months = months_by_year.get(str(year), [])
+                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year} - months in final data: {months_in_data}, expected: {expected_months}")
+                    if set(months_in_data) != set(expected_months):
+                        print(f"DEBUG BREAKDOWN MONTHLY: WARNING - Year {year} has unexpected months in data!")
+                print(f"DEBUG BREAKDOWN MONTHLY: Unique streams in final agg: {sorted(agg['Stream'].unique().tolist())}")
                 
                 # Get all available streams for consistent coloring
+                # Prioritize streams that are actually in the data
                 streams_in_data = order_streams_list(agg["Stream"].dropna().unique().tolist(), tab="monthly")
-                all_available_streams = available_streams if available_streams else streams_in_data
-                if not all_available_streams:
-                    all_available_streams = streams_in_data
-                if not all_available_streams:
-                    all_available_streams = get_stream_order("monthly")
+                print(f"DEBUG BREAKDOWN MONTHLY: Streams in data (ordered): {streams_in_data}")
+                
+                # Use streams from data as primary source, merge with grades CSV streams for color mapping
+                all_available_streams = streams_in_data if streams_in_data else get_stream_order("monthly")
+                # Add any streams from grades CSV that aren't in data (for color mapping consistency)
+                if available_streams:
+                    for stream in available_streams:
+                        if stream not in all_available_streams:
+                            all_available_streams.append(stream)
+                
+                print(f"DEBUG BREAKDOWN MONTHLY: All available streams (for color mapping): {all_available_streams}")
+                
+                # Use streams_in_data for categories (only streams that actually have data)
+                stream_categories = streams_in_data if streams_in_data else get_stream_order("monthly")
+                print(f"DEBUG BREAKDOWN MONTHLY: Stream categories (for chart): {stream_categories}")
                 
                 color_map = {stream: get_stream_color(stream, all_available_streams, tab="monthly") for stream in all_available_streams}
-                stream_categories = all_available_streams if all_available_streams else get_stream_order("monthly")
                 
                 agg = agg[agg["year"].isin(selected_years_sorted)].copy()
                 agg["Stream"] = pd.Categorical(agg["Stream"], categories=stream_categories, ordered=True)
@@ -1691,17 +1718,60 @@ def register_callbacks(dash_app, server):
                 agg = agg.sort_values(["year", "month_order", "Stream"])
                 
                 agg["year"] = pd.Categorical(agg["year"], categories=selected_years_sorted, ordered=True)
-                agg["month"] = pd.Categorical(agg["month"], categories=month_names, ordered=True)
-                agg_for_chart = agg.sort_values(["year", "month_order", "Stream"])
+                # Use month names directly (not numeric positions) - this works better with Plotly's grouping
+                # IMPORTANT: Only use months that have data - don't create categorical with all 12 months
+                agg["month"] = agg["month_idx"].map(idx_to_month)
+                agg_for_chart = agg.sort_values(["year", "month_order", "Stream"]).copy()
+                
+                # Convert to string (NOT categorical) to avoid Plotly showing all possible months
+                # This ensures only months with actual data are in the chart
+                agg_for_chart["Stream"] = agg_for_chart["Stream"].astype(str)
+                agg_for_chart["month"] = agg_for_chart["month"].astype(str)
+                
+                # Verify only months with data are present
+                for year in selected_years_sorted:
+                    year_data = agg_for_chart[agg_for_chart["year"] == year]
+                    months_in_chart = sorted(year_data["month"].unique().tolist())
+                    expected_months = months_by_year.get(str(year), [])
+                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year} - months in chart data: {months_in_chart}, expected: {expected_months}")
+                    if set(months_in_chart) != set(expected_months):
+                        print(f"DEBUG BREAKDOWN MONTHLY: ERROR - Year {year} has unexpected months! Filtering out blank months...")
+                        # Remove any months not in expected_months
+                        agg_for_chart = agg_for_chart[
+                            ~((agg_for_chart["year"] == year) & (~agg_for_chart["month"].isin(expected_months)))
+                        ].copy()
                 
                 print(f"DEBUG BREAKDOWN MONTHLY: Chart data shape: {agg_for_chart.shape}")
+                print(f"DEBUG BREAKDOWN MONTHLY: Unique streams in agg_for_chart: {sorted(agg_for_chart['Stream'].unique().tolist())}")
+                print(f"DEBUG BREAKDOWN MONTHLY: Stream categories: {stream_categories}")
+                
                 years_in_chart = agg_for_chart["year"].astype(str).unique().tolist()
                 selected_years_sorted = [y for y in selected_years_sorted if y in years_in_chart]
                 print(f"DEBUG BREAKDOWN MONTHLY: Years in chart: {selected_years_sorted}")
                 
+                print(f"DEBUG BREAKDOWN MONTHLY: Streams in final data: {sorted(agg_for_chart['Stream'].unique().tolist())}")
+                print(f"DEBUG BREAKDOWN MONTHLY: Number of unique streams: {len(agg_for_chart['Stream'].unique())}")
+                
+                # Final verification: ensure no blank months in data
+                all_months_in_data = set()
+                for year in selected_years_sorted:
+                    year_data = agg_for_chart[agg_for_chart["year"] == year]
+                    year_months = set(year_data["month"].unique())
+                    all_months_in_data.update(year_months)
+                    expected = set(months_by_year.get(str(year), []))
+                    if year_months != expected:
+                        print(f"DEBUG BREAKDOWN MONTHLY: CRITICAL - Year {year} data contains months not in expected list!")
+                        print(f"  Data has: {sorted(year_months)}, Expected: {sorted(expected)}")
+                        print(f"  Removing unexpected months...")
+                        # Keep only expected months for this year
+                        mask = (agg_for_chart["year"] != year) | (agg_for_chart["month"].isin(expected))
+                        agg_for_chart = agg_for_chart[mask].copy()
+                
+                print(f"DEBUG BREAKDOWN MONTHLY: Final verification - all months in data: {sorted(all_months_in_data)}")
+                
                 fig = px.bar(
                     agg_for_chart, 
-                    x="month", 
+                    x="month",  # Use month names directly (not numeric positions)
                     y="value",
                     color="Stream",
                     color_discrete_map=color_map,
@@ -1709,12 +1779,46 @@ def register_callbacks(dash_app, server):
                     category_orders={
                         "Stream": stream_categories,
                         "year": selected_years_sorted
+                        # DO NOT set month in category_orders - let each facet control its own months
                     },
                     facet_col="year",
                     facet_col_spacing=0.04,
                     labels={"value":"Avg. Value", "month":"Month", "Stream":"Stream", "year":"Year"},
                     barmode="stack"
                 )
+                
+                # Debug: Check how many traces were created and which streams they represent
+                print(f"DEBUG BREAKDOWN MONTHLY: Number of traces created by Plotly: {len(fig.data)}")
+                trace_names = [trace.name for trace in fig.data if trace.name]
+                print(f"DEBUG BREAKDOWN MONTHLY: Trace names: {trace_names}")
+                print(f"DEBUG BREAKDOWN MONTHLY: Expected streams: {stream_categories}")
+                
+                # Check if all streams have traces
+                missing_traces = [s for s in stream_categories if s not in trace_names]
+                if missing_traces:
+                    print(f"DEBUG BREAKDOWN MONTHLY: WARNING - Streams without traces: {missing_traces}")
+                
+                # Check data points per trace
+                for trace in fig.data:
+                    if trace.name:
+                        x_len = len(trace.x) if hasattr(trace, 'x') and trace.x is not None else 0
+                        y_max = max(trace.y) if hasattr(trace, 'y') and trace.y is not None and len(trace.y) > 0 else 'N/A'
+                        print(f"DEBUG BREAKDOWN MONTHLY: Trace '{trace.name}': {x_len} data points, max y: {y_max}")
+                
+                # Verify colors are applied correctly and fix if needed
+                print(f"DEBUG BREAKDOWN MONTHLY: Verifying trace colors:")
+                for trace in fig.data:
+                    if trace.name and trace.name in color_map:
+                        expected_color = color_map[trace.name]
+                        # Get current color from trace
+                        current_color = None
+                        if hasattr(trace, 'marker') and hasattr(trace.marker, 'color'):
+                            current_color = trace.marker.color
+                        
+                        # Explicitly set the color to ensure it's correct
+                        if hasattr(trace, 'marker'):
+                            trace.marker.color = expected_color
+                            print(f"  Trace '{trace.name}': Set color to {expected_color}")
                 
                 stack_order = list(reversed(stream_categories))
                 order_lookup = {name: idx for idx, name in enumerate(stack_order)}
@@ -1728,17 +1832,8 @@ def register_callbacks(dash_app, server):
                     hovertemplate='<b>%{fullData.name}</b><br>Year: %{fullData.facet_col}<br>Month: %{x}<br>Avg. Value: %{y:,.0f} (\'000 b/d)<extra></extra>'
                 )
                 
-                # Apply per-year month ordering to x-axes
-                for idx, year in enumerate(selected_years_sorted, start=1):
-                    axis_key = f"xaxis{idx}" if idx > 1 else "xaxis"
-                    months_for_axis = months_by_year.get(str(year), month_names)
-                    if axis_key in fig.layout and months_for_axis:
-                        fig.layout[axis_key].update(
-                            categoryorder="array",
-                            categoryarray=months_for_axis
-                        )
-                
                 fig.update_yaxes(matches='y')
+                # Update general x-axis styling first
                 fig.for_each_xaxis(
                     lambda axis: axis.update(
                         showgrid=True,
@@ -1751,6 +1846,39 @@ def register_callbacks(dash_app, server):
                         title=""
                     )
                 )
+                
+                # Apply per-year month ordering to x-axes - only show months with data
+                # This removes blank months while keeping month names on x-axis
+                print(f"DEBUG BREAKDOWN MONTHLY: Applying x-axis configuration to remove blank months")
+                for idx, year in enumerate(selected_years_sorted, start=1):
+                    axis_key = f"xaxis{idx}" if idx > 1 else "xaxis"
+                    months_for_axis = months_by_year.get(str(year), [])
+                    if months_for_axis:
+                        months_for_axis = sorted(months_for_axis, key=lambda m: month_to_idx.get(m, 999))
+                    
+                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year} ({axis_key}): months with data = {months_for_axis}")
+                    
+                    if axis_key in fig.layout and months_for_axis:
+                        # Force only months with data to appear on x-axis
+                        # Use both categoryarray AND tickmode/tickvals to ensure blank months don't show
+                        fig.layout[axis_key].update(
+                            type="category",
+                            categoryorder="array",
+                            categoryarray=months_for_axis,  # Only months with data - removes blank months
+                            tickmode="array",  # Explicitly set tick mode
+                            tickvals=months_for_axis,  # Only show these months
+                            ticktext=months_for_axis,  # Display these month names
+                            title=""  # Remove "Month" text
+                        )
+                        print(f"DEBUG BREAKDOWN MONTHLY: Set {axis_key} to show only {len(months_for_axis)} months: {months_for_axis}")
+                    elif axis_key in fig.layout:
+                        # No data for this year - hide axis
+                        print(f"DEBUG BREAKDOWN MONTHLY: No months with data for year {year}, hiding {axis_key}")
+                        fig.layout[axis_key].update(
+                            showticklabels=False,
+                            showgrid=False,
+                            title=""
+                        )
                 fig.for_each_yaxis(
                     lambda axis: axis.update(
                         showgrid=True,
