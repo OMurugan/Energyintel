@@ -3,7 +3,7 @@ Crude Overview View
 Replicates Energy Intelligence WCoD Crude Overview functionality
 Monthly World Crude Production Dashboard - Based on Tableau source
 """
-from dash import dcc, html, Input, Output, State, callback, dash_table, dash, no_update
+from dash import dcc, html, Input, Output, State, dash_table, dash, no_update
 import dash.dependencies as dd
 import plotly.graph_objects as go
 import plotly.express as px
@@ -12,6 +12,7 @@ import os
 import re
 import itertools
 import math
+from app import create_dash_app
 
 # Define data paths
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'crude_overview')
@@ -651,7 +652,7 @@ def create_layout(server=None):
 def register_callbacks(dash_app, server):
     """Register all callbacks for Crude Overview"""
     
-    @callback(
+    @dash_app.callback(
         Output("crude-country-dropdown", "value", allow_duplicate=True),
         Input("crude-map", "clickData"),
         prevent_initial_call=True
@@ -664,28 +665,17 @@ def register_callbacks(dash_app, server):
                 return [clicked_country]
         return no_update
     
-    @callback(
+    @dash_app.callback(
         [Output("profiled-streams", "options"),
          Output("profiled-streams", "value")],
         [Input("crude-country-dropdown", "value"),
          Input("crude-main-tabs", "value"),
          Input("crude-year-dropdown", "value"),
-         Input("crude-year-month-dropdown", "value"),
-         Input("current-submenu", "data"),
-         Input("url", "pathname")],
+         Input("crude-year-month-dropdown", "value")],
         prevent_initial_call=False
     )
-    def update_profiled_streams_options(country, tab, year, year_month, submenu, pathname):
+    def update_profiled_streams_options(country, tab, year, year_month):
         """Update profiled streams options based on selected country and tab using grades CSV files"""
-        # Allow execution if pathname matches OR submenu matches OR pathname is None/empty
-        pathname_str = str(pathname) if pathname else ''
-        if pathname_str and '/wcod/crude-overview' not in pathname_str:
-            if submenu != 'crude-overview' and submenu is not None:
-                # Return empty but don't block - allow initial load
-                if pathname_str == '/' or not pathname_str:
-                    pass  # Allow initial load
-                else:
-                    return [], []
         
         try:
             # Handle country - ensure it's a list
@@ -762,7 +752,7 @@ def register_callbacks(dash_app, server):
             return FALLBACK_COLORS[idx % len(FALLBACK_COLORS)]
         return FALLBACK_COLORS[0]
     
-    @callback(
+    @dash_app.callback(
         Output("profiled-streams-container", "children"),
         [Input("profiled-streams", "value"),
          Input("profiled-streams", "options"),
@@ -870,7 +860,7 @@ def register_callbacks(dash_app, server):
         
         return checklist_items
     
-    @callback(
+    @dash_app.callback(
         Output("profiled-streams", "value", allow_duplicate=True),
         [Input({"type": "stream-checkbox", "stream": dd.ALL}, "value")],
         [State({"type": "stream-checkbox", "stream": dd.ALL}, "id")],
@@ -891,7 +881,7 @@ def register_callbacks(dash_app, server):
         
         return checked_streams
     
-    @callback(
+    @dash_app.callback(
         [Output("year-controls", "style"),
          Output("year-month-controls", "style"),
          Output("production-year-filter", "style")],
@@ -905,26 +895,16 @@ def register_callbacks(dash_app, server):
         else:
             return {"display": "none"}, {"display": "block"}, {"display": "block"}
     
-    @callback(
+    @dash_app.callback(
         Output("crude-map", "figure"),
         [Input("crude-year-dropdown", "value"),
          Input("crude-year-month-dropdown", "value"),
          Input("crude-country-dropdown", "value"),
-         Input("crude-main-tabs", "value"),
-         Input("current-submenu", "data"),
-         Input("url", "pathname")],
+         Input("crude-main-tabs", "value")],
         prevent_initial_call=False
     )
-    def update_map(selected_year, selected_year_month, selected_countries, tab, submenu, pathname):
+    def update_map(selected_year, selected_year_month, selected_countries, tab):
         """Update world map based on filters"""
-        # Allow execution if pathname matches OR submenu matches OR pathname is None/empty
-        pathname_str = str(pathname) if pathname else ''
-        # Only block if we have a pathname that doesn't match AND submenu doesn't match
-        # But allow if pathname is None/empty (initial load) or if either matches
-        if pathname_str and '/wcod/crude-overview' not in pathname_str:
-            if submenu != 'crude-overview' and submenu is not None:
-                # Only block if both pathname doesn't match AND submenu doesn't match AND submenu is not None
-                return go.Figure()
         
         # Set defaults if None
         if selected_year is None:
@@ -1073,7 +1053,7 @@ def register_callbacks(dash_app, server):
         )
         return fig
     
-    @callback(
+    @dash_app.callback(
         [Output("production-breakdown-chart", "figure"),
          Output("production-breakdown-title", "children")],
         [Input("crude-country-dropdown", "value"),
@@ -1082,21 +1062,11 @@ def register_callbacks(dash_app, server):
          Input("production-year-dropdown", "value"),  # Year of Date filter for monthly chart
          Input("profiled-streams", "value"),
          Input("crude-main-tabs", "value"),
-         Input("crude-map", "clickData"),
-         Input("current-submenu", "data"),
-         Input("url", "pathname")],
+         Input("crude-map", "clickData")],
         prevent_initial_call=False
     )
-    def update_breakdown(country, year, year_month, production_years, profiled, tab, map_click, submenu, pathname):
+    def update_breakdown(country, year, year_month, production_years, profiled, tab, map_click):
         """Update production breakdown chart"""
-        # Allow execution if pathname matches OR submenu matches OR pathname is None/empty
-        pathname_str = str(pathname) if pathname else ''
-        # Only block if we have a pathname that doesn't match AND submenu doesn't match
-        # But allow if pathname is None/empty (initial load) or if either matches
-        if pathname_str and '/wcod/crude-overview' not in pathname_str:
-            if submenu != 'crude-overview' and submenu is not None:
-                # Only block if both pathname doesn't match AND submenu doesn't match AND submenu is not None
-                return go.Figure(), "Production Breakdown"
         
         try:
             month_names = ["January", "February", "March", "April", "May", "June",
@@ -1842,7 +1812,7 @@ def register_callbacks(dash_app, server):
             )
             return fig, "Production Breakdown"
     
-    @callback(
+    @dash_app.callback(
         [Output("crude-table", "data"),
          Output("crude-table", "columns")],
         [Input("filter-stream", "value"),
@@ -1851,21 +1821,11 @@ def register_callbacks(dash_app, server):
          Input("filter-sulfur", "value"),
          Input("crude-year-dropdown", "value"),
          Input("crude-year-month-dropdown", "value"),
-         Input("crude-main-tabs", "value"),
-         Input("current-submenu", "data"),
-         Input("url", "pathname")],
+         Input("crude-main-tabs", "value")],
         prevent_initial_call=False
     )
-    def filter_table(stream, ci, api, sulfur, year, year_month, tab, submenu, pathname):
+    def filter_table(stream, ci, api, sulfur, year, year_month, tab):
         """Filter and update data table"""
-        # Allow execution if pathname matches OR submenu matches OR pathname is None/empty
-        pathname_str = str(pathname) if pathname else ''
-        # Only block if we have a pathname that doesn't match AND submenu doesn't match
-        # But allow if pathname is None/empty (initial load) or if either matches
-        if pathname_str and '/wcod/crude-overview' not in pathname_str:
-            if submenu != 'crude-overview' and submenu is not None:
-                # Only block if both pathname doesn't match AND submenu doesn't match AND submenu is not None
-                return [], []
         
         # Set defaults if None
         if tab is None:
@@ -2005,3 +1965,14 @@ def register_callbacks(dash_app, server):
                 table_data.append(row)
             
             return table_data, columns
+
+
+# ------------------------------------------------------------------------------
+# DASH APP CREATION
+# ------------------------------------------------------------------------------
+def create_crude_overview_dashboard(server, url_base_pathname="/dash/crude-overview/"):
+    """Create the Crude Overview dashboard"""
+    dash_app = create_dash_app(server, url_base_pathname)
+    dash_app.layout = create_layout(server)
+    register_callbacks(dash_app, server)
+    return dash_app
