@@ -32,13 +32,57 @@ def load_yearly_bar():
         print(f"DEBUG: Yearly bar data columns: {df.columns.tolist()}")
         print(f"DEBUG: Yearly bar data sample:\n{df.head(3)}")
         
+        # Extract year-level ProductionDataValue BEFORE filtering by Country/CrudeOil
+        # ProductionDataValue is a single value per year, not per stream
+        # Note: ProductionDataValue rows may have blank Country/CrudeOil/Crude Color/Avg. ProductionDataValue
+        year_production_data_value = {}
+        if "ProductionDataValue" in df.columns and "Year of YearReported" in df.columns:
+            print(f"DEBUG: Extracting ProductionDataValue from {len(df)} rows")
+            # Get ALL rows with ProductionDataValue (don't filter by Country/CrudeOil yet)
+            year_value_df = df[["Year of YearReported", "ProductionDataValue"]].copy()
+            print(f"DEBUG: ProductionDataValue column sample:\n{year_value_df.head(10)}")
+            print(f"DEBUG: ProductionDataValue non-null count: {year_value_df['ProductionDataValue'].notna().sum()}")
+            
+            # Remove rows where ProductionDataValue is blank/empty/null
+            year_value_df = year_value_df[
+                year_value_df["ProductionDataValue"].notna() & 
+                (year_value_df["ProductionDataValue"].astype(str).str.strip() != "") &
+                (year_value_df["ProductionDataValue"].astype(str).str.strip().str.lower() != "nan")
+            ].copy()
+            print(f"DEBUG: After filtering blanks, {len(year_value_df)} rows with ProductionDataValue")
+            
+            if len(year_value_df) > 0:
+                # Convert to numeric
+                year_value_df["ProductionDataValue"] = pd.to_numeric(
+                    year_value_df["ProductionDataValue"].astype(str).str.replace(',', '').str.replace('$', ''),
+                    errors="coerce"
+                )
+                # Remove any rows that couldn't be converted to numeric
+                year_value_df = year_value_df[year_value_df["ProductionDataValue"].notna()].copy()
+                print(f"DEBUG: After numeric conversion, {len(year_value_df)} valid ProductionDataValue rows")
+                
+                # Group by year and take the first non-null value (should be unique per year)
+                for year, group in year_value_df.groupby("Year of YearReported"):
+                    year_str = str(year).strip()
+                    valid_values = group[group["ProductionDataValue"].notna() & (group["ProductionDataValue"] > 0)]["ProductionDataValue"]
+                    if len(valid_values) > 0:
+                        year_production_data_value[year_str] = float(valid_values.iloc[0])
+                        print(f"DEBUG: Found ProductionDataValue for year {year_str}: {year_production_data_value[year_str]}")
+            else:
+                print(f"DEBUG: WARNING - No valid ProductionDataValue found in CSV!")
+        else:
+            print(f"DEBUG: WARNING - ProductionDataValue or Year of YearReported column not found!")
+            if "ProductionDataValue" not in df.columns:
+                print(f"DEBUG: Available columns: {df.columns.tolist()}")
+        
+        print(f"DEBUG: Final year-level ProductionDataValue dictionary: {year_production_data_value}")
+        
         # Filter out rows where Country or CrudeOil is missing
         df = df[(df["Country"].notna()) & (df["CrudeOil"].notna())].copy()
         df_long = pd.DataFrame()
         
         value_columns = []
-        if "ProductionDataValue" in df.columns:
-            value_columns.append("ProductionDataValue")
+        # For bar chart values, use Avg. ProductionDataValue (NOT ProductionDataValue which is year-level only)
         if "Avg. ProductionDataValue" in df.columns:
             value_columns.append("Avg. ProductionDataValue")
         
@@ -51,14 +95,8 @@ def load_yearly_bar():
                 "Year of YearReported": "year"
             })
             
-            value_source = None
-            if "ProductionDataValue" in df_long.columns:
-                value_source = df_long["ProductionDataValue"]
-                if "Avg. ProductionDataValue" in df_long.columns:
-                    avg_source = df_long["Avg. ProductionDataValue"]
-                    empty_mask = value_source.isna() | (value_source.astype(str).str.strip() == "")
-                    value_source = value_source.mask(empty_mask, avg_source)
-            elif "Avg. ProductionDataValue" in df_long.columns:
+            # Use Avg. ProductionDataValue for bar chart (stream-level values)
+            if "Avg. ProductionDataValue" in df_long.columns:
                 value_source = df_long["Avg. ProductionDataValue"]
             else:
                 value_source = pd.Series([0] * len(df_long), index=df_long.index)
@@ -82,7 +120,8 @@ def load_yearly_bar():
         traceback.print_exc()
         df = pd.DataFrame()
         df_long = pd.DataFrame()
-    return df, df_long
+        year_production_data_value = {}
+    return df, df_long, year_production_data_value
 
 def load_monthly_bar():
     """Load monthly bar data from Monthly Bar - Production_data.csv"""
@@ -297,7 +336,7 @@ def load_table():
     return yearly_df, monthly_df, year_to_month_cols
 
 # Load data once at module import
-BAR_DF_YEARLY, BAR_LONG_YEARLY = load_yearly_bar()
+BAR_DF_YEARLY, BAR_LONG_YEARLY, YEAR_PRODUCTION_DATA_VALUE = load_yearly_bar()
 BAR_DF_MONTHLY, BAR_LONG_MONTHLY = load_monthly_bar()
 MAP_YEARLY_LONG, MAP_MONTHLY_LONG = load_map_data()
 TABLE_DF_YEARLY, TABLE_DF_MONTHLY, YEAR_TO_MONTH_COLS = load_table()
@@ -318,8 +357,22 @@ for year in range(2000, 2026):
         YEAR_MONTHS.append({"label": f"{year}-{month_str}", "value": f"{year}-{month_str}"})
 YEAR_MONTHS.reverse()
 
-# Stream color/ordering requirements (matches Tableau source exactly)
-STREAM_COLOR_ORDER = [
+# Stream color/ordering requirements
+YEARLY_STREAM_COLOR_ORDER = [
+    ("Arco", "#0069aa"),
+    ("Siberian Light", "#313849"),
+    ("Vityaz", "#0069aa"),
+    ("YK Blend", "#595959"),
+    ("Sakhalin Blend", "#4e83bb"),
+    ("Varandey", "#a6a6a6"),
+    ("Novy Port", "#a95b41"),
+    ("Sokol", "#cb4515"),
+    ("Other Crudes - Russia", "#a95b41"),
+    ("Espo Blend", "#20295e"),
+    ("Urals", "#826ecc")
+]
+
+MONTHLY_STREAM_COLOR_ORDER = [
     ("Arco", "#0069aa"),
     ("Cpc Blend - Russia", "#cb4515"),
     ("Espo Blend", "#badf97"),
@@ -331,25 +384,41 @@ STREAM_COLOR_ORDER = [
     ("Urals", "#a95b41"),
     ("Varandey", "#826ecc")
 ]
-STREAM_COLOR_MAP = {name: color for name, color in STREAM_COLOR_ORDER}
-STREAM_ORDER = [name for name, _ in STREAM_COLOR_ORDER]
+
+STREAM_COLOR_ORDERS = {
+    "yearly": YEARLY_STREAM_COLOR_ORDER,
+    "monthly": MONTHLY_STREAM_COLOR_ORDER
+}
+STREAM_COLOR_MAPS = {mode: {name: color for name, color in order} for mode, order in STREAM_COLOR_ORDERS.items()}
+STREAM_ORDERS = {mode: [name for name, _ in order] for mode, order in STREAM_COLOR_ORDERS.items()}
 FALLBACK_COLORS = [
     '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
     '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
     '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5',
     '#c49c94', '#f7b6d3', '#c7c7c7', '#dbdb8d', '#9edae5'
 ]
-COLOR_SEQUENCE = [color for _, color in STREAM_COLOR_ORDER]
-DEFAULT_COLOR_SEQUENCE = COLOR_SEQUENCE + [c for c in FALLBACK_COLORS if c not in COLOR_SEQUENCE]
 
 
-def order_streams_list(streams):
+def get_stream_order(tab="yearly"):
+    return STREAM_ORDERS.get(tab, STREAM_ORDERS["yearly"])
+
+
+def get_stream_color_map(tab="yearly"):
+    return STREAM_COLOR_MAPS.get(tab, STREAM_COLOR_MAPS["yearly"])
+
+
+def get_color_sequence(tab="yearly"):
+    base = [color for _, color in STREAM_COLOR_ORDERS.get(tab, STREAM_COLOR_ORDERS["yearly"])]
+    return base + [c for c in FALLBACK_COLORS if c not in base]
+
+
+def order_streams_list(streams, tab="yearly"):
     """Order streams to match required Tableau order, then append any unknowns"""
     if not streams:
         return []
     seen = set()
     ordered = []
-    for name in STREAM_ORDER:
+    for name in get_stream_order(tab):
         if name in streams and name not in seen:
             ordered.append(name)
             seen.add(name)
@@ -643,7 +712,7 @@ def register_callbacks(dash_app, server):
                     else:
                         # If no Country column, use all streams
                         country_streams = YEARLY_GRADES_DF["Stream"].dropna().unique().tolist()
-                    available_streams = order_streams_list(country_streams)
+                    available_streams = order_streams_list(country_streams, tab="yearly")
                     print(f"DEBUG: Yearly streams for {selected_country}: {len(available_streams)} streams")
             else:
                 # Use monthly grades CSV
@@ -654,7 +723,7 @@ def register_callbacks(dash_app, server):
                     else:
                         # If no Country column, use all streams
                         country_streams = MONTHLY_GRADES_DF["Stream"].dropna().unique().tolist()
-                    available_streams = order_streams_list(country_streams)
+                    available_streams = order_streams_list(country_streams, tab="monthly")
                     print(f"DEBUG: Monthly streams for {selected_country}: {len(available_streams)} streams")
             
             # If no streams from grades CSV, fall back to all streams from bar data
@@ -662,11 +731,11 @@ def register_callbacks(dash_app, server):
                 if tab == "yearly" or tab is None:
                     if not BAR_LONG_YEARLY.empty and "Stream" in BAR_LONG_YEARLY.columns:
                         country_data = BAR_LONG_YEARLY[BAR_LONG_YEARLY["Country"].isin(country)]
-                        available_streams = order_streams_list(country_data["Stream"].dropna().unique().tolist())
+                        available_streams = order_streams_list(country_data["Stream"].dropna().unique().tolist(), tab="yearly")
                 else:
                     if not BAR_LONG_MONTHLY.empty and "Stream" in BAR_LONG_MONTHLY.columns:
                         country_data = BAR_LONG_MONTHLY[BAR_LONG_MONTHLY["Country"].isin(country)]
-                        available_streams = order_streams_list(country_data["Stream"].dropna().unique().tolist())
+                        available_streams = order_streams_list(country_data["Stream"].dropna().unique().tolist(), tab="monthly")
             
             # Create options
             options = [{"label": s, "value": s} for s in available_streams]
@@ -683,10 +752,11 @@ def register_callbacks(dash_app, server):
             traceback.print_exc()
             return [], []
     
-    def get_stream_color(stream, all_streams_list):
+    def get_stream_color(stream, all_streams_list, tab="yearly"):
         """Get consistent color for a stream based on its position in the full streams list"""
-        if stream in STREAM_COLOR_MAP:
-            return STREAM_COLOR_MAP[stream]
+        color_map = get_stream_color_map(tab)
+        if stream in color_map:
+            return color_map[stream]
         if stream in all_streams_list:
             idx = all_streams_list.index(stream)
             return FALLBACK_COLORS[idx % len(FALLBACK_COLORS)]
@@ -696,10 +766,11 @@ def register_callbacks(dash_app, server):
         Output("profiled-streams-container", "children"),
         [Input("profiled-streams", "value"),
          Input("profiled-streams", "options"),
-         Input("production-breakdown-chart", "figure")],
+         Input("production-breakdown-chart", "figure"),
+         Input("crude-main-tabs", "value")],
         prevent_initial_call=False
     )
-    def update_profiled_streams_with_colors(selected_streams, stream_options, chart_figure):
+    def update_profiled_streams_with_colors(selected_streams, stream_options, chart_figure, active_tab):
         """Create combined checklist with checkbox and color badge for each stream - single list with both"""
         if not stream_options:
             return html.Div("No streams available")
@@ -741,7 +812,8 @@ def register_callbacks(dash_app, server):
             if stream in color_map:
                 color = color_map[stream]
             else:
-                color = get_stream_color(stream, all_available_streams)
+                tab_value = active_tab if active_tab in STREAM_COLOR_ORDERS else "yearly"
+                color = get_stream_color(stream, all_available_streams, tab=tab_value)
             
             # Convert color to hex if needed
             color_hex = color
@@ -1102,7 +1174,7 @@ def register_callbacks(dash_app, server):
                     else:
                         print(f"DEBUG BREAKDOWN YEARLY: YEARLY_GRADES_DF is empty or missing Stream column")
                         # Use all streams from data
-                        available_streams = order_streams_list(df["Stream"].dropna().unique().tolist()) if len(df) > 0 else []
+                        available_streams = order_streams_list(df["Stream"].dropna().unique().tolist(), tab="yearly") if len(df) > 0 else []
                 else:
                     df = pd.DataFrame(columns=["Stream", "Country", "year", "value", "month_idx"])
                     print("DEBUG BREAKDOWN YEARLY: BAR_LONG_YEARLY is empty or missing columns")
@@ -1180,20 +1252,20 @@ def register_callbacks(dash_app, server):
                     return fig, title_text
                 
                 # Get all available streams for consistent coloring
-                all_available_streams = available_streams if available_streams else order_streams_list(agg["Stream"].unique().tolist())
+                all_available_streams = available_streams if available_streams else order_streams_list(agg["Stream"].unique().tolist(), tab="yearly")
                 
                 # Create color map - use specific colors for known streams, fallback to palette
-                unique_streams = order_streams_list(agg["Stream"].unique().tolist())
+                unique_streams = order_streams_list(agg["Stream"].unique().tolist(), tab="yearly")
                 color_map = {}
                 for stream in unique_streams:
-                    color_map[stream] = get_stream_color(stream, all_available_streams)
+                    color_map[stream] = get_stream_color(stream, all_available_streams, tab="yearly")
                 
                 print(f"DEBUG BREAKDOWN YEARLY: Color map: {color_map}")
                 
                 # Ensure we have data for all years (even if empty) for proper X-axis display
                 # Create a complete year-stream combination dataframe
                 all_years_list = [str(y) for y in range(2006, 2025)]
-                all_streams_list = order_streams_list(agg["Stream"].unique().tolist())
+                all_streams_list = order_streams_list(agg["Stream"].unique().tolist(), tab="yearly")
                 
                 print(f"DEBUG BREAKDOWN YEARLY: Creating complete combo - years: {len(all_years_list)}, streams: {len(all_streams_list)}")
                 
@@ -1272,7 +1344,7 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                stream_categories = all_streams_list if all_streams_list else STREAM_ORDER
+                stream_categories = all_streams_list if all_streams_list else get_stream_order("yearly")
                 agg_for_chart["Stream"] = pd.Categorical(agg_for_chart["Stream"], categories=stream_categories, ordered=True)
                 agg_for_chart = agg_for_chart.sort_values(["year", "Stream"])
 
@@ -1285,7 +1357,7 @@ def register_callbacks(dash_app, server):
                         y="value",
                         color="Stream",
                         color_discrete_map=color_map,
-                        color_discrete_sequence=DEFAULT_COLOR_SEQUENCE,
+                        color_discrete_sequence=get_color_sequence("yearly"),
                         category_orders={"Stream": stream_categories},
                         labels={"value":"Production Volume ('000 b/d)", "year":"Year", "Stream":"Stream"},
                         barmode="stack"  # Stack streams for each year
@@ -1314,7 +1386,16 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                # Calculate totals for each year to display above bars
+                # Get year-level ProductionDataValue for annotations (single value per year)
+                # This is different from the bar chart values which are stream-level
+                year_production_values = YEAR_PRODUCTION_DATA_VALUE if YEAR_PRODUCTION_DATA_VALUE else {}
+                
+                print(f"DEBUG BREAKDOWN YEARLY: YEAR_PRODUCTION_DATA_VALUE type: {type(YEAR_PRODUCTION_DATA_VALUE)}")
+                print(f"DEBUG BREAKDOWN YEARLY: YEAR_PRODUCTION_DATA_VALUE content: {YEAR_PRODUCTION_DATA_VALUE}")
+                print(f"DEBUG BREAKDOWN YEARLY: year_production_values: {year_production_values}")
+                print(f"DEBUG BREAKDOWN YEARLY: years_sorted: {years_sorted}")
+                
+                # Calculate max value for Y-axis scaling (use either ProductionDataValue or sum of bars)
                 chart_totals_df = agg_for_chart[agg_for_chart["value"] > 0.001].copy()  # Filter out tiny placeholder values
                 if len(chart_totals_df) > 0:
                     year_totals = chart_totals_df.groupby("year")["value"].sum().reset_index()
@@ -1323,42 +1404,87 @@ def register_callbacks(dash_app, server):
                     year_totals = agg.groupby("year")["value"].sum().reset_index()
                 year_totals_dict = dict(zip(year_totals["year"], year_totals["value"]))
                 
-                print(f"DEBUG BREAKDOWN YEARLY: Year totals: {year_totals_dict}")
-                
-                max_total = max(year_totals_dict.values()) if year_totals_dict else 12000
-                y_axis_max = max_total * 1.12  # Add space for annotations
-                
-                # Format traces
+                # Format traces first
                 fig.update_traces(
                     marker=dict(line=dict(width=1, color='white')),
                     hovertemplate='<b>%{fullData.name}</b><br>Year: %{x}<br>Production: %{y:,.0f} (\'000 b/d)<extra></extra>'
                 )
                 
-                # Add total production values above each bar with year label, displayed vertically
-                annotations_added = 0
+                # Calculate max bar height first (needed for annotation positioning)
+                max_bar_height = max(year_totals_dict.values()) if year_totals_dict else 0
+                
+                # Add ProductionDataValue above each bar - show only the value (no year, since year is on X-axis)
+                # Use year-level ProductionDataValue if available, otherwise use sum of bars
+                annotations_list = []
+                max_annotation_y = 0
+                
+                # Create year to index mapping for categorical X-axis positioning
+                year_to_index = {year: idx for idx, year in enumerate(years_sorted)}
+                
                 for year in years_sorted:
-                    total = year_totals_dict.get(year, 0)
+                    # Prefer ProductionDataValue, fallback to sum of bars
+                    production_value = year_production_values.get(year)
+                    print(f"DEBUG BREAKDOWN YEARLY: Year {year} - ProductionDataValue: {production_value}, Sum of bars: {year_totals_dict.get(year, 0)}")
                     
-                    if total > 0:
-                        annotation_text = f"{year}<br>{int(total):,}"
-                        fig.add_annotation(
-                            text=annotation_text,
-                            x=year,
-                            y=total + (max_total * 0.02),
-                            xref="x",
-                            yref="y",
-                            showarrow=False,
-                            font=dict(size=11, color="#2c3e50", family="Arial, sans-serif"),
-                            bgcolor="rgba(255, 255, 255, 0.8)",
-                            bordercolor="#2c3e50",
-                            borderwidth=1,
-                            borderpad=2,
-                            align="center"
-                        )
-                        annotations_added += 1
+                    if production_value is None or production_value == 0:
+                        production_value = year_totals_dict.get(year, 0)
+                    
+                    # Always show annotation if we have a value (either ProductionDataValue or sum)
+                    if production_value > 0:
+                        # Show only the value (no year, since year is on X-axis)
+                        annotation_text = f"{int(production_value):,}"
+                        # Position annotation above the bar - use bar height + fixed offset
+                        bar_height = year_totals_dict.get(year, 0)
+                        # Position annotation slightly above the bar (5% of max bar height for consistent spacing)
+                        annotation_y = bar_height + (max_bar_height * 0.05) if max_bar_height > 0 else bar_height + 500
+                        max_annotation_y = max(max_annotation_y, annotation_y)
+                        
+                        # Use numeric index for X position (works better with categorical axes)
+                        x_index = year_to_index.get(year, 0)
+                        
+                        print(f"DEBUG BREAKDOWN YEARLY: Adding annotation for year {year} (index {x_index}): text='{annotation_text}', y={annotation_y}, bar_height={bar_height}")
+                        
+                        annotations_list.append({
+                            "text": annotation_text,
+                            "x": x_index,  # Use numeric index for categorical X-axis
+                            "y": annotation_y,
+                            "xref": "x",
+                            "yref": "y",
+                            "xanchor": "center",
+                            "yanchor": "bottom",
+                            "showarrow": False,
+                            "font": dict(size=11, color="#2c3e50", family="Arial, sans-serif"),
+                            "align": "center",
+                            "textangle": -90  # Rotate text 90 degrees counterclockwise (bottom to top)
+                        })
+                    else:
+                        print(f"DEBUG BREAKDOWN YEARLY: Skipping annotation for year {year} - no value")
                 
-                print(f"DEBUG BREAKDOWN YEARLY: Added {annotations_added} total value annotations")
+                print(f"DEBUG BREAKDOWN YEARLY: Created {len(annotations_list)} annotations, max Y: {max_annotation_y}")
                 
+                # Calculate Y-axis max to accommodate annotations
+                # Calculate expected max annotation Y position
+                expected_max_annotation_y = max_bar_height + (max_bar_height * 0.05) if max_bar_height > 0 else 0
+                # Use the larger of actual max annotation Y or expected, then add padding
+                # Ensure we have enough space - use at least 25% padding above the highest point
+                base_max = max(max_annotation_y, expected_max_annotation_y, max_bar_height)
+                y_axis_max = base_max * 1.25  # Add 25% padding above highest point
+                
+                if y_axis_max == 0:
+                    y_axis_max = 12000
+                
+                print(f"DEBUG BREAKDOWN YEARLY: max_bar_height={max_bar_height}, max_annotation_y={max_annotation_y}, expected_max_annotation_y={expected_max_annotation_y}, base_max={base_max}, y_axis_max={y_axis_max}")
+                
+                # Verify all annotations are within Y-axis range
+                for i, ann in enumerate(annotations_list):
+                    if ann.get('y', 0) > y_axis_max:
+                        print(f"DEBUG BREAKDOWN YEARLY: WARNING - Annotation {i} (year {ann.get('x')}) Y position {ann.get('y')} exceeds Y-axis max {y_axis_max}")
+                
+                print(f"DEBUG BREAKDOWN YEARLY: Year-level ProductionDataValue: {year_production_values}")
+                print(f"DEBUG BREAKDOWN YEARLY: Year totals (sum of bars): {year_totals_dict}")
+                print(f"DEBUG BREAKDOWN YEARLY: Max bar height: {max_bar_height}, Max annotation Y: {max_annotation_y}, Y-axis max: {y_axis_max}")
+                
+                # Update layout with annotations included directly
                 fig.update_layout(
                     xaxis_title="Year",
                     yaxis_title="Production Volume ('000 b/d)",
@@ -1393,8 +1519,14 @@ def register_callbacks(dash_app, server):
                     plot_bgcolor="white",
                     paper_bgcolor="white",
                     margin=dict(l=70, r=30, t=70, b=80),
-                    hovermode='closest'
+                    hovermode='closest',
+                    annotations=annotations_list  # Add annotations directly to layout
                 )
+                
+                print(f"DEBUG BREAKDOWN YEARLY: Added {len(annotations_list)} ProductionDataValue annotations to layout")
+                print(f"DEBUG BREAKDOWN YEARLY: Final figure has {len(fig.layout.annotations) if fig.layout.annotations else 0} total annotations")
+                if fig.layout.annotations:
+                    print(f"DEBUG BREAKDOWN YEARLY: First annotation sample: {fig.layout.annotations[0] if len(fig.layout.annotations) > 0 else 'N/A'}")
                 
                 print(f"DEBUG BREAKDOWN YEARLY: Chart layout updated, returning figure")
                 return fig, title_text
@@ -1434,7 +1566,7 @@ def register_callbacks(dash_app, server):
                     # But don't filter if no streams found - show all available data
                     available_streams = []
                     if not MONTHLY_GRADES_DF.empty and "Stream" in MONTHLY_GRADES_DF.columns:
-                        available_streams = order_streams_list(MONTHLY_GRADES_DF["Stream"].dropna().unique().tolist())
+                        available_streams = order_streams_list(MONTHLY_GRADES_DF["Stream"].dropna().unique().tolist(), tab="monthly")
                         print(f"DEBUG BREAKDOWN MONTHLY: Available streams from grades: {len(available_streams)}")
                         # Only filter if we have streams in the grades CSV AND we have matching streams in the data
                         if available_streams:
@@ -1573,15 +1705,15 @@ def register_callbacks(dash_app, server):
                 print(f"DEBUG BREAKDOWN MONTHLY: Final data shape: {agg.shape}")
                 
                 # Get all available streams for consistent coloring
-                streams_in_data = order_streams_list(agg["Stream"].dropna().unique().tolist())
+                streams_in_data = order_streams_list(agg["Stream"].dropna().unique().tolist(), tab="monthly")
                 all_available_streams = available_streams if available_streams else streams_in_data
                 if not all_available_streams:
                     all_available_streams = streams_in_data
                 if not all_available_streams:
-                    all_available_streams = STREAM_ORDER
+                    all_available_streams = get_stream_order("monthly")
                 
-                color_map = {stream: get_stream_color(stream, all_available_streams) for stream in all_available_streams}
-                stream_categories = all_available_streams if all_available_streams else STREAM_ORDER
+                color_map = {stream: get_stream_color(stream, all_available_streams, tab="monthly") for stream in all_available_streams}
+                stream_categories = all_available_streams if all_available_streams else get_stream_order("monthly")
                 
                 agg = agg[agg["year"].isin(selected_years_sorted)].copy()
                 agg["Stream"] = pd.Categorical(agg["Stream"], categories=stream_categories, ordered=True)
@@ -1603,7 +1735,7 @@ def register_callbacks(dash_app, server):
                     y="value",
                     color="Stream",
                     color_discrete_map=color_map,
-                    color_discrete_sequence=DEFAULT_COLOR_SEQUENCE,
+                    color_discrete_sequence=get_color_sequence("monthly"),
                     category_orders={
                         "Stream": stream_categories,
                         "year": selected_years_sorted
