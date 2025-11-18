@@ -168,7 +168,7 @@ def create_layout(server):
 
             html.Hr(style={"margin": "10px 0", "border": "1px solid #ccc"}),
 
-            # Sorting dropdown (initially hidden)
+            # Sorting controls (initially hidden)
             html.Div([
                 html.Div("Sort order", style={
                     "fontWeight": "bold", 
@@ -325,16 +325,91 @@ def create_layout(server):
                             position: relative !important;
                         '''
                     },
+                    # A-Z vertical text for sort order
                     {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"]:hover::after',
+                        'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-order-container',
                         'rule': '''
-                            content: "▼";
                             position: absolute;
-                            right: 8px;
+                            right: 25px;
                             top: 50%;
                             transform: translateY(-50%);
                             font-size: 10px;
                             color: #666;
+                            cursor: pointer;
+                            padding: 2px;
+                            border: 1px solid transparent;
+                            border-radius: 2px;
+                            line-height: 1;
+                            text-align: center;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            justify-content: center;
+                            height: 30px;
+                        '''
+                    },
+                    {
+                        'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-order-container:hover',
+                        'rule': '''
+                            background-color: #e6f3ff;
+                            border-color: #1f3263;
+                        '''
+                    },
+                    {
+                        'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-asc',
+                        'rule': '''
+                            display: block;
+                            line-height: 1;
+                            cursor: pointer;
+                            padding: 1px 2px;
+                            border-radius: 1px;
+                        '''
+                    },
+                    {
+                        'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-asc:hover',
+                        'rule': '''
+                            background-color: #d4e7ff;
+                            font-weight: bold;
+                        '''
+                    },
+                    {
+                        'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-desc',
+                        'rule': '''
+                            display: block;
+                            line-height: 1;
+                            cursor: pointer;
+                            padding: 1px 2px;
+                            border-radius: 1px;
+                        '''
+                    },
+                    {
+                        'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-desc:hover',
+                        'rule': '''
+                            background-color: #d4e7ff;
+                            font-weight: bold;
+                        '''
+                    },
+                    # Popup menu indicator (three dots)
+                    {
+                        'selector': '.dash-header[data-dash-column="CrudeOil"] .popup-menu-indicator',
+                        'rule': '''
+                            position: absolute;
+                            right: 8px;
+                            top: 50%;
+                            transform: translateY(-50%);
+                            font-size: 14px;
+                            color: #666;
+                            cursor: pointer;
+                            padding: 2px 4px;
+                            border: 1px solid transparent;
+                            border-radius: 2px;
+                        '''
+                    },
+                    {
+                        'selector': '.dash-header[data-dash-column="CrudeOil"] .popup-menu-indicator:hover',
+                        'rule': '''
+                            background-color: #e6f3ff;
+                            border-color: #1f3263;
                         '''
                     },
                     {
@@ -356,7 +431,12 @@ def create_layout(server):
             dcc.Store(id='current-sort-order', data={'type': 'source', 'direction': 'asc'}),
             dcc.Store(id='show-sorting-controls', data=False),
             html.Div(id='dummy-output', style={'display': 'none'}),
-            html.Div(id='header-click-trigger', style={'display': 'none'}),
+            html.Div(id='dummy-output-2', style={'display': 'none'}),
+
+            # Hidden buttons for header interactions
+            html.Button("Sort Ascending Click", id="sort-asc-btn-hidden", n_clicks=0, style={"display": "none"}),
+            html.Button("Sort Descending Click", id="sort-desc-btn-hidden", n_clicks=0, style={"display": "none"}),
+            html.Button("Popup Menu Click", id="popup-menu-btn", n_clicks=0, style={"display": "none"}),
 
             html.Div([
                 html.P(
@@ -422,37 +502,48 @@ def register_callbacks(app):
         _, columns = load_crude_data(mode)
         return columns
 
-    # Toggle sorting controls visibility
+    # Handle header clicks (both sort order and popup menu)
     @app.callback(
         [Output('sorting-controls', 'style'),
-         Output('show-sorting-controls', 'data')],
-        [Input('crude-comparison-table', 'active_cell'),
+         Output('show-sorting-controls', 'data'),
+         Output('current-sort-order', 'data', allow_duplicate=True)],
+        [Input('sort-asc-btn-hidden', 'n_clicks'),
+         Input('sort-desc-btn-hidden', 'n_clicks'),
+         Input('popup-menu-btn', 'n_clicks'),
          Input('sort-asc-btn', 'n_clicks'),
          Input('sort-desc-btn', 'n_clicks'),
          Input('sort-options-dropdown', 'value')],
         [State('show-sorting-controls', 'data'),
-         State('crude-comparison-table', 'data')]
+         State('current-sort-order', 'data')],
+        prevent_initial_call=True
     )
-    def toggle_sorting_controls(active_cell, asc_clicks, desc_clicks, sort_value, show_controls, table_data):
+    def handle_header_interactions(asc_clicks, desc_clicks, popup_clicks, popup_asc_clicks, popup_desc_clicks, sort_value, show_controls, current_sort):
         trigger = ctx.triggered_id
         
-        if trigger == 'crude-comparison-table' and active_cell:
-            # Check if CrudeOil header was clicked
-            if active_cell['column_id'] == 'CrudeOil' and active_cell['row'] is None:
-                # Show the sorting controls
-                return {
-                    "position": "absolute", 
-                    "backgroundColor": "white", 
-                    "border": "1px solid #ccc",
-                    "padding": "12px",
-                    "borderRadius": "4px",
-                    "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
-                    "zIndex": "1000",
-                    "display": "block",
-                    "minWidth": "200px",
-                    "top": "200px",
-                    "left": "50px"
-                }, True
+        if trigger == 'sort-asc-btn-hidden':
+            # Set to ascending alphabetical order
+            return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'asc'}
+        
+        elif trigger == 'sort-desc-btn-hidden':
+            # Set to descending alphabetical order
+            return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'desc'}
+        
+        elif trigger == 'popup-menu-btn':
+            # Show the sorting controls popup
+            return {
+                "position": "absolute", 
+                "backgroundColor": "white", 
+                "border": "1px solid #ccc",
+                "padding": "12px",
+                "borderRadius": "4px",
+                "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
+                "zIndex": "1000",
+                "display": "block",
+                "minWidth": "200px",
+                "top": "200px",
+                "left": "50px"
+            }, True, dash.no_update
+        
         elif trigger in ['sort-asc-btn', 'sort-desc-btn', 'sort-options-dropdown']:
             # Hide after selection
             return {
@@ -465,7 +556,7 @@ def register_callbacks(app):
                 "zIndex": "1000",
                 "display": "none",
                 "minWidth": "200px"
-            }, False
+            }, False, dash.no_update
         
         # Default: hide controls
         return {
@@ -478,7 +569,56 @@ def register_callbacks(app):
             "zIndex": "1000",
             "display": "none",
             "minWidth": "200px"
-        }, False
+        }, False, dash.no_update
+
+    # Apply sorting when sort order changes
+    @app.callback(
+        [Output('crude-comparison-table', 'data', allow_duplicate=True),
+         Output('current-sort-order', 'data', allow_duplicate=True)],
+        [Input('current-sort-order', 'data')],
+        [State('crude-comparison-table', 'data'),
+         State('export-production-dropdown', 'value')],
+        prevent_initial_call=True
+    )
+    def apply_sort_order(current_sort, current_data, mode):
+        if not current_data or not current_sort:
+            return dash.no_update, dash.no_update
+            
+        sort_type = current_sort.get('type', 'alphabetic')
+        direction = current_sort.get('direction', 'asc')
+        
+        # Convert back to DataFrame for sorting
+        df = pd.DataFrame(current_data)
+        
+        if sort_type == 'alphabetic':
+            # Sort by CrudeOil name alphabetically
+            df_sorted = df.sort_values('CrudeOil', ascending=(direction == 'asc'), na_position='last')
+        elif sort_type in ['field', 'nested']:
+            # Calculate sum for Field/Nested sorting
+            numeric_cols = [col for col in df.columns if col != 'CrudeOil']
+            
+            def calculate_sum(row):
+                total = 0
+                for col in numeric_cols:
+                    val = row[col]
+                    if val and str(val).strip() and str(val).strip() != '':
+                        try:
+                            # Remove commas from numbers like "1,000"
+                            clean_val = str(val).replace(',', '')
+                            total += float(clean_val)
+                        except (ValueError, TypeError):
+                            continue
+                return total
+            
+            df['_sum'] = df.apply(calculate_sum, axis=1)
+            df_sorted = df.sort_values('_sum', ascending=(direction == 'asc'))
+            df_sorted = df_sorted.drop('_sum', axis=1)
+        else:  # source order - return to original order
+            # Reload original data to get source order
+            original_data, _ = load_crude_data(mode)
+            df_sorted = pd.DataFrame(original_data)
+        
+        return df_sorted.to_dict('records'), dash.no_update
 
     # Show SUM values for Field and Nested options
     @app.callback(
@@ -608,10 +748,10 @@ def register_callbacks(app):
         # Return default styles when no cell is selected
         return default_styles
 
-    # Handle sorting
+    # Handle sorting from popup menu
     @app.callback(
         [Output('crude-comparison-table', 'data', allow_duplicate=True),
-         Output('current-sort-order', 'data')],
+         Output('current-sort-order', 'data', allow_duplicate=True)],
         [Input('sort-asc-btn', 'n_clicks'),
          Input('sort-desc-btn', 'n_clicks'),
          Input('sort-options-dropdown', 'value')],
@@ -620,7 +760,7 @@ def register_callbacks(app):
          State('export-production-dropdown', 'value')],
         prevent_initial_call=True
     )
-    def handle_sorting(asc_clicks, desc_clicks, sort_type, current_data, current_sort, mode):
+    def handle_popup_sorting(asc_clicks, desc_clicks, sort_type, current_data, current_sort, mode):
         if not current_data:
             return dash.no_update, dash.no_update
             
@@ -678,4 +818,63 @@ def register_callbacks(app):
         """,
         Output('dummy-output', 'children'),
         Input('external-url-store', 'data')
+    )
+
+    # Add custom CSS for the header elements
+    app.clientside_callback(
+        """
+        function(n) {
+            // Add custom elements to CrudeOil header
+            setTimeout(function() {
+                const crudeHeader = document.querySelector('.dash-header[data-dash-column="CrudeOil"]');
+                if (crudeHeader && !crudeHeader.querySelector('.sort-order-container')) {
+                    // Create container for A-Z vertical text
+                    const sortContainer = document.createElement('div');
+                    sortContainer.className = 'sort-order-container';
+                    
+                    // Create separate clickable elements for A and Z
+                    const aElement = document.createElement('div');
+                    aElement.className = 'sort-asc';
+                    aElement.textContent = 'A';
+                    aElement.title = 'Click for ascending alphabetical order';
+                    aElement.onclick = function(e) {
+                        e.stopPropagation();
+                        const btn = document.getElementById('sort-asc-btn-hidden');
+                        if (btn) btn.click();
+                    };
+                    
+                    const zElement = document.createElement('div');
+                    zElement.className = 'sort-desc';
+                    zElement.textContent = 'Z';
+                    zElement.title = 'Click for descending alphabetical order';
+                    zElement.onclick = function(e) {
+                        e.stopPropagation();
+                        const btn = document.getElementById('sort-desc-btn-hidden');
+                        if (btn) btn.click();
+                    };
+                    
+                    sortContainer.appendChild(aElement);
+                    sortContainer.appendChild(zElement);
+                    
+                    // Add popup menu indicator (three dots)
+                    const popupMenu = document.createElement('div');
+                    popupMenu.className = 'popup-menu-indicator';
+                    popupMenu.innerHTML = '⋯';
+                    popupMenu.title = 'Click to show sort options';
+                    popupMenu.onclick = function(e) {
+                        e.stopPropagation();
+                        const btn = document.getElementById('popup-menu-btn');
+                        if (btn) btn.click();
+                    };
+                    
+                    crudeHeader.appendChild(sortContainer);
+                    crudeHeader.appendChild(popupMenu);
+                }
+            }, 100);
+            return '';
+        }
+        """,
+        Output('dummy-output-2', 'children'),
+        Input('crude-comparison-table', 'columns'),
+        prevent_initial_call=False
     )
