@@ -3,12 +3,13 @@ Country Profile View
 World map-based country profile with detailed statistics
 Replicates Energy Intelligence WCoD Country Profile functionality
 """
-from dash import dcc, html, Input, Output, callback, dash_table, dash
+from dash import dcc, html, Input, Output, dash_table, dash
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 import os
+from app import create_dash_app
 
 # CSV paths
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Country_Profile')
@@ -1386,16 +1387,15 @@ def create_key_figures_table(country_name):
 def register_callbacks(dash_app, server):
     """Register all callbacks for Country Profile"""
     
-    @callback(
+    @dash_app.callback(
         [Output('country-profile-content', 'children'),
          Output('selected-country-profile-store', 'data')],
         [Input('country-select-profile', 'value'),
          Input('world-map-chart', 'clickData'),
-         Input('time-period-select', 'value'),
-         Input('url', 'pathname')],
+         Input('time-period-select', 'value')],
         prevent_initial_call=False
     )
-    def update_country_profile(selected_country, click_data, time_period, pathname):
+    def update_country_profile(selected_country, click_data, time_period):
         """Update country profile content based on selection"""
         # Determine which country is selected
         country_name = selected_country or default_country
@@ -1477,16 +1477,13 @@ def register_callbacks(dash_app, server):
             *sections
         ]), country_name
     
-    @callback(
+    @dash_app.callback(
         Output('world-map-chart', 'figure'),
-        [Input('country-select-profile', 'value'),
-         Input('current-submenu', 'data'),
-         Input('url', 'pathname')],
+        Input('country-select-profile', 'value'),
         prevent_initial_call=False
     )
-    def update_world_map(selected_country, submenu, pathname):
+    def update_world_map(selected_country):
         """Update world map when country selection changes or page loads"""
-        # This callback is only registered for country profile, so always show the map
         # Use selected country or default
         country = selected_country or default_country
         
@@ -1498,7 +1495,7 @@ def register_callbacks(dash_app, server):
             traceback.print_exc()
             return create_empty_map()
     
-    @callback(
+    @dash_app.callback(
         Output('time-period-store', 'data'),
         Input('time-period-select', 'value'),
         prevent_initial_call=False
@@ -1507,7 +1504,7 @@ def register_callbacks(dash_app, server):
         """Update time period store"""
         return time_period or 'Monthly'
     
-    @callback(
+    @dash_app.callback(
         Output('profile-link', 'href'),
         Input('country-select-profile', 'value'),
         prevent_initial_call=False
@@ -1760,4 +1757,15 @@ def register_callbacks(dash_app, server):
         Input('css-injection-placeholder', 'id'),
         prevent_initial_call=False
     )
-    
+
+
+# ------------------------------------------------------------------------------
+# DASH APP CREATION
+# ------------------------------------------------------------------------------
+def create_country_profile_dashboard(server, url_base_pathname="/dash/country-profile/"):
+    """Create the Country Profile dashboard"""
+    dash_app = create_dash_app(server, url_base_pathname)
+    dash_app.layout = create_layout(server)
+    register_callbacks(dash_app, server)
+    return dash_app
+

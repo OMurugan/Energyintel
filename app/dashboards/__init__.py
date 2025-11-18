@@ -13,6 +13,8 @@ def register_dashboards(app):
     from app.dashboards.wcod.crude_carbon import create_crude_carbon_dashboard
     from app.dashboards.wcod.crude_comparison import create_crude_comparison_dashboard
     from app.dashboards.wcod.crude_overview import create_crude_overview_dashboard
+    from app.dashboards.wcod.country_profile import create_country_profile_dashboard as create_wcod_country_profile_dashboard
+    from app.dashboards.wcod.crude_profile import create_crude_profile_dashboard
     print('app',app)
     # Create Dash apps - each gets its own server instance
     # Dash apps will be accessible at their url_base_pathname
@@ -24,12 +26,16 @@ def register_dashboards(app):
     crude_carbon_dash = create_crude_carbon_dashboard(app, '/dash/crude-carbon/')
     crude_comparison_dash = create_crude_comparison_dashboard(app, '/dash/crude-comparison/')
     crude_overview_dash = create_crude_overview_dashboard(app, '/dash/crude-overview/')
+    wcod_country_profile_dash = create_wcod_country_profile_dashboard(app, '/dash/wcod-country-profile/')
+    crude_profile_dash = create_crude_profile_dashboard(app, '/dash/crude-profile/')
     # Store dash apps on Flask app for reference
     print('country_dash',country_dash)
     print('crude_quality_dash',crude_quality_dash)
     print('crude_carbon_dash',crude_carbon_dash)
     print('crude_comparison_dash',crude_comparison_dash)
     print('crude_overview_dash',crude_overview_dash)
+    print('wcod_country_profile_dash',wcod_country_profile_dash)
+    print('crude_profile_dash',crude_profile_dash)
     app.dash_apps = {
         'wcod': wcod_dash,
         'country-profile': country_dash,
@@ -38,6 +44,8 @@ def register_dashboards(app):
         'crude-quality': crude_quality_dash,
         'crude-carbon': crude_carbon_dash,
         'crude-comparison': crude_comparison_dash,
-        'crude-overview': crude_overview_dash
+        'crude-overview': crude_overview_dash,
+        'wcod-country-profile': wcod_country_profile_dash,
+        'crude-profile': crude_profile_dash
     }
 
