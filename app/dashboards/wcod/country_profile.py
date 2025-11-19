@@ -1535,6 +1535,14 @@ def register_callbacks(dash_app, server):
                 font-weight: 600;
                 color: #1f2d3d !important;
             }
+            #world-map-chart .plotly .choroplethlayer {
+                z-index: 10 !important;
+                pointer-events: auto !important;
+            }
+            #world-map-chart .plotly .scatterlayer,
+            #world-map-chart .plotly .scattergeo {
+                z-index: 20 !important;
+            }
             #world-map-chart .plotly .choroplethlayer path {
                 pointer-events: auto !important;
                 stroke: none !important;
@@ -1545,8 +1553,15 @@ def register_callbacks(dash_app, server):
                 stroke: black !important;
                 stroke-width: 2px !important;
             }
+            /* Hide country border when port is being hovered */
+            #world-map-chart.port-hovering .plotly .choroplethlayer path:hover {
+                stroke: none !important;
+                stroke-width: 0 !important;
+                pointer-events: none !important;
+            }
             #world-map-chart .plotly .scattergeo .points path {
                 pointer-events: auto !important;
+                cursor: pointer;
             }
             #world-map-chart .plotly .scattergeo .points path:hover {
                 stroke: none !important;
@@ -1563,6 +1578,64 @@ def register_callbacks(dash_app, server):
             const MIN_LON_RANGE = 60;       // Minimum longitude range (degrees) - zoom in limit
             const MAX_LAT_RANGE = ZOOM_OUT_MAX_LAT - ZOOM_OUT_MIN_LAT;  // Maximum allowed latitude range (155 degrees)
             const MAX_LON_RANGE = ZOOM_OUT_MAX_LON - ZOOM_OUT_MIN_LON;  // Maximum allowed longitude range (360 degrees)
+            
+            function setupPortHoverEffects() {
+                const mapElement = document.getElementById('world-map-chart');
+                if (!mapElement) {
+                    setTimeout(setupPortHoverEffects, 500);
+                    return;
+                }
+                const plotlyDiv = mapElement.querySelector('.plotly');
+                if (!plotlyDiv) {
+                    setTimeout(setupPortHoverEffects, 500);
+                    return;
+                }
+                
+                function bindPortListeners() {
+                    const portMarkers = plotlyDiv.querySelectorAll('.scattergeo .points path');
+                    if (!portMarkers || !portMarkers.length) {
+                        return;
+                    }
+                    
+                    portMarkers.forEach(function(marker) {
+                        if (marker.dataset.portHoverBound === 'true') {
+                            return;
+                        }
+                        marker.dataset.portHoverBound = 'true';
+                        
+                        const addHoverClass = function() {
+                            mapElement.classList.add('port-hovering');
+                        };
+                        const removeHoverClass = function() {
+                            mapElement.classList.remove('port-hovering');
+                        };
+                        
+                        marker.addEventListener('mouseenter', addHoverClass);
+                        marker.addEventListener('mouseleave', removeHoverClass);
+                        marker.addEventListener('focus', addHoverClass);
+                        marker.addEventListener('blur', removeHoverClass);
+                        marker.addEventListener('touchstart', addHoverClass, { passive: true });
+                        marker.addEventListener('touchend', removeHoverClass);
+                        marker.addEventListener('touchcancel', removeHoverClass);
+                    });
+                }
+                
+                bindPortListeners();
+                
+                if (mapElement._portHoverObserver) {
+                    mapElement._portHoverObserver.disconnect();
+                }
+                
+                const observer = new MutationObserver(function() {
+                    bindPortListeners();
+                });
+                observer.observe(plotlyDiv, { childList: true, subtree: true });
+                mapElement._portHoverObserver = observer;
+                
+                mapElement.addEventListener('mouseleave', function() {
+                    mapElement.classList.remove('port-hovering');
+                });
+            }
             
             // Limit zoom in and zoom out on map
             function enforceZoomLimits() {
@@ -1824,6 +1897,7 @@ def register_callbacks(dash_app, server):
             // Start setup
             setupZoomLimits();
             initProductionTableEnhancements();
+            setupPortHoverEffects();
             
             return window.dash_clientside.no_update;
         }
