@@ -1727,6 +1727,9 @@ def register_callbacks(dash_app, server):
                 # This ensures only months with actual data are in the chart
                 agg_for_chart["Stream"] = agg_for_chart["Stream"].astype(str)
                 agg_for_chart["month"] = agg_for_chart["month"].astype(str)
+                country_display = ", ".join(country)
+                agg_for_chart["country_display"] = country_display
+                agg_for_chart["year_label"] = agg_for_chart["year"].astype(str)
                 
                 # Verify only months with data are present
                 for year in selected_years_sorted:
@@ -1784,8 +1787,11 @@ def register_callbacks(dash_app, server):
                     facet_col="year",
                     facet_col_spacing=0.04,
                     labels={"value":"Avg. Value", "month":"Month", "Stream":"Stream", "year":"Year"},
-                    barmode="stack"
+                    barmode="stack",
+                    custom_data=["month", "country_display", "year_label"]
                 )
+                # Increase individual bar width after chart creation
+                fig.update_traces(width=0.95, selector=dict(type='bar'))
                 
                 # Debug: Check how many traces were created and which streams they represent
                 print(f"DEBUG BREAKDOWN MONTHLY: Number of traces created by Plotly: {len(fig.data)}")
@@ -1829,7 +1835,14 @@ def register_callbacks(dash_app, server):
                 # Ensure month labels only show months with data for each year
                 fig.update_traces(
                     marker=dict(line=dict(width=1, color='white')),
-                    hovertemplate='<b>%{fullData.name}</b><br>Year: %{fullData.facet_col}<br>Month: %{x}<br>Avg. Value: %{y:,.0f} (\'000 b/d)<extra></extra>'
+                    hovertemplate=(
+                        "Month of Date: %{customdata[0]}<br>"
+                        "Country: %{customdata[1]}<br>"
+                        "Stream Name: %{fullData.name}<br>"
+                        "Year of Date: %{customdata[2]}<br>"
+                        "Production Volume: %{y:,.0f} (\\'000 b/d)"
+                        "<extra></extra>"
+                    )
                 )
                 
                 fig.update_yaxes(matches='y')
@@ -1852,9 +1865,15 @@ def register_callbacks(dash_app, server):
                 print(f"DEBUG BREAKDOWN MONTHLY: Applying x-axis configuration to remove blank months")
                 for idx, year in enumerate(selected_years_sorted, start=1):
                     axis_key = f"xaxis{idx}" if idx > 1 else "xaxis"
-                    months_for_axis = months_by_year.get(str(year), [])
-                    if months_for_axis:
-                        months_for_axis = sorted(months_for_axis, key=lambda m: month_to_idx.get(m, 999))
+                    year_data = agg_for_chart[agg_for_chart["year"] == year]
+                    months_for_axis = []
+                    if len(year_data) > 0:
+                        months_for_axis = (
+                            year_data[["month", "month_order"]]
+                            .drop_duplicates()
+                            .sort_values("month_order")["month"]
+                            .tolist()
+                        )
                     
                     print(f"DEBUG BREAKDOWN MONTHLY: Year {year} ({axis_key}): months with data = {months_for_axis}")
                     
@@ -1884,17 +1903,21 @@ def register_callbacks(dash_app, server):
                         showgrid=True,
                         gridcolor="#e0e0e0",
                         title="Avg. Value" if axis.anchor == 'x1' else "",
-                        tickformat=',',
+                        tickformat='s',
                         showline=True,
                         linewidth=1,
                         linecolor="#c0c0c0"
                     )
                 )
+                if "yaxis" in fig.layout:
+                    fig.layout["yaxis"].update(title="Avg. Value", tickformat='s')
+                if "yaxis" in fig.layout:
+                    fig.layout["yaxis"].update(title="Avg. Value")
                 fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1], font=dict(size=11, color="#2c3e50")))
                 
                 cols = min(4, len(selected_years_sorted)) if selected_years_sorted else 1
                 rows = math.ceil(len(selected_years_sorted) / cols) if selected_years_sorted else 1
-                base_height = 420
+                base_height = 520  # Increased to give monthly facets more vertical space
                 
                 fig.update_layout(
                     title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
@@ -1916,6 +1939,10 @@ def register_callbacks(dash_app, server):
                         fillcolor="rgba(0,0,0,0)"
                     )]
                 )
+
+                # Adjust spacing/width for monthly bars (visual only, data unchanged)
+                fig.update_layout(bargap=0.3, bargroupgap=0.12)
+                fig.update_traces(width=0.9, selector=dict(type='bar'))
                 
                 print(f"DEBUG BREAKDOWN MONTHLY: Faceted chart layout updated, returning figure")
                 return fig, title_text
