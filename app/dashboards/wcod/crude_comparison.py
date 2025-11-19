@@ -126,10 +126,11 @@ def load_crude_data(mode):
     ]
 
 # ------------------------------------------------------------------------------
-# CALCULATE COMBINED SUM DATA (Production + Exports)
+# CALCULATE COMBINED SUM DATA (Production + Exports) FOR SORTING
 # ------------------------------------------------------------------------------
-def calculate_combined_sums():
-    """Calculate combined sums of Production and Exports for each crude oil and year"""
+def calculate_combined_sums_for_sorting():
+    """Calculate combined sums of Production and Exports for sorting purposes"""
+    print("🔄 Calculating combined sums for sorting...")
     
     # Load both datasets
     production_data, production_cols = load_crude_data("production")
@@ -142,7 +143,7 @@ def calculate_combined_sums():
     # Get numeric columns (years)
     numeric_cols = [col for col in prod_df.columns if col != 'CrudeOil']
     
-    # Create combined data
+    # Create combined data for sorting reference
     combined_data = []
     
     # Get all unique crude oils from both datasets
@@ -180,23 +181,24 @@ def calculate_combined_sums():
                     except (ValueError, TypeError):
                         exp_val = 0
             
-            # Calculate combined sum
+            # Calculate combined sum for sorting reference
             combined_val = prod_val + exp_val
-            combined_row[col] = f"{combined_val:,.0f}" if combined_val > 0 else ""
+            combined_row[col] = combined_val
         
         combined_data.append(combined_row)
     
+    print(f"✅ Combined sums calculated for {len(combined_data)} crude oils")
     return combined_data
 
 # ------------------------------------------------------------------------------
-# CALCULATE SUM ROW FOR COMBINED DATA
+# CALCULATE SUM ROW
 # ------------------------------------------------------------------------------
-def calculate_combined_sum_row(combined_data):
-    """Calculate sum row for combined data"""
-    if not combined_data:
+def calculate_sum_row(data):
+    """Calculate sum row for any dataset"""
+    if not data:
         return None
     
-    df = pd.DataFrame(combined_data)
+    df = pd.DataFrame(data)
     numeric_cols = [col for col in df.columns if col != 'CrudeOil']
     
     sum_row = {'CrudeOil': 'SUM'}
@@ -217,12 +219,8 @@ def calculate_combined_sum_row(combined_data):
 # ------------------------------------------------------------------------------
 # INITIAL LOAD
 # ------------------------------------------------------------------------------
-combined_data = calculate_combined_sums()
-combined_sum_row = calculate_combined_sum_row(combined_data)
 production_data, production_columns = load_crude_data("production")
-
-# Combine data with SUM row
-table_data_with_sum = combined_data + [combined_sum_row] if combined_sum_row else combined_data
+combined_sorting_data = calculate_combined_sums_for_sorting()
 
 # ------------------------------------------------------------------------------
 # LAYOUT
@@ -247,9 +245,8 @@ def create_layout(server):
                     options=[
                         {"label": "Production", "value": "production"},
                         {"label": "Exports", "value": "exports"},
-                        {"label": "Combined Total", "value": "combined"},
                     ],
-                    value="combined",
+                    value="production",
                     clearable=False,
                     style={
                         "width": "100%",
@@ -283,6 +280,78 @@ def create_layout(server):
                     white-space: nowrap;
                     z-index: 1003;
                     pointer-events: none;
+                }
+                /* Sort indicator icon styles for ALL headers */
+                .sort-indicator {
+                    position: absolute;
+                    right: 8px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    width: 15px;
+                    height: 15px;
+                    cursor: pointer;
+                    opacity: 0;
+                    transition: opacity 0.2s ease;
+                }
+                .dash-header:hover .sort-indicator {
+                    opacity: 1;
+                }
+                .sort-indicator:hover {
+                    background-color: #e6f3ff;
+                    border-radius: 2px;
+                }
+                .sort-indicator svg {
+                    width: 100%;
+                    height: 100%;
+                    fill: #666;
+                }
+                .sort-indicator:hover svg {
+                    fill: #1f3263;
+                }
+                /* Specific styles for CrudeOil header additional elements */
+                .dash-header[data-dash-column="CrudeOil"] .sort-order-container {
+                    position: absolute;
+                    right: 30px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    font-size: 10px;
+                    color: #666;
+                    cursor: pointer;
+                    padding: 2px;
+                    border: 1px solid transparent;
+                    border-radius: 2px;
+                    line-height: 1;
+                    text-align: center;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 30px;
+                    opacity: 0;
+                    transition: opacity 0.2s ease;
+                }
+                .dash-header[data-dash-column="CrudeOil"]:hover .sort-order-container {
+                    opacity: 1;
+                }
+                .dash-header[data-dash-column="CrudeOil"] .sort-order-container:hover {
+                    background-color: #e6f3ff;
+                    border-color: #1f3263;
+                }
+                .dash-header[data-dash-column="CrudeOil"] .sort-asc,
+                .dash-header[data-dash-column="CrudeOil"] .sort-desc {
+                    display: block;
+                    line-height: 1;
+                    cursor: pointer;
+                    padding: 1px 2px;
+                    border-radius: 1px;
+                }
+                .dash-header[data-dash-column="CrudeOil"] .sort-asc:hover,
+                .dash-header[data-dash-column="CrudeOil"] .sort-desc:hover {
+                    background-color: #d4e7ff;
+                    font-weight: bold;
+                }
+                .dash-cell:not([data-dash-column="CrudeOil"]):not(.dash-header) {
+                    cursor: pointer;
                 }
                 </style>
             """, dangerously_allow_html=True),
@@ -340,7 +409,7 @@ def create_layout(server):
                            "fontSize": "12px",
                            "cursor": "pointer",
                            "fontFamily": "Arial",
-                           "color": "#333",
+                           "color": " #333",
                            "display": "flex",
                            "alignItems": "center",
                            "justifyContent": "space-between",
@@ -359,7 +428,7 @@ def create_layout(server):
 
             dash_table.DataTable(
                 id="crude-comparison-table",
-                data=table_data_with_sum,
+                data=production_data,
                 columns=production_columns,
                 style_table={
                     "overflowX": "auto",
@@ -465,7 +534,7 @@ def create_layout(server):
                         'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-order-container',
                         'rule': '''
                             position: absolute;
-                            right: 25px;
+                            right: 30px;
                             top: 50%;
                             transform: translateY(-50%);
                             font-size: 10px;
@@ -532,35 +601,32 @@ def create_layout(server):
                             font-weight: bold;
                         '''
                     },
-                    # Popup menu indicator (down arrow) - HIDDEN BY DEFAULT
+                    # Sort indicator (SVG icon) for ALL headers - HIDDEN BY DEFAULT
                     {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"] .popup-menu-indicator',
+                        'selector': '.dash-header .sort-indicator',
                         'rule': '''
                             position: absolute;
                             right: 8px;
                             top: 50%;
                             transform: translateY(-50%);
-                            font-size: 14px;
-                            color: #666;
+                            width: 15px;
+                            height: 15px;
                             cursor: pointer;
-                            padding: 2px 4px;
-                            border: 1px solid transparent;
-                            border-radius: 2px;
                             opacity: 0;
                             transition: opacity 0.2s ease;
                         '''
                     },
                     {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"]:hover .popup-menu-indicator',
+                        'selector': '.dash-header:hover .sort-indicator',
                         'rule': '''
                             opacity: 1;
                         '''
                     },
                     {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"] .popup-menu-indicator:hover',
+                        'selector': '.dash-header .sort-indicator:hover',
                         'rule': '''
                             background-color: #e6f3ff;
-                            border-color: #1f3263;
+                            border-radius: 2px;
                         '''
                     },
                     {
@@ -581,8 +647,8 @@ def create_layout(server):
             dcc.Store(id='original-data-store', data=production_data),
             dcc.Store(id='current-sort-order', data={'type': 'source', 'direction': 'asc'}),
             dcc.Store(id='show-sorting-controls', data=False),
-            dcc.Store(id='sum-row-store', data=combined_sum_row),
-            dcc.Store(id='combined-data-store', data=combined_data),
+            dcc.Store(id='sum-row-store', data=None),
+            dcc.Store(id='combined-sorting-data-store', data=combined_sorting_data),
             html.Div(id='dummy-output', style={'display': 'none'}),
             html.Div(id='dummy-output-2', style={'display': 'none'}),
 
@@ -590,6 +656,9 @@ def create_layout(server):
             html.Button("Sort Ascending Click", id="sort-asc-btn-hidden", n_clicks=0, style={"display": "none"}),
             html.Button("Sort Descending Click", id="sort-desc-btn-hidden", n_clicks=0, style={"display": "none"}),
             html.Button("Popup Menu Click", id="popup-menu-btn", n_clicks=0, style={"display": "none"}),
+            html.Button("Year Column Click", id="year-column-btn", n_clicks=0, style={"display": "none"}),
+            html.Button("Field Arrow Click", id="field-arrow-click-btn", n_clicks=0, style={"display": "none"}),
+            html.Button("Nested Arrow Click", id="nested-arrow-click-btn", n_clicks=0, style={"display": "none"}),
 
             html.Div([
                 html.P(
@@ -627,10 +696,8 @@ def register_callbacks(app):
     def update_header(selected):
         if selected == "exports":
             title = "Exports ('000 b/d)"
-        elif selected == "production":
+        else:  # production
             title = "Production ('000 b/d)"
-        else:  # combined
-            title = "Combined Production + Exports ('000 b/d)"
         
         return html.H2(
             title,
@@ -647,31 +714,89 @@ def register_callbacks(app):
     @app.callback(
         [Output("crude-comparison-table", "data"),
          Output("original-data-store", "data"),
-         Output("sum-row-store", "data"),
-         Output("combined-data-store", "data")],
+         Output("sum-row-store", "data")],
         Input("export-production-dropdown", "value"),
+        [State('current-sort-order', 'data'),
+         State('combined-sorting-data-store', 'data')]
     )
-    def reload_data(mode):
-        if mode == "combined":
-            # Use combined data (Production + Exports)
-            combined_data = calculate_combined_sums()
-            sum_row = calculate_combined_sum_row(combined_data)
-            table_data_with_sum = combined_data + [sum_row] if sum_row else combined_data
-            return table_data_with_sum, combined_data, sum_row, combined_data
+    def reload_data(mode, current_sort, combined_sorting_data):
+        print(f"🔄 Loading {mode} data...")
+        # Load the selected dataset
+        crude_data, columns = load_crude_data(mode)
+        sum_row = calculate_sum_row(crude_data)
+        
+        # Apply current sorting if it's Field or Nested type
+        if current_sort and current_sort.get('type') in ['field', 'nested']:
+            print(f"🔀 Applying {current_sort} sorting...")
+            sorted_data = apply_combined_sorting(crude_data, current_sort, combined_sorting_data)
+            table_data_with_sum = sorted_data + [sum_row] if sum_row else sorted_data
         else:
-            # Use individual mode data
-            crude_data, columns = load_crude_data(mode)
-            sum_row = calculate_combined_sum_row(crude_data)
             table_data_with_sum = crude_data + [sum_row] if sum_row else crude_data
-            return table_data_with_sum, crude_data, sum_row, None
+        
+        return table_data_with_sum, crude_data, sum_row
 
     @app.callback(
         Output("crude-comparison-table", "columns"),
         Input("export-production-dropdown", "value"),
     )
     def reload_columns(mode):
-        _, columns = load_crude_data("production")
+        _, columns = load_crude_data(mode)
         return columns
+
+    def apply_combined_sorting(original_data, current_sort, combined_sorting_data):
+        """Apply Field or Nested sorting using combined Production + Exports data"""
+        if not original_data or not current_sort or not combined_sorting_data:
+            return original_data
+            
+        sort_type = current_sort.get('type', 'alphabetic')
+        direction = current_sort.get('direction', 'asc')
+        
+        print(f"🔀 Applying {sort_type} sorting ({direction}) using combined data...")
+        
+        # Convert to DataFrames
+        df = pd.DataFrame(original_data)
+        combined_df = pd.DataFrame(combined_sorting_data)
+        
+        if sort_type == 'field':
+            # Field sorting: sort by column sums (using Production + Exports combined data)
+            numeric_cols = [col for col in combined_df.columns if col != 'CrudeOil']
+            
+            # Calculate sum for each column in combined data
+            col_sums = {}
+            for col in numeric_cols:
+                col_sum = combined_df[col].sum()
+                col_sums[col] = col_sum
+                print(f"📊 Column {col} combined sum: {col_sum}")
+            
+            # Sort columns by their combined sums
+            sorted_cols = sorted(numeric_cols, key=lambda x: col_sums[x], ascending=(direction == 'asc'))
+            print(f"📋 Sorted columns: {sorted_cols}")
+            
+            # Reorder dataframe columns (make sure all columns exist)
+            available_cols = [col for col in ['CrudeOil'] + sorted_cols if col in df.columns]
+            df_sorted = df[available_cols]
+            
+        elif sort_type == 'nested':
+            # Nested sorting: sort by row sums (using Production + Exports combined data)
+            numeric_cols = [col for col in combined_df.columns if col != 'CrudeOil']
+            
+            # Create a mapping of CrudeOil to combined sum for sorting
+            combined_sums = {}
+            for _, row in combined_df.iterrows():
+                row_sum = row[numeric_cols].sum()
+                combined_sums[row['CrudeOil']] = row_sum
+                print(f"📊 {row['CrudeOil']} combined sum: {row_sum}")
+            
+            # Add combined sum to original dataframe for sorting
+            df['_combined_sum'] = df['CrudeOil'].map(combined_sums)
+            df_sorted = df.sort_values('_combined_sum', ascending=(direction == 'asc'), na_position='last')
+            df_sorted = df_sorted.drop('_combined_sum', axis=1)
+            
+        else:
+            df_sorted = df
+        
+        print("✅ Sorting applied successfully")
+        return df_sorted.to_dict('records')
 
     # Handle header clicks (both sort order and popup menu)
     @app.callback(
@@ -683,17 +808,20 @@ def register_callbacks(app):
          Input('popup-menu-btn', 'n_clicks'),
          Input('popup-source-btn', 'n_clicks'),
          Input('popup-alphabetic-btn', 'n_clicks'),
-         Input('popup-field-btn', 'n_clicks'),
-         Input('popup-nested-btn', 'n_clicks')],
+         Input('field-arrow-click-btn', 'n_clicks'),  # Field arrow click
+         Input('nested-arrow-click-btn', 'n_clicks'),  # Nested arrow click
+         Input('year-column-btn', 'n_clicks')],  # Year column click
         [State('show-sorting-controls', 'data'),
          State('current-sort-order', 'data')],
         prevent_initial_call=True
     )
     def handle_header_interactions(asc_clicks, desc_clicks, popup_clicks, 
                                   popup_source_clicks, popup_alpha_clicks,
-                                  popup_field_clicks, popup_nested_clicks,
+                                  field_arrow_clicks, nested_arrow_clicks, year_clicks,
                                   show_controls, current_sort):
         trigger = ctx.triggered_id
+        
+        print(f"🎯 Header interaction triggered: {trigger}")
         
         if trigger == 'sort-asc-btn-hidden':
             return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'asc'}
@@ -736,11 +864,21 @@ def register_callbacks(app):
                 "minWidth": "160px"
             }, False, {'type': 'alphabetic', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
         
-        elif trigger == 'popup-field-btn':
-            return dash.no_update, dash.no_update, {'type': 'field', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+        elif trigger == 'field-arrow-click-btn':
+            # Field sorting - sort by column sum (Production + Exports)
+            new_direction = 'desc' if current_sort and current_sort.get('type') == 'field' and current_sort.get('direction') == 'asc' else 'asc'
+            print(f"🎯 Field arrow clicked - direction: {new_direction}")
+            return dash.no_update, dash.no_update, {'type': 'field', 'direction': new_direction}
         
-        elif trigger == 'popup-nested-btn':
-            return dash.no_update, dash.no_update, {'type': 'nested', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+        elif trigger == 'nested-arrow-click-btn':
+            # Nested sorting - sort by row sum (Production + Exports)
+            new_direction = 'desc' if current_sort and current_sort.get('type') == 'nested' and current_sort.get('direction') == 'asc' else 'asc'
+            print(f"🎯 Nested arrow clicked - direction: {new_direction}")
+            return dash.no_update, dash.no_update, {'type': 'nested', 'direction': new_direction}
+        
+        elif trigger == 'year-column-btn':
+            # Year column clicked - sort by that specific column (using current dataset)
+            return dash.no_update, dash.no_update, {'type': 'year', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
         
         return {
             "position": "absolute", 
@@ -758,45 +896,20 @@ def register_callbacks(app):
          Output('current-sort-order', 'data', allow_duplicate=True)],
         [Input('current-sort-order', 'data')],
         [State('original-data-store', 'data'),
-         State('export-production-dropdown', 'value'),
-         State('sum-row-store', 'data')],
+         State('sum-row-store', 'data'),
+         State('combined-sorting-data-store', 'data')],
         prevent_initial_call=True
     )
-    def apply_sort_order(current_sort, original_data, mode, sum_row):
+    def apply_sort_order(current_sort, original_data, sum_row, combined_sorting_data):
         if not original_data or not current_sort:
             return dash.no_update, dash.no_update
             
-        sort_type = current_sort.get('type', 'alphabetic')
-        direction = current_sort.get('direction', 'asc')
+        print(f"🔄 Applying sort order: {current_sort}")
         
-        # Convert back to DataFrame for sorting
-        df = pd.DataFrame(original_data)
+        # Apply sorting
+        sorted_data = apply_combined_sorting(original_data, current_sort, combined_sorting_data)
         
-        if sort_type == 'alphabetic':
-            df_sorted = df.sort_values('CrudeOil', ascending=(direction == 'asc'), na_position='last')
-        elif sort_type in ['field', 'nested']:
-            numeric_cols = [col for col in df.columns if col != 'CrudeOil']
-            
-            def calculate_sum(row):
-                total = 0
-                for col in numeric_cols:
-                    val = row[col]
-                    if val and str(val).strip() and str(val).strip() != '':
-                        try:
-                            clean_val = str(val).replace(',', '')
-                            total += float(clean_val)
-                        except (ValueError, TypeError):
-                            continue
-                return total
-            
-            df['_sum'] = df.apply(calculate_sum, axis=1)
-            df_sorted = df.sort_values('_sum', ascending=(direction == 'asc'))
-            df_sorted = df_sorted.drop('_sum', axis=1)
-        else:
-            df_sorted = df
-        
-        # Convert back to dict and add SUM row
-        sorted_data = df_sorted.to_dict('records')
+        # Add SUM row
         if sum_row:
             sorted_data.append(sum_row)
         
@@ -812,13 +925,13 @@ def register_callbacks(app):
          Input('popup-nested-btn', 'n_clicks')],
         [State('original-data-store', 'data'),
          State('current-sort-order', 'data'),
-         State('export-production-dropdown', 'value'),
-         State('sum-row-store', 'data')],
+         State('sum-row-store', 'data'),
+         State('combined-sorting-data-store', 'data')],
         prevent_initial_call=True
     )
     def handle_popup_sorting(popup_source_clicks, popup_alpha_clicks,
                            popup_field_clicks, popup_nested_clicks,
-                           original_data, current_sort, mode, sum_row):
+                           original_data, current_sort, sum_row, combined_sorting_data):
         if not original_data:
             return dash.no_update, dash.no_update
             
@@ -837,32 +950,12 @@ def register_callbacks(app):
         
         direction = current_sort.get('direction', 'asc')
         
-        df = pd.DataFrame(original_data)
+        print(f"🔄 Applying {sort_type} sorting from popup...")
         
-        if sort_type == 'alphabetic':
-            df_sorted = df.sort_values('CrudeOil', ascending=(direction == 'asc'), na_position='last')
-        elif sort_type in ['field', 'nested']:
-            numeric_cols = [col for col in df.columns if col != 'CrudeOil']
-            
-            def calculate_sum(row):
-                total = 0
-                for col in numeric_cols:
-                    val = row[col]
-                    if val and str(val).strip() and str(val).strip() != '':
-                        try:
-                            clean_val = str(val).replace(',', '')
-                            total += float(clean_val)
-                        except (ValueError, TypeError):
-                            continue
-                return total
-            
-            df['_sum'] = df.apply(calculate_sum, axis=1)
-            df_sorted = df.sort_values('_sum', ascending=(direction == 'asc'))
-            df_sorted = df_sorted.drop('_sum', axis=1)
-        else:
-            df_sorted = df
+        # Apply sorting
+        sorted_data = apply_combined_sorting(original_data, {'type': sort_type, 'direction': direction}, combined_sorting_data)
         
-        sorted_data = df_sorted.to_dict('records')
+        # Add SUM row
         if sum_row:
             sorted_data.append(sum_row)
         
@@ -947,8 +1040,12 @@ def register_callbacks(app):
         """
         function(n) {
             setTimeout(function() {
+                console.log('🔄 Setting up header interactions...');
+                
+                // Add A/Z and SVG sort icon to CrudeOil header
                 const crudeHeader = document.querySelector('.dash-header[data-dash-column="CrudeOil"]');
                 if (crudeHeader && !crudeHeader.querySelector('.sort-order-container')) {
+                    console.log('🎯 Adding sort controls to CrudeOil header...');
                     const sortContainer = document.createElement('div');
                     sortContainer.className = 'sort-order-container';
                     
@@ -958,6 +1055,7 @@ def register_callbacks(app):
                     aElement.title = 'Click for ascending alphabetical order';
                     aElement.onclick = function(e) {
                         e.stopPropagation();
+                        console.log('🔼 Ascending sort clicked');
                         const btn = document.getElementById('sort-asc-btn-hidden');
                         if (btn) btn.click();
                     };
@@ -968,6 +1066,7 @@ def register_callbacks(app):
                     zElement.title = 'Click for descending alphabetical order';
                     zElement.onclick = function(e) {
                         e.stopPropagation();
+                        console.log('🔽 Descending sort clicked');
                         const btn = document.getElementById('sort-desc-btn-hidden');
                         if (btn) btn.click();
                     };
@@ -975,28 +1074,102 @@ def register_callbacks(app):
                     sortContainer.appendChild(aElement);
                     sortContainer.appendChild(zElement);
                     
-                    const popupMenu = document.createElement('div');
-                    popupMenu.className = 'popup-menu-indicator';
-                    popupMenu.innerHTML = '▼';
-                    popupMenu.title = 'Click to show sort options';
-                    popupMenu.onclick = function(e) {
+                    // Add SVG sort icon (same as year columns)
+                    const sortIndicator = document.createElement('div');
+                    sortIndicator.className = 'sort-indicator';
+                    sortIndicator.title = 'Click to show sort options';
+                    
+                    // Add the exact SVG from your file
+                    sortIndicator.innerHTML = `
+                        <svg fill="#000000" viewBox="0 0 301.219 301.219" xmlns="http://www.w3.org/2000/svg">
+                            <g>
+                                <path d="M159.365,23.736v-10c0-5.523-4.477-10-10-10H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h139.365
+                                    C154.888,33.736,159.365,29.259,159.365,23.736z"/>
+                                <path d="M130.586,66.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h120.586c5.523,0,10-4.477,10-10v-10
+                                    C140.586,71.213,136.109,66.736,130.586,66.736z"/>
+                                <path d="M111.805,129.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h101.805c5.523,0,10-4.477,10-10v-10
+                                    C121.805,134.213,117.328,129.736,111.805,129.736z"/>
+                                <path d="M93.025,199.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h83.025c5.522,0,10-4.477,10-10v-10
+                                    C103.025,204.213,98.548,199.736,93.025,199.736z"/>
+                                <path d="M74.244,262.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h64.244c5.522,0,10-4.477,10-10v-10
+                                    C84.244,267.213,79.767,262.736,74.244,262.736z"/>
+                                <path d="M298.29,216.877l-7.071-7.071c-1.875-1.875-4.419-2.929-7.071-2.929c-2.652,0-5.196,1.054-7.072,2.929l-34.393,34.393
+                                    V18.736c0-5.523-4.477-10-10-10h-10c-5.523,0-10,4.477-10,10v225.462l-34.393-34.393c-1.876-1.875-4.419-2.929-7.071-2.929
+                                    c-2.652,0-5.196,1.054-7.071,2.929l-7.072,7.071c-3.904,3.905-3.904,10.237,0,14.142l63.536,63.536
+                                    c1.953,1.953,4.512,2.929,7.071,2.929c2.559,0,5.119-0.976,7.071-2.929l63.536-63.536
+                                    C302.195,227.113,302.195,220.781,298.29,216.877z"/>
+                            </g>
+                        </svg>
+                    `;
+                    
+                    sortIndicator.onclick = function(e) {
                         e.stopPropagation();
+                        console.log('📊 Sort menu clicked');
                         const btn = document.getElementById('popup-menu-btn');
                         if (btn) btn.click();
                     };
                     
                     crudeHeader.appendChild(sortContainer);
-                    crudeHeader.appendChild(popupMenu);
+                    crudeHeader.appendChild(sortIndicator);
                 }
                 
-                // Add mouseover tooltips for Field and Nested arrows
+                // Add SVG sort icons to ALL year columns (2024, 2023, etc.)
+                const yearHeaders = document.querySelectorAll('.dash-header:not([data-dash-column="CrudeOil"])');
+                console.log(`🎯 Found ${yearHeaders.length} year headers`);
+                yearHeaders.forEach(header => {
+                    if (!header.querySelector('.sort-indicator')) {
+                        const sortIndicator = document.createElement('div');
+                        sortIndicator.className = 'sort-indicator';
+                        sortIndicator.title = 'Sort options';
+                        
+                        // Add the exact SVG from your file
+                        sortIndicator.innerHTML = `
+                            <svg fill="#000000" viewBox="0 0 301.219 301.219" xmlns="http://www.w3.org/2000/svg">
+                                <g>
+                                    <path d="M159.365,23.736v-10c0-5.523-4.477-10-10-10H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h139.365
+                                        C154.888,33.736,159.365,29.259,159.365,23.736z"/>
+                                    <path d="M130.586,66.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h120.586c5.523,0,10-4.477,10-10v-10
+                                        C140.586,71.213,136.109,66.736,130.586,66.736z"/>
+                                    <path d="M111.805,129.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h101.805c5.523,0,10-4.477,10-10v-10
+                                        C121.805,134.213,117.328,129.736,111.805,129.736z"/>
+                                    <path d="M93.025,199.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h83.025c5.522,0,10-4.477,10-10v-10
+                                        C103.025,204.213,98.548,199.736,93.025,199.736z"/>
+                                    <path d="M74.244,262.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h64.244c5.522,0,10-4.477,10-10v-10
+                                        C84.244,267.213,79.767,262.736,74.244,262.736z"/>
+                                    <path d="M298.29,216.877l-7.071-7.071c-1.875-1.875-4.419-2.929-7.071-2.929c-2.652,0-5.196,1.054-7.072,2.929l-34.393,34.393
+                                        V18.736c0-5.523-4.477-10-10-10h-10c-5.523,0-10,4.477-10,10v225.462l-34.393-34.393c-1.876-1.875-4.419-2.929-7.071-2.929
+                                        c-2.652,0-5.196,1.054-7.071,2.929l-7.072,7.071c-3.904,3.905-3.904,10.237,0,14.142l63.536,63.536
+                                        c1.953,1.953,4.512,2.929,7.071,2.929c2.559,0,5.119-0.976,7.071-2.929l63.536-63.536
+                                        C302.195,227.113,302.195,220.781,298.29,216.877z"/>
+                                </g>
+                            </svg>
+                        `;
+                        
+                        sortIndicator.onclick = function(e) {
+                            e.stopPropagation();
+                            console.log('📅 Year column sort clicked');
+                            const btn = document.getElementById('year-column-btn');
+                            if (btn) btn.click();
+                        };
+                        
+                        header.appendChild(sortIndicator);
+                    }
+                });
+                
+                // Add click handlers for Field and Nested arrows
                 const fieldArrow = document.getElementById('field-arrow-btn');
                 const nestedArrow = document.getElementById('nested-arrow-btn');
                 
                 if (fieldArrow) {
+                    console.log('🎯 Setting up Field arrow...');
                     fieldArrow.title = 'SUM(Exports/Production Value)';
+                    fieldArrow.onclick = function(e) {
+                        e.stopPropagation();
+                        console.log('📊 Field arrow clicked - will sort by column sums');
+                        const btn = document.getElementById('field-arrow-click-btn');
+                        if (btn) btn.click();
+                    };
                     
-                    // Create custom tooltip
                     fieldArrow.addEventListener('mouseover', function(e) {
                         const tooltip = document.createElement('div');
                         tooltip.className = 'arrow-tooltip';
@@ -1024,9 +1197,15 @@ def register_callbacks(app):
                 }
                 
                 if (nestedArrow) {
+                    console.log('🎯 Setting up Nested arrow...');
                     nestedArrow.title = 'SUM(Exports/Production Value)';
+                    nestedArrow.onclick = function(e) {
+                        e.stopPropagation();
+                        console.log('📊 Nested arrow clicked - will sort by row sums');
+                        const btn = document.getElementById('nested-arrow-click-btn');
+                        if (btn) btn.click();
+                    };
                     
-                    // Create custom tooltip
                     nestedArrow.addEventListener('mouseover', function(e) {
                         const tooltip = document.createElement('div');
                         tooltip.className = 'arrow-tooltip';
@@ -1053,6 +1232,7 @@ def register_callbacks(app):
                     });
                 }
                 
+                console.log('✅ Header interactions setup complete');
             }, 100);
             return '';
         }
