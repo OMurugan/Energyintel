@@ -60,19 +60,23 @@ def load_imports_by_region_data():
         year_cols = [str(year) for year in range(2025, 2005, -1)]
         
         # Filter to only rows with region totals (rows where Exporter == 'Total')
-        region_totals = df[df['Exporter'] == 'Total'].copy()
+        # Exclude 'Grand Total' row - we only want individual regions
+        region_totals = df[(df['Exporter'] == 'Total') & (df['Exporting Region'] != 'Grand Total')].copy()
         
         # Melt the dataframe to long format
         data_rows = []
         for _, row in region_totals.iterrows():
             region = row['Exporting Region']
-            if pd.isna(region) or region == '':
+            if pd.isna(region) or region == '' or region == 'Grand Total':
                 continue
             for year in year_cols:
                 if year in row.index:
                     value = row[year]
                     if pd.notna(value) and value != '':
                         try:
+                            # Handle comma-separated numbers (e.g., "2,223" -> 2223)
+                            if isinstance(value, str):
+                                value = value.replace(',', '').strip()
                             value = float(value)
                             if value > 0:
                                 data_rows.append({
@@ -174,12 +178,30 @@ def create_layout():
         
         # Country Selector
         html.Div([
-            html.Label("Select Importing Country", style={'fontWeight': 'bold', 'marginBottom': '5px'}),
+            html.Label(
+                "Select Importing Country",
+                style={
+                    'fontWeight': 'bold',
+                    'fontSize': '16px',
+                    'lineHeight': '18px',
+                    'color': '#1b365d',
+                    'marginBottom': '5px',
+                    'display': 'block',
+                    'fontFamily': '"Lato", "Benton Sans", "Arial", "Helvetica", sans-serif',
+                    'textAlign': 'left'
+                }
+            ),
             dcc.Dropdown(
                 id='importing-country-select',
                 options=[{'label': country, 'value': country} for country in available_countries],
                 value='Japan',
-                style={'width': '300px'}
+                style={
+                    'width': '300px',
+                    'fontSize': '13px',
+                    'fontFamily': '"Lato", "Benton Sans", "Arial", "Helvetica", sans-serif',
+                    'color': '#1b365d'
+                },
+                className='importing-country-dropdown'
             )
         ], style={'marginBottom': '20px'}),
         
@@ -206,6 +228,8 @@ def create_layout():
             html.H4(id='imports-table-title', children="Japan Crude Oil Imports by Region and Country", className='imports-table-title'),
             dash_table.DataTable(
                 id='imports-detail-table',
+                data=[],
+                columns=[],
                 style_table={
                     'overflowX': 'auto',
                     'overflowY': 'auto',
@@ -311,15 +335,26 @@ def create_imports_by_region_chart(selected_country='Japan'):
     # Group by Region and Year, sum volumes
     df_grouped = df.groupby(['Region', 'Year'])['Volume'].sum().reset_index()
     
-    # Get all years
-    years = sorted(df_grouped['Year'].unique())
+    # Get all years from 2006 to 2025 (matching Figure 1)
+    years = sorted([y for y in df_grouped['Year'].unique() if 2006 <= y <= 2025])
     
-    # Get available regions from data and sort them alphabetically
-    regions = sorted(df_grouped['Region'].unique().tolist())
+    # Define stacking order to match Figure 1: Middle East at bottom, then others
+    # Order: Middle East (bottom), Africa, Asia-Pacific, Europe, FSU, Latin America, North America, Others (top)
+    region_order = ['Middle East', 'Africa', 'Asia-Pacific', 'Europe', 'FSU', 'Latin America', 'North America', 'Others']
+    
+    # Get available regions from data
+    available_regions = df_grouped['Region'].unique().tolist()
+    
+    # Sort regions according to the stacking order (only include regions that exist in data)
+    regions = [r for r in region_order if r in available_regions]
+    # Add any remaining regions not in the predefined order
+    for r in sorted(available_regions):
+        if r not in regions:
+            regions.append(r)
     
     fig = go.Figure()
     
-    # Add a trace for each region in alphabetical order
+    # Add a trace for each region in the specified stacking order
     # In stacked bars, first trace is at bottom, last trace is at top
     for region in regions:
         region_data = df_grouped[df_grouped['Region'] == region]
@@ -336,7 +371,7 @@ def create_imports_by_region_chart(selected_country='Japan'):
             y=volumes,
             name=region,
             marker_color=color_map.get(region, '#CCCCCC'),
-            hovertemplate=f'Region: {region}<br>Year: %{{x}}<br>Traded Volume: %{{y:,.6f}} (\'000 b/d)<extra></extra>'
+            hovertemplate=f'Region: {region}<br>Year: %{{x}}<br>Import Volume: %{{y:,.0f}} (\'000 b/d)<extra></extra>'
         ))
     
     # Calculate total volumes for each year to display on top of bars
@@ -355,25 +390,81 @@ def create_imports_by_region_chart(selected_country='Japan'):
         textfont=dict(size=11, color='#000000')
     ))
     
-    # Update layout
+    # Update layout to match Figure 1 exactly
     fig.update_layout(
         title={
             'text': f"{selected_country}'s Crude Imports by Exporting Region",
             'x': 0.5,
-            'xanchor': 'center'
+            'xanchor': 'center',
+            'font': {
+                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                'size': 16,
+                'color': '#ff7f0e'  # Orange color matching Figure 1
+            }
         },
-        xaxis_title="Year",
-        yaxis_title="Import Volume ('000 b/d)",
+        xaxis=dict(
+            title="Year",
+            tickmode='linear',
+            tick0=2006,
+            dtick=1,  # Show every year
+            range=[2005.5, 2025.5],  # Slight padding for better visibility
+            tickfont={
+                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                'size': 11,
+                'color': '#333333'
+            },
+            titlefont={
+                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                'size': 13,
+                'color': '#333333'
+            },
+            showgrid=True,
+            gridcolor='#e0e0e0',
+            gridwidth=1,
+            linecolor='#d3d3d3',
+            linewidth=1
+        ),
+        yaxis=dict(
+            title="Import Volume ('000 b/d)",
+            range=[0, 4500],  # Set range to 0-4500 to show up to 4000 clearly
+            tickmode='linear',
+            tick0=0,
+            dtick=1000,  # Show ticks at 0, 1000, 2000, 3000, 4000
+            tickfont={
+                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                'size': 11,
+                'color': '#333333'
+            },
+            titlefont={
+                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                'size': 13,
+                'color': '#333333'
+            },
+            showgrid=True,
+            gridcolor='#e0e0e0',
+            gridwidth=1,
+            linecolor='#d3d3d3',
+            linewidth=1
+        ),
         barmode='stack',
         height=400,
         plot_bgcolor='white',
         paper_bgcolor='white',
+        margin=dict(l=60, r=200, t=60, b=50),
         legend=dict(
             orientation='v',
             yanchor='top',
             y=1,
             xanchor='left',
-            x=1.02
+            x=1.02,
+            font={
+                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                'size': 11,
+                'color': '#333333'
+            },
+            bgcolor='rgba(255,255,255,0.8)',
+            bordercolor='#d3d3d3',
+            borderwidth=1
         ),
         hovermode='closest',
         hoverlabel=dict(
