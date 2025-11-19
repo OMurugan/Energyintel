@@ -196,10 +196,11 @@ def create_layout():
                 options=[{'label': country, 'value': country} for country in available_countries],
                 value='Japan',
                 style={
-                    'width': '300px',
+                    'width': '1200px',
                     'fontSize': '13px',
                     'fontFamily': '"Lato", "Benton Sans", "Arial", "Helvetica", sans-serif',
-                    'color': '#1b365d'
+                    'color': '#1b365d',
+                    'align': 'center',
                 },
                 className='importing-country-dropdown'
             )
@@ -495,6 +496,10 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
     if df_filtered.empty:
         return go.Figure()
     
+    # Remove duplicates based on Exporter, Crude, and DataValue
+    # Keep only the first occurrence of each unique combination
+    df_filtered = df_filtered.drop_duplicates(subset=['Exporter', 'Crude', 'DataValue'], keep='first')
+    
     # Group by Exporter and Crude, sum volumes
     # Note: Color column contains crude names, not actual colors
     df_grouped = df_filtered.groupby(['Exporter', 'Crude'])['DataValue'].sum().reset_index()
@@ -503,18 +508,62 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
     exporter_totals = df_grouped.groupby('Exporter')['DataValue'].sum().sort_values(ascending=False)
     exporters = exporter_totals.index.tolist()
     
-    # Get unique crudes and assign colors from a consistent palette
-    crudes = sorted(df_grouped['Crude'].unique())
-    import plotly.colors as pc
-    # Use a large color palette to ensure unique colors for each crude
-    qualitative_colors = (pc.qualitative.Set3 + pc.qualitative.Pastel + 
-                         pc.qualitative.Dark2 + pc.qualitative.Pastel1 + 
-                         pc.qualitative.Set1 + pc.qualitative.Set2)
+    # Define exact color mapping for each crude type
+    crude_color_map = {
+        'Al-Shaheen': '#2ca02c',
+        'Arab Extra Light': '#ff9896',
+        'Arab Heavy': '#9467bd',
+        'Arab Light': '#c5b0d5',
+        'Arab Medium': '#c49c94',
+        'Arab Super Light': '#f7b6d2',
+        'Bach Ho': '#d62728',
+        'Banoco Arab Medium': '#c7c7c7',
+        'Champion': '#7f7f7f',
+        'Clifhead': '#c7c7c7',
+        'Cossack': '#8c564b',
+        'Das Blend': '#2ca02c',
+        'Deodorized Field Condensate': '#98df8a',
+        'Dubai': '#ff9896',
+        'Ichthys Condensate': '#7f7f7f',
+        'Isthmus': '#c7c7c7',
+        'Ketapang': '#c7c7c7',
+        'Khafji': '#d62728',
+        'Kikeh': '#dbdb8d',
+        'Kuwait': '#8c564b',
+        'Kuwait Super Light': '#f7b6d2',
+        'Lalang': '#1f77b4',
+        'Mares Blend': '#aec7e8',
+        'Mars Blend': '#ff7f0e',
+        'Mubarras Blend': '#1f77b4',
+        'Murban': '#aec7e8',
+        'Napo': '#98df8a',
+        'Nile Blend Sudan': '#d62728',
+        'Oman': '#8c564b',
+        'Oriente': '#ff9896',
+        'Pyrenees': '#c49c94',
+        'Qatar Land': '#c7c7c7',
+        'Qatar Low Sulphur Condensate': '#bcbd22',
+        'Qatar Marine': '#dbdb8d',
+        'Ruby': '#f7b6d2',
+        'Sakhalin Blend': '#ff9896',
+        'Sepat': '#bcbd22',
+        'Seria Light': '#17becf',
+        'Stag': '#9edae5',
+        'Thang Long': '#ffbb78',
+        'Umm Lulu': '#bcbd22',
+        'Upper Zakum': '#9edae5',
+        'Wandoo': '#2ca02c',
+        'West Texas Intermediate': '#aec7e8',
+        'West Texas Light': '#ff7f0e'
+    }
     
-    crude_color_map = {crude: qualitative_colors[i % len(qualitative_colors)] 
-                       for i, crude in enumerate(crudes)}
+    # Get unique crudes from data
+    crudes = sorted(df_grouped['Crude'].unique())
     
     fig = go.Figure()
+    
+    # Store volumes for each crude to calculate cumulative positions for text labels
+    crude_volumes_dict = {}
     
     # Add a trace for each crude
     for crude in crudes:
@@ -536,21 +585,13 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
                 y=volumes,
                 name=crude,
                 marker_color=crude_color_map.get(crude, '#CCCCCC'),
-                hovertemplate=f'Crude: {crude}<br>Year: {year_str}<br>Traded Volume: %{{y:,.0f}}(\'000 b/d)<extra></extra>'
+                hovertemplate=f'Crude: {crude}<br>Year: {year_str}<br>Traded Volume: %{{y:,.1f}}(\'000 b/d)<extra></extra>',
+                text=[f'{v:,.1f}' if v >= 10 else '' for v in volumes],  # Show value if >= 10
+                textposition='inside',
+                textangle=-90,  # Rotate text vertically
+                textfont=dict(size=10, color='#000000')
             ))
-    
-    # Add total values on top of bars (only for bars with significant values)
-    exporter_totals_list = [exporter_totals[exp] for exp in exporters]
-    fig.add_trace(go.Scatter(
-        x=exporters,
-        y=exporter_totals_list,
-        mode='text',
-        text=[f'{val:,.1f}' if val >= 0.5 else '' for val in exporter_totals_list],  # Only show if >= 0.5
-        textposition='top center',
-        showlegend=False,
-        hoverinfo='skip',
-        textfont=dict(size=10)
-    ))
+            crude_volumes_dict[crude] = volumes
     
     # Update layout
     fig.update_layout(
@@ -580,11 +621,11 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
                 'color': '#666666'
             },
             tickangle=90,  # Vertical labels (straight up)
-            gridcolor='#e0e0e0',
-            gridwidth=1,
-            showgrid=True,
+            showgrid=False,  # Remove vertical grid lines to avoid square boxes
+            showline=True,  # Show the axis line
             linecolor='#d3d3d3',
-            linewidth=1
+            linewidth=1,
+            mirror=True  # Show axis line on all sides
         ),
         yaxis=dict(
             title={
@@ -600,11 +641,17 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
                 'size': 11,
                 'color': '#666666'
             },
+            range=[0, 1100],  # Set range to 0-1100 to show up to 1000 clearly (matching Figure 1)
+            tickmode='linear',
+            tick0=0,
+            dtick=200,  # Show ticks at 0, 200, 400, 600, 800, 1000 (matching Figure 1)
             gridcolor='#e0e0e0',
             gridwidth=1,
-            showgrid=True,
+            showgrid=False,  # Remove horizontal grid lines
+            showline=True,  # Show the axis line
             linecolor='#d3d3d3',
-            linewidth=1
+            linewidth=1,
+            mirror=True  # Show axis line on all sides
         ),
         barmode='stack',
         height=520,
@@ -673,8 +720,11 @@ def create_imports_table(selected_country='Japan'):
                 if pd.isna(value) or value == '':
                     record[key] = ''
                 elif isinstance(value, (int, float)):
-                    # Format numeric values - keep 0 as 0
-                    record[key] = value
+                    # Format numeric values - keep 0 as 0, ensure it's a valid number
+                    if pd.isna(value) or pd.isinf(value):
+                        record[key] = ''
+                    else:
+                        record[key] = float(value) if not pd.isna(value) else ''
         
         # Hierarchical grouping: only show region/exporter/company once per group
         if current_region and current_region == prev_region:
@@ -773,6 +823,17 @@ def register_callbacks(dash_app, server):
         """Update imports detail table"""
         if submenu != 'imports-detail':
             return [], [], ""
-        data, columns = create_imports_table(selected_country)
-        title = f"{selected_country} Crude Oil Imports by Region and Country"
-        return data, columns, title
+        try:
+            data, columns = create_imports_table(selected_country)
+            # Ensure data and columns are lists
+            if not isinstance(data, list):
+                data = []
+            if not isinstance(columns, list):
+                columns = []
+            title = f"{selected_country} Crude Oil Imports by Region and Country"
+            return data, columns, title
+        except Exception as e:
+            print(f"Error updating imports table: {e}")
+            import traceback
+            traceback.print_exc()
+            return [], [], ""
