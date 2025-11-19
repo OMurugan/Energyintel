@@ -126,9 +126,103 @@ def load_crude_data(mode):
     ]
 
 # ------------------------------------------------------------------------------
+# CALCULATE COMBINED SUM DATA (Production + Exports)
+# ------------------------------------------------------------------------------
+def calculate_combined_sums():
+    """Calculate combined sums of Production and Exports for each crude oil and year"""
+    
+    # Load both datasets
+    production_data, production_cols = load_crude_data("production")
+    exports_data, exports_cols = load_crude_data("exports")
+    
+    # Convert to DataFrames
+    prod_df = pd.DataFrame(production_data)
+    exp_df = pd.DataFrame(exports_data)
+    
+    # Get numeric columns (years)
+    numeric_cols = [col for col in prod_df.columns if col != 'CrudeOil']
+    
+    # Create combined data
+    combined_data = []
+    
+    # Get all unique crude oils from both datasets
+    all_crudes = set(prod_df['CrudeOil'].tolist() + exp_df['CrudeOil'].tolist())
+    
+    for crude in all_crudes:
+        combined_row = {'CrudeOil': crude}
+        
+        # Find this crude in production data
+        prod_row = prod_df[prod_df['CrudeOil'] == crude]
+        # Find this crude in exports data  
+        exp_row = exp_df[exp_df['CrudeOil'] == crude]
+        
+        for col in numeric_cols:
+            prod_val = 0
+            exp_val = 0
+            
+            # Get production value
+            if not prod_row.empty and col in prod_row.columns:
+                prod_cell = prod_row[col].iloc[0]
+                if prod_cell and str(prod_cell).strip() and str(prod_cell).strip() != '':
+                    try:
+                        clean_val = str(prod_cell).replace(',', '')
+                        prod_val = float(clean_val)
+                    except (ValueError, TypeError):
+                        prod_val = 0
+            
+            # Get exports value
+            if not exp_row.empty and col in exp_row.columns:
+                exp_cell = exp_row[col].iloc[0]
+                if exp_cell and str(exp_cell).strip() and str(exp_cell).strip() != '':
+                    try:
+                        clean_val = str(exp_cell).replace(',', '')
+                        exp_val = float(clean_val)
+                    except (ValueError, TypeError):
+                        exp_val = 0
+            
+            # Calculate combined sum
+            combined_val = prod_val + exp_val
+            combined_row[col] = f"{combined_val:,.0f}" if combined_val > 0 else ""
+        
+        combined_data.append(combined_row)
+    
+    return combined_data
+
+# ------------------------------------------------------------------------------
+# CALCULATE SUM ROW FOR COMBINED DATA
+# ------------------------------------------------------------------------------
+def calculate_combined_sum_row(combined_data):
+    """Calculate sum row for combined data"""
+    if not combined_data:
+        return None
+    
+    df = pd.DataFrame(combined_data)
+    numeric_cols = [col for col in df.columns if col != 'CrudeOil']
+    
+    sum_row = {'CrudeOil': 'SUM'}
+    
+    for col in numeric_cols:
+        col_sum = 0
+        for val in df[col]:
+            if val and str(val).strip() and str(val).strip() != '':
+                try:
+                    clean_val = str(val).replace(',', '')
+                    col_sum += float(clean_val)
+                except (ValueError, TypeError):
+                    continue
+        sum_row[col] = f"{col_sum:,.0f}"
+    
+    return sum_row
+
+# ------------------------------------------------------------------------------
 # INITIAL LOAD
 # ------------------------------------------------------------------------------
-crude_data, columns = load_crude_data("production")
+combined_data = calculate_combined_sums()
+combined_sum_row = calculate_combined_sum_row(combined_data)
+production_data, production_columns = load_crude_data("production")
+
+# Combine data with SUM row
+table_data_with_sum = combined_data + [combined_sum_row] if combined_sum_row else combined_data
 
 # ------------------------------------------------------------------------------
 # LAYOUT
@@ -153,8 +247,9 @@ def create_layout(server):
                     options=[
                         {"label": "Production", "value": "production"},
                         {"label": "Exports", "value": "exports"},
+                        {"label": "Combined Total", "value": "combined"},
                     ],
-                    value="production",
+                    value="combined",
                     clearable=False,
                     style={
                         "width": "100%",
@@ -168,68 +263,104 @@ def create_layout(server):
 
             html.Hr(style={"margin": "10px 0", "border": "1px solid #ccc"}),
 
-            # Sorting controls popup (initially hidden) - SIMPLIFIED
+            # CSS for popup menu hover effects and tooltips
+            dcc.Markdown("""
+                <style>
+                .popup-menu-item:hover {
+                    background-color: #f5f5f5 !important;
+                }
+                #popup-field-btn:hover, #popup-nested-btn:hover {
+                    background-color: #f5f5f5 !important;
+                }
+                .arrow-tooltip {
+                    position: absolute;
+                    background-color: #333;
+                    color: white;
+                    padding: 4px 8px;
+                    border-radius: 3px;
+                    font-size: 11px;
+                    font-family: Arial;
+                    white-space: nowrap;
+                    z-index: 1003;
+                    pointer-events: none;
+                }
+                </style>
+            """, dangerously_allow_html=True),
+
+            # Sorting controls popup (initially hidden)
             html.Div([
-                # Sort by options section only
                 html.Div([
-                    # Text options instead of dropdown
                     html.Div("Data source order", id="popup-source-btn", 
                             style={
                                 "padding": "6px 10px", 
                                 "fontSize": "12px",
                                 "cursor": "pointer",
-                                "borderBottom": "1px solid #eee",
                                 "fontFamily": "Arial",
-                            }),
+                                "color": "#333",
+                            }, className="popup-menu-item"),
                     html.Div("Alphabetic", id="popup-alphabetic-btn",
                             style={
                                 "padding": "6px 10px", 
                                 "fontSize": "12px",
                                 "cursor": "pointer",
-                                "borderBottom": "1px solid #eee",
                                 "fontFamily": "Arial",
-                            }),
-                    html.Div("Field", id="popup-field-btn",
-                            style={
-                                "padding": "6px 10px", 
-                                "fontSize": "12px",
-                                "cursor": "pointer",
-                                "borderBottom": "1px solid #eee",
-                                "fontFamily": "Arial",
-                            }),
-                    html.Div("Nested", id="popup-nested-btn",
-                            style={
-                                "padding": "6px 10px", 
-                                "fontSize": "12px",
-                                "cursor": "pointer",
-                                "fontFamily": "Arial",
-                            }),
-                ], style={"border": "1px solid #ddd", "borderRadius": "3px"}),
-                
-                # SUM display
-                html.Div(id="sort-sum-display", style={
-                    "marginTop": "8px",
-                    "fontSize": "10px",
-                    "color": "#666",
-                    "fontStyle": "italic",
-                    "fontFamily": "Arial",
-                }),
+                                "color": "#333",
+                            }, className="popup-menu-item"),
+                    html.Div([
+                        html.Span("Field", style={"flex": "1"}),
+                        html.Span("▶", id="field-arrow-btn", style={
+                            "cursor": "pointer",
+                            "fontSize": "10px",
+                            "color": "#666",
+                            "marginLeft": "8px",
+                        }),
+                    ], id="popup-field-btn",
+                       style={
+                           "padding": "6px 10px", 
+                           "fontSize": "12px",
+                           "cursor": "pointer",
+                           "fontFamily": "Arial",
+                           "color": "#333",
+                           "display": "flex",
+                           "alignItems": "center",
+                           "justifyContent": "space-between",
+                           "position": "relative",
+                       }),
+                    html.Div([
+                        html.Span("Nested", style={"flex": "1"}),
+                        html.Span("▶", id="nested-arrow-btn", style={
+                            "cursor": "pointer",
+                            "fontSize": "10px",
+                            "color": "#666",
+                            "marginLeft": "8px",
+                        }),
+                    ], id="popup-nested-btn",
+                       style={
+                           "padding": "6px 10px", 
+                           "fontSize": "12px",
+                           "cursor": "pointer",
+                           "fontFamily": "Arial",
+                           "color": "#333",
+                           "display": "flex",
+                           "alignItems": "center",
+                           "justifyContent": "space-between",
+                           "position": "relative",
+                       }),
+                ]),
             ], id="sorting-controls", style={
                 "position": "absolute", 
                 "backgroundColor": "white", 
-                "border": "1px solid #ccc",
-                "padding": "10px",
-                "borderRadius": "4px",
+                "padding": "4px 0",
                 "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
                 "zIndex": "1000",
                 "display": "none",
-                "minWidth": "140px"
+                "minWidth": "160px"
             }),
 
             dash_table.DataTable(
                 id="crude-comparison-table",
-                data=crude_data,
-                columns=columns,
+                data=table_data_with_sum,
+                columns=production_columns,
                 style_table={
                     "overflowX": "auto",
                     "overflowY": "auto",
@@ -287,6 +418,21 @@ def create_layout(server):
                     {
                         "if": {"column_id": [str(year) for year in range(2007, 2025)]},
                         "cursor": "pointer",
+                    },
+                    # Style for SUM row - DARK BLUE BACKGROUND
+                    {
+                        "if": {"filter_query": '{CrudeOil} = "SUM"'},
+                        "backgroundColor": "#1f3263",
+                        "color": "white",
+                        "fontWeight": "bold",
+                        "borderTop": "2px solid #d65a00",
+                    },
+                    {
+                        "if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"},
+                        "textAlign": "left",
+                        "backgroundColor": "#1f3263",
+                        "color": "white",
+                        "fontWeight": "bold",
                     }
                 ],
                 css=[
@@ -405,13 +551,6 @@ def create_layout(server):
                         'selector': '.dash-cell:not([data-dash-column="CrudeOil"]):not(.dash-header)',
                         'rule': 'cursor: pointer;'
                     },
-                    # Hover styles for popup options
-                    {
-                        'selector': '.popup-option:hover',
-                        'rule': '''
-                            background-color: #e6f3ff !important;
-                        '''
-                    },
                 ],
                 fixed_rows={"headers": True},
                 page_action="none",
@@ -423,9 +562,11 @@ def create_layout(server):
             # Store components
             dcc.Store(id='external-url-store'),
             dcc.Store(id='selected-cell-store', data=None),
-            dcc.Store(id='original-data-store', data=crude_data),
+            dcc.Store(id='original-data-store', data=production_data),
             dcc.Store(id='current-sort-order', data={'type': 'source', 'direction': 'asc'}),
             dcc.Store(id='show-sorting-controls', data=False),
+            dcc.Store(id='sum-row-store', data=combined_sum_row),
+            dcc.Store(id='combined-data-store', data=combined_data),
             html.Div(id='dummy-output', style={'display': 'none'}),
             html.Div(id='dummy-output-2', style={'display': 'none'}),
 
@@ -468,7 +609,13 @@ def register_callbacks(app):
         Input("export-production-dropdown", "value"),
     )
     def update_header(selected):
-        title = "Exports ('000 b/d)" if selected == "exports" else "Production ('000 b/d)"
+        if selected == "exports":
+            title = "Exports ('000 b/d)"
+        elif selected == "production":
+            title = "Production ('000 b/d)"
+        else:  # combined
+            title = "Combined Production + Exports ('000 b/d)"
+        
         return html.H2(
             title,
             style={
@@ -483,19 +630,31 @@ def register_callbacks(app):
 
     @app.callback(
         [Output("crude-comparison-table", "data"),
-         Output("original-data-store", "data")],
+         Output("original-data-store", "data"),
+         Output("sum-row-store", "data"),
+         Output("combined-data-store", "data")],
         Input("export-production-dropdown", "value"),
     )
     def reload_data(mode):
-        crude_data, _ = load_crude_data(mode)
-        return crude_data, crude_data
+        if mode == "combined":
+            # Use combined data (Production + Exports)
+            combined_data = calculate_combined_sums()
+            sum_row = calculate_combined_sum_row(combined_data)
+            table_data_with_sum = combined_data + [sum_row] if sum_row else combined_data
+            return table_data_with_sum, combined_data, sum_row, combined_data
+        else:
+            # Use individual mode data
+            crude_data, columns = load_crude_data(mode)
+            sum_row = calculate_combined_sum_row(crude_data)
+            table_data_with_sum = crude_data + [sum_row] if sum_row else crude_data
+            return table_data_with_sum, crude_data, sum_row, None
 
     @app.callback(
         Output("crude-comparison-table", "columns"),
         Input("export-production-dropdown", "value"),
     )
     def reload_columns(mode):
-        _, columns = load_crude_data(mode)
+        _, columns = load_crude_data("production")
         return columns
 
     # Handle header clicks (both sort order and popup menu)
@@ -521,54 +680,60 @@ def register_callbacks(app):
         trigger = ctx.triggered_id
         
         if trigger == 'sort-asc-btn-hidden':
-            # Set to ascending alphabetical order
             return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'asc'}
         
         elif trigger == 'sort-desc-btn-hidden':
-            # Set to descending alphabetical order
             return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'desc'}
         
         elif trigger == 'popup-menu-btn':
-            # Show the sorting controls popup
             return {
                 "position": "absolute", 
                 "backgroundColor": "white", 
-                "border": "1px solid #ccc",
-                "padding": "10px",
-                "borderRadius": "4px",
+                "padding": "4px 0",
                 "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
                 "zIndex": "1000",
                 "display": "block",
-                "minWidth": "140px",
+                "minWidth": "160px",
                 "top": "200px",
                 "left": "50px"
             }, True, dash.no_update
         
-        elif trigger in ['popup-source-btn', 'popup-alphabetic-btn', 'popup-field-btn', 'popup-nested-btn']:
-            # Hide after selection
+        elif trigger == 'popup-source-btn':
             return {
                 "position": "absolute", 
                 "backgroundColor": "white", 
-                "border": "1px solid #ccc",
-                "padding": "10px",
-                "borderRadius": "4px",
+                "padding": "4px 0",
                 "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
                 "zIndex": "1000",
                 "display": "none",
-                "minWidth": "140px"
-            }, False, dash.no_update
+                "minWidth": "160px"
+            }, False, {'type': 'source', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
         
-        # Default: hide controls
+        elif trigger == 'popup-alphabetic-btn':
+            return {
+                "position": "absolute", 
+                "backgroundColor": "white", 
+                "padding": "4px 0",
+                "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
+                "zIndex": "1000",
+                "display": "none",
+                "minWidth": "160px"
+            }, False, {'type': 'alphabetic', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+        
+        elif trigger == 'popup-field-btn':
+            return dash.no_update, dash.no_update, {'type': 'field', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+        
+        elif trigger == 'popup-nested-btn':
+            return dash.no_update, dash.no_update, {'type': 'nested', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+        
         return {
             "position": "absolute", 
             "backgroundColor": "white", 
-            "border": "1px solid #ccc",
-            "padding": "10px",
-            "borderRadius": "4px",
+            "padding": "4px 0",
             "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
             "zIndex": "1000",
             "display": "none",
-            "minWidth": "140px"
+            "minWidth": "160px"
         }, False, dash.no_update
 
     # Apply sorting when sort order changes
@@ -576,25 +741,24 @@ def register_callbacks(app):
         [Output('crude-comparison-table', 'data', allow_duplicate=True),
          Output('current-sort-order', 'data', allow_duplicate=True)],
         [Input('current-sort-order', 'data')],
-        [State('crude-comparison-table', 'data'),
-         State('export-production-dropdown', 'value')],
+        [State('original-data-store', 'data'),
+         State('export-production-dropdown', 'value'),
+         State('sum-row-store', 'data')],
         prevent_initial_call=True
     )
-    def apply_sort_order(current_sort, current_data, mode):
-        if not current_data or not current_sort:
+    def apply_sort_order(current_sort, original_data, mode, sum_row):
+        if not original_data or not current_sort:
             return dash.no_update, dash.no_update
             
         sort_type = current_sort.get('type', 'alphabetic')
         direction = current_sort.get('direction', 'asc')
         
         # Convert back to DataFrame for sorting
-        df = pd.DataFrame(current_data)
+        df = pd.DataFrame(original_data)
         
         if sort_type == 'alphabetic':
-            # Sort by CrudeOil name alphabetically
             df_sorted = df.sort_values('CrudeOil', ascending=(direction == 'asc'), na_position='last')
         elif sort_type in ['field', 'nested']:
-            # Calculate sum for Field/Nested sorting
             numeric_cols = [col for col in df.columns if col != 'CrudeOil']
             
             def calculate_sum(row):
@@ -603,7 +767,6 @@ def register_callbacks(app):
                     val = row[col]
                     if val and str(val).strip() and str(val).strip() != '':
                         try:
-                            # Remove commas from numbers like "1,000"
                             clean_val = str(val).replace(',', '')
                             total += float(clean_val)
                         except (ValueError, TypeError):
@@ -613,46 +776,15 @@ def register_callbacks(app):
             df['_sum'] = df.apply(calculate_sum, axis=1)
             df_sorted = df.sort_values('_sum', ascending=(direction == 'asc'))
             df_sorted = df_sorted.drop('_sum', axis=1)
-        else:  # source order - return to original order
-            # Reload original data to get source order
-            original_data, _ = load_crude_data(mode)
-            df_sorted = pd.DataFrame(original_data)
+        else:
+            df_sorted = df
         
-        return df_sorted.to_dict('records'), dash.no_update
-
-    # Show SUM values for Field and Nested options
-    @app.callback(
-        Output('sort-sum-display', 'children'),
-        [Input('current-sort-order', 'data'),
-         Input('export-production-dropdown', 'value')],
-        [State('crude-comparison-table', 'data')]
-    )
-    def show_sum_display(current_sort, mode, table_data):
-        if not table_data or not current_sort:
-            return ""
-            
-        sort_type = current_sort.get('type', 'source')
+        # Convert back to dict and add SUM row
+        sorted_data = df_sorted.to_dict('records')
+        if sum_row:
+            sorted_data.append(sum_row)
         
-        if sort_type in ['field', 'nested']:
-            # Calculate total sum for all data
-            df = pd.DataFrame(table_data)
-            numeric_cols = [col for col in df.columns if col != 'CrudeOil']
-            
-            total_sum = 0
-            for col in numeric_cols:
-                for val in df[col]:
-                    if val and str(val).strip() and str(val).strip() != '':
-                        try:
-                            # Remove commas from numbers like "1,000"
-                            clean_val = str(val).replace(',', '')
-                            total_sum += float(clean_val)
-                        except (ValueError, TypeError):
-                            continue
-            
-            mode_text = "Production" if mode == "production" else "Exports"
-            return f"SUM({mode_text} Value): {total_sum:,.0f}"
-        
-        return ""
+        return sorted_data, dash.no_update
 
     # Handle sorting from popup menu text options
     @app.callback(
@@ -662,20 +794,20 @@ def register_callbacks(app):
          Input('popup-alphabetic-btn', 'n_clicks'),
          Input('popup-field-btn', 'n_clicks'),
          Input('popup-nested-btn', 'n_clicks')],
-        [State('crude-comparison-table', 'data'),
+        [State('original-data-store', 'data'),
          State('current-sort-order', 'data'),
-         State('export-production-dropdown', 'value')],
+         State('export-production-dropdown', 'value'),
+         State('sum-row-store', 'data')],
         prevent_initial_call=True
     )
     def handle_popup_sorting(popup_source_clicks, popup_alpha_clicks,
                            popup_field_clicks, popup_nested_clicks,
-                           current_data, current_sort, mode):
-        if not current_data:
+                           original_data, current_sort, mode, sum_row):
+        if not original_data:
             return dash.no_update, dash.no_update
             
         trigger = ctx.triggered_id
         
-        # Determine sort type based on which button was clicked
         if trigger == 'popup-source-btn':
             sort_type = 'source'
         elif trigger == 'popup-alphabetic-btn':
@@ -687,17 +819,13 @@ def register_callbacks(app):
         else:
             return dash.no_update, dash.no_update
         
-        # Keep the same direction for all sorts
         direction = current_sort.get('direction', 'asc')
         
-        # Convert back to DataFrame for sorting
-        df = pd.DataFrame(current_data)
+        df = pd.DataFrame(original_data)
         
         if sort_type == 'alphabetic':
-            # Sort by CrudeOil name alphabetically
             df_sorted = df.sort_values('CrudeOil', ascending=(direction == 'asc'), na_position='last')
         elif sort_type in ['field', 'nested']:
-            # Calculate sum for Field/Nested sorting
             numeric_cols = [col for col in df.columns if col != 'CrudeOil']
             
             def calculate_sum(row):
@@ -706,7 +834,6 @@ def register_callbacks(app):
                     val = row[col]
                     if val and str(val).strip() and str(val).strip() != '':
                         try:
-                            # Remove commas from numbers like "1,000"
                             clean_val = str(val).replace(',', '')
                             total += float(clean_val)
                         except (ValueError, TypeError):
@@ -716,12 +843,14 @@ def register_callbacks(app):
             df['_sum'] = df.apply(calculate_sum, axis=1)
             df_sorted = df.sort_values('_sum', ascending=(direction == 'asc'))
             df_sorted = df_sorted.drop('_sum', axis=1)
-        else:  # source order - return to original order
-            # Reload original data to get source order
-            original_data, _ = load_crude_data(mode)
-            df_sorted = pd.DataFrame(original_data)
+        else:
+            df_sorted = df
         
-        return df_sorted.to_dict('records'), {'type': sort_type, 'direction': direction}
+        sorted_data = df_sorted.to_dict('records')
+        if sum_row:
+            sorted_data.append(sum_row)
+        
+        return sorted_data, {'type': sort_type, 'direction': direction}
 
     @app.callback(
         [Output('external-url-store', 'data'),
@@ -736,28 +865,22 @@ def register_callbacks(app):
             row = active_cell['row']
             column = active_cell['column_id']
             
-            # Only process clicks on numeric columns (not CrudeOil column)
-            if column != "CrudeOil" and data and row is not None and row < len(data):
+            if (column != "CrudeOil" and data and row is not None and 
+                row < len(data) and data[row].get('CrudeOil') != 'SUM'):
                 cell_value = data[row].get(column)
                 crude_markdown = data[row].get('CrudeOil', '')
                 
-                # Only navigate if there's a valid number (including 0)
                 if cell_value and str(cell_value).strip():
-                    # Extract the EXTERNAL URL from the CrudeOil markdown link
                     url_match = re.search(r'\[.*?\]\((.*?)\)', crude_markdown)
                     if url_match:
                         external_url = url_match.group(1)
-                        
-                        # Store the selected cell information
                         selected_cell = {
                             'row': row,
                             'column': column,
                             'value': cell_value
                         }
-                        
                         return external_url, selected_cell
         
-        # Return no update if conditions aren't met
         raise dash.exceptions.PreventUpdate
 
     @app.callback(
@@ -766,57 +889,27 @@ def register_callbacks(app):
         [State('crude-comparison-table', 'data')]
     )
     def update_table_styles(selected_cell, current_data):
-        # Default styles - show all values normally
         default_styles = [
             {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"},
             {"if": {"column_id": "CrudeOil"}, "color": "#1f3263"},
-            {"if": {"column_id": [str(year) for year in range(2007, 2025)]}, "cursor": "pointer"}
+            {"if": {"column_id": [str(year) for year in range(2007, 2025)]}, "cursor": "pointer"},
+            {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
+            {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
         ]
         
-        # If a cell is selected, make other numbers very light (almost hidden)
         if selected_cell:
-            # Get all column IDs except CrudeOil
-            numeric_columns = [col for col in (current_data[0].keys() if current_data else []) 
-                             if col != "CrudeOil"]
+            numeric_columns = [col for col in (current_data[0].keys() if current_data else []) if col != "CrudeOil"]
             
             style_conditions = [
-                # Keep row striping
                 {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"},
-                
-                # Keep CrudeOil column always visible
-                {
-                    "if": {"column_id": "CrudeOil"},
-                    "color": "#1f3263",
-                    "backgroundColor": "white",
-                    "cursor": "pointer"
-                },
-                
-                # Make ALL numeric cells very light gray (almost hidden but still visible)
-                {
-                    "if": {
-                        "column_id": numeric_columns
-                    },
-                    "color": "#f0f0f0",  # Very light gray - almost invisible
-                    "backgroundColor": "white",
-                    "cursor": "pointer"
-                },
-                
-                # Show ONLY the selected cell normally with highlight
-                {
-                    "if": {
-                        "row_index": selected_cell['row'],
-                        "column_id": selected_cell['column']
-                    },
-                    "color": "#1f3263",
-                    "backgroundColor": "#e6f3ff",
-                    "fontWeight": "bold",
-                    "border": "2px solid #1f3263",
-                    "cursor": "pointer"
-                }
+                {"if": {"column_id": "CrudeOil"}, "color": "#1f3263", "backgroundColor": "white", "cursor": "pointer"},
+                {"if": {"column_id": numeric_columns}, "color": "#f0f0f0", "backgroundColor": "white", "cursor": "pointer"},
+                {"if": {"row_index": selected_cell['row'], "column_id": selected_cell['column']}, "color": "#1f3263", "backgroundColor": "#e6f3ff", "fontWeight": "bold", "border": "2px solid #1f3263", "cursor": "pointer"},
+                {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
+                {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
             ]
             return style_conditions
         
-        # Return default styles when no cell is selected
         return default_styles
 
     # Client-side callback to open the external URL
@@ -833,19 +926,16 @@ def register_callbacks(app):
         Input('external-url-store', 'data')
     )
 
-    # Add custom CSS for the header elements
+    # Add custom CSS for the header elements and tooltips
     app.clientside_callback(
         """
         function(n) {
-            // Add custom elements to CrudeOil header
             setTimeout(function() {
                 const crudeHeader = document.querySelector('.dash-header[data-dash-column="CrudeOil"]');
                 if (crudeHeader && !crudeHeader.querySelector('.sort-order-container')) {
-                    // Create container for A-Z vertical text
                     const sortContainer = document.createElement('div');
                     sortContainer.className = 'sort-order-container';
                     
-                    // Create separate clickable elements for A and Z
                     const aElement = document.createElement('div');
                     aElement.className = 'sort-asc';
                     aElement.textContent = 'A';
@@ -869,7 +959,6 @@ def register_callbacks(app):
                     sortContainer.appendChild(aElement);
                     sortContainer.appendChild(zElement);
                     
-                    // Add popup menu indicator (down arrow)
                     const popupMenu = document.createElement('div');
                     popupMenu.className = 'popup-menu-indicator';
                     popupMenu.innerHTML = '▼';
@@ -883,6 +972,71 @@ def register_callbacks(app):
                     crudeHeader.appendChild(sortContainer);
                     crudeHeader.appendChild(popupMenu);
                 }
+                
+                // Add mouseover tooltips for Field and Nested arrows
+                const fieldArrow = document.getElementById('field-arrow-btn');
+                const nestedArrow = document.getElementById('nested-arrow-btn');
+                
+                if (fieldArrow) {
+                    fieldArrow.title = 'SUM(Exports/Production Value)';
+                    
+                    // Create custom tooltip
+                    fieldArrow.addEventListener('mouseover', function(e) {
+                        const tooltip = document.createElement('div');
+                        tooltip.className = 'arrow-tooltip';
+                        tooltip.textContent = 'SUM(Exports/Production Value)';
+                        tooltip.style.left = (e.pageX + 10) + 'px';
+                        tooltip.style.top = (e.pageY - 25) + 'px';
+                        document.body.appendChild(tooltip);
+                        
+                        fieldArrow._tooltip = tooltip;
+                    });
+                    
+                    fieldArrow.addEventListener('mouseout', function(e) {
+                        if (fieldArrow._tooltip) {
+                            fieldArrow._tooltip.remove();
+                            fieldArrow._tooltip = null;
+                        }
+                    });
+                    
+                    fieldArrow.addEventListener('mousemove', function(e) {
+                        if (fieldArrow._tooltip) {
+                            fieldArrow._tooltip.style.left = (e.pageX + 10) + 'px';
+                            fieldArrow._tooltip.style.top = (e.pageY - 25) + 'px';
+                        }
+                    });
+                }
+                
+                if (nestedArrow) {
+                    nestedArrow.title = 'SUM(Exports/Production Value)';
+                    
+                    // Create custom tooltip
+                    nestedArrow.addEventListener('mouseover', function(e) {
+                        const tooltip = document.createElement('div');
+                        tooltip.className = 'arrow-tooltip';
+                        tooltip.textContent = 'SUM(Exports/Production Value)';
+                        tooltip.style.left = (e.pageX + 10) + 'px';
+                        tooltip.style.top = (e.pageY - 25) + 'px';
+                        document.body.appendChild(tooltip);
+                        
+                        nestedArrow._tooltip = tooltip;
+                    });
+                    
+                    nestedArrow.addEventListener('mouseout', function(e) {
+                        if (nestedArrow._tooltip) {
+                            nestedArrow._tooltip.remove();
+                            nestedArrow._tooltip = null;
+                        }
+                    });
+                    
+                    nestedArrow.addEventListener('mousemove', function(e) {
+                        if (nestedArrow._tooltip) {
+                            nestedArrow._tooltip.style.left = (e.pageX + 10) + 'px';
+                            nestedArrow._tooltip.style.top = (e.pageY - 25) + 'px';
+                        }
+                    });
+                }
+                
             }, 100);
             return '';
         }
