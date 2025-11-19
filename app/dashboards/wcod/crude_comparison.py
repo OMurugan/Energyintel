@@ -460,7 +460,7 @@ def create_layout(server):
                             position: relative !important;
                         '''
                     },
-                    # A-Z vertical text for sort order
+                    # A-Z vertical text for sort order - HIDDEN BY DEFAULT
                     {
                         'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-order-container',
                         'rule': '''
@@ -481,6 +481,14 @@ def create_layout(server):
                             align-items: center;
                             justify-content: center;
                             height: 30px;
+                            opacity: 0;
+                            transition: opacity 0.2s ease;
+                        '''
+                    },
+                    {
+                        'selector': '.dash-header[data-dash-column="CrudeOil"]:hover .sort-order-container',
+                        'rule': '''
+                            opacity: 1;
                         '''
                     },
                     {
@@ -524,7 +532,7 @@ def create_layout(server):
                             font-weight: bold;
                         '''
                     },
-                    # Popup menu indicator (down arrow)
+                    # Popup menu indicator (down arrow) - HIDDEN BY DEFAULT
                     {
                         'selector': '.dash-header[data-dash-column="CrudeOil"] .popup-menu-indicator',
                         'rule': '''
@@ -538,6 +546,14 @@ def create_layout(server):
                             padding: 2px 4px;
                             border: 1px solid transparent;
                             border-radius: 2px;
+                            opacity: 0;
+                            transition: opacity 0.2s ease;
+                        '''
+                    },
+                    {
+                        'selector': '.dash-header[data-dash-column="CrudeOil"]:hover .popup-menu-indicator',
+                        'rule': '''
+                            opacity: 1;
                         '''
                     },
                     {
