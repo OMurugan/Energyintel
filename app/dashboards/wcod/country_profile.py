@@ -144,9 +144,9 @@ def create_layout(server):
                     # Country selector (smaller width)
                     html.Div([
                         html.Label("Select Country:", style=label_style),
-                        dcc.Dropdown(
-                            id='country-select-profile',
-                            options=country_options,
+            dcc.Dropdown(
+                id='country-select-profile',
+                options=country_options,
                             value=default_country,
                             clearable=False,
                             placeholder="Select a country...",
@@ -166,7 +166,7 @@ def create_layout(server):
                                 {'label': 'Monthly', 'value': 'Monthly'}
                             ],
                             value='Monthly',
-                            clearable=False,
+                clearable=False,
                             style=dropdown_style
                         )
                     ], style={'width': '220px', 'marginRight': '20px'}),
@@ -1140,7 +1140,7 @@ def register_callbacks(dash_app, server):
                                 'marginBottom': '20px'
                             }
                         ),
-                        html.Div([
+                html.Div([
                             create_key_figures_table(country_name)
                         ], style={'background': 'white', 'padding': '20px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
                     ], className='col-md-12', style={'padding': '15px'})
@@ -1179,7 +1179,7 @@ def register_callbacks(dash_app, server):
                             'textAlign': 'center'
                         }
                     ),
-                    html.Div([
+            html.Div([
                         create_port_details_table(country_name)
                     ], style={'background': 'white', 'padding': '20px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
                 ], className='col-md-12', style={'padding': '15px'})
@@ -1479,4 +1479,4 @@ def register_callbacks(dash_app, server):
         Input('css-injection-placeholder', 'id'),
         prevent_initial_call=False
     )
-    
+
