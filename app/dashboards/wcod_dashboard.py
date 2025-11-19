@@ -372,16 +372,27 @@ def create_wcod_dashboard(server, url_base_pathname):
     @callback(
         [Output('main-tabs', 'value'),
          Output('current-submenu', 'data', allow_duplicate=True)],
-        Input('url', 'pathname'),
+        [Input('url', 'pathname'),
+         Input('url', 'search')],
         prevent_initial_call='initial_duplicate'  # Required when using allow_duplicate=True
     )
-    def update_from_url(pathname):
+    def update_from_url(pathname, search):
         """Update tabs and submenu based on URL"""
+        # Check for page query parameter (used when embedded in iframe)
+        page_from_query = None
+        if search:
+            query_params = parse_qs(search.lstrip('?'))
+            if 'page' in query_params and query_params['page']:
+                page_from_query = query_params['page'][0]
+        
+        # Use page from query parameter if available, otherwise use pathname
+        effective_pathname = page_from_query if page_from_query else pathname
+        
         # Normalize pathname
-        if not pathname:
-            pathname = '/wcod/'
-        elif pathname == '/wcod':
-            pathname = '/wcod/'
+        if not effective_pathname:
+            effective_pathname = '/wcod/'
+        elif effective_pathname == '/wcod':
+            effective_pathname = '/wcod/'
         
         # Map URL paths to tab and submenu - matching exact user-provided URLs
         url_mapping = {
@@ -415,7 +426,7 @@ def create_wcod_dashboard(server, url_base_pathname):
             '/wcod-carbon-intensity-methodology': ('methodology-tab', 'projects-carbon'),
         }
         
-        tab, submenu = url_mapping.get(pathname, ('country-tab', 'country-overview'))
+        tab, submenu = url_mapping.get(effective_pathname, ('country-tab', 'country-overview'))
         return tab, submenu
     
     # Callback to highlight active tab - runs on initial load and when tab changes
@@ -638,15 +649,26 @@ def create_wcod_dashboard(server, url_base_pathname):
         Output('tab-content', 'children'),
         [Input('current-submenu', 'data'),
          Input('main-tabs', 'value'),
-         Input('url', 'pathname')],
+         Input('url', 'pathname'),
+         Input('url', 'search')],
         prevent_initial_call=False
     )
-    def update_tab_content(submenu, main_tab, pathname):
+    def update_tab_content(submenu, main_tab, pathname, search):
         """Update main content area based on sub-menu selection"""
-        # If pathname matches crude-overview, ensure we render it even if submenu isn't set yet
+        # Check for page query parameter (used when embedded in iframe)
         pathname_str = str(pathname) if pathname else ''
-        if '/wcod/crude-overview' in pathname_str:
-            return render_crude_overview()
+        page_from_query = None
+        if search:
+            query_params = parse_qs(search.lstrip('?'))
+            if 'page' in query_params and query_params['page']:
+                page_from_query = query_params['page'][0]
+        
+        # Use page from query parameter to determine which view to show if submenu is None
+        effective_page = page_from_query if page_from_query else pathname_str
+        
+        # If pathname matches crude-carbon-intensity, ensure we render it even if submenu isn't set yet
+        if '/wcod-crude-carbon-intensity' in effective_page:
+            return render_crude_carbon()
         
         if main_tab == 'country-tab':
             if submenu == 'country-overview':
@@ -654,7 +676,27 @@ def create_wcod_dashboard(server, url_base_pathname):
             elif submenu == 'country-profile':
                 return render_country_profile()
         elif main_tab == 'crude-tab':
-            if submenu == 'crude-overview':
+            # Handle None submenu on refresh - use query parameter to determine which view to show
+            if submenu is None:
+                # On refresh, submenu might be None, so check query parameter or pathname
+                if page_from_query:
+                    effective_page = page_from_query
+                else:
+                    effective_page = pathname_str
+                
+                if '/wcod-crude-carbon-intensity' in effective_page:
+                    return render_crude_carbon()
+                elif '/wcod/crude-overview' in effective_page:
+                    return render_crude_overview()
+                elif '/wcod-crude-profile' in effective_page:
+                    return render_crude_profile()
+                elif '/wcod-crude-comparison' in effective_page:
+                    return render_crude_comparison()
+                elif '/wcod-crude-quality-comparison' in effective_page:
+                    return render_crude_quality()
+                # Default to crude-overview if we can't determine
+                return render_crude_overview()
+            elif submenu == 'crude-overview':
                 return render_crude_overview()
             elif submenu == 'crude-profile':
                 return render_crude_profile()

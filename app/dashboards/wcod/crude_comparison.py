@@ -2,6 +2,7 @@ from dash import dcc, html, Input, Output, dash_table
 import pandas as pd
 import os
 import chardet
+from app import create_dash_app
 
 # ------------------------------------------------------------------------------
 # PATH CONSTANTS
@@ -131,7 +132,7 @@ crude_data, columns = load_crude_data("production")
 # ------------------------------------------------------------------------------
 # LAYOUT
 # ------------------------------------------------------------------------------
-def create_layout(server):
+def create_layout(server=None):
     return html.Div(
         children=[
             html.Div([
@@ -185,12 +186,13 @@ def create_layout(server):
                     "border": "1px solid #e2e2e2",
                     "whiteSpace": "normal",
                     "height": "35px",         # reduced row height
+                    "color": "#1f3263",
                 },
                 style_header={
                     "backgroundColor": "#f2f2f2",
                     "fontWeight": "bold",
                     "fontSize": "12px",
-                    "color": "#444",
+                    "color": "#1f3263",
                     "border": "1px solid #d0d0d0",
                 },
                 style_cell_conditional=[
@@ -203,7 +205,8 @@ def create_layout(server):
                         "borderRight": "2px solid #d0d0d0",
                         "paddingLeft": "10px",
                         "paddingTop": "5px",   # push text slightly down
-                        "paddingBottom": "5px" # reduce bottom padding to keep row compact
+                        "paddingBottom": "5px", # reduce bottom padding to keep row compact
+                        "color": "#1f3263",
                     }
                 ],
                 style_data_conditional=[
@@ -240,9 +243,9 @@ def create_layout(server):
 # ------------------------------------------------------------------------------
 # CALLBACKS
 # ------------------------------------------------------------------------------
-def register_callbacks(app):
+def register_callbacks(dash_app, server=None):
 
-    @app.callback(
+    @dash_app.callback(
         Output("crude-heading", "children"),
         Input("export-production-dropdown", "value"),
     )
@@ -260,7 +263,7 @@ def register_callbacks(app):
             },
         )
 
-    @app.callback(
+    @dash_app.callback(
         Output("crude-comparison-table", "data"),
         Input("export-production-dropdown", "value"),
     )
@@ -268,12 +271,23 @@ def register_callbacks(app):
         crude_data, _ = load_crude_data(mode)
         return crude_data
 
-    @app.callback(
+    @dash_app.callback(
         Output("crude-comparison-table", "columns"),
         Input("export-production-dropdown", "value"),
     )
     def reload_columns(mode):
         _, columns = load_crude_data(mode)
         return columns
+
+
+# ------------------------------------------------------------------------------
+# DASH APP CREATION
+# ------------------------------------------------------------------------------
+def create_crude_comparison_dashboard(server, url_base_pathname="/dash/crude-comparison/"):
+    """Create the Crude Comparison dashboard"""
+    dash_app = create_dash_app(server, url_base_pathname)
+    dash_app.layout = create_layout(server)
+    register_callbacks(dash_app, server)
+    return dash_app
 
 
