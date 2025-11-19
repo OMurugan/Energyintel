@@ -87,43 +87,47 @@ def load_crude_quality_table():
 
     # Data starts from row index 2
     df = raw.iloc[2:].reset_index(drop=True)
-    df.columns = sub_headers
-
-    # Keep only the columns that are visible in the Tableau view
-    # Country | CrudeOil | Gravity (API at 60 F) |
-    # Sulfur Content (% Wt) | Pour Point (Temp. C) | Viscosity (cSt at X C ...)
-    columns_to_keep = [
-        "Country",
-        "CrudeOil",
-        "API at 60 F",      # under Gravity
-        "% Wt",             # under Sulfur Content
-        "Temp. C",          # under Pour Point
-        "cSt at 10 C",
-        "cSt at 15.6 C",
-        "cSt at 20 C",
-        "cSt at 37.8 C",
-        "cSt at 40 C",
-        "cSt at 50 C",
-    ]
-
-    available_cols = [c for c in columns_to_keep if c in df.columns]
-    df = df[available_cols]
-
-    # Build column info for grouped headers (parent / sub)
+    
+    # Filter out empty columns first, keeping track of original indices
+    valid_indices = []
+    valid_sub_headers = []
+    valid_parent_headers = []
+    
+    for idx, (sub_h, parent_h) in enumerate(zip(sub_headers, parent_headers)):
+        sub_h_str = str(sub_h).strip() if pd.notna(sub_h) else ""
+        if sub_h_str and sub_h_str != '':
+            valid_indices.append(idx)
+            valid_sub_headers.append(sub_h_str)
+            # Normalize parent header - strip and normalize whitespace for consistent merging
+            parent_h_clean = str(parent_h).strip() if pd.notna(parent_h) and str(parent_h).strip() != '' else ""
+            # Normalize parent header to ensure identical headers merge (remove extra spaces)
+            if parent_h_clean:
+                parent_h_clean = ' '.join(parent_h_clean.split())  # Normalize multiple spaces to single space
+            valid_parent_headers.append(parent_h_clean)
+    
+    # Select only valid columns and create unique column names
+    df = df.iloc[:, valid_indices].copy()
+    
+    # Create unique column IDs by combining parent and sub header with index
+    # This handles duplicate sub-header names correctly
+    unique_column_ids = []
     column_info = []
-    for col in df.columns:
-        parent = ""
-        if col in sub_headers:
-            idx = sub_headers.index(col)
-            if idx < len(parent_headers):
-                parent = parent_headers[idx].strip()
-
-        # We only show grouped headers when there is a real parent
-        # and we do NOT group Country / CrudeOil
-        if parent and parent != col and col not in ["Country", "CrudeOil"]:
-            column_info.append({"id": col, "parent": parent, "sub": col})
+    
+    for idx, (sub_h, parent_h) in enumerate(zip(valid_sub_headers, valid_parent_headers)):
+        # Create unique ID: use index to differentiate duplicates
+        unique_id = f"{sub_h}_{idx}" if valid_sub_headers.count(sub_h) > 1 else sub_h
+        unique_column_ids.append(unique_id)
+        
+        # Store mapping: unique_id -> original_sub_header
+        parent = parent_h if parent_h and parent_h != "" else ""
+        
+        if parent and parent != sub_h and sub_h not in ["Country", "CrudeOil"]:
+            column_info.append({"id": unique_id, "parent": parent, "sub": sub_h, "original_idx": idx})
         else:
-            column_info.append({"id": col, "parent": "", "sub": col})
+            column_info.append({"id": unique_id, "parent": "", "sub": sub_h, "original_idx": idx})
+    
+    # Rename columns to unique IDs
+    df.columns = unique_column_ids
 
     # Attach meta so create_grouped_columns can use it
     df._column_info = column_info
@@ -138,32 +142,112 @@ def create_grouped_columns(df):
     if df.empty or not hasattr(df, '_column_info'):
         return [{"name": col, "id": col} for col in df.columns]
 
+    # Create a mapping from column ID to column info
+    info_map = {info["id"]: info for info in df._column_info}
+    
     columns = []
-    for info in df._column_info:
-        col_id = info["id"]
-        parent = info["parent"]
-        sub = info["sub"]
+    for idx, col_id in enumerate(df.columns):
+        if col_id in info_map:
+            info = info_map[col_id]
+            parent = info["parent"]
+            sub = info["sub"]
 
-        if parent and parent != sub and sub not in ["Country", "CrudeOil"]:
-            # Two-level header: first row = parent, second row = sub
-            display_name = [parent, sub]
+            # Make sub-header unique by appending only invisible Unicode characters
+            # This prevents merging of duplicate sub-headers in the second row
+            # Each sub-header will be treated as separate even if the text is the same
+            # Parent headers in the first row can still merge if they're the same
+            # Encode index as invisible characters (zero-width space, non-joiner, joiner)
+            # Convert index to base-4 and map to invisible chars: 0=\u200B, 1=\u200C, 2=\u200D, 3=\uFEFF
+            invisible_chars = ['\u200B', '\u200C', '\u200D', '\uFEFF']  # All invisible
+            index_str = ''
+            temp_idx = idx
+            while temp_idx > 0:
+                index_str = invisible_chars[temp_idx % 4] + index_str
+                temp_idx //= 4
+            if not index_str:
+                index_str = invisible_chars[0]
+            unique_sub = f"{sub}{index_str}"  # Only invisible characters, no visible numbers
+
+            # For Country and CrudeOil, use empty parent header to align with two-level structure
+            if sub in ["Country", "CrudeOil"]:
+                # Use empty string as parent to show only sub-header in second row
+                display_name = ["", unique_sub]
+            elif parent and parent != sub:
+                # Two-level header: first row = parent, second row = sub (unique)
+                display_name = [parent, unique_sub]
+            else:
+                # Single header row
+                display_name = unique_sub
+
+            columns.append({
+                "name": display_name,
+                "id": col_id
+            })
         else:
-            # Single header row
-            display_name = sub
-
-        columns.append({
-            "name": display_name,
-            "id": col_id
-        })
+            # Fallback if info not found
+            columns.append({
+                "name": col_id,
+                "id": col_id
+            })
 
     return columns
 
 
-def load_yield_volume_table():
-    """Load data for Crudes Compared by Product Yield table"""
-    csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'crude_quality', 'table_yield Volume.csv')
+def process_quality_table_data(df, country_col_id, crudeoil_col_id):
+    """Merge country cells visually (Tableau style)"""
+    if df.empty:
+        return []
+
+    df = df.copy()
+
+    # Normalize the country column - ensure empty strings are truly empty
+    df[country_col_id] = df[country_col_id].fillna("").astype(str).str.strip()
+    df[crudeoil_col_id] = df[crudeoil_col_id].fillna("").astype(str).str.strip()
     
-    df = pd.read_csv(
+    # Replace empty strings with None, then back to empty string to ensure consistency
+    df[country_col_id] = df[country_col_id].replace("", None).fillna("")
+    df[crudeoil_col_id] = df[crudeoil_col_id].replace("", None).fillna("")
+
+    # Remove duplicate country values, keeping only the first occurrence
+    prev = None
+    for i in range(len(df)):
+        val = str(df.at[i, country_col_id]).strip()
+        if val == prev and val != "":
+            df.at[i, country_col_id] = ""      # remove duplicate - use empty string
+        else:
+            prev = val                         # keep first
+    
+    # Convert to dict, ensuring empty strings are preserved
+    records = df.to_dict("records")
+    # Ensure empty strings are truly empty (not None)
+    for record in records:
+        if country_col_id in record and record[country_col_id] is None:
+            record[country_col_id] = ""
+        if crudeoil_col_id in record and record[crudeoil_col_id] is None:
+            record[crudeoil_col_id] = ""
+    
+    return records
+
+
+
+def load_yield_volume_table():
+    """
+    Load data for 'Crudes Compared by Product Yield' table.
+    
+    Follows the same robust parsing logic as load_crude_quality_table():
+    - Handles copyright/source rows
+    - Extracts two-level headers (parent and sub headers)
+    - Filters empty columns dynamically
+    - Loads ALL columns from CSV
+    """
+    csv_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        'data',
+        'crude_quality',
+        'table_yield Volume.csv'
+    )
+    
+    raw = pd.read_csv(
         csv_path,
         encoding="utf-16",
         sep="\t",
@@ -171,31 +255,176 @@ def load_yield_volume_table():
         engine="python"
     )
     
-    # Skip copyright rows (rows 0-2) and use row 4 (index 3) as header
-    df = df.iloc[3:].reset_index(drop=True)
+    # Drop completely empty rows (same as Quality table)
+    raw = raw.dropna(how="all")
     
-    # First row (index 0) is the header - strip whitespace
-    df.columns = df.iloc[0].astype(str).str.strip()
-    df = df.iloc[1:].reset_index(drop=True)
+    # Skip first two "Source / COPYRIGHT" rows (same as Quality table)
+    raw = raw.iloc[2:].reset_index(drop=True)
     
-    # Select relevant columns for the table (only Tableau columns)
-    columns_to_keep = [
-        'Country',
-        'CrudeOil',
-        'Gravity (API at 60 F)',
-        'Barrels ( Per Metric Ton)',
-        'Gasoil',
-        'Kerosene',
-        'LPG',
-        'Naphtha',
-        'Residue'
-    ]
+    # Parent & sub headers (two-level header structure like Quality table)
+    parent_headers = raw.iloc[0].fillna("").astype(str).str.strip().tolist()
+    sub_headers = raw.iloc[1].fillna("").astype(str).str.strip().tolist()
     
-    available_cols = [col for col in columns_to_keep if col in df.columns]
-    if available_cols:
-        df = df[available_cols]
+    # Data starts from row index 2
+    df = raw.iloc[2:].reset_index(drop=True)
+    
+    # Filter out empty columns first, keeping track of original indices
+    valid_indices = []
+    valid_sub_headers = []
+    valid_parent_headers = []
+    
+    for idx, (sub_h, parent_h) in enumerate(zip(sub_headers, parent_headers)):
+        sub_h_str = str(sub_h).strip() if pd.notna(sub_h) else ""
+        # Normalize parent header - strip and normalize whitespace for consistent merging
+        parent_h_clean = str(parent_h).strip() if pd.notna(parent_h) and str(parent_h).strip() != '' else ""
+        # Normalize parent header to ensure identical headers merge (remove extra spaces)
+        if parent_h_clean:
+            parent_h_clean = ' '.join(parent_h_clean.split())  # Normalize multiple spaces to single space
+        
+        # Include column if sub-header exists (parent header is optional for grouping display)
+        if sub_h_str and sub_h_str != '':
+            valid_indices.append(idx)
+            valid_sub_headers.append(sub_h_str)
+            valid_parent_headers.append(parent_h_clean)
+    
+    # Select only valid columns
+    df = df.iloc[:, valid_indices].copy()
+    
+    # Create unique column IDs for duplicate sub-headers (like Quality table does)
+    # This handles cases where "Crude Oil" appears multiple times under different parents
+    unique_column_ids = []
+    column_info = []
+    sub_header_counts = {}
+    
+    for idx, (sub_h, parent_h) in enumerate(zip(valid_sub_headers, valid_parent_headers)):
+        parent = parent_h if parent_h and parent_h != "" else ""
+        
+        # Count occurrences of this sub-header (for display purposes)
+        if sub_h not in sub_header_counts:
+            sub_header_counts[sub_h] = 0
+        sub_header_counts[sub_h] += 1
+        
+        # Create unique ID: use parent+sub combination if sub-header is duplicate
+        # This ensures "Crude Oil" under "Gravity" is different from "Crude Oil" under "Barrels"
+        if sub_header_counts[sub_h] > 1:
+            # Use parent to differentiate when sub-header is duplicate
+            if parent:
+                # Create ID from parent (cleaned) + sub to make it unique
+                parent_clean = parent.replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_").replace("-", "_")
+                unique_id = f"{parent_clean}_{sub_h}".replace("__", "_").strip("_")
+            else:
+                # Fallback: use index-based unique ID
+                unique_id = f"{sub_h}_{idx}"
+        else:
+            # First occurrence - use sub-header as ID, but if it's generic and has parent, include parent
+            if parent and sub_h in ["Crude Oil", "CrudeOil"]:
+                parent_clean = parent.replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_").replace("-", "_")
+                unique_id = f"{parent_clean}_{sub_h}".replace("__", "_").strip("_")
+            else:
+                unique_id = sub_h
+        
+        unique_column_ids.append(unique_id)
+        
+        # Store column info - preserve original parent header for display
+        column_info.append({
+            "id": unique_id,
+            "parent": parent,
+            "sub": sub_h,
+            "original_idx": idx
+        })
+    
+    # Rename columns to unique IDs
+    df.columns = unique_column_ids
+    
+    # Drop rows that are completely empty
+    df = df.dropna(how="all")
+    df = df.reset_index(drop=True)
+    
+    # Normalize country and crudeoil columns if they exist (check by unique ID or original name)
+    country_col = None
+    crudeoil_col = None
+    for col_id, info in zip(unique_column_ids, column_info):
+        if info['sub'] == 'Country':    
+            country_col = col_id
+        elif info['sub'] == 'CrudeOil':
+            crudeoil_col = col_id
+    
+    if country_col and country_col in df.columns:
+        df[country_col] = df[country_col].fillna("").astype(str).str.strip()
+    if crudeoil_col and crudeoil_col in df.columns:
+        df[crudeoil_col] = df[crudeoil_col].fillna("").astype(str).str.strip()
+    
+    # Store parent and sub headers for grouped column creation (like Quality table)
+    df._parent_headers = valid_parent_headers
+    df._sub_headers = valid_sub_headers
+    df._column_info = column_info
     
     return df
+
+def process_yield_table_data(df):
+    """
+    Process yield table data to merge country cells visually (Tableau style).
+    Same logic as process_quality_table_data - country names appear once per group.
+    """
+    if df.empty:
+        return []
+    
+    df = df.copy()
+    
+    # Find Country and CrudeOil column IDs (they might have unique IDs)
+    country_col_id = None
+    crudeoil_col_id = None
+    
+    if hasattr(df, '_column_info'):
+        for info in df._column_info:
+            if info.get('sub') == 'Country':
+                country_col_id = info.get('id')
+            elif info.get('sub') == 'CrudeOil':
+                crudeoil_col_id = info.get('id')
+    
+    # Fallback: check column names directly
+    if not country_col_id:
+        for col in df.columns:
+            if col == 'Country' or (isinstance(col, str) and 'Country' in col):
+                country_col_id = col
+                break
+    if not crudeoil_col_id:
+        for col in df.columns:
+            if col == 'CrudeOil' or (isinstance(col, str) and 'CrudeOil' in col):
+                crudeoil_col_id = col
+                break
+    
+    # Normalize the country column - ensure empty strings are truly empty
+    if country_col_id and country_col_id in df.columns:
+        df[country_col_id] = df[country_col_id].fillna("").astype(str).str.strip()
+    if crudeoil_col_id and crudeoil_col_id in df.columns:
+        df[crudeoil_col_id] = df[crudeoil_col_id].fillna("").astype(str).str.strip()
+    
+    # Replace empty strings with None, then back to empty string to ensure consistency
+    if country_col_id and country_col_id in df.columns:
+        df[country_col_id] = df[country_col_id].replace("", None).fillna("")
+    if crudeoil_col_id and crudeoil_col_id in df.columns:
+        df[crudeoil_col_id] = df[crudeoil_col_id].replace("", None).fillna("")
+    
+    # Remove duplicate country values, keeping only the first occurrence
+    if country_col_id and country_col_id in df.columns:
+        prev = None
+        for i in range(len(df)):
+            val = str(df.at[i, country_col_id]).strip()
+            if val == prev and val != "":
+                df.at[i, country_col_id] = ""      # remove duplicate - use empty string
+            else:
+                prev = val                         # keep first
+    
+    # Convert to dict, ensuring empty strings are preserved
+    records = df.to_dict("records")
+    # Ensure empty strings are truly empty (not None)
+    for record in records:
+        for key, value in record.items():
+            if value is None:
+                record[key] = ""
+    
+    return records
 
 def create_layout(dash_app=None):
 
@@ -206,11 +435,65 @@ def create_layout(dash_app=None):
         quality_df = load_crude_quality_table()
     except Exception as e:
         quality_df = pd.DataFrame()
+    print('quality_df',quality_df)
     
+    # Find column IDs for Country and CrudeOil for sticky positioning
+    # Handle both exact match and pattern match (in case of unique IDs)
+    country_col_id = None
+    crudeoil_col_id = None
+    if not quality_df.empty:
+        if hasattr(quality_df, '_column_info'):
+            for info in quality_df._column_info:
+                if info.get('sub') == 'Country':
+                    country_col_id = info.get('id')
+                elif info.get('sub') == 'CrudeOil':
+                    crudeoil_col_id = info.get('id')
+        # Fallback: check column names directly
+        if not country_col_id:
+            for col in quality_df.columns:
+                if col == 'Country' or (isinstance(col, str) and col.startswith('Country')):
+                    country_col_id = col
+                    break
+        if not crudeoil_col_id:
+            for col in quality_df.columns:
+                if col == 'CrudeOil' or (isinstance(col, str) and col.startswith('CrudeOil')):
+                    crudeoil_col_id = col
+                    break
+    
+    # Debug: print found column IDs
+    print(f'\n{"="*70}')
+    print(f'DEBUG: Found column IDs')
+    print(f'  Country column ID: {country_col_id}')
+    print(f'  CrudeOil column ID: {crudeoil_col_id}')
+    print(f'  Quality DF columns: {list(quality_df.columns)[:10] if not quality_df.empty else "Empty"}')
+    print(f'  Quality DF shape: {quality_df.shape if not quality_df.empty else "Empty"}')
+    print(f'{"="*70}\n')
     try:
         yield_df = load_yield_volume_table()
     except Exception as e:
         yield_df = pd.DataFrame()
+    
+    # Find column IDs for Country and CrudeOil for Yield table (for sticky positioning and styling)
+    yield_country_col_id = None
+    yield_crudeoil_col_id = None
+    if not yield_df.empty:
+        if hasattr(yield_df, '_column_info'):
+            for info in yield_df._column_info:
+                if info.get('sub') == 'Country':
+                    yield_country_col_id = info.get('id')
+                elif info.get('sub') == 'CrudeOil':
+                    yield_crudeoil_col_id = info.get('id')
+        # Fallback: check column names directly
+        if not yield_country_col_id:
+            for col in yield_df.columns:
+                if col == 'Country' or (isinstance(col, str) and 'Country' in col):
+                    yield_country_col_id = col
+                    break
+        if not yield_crudeoil_col_id:
+            for col in yield_df.columns:
+                if col == 'CrudeOil' or (isinstance(col, str) and 'CrudeOil' in col):
+                    yield_crudeoil_col_id = col
+                    break
         
     # Create options for dropdowns
     x_options = [{"label": 'Gravity-API at 60°F', "value": 'Gravity-API at 60°F'}]
@@ -462,67 +745,356 @@ def create_layout(dash_app=None):
         html.Div([
             # First Table: Crudes Compared by Quality
             html.Div([
-                html.H3("Crudes Compared by Quality", 
-                       style={'color': '#FF6600', 'fontWeight': 'bold', 'marginBottom': '10px', 'fontSize': '18px'}),
-                dash_table.DataTable(
-                    id='crude-quality-table',
-                    columns=create_grouped_columns(quality_df) if not quality_df.empty else [],
-                    data=quality_df.to_dict('records') if not quality_df.empty else [],
-                    style_table={
-                        'overflowX': 'auto',
-                        'overflowY': 'auto',
-                        'height': '550px',
-                        'marginBottom': '0px',
-                    },
-                    style_header={
-                        'fontWeight': 'bold',
-                        'backgroundColor': 'white',
-                        'border': '1px solid #d3d3d3',
-                        'textAlign': 'center',
-                    },
-                    style_cell={
-                        'padding': '4px',
-                        'fontSize': '12px',
-                        'textAlign': 'right',
-                        'minWidth': '80px',
-                    },
+                html.Div([
+                    html.H3(
+                        "Crudes Compared by Quality",
+                        style={
+                            'color': '#FF6600',
+                            'fontWeight': 'bold',
+                            'marginBottom': '10px',
+                            'fontSize': '20px'
+                        }
+                    ),
 
-                    filter_action="none",      # <-- IMPORTANT
-                    page_action="none",        # ensure no pagination
-                    sort_action="native",
-                )
-            ], style={'marginTop': '30px', 'marginBottom': '30px', }),
+                    dash_table.DataTable(
+                        id='crude-quality-table',
+                        columns=create_grouped_columns(quality_df),
+                        data=process_quality_table_data(quality_df, country_col_id, crudeoil_col_id),
+                        style_table={
+                            'overflowX': 'auto',
+                            'overflowY': 'auto',
+                            'height': '540px',
+                            'border': '1px solid #CFCFCF',
+                            'borderCollapse': 'separate',
+                            'borderSpacing': 0,
+                            'width': '100%'
+                        },
+                        style_cell={
+                            'padding': '8px 8px',
+                            'fontSize': '12px',
+                            'fontFamily': 'Arial, sans-serif',
+                            'border': '1px solid #E6E6E6',
+                            'whiteSpace': 'normal',
+                            'textAlign': 'right',
+                            'backgroundColor': 'white',
+                            'height': 'auto',
+                            'lineHeight': '1.4'
+                        },
+                        style_header={
+                            'backgroundColor': 'white',
+                            'fontWeight': 'bold',
+                            'fontSize': '12px',
+                            'fontFamily': 'Arial, sans-serif',
+                            'border': '1px solid #D0D0D0',
+                            'borderBottom': '2px solid #D0D0D0',
+                            'padding': '8px 6px',
+                            'textAlign': 'center',
+                            'height': 'auto'
+                        },
+                        style_cell_conditional=[
+                            {
+                                'if': {'column_id': country_col_id},
+                                'position': 'sticky',
+                                'left': 0,
+                                'backgroundColor': 'white',
+                                'zIndex': 10,
+                                'textAlign': 'left',
+                                'minWidth': '140px',
+                                'width': '140px',
+                                'fontWeight': 'bold',
+                                'color': '#333',
+                                'borderRight': '2px solid #D3D3D3',
+                                'fontSize': '12px',
+                                'padding': '8px 8px'
+                            },
+                            {
+                                'if': {'column_id': crudeoil_col_id},
+                                'position': 'sticky',
+                                'left': '140px',
+                                'backgroundColor': 'white',
+                                'zIndex': 10,
+                                'textAlign': 'left',
+                                'minWidth': '170px',
+                                'width': '170px',
+                                'borderRight': '2px solid #D3D3D3',
+                                'fontSize': '12px',
+                                'padding': '8px 8px'
+                            },
+                        ],
+                        style_header_conditional=[
+                            {
+                                'if': {'column_id': country_col_id},
+                                'position': 'sticky',
+                                'left': 0,
+                                'backgroundColor': 'white',
+                                'zIndex': 11,
+                                'textAlign': 'left',
+                                'borderRight': '2px solid #D3D3D3'
+                            },
+                            {
+                                'if': {'column_id': crudeoil_col_id},
+                                'position': 'sticky',
+                                'left': '140px',
+                                'backgroundColor': 'white',
+                                'zIndex': 11,
+                                'textAlign': 'left',
+                                'borderRight': '2px solid #D3D3D3'
+                            },
+                        ],
+                        style_data_conditional=[
+                            # Apply gray background to entire row when country is not empty
+                            {
+                                'if': {
+                                    'filter_query': f'{{{country_col_id}}} != ""'
+                                },
+                                'backgroundColor': '#F5F5F5'
+                            },
+                            # Country column styling - header rows (non-empty)
+                            {
+                                'if': {
+                                    'filter_query': f'{{{country_col_id}}} != ""',
+                                    'column_id': country_col_id
+                                },
+                                'fontWeight': 'bold',
+                                'borderTop': '2px solid #CFCFCF',
+                                'borderBottom': '1px solid #E6E6E6',
+                                'verticalAlign': 'middle',
+                                'padding': '10px 8px'
+                            },
+                            # Country column - child rows (empty country cell)
+                            {
+                                'if': {
+                                    'filter_query': f'{{{country_col_id}}} = ""',
+                                    'column_id': country_col_id
+                                },
+                                'borderTop': 'none',
+                                'borderBottom': '1px solid #E6E6E6',
+                                'backgroundColor': 'white',
+                                'padding': '8px 8px'
+                            },
+                            # CrudeOil column - child rows (indented, when country is empty)
+                            {
+                                'if': {
+                                    'filter_query': f'{{{country_col_id}}} = ""',
+                                    'column_id': crudeoil_col_id
+                                },
+                                'paddingLeft': '28px',
+                                'fontWeight': 'normal',
+                                'backgroundColor': 'white',
+                                'paddingTop': '8px',
+                                'paddingBottom': '8px'
+                            },
+                            # CrudeOil column - header rows (when country is not empty)
+                            {
+                                'if': {
+                                    'filter_query': f'{{{country_col_id}}} != ""',
+                                    'column_id': crudeoil_col_id
+                                },
+                                'paddingLeft': '8px',
+                                'fontWeight': 'normal',
+                                'backgroundColor': '#F5F5F5',
+                                'paddingTop': '10px',
+                                'paddingBottom': '10px'
+                            },
+                            # Text alignment - Country column always left
+                            {
+                                'if': {
+                                    'column_id': country_col_id
+                                },
+                                'textAlign': 'left'
+                            },
+                            # Text alignment - CrudeOil column always left
+                            {
+                                'if': {
+                                    'column_id': crudeoil_col_id
+                                },
+                                'textAlign': 'left'
+                            }
+                        ],
+                        merge_duplicate_headers=True,
+                        filter_action="none",
+                        page_action="none",
+                        sort_action="native"
+                    )
+
+                ], style={'marginTop': '30px', 'marginBottom': '30px'})
+            ]),
+
 
             # Second Table: Crudes Compared by Product Yield
             html.Div([
                 html.H3("Crudes Compared by Product Yield", 
-                       style={'color': '#FF6600', 'fontWeight': 'bold', 'marginBottom': '10px', 'fontSize': '18px'}),
+                       style={'color': '#FF6600', 'fontWeight': 'bold', 'marginBottom': '10px', 'fontSize': '20px'}),
                 dash_table.DataTable(
                     id='yield-volume-table',
-                    columns=[{"name": col, "id": col} for col in yield_df.columns] if not yield_df.empty else [],
-                    data=yield_df.to_dict('records') if not yield_df.empty else [],
+                    columns=create_grouped_columns(yield_df) if not yield_df.empty else [],
+                    data=process_yield_table_data(yield_df) if not yield_df.empty else [],
                     style_table={
                         'overflowX': 'auto',
-                        'overflowY': 'hidden',
+                        'overflowY': 'auto',
+                        'height': '540px',
+                        'border': '1px solid #CFCFCF',
+                        'borderCollapse': 'separate',
+                        'borderSpacing': 0,
+                        'width': '100%'
+                    },
+                    style_cell={
+                        'padding': '8px 8px',
+                        'fontSize': '12px',
+                        'fontFamily': 'Arial, sans-serif',
+                        'border': '1px solid #E6E6E6',
+                        'textAlign': 'right',
+                        'minWidth': '80px',
+                        'backgroundColor': 'white',
                         'height': 'auto',
-                        'marginBottom': '0px',
+                        'lineHeight': '1.4'
                     },
                     style_header={
                         'fontWeight': 'bold',
-                        'backgroundColor': 'white',
-                        'border': '1px solid #d3d3d3',
-                        'textAlign': 'center',
-                    },
-                    style_cell={
-                        'padding': '4px',
                         'fontSize': '12px',
-                        'textAlign': 'right',
-                        'minWidth': '80px',
+                        'fontFamily': 'Arial, sans-serif',
+                        'backgroundColor': 'white',
+                        'border': '1px solid #D0D0D0',
+                        'borderBottom': '2px solid #D0D0D0',
+                        'textAlign': 'center',
+                        'padding': '8px 6px'
                     },
-
+                    style_cell_conditional=([
+                        {
+                            'if': {'column_id': yield_country_col_id},
+                            'position': 'sticky',
+                            'left': 0,
+                            'backgroundColor': 'white',
+                            'zIndex': 10,
+                            'textAlign': 'left',
+                            'minWidth': '140px',
+                            'width': '140px',
+                            'fontWeight': 'bold',
+                            'color': '#333',
+                            'borderRight': '2px solid #D3D3D3',
+                            'fontSize': '12px',
+                            'padding': '8px 8px'
+                        },
+                        {
+                            'if': {'column_id': yield_crudeoil_col_id},
+                            'position': 'sticky',
+                            'left': '140px',
+                            'backgroundColor': 'white',
+                            'zIndex': 10,
+                            'textAlign': 'left',
+                            'minWidth': '170px',
+                            'width': '170px',
+                            'borderRight': '2px solid #D3D3D3',
+                            'fontSize': '12px',
+                            'padding': '8px 8px'
+                        },
+                    ] if yield_country_col_id and yield_crudeoil_col_id else []),
+                    style_header_conditional=([
+                        {
+                            'if': {'column_id': yield_country_col_id},
+                            'position': 'sticky',
+                            'left': 0,
+                            'backgroundColor': 'white',
+                            'zIndex': 11,
+                            'textAlign': 'left',
+                            'borderRight': '2px solid #D3D3D3'
+                        },
+                        {
+                            'if': {'column_id': yield_crudeoil_col_id},
+                            'position': 'sticky',
+                            'left': '140px',
+                            'backgroundColor': 'white',
+                            'zIndex': 11,
+                            'textAlign': 'left',
+                            'borderRight': '2px solid #D3D3D3'
+                        },
+                    ] if yield_country_col_id and yield_crudeoil_col_id else []),
+                    style_data_conditional=([
+                        # Apply gray background to entire row when country is not empty (country header rows)
+                        {
+                            'if': {
+                                'filter_query': f'{{{yield_country_col_id}}} != ""'
+                            },
+                            'backgroundColor': '#F5F5F5',
+                            'borderTop': '2px solid #CFCFCF'
+                        },
+                        # Country column styling - header rows (non-empty)
+                        {
+                            'if': {
+                                'filter_query': f'{{{yield_country_col_id}}} != ""',
+                                'column_id': yield_country_col_id
+                            },
+                            'fontWeight': 'bold',
+                            'borderTop': '2px solid #CFCFCF',
+                            'borderBottom': '1px solid #E6E6E6',
+                            'verticalAlign': 'middle',
+                            'padding': '8px 8px',
+                            'backgroundColor': '#F5F5F5'
+                        },
+                        # Country column - child rows (empty country cell) - remove top border
+                        {
+                            'if': {
+                                'filter_query': f'{{{yield_country_col_id}}} = ""',
+                                'column_id': yield_country_col_id
+                            },
+                            'borderTop': 'none',
+                            'borderBottom': '1px solid #E6E6E6',
+                            'backgroundColor': 'white',
+                            'padding': '8px 8px'
+                        },
+                        # All cells in child rows (when country is empty) - ensure white background
+                        {
+                            'if': {
+                                'filter_query': f'{{{yield_country_col_id}}} = ""'
+                            },
+                            'backgroundColor': 'white',
+                            'borderTop': 'none'
+                        },
+                        # CrudeOil column - child rows (indented, when country is empty)
+                        {
+                            'if': {
+                                'filter_query': f'{{{yield_country_col_id}}} = ""',
+                                'column_id': yield_crudeoil_col_id
+                            },
+                            'paddingLeft': '24px',
+                            'fontWeight': 'normal',
+                            'backgroundColor': 'white',
+                            'paddingTop': '8px',
+                            'paddingBottom': '8px',
+                            'paddingRight': '8px'
+                        },
+                        # CrudeOil column - header rows (when country is not empty)
+                        {
+                            'if': {
+                                'filter_query': f'{{{yield_country_col_id}}} != ""',
+                                'column_id': yield_crudeoil_col_id
+                            },
+                            'paddingLeft': '8px',
+                            'fontWeight': 'normal',
+                            'backgroundColor': '#F5F5F5',
+                            'paddingTop': '8px',
+                            'paddingBottom': '8px',
+                            'paddingRight': '8px'
+                        },
+                        # Text alignment - Country column always left
+                        {
+                            'if': {
+                                'column_id': yield_country_col_id
+                            },
+                            'textAlign': 'left'
+                        },
+                        # Text alignment - CrudeOil column always left
+                        {
+                            'if': {
+                                'column_id': yield_crudeoil_col_id
+                            },
+                            'textAlign': 'left'
+                        }
+                    ] if yield_country_col_id and yield_crudeoil_col_id else []),
+                    merge_duplicate_headers=True,
                     filter_action="none",
-                    page_action="none",        # <-- removes pagination
-                    sort_action="native",
+                    page_action="none",
+                    sort_action="native"
                 )
             ], style={'marginTop': '30px', 'marginBottom': '30px'})
         ])
@@ -549,12 +1121,74 @@ def create_crude_quality_dashboard(server, url_base_pathname="/dash/crude-qualit
     # --------------------------------------------------------
     css_injected = """
         <style>
-        /* Allow vertical scrolling to see tables */
+        /* Prevent page scrolling, but allow table scrolling */
         html, body {
             overflow-x: hidden !important;
-            overflow-y: auto !important;
-            height: auto !important;
+            overflow-y: hidden !important;
+            height: 100% !important;
             min-height: 100% !important;
+        }
+        
+        /* Support table scrolling - Dash handles sticky via DataTable props */
+        #crude-quality-table .dash-table-container,
+        #yield-volume-table .dash-table-container {
+            position: relative !important;
+            overflow-x: auto !important;
+        }
+        
+        #crude-quality-table .dash-table-container .dash-spreadsheet-container,
+        #yield-volume-table .dash-table-container .dash-spreadsheet-container {
+            overflow-x: auto !important;
+            overflow-y: auto !important;
+        }
+        
+        #crude-quality-table table,
+        #yield-volume-table table {
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
+            width: 100% !important;
+        }
+        
+        /* Ensure proper table cell borders and spacing */
+        #crude-quality-table td,
+        #crude-quality-table th,
+        #yield-volume-table td,
+        #yield-volume-table th {
+            border: 1px solid #E6E6E6 !important;
+        }
+        
+        /* Remove top border for empty country cells to create grouping effect */
+        #crude-quality-table tbody tr td:first-child:empty,
+        #yield-volume-table tbody tr td:first-child:empty {
+            border-top: none !important;
+        }
+        
+        /* Ensure table rows have consistent spacing */
+        #crude-quality-table tbody tr,
+        #yield-volume-table tbody tr {
+            height: auto !important;
+        }
+        
+        /* Ensure sticky columns maintain proper background */
+        #crude-quality-table .dash-table-container table thead tr th:first-child,
+        #crude-quality-table .dash-table-container table tbody tr td:first-child,
+        #yield-volume-table .dash-table-container table thead tr th:first-child,
+        #yield-volume-table .dash-table-container table tbody tr td:first-child {
+            background-color: white !important;
+        }
+        
+        #crude-quality-table .dash-table-container table thead tr th:nth-child(2),
+        #crude-quality-table .dash-table-container table tbody tr td:nth-child(2),
+        #yield-volume-table .dash-table-container table thead tr th:nth-child(2),
+        #yield-volume-table .dash-table-container table tbody tr td:nth-child(2) {
+            background-color: white !important;
+        }
+        
+        /* Ensure proper border rendering */
+        #crude-quality-table table,
+        #yield-volume-table table {
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
         }
         
         /* === Left Handle: flat left, round right === */
