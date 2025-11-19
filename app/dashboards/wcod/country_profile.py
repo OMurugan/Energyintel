@@ -1551,7 +1551,7 @@ def register_callbacks(dash_app, server):
             }
             #world-map-chart .plotly .choroplethlayer path:hover {
                 stroke: black !important;
-                stroke-width: 2px !important;
+                stroke-width: 1px !important;
             }
             /* Hide country border when port is being hovered */
             #world-map-chart.port-hovering .plotly .choroplethlayer path:hover {
