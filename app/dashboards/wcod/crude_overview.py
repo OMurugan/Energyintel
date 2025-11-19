@@ -2312,11 +2312,21 @@ def register_callbacks(dash_app, server):
                         year_month_counts[year_str] = max(1, months_for_year)
                         print(f"DEBUG BREAKDOWN MONTHLY: Year {year_str} has {year_month_counts[year_str]} months")
 
-                    total_weight = sum(year_month_counts.values())
+                    MIN_FACET_MONTH_WEIGHT = 8  # minimum visual width (in months) for a year facet
+                    year_weights = {}
+                    for year_str, month_count in year_month_counts.items():
+                        weight = month_count
+                        # Apply minimum width to avoid overly thin facets when months are missing
+                        if len(year_month_counts) > 1:
+                            weight = max(month_count, MIN_FACET_MONTH_WEIGHT)
+                        year_weights[year_str] = weight
+                        print(f"DEBUG BREAKDOWN MONTHLY: Year {year_str} month_count={month_count}, weight={weight}")
+
+                    total_weight = sum(year_weights.values())
                     if total_weight == 0:
                         total_weight = len(selected_years_sorted)
-                    gap = 0.02
                     n_years = len(selected_years_sorted)
+                    gap = 0.0 if n_years > 1 else 0.02
                     usable_width = 1.0 - gap * (n_years - 1)
                     usable_width = max(0.3, usable_width)
                     unit = usable_width / total_weight if total_weight > 0 else usable_width / n_years
@@ -2327,7 +2337,7 @@ def register_callbacks(dash_app, server):
 
                     for idx, year in enumerate(selected_years_sorted, start=1):
                         year_str = str(year)
-                        width = unit * year_month_counts.get(year_str, 1)
+                        width = unit * year_weights.get(year_str, 1)
                         domain_start = current_start
                         domain_end = domain_start + width
                         # Don't force last year to 1.0 - calculate proportionally
