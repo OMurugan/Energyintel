@@ -2123,6 +2123,10 @@ def register_callbacks(dash_app, server):
                 
                 print(f"DEBUG BREAKDOWN MONTHLY: Final verification - all months in data: {sorted(all_months_in_data)}")
                 
+                # Use 0 spacing when we have multiple years (we'll set custom domains)
+                # Otherwise use default spacing for single year
+                spacing = 0.0 if len(selected_years_sorted) > 1 else 0.04
+                
                 fig = px.bar(
                     agg_for_chart, 
                     x="month",  # use month labels directly
@@ -2136,7 +2140,7 @@ def register_callbacks(dash_app, server):
                         # DO NOT set month in category_orders - let each facet control its own months
                     },
                     facet_col="year",
-                    facet_col_spacing=0.04,
+                    facet_col_spacing=spacing,
                     labels={"value":"Avg. Value", "month":"Month", "Stream":"Stream", "year":"Year"},
                     barmode="stack",
                     custom_data=["month", "country_display", "year_label"]
@@ -2212,17 +2216,19 @@ def register_callbacks(dash_app, server):
                 )
                 
                 # Apply per-year month ordering to x-axes - only show months with data
-                # This removes blank months while keeping month names on x-axis
+                # Chart months should be in forward order (January to December), NOT reversed
+                # Reverse order is only for the table, not the chart
                 print(f"DEBUG BREAKDOWN MONTHLY: Applying x-axis configuration to remove blank months")
                 for idx, year in enumerate(selected_years_sorted, start=1):
                     axis_key = f"xaxis{idx}" if idx > 1 else "xaxis"
                     year_data = agg_for_chart[agg_for_chart["year"] == year]
                     months_for_axis = []
                     if len(year_data) > 0:
+                        # Sort in forward order (January to December) - ascending=True
                         months_for_axis = (
                             year_data[["month", "month_order"]]
                             .drop_duplicates()
-                            .sort_values("month_order", ascending=False)["month"]
+                            .sort_values("month_order", ascending=True)["month"]
                             .tolist()
                         )
                     
@@ -2292,6 +2298,65 @@ def register_callbacks(dash_app, server):
                 # Adjust spacing/width for monthly bars (visual only, data unchanged)
                 fig.update_layout(bargap=0.02, bargroupgap=0.0)
                 fig.update_traces(width=0.96, selector=dict(type='bar'))
+
+                # Dynamically allocate facet widths based on months count per year
+                if len(selected_years_sorted) > 1:
+                    year_month_counts = {}
+                    # Ensure we're comparing strings consistently
+                    agg_for_chart["year"] = agg_for_chart["year"].astype(str)
+                    
+                    for year in selected_years_sorted:
+                        year_str = str(year)
+                        year_data = agg_for_chart[agg_for_chart["year"] == year_str]
+                        months_for_year = year_data["month"].nunique() if len(year_data) > 0 else 0
+                        year_month_counts[year_str] = max(1, months_for_year)
+                        print(f"DEBUG BREAKDOWN MONTHLY: Year {year_str} has {year_month_counts[year_str]} months")
+
+                    total_weight = sum(year_month_counts.values())
+                    if total_weight == 0:
+                        total_weight = len(selected_years_sorted)
+                    gap = 0.02
+                    n_years = len(selected_years_sorted)
+                    usable_width = 1.0 - gap * (n_years - 1)
+                    usable_width = max(0.3, usable_width)
+                    unit = usable_width / total_weight if total_weight > 0 else usable_width / n_years
+                    current_start = 0.0
+                    axis_centers = {}
+
+                    print(f"DEBUG BREAKDOWN MONTHLY: Total weight: {total_weight}, Unit width: {unit}, Usable width: {usable_width}")
+
+                    for idx, year in enumerate(selected_years_sorted, start=1):
+                        year_str = str(year)
+                        width = unit * year_month_counts.get(year_str, 1)
+                        domain_start = current_start
+                        domain_end = domain_start + width
+                        # Don't force last year to 1.0 - calculate proportionally
+                        # Only ensure we don't exceed 1.0
+                        domain_end = min(1.0, domain_end)
+                        axis_key = f"xaxis{idx}" if idx > 1 else "xaxis"
+                        yaxis_key = f"yaxis{idx}" if idx > 1 else "yaxis"
+
+                        print(f"DEBUG BREAKDOWN MONTHLY: Year {year_str} ({axis_key}): domain=[{domain_start:.4f}, {domain_end:.4f}], width={width:.4f}, months={year_month_counts.get(year_str, 1)}")
+
+                        # Update xaxis domain - must be done directly on layout for faceted charts
+                        if axis_key in fig.layout:
+                            # Force update the domain
+                            fig.layout[axis_key].domain = [domain_start, domain_end]
+                            axis_centers[year_str] = (domain_start + domain_end) / 2
+                            print(f"DEBUG BREAKDOWN MONTHLY: Updated {axis_key}.domain to [{domain_start:.4f}, {domain_end:.4f}]")
+                        if yaxis_key in fig.layout:
+                            fig.layout[yaxis_key].domain = [0.0, 1.0]
+
+                        current_start = domain_end + (gap if idx < n_years else 0)
+
+                    # Reposition annotations (year labels) to align with new facet widths
+                    if hasattr(fig.layout, "annotations"):
+                        for ann in fig.layout.annotations:
+                            if ann.text:
+                                ann_year = ann.text.strip()
+                                if ann_year in axis_centers:
+                                    ann.update(x=axis_centers[ann_year])
+                                    print(f"DEBUG BREAKDOWN MONTHLY: Repositioned annotation for {ann_year} to x={axis_centers[ann_year]:.4f}")
                 
                 print(f"DEBUG BREAKDOWN MONTHLY: Faceted chart layout updated, returning figure")
                 return fig, title_text
