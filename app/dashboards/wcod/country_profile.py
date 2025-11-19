@@ -549,19 +549,16 @@ def create_world_map(selected_country=None):
         country_iso = country_to_iso.get(selected_country, None)
         
         if country_iso:
-            # Create a choropleth to highlight the selected country
-            all_countries = list(country_to_iso.values())
-            country_values = [1 if code == country_iso else 0 for code in all_countries]
-            
+            # Create a choropleth to highlight only the selected country; border handled via CSS hover
             fig.add_trace(go.Choropleth(
-                locations=all_countries,
-                z=country_values,
-                colorscale=[[0, 'rgba(232,232,232,0.5)'], [1, 'rgba(142, 153, 208, 1)']],  # Light gray for others, light blue for selected (matching image)
+                locations=[country_iso],
+                z=[1],
+                colorscale=[[0, 'rgba(142, 153, 208, 1)'], [1, 'rgba(142, 153, 208, 1)']],
                 showscale=False,
                 geo='geo',
                 hoverinfo='skip',
-                marker_line_width=0,  # No border lines
-                marker_line_color='rgba(0,0,0,0)'  # Transparent border
+                marker_line_width=0,
+                marker_line_color='rgba(0,0,0,0)'
             ))
         
         # Add scatter points for each port with orange-red markers and varied symbols
@@ -978,6 +975,7 @@ def create_production_table(country_name, time_period='Yearly'):
             table_data.append(row)
     
     return dash_table.DataTable(
+        id='production-table',
         data=table_data, 
         columns=columns,
         sort_action='native',
@@ -1087,22 +1085,6 @@ def create_production_table(country_name, time_period='Yearly'):
             {
                 'selector': 'th.dash-header[data-dash-column="Crude"] .column-header--sort',
                 'rule': 'display: inline-flex !important;'
-            },
-            {
-                'selector': '.dash-spreadsheet-container td',
-                'rule': 'transition: opacity 0.2s ease-in-out, background-color 0.2s ease-in-out;'
-            },
-            {
-                'selector': '.dash-spreadsheet-container:focus-within td:not([data-dash-column="Crude"])',
-                'rule': 'opacity: 0.3;'
-            },
-            {
-                'selector': '.dash-spreadsheet-container:focus-within td.dash-cell.focused',
-                'rule': 'opacity: 1 !important; background-color: #f7fbff !important; box-shadow: inset 0 0 0 2px #0075A8 !important; font-weight: 600; color: #1f2d3d;'
-            },
-            {
-                'selector': '.dash-spreadsheet-container:focus-within td[data-dash-column="Crude"]',
-                'rule': 'opacity: 1 !important;'
             }
         ]
     )
@@ -1536,23 +1518,38 @@ def register_callbacks(dash_app, server):
             .profile-link-hover:hover {
                 border-color: #fe5000 !important;
             }
-            /* Add black outline on hover for ALL countries (including selected) */
-            /* Target all choropleth paths on hover - show black border */
-            #world-map-chart .plotly .choroplethlayer path:hover,
-            #world-map-chart .plotly .choroplethlayer path.hover,
-            #world-map-chart .plotly .choropleth path:hover,
-            #world-map-chart .plotly .choropleth path.hover {
+            #production-table .dash-spreadsheet-container {
+                cursor: pointer;
+            }
+            #production-table .dash-spreadsheet-container.production-selection-active td {
+                opacity: 0.18;
+                transition: opacity 0.2s ease-in-out;
+            }
+            #production-table .dash-spreadsheet-container.production-selection-active td.production-cell-selected,
+            #production-table .dash-spreadsheet-container.production-selection-active td[data-dash-column="Crude"] {
+                opacity: 1 !important;
+            }
+            #production-table .dash-spreadsheet-container td.production-cell-selected {
+                background-color: #f7fbff !important;
+                box-shadow: inset 0 0 0 2px #0075A8 !important;
+                font-weight: 600;
+                color: #1f2d3d !important;
+            }
+            #world-map-chart .plotly .choroplethlayer path {
+                pointer-events: auto !important;
+                stroke: none !important;
+                stroke-width: 0 !important;
+                transition: stroke 0.15s ease-in-out, stroke-width 0.15s ease-in-out;
+            }
+            #world-map-chart .plotly .choroplethlayer path:hover {
                 stroke: black !important;
                 stroke-width: 2px !important;
             }
-            /* Default: no stroke for choropleth paths (when not hovering) */
-            #world-map-chart .plotly .choroplethlayer path {
-                stroke: none !important;
-                stroke-width: 0 !important;
+            #world-map-chart .plotly .scattergeo .points path {
+                pointer-events: auto !important;
             }
-            #world-map-chart .plotly .choropleth path {
+            #world-map-chart .plotly .scattergeo .points path:hover {
                 stroke: none !important;
-                stroke-width: 0 !important;
             }
             `;
             document.head.appendChild(style);
@@ -1747,8 +1744,86 @@ def register_callbacks(dash_app, server):
                 setInterval(enforceZoomLimits, 500);
             }
             
+            function initProductionTableEnhancements() {
+                if (window.productionTableEnhancerInitialized) {
+                    return;
+                }
+                window.productionTableEnhancerInitialized = true;
+                
+                function clearSelection(spreadsheet) {
+                    if (!spreadsheet) return;
+                    spreadsheet.classList.remove('production-selection-active');
+                    spreadsheet.dataset.selectedKey = '';
+                    spreadsheet.querySelectorAll('.production-cell-selected').forEach(function(cell) {
+                        cell.classList.remove('production-cell-selected');
+                    });
+                }
+                
+                function enhanceTable(tableElement) {
+                    if (!tableElement || tableElement.dataset.productionEnhanced === 'true') {
+                        return;
+                    }
+                    const spreadsheet = tableElement.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet) {
+                        return;
+                    }
+                    tableElement.dataset.productionEnhanced = 'true';
+                    spreadsheet.dataset.selectedKey = '';
+                    
+                    spreadsheet.addEventListener('click', function(event) {
+                        const cell = event.target.closest('td[data-dash-row]');
+                        if (!cell) {
+                            return;
+                        }
+                        
+                        const columnId = cell.getAttribute('data-dash-column');
+                        if (columnId === 'Crude') {
+                            return;
+                        }
+                        
+                        const cellKey = cell.getAttribute('data-dash-row') + '-' + columnId;
+                        
+                        if (spreadsheet.dataset.selectedKey === cellKey) {
+                            clearSelection(spreadsheet);
+                            return;
+                        }
+                        
+                        spreadsheet.dataset.selectedKey = cellKey;
+                        spreadsheet.classList.add('production-selection-active');
+                        spreadsheet.querySelectorAll('.production-cell-selected').forEach(function(selectedCell) {
+                            selectedCell.classList.remove('production-cell-selected');
+                        });
+                        cell.classList.add('production-cell-selected');
+                    });
+                }
+                
+                document.addEventListener('click', function(event) {
+                    document.querySelectorAll('#production-table .dash-spreadsheet-container.production-selection-active').forEach(function(spreadsheet) {
+                        const wrapper = spreadsheet.closest('#production-table');
+                        if (wrapper && !wrapper.contains(event.target)) {
+                            clearSelection(spreadsheet);
+                        }
+                    });
+                });
+                
+                const observer = new MutationObserver(function() {
+                    const tableElement = document.getElementById('production-table');
+                    if (tableElement) {
+                        enhanceTable(tableElement);
+                    }
+                });
+                
+                observer.observe(document.body, { childList: true, subtree: true });
+                
+                const initialTable = document.getElementById('production-table');
+                if (initialTable) {
+                    enhanceTable(initialTable);
+                }
+            }
+            
             // Start setup
             setupZoomLimits();
+            initProductionTableEnhancements();
             
             return window.dash_clientside.no_update;
         }
