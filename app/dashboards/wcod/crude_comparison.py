@@ -791,7 +791,7 @@ def register_callbacks(app):
     )
     def update_header(selected, is_combined):
         if is_combined:
-            title = "Production + Exports Combined ('000 b/d)"
+            title = "Production('000 b/d)"
         elif selected == "exports":
             title = "Exports ('000 b/d)"
         else:  # production
