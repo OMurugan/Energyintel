@@ -465,20 +465,24 @@ def create_layout(server):
                 },
                 style_cell={
                     "textAlign": "center",
-                    "padding": "2px 4px",
-                    "fontSize": "12px",
-                    "fontFamily": "Arial",
-                    "border": "1px solid #e2e2e2",
+                    "padding": "8px 12px",
+                    "fontSize": "13px",
+                    "fontFamily": "Arial, sans-serif",
+                    "border": "1px solid #e0e0e0",
                     "whiteSpace": "normal",
-                    "height": "35px",
-                    "cursor": "pointer",
+                    "height": "auto",
+                    "minHeight": "35px",
+                    "color": "#333333",
                 },
                 style_header={
                     "backgroundColor": "#f2f2f2",
                     "fontWeight": "bold",
-                    "fontSize": "12px",
+                    "fontSize": "13px",
+                    "fontFamily": "Arial, sans-serif",
                     "border": "1px solid #d0d0d0",
-                    "cursor": "pointer",
+                    "color": "#1f3263",
+                    "textAlign": "center",
+                    "padding": "10px 12px",
                     "position": "relative",
                 },
                 style_cell_conditional=[
@@ -486,32 +490,47 @@ def create_layout(server):
                         "if": {"column_id": "CrudeOil"},
                         "textAlign": "left",
                         "fontWeight": "600",
-                        "minWidth": "160px",
+                        "minWidth": "180px",
                         "backgroundColor": "#FFFFFF",
-                        "borderRight": "2px solid #d0d0d0",
-                        "paddingLeft": "10px",
-                        "paddingTop": "5px",
-                        "paddingBottom": "5px",
+                        "borderRight": "1px solid #d0d0d0",
+                        "paddingLeft": "12px",
+                        "paddingRight": "12px",
                         "color": "#1f3263",
-                        "cursor": "pointer",
                     },
                     {
                         "if": {"column_id": "CrudeOil", "header": True},
+                        "textAlign": "left",
                         "color": "#1f3263",
-                        "cursor": "pointer",
                         "position": "relative",
+                    },
+                    # Year column headers - dark blue, center-aligned
+                    {
+                        "if": {"header": True, "column_id": [str(year) for year in range(2007, 2025)]},
+                        "color": "#1f3263",
+                        "textAlign": "center",
                     },
                 ],
                 style_data_conditional=[
-                    {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"},
+                    # All data rows white background
+                    {
+                        "if": {"row_index": "odd"},
+                        "backgroundColor": "#FFFFFF",
+                    },
+                    {
+                        "if": {"row_index": "even"},
+                        "backgroundColor": "#FFFFFF",
+                    },
+                    # CrudeOil column data - dark blue
                     {
                         "if": {"column_id": "CrudeOil"},
                         "color": "#1f3263",
+                        "backgroundColor": "#FFFFFF",
                     },
-                    # Default style for all numeric cells
+                    # Year columns data - dark gray/black, center-aligned
                     {
                         "if": {"column_id": [str(year) for year in range(2007, 2025)]},
-                        "cursor": "pointer",
+                        "color": "#333333",
+                        "textAlign": "center",
                     },
                     # Style for SUM row - DARK BLUE BACKGROUND
                     {
@@ -536,6 +555,7 @@ def create_layout(server):
                             color: #1f3263 !important; 
                             text-decoration: underline !important;
                             font-weight: 600 !important;
+                            font-family: Arial, sans-serif !important;
                             cursor: pointer !important;
                         '''
                     },
@@ -544,7 +564,6 @@ def create_layout(server):
                         'rule': '''
                             color: #1f3263 !important; 
                             text-decoration: underline !important;
-                            background-color: #f0f5ff !important;
                         '''
                     },
                     {
@@ -552,6 +571,37 @@ def create_layout(server):
                         'rule': '''
                             color: #1f3263 !important;
                             position: relative !important;
+                            text-align: left !important;
+                        '''
+                    },
+                    # Year column headers styling
+                    {
+                        'selector': '.dash-header[data-dash-column*="20"]',
+                        'rule': '''
+                            color: #1f3263 !important;
+                            text-align: center !important;
+                            font-weight: bold !important;
+                        '''
+                    },
+                    # Table borders - horizontal lines for rows
+                    {
+                        'selector': '.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table',
+                        'rule': '''
+                            border-collapse: collapse !important;
+                        '''
+                    },
+                    {
+                        'selector': '.dash-cell',
+                        'rule': '''
+                            border-top: 1px solid #e0e0e0 !important;
+                            border-bottom: 1px solid #e0e0e0 !important;
+                        '''
+                    },
+                    {
+                        'selector': '.dash-header',
+                        'rule': '''
+                            border-left: 1px solid #d0d0d0 !important;
+                            border-right: 1px solid #d0d0d0 !important;
                         '''
                     },
                     # A-Z vertical text for sort order - HIDDEN BY DEFAULT
