@@ -214,7 +214,7 @@ def create_layout():
         # Instruction text
         html.Div([
             html.P(
-                "Click on any year from the graph above to view a break down by country and crude grade below",
+                "Click on any bar to highlight it. Use the country selector above to change the data view.",
                 style={'fontSize': '13px', 'fontStyle': 'italic', 'marginBottom': '20px', 'color': '#666'}
             )
         ]),
@@ -230,7 +230,12 @@ def create_layout():
             dash_table.DataTable(
                 id='imports-detail-table',
                 data=[],
-                columns=[],
+                columns=[
+                    {'name': 'Exporting Region', 'id': 'Exporting Region'},
+                    {'name': 'Exporter', 'id': 'Exporter'},
+                    {'name': 'Company', 'id': 'Company'},
+                    {'name': 'Crude', 'id': 'Crude'}
+                ],
                 style_table={
                     'overflowX': 'auto',
                     'overflowY': 'auto',
@@ -372,7 +377,10 @@ def create_imports_by_region_chart(selected_country='Japan'):
             y=volumes,
             name=region,
             marker_color=color_map.get(region, '#CCCCCC'),
-            hovertemplate=f'Region: {region}<br>Year: %{{x}}<br>Import Volume: %{{y:,.0f}} (\'000 b/d)<extra></extra>'
+            hovertemplate=f'Region: {region}<br>Year: %{{x}}<br>Import Volume: %{{y:,.0f}} (\'000 b/d)<extra></extra>',
+            selected=dict(marker=dict(opacity=1.0)),  # Selected bars remain fully opaque
+            unselected=dict(marker=dict(opacity=0.3))
+            
         ))
     
     # Calculate total volumes for each year to display on top of bars
@@ -452,6 +460,7 @@ def create_imports_by_region_chart(selected_country='Japan'):
         plot_bgcolor='white',
         paper_bgcolor='white',
         margin=dict(l=60, r=200, t=60, b=50),
+        clickmode='select',  # Only selection, no event callbacks
         legend=dict(
             orientation='v',
             yanchor='top',
@@ -589,7 +598,9 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
                 text=[f'{v:,.1f}' if v >= 10 else '' for v in volumes],  # Show value if >= 10
                 textposition='inside',
                 textangle=-90,  # Rotate text vertically
-                textfont=dict(size=10, color='#000000')
+                textfont=dict(size=10, color='#000000'),
+                selected=dict(marker=dict(opacity=1.0)),  # Selected bars remain fully opaque
+                unselected=dict(marker=dict(opacity=0.3))  # Unselected bars are dimmed
             ))
             crude_volumes_dict[crude] = volumes
     
@@ -658,6 +669,7 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
         plot_bgcolor='white',
         paper_bgcolor='white',
         margin=dict(l=60, r=200, t=60, b=100),
+        clickmode='select',  # Only selection, no event callbacks
         legend=dict(
             orientation='v',
             yanchor='top',
@@ -701,7 +713,35 @@ def create_imports_table(selected_country='Japan'):
                         ascending=[True, True, True, True]).reset_index(drop=True)
     
     # Convert to list of dictionaries for DataTable
-    table_data = df.to_dict('records')
+    # Ensure all values are native Python types (not pandas/numpy types)
+    table_data = []
+    for _, row in df.iterrows():
+        record = {}
+        for col in df.columns:
+            value = row[col]
+            # Convert pandas/numpy types to native Python types
+            if pd.isna(value) or value is None:
+                record[col] = ''
+            elif hasattr(value, 'item'):  # numpy scalar types have .item() method
+                try:
+                    record[col] = value.item()
+                except:
+                    record[col] = str(value)
+            elif isinstance(value, (int, float)):
+                # Check for NaN or inf
+                if isinstance(value, float) and (value != value or abs(value) == float('inf')):
+                    record[col] = ''
+                else:
+                    record[col] = int(value) if isinstance(value, (int, bool)) else float(value)
+            elif isinstance(value, bool):
+                record[col] = bool(value)
+            else:
+                # Convert everything else to string
+                try:
+                    record[col] = str(value) if value is not None else ''
+                except:
+                    record[col] = ''
+        table_data.append(record)
     
     # Process data for hierarchical grouping and formatting
     prev_region = None
@@ -709,22 +749,40 @@ def create_imports_table(selected_country='Japan'):
     prev_company = None
     
     for i, record in enumerate(table_data):
+        # Ensure record is a dictionary
+        if not isinstance(record, dict):
+            continue
+            
         # Get original values before any modifications
-        current_region = str(record.get('Exporting Region', '')).strip() if pd.notna(record.get('Exporting Region')) else ''
-        current_exporter = str(record.get('Exporter', '')).strip() if pd.notna(record.get('Exporter')) else ''
-        current_company = str(record.get('Company', '')).strip() if pd.notna(record.get('Company')) else ''
+        current_region = str(record.get('Exporting Region', '')).strip() if record.get('Exporting Region') else ''
+        current_exporter = str(record.get('Exporter', '')).strip() if record.get('Exporter') else ''
+        current_company = str(record.get('Company', '')).strip() if record.get('Company') else ''
         
-        # Replace NaN/None values with empty strings for better display (for year columns)
-        for key, value in record.items():
+        # Replace NaN/None values with empty strings or valid numbers for better display (for year columns)
+        for key, value in list(record.items()):
             if key not in ['Exporting Region', 'Exporter', 'Company', 'Crude']:
-                if pd.isna(value) or value == '':
+                if value == '' or value is None:
                     record[key] = ''
                 elif isinstance(value, (int, float)):
                     # Format numeric values - keep 0 as 0, ensure it's a valid number
-                    if pd.isna(value) or pd.isinf(value):
+                    if value != value:  # Check for NaN (NaN != NaN)
+                        record[key] = ''
+                    elif abs(value) == float('inf'):
                         record[key] = ''
                     else:
-                        record[key] = float(value) if not pd.isna(value) else ''
+                        # Ensure it's a valid number (native Python type)
+                        record[key] = float(value) if isinstance(value, float) else int(value)
+                else:
+                    # For non-numeric, non-empty values, convert to string
+                    record[key] = str(value) if value is not None else ''
+        
+        # Ensure text columns are strings, not None
+        for col in ['Exporting Region', 'Exporter', 'Company', 'Crude']:
+            if col in record:
+                if record[col] is None or record[col] == '':
+                    record[col] = ''
+                else:
+                    record[col] = str(record[col])
         
         # Hierarchical grouping: only show region/exporter/company once per group
         if current_region and current_region == prev_region:
@@ -781,33 +839,33 @@ def register_callbacks(dash_app, server):
     @callback(
         Output('imports-by-region-chart', 'figure'),
         [Input('importing-country-select', 'value'),
-         Input('current-submenu', 'data')]
+         Input('current-submenu', 'data')],
+        prevent_initial_call=False
     )
     def update_imports_by_region(selected_country, submenu):
         """Update imports by region chart"""
         if submenu != 'imports-detail':
             return go.Figure()
-        return create_imports_by_region_chart(selected_country)
+        fig = create_imports_by_region_chart(selected_country)
+        # Ensure the figure is valid and has data
+        if fig and len(fig.data) > 0:
+            return fig
+        return go.Figure()
     
     @callback(
         [Output('imports-by-country-chart', 'figure'),
          Output('selected-year-store', 'data')],
-        [Input('imports-by-region-chart', 'clickData'),
-         Input('importing-country-select', 'value'),
+        [Input('importing-country-select', 'value'),
          Input('current-submenu', 'data'),
          State('selected-year-store', 'data')]
     )
-    def update_imports_by_country(click_data, selected_country, submenu, current_year):
-        """Update imports by country chart based on year selection"""
+    def update_imports_by_country(selected_country, submenu, current_year):
+        """Update imports by country chart based on country selection"""
         if submenu != 'imports-detail':
             return go.Figure(), current_year
         
-        # Get year from click data or use current year
-        selected_year = current_year
-        if click_data and 'points' in click_data and len(click_data['points']) > 0:
-            point = click_data['points'][0]
-            if 'x' in point:
-                selected_year = int(point['x'])
+        # Use current year (default 2023) - chart 1 clicks no longer affect chart 2
+        selected_year = current_year if current_year else 2023
         
         fig = create_imports_by_country_chart(selected_year, selected_country)
         return fig, selected_year
@@ -822,18 +880,96 @@ def register_callbacks(dash_app, server):
     def update_imports_table(selected_country, submenu):
         """Update imports detail table"""
         if submenu != 'imports-detail':
-            return [], [], ""
+            # Return empty but valid structures
+            empty_columns = [
+                {'name': 'Exporting Region', 'id': 'Exporting Region'},
+                {'name': 'Exporter', 'id': 'Exporter'},
+                {'name': 'Company', 'id': 'Company'},
+                {'name': 'Crude', 'id': 'Crude'}
+            ]
+            return [], empty_columns, ""
         try:
             data, columns = create_imports_table(selected_country)
             # Ensure data and columns are lists
             if not isinstance(data, list):
                 data = []
             if not isinstance(columns, list):
-                columns = []
+                # Return default columns structure if columns is invalid
+                columns = [
+                    {'name': 'Exporting Region', 'id': 'Exporting Region'},
+                    {'name': 'Exporter', 'id': 'Exporter'},
+                    {'name': 'Company', 'id': 'Company'},
+                    {'name': 'Crude', 'id': 'Crude'}
+                ]
+            
+            # Deep clean: Ensure all data items are dictionaries with only native Python types
+            cleaned_data = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                cleaned_item = {}
+                for key, value in item.items():
+                    # Ensure key is a string
+                    key_str = str(key) if key is not None else ''
+                    # Ensure value is a native Python type
+                    if value is None:
+                        cleaned_item[key_str] = ''
+                    elif isinstance(value, (int, float, str, bool)):
+                        # Check for NaN or inf in floats
+                        if isinstance(value, float) and (value != value or abs(value) == float('inf')):
+                            cleaned_item[key_str] = ''
+                        else:
+                            cleaned_item[key_str] = value
+                    elif hasattr(value, 'item'):  # numpy scalar
+                        try:
+                            cleaned_item[key_str] = value.item()
+                        except:
+                            cleaned_item[key_str] = str(value)
+                    else:
+                        # Convert everything else to string
+                        try:
+                            cleaned_item[key_str] = str(value) if value is not None else ''
+                        except:
+                            cleaned_item[key_str] = ''
+                cleaned_data.append(cleaned_item)
+            
+            # Ensure all column items are dictionaries with required keys
+            cleaned_columns = []
+            for col in columns:
+                if not isinstance(col, dict):
+                    continue
+                if 'name' in col and 'id' in col:
+                    # Ensure name and id are strings
+                    cleaned_col = {
+                        'name': str(col['name']) if col['name'] is not None else '',
+                        'id': str(col['id']) if col['id'] is not None else ''
+                    }
+                    # Copy other properties if they exist
+                    for key, value in col.items():
+                        if key not in ['name', 'id']:
+                            cleaned_col[key] = value
+                    cleaned_columns.append(cleaned_col)
+            
+            if not cleaned_columns:
+                # Fallback to default columns
+                cleaned_columns = [
+                    {'name': 'Exporting Region', 'id': 'Exporting Region'},
+                    {'name': 'Exporter', 'id': 'Exporter'},
+                    {'name': 'Company', 'id': 'Company'},
+                    {'name': 'Crude', 'id': 'Crude'}
+                ]
+            
             title = f"{selected_country} Crude Oil Imports by Region and Country"
-            return data, columns, title
+            return cleaned_data, cleaned_columns, title
         except Exception as e:
             print(f"Error updating imports table: {e}")
             import traceback
             traceback.print_exc()
-            return [], [], ""
+            # Return empty but valid structures on error
+            empty_columns = [
+                {'name': 'Exporting Region', 'id': 'Exporting Region'},
+                {'name': 'Exporter', 'id': 'Exporter'},
+                {'name': 'Company', 'id': 'Company'},
+                {'name': 'Crude', 'id': 'Crude'}
+            ]
+            return [], empty_columns, ""
