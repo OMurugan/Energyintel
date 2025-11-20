@@ -1102,7 +1102,7 @@ def register_callbacks(app):
                     if (!header.querySelector('.sort-indicator')) {
                         const sortIndicator = document.createElement('div');
                         sortIndicator.className = 'sort-indicator';
-                        sortIndicator.title = 'Sort options';
+                        sortIndicator.title = 'Sorted ascending by sum of Exports/Production Value within CrudeOil, broken down by Source: Energy Intelligence/COPYRIGHT © 2001-2025 ENERGY INTELLIGENCE GROUP, INC. / ENERGY INTELLIGENCE GROUP (UK) LIMITED./2024.';
                         
                         // Add the exact SVG from your file
                         sortIndicator.innerHTML = `
