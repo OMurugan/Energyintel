@@ -466,7 +466,7 @@ def create_layout(server):
                 style_cell={
                     "textAlign": "center",
                     "padding": "8px 12px",
-                    "fontSize": "13px",
+                    "fontSize": "11px",
                     "fontFamily": "Arial, sans-serif",
                     "border": "1px solid #e0e0e0",
                     "whiteSpace": "normal",
@@ -477,7 +477,7 @@ def create_layout(server):
                 style_header={
                     "backgroundColor": "#f2f2f2",
                     "fontWeight": "bold",
-                    "fontSize": "13px",
+                    "fontSize": "14px",
                     "fontFamily": "Arial, sans-serif",
                     "border": "1px solid #d0d0d0",
                     "color": "#1f3263",
