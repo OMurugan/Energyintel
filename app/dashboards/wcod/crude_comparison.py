@@ -126,11 +126,10 @@ def load_crude_data(mode):
     ]
 
 # ------------------------------------------------------------------------------
-# CALCULATE COMBINED SUM DATA (Production + Exports) FOR SORTING
+# CALCULATE COMBINED SUM DATA (Production + Exports)
 # ------------------------------------------------------------------------------
-def calculate_combined_sums_for_sorting():
-    """Calculate combined sums of Production and Exports for sorting purposes"""
-    print("🔄 Calculating combined sums for sorting...")
+def calculate_combined_sums():
+    """Calculate combined sums of Production and Exports for each crude oil and year"""
     
     # Load both datasets
     production_data, production_cols = load_crude_data("production")
@@ -143,7 +142,7 @@ def calculate_combined_sums_for_sorting():
     # Get numeric columns (years)
     numeric_cols = [col for col in prod_df.columns if col != 'CrudeOil']
     
-    # Create combined data for sorting reference
+    # Create combined data
     combined_data = []
     
     # Get all unique crude oils from both datasets
@@ -181,20 +180,45 @@ def calculate_combined_sums_for_sorting():
                     except (ValueError, TypeError):
                         exp_val = 0
             
-            # Calculate combined sum for sorting reference
+            # Calculate combined sum
             combined_val = prod_val + exp_val
-            combined_row[col] = combined_val
+            combined_row[col] = f"{combined_val:,.0f}" if combined_val > 0 else ""
         
         combined_data.append(combined_row)
     
-    print(f"✅ Combined sums calculated for {len(combined_data)} crude oils")
     return combined_data
 
 # ------------------------------------------------------------------------------
-# CALCULATE SUM ROW
+# CALCULATE SUM ROW FOR COMBINED DATA
+# ------------------------------------------------------------------------------
+def calculate_combined_sum_row(combined_data):
+    """Calculate sum row for combined data"""
+    if not combined_data:
+        return None
+    
+    df = pd.DataFrame(combined_data)
+    numeric_cols = [col for col in df.columns if col != 'CrudeOil']
+    
+    sum_row = {'CrudeOil': 'SUM'}
+    
+    for col in numeric_cols:
+        col_sum = 0
+        for val in df[col]:
+            if val and str(val).strip() and str(val).strip() != '':
+                try:
+                    clean_val = str(val).replace(',', '')
+                    col_sum += float(clean_val)
+                except (ValueError, TypeError):
+                    continue
+        sum_row[col] = f"{col_sum:,.0f}"
+    
+    return sum_row
+
+# ------------------------------------------------------------------------------
+# CALCULATE SUM ROW FOR REGULAR DATA
 # ------------------------------------------------------------------------------
 def calculate_sum_row(data):
-    """Calculate sum row for any dataset"""
+    """Calculate sum row for regular production/exports data"""
     if not data:
         return None
     
@@ -220,7 +244,8 @@ def calculate_sum_row(data):
 # INITIAL LOAD
 # ------------------------------------------------------------------------------
 production_data, production_columns = load_crude_data("production")
-combined_sorting_data = calculate_combined_sums_for_sorting()
+production_sum_row = calculate_sum_row(production_data)
+table_data_with_sum = production_data + [production_sum_row] if production_sum_row else production_data
 
 # ------------------------------------------------------------------------------
 # LAYOUT
@@ -409,7 +434,7 @@ def create_layout(server):
                            "fontSize": "12px",
                            "cursor": "pointer",
                            "fontFamily": "Arial",
-                           "color": " #333",
+                           "color": "#333",
                            "display": "flex",
                            "alignItems": "center",
                            "justifyContent": "space-between",
@@ -428,7 +453,7 @@ def create_layout(server):
 
             dash_table.DataTable(
                 id="crude-comparison-table",
-                data=production_data,
+                data=table_data_with_sum,
                 columns=production_columns,
                 style_table={
                     "overflowX": "auto",
@@ -647,8 +672,8 @@ def create_layout(server):
             dcc.Store(id='original-data-store', data=production_data),
             dcc.Store(id='current-sort-order', data={'type': 'source', 'direction': 'asc'}),
             dcc.Store(id='show-sorting-controls', data=False),
-            dcc.Store(id='sum-row-store', data=None),
-            dcc.Store(id='combined-sorting-data-store', data=combined_sorting_data),
+            dcc.Store(id='sum-row-store', data=production_sum_row),
+            dcc.Store(id='combined-data-store', data=None),
             html.Div(id='dummy-output', style={'display': 'none'}),
             html.Div(id='dummy-output-2', style={'display': 'none'}),
 
@@ -656,9 +681,6 @@ def create_layout(server):
             html.Button("Sort Ascending Click", id="sort-asc-btn-hidden", n_clicks=0, style={"display": "none"}),
             html.Button("Sort Descending Click", id="sort-desc-btn-hidden", n_clicks=0, style={"display": "none"}),
             html.Button("Popup Menu Click", id="popup-menu-btn", n_clicks=0, style={"display": "none"}),
-            html.Button("Year Column Click", id="year-column-btn", n_clicks=0, style={"display": "none"}),
-            html.Button("Field Arrow Click", id="field-arrow-click-btn", n_clicks=0, style={"display": "none"}),
-            html.Button("Nested Arrow Click", id="nested-arrow-click-btn", n_clicks=0, style={"display": "none"}),
 
             html.Div([
                 html.P(
@@ -714,26 +736,16 @@ def register_callbacks(app):
     @app.callback(
         [Output("crude-comparison-table", "data"),
          Output("original-data-store", "data"),
-         Output("sum-row-store", "data")],
+         Output("sum-row-store", "data"),
+         Output("combined-data-store", "data")],
         Input("export-production-dropdown", "value"),
-        [State('current-sort-order', 'data'),
-         State('combined-sorting-data-store', 'data')]
     )
-    def reload_data(mode, current_sort, combined_sorting_data):
-        print(f"🔄 Loading {mode} data...")
-        # Load the selected dataset
+    def reload_data(mode):
+        # Always use individual mode data (Production or Exports only)
         crude_data, columns = load_crude_data(mode)
         sum_row = calculate_sum_row(crude_data)
-        
-        # Apply current sorting if it's Field or Nested type
-        if current_sort and current_sort.get('type') in ['field', 'nested']:
-            print(f"🔀 Applying {current_sort} sorting...")
-            sorted_data = apply_combined_sorting(crude_data, current_sort, combined_sorting_data)
-            table_data_with_sum = sorted_data + [sum_row] if sum_row else sorted_data
-        else:
-            table_data_with_sum = crude_data + [sum_row] if sum_row else crude_data
-        
-        return table_data_with_sum, crude_data, sum_row
+        table_data_with_sum = crude_data + [sum_row] if sum_row else crude_data
+        return table_data_with_sum, crude_data, sum_row, None
 
     @app.callback(
         Output("crude-comparison-table", "columns"),
@@ -742,61 +754,6 @@ def register_callbacks(app):
     def reload_columns(mode):
         _, columns = load_crude_data(mode)
         return columns
-
-    def apply_combined_sorting(original_data, current_sort, combined_sorting_data):
-        """Apply Field or Nested sorting using combined Production + Exports data"""
-        if not original_data or not current_sort or not combined_sorting_data:
-            return original_data
-            
-        sort_type = current_sort.get('type', 'alphabetic')
-        direction = current_sort.get('direction', 'asc')
-        
-        print(f"🔀 Applying {sort_type} sorting ({direction}) using combined data...")
-        
-        # Convert to DataFrames
-        df = pd.DataFrame(original_data)
-        combined_df = pd.DataFrame(combined_sorting_data)
-        
-        if sort_type == 'field':
-            # Field sorting: sort by column sums (using Production + Exports combined data)
-            numeric_cols = [col for col in combined_df.columns if col != 'CrudeOil']
-            
-            # Calculate sum for each column in combined data
-            col_sums = {}
-            for col in numeric_cols:
-                col_sum = combined_df[col].sum()
-                col_sums[col] = col_sum
-                print(f"📊 Column {col} combined sum: {col_sum}")
-            
-            # Sort columns by their combined sums
-            sorted_cols = sorted(numeric_cols, key=lambda x: col_sums[x], ascending=(direction == 'asc'))
-            print(f"📋 Sorted columns: {sorted_cols}")
-            
-            # Reorder dataframe columns (make sure all columns exist)
-            available_cols = [col for col in ['CrudeOil'] + sorted_cols if col in df.columns]
-            df_sorted = df[available_cols]
-            
-        elif sort_type == 'nested':
-            # Nested sorting: sort by row sums (using Production + Exports combined data)
-            numeric_cols = [col for col in combined_df.columns if col != 'CrudeOil']
-            
-            # Create a mapping of CrudeOil to combined sum for sorting
-            combined_sums = {}
-            for _, row in combined_df.iterrows():
-                row_sum = row[numeric_cols].sum()
-                combined_sums[row['CrudeOil']] = row_sum
-                print(f"📊 {row['CrudeOil']} combined sum: {row_sum}")
-            
-            # Add combined sum to original dataframe for sorting
-            df['_combined_sum'] = df['CrudeOil'].map(combined_sums)
-            df_sorted = df.sort_values('_combined_sum', ascending=(direction == 'asc'), na_position='last')
-            df_sorted = df_sorted.drop('_combined_sum', axis=1)
-            
-        else:
-            df_sorted = df
-        
-        print("✅ Sorting applied successfully")
-        return df_sorted.to_dict('records')
 
     # Handle header clicks (both sort order and popup menu)
     @app.callback(
@@ -808,20 +765,17 @@ def register_callbacks(app):
          Input('popup-menu-btn', 'n_clicks'),
          Input('popup-source-btn', 'n_clicks'),
          Input('popup-alphabetic-btn', 'n_clicks'),
-         Input('field-arrow-click-btn', 'n_clicks'),  # Field arrow click
-         Input('nested-arrow-click-btn', 'n_clicks'),  # Nested arrow click
-         Input('year-column-btn', 'n_clicks')],  # Year column click
+         Input('popup-field-btn', 'n_clicks'),
+         Input('popup-nested-btn', 'n_clicks')],
         [State('show-sorting-controls', 'data'),
          State('current-sort-order', 'data')],
         prevent_initial_call=True
     )
     def handle_header_interactions(asc_clicks, desc_clicks, popup_clicks, 
                                   popup_source_clicks, popup_alpha_clicks,
-                                  field_arrow_clicks, nested_arrow_clicks, year_clicks,
+                                  popup_field_clicks, popup_nested_clicks,
                                   show_controls, current_sort):
         trigger = ctx.triggered_id
-        
-        print(f"🎯 Header interaction triggered: {trigger}")
         
         if trigger == 'sort-asc-btn-hidden':
             return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'asc'}
@@ -864,21 +818,11 @@ def register_callbacks(app):
                 "minWidth": "160px"
             }, False, {'type': 'alphabetic', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
         
-        elif trigger == 'field-arrow-click-btn':
-            # Field sorting - sort by column sum (Production + Exports)
-            new_direction = 'desc' if current_sort and current_sort.get('type') == 'field' and current_sort.get('direction') == 'asc' else 'asc'
-            print(f"🎯 Field arrow clicked - direction: {new_direction}")
-            return dash.no_update, dash.no_update, {'type': 'field', 'direction': new_direction}
+        elif trigger == 'popup-field-btn':
+            return dash.no_update, dash.no_update, {'type': 'field', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
         
-        elif trigger == 'nested-arrow-click-btn':
-            # Nested sorting - sort by row sum (Production + Exports)
-            new_direction = 'desc' if current_sort and current_sort.get('type') == 'nested' and current_sort.get('direction') == 'asc' else 'asc'
-            print(f"🎯 Nested arrow clicked - direction: {new_direction}")
-            return dash.no_update, dash.no_update, {'type': 'nested', 'direction': new_direction}
-        
-        elif trigger == 'year-column-btn':
-            # Year column clicked - sort by that specific column (using current dataset)
-            return dash.no_update, dash.no_update, {'type': 'year', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+        elif trigger == 'popup-nested-btn':
+            return dash.no_update, dash.no_update, {'type': 'nested', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
         
         return {
             "position": "absolute", 
@@ -896,20 +840,45 @@ def register_callbacks(app):
          Output('current-sort-order', 'data', allow_duplicate=True)],
         [Input('current-sort-order', 'data')],
         [State('original-data-store', 'data'),
-         State('sum-row-store', 'data'),
-         State('combined-sorting-data-store', 'data')],
+         State('export-production-dropdown', 'value'),
+         State('sum-row-store', 'data')],
         prevent_initial_call=True
     )
-    def apply_sort_order(current_sort, original_data, sum_row, combined_sorting_data):
+    def apply_sort_order(current_sort, original_data, mode, sum_row):
         if not original_data or not current_sort:
             return dash.no_update, dash.no_update
             
-        print(f"🔄 Applying sort order: {current_sort}")
+        sort_type = current_sort.get('type', 'alphabetic')
+        direction = current_sort.get('direction', 'asc')
         
-        # Apply sorting
-        sorted_data = apply_combined_sorting(original_data, current_sort, combined_sorting_data)
+        # Convert back to DataFrame for sorting
+        df = pd.DataFrame(original_data)
         
-        # Add SUM row
+        if sort_type == 'alphabetic':
+            df_sorted = df.sort_values('CrudeOil', ascending=(direction == 'asc'), na_position='last')
+        elif sort_type in ['field', 'nested']:
+            numeric_cols = [col for col in df.columns if col != 'CrudeOil']
+            
+            def calculate_sum(row):
+                total = 0
+                for col in numeric_cols:
+                    val = row[col]
+                    if val and str(val).strip() and str(val).strip() != '':
+                        try:
+                            clean_val = str(val).replace(',', '')
+                            total += float(clean_val)
+                        except (ValueError, TypeError):
+                            continue
+                return total
+            
+            df['_sum'] = df.apply(calculate_sum, axis=1)
+            df_sorted = df.sort_values('_sum', ascending=(direction == 'asc'))
+            df_sorted = df_sorted.drop('_sum', axis=1)
+        else:
+            df_sorted = df
+        
+        # Convert back to dict and add SUM row
+        sorted_data = df_sorted.to_dict('records')
         if sum_row:
             sorted_data.append(sum_row)
         
@@ -925,13 +894,13 @@ def register_callbacks(app):
          Input('popup-nested-btn', 'n_clicks')],
         [State('original-data-store', 'data'),
          State('current-sort-order', 'data'),
-         State('sum-row-store', 'data'),
-         State('combined-sorting-data-store', 'data')],
+         State('export-production-dropdown', 'value'),
+         State('sum-row-store', 'data')],
         prevent_initial_call=True
     )
     def handle_popup_sorting(popup_source_clicks, popup_alpha_clicks,
                            popup_field_clicks, popup_nested_clicks,
-                           original_data, current_sort, sum_row, combined_sorting_data):
+                           original_data, current_sort, mode, sum_row):
         if not original_data:
             return dash.no_update, dash.no_update
             
@@ -950,12 +919,32 @@ def register_callbacks(app):
         
         direction = current_sort.get('direction', 'asc')
         
-        print(f"🔄 Applying {sort_type} sorting from popup...")
+        df = pd.DataFrame(original_data)
         
-        # Apply sorting
-        sorted_data = apply_combined_sorting(original_data, {'type': sort_type, 'direction': direction}, combined_sorting_data)
+        if sort_type == 'alphabetic':
+            df_sorted = df.sort_values('CrudeOil', ascending=(direction == 'asc'), na_position='last')
+        elif sort_type in ['field', 'nested']:
+            numeric_cols = [col for col in df.columns if col != 'CrudeOil']
+            
+            def calculate_sum(row):
+                total = 0
+                for col in numeric_cols:
+                    val = row[col]
+                    if val and str(val).strip() and str(val).strip() != '':
+                        try:
+                            clean_val = str(val).replace(',', '')
+                            total += float(clean_val)
+                        except (ValueError, TypeError):
+                            continue
+                return total
+            
+            df['_sum'] = df.apply(calculate_sum, axis=1)
+            df_sorted = df.sort_values('_sum', ascending=(direction == 'asc'))
+            df_sorted = df_sorted.drop('_sum', axis=1)
+        else:
+            df_sorted = df
         
-        # Add SUM row
+        sorted_data = df_sorted.to_dict('records')
         if sum_row:
             sorted_data.append(sum_row)
         
@@ -1040,12 +1029,9 @@ def register_callbacks(app):
         """
         function(n) {
             setTimeout(function() {
-                console.log('🔄 Setting up header interactions...');
-                
                 // Add A/Z and SVG sort icon to CrudeOil header
                 const crudeHeader = document.querySelector('.dash-header[data-dash-column="CrudeOil"]');
                 if (crudeHeader && !crudeHeader.querySelector('.sort-order-container')) {
-                    console.log('🎯 Adding sort controls to CrudeOil header...');
                     const sortContainer = document.createElement('div');
                     sortContainer.className = 'sort-order-container';
                     
@@ -1055,7 +1041,6 @@ def register_callbacks(app):
                     aElement.title = 'Click for ascending alphabetical order';
                     aElement.onclick = function(e) {
                         e.stopPropagation();
-                        console.log('🔼 Ascending sort clicked');
                         const btn = document.getElementById('sort-asc-btn-hidden');
                         if (btn) btn.click();
                     };
@@ -1066,7 +1051,6 @@ def register_callbacks(app):
                     zElement.title = 'Click for descending alphabetical order';
                     zElement.onclick = function(e) {
                         e.stopPropagation();
-                        console.log('🔽 Descending sort clicked');
                         const btn = document.getElementById('sort-desc-btn-hidden');
                         if (btn) btn.click();
                     };
@@ -1104,7 +1088,6 @@ def register_callbacks(app):
                     
                     sortIndicator.onclick = function(e) {
                         e.stopPropagation();
-                        console.log('📊 Sort menu clicked');
                         const btn = document.getElementById('popup-menu-btn');
                         if (btn) btn.click();
                     };
@@ -1115,7 +1098,6 @@ def register_callbacks(app):
                 
                 // Add SVG sort icons to ALL year columns (2024, 2023, etc.)
                 const yearHeaders = document.querySelectorAll('.dash-header:not([data-dash-column="CrudeOil"])');
-                console.log(`🎯 Found ${yearHeaders.length} year headers`);
                 yearHeaders.forEach(header => {
                     if (!header.querySelector('.sort-indicator')) {
                         const sortIndicator = document.createElement('div');
@@ -1147,28 +1129,20 @@ def register_callbacks(app):
                         
                         sortIndicator.onclick = function(e) {
                             e.stopPropagation();
-                            console.log('📅 Year column sort clicked');
-                            const btn = document.getElementById('year-column-btn');
-                            if (btn) btn.click();
+                            const columnId = header.getAttribute('data-dash-column');
+                            console.log('Year column clicked:', columnId);
                         };
                         
                         header.appendChild(sortIndicator);
                     }
                 });
                 
-                // Add click handlers for Field and Nested arrows
+                // Add mouseover tooltips for Field and Nested arrows
                 const fieldArrow = document.getElementById('field-arrow-btn');
                 const nestedArrow = document.getElementById('nested-arrow-btn');
                 
                 if (fieldArrow) {
-                    console.log('🎯 Setting up Field arrow...');
                     fieldArrow.title = 'SUM(Exports/Production Value)';
-                    fieldArrow.onclick = function(e) {
-                        e.stopPropagation();
-                        console.log('📊 Field arrow clicked - will sort by column sums');
-                        const btn = document.getElementById('field-arrow-click-btn');
-                        if (btn) btn.click();
-                    };
                     
                     fieldArrow.addEventListener('mouseover', function(e) {
                         const tooltip = document.createElement('div');
@@ -1197,14 +1171,7 @@ def register_callbacks(app):
                 }
                 
                 if (nestedArrow) {
-                    console.log('🎯 Setting up Nested arrow...');
                     nestedArrow.title = 'SUM(Exports/Production Value)';
-                    nestedArrow.onclick = function(e) {
-                        e.stopPropagation();
-                        console.log('📊 Nested arrow clicked - will sort by row sums');
-                        const btn = document.getElementById('nested-arrow-click-btn');
-                        if (btn) btn.click();
-                    };
                     
                     nestedArrow.addEventListener('mouseover', function(e) {
                         const tooltip = document.createElement('div');
@@ -1232,7 +1199,6 @@ def register_callbacks(app):
                     });
                 }
                 
-                console.log('✅ Header interactions setup complete');
             }, 100);
             return '';
         }
