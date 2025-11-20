@@ -2052,26 +2052,28 @@ def register_callbacks(dash_app, server):
                         print(f"DEBUG BREAKDOWN MONTHLY: WARNING - Year {year} has unexpected months in data!")
                 print(f"DEBUG BREAKDOWN MONTHLY: Unique streams in final agg: {sorted(agg['Stream'].unique().tolist())}")
                 
-                # Get all available streams for consistent coloring
-                # Prioritize streams that are actually in the data
+                # Determine final stream order/colors strictly from monthly default order
                 streams_in_data = order_streams_list(agg["Stream"].dropna().unique().tolist(), tab="monthly")
                 print(f"DEBUG BREAKDOWN MONTHLY: Streams in data (ordered): {streams_in_data}")
                 
-                # Use streams from data as primary source, merge with grades CSV streams for color mapping
-                all_available_streams = streams_in_data if streams_in_data else get_stream_order("monthly")
-                # Add any streams from grades CSV that aren't in data (for color mapping consistency)
-                if available_streams:
-                    for stream in available_streams:
-                        if stream not in all_available_streams:
-                            all_available_streams.append(stream)
-                
-                print(f"DEBUG BREAKDOWN MONTHLY: All available streams (for color mapping): {all_available_streams}")
-                
-                # Use streams_in_data for categories (only streams that actually have data)
-                stream_categories = streams_in_data if streams_in_data else get_stream_order("monthly")
+                reference_order = get_stream_order("monthly")
+                stream_categories = [s for s in reference_order if s in streams_in_data]
+                extras = [s for s in streams_in_data if s not in stream_categories]
+                stream_categories.extend(extras)
+                if not stream_categories:
+                    stream_categories = reference_order[:]
                 print(f"DEBUG BREAKDOWN MONTHLY: Stream categories (for chart): {stream_categories}")
                 
-                color_map = {stream: get_stream_color(stream, all_available_streams, tab="monthly") for stream in all_available_streams}
+                base_color_map = get_stream_color_map("monthly")
+                color_map = {}
+                fallback_index = 0
+                for stream in stream_categories:
+                    if stream in base_color_map:
+                        color_map[stream] = base_color_map[stream]
+                    else:
+                        color_map[stream] = FALLBACK_COLORS[fallback_index % len(FALLBACK_COLORS)]
+                        fallback_index += 1
+                print(f"DEBUG BREAKDOWN MONTHLY: Color map keys: {list(color_map.keys())}")
                 
                 agg = agg[agg["year"].isin(selected_years_sorted)].copy()
                 agg["Stream"] = pd.Categorical(agg["Stream"], categories=stream_categories, ordered=True)
@@ -2151,6 +2153,7 @@ def register_callbacks(dash_app, server):
                 print(f"DEBUG BREAKDOWN MONTHLY: Creating custom subplots with rows={rows}, cols={cols}")
                 
                 year_month_counts = {}
+                stack_order = list(reversed(stream_categories))
                 
                 # Build stacked bars manually to gain precise control over axes
                 for idx, year in enumerate(selected_years_sorted):
@@ -2176,7 +2179,7 @@ def register_callbacks(dash_app, server):
                     
                     print(f"DEBUG BREAKDOWN MONTHLY: Year {year_str} month positions: {month_pos_map}")
                     
-                    for stream in stream_categories:
+                    for stream in stack_order:
                         stream_data = year_data[year_data["Stream"] == stream]
                         if len(stream_data) == 0:
                             continue
