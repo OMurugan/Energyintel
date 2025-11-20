@@ -402,7 +402,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                 dcc.Link(
                     html.Div([
                         html.Img(
-                            src="https://www.energyintel.com/styleguide/assets/tabs/svgs/globe_inactive.svg",
+                            src="/assets/images/globe_inactive.svg",
                             id="tab-icon-country",
                             style={
                                 'height': '35px',
@@ -432,7 +432,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                 dcc.Link(
                     html.Div([
                         html.Img(
-                            src="https://www.energyintel.com/styleguide/assets/tabs/svgs/oil_inactive.svg",
+                            src="/assets/images/oil_inactive.svg",
                             id='tab-icon-crude',
                             style={
                                 'height': '40px',
@@ -462,7 +462,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                 dcc.Link(
                     html.Div([
                         html.Img(
-                            src="https://www.energyintel.com/styleguide/assets/tabs/svgs/trade_inactive.svg",
+                            src="/assets/images/trade_inactive.svg",
                             id='tab-icon-trade',
                             style={
                                 'height': '40px',
@@ -492,7 +492,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                 dcc.Link(
                     html.Div([
                         html.Img(
-                            src="https://www.energyintel.com/styleguide/assets/tabs/svgs/prices_inactive.svg",
+                            src="/assets/images/prices_inactive.svg",
                             id='tab-icon-prices',
                             style={
                                 'height': '40px',
@@ -783,7 +783,7 @@ def create_wcod_dashboard(server, url_base_pathname):
             'zIndex': '1',
             'padding': '10px 25px',
             'height': '75px',
-            'transform': 'translateY(0)'
+            'transform': 'translateY(-3px)'
         }
         
         # Active style - white background, elevated with prominent shadow (matching image)
@@ -795,15 +795,15 @@ def create_wcod_dashboard(server, url_base_pathname):
             'boxShadow': '0 -3px 12px rgba(0, 0, 0, 0.15), 0 -1px 4px rgba(0, 0, 0, 0.1)',
             'position': 'relative',
             'zIndex': '2',
-            'padding': '10px 35px',
+            'padding': '13px 35px',
             'transform': 'translateY(0px)'
         }
         
-        # Icon sources - switch between active and inactive SVGs (using external URLs)
-        country_icon = 'https://www.energyintel.com/styleguide/assets/tabs/svgs/globe_active.svg' if active_tab == 'country-tab' else 'https://www.energyintel.com/styleguide/assets/tabs/svgs/globe_inactive.svg'
-        crude_icon = 'https://www.energyintel.com/styleguide/assets/tabs/svgs/oil_active.svg' if active_tab == 'crude-tab' else 'https://www.energyintel.com/styleguide/assets/tabs/svgs/oil_inactive.svg'
-        trade_icon = 'https://www.energyintel.com/styleguide/assets/tabs/svgs/trade_active.svg' if active_tab == 'trade-tab' else 'https://www.energyintel.com/styleguide/assets/tabs/svgs/trade_inactive.svg'
-        prices_icon = 'https://www.energyintel.com/styleguide/assets/tabs/svgs/prices_active.svg' if active_tab == 'prices-tab' else 'https://www.energyintel.com/styleguide/assets/tabs/svgs/prices_inactive.svg'
+        # Icon sources - switch between active and inactive SVGs (using local assets)
+        country_icon = '/assets/images/globe_active.svg' if active_tab == 'country-tab' else '/assets/images/globe_inactive.svg'
+        crude_icon = '/assets/images/oil_active.svg' if active_tab == 'crude-tab' else '/assets/images/oil_inactive.svg'
+        trade_icon = '/assets/images/trade_active.svg' if active_tab == 'trade-tab' else '/assets/images/trade_inactive.svg'
+        prices_icon = '/assets/images/prices_active.svg' if active_tab == 'prices-tab' else '/assets/images/prices_inactive.svg'
         
         return [
             active_style if active_tab == 'country-tab' else base_style,
