@@ -4,7 +4,6 @@ import os
 import chardet
 import dash
 import re
-from app import create_dash_app
 
 # ------------------------------------------------------------------------------
 # PATH CONSTANTS
@@ -377,6 +376,13 @@ def create_layout(server):
                 .dash-cell:not([data-dash-column="CrudeOil"]):not(.dash-header) {
                     cursor: pointer;
                 }
+                #sum-text-box {
+                    cursor: pointer !important;
+                }
+                #sum-text-box:hover {
+                    background-color: #f5f5f5 !important;
+                    border-color: #999 !important;
+                }
                 </style>
             """, dangerously_allow_html=True),
 
@@ -384,6 +390,7 @@ def create_layout(server):
             html.Div(
                 "SUM(Exports/Production Value)",
                 id="sum-text-box",
+                n_clicks=0,
                 style={
                     "position": "absolute",
                     "backgroundColor": "white",
@@ -396,6 +403,7 @@ def create_layout(server):
                     "zIndex": "1002",
                     "display": "none",
                     "color": "#333",
+                    "cursor": "pointer",
                 }
             ),
 
@@ -728,6 +736,15 @@ def create_layout(server):
                         'selector': '.dash-cell:not([data-dash-column="CrudeOil"]):not(.dash-header)',
                         'rule': 'cursor: pointer;'
                     },
+                    # SUM text box styling
+                    {
+                        'selector': '#sum-text-box',
+                        'rule': 'cursor: pointer !important;'
+                    },
+                    {
+                        'selector': '#sum-text-box:hover',
+                        'rule': 'background-color: #f5f5f5 !important; border-color: #999 !important;'
+                    },
                 ],
                 fixed_rows={"headers": True},
                 page_action="none",
@@ -818,14 +835,15 @@ def register_callbacks(app):
         [Input("export-production-dropdown", "value"),
          Input("field-sort-btn", "n_clicks"),
          Input("nested-sort-btn", "n_clicks"),
-         Input("year-column-btn", "n_clicks")],
+         Input("year-column-btn", "n_clicks"),
+         Input("sum-text-box", "n_clicks")],
         [State("is-combined-mode", "data")]
     )
-    def reload_data(mode, field_clicks, nested_clicks, year_clicks, is_combined):
+    def reload_data(mode, field_clicks, nested_clicks, year_clicks, sum_text_clicks, is_combined):
         trigger = ctx.triggered_id
         
-        # If Field, Nested, or Year icon is clicked, switch to combined mode
-        if trigger in ['field-sort-btn', 'nested-sort-btn', 'year-column-btn']:
+        # If Field, Nested, Year icon, or SUM text box is clicked, switch to combined mode
+        if trigger in ['field-sort-btn', 'nested-sort-btn', 'year-column-btn', 'sum-text-box']:
             # Use combined data WITHOUT sum row
             combined_data = calculate_combined_sums()
             return combined_data, combined_data, None, True
@@ -903,7 +921,8 @@ def register_callbacks(app):
          Input('popup-field-btn', 'n_clicks'),
          Input('popup-nested-btn', 'n_clicks'),
          Input('field-sort-btn', 'n_clicks'),
-         Input('nested-sort-btn', 'n_clicks')],
+         Input('nested-sort-btn', 'n_clicks'),
+         Input('sum-text-box', 'n_clicks')],
         [State('show-sorting-controls', 'data'),
          State('current-sort-order', 'data')],
         prevent_initial_call=True
@@ -912,6 +931,7 @@ def register_callbacks(app):
                                   popup_source_clicks, popup_alpha_clicks,
                                   popup_field_clicks, popup_nested_clicks,
                                   field_sort_clicks, nested_sort_clicks,
+                                  sum_text_clicks,
                                   show_controls, current_sort):
         trigger = ctx.triggered_id
         
@@ -981,6 +1001,7 @@ def register_callbacks(app):
             }
         
         elif trigger == 'popup-field-btn' or trigger == 'field-sort-btn':
+            # Show SUM text box but keep popup open for Field menu item
             return dash.no_update, dash.no_update, {'type': 'field', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}, {
                 "position": "absolute",
                 "backgroundColor": "white",
@@ -998,6 +1019,7 @@ def register_callbacks(app):
             }
         
         elif trigger == 'popup-nested-btn' or trigger == 'nested-sort-btn':
+            # Show SUM text box but keep popup open for Nested menu item
             return dash.no_update, dash.no_update, {'type': 'nested', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}, {
                 "position": "absolute",
                 "backgroundColor": "white",
@@ -1012,6 +1034,30 @@ def register_callbacks(app):
                 "color": "#333",
                 "top": "316px",
                 "left": "351px"
+            }
+        
+        elif trigger == 'sum-text-box':
+            # When SUM text box is clicked, close popup and show combined data
+            return {
+                "position": "absolute", 
+                "backgroundColor": "white", 
+                "padding": "4px 0",
+                "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
+                "zIndex": "1000",
+                "display": "none",
+                "minWidth": "160px"
+            }, False, {'type': 'field', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}, {
+                "position": "absolute",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "none",
+                "color": "#333",
             }
         
         return {
@@ -1385,18 +1431,3 @@ def register_callbacks(app):
         Input('crude-comparison-table', 'columns'),
         prevent_initial_call=False
     )
-
-# ------------------------------------------------------------------------------
-# CREATE DASHBOARD
-# ------------------------------------------------------------------------------
-def create_crude_comparison_dashboard(server, url_base_pathname="/dash/crude-comparison/"):
-    """Create and configure the crude comparison dashboard"""
-    dash_app = create_dash_app(server, url_base_pathname)
-    
-    # Set layout
-    dash_app.layout = create_layout(server)
-    
-    # Register callbacks
-    register_callbacks(dash_app)
-    
-    return dash_app
