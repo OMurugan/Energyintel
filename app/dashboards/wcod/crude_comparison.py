@@ -723,7 +723,7 @@ def create_layout(server):
             dcc.Store(id='current-sort-order', data={'type': 'source', 'direction': 'asc'}),
             dcc.Store(id='show-sorting-controls', data=False),
             dcc.Store(id='sum-row-store', data=production_sum_row),
-            dcc.Store(id='combined-data-store', data=None),
+            dcc.Store(id='is-combined-mode', data=False),  # Track if we're in combined mode
             html.Div(id='dummy-output', style={'display': 'none'}),
             html.Div(id='dummy-output-2', style={'display': 'none'}),
 
@@ -731,6 +731,10 @@ def create_layout(server):
             html.Button("Sort Ascending Click", id="sort-asc-btn-hidden", n_clicks=0, style={"display": "none"}),
             html.Button("Sort Descending Click", id="sort-desc-btn-hidden", n_clicks=0, style={"display": "none"}),
             html.Button("Popup Menu Click", id="popup-menu-btn", n_clicks=0, style={"display": "none"}),
+            # Hidden buttons for year column sorting and combined mode
+            html.Button("Year Column Click", id="year-column-btn", n_clicks=0, style={"display": "none"}),
+            html.Button("Field Sort Click", id="field-sort-btn", n_clicks=0, style={"display": "none"}),
+            html.Button("Nested Sort Click", id="nested-sort-btn", n_clicks=0, style={"display": "none"}),
 
             html.Div([
                 html.P(
@@ -763,10 +767,13 @@ def register_callbacks(app):
 
     @app.callback(
         Output("crude-heading", "children"),
-        Input("export-production-dropdown", "value"),
+        [Input("export-production-dropdown", "value"),
+         Input("is-combined-mode", "data")]
     )
-    def update_header(selected):
-        if selected == "exports":
+    def update_header(selected, is_combined):
+        if is_combined:
+            title = "Production + Exports Combined ('000 b/d)"
+        elif selected == "exports":
             title = "Exports ('000 b/d)"
         else:  # production
             title = "Production ('000 b/d)"
@@ -787,15 +794,29 @@ def register_callbacks(app):
         [Output("crude-comparison-table", "data"),
          Output("original-data-store", "data"),
          Output("sum-row-store", "data"),
-         Output("combined-data-store", "data")],
-        Input("export-production-dropdown", "value"),
+         Output("is-combined-mode", "data")],
+        [Input("export-production-dropdown", "value"),
+         Input("field-sort-btn", "n_clicks"),
+         Input("nested-sort-btn", "n_clicks"),
+         Input("year-column-btn", "n_clicks")],
+        [State("is-combined-mode", "data")]
     )
-    def reload_data(mode):
-        # Always use individual mode data (Production or Exports only)
-        crude_data, columns = load_crude_data(mode)
-        sum_row = calculate_sum_row(crude_data)
-        table_data_with_sum = crude_data + [sum_row] if sum_row else crude_data
-        return table_data_with_sum, crude_data, sum_row, None
+    def reload_data(mode, field_clicks, nested_clicks, year_clicks, is_combined):
+        trigger = ctx.triggered_id
+        
+        # If Field, Nested, or Year icon is clicked, switch to combined mode
+        if trigger in ['field-sort-btn', 'nested-sort-btn', 'year-column-btn']:
+            # Use combined data
+            combined_data = calculate_combined_sums()
+            sum_row = calculate_combined_sum_row(combined_data)
+            table_data_with_sum = combined_data + [sum_row] if sum_row else combined_data
+            return table_data_with_sum, combined_data, sum_row, True
+        else:
+            # Use individual dataset (Production or Exports)
+            crude_data, columns = load_crude_data(mode)
+            sum_row = calculate_sum_row(crude_data)
+            table_data_with_sum = crude_data + [sum_row] if sum_row else crude_data
+            return table_data_with_sum, crude_data, sum_row, False
 
     @app.callback(
         Output("crude-comparison-table", "columns"),
@@ -816,7 +837,9 @@ def register_callbacks(app):
          Input('popup-source-btn', 'n_clicks'),
          Input('popup-alphabetic-btn', 'n_clicks'),
          Input('popup-field-btn', 'n_clicks'),
-         Input('popup-nested-btn', 'n_clicks')],
+         Input('popup-nested-btn', 'n_clicks'),
+         Input('field-sort-btn', 'n_clicks'),
+         Input('nested-sort-btn', 'n_clicks')],
         [State('show-sorting-controls', 'data'),
          State('current-sort-order', 'data')],
         prevent_initial_call=True
@@ -824,6 +847,7 @@ def register_callbacks(app):
     def handle_header_interactions(asc_clicks, desc_clicks, popup_clicks, 
                                   popup_source_clicks, popup_alpha_clicks,
                                   popup_field_clicks, popup_nested_clicks,
+                                  field_sort_clicks, nested_sort_clicks,
                                   show_controls, current_sort):
         trigger = ctx.triggered_id
         
@@ -868,10 +892,10 @@ def register_callbacks(app):
                 "minWidth": "160px"
             }, False, {'type': 'alphabetic', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
         
-        elif trigger == 'popup-field-btn':
+        elif trigger == 'popup-field-btn' or trigger == 'field-sort-btn':
             return dash.no_update, dash.no_update, {'type': 'field', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
         
-        elif trigger == 'popup-nested-btn':
+        elif trigger == 'popup-nested-btn' or trigger == 'nested-sort-btn':
             return dash.no_update, dash.no_update, {'type': 'nested', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
         
         return {
@@ -1152,7 +1176,7 @@ def register_callbacks(app):
                     if (!header.querySelector('.sort-indicator')) {
                         const sortIndicator = document.createElement('div');
                         sortIndicator.className = 'sort-indicator';
-                        sortIndicator.title = 'Sorted ascending by sum of Exports/Production Value within CrudeOil, broken down by Source: Energy Intelligence/COPYRIGHT © 2001-2025 ENERGY INTELLIGENCE GROUP, INC. / ENERGY INTELLIGENCE GROUP (UK) LIMITED./2024.';
+                        sortIndicator.title = 'Click to show combined Production + Exports data';
                         
                         // Add the exact SVG from your file
                         sortIndicator.innerHTML = `
@@ -1179,8 +1203,8 @@ def register_callbacks(app):
                         
                         sortIndicator.onclick = function(e) {
                             e.stopPropagation();
-                            const columnId = header.getAttribute('data-dash-column');
-                            console.log('Year column clicked:', columnId);
+                            const btn = document.getElementById('year-column-btn');
+                            if (btn) btn.click();
                         };
                         
                         header.appendChild(sortIndicator);
@@ -1192,12 +1216,12 @@ def register_callbacks(app):
                 const nestedArrow = document.getElementById('nested-arrow-btn');
                 
                 if (fieldArrow) {
-                    fieldArrow.title = 'SUM(Exports/Production Value)';
+                    fieldArrow.title = 'Click to show combined Production + Exports data';
                     
                     fieldArrow.addEventListener('mouseover', function(e) {
                         const tooltip = document.createElement('div');
                         tooltip.className = 'arrow-tooltip';
-                        tooltip.textContent = 'SUM(Exports/Production Value)';
+                        tooltip.textContent = 'Click to show combined Production + Exports data';
                         tooltip.style.left = (e.pageX + 10) + 'px';
                         tooltip.style.top = (e.pageY - 25) + 'px';
                         document.body.appendChild(tooltip);
@@ -1218,15 +1242,22 @@ def register_callbacks(app):
                             fieldArrow._tooltip.style.top = (e.pageY - 25) + 'px';
                         }
                     });
+                    
+                    // Make Field arrow clickable
+                    fieldArrow.onclick = function(e) {
+                        e.stopPropagation();
+                        const btn = document.getElementById('field-sort-btn');
+                        if (btn) btn.click();
+                    };
                 }
                 
                 if (nestedArrow) {
-                    nestedArrow.title = 'SUM(Exports/Production Value)';
+                    nestedArrow.title = 'Click to show combined Production + Exports data';
                     
                     nestedArrow.addEventListener('mouseover', function(e) {
                         const tooltip = document.createElement('div');
                         tooltip.className = 'arrow-tooltip';
-                        tooltip.textContent = 'SUM(Exports/Production Value)';
+                        tooltip.textContent = 'Click to show combined Production + Exports data';
                         tooltip.style.left = (e.pageX + 10) + 'px';
                         tooltip.style.top = (e.pageY - 25) + 'px';
                         document.body.appendChild(tooltip);
@@ -1247,6 +1278,13 @@ def register_callbacks(app):
                             nestedArrow._tooltip.style.top = (e.pageY - 25) + 'px';
                         }
                     });
+                    
+                    // Make Nested arrow clickable
+                    nestedArrow.onclick = function(e) {
+                        e.stopPropagation();
+                        const btn = document.getElementById('nested-sort-btn');
+                        if (btn) btn.click();
+                    };
                 }
                 
             }, 100);
