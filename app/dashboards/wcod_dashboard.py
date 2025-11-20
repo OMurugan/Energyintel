@@ -47,7 +47,27 @@ from app.dashboards.wcod import (
 
 def create_wcod_dashboard(server, url_base_pathname):
     """Create comprehensive WCoD dashboard with tab navigation"""
+    from pathlib import Path
+    from flask import send_from_directory
+    
     dash_app = create_dash_app(server, url_base_pathname)
+    
+    # Configure assets folder and add route to serve assets
+    current_dir = Path(__file__).parent
+    assets_dir = current_dir / "assets"
+    
+    # Add route to serve assets from /wcod/assets/ path
+    @server.route('/wcod/assets/<path:filename>')
+    def serve_wcod_assets(filename):
+        """Serve static assets for WCoD dashboard"""
+        return send_from_directory(str(assets_dir), filename)
+    
+    # Add route to serve assets from app/assets/ directory
+    app_assets_dir = Path(__file__).parent.parent / "assets"
+    @server.route('/assets/<path:filename>')
+    def serve_app_assets(filename):
+        """Serve static assets from app/assets/ directory"""
+        return send_from_directory(str(app_assets_dir), filename)
     
     # Custom CSS for Tableau-like styling
     dash_app.index_string = '''
@@ -62,6 +82,9 @@ def create_wcod_dashboard(server, url_base_pathname):
                 body {
                     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                     background-color: #f5f5f5;
+                }
+                .tab-style1 {
+                    padding: 0 30px;
                 }
                 .kpi-card {
                     background: white;
@@ -84,7 +107,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                     padding: 20px;
                     background: white;
                     border-radius: 8px;
-                    margin-top: 20px;
+                    margin-top: 0;
                 }
                 .submenu-item {
                     padding: 10px 15px;
@@ -98,9 +121,64 @@ def create_wcod_dashboard(server, url_base_pathname):
                     background: #e9ecef;
                 }
                 .submenu-item.active {
-                    background: #007bff;
+                    background: #1b365d;
                     color: white;
                 }
+                /* Tab styling for Image 1 design - pixel perfect */
+                #tab-link-country, #tab-link-crude, #tab-link-trade, 
+                #tab-link-prices, #tab-link-projects, #tab-link-methodology {
+                    display: inline-block;
+                    background: #e5e5e5;
+                    border-radius: 8px 8px 0 0;
+                    margin-bottom: 0;
+                    position: relative;
+                    z-index: 1;
+                }
+                /* Icon styling */
+                #tab-icon-country, #tab-icon-crude, #tab-icon-trade, #tab-icon-prices {
+                    flex-shrink: 0;
+                    object-fit: contain;
+                }
+                /* Ensure tab container has proper background */
+                .tab-container {
+                    background: #e5e5e5;
+                    padding: 8px 8px 0 8px;
+                }
+                /* WCoD Header gradient background with wave patterns */
+                #header-container > div:last-child {
+                    position: relative;
+                }
+                #header-container > div:last-child::before {
+                    content: '';
+                    position: absolute;
+                    bottom: 0;
+                    left: 0;
+                    width: 300px;
+                    height: 150px;
+                    background: 
+                        radial-gradient(ellipse at 20% 80%, rgba(255,255,255,0.15) 0%, transparent 50%),
+                        radial-gradient(ellipse at 60% 90%, rgba(255,255,255,0.1) 0%, transparent 50%);
+                    opacity: 0.4;
+                    pointer-events: none;
+                }
+                #header-container > div:last-child::after {
+                    content: '';
+                    position: absolute;
+                    bottom: 0;
+                    right: 0;
+                    width: 300px;
+                    height: 150px;
+                    background: 
+                        radial-gradient(ellipse at 80% 80%, rgba(255,255,255,0.15) 0%, transparent 50%),
+                        radial-gradient(ellipse at 40% 90%, rgba(255,255,255,0.1) 0%, transparent 50%);
+                    opacity: 0.4;
+                    pointer-events: none;
+                }
+
+                .top-header .header-menu a {
+                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                }
+
             </style>
         </head>
         <body>
@@ -123,130 +201,374 @@ def create_wcod_dashboard(server, url_base_pathname):
         
         # Header Navigation (hidden for country profile iframe)
         html.Div(id='header-container', children=[
+            # Top Header - Energy Intelligence
             html.Nav([
                 html.Div([
-                    html.A(
-                        "Energy Intelligence",
-                        href="/",
-                        className="navbar-brand",
+                    # Logo with SVG icon
+                    html.Div([
+                        html.Img(
+                            src="/assets/images/logo.svg",
+                            alt="Energy Intelligence",
+                            style={
+                                'height': '40px',
+                                'width': 'auto',
+                                'marginRight': '12px',
+                                'display': 'block'
+                            }
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center'}),
+                    # Right side navigation
+                    html.Div([
+                        html.A([
+                            "Energy Debate",
+                            html.Span(" ▼", style={'fontSize': '10px', 'marginLeft': '4px'})
+                        ], href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 1rem', 'fontSize': '14px', 'display': 'inline-flex', 'alignItems': 'center'}),
+                        html.A([
+                            "Products",
+                            html.Span(" ▼", style={'fontSize': '10px', 'marginLeft': '4px'})
+                        ], href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px', 'display': 'inline-flex', 'alignItems': 'center'}),
+                        html.A([
+                            "What We Do",
+                            html.Span(" ▼", style={'fontSize': '10px', 'marginLeft': '4px'})
+                        ], href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px', 'display': 'inline-flex', 'alignItems': 'center'}),
+                        html.A([
+                            "Who We Are",
+                            html.Span(" ▼", style={'fontSize': '10px', 'marginLeft': '4px'})
+                        ], href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px', 'display': 'inline-flex', 'alignItems': 'center'}),
+                        html.A("In the Media", href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 1rem', 'fontSize': '14px'}),
+                        html.A("Contact Us", href="/contact", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px'}),
+                        html.A("Logout", href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px'}),
+                        html.Button(
+                            "MY EI",
+                            style={
+                                'background': '#FF6B35',
+                                'color': '#ffffff',
+                                'border': 'none',
+                                'padding': '4px 16px',
+                                'borderRadius': '4px',
+                                'fontSize': '14px',
+                                'fontWeight': '600',
+                                'margin': '0 1rem',
+                                'cursor': 'pointer'
+                            }
+                        ),
+                        html.Div([
+                            html.Span("👤", style={'fontSize': '20px'})
+                        ], style={'marginLeft': '1rem', 'cursor': 'pointer'})
+                    ], className="header-menu", style={'display': 'flex', 'alignItems': 'center', 'marginLeft': 'auto'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'width': '100%', 'maxWidth': '1400px', 'margin': '0 auto', 'padding': '1rem 40px'})
+            ], className="top-header", style={'background': '#ffffff', 'borderBottom': '1px solid #e0e0e0', 'padding': '0'}),
+            
+            # Secondary Navigation Bar - Dark Blue
+            html.Nav([
+                html.Div([
+                    html.Div([
+                        html.A("Low-Carbon Energy", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
+                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
+                        html.A("Oil Markets", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
+                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
+                        html.A("Gas and LNG", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
+                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
+                        html.A("Risk", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
+                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
+                        html.A("Competitive Intelligence", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
+                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
+                        html.A("Energy Intelligence Premium", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
+                    ], style={'display': 'flex', 'alignItems': 'center'}),
+                    # Search bar
+                    html.Div([
+                        dcc.Input(
+                            type="text",
+                            placeholder="Search...",
+                            id='header-search-input',
+                            style={
+                                'padding': '3px 12px',
+                                'border': '1px solid #ccc',
+                                'borderRadius': '4px',
+                                'fontSize': '14px',
+                                'width': '200px',
+                                'marginRight': '8px'
+                            }
+                        ),
+                        html.Span("🔍", style={'fontSize': '18px', 'cursor': 'pointer'})
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginLeft': 'auto'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'width': '100%', 'maxWidth': '1400px', 'margin': '0 auto', 'padding': '5px 10px'})
+            ], style={'background': '#1b365d', 'padding': '0'}),
+            
+            # WCoD Header Section - Gradient Background with Banner
+            html.Div([
+                html.Div([
+                    html.H1(
+                        "WORLD CRUDE OIL DATA",
                         style={
-                            'fontWeight': '600',
-                            'fontSize': '1.5rem',
-                            'color': '#fff',
-                            'textDecoration': 'none'
+                            'fontSize': '2.5rem',
+                            'fontWeight': '700',
+                            'color': '#ffffff',
+                            'textTransform': 'uppercase',
+                            'letterSpacing': '2px',
+                            'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
                         }
                     ),
+                    html.P(
+                        "Analysis on the top 200 global crudes, including data on production, trade, quality and pricing",
+                        style={
+                            'fontSize': '1.1rem',
+                            'color': '#ffffff',
+                            'marginBottom': '0',
+                            'fontWeight': '400',
+                            'lineHeight': '1.6',
+                            'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+                        }
+                    )
+                ], style={
+                    'background': 'rgba(27, 54, 93, .8)',
+                    'padding': '25px 20px',
+                    'margin': '40px 0',
+                    'maxWidth': '880px',
+                    'position': 'relative',
+                    'zIndex': '1'
+                }),
+                # Bottom Navigation Bar
+                html.Div([
                     html.Div([
-                        html.A("Home", href="/", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                        html.A("News", href="/news", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                        html.A("Data", href="/data", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                        html.A("WCoD", href="/wcod/", className="nav-link", style={'color': '#fff', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontWeight': '600'}),
-                        html.A("Research", href="/research", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                        html.A("Services", href="/services", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                        html.A("About", href="/about", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                        html.A("Contact", href="/contact", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                    ], style={'display': 'flex', 'alignItems': 'center', 'marginLeft': 'auto'})
-                ], style={'display': 'flex', 'alignItems': 'center', 'width': '100%', 'maxWidth': '1200px', 'margin': '0 auto', 'padding': '0 20px'})
-            ], style={'background': '#1a1a1a', 'padding': '1rem 0', 'marginBottom': '0'}),
-            
-            # Page Header
-            html.Div([
-                html.H1(
-                    "World Crude Oil Data",
-                    className="mb-2",
-                    style={'color': '#2c3e50', 'fontWeight': '600', 'fontSize': '32px'}
-                ),
-                html.P(
-                    "Crude fundamentals, including production, trade, quality and pricing data.",
-                    style={'color': '#7f8c8d', 'marginBottom': '20px', 'fontSize': '16px'}
-                )
-            ], className="container-fluid", style={'padding': '30px', 'background': 'white', 'marginBottom': '0'})
+                        html.Div([
+                            html.A("Prices", href="/wcod/prices/global-crude-prices", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
+                            html.A("Upstream Projects", href="/wcod/upstream-projects/projects-by-country", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
+                            html.A("Methodology", href="/wcod-upstream-oil-projects-tracker-methodology", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
+                            html.A("API Access", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                        ], style={'display': 'flex', 'alignItems': 'center'}),
+                        html.A(
+                            "Learn more about World Crude Oil Data >",
+                            href="#",
+                            style={
+                                'color': '#ffffff',
+                                'textDecoration': 'none',
+                                'fontSize': '14px',
+                                'fontWeight': '400',
+                                'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+                                'transition': 'opacity 0.3s',
+                                'marginLeft': 'auto'
+                            }
+                        )
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'justifyContent': 'space-between',
+                        'maxWidth': '1200px',
+                        'margin': '0 auto'
+                    })
+                ], style={
+                    'background': '#2c3e50',
+                    'padding': '15px 40px',
+                    'position': 'relative',
+                    'zIndex': '1',
+                    'top': '31px'
+                })
+            ], style={
+                'position': 'relative',
+                'background': 'linear-gradient(to top, #1a4a5c 0%, #2c5f7a 50%, #4a9bb8 100%)',
+                'padding': '0',
+                'overflow': 'hidden',
+                'minHeight': '300px',
+                'marginBottom': '0'
+            })
         ]),  # Close header-container
         
-        # Filter & Search heading - above main tabs (matching Energy Intelligence design)
+        # Filter & Search Section Header
         html.Div([
             html.Div([
-                html.H5(
+                html.H2(
                     "Filter & Search",
                     style={
-                        'fontSize': '16px',
-                        'fontWeight': '600',
-                        'color': '#2c3e50',
-                        'marginBottom': '0',
-                        'padding': '15px 30px',
-                        'borderBottom': '1px solid #e0e0e0'
+                        'fontSize': '2.0rem',
+                        'fontFamily': "Helvetica, sans-serif",
+                        'fontWeight': '500',
+                        'color': '#1b365d',
+                        'letterSpacing': '0.5px',
+                        'margin': '0',
+                        'padding': '16px 30px 12px 30px',
+                        'lineHeight': '1.2'
                     }
                 )
-            ], className='col-md-12', style={
-                'background': '#ffffff'
-            })
-        ], className='row', style={'margin': '0', 'background': 'white'}),
+            ], style={'background': '#e5e5e5', 'borderBottom': 'none', 'margin': '0', 'padding': '0'})
+        ], className="container-fluid", style={'padding': '0', 'background': '#e5e5e5', 'width': '100%', 'margin': '0'}),
         
-        # Tab Navigation - matching Energy Intelligence design
+        # Tab Navigation - matching Image 1 design (white tabs with rounded corners on light gray background)
         html.Div([
             html.Div([
                 dcc.Link(
                     html.Div([
-                        html.Span('🌍', style={'marginRight': '8px', 'fontSize': '18px'}),
-                        html.Span('Country', style={'fontSize': '16px', 'fontWeight': '500'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'padding': '12px 24px', 'cursor': 'pointer'}),
+                        html.Img(
+                            src="/assets/images/globe_inactive.svg",
+                            id="tab-icon-country",
+                            style={
+                                'height': '35px',
+                                'marginRight': '10px',
+                                'display': 'inline-block',
+                                'verticalAlign': 'middle'
+                            }
+                        ),
+                        html.Span('Country', style={
+                            'fontSize': '18px',
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'display': 'inline-block',
+                            'verticalAlign': 'middle'
+                        })
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '15px 20px',
+                        'cursor': 'pointer',
+                        'height': '100%'
+                    }),
                     href='/wcod/',
                     id='tab-link-country',
-                    style={'textDecoration': 'none', 'color': '#2c3e50', 'borderBottom': '3px solid transparent', 'transition': 'all 0.3s'}
+                    style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
-                        html.Span('🛢️', style={'marginRight': '8px', 'fontSize': '18px'}),
-                        html.Span('Crude', style={'fontSize': '16px', 'fontWeight': '500'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'padding': '12px 24px', 'cursor': 'pointer'}),
+                        html.Img(
+                            src="/assets/images/oil_inactive.svg",
+                            id='tab-icon-crude',
+                            style={
+                                'height': '40px',
+                                'marginRight': '10px',
+                                'display': 'inline-block',
+                                'verticalAlign': 'middle'
+                            }
+                        ),
+                        html.Span('Crude', style={
+                            'fontSize': '18px',
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'display': 'inline-block',
+                            'verticalAlign': 'middle'
+                        })
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '15px 20px',
+                        'cursor': 'pointer',
+                        'height': '100%'
+                    }),
                     href='/wcod/crude-overview',
                     id='tab-link-crude',
-                    style={'textDecoration': 'none', 'color': '#2c3e50', 'borderBottom': '3px solid transparent', 'transition': 'all 0.3s'}
+                    style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
-                        html.Span('📦', style={'marginRight': '8px', 'fontSize': '18px'}),
-                        html.Span('Trade', style={'fontSize': '16px', 'fontWeight': '500'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'padding': '12px 24px', 'cursor': 'pointer'}),
+                        html.Img(
+                            src="/assets/images/trade_inactive.svg",
+                            id='tab-icon-trade',
+                            style={
+                                'height': '40px',
+                                'marginRight': '10px',
+                                'display': 'inline-block',
+                                'verticalAlign': 'middle'
+                            }
+                        ),
+                        html.Span('Trade', style={
+                            'fontSize': '18px',
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'display': 'inline-block',
+                            'verticalAlign': 'middle'
+                        })
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '15px 20px',
+                        'cursor': 'pointer',
+                        'height': '100%'
+                    }),
                     href='/wcod/trade/imports-country-detail',
                     id='tab-link-trade',
-                    style={'textDecoration': 'none', 'color': '#2c3e50', 'borderBottom': '3px solid transparent', 'transition': 'all 0.3s'}
+                    style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
-                        html.Span('💰', style={'marginRight': '8px', 'fontSize': '18px'}),
-                        html.Span('Prices', style={'fontSize': '16px', 'fontWeight': '500'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'padding': '12px 24px', 'cursor': 'pointer'}),
+                        html.Img(
+                            src="/assets/images/prices_inactive.svg",
+                            id='tab-icon-prices',
+                            style={
+                                'height': '40px',
+                                'marginRight': '10px',
+                                'display': 'inline-block',
+                                'verticalAlign': 'middle'
+                            }
+                        ),
+                        html.Span('Prices', style={
+                            'fontSize': '18px',
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'display': 'inline-block',
+                            'verticalAlign': 'middle'
+                        })
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '15px 20px',
+                        'cursor': 'pointer',
+                        'height': '100%'
+                    }),
                     href='/wcod/prices/global-crude-prices',
                     id='tab-link-prices',
-                    style={'textDecoration': 'none', 'color': '#2c3e50', 'borderBottom': '3px solid transparent', 'transition': 'all 0.3s'}
+                    style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
-                        html.Span('🏗️', style={'marginRight': '8px', 'fontSize': '18px'}),
-                        html.Span('Upstream Projects', style={'fontSize': '16px', 'fontWeight': '500'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'padding': '12px 24px', 'cursor': 'pointer'}),
+                        html.Span('Upstream Projects', style={
+                            'fontSize': '18px',
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'display': 'inline-block',
+                            'verticalAlign': 'middle'
+                        })
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '15px 20px',
+                        'cursor': 'pointer',
+                        'height': '100%'
+                    }),
                     href='/wcod/upstream-projects/projects-by-country',
                     id='tab-link-projects',
-                    style={'textDecoration': 'none', 'color': '#2c3e50', 'borderBottom': '3px solid transparent', 'transition': 'all 0.3s'}
+                    style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
-                        html.Span('📊', style={'marginRight': '8px', 'fontSize': '18px'}),
-                        html.Span('Methodology', style={'fontSize': '16px', 'fontWeight': '500'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'padding': '12px 24px', 'cursor': 'pointer'}),
+                        html.Span('Methodology', style={
+                            'fontSize': '18px',
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'display': 'inline-block',
+                            'verticalAlign': 'middle'
+                        })
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '15px 20px',
+                        'cursor': 'pointer',
+                        'height': '100%'
+                    }),
                     href='/wcod-upstream-oil-projects-tracker-methodology',
                     id='tab-link-methodology',
-                    style={'textDecoration': 'none', 'color': '#2c3e50', 'borderBottom': '3px solid transparent', 'transition': 'all 0.3s'}
+                    style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
             ], style={
-                'display': 'flex', 
-                'borderBottom': '2px solid #e0e0e0', 
-                'background': 'white',
-                'padding': '0',
+                'display': 'flex',
+                'background': '#e5e5e5',
+                'padding': '8px 20px 0 30px',
                 'margin': '0',
-                'overflowX': 'auto'
-            }),
+                'overflowX': 'auto',
+                'gap': '4px',
+                'minHeight': '56px',
+                'alignItems': 'flex-end'
+            }, className='tab-style1'),
             # Hidden tabs component for state management
             dcc.Tabs(
                 id='main-tabs',
@@ -261,7 +583,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                 ],
                 style={'display': 'none'}
             )
-        ], className="container-fluid", style={'padding': '0', 'background': 'white'}),
+        ], className="container-fluid", style={'padding': '0', 'background': '#e5e5e5', 'width': '100%'}),
         
         # Sub-menu - horizontal oval buttons below tabs (matching Energy Intelligence design)
         # This will be dynamically updated by the update_submenu callback based on the active tab
@@ -273,7 +595,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                 'background': '#ffffff',
                 'borderBottom': '1px solid #e0e0e0'
             })
-        ], className='row', style={'margin': '0', 'background': 'white'}),
+        ], className='row cover-menu', style={'margin': '0', 'background': 'white'}),
         
         # Main Content Area
         html.Div([
@@ -436,28 +758,52 @@ def create_wcod_dashboard(server, url_base_pathname):
          Output('tab-link-trade', 'style'),
          Output('tab-link-prices', 'style'),
          Output('tab-link-projects', 'style'),
-         Output('tab-link-methodology', 'style')],
+         Output('tab-link-methodology', 'style'),
+         Output('tab-icon-country', 'src'),
+         Output('tab-icon-crude', 'src'),
+         Output('tab-icon-trade', 'src'),
+         Output('tab-icon-prices', 'src')],
         Input('main-tabs', 'value'),
         prevent_initial_call=False
     )
     def update_tab_styles(active_tab):
-        """Update tab link styles based on active tab"""
+        """Update tab link styles based on active tab - matching Image 1 design"""
         # Default to country-tab if active_tab is None or not set
         if not active_tab:
             active_tab = 'country-tab'
         
+        # Base style for inactive tabs - light gray background (blends with container)
         base_style = {
             'textDecoration': 'none',
-            'color': '#2c3e50',
-            'borderBottom': '3px solid transparent',
-            'transition': 'all 0.3s'
+            'transition': 'all 0.2s ease',
+            'background': '#fff',
+            'borderRadius': '8px 8px 0 0',
+            'boxShadow': 'none',
+            'position': 'relative',
+            'zIndex': '1',
+            'padding': '10px 25px',
+            'height': '75px',
+            'transform': 'translateY(-3px)'
         }
+        
+        # Active style - white background, elevated with prominent shadow (matching image)
         active_style = {
-            **base_style,
-            'color': '#007bff',
-            'borderBottom': '3px solid #007bff',
-            'fontWeight': '600'
+            'textDecoration': 'none',
+            'transition': 'all 0.2s ease',
+            'background': 'white',
+            'borderRadius': '8px 8px 0 0',
+            'boxShadow': '0 -3px 12px rgba(0, 0, 0, 0.15), 0 -1px 4px rgba(0, 0, 0, 0.1)',
+            'position': 'relative',
+            'zIndex': '2',
+            'padding': '13px 35px',
+            'transform': 'translateY(0px)'
         }
+        
+        # Icon sources - switch between active and inactive SVGs (using local assets)
+        country_icon = '/assets/images/globe_active.svg' if active_tab == 'country-tab' else '/assets/images/globe_inactive.svg'
+        crude_icon = '/assets/images/oil_active.svg' if active_tab == 'crude-tab' else '/assets/images/oil_inactive.svg'
+        trade_icon = '/assets/images/trade_active.svg' if active_tab == 'trade-tab' else '/assets/images/trade_inactive.svg'
+        prices_icon = '/assets/images/prices_active.svg' if active_tab == 'prices-tab' else '/assets/images/prices_inactive.svg'
         
         return [
             active_style if active_tab == 'country-tab' else base_style,
@@ -466,6 +812,10 @@ def create_wcod_dashboard(server, url_base_pathname):
             active_style if active_tab == 'prices-tab' else base_style,
             active_style if active_tab == 'projects-tab' else base_style,
             active_style if active_tab == 'methodology-tab' else base_style,
+            country_icon,
+            crude_icon,
+            trade_icon,
+            prices_icon,
         ]
     
     # Callback to update sub-menu based on main tab and submenu changes
@@ -627,9 +977,9 @@ def create_wcod_dashboard(server, url_base_pathname):
                         'display': 'inline-block',
                         'padding': '8px 20px',
                         'margin': '0 8px 8px 0',
-                        'background': '#007bff' if item['value'] == default_value else '#f8f9fa',
+                        'background': '#1b365d' if item['value'] == default_value else '#f8f9fa',
                         'color': 'white' if item['value'] == default_value else '#2c3e50',
-                        'border': '1px solid #007bff' if item['value'] == default_value else '1px solid #e0e0e0',
+                        'border': '1px solid #ffffff' if item['value'] == default_value else '1px solid #e0e0e0',
                         'borderRadius': '20px',
                         'cursor': 'pointer',
                         'transition': 'all 0.3s',

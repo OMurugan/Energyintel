@@ -5,20 +5,105 @@
 {% block extra_css %}
 <style>
     .wcod-header {
-        background: #fff;
-        padding: 2rem 0 1rem;
-        border-bottom: 1px solid #e0e0e0;
+        position: relative;
+        background: linear-gradient(to top, #1a4a5c 0%, #2c5f7a 50%, #4a9bb8 100%);
+        padding: 0;
+        overflow: hidden;
+        min-height: 300px;
+    }
+    .wcod-header::before {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 300px;
+        height: 150px;
+        background: 
+            radial-gradient(ellipse at 20% 80%, rgba(255,255,255,0.15) 0%, transparent 50%),
+            radial-gradient(ellipse at 60% 90%, rgba(255,255,255,0.1) 0%, transparent 50%);
+        opacity: 0.4;
+    }
+    .wcod-header::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        width: 300px;
+        height: 150px;
+        background: 
+            radial-gradient(ellipse at 80% 80%, rgba(255,255,255,0.15) 0%, transparent 50%),
+            radial-gradient(ellipse at 40% 90%, rgba(255,255,255,0.1) 0%, transparent 50%);
+        opacity: 0.4;
+    }
+    .wcod-header-banner {
+        background: #2c3e50;
+        padding: 60px 40px;
+        margin: 40px auto;
+        max-width: 1200px;
+        position: relative;
+        z-index: 1;
     }
     .wcod-title {
-        font-size: 2rem;
+        font-size: 3.5rem;
         font-weight: 700;
-        color: #1a1a1a;
-        margin-bottom: 0.5rem;
+        color: #ffffff;
+        margin-bottom: 1rem;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
     .wcod-subtitle {
-        font-size: 1rem;
-        color: #666;
-        margin-bottom: 2rem;
+        font-size: 1.1rem;
+        color: #ffffff;
+        margin-bottom: 0;
+        font-weight: 400;
+        line-height: 1.6;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .wcod-nav-bar {
+        background: #2c3e50;
+        padding: 15px 40px;
+        position: relative;
+        z-index: 1;
+    }
+    .wcod-nav-links {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    .wcod-nav-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .wcod-nav-link {
+        color: #ffffff;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 400;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        transition: opacity 0.3s;
+    }
+    .wcod-nav-link:hover {
+        opacity: 0.8;
+    }
+    .wcod-nav-separator {
+        color: #ffffff;
+        margin: 0 4px;
+        user-select: none;
+    }
+    .wcod-nav-learn-more {
+        color: #ffffff;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 400;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        transition: opacity 0.3s;
+    }
+    .wcod-nav-learn-more:hover {
+        opacity: 0.8;
     }
     
     /* Filter & Search Section */
@@ -118,12 +203,12 @@
     .wcod-submenu-link:hover {
         background: #e9ecef;
         border-color: #007bff;
-        color: #007bff;
+        color: #1b365d;
     }
     .wcod-submenu-link.active {
-        background: #007bff;
+        background: #1b365d;
         color: #fff;
-        border-color: #007bff;
+        border-color: #ffffff;
         font-weight: 600;
     }
     
@@ -142,18 +227,55 @@
         .wcod-submenu {
             padding: 15px 20px;
         }
+        .wcod-title {
+            font-size: 2rem;
+        }
+        .wcod-subtitle {
+            font-size: 0.95rem;
+        }
+        .wcod-header-banner {
+            padding: 40px 20px;
+            margin: 20px;
+        }
+        .wcod-nav-bar {
+            padding: 15px 20px;
+        }
+        .wcod-nav-links {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        .wcod-nav-left {
+            flex-wrap: wrap;
+        }
     }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="wcod-header">
-    <div class="container-fluid">
-        <div class="row">
-            <div class="col-12">
-                <h1 class="wcod-title">WORLD CRUDE OIL DATA</h1>
-                <p class="wcod-subtitle">Crude fundamentals, including production, trade, quality and pricing data.</p>
+    <div class="wcod-header-banner">
+        <h1 class="wcod-title">WORLD CRUDE OIL DATA</h1>
+        <p class="wcod-subtitle">Analysis on the top 200 global crudes, including data on production, trade, quality and pricing</p>
+    </div>
+    <div class="wcod-nav-bar">
+        <div class="wcod-nav-links">
+            <div class="wcod-nav-left">
+                <a href="/wcod/" class="wcod-nav-link">Country</a>
+                <span class="wcod-nav-separator">|</span>
+                <a href="/wcod/crude-overview" class="wcod-nav-link">Crude</a>
+                <span class="wcod-nav-separator">|</span>
+                <a href="/wcod/trade/imports-country-detail" class="wcod-nav-link">Trade</a>
+                <span class="wcod-nav-separator">|</span>
+                <a href="/wcod/prices/global-crude-prices" class="wcod-nav-link">Prices</a>
+                <span class="wcod-nav-separator">|</span>
+                <a href="/wcod/upstream-projects/projects-by-country" class="wcod-nav-link">Upstream Projects</a>
+                <span class="wcod-nav-separator">|</span>
+                <a href="/wcod-upstream-oil-projects-tracker-methodology" class="wcod-nav-link">Methodology</a>
+                <span class="wcod-nav-separator">|</span>
+                <a href="#" class="wcod-nav-link">API Access</a>
             </div>
+            <a href="#" class="wcod-nav-learn-more">Learn more about World Crude Oil Data &gt;</a>
         </div>
     </div>
 </div>

@@ -4,6 +4,7 @@ import os
 import chardet
 import dash
 import re
+from app import create_dash_app
 
 # ------------------------------------------------------------------------------
 # PATH CONSTANTS
@@ -126,10 +127,10 @@ def load_crude_data(mode):
     ]
 
 # ------------------------------------------------------------------------------
-# CALCULATE COMBINED SUM DATA (Production + Exports)
+# CALCULATE COMBINED SUM DATA (Production + Exports) - SORTED BY TOTAL SUM DESC
 # ------------------------------------------------------------------------------
 def calculate_combined_sums():
-    """Calculate combined sums of Production and Exports for each crude oil and year"""
+    """Calculate combined sums of Production and Exports for each crude oil and year, sorted by maximum value descending"""
     
     # Load both datasets
     production_data, production_cols = load_crude_data("production")
@@ -142,7 +143,7 @@ def calculate_combined_sums():
     # Get numeric columns (years)
     numeric_cols = [col for col in prod_df.columns if col != 'CrudeOil']
     
-    # Create combined data
+    # Create combined data with maximum values
     combined_data = []
     
     # Get all unique crude oils from both datasets
@@ -150,6 +151,7 @@ def calculate_combined_sums():
     
     for crude in all_crudes:
         combined_row = {'CrudeOil': crude}
+        max_value = 0  # Track maximum value for sorting
         
         # Find this crude in production data
         prod_row = prod_df[prod_df['CrudeOil'] == crude]
@@ -183,20 +185,33 @@ def calculate_combined_sums():
             # Calculate combined sum
             combined_val = prod_val + exp_val
             combined_row[col] = f"{combined_val:,.0f}" if combined_val > 0 else ""
+            
+            # Update maximum value if this year's value is higher
+            if combined_val > max_value:
+                max_value = combined_val
         
+        # Add maximum value for sorting
+        combined_row['_max_value'] = max_value
         combined_data.append(combined_row)
     
-    return combined_data
+    # Sort by maximum value in descending order (highest first)
+    combined_data_sorted = sorted(combined_data, key=lambda x: x['_max_value'], reverse=True)
+    
+    # Remove the temporary _max_value field
+    for row in combined_data_sorted:
+        row.pop('_max_value', None)
+    
+    return combined_data_sorted
 
 # ------------------------------------------------------------------------------
-# CALCULATE SUM ROW FOR COMBINED DATA
+# CALCULATE SUM ROW FOR REGULAR DATA
 # ------------------------------------------------------------------------------
-def calculate_combined_sum_row(combined_data):
-    """Calculate sum row for combined data"""
-    if not combined_data:
+def calculate_sum_row(data):
+    """Calculate sum row for regular production/exports data"""
+    if not data:
         return None
     
-    df = pd.DataFrame(combined_data)
+    df = pd.DataFrame(data)
     numeric_cols = [col for col in df.columns if col != 'CrudeOil']
     
     sum_row = {'CrudeOil': 'SUM'}
@@ -217,12 +232,9 @@ def calculate_combined_sum_row(combined_data):
 # ------------------------------------------------------------------------------
 # INITIAL LOAD
 # ------------------------------------------------------------------------------
-combined_data = calculate_combined_sums()
-combined_sum_row = calculate_combined_sum_row(combined_data)
 production_data, production_columns = load_crude_data("production")
-
-# Combine data with SUM row
-table_data_with_sum = combined_data + [combined_sum_row] if combined_sum_row else combined_data
+production_sum_row = calculate_sum_row(production_data)
+table_data_with_sum = production_data + [production_sum_row] if production_sum_row else production_data
 
 # ------------------------------------------------------------------------------
 # LAYOUT
@@ -247,9 +259,8 @@ def create_layout(server):
                     options=[
                         {"label": "Production", "value": "production"},
                         {"label": "Exports", "value": "exports"},
-                        {"label": "Combined Total", "value": "combined"},
                     ],
-                    value="combined",
+                    value="production",
                     clearable=False,
                     style={
                         "width": "100%",
@@ -284,8 +295,121 @@ def create_layout(server):
                     z-index: 1003;
                     pointer-events: none;
                 }
+                .sum-text-box {
+                    position: absolute;
+                    background-color: white;
+                    border: 1px solid #ccc;
+                    padding: 8px 12px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                    font-family: Arial;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                    z-index: 1002;
+                    white-space: nowrap;
+                    color: #333;
+                }
+                /* Sort indicator icon styles for ALL headers */
+                .sort-indicator {
+                    position: absolute;
+                    right: 8px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    width: 15px;
+                    height: 15px;
+                    cursor: pointer;
+                    opacity: 0;
+                    transition: opacity 0.2s ease;
+                }
+                .dash-header:hover .sort-indicator {
+                    opacity: 1;
+                }
+                .sort-indicator:hover {
+                    background-color: #e6f3ff;
+                    border-radius: 2px;
+                }
+                .sort-indicator svg {
+                    width: 100%;
+                    height: 100%;
+                    fill: #666;
+                }
+                .sort-indicator:hover svg {
+                    fill: #1f3263;
+                }
+                /* Specific styles for CrudeOil header additional elements */
+                .dash-header[data-dash-column="CrudeOil"] .sort-order-container {
+                    position: absolute;
+                    right: 30px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    font-size: 10px;
+                    color: #666;
+                    cursor: pointer;
+                    padding: 2px;
+                    border: 1px solid transparent;
+                    border-radius: 2px;
+                    line-height: 1;
+                    text-align: center;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 30px;
+                    opacity: 0;
+                    transition: opacity 0.2s ease;
+                }
+                .dash-header[data-dash-column="CrudeOil"]:hover .sort-order-container {
+                    opacity: 1;
+                }
+                .dash-header[data-dash-column="CrudeOil"] .sort-order-container:hover {
+                    background-color: #e6f3ff;
+                    border-color: #1f3263;
+                }
+                .dash-header[data-dash-column="CrudeOil"] .sort-asc,
+                .dash-header[data-dash-column="CrudeOil"] .sort-desc {
+                    display: block;
+                    line-height: 1;
+                    cursor: pointer;
+                    padding: 1px 2px;
+                    border-radius: 1px;
+                }
+                .dash-header[data-dash-column="CrudeOil"] .sort-asc:hover,
+                .dash-header[data-dash-column="CrudeOil"] .sort-desc:hover {
+                    background-color: #d4e7ff;
+                    font-weight: bold;
+                }
+                .dash-cell:not([data-dash-column="CrudeOil"]):not(.dash-header) {
+                    cursor: pointer;
+                }
+                #sum-text-box {
+                    cursor: pointer !important;
+                }
+                #sum-text-box:hover {
+                    background-color: #f5f5f5 !important;
+                    border-color: #999 !important;
+                }
                 </style>
             """, dangerously_allow_html=True),
+
+            # SUM Text Box (initially hidden)
+            html.Div(
+                "SUM(Exports/Production Value)",
+                id="sum-text-box",
+                n_clicks=0,
+                style={
+                    "position": "absolute",
+                    "backgroundColor": "white",
+                    "border": "1px solid #ccc",
+                    "padding": "8px 12px",
+                    "borderRadius": "4px",
+                    "fontSize": "12px",
+                    "fontFamily": "Arial",
+                    "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                    "zIndex": "1002",
+                    "display": "none",
+                    "color": "#333",
+                    "cursor": "pointer",
+                }
+            ),
 
             # Sorting controls popup (initially hidden)
             html.Div([
@@ -350,11 +474,13 @@ def create_layout(server):
             ], id="sorting-controls", style={
                 "position": "absolute", 
                 "backgroundColor": "white", 
-                "padding": "4px 0",
+                "padding": "15px",
                 "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
                 "zIndex": "1000",
                 "display": "none",
-                "minWidth": "160px"
+                "minWidth": "160px",
+                "top": "213px",
+                "left": "209px"
             }),
 
             dash_table.DataTable(
@@ -371,20 +497,24 @@ def create_layout(server):
                 },
                 style_cell={
                     "textAlign": "center",
-                    "padding": "2px 4px",
-                    "fontSize": "12px",
-                    "fontFamily": "Arial",
-                    "border": "1px solid #e2e2e2",
+                    "padding": "8px 12px",
+                    "fontSize": "11px",
+                    "fontFamily": "Arial, sans-serif",
+                    "border": "1px solid #e0e0e0",
                     "whiteSpace": "normal",
-                    "height": "35px",
-                    "cursor": "pointer",
+                    "height": "auto",
+                    "minHeight": "35px",
+                    "color": "#333333",
                 },
                 style_header={
                     "backgroundColor": "#f2f2f2",
                     "fontWeight": "bold",
-                    "fontSize": "12px",
+                    "fontSize": "14px",
+                    "fontFamily": "Arial, sans-serif",
                     "border": "1px solid #d0d0d0",
-                    "cursor": "pointer",
+                    "color": "#1f3263",
+                    "textAlign": "center",
+                    "padding": "10px 12px",
                     "position": "relative",
                 },
                 style_cell_conditional=[
@@ -392,32 +522,47 @@ def create_layout(server):
                         "if": {"column_id": "CrudeOil"},
                         "textAlign": "left",
                         "fontWeight": "600",
-                        "minWidth": "160px",
+                        "minWidth": "180px",
                         "backgroundColor": "#FFFFFF",
-                        "borderRight": "2px solid #d0d0d0",
-                        "paddingLeft": "10px",
-                        "paddingTop": "5px",
-                        "paddingBottom": "5px",
+                        "borderRight": "1px solid #d0d0d0",
+                        "paddingLeft": "12px",
+                        "paddingRight": "12px",
                         "color": "#1f3263",
-                        "cursor": "pointer",
                     },
                     {
                         "if": {"column_id": "CrudeOil", "header": True},
+                        "textAlign": "left",
                         "color": "#1f3263",
-                        "cursor": "pointer",
                         "position": "relative",
+                    },
+                    # Year column headers - dark blue, center-aligned
+                    {
+                        "if": {"header": True, "column_id": [str(year) for year in range(2007, 2025)]},
+                        "color": "#1f3263",
+                        "textAlign": "center",
                     },
                 ],
                 style_data_conditional=[
-                    {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"},
+                    # All data rows white background
+                    {
+                        "if": {"row_index": "odd"},
+                        "backgroundColor": "#FFFFFF",
+                    },
+                    {
+                        "if": {"row_index": "even"},
+                        "backgroundColor": "#FFFFFF",
+                    },
+                    # CrudeOil column data - dark blue
                     {
                         "if": {"column_id": "CrudeOil"},
                         "color": "#1f3263",
+                        "backgroundColor": "#FFFFFF",
                     },
-                    # Default style for all numeric cells
+                    # Year columns data - dark gray/black, center-aligned
                     {
                         "if": {"column_id": [str(year) for year in range(2007, 2025)]},
-                        "cursor": "pointer",
+                        "color": "#333333",
+                        "textAlign": "center",
                     },
                     # Style for SUM row - DARK BLUE BACKGROUND
                     {
@@ -442,6 +587,7 @@ def create_layout(server):
                             color: #1f3263 !important; 
                             text-decoration: underline !important;
                             font-weight: 600 !important;
+                            font-family: Arial, sans-serif !important;
                             cursor: pointer !important;
                         '''
                     },
@@ -450,7 +596,6 @@ def create_layout(server):
                         'rule': '''
                             color: #1f3263 !important; 
                             text-decoration: underline !important;
-                            background-color: #f0f5ff !important;
                         '''
                     },
                     {
@@ -458,6 +603,37 @@ def create_layout(server):
                         'rule': '''
                             color: #1f3263 !important;
                             position: relative !important;
+                            text-align: left !important;
+                        '''
+                    },
+                    # Year column headers styling
+                    {
+                        'selector': '.dash-header[data-dash-column*="20"]',
+                        'rule': '''
+                            color: #1f3263 !important;
+                            text-align: center !important;
+                            font-weight: bold !important;
+                        '''
+                    },
+                    # Table borders - horizontal lines for rows
+                    {
+                        'selector': '.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table',
+                        'rule': '''
+                            border-collapse: collapse !important;
+                        '''
+                    },
+                    {
+                        'selector': '.dash-cell',
+                        'rule': '''
+                            border-top: 1px solid #e0e0e0 !important;
+                            border-bottom: 1px solid #e0e0e0 !important;
+                        '''
+                    },
+                    {
+                        'selector': '.dash-header',
+                        'rule': '''
+                            border-left: 1px solid #d0d0d0 !important;
+                            border-right: 1px solid #d0d0d0 !important;
                         '''
                     },
                     # A-Z vertical text for sort order - HIDDEN BY DEFAULT
@@ -465,7 +641,7 @@ def create_layout(server):
                         'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-order-container',
                         'rule': '''
                             position: absolute;
-                            right: 25px;
+                            right: 30px;
                             top: 50%;
                             transform: translateY(-50%);
                             font-size: 10px;
@@ -532,40 +708,46 @@ def create_layout(server):
                             font-weight: bold;
                         '''
                     },
-                    # Popup menu indicator (down arrow) - HIDDEN BY DEFAULT
+                    # Sort indicator (SVG icon) for ALL headers - HIDDEN BY DEFAULT
                     {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"] .popup-menu-indicator',
+                        'selector': '.dash-header .sort-indicator',
                         'rule': '''
                             position: absolute;
                             right: 8px;
                             top: 50%;
                             transform: translateY(-50%);
-                            font-size: 14px;
-                            color: #666;
+                            width: 15px;
+                            height: 15px;
                             cursor: pointer;
-                            padding: 2px 4px;
-                            border: 1px solid transparent;
-                            border-radius: 2px;
                             opacity: 0;
                             transition: opacity 0.2s ease;
                         '''
                     },
                     {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"]:hover .popup-menu-indicator',
+                        'selector': '.dash-header:hover .sort-indicator',
                         'rule': '''
                             opacity: 1;
                         '''
                     },
                     {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"] .popup-menu-indicator:hover',
+                        'selector': '.dash-header .sort-indicator:hover',
                         'rule': '''
                             background-color: #e6f3ff;
-                            border-color: #1f3263;
+                            border-radius: 2px;
                         '''
                     },
                     {
                         'selector': '.dash-cell:not([data-dash-column="CrudeOil"]):not(.dash-header)',
                         'rule': 'cursor: pointer;'
+                    },
+                    # SUM text box styling
+                    {
+                        'selector': '#sum-text-box',
+                        'rule': 'cursor: pointer !important;'
+                    },
+                    {
+                        'selector': '#sum-text-box:hover',
+                        'rule': 'background-color: #f5f5f5 !important; border-color: #999 !important;'
                     },
                 ],
                 fixed_rows={"headers": True},
@@ -581,8 +763,8 @@ def create_layout(server):
             dcc.Store(id='original-data-store', data=production_data),
             dcc.Store(id='current-sort-order', data={'type': 'source', 'direction': 'asc'}),
             dcc.Store(id='show-sorting-controls', data=False),
-            dcc.Store(id='sum-row-store', data=combined_sum_row),
-            dcc.Store(id='combined-data-store', data=combined_data),
+            dcc.Store(id='sum-row-store', data=production_sum_row),
+            dcc.Store(id='is-combined-mode', data=False),  # Track if we're in combined mode
             html.Div(id='dummy-output', style={'display': 'none'}),
             html.Div(id='dummy-output-2', style={'display': 'none'}),
 
@@ -590,6 +772,10 @@ def create_layout(server):
             html.Button("Sort Ascending Click", id="sort-asc-btn-hidden", n_clicks=0, style={"display": "none"}),
             html.Button("Sort Descending Click", id="sort-desc-btn-hidden", n_clicks=0, style={"display": "none"}),
             html.Button("Popup Menu Click", id="popup-menu-btn", n_clicks=0, style={"display": "none"}),
+            # Hidden buttons for year column sorting and combined mode
+            html.Button("Year Column Click", id="year-column-btn", n_clicks=0, style={"display": "none"}),
+            html.Button("Field Sort Click", id="field-sort-btn", n_clicks=0, style={"display": "none"}),
+            html.Button("Nested Sort Click", id="nested-sort-btn", n_clicks=0, style={"display": "none"}),
 
             html.Div([
                 html.P(
@@ -622,15 +808,16 @@ def register_callbacks(app):
 
     @app.callback(
         Output("crude-heading", "children"),
-        Input("export-production-dropdown", "value"),
+        [Input("export-production-dropdown", "value"),
+         Input("is-combined-mode", "data")]
     )
-    def update_header(selected):
-        if selected == "exports":
+    def update_header(selected, is_combined):
+        if is_combined:
+            title = "Production('000 b/d)"
+        elif selected == "exports":
             title = "Exports ('000 b/d)"
-        elif selected == "production":
+        else:  # production
             title = "Production ('000 b/d)"
-        else:  # combined
-            title = "Combined Production + Exports ('000 b/d)"
         
         return html.H2(
             title,
@@ -648,43 +835,98 @@ def register_callbacks(app):
         [Output("crude-comparison-table", "data"),
          Output("original-data-store", "data"),
          Output("sum-row-store", "data"),
-         Output("combined-data-store", "data")],
-        Input("export-production-dropdown", "value"),
+         Output("is-combined-mode", "data")],
+        [Input("export-production-dropdown", "value"),
+         Input("field-sort-btn", "n_clicks"),
+         Input("nested-sort-btn", "n_clicks"),
+         Input("year-column-btn", "n_clicks"),
+         Input("sum-text-box", "n_clicks")],
+        [State("is-combined-mode", "data")]
     )
-    def reload_data(mode):
-        if mode == "combined":
-            # Use combined data (Production + Exports)
+    def reload_data(mode, field_clicks, nested_clicks, year_clicks, sum_text_clicks, is_combined):
+        trigger = ctx.triggered_id
+        
+        # If Field, Nested, Year icon, or SUM text box is clicked, switch to combined mode
+        if trigger in ['field-sort-btn', 'nested-sort-btn', 'year-column-btn', 'sum-text-box']:
+            # Use combined data WITHOUT sum row
             combined_data = calculate_combined_sums()
-            sum_row = calculate_combined_sum_row(combined_data)
-            table_data_with_sum = combined_data + [sum_row] if sum_row else combined_data
-            return table_data_with_sum, combined_data, sum_row, combined_data
+            return combined_data, combined_data, None, True
         else:
-            # Use individual mode data
+            # Use individual dataset (Production or Exports) WITH sum row
             crude_data, columns = load_crude_data(mode)
-            sum_row = calculate_combined_sum_row(crude_data)
+            sum_row = calculate_sum_row(crude_data)
             table_data_with_sum = crude_data + [sum_row] if sum_row else crude_data
-            return table_data_with_sum, crude_data, sum_row, None
+            return table_data_with_sum, crude_data, sum_row, False
 
     @app.callback(
         Output("crude-comparison-table", "columns"),
         Input("export-production-dropdown", "value"),
     )
     def reload_columns(mode):
-        _, columns = load_crude_data("production")
+        _, columns = load_crude_data(mode)
         return columns
+
+    # Handle SUM text box display
+    @app.callback(
+        Output('sum-text-box', 'style'),
+        [Input('popup-field-btn', 'n_clicks'),
+         Input('popup-nested-btn', 'n_clicks'),
+         Input('field-arrow-btn', 'n_clicks'),
+         Input('nested-arrow-btn', 'n_clicks')],
+        [State('show-sorting-controls', 'data')]
+    )
+    def handle_sum_text_box(field_clicks, nested_clicks, field_arrow_clicks, nested_arrow_clicks, show_controls):
+        trigger = ctx.triggered_id
+        
+        # Show SUM text box when hovering over Field/Nested arrows
+        if trigger in ['popup-field-btn', 'popup-nested-btn', 'field-arrow-btn', 'nested-arrow-btn']:
+            if show_controls:
+                return {
+                    "position": "absolute",
+                    "backgroundColor": "white",
+                    "border": "1px solid #ccc",
+                    "padding": "8px 12px",
+                    "borderRadius": "4px",
+                    "fontSize": "12px",
+                    "fontFamily": "Arial",
+                    "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                    "zIndex": "1002",
+                    "display": "block",
+                    "color": "#333",
+                    "top": "286px",
+                    "left": "353px"
+                }
+        
+        return {
+            "position": "absolute",
+            "backgroundColor": "white",
+            "border": "1px solid #ccc",
+            "padding": "8px 12px",
+            "borderRadius": "4px",
+            "fontSize": "12px",
+            "fontFamily": "Arial",
+            "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+            "zIndex": "1002",
+            "display": "none",
+            "color": "#333",
+        }
 
     # Handle header clicks (both sort order and popup menu)
     @app.callback(
         [Output('sorting-controls', 'style'),
          Output('show-sorting-controls', 'data'),
-         Output('current-sort-order', 'data', allow_duplicate=True)],
+         Output('current-sort-order', 'data', allow_duplicate=True),
+         Output('sum-text-box', 'style', allow_duplicate=True)],
         [Input('sort-asc-btn-hidden', 'n_clicks'),
          Input('sort-desc-btn-hidden', 'n_clicks'),
          Input('popup-menu-btn', 'n_clicks'),
          Input('popup-source-btn', 'n_clicks'),
          Input('popup-alphabetic-btn', 'n_clicks'),
          Input('popup-field-btn', 'n_clicks'),
-         Input('popup-nested-btn', 'n_clicks')],
+         Input('popup-nested-btn', 'n_clicks'),
+         Input('field-sort-btn', 'n_clicks'),
+         Input('nested-sort-btn', 'n_clicks'),
+         Input('sum-text-box', 'n_clicks')],
         [State('show-sorting-controls', 'data'),
          State('current-sort-order', 'data')],
         prevent_initial_call=True
@@ -692,27 +934,29 @@ def register_callbacks(app):
     def handle_header_interactions(asc_clicks, desc_clicks, popup_clicks, 
                                   popup_source_clicks, popup_alpha_clicks,
                                   popup_field_clicks, popup_nested_clicks,
+                                  field_sort_clicks, nested_sort_clicks,
+                                  sum_text_clicks,
                                   show_controls, current_sort):
         trigger = ctx.triggered_id
         
         if trigger == 'sort-asc-btn-hidden':
-            return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'asc'}
+            return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'asc'}, dash.no_update
         
         elif trigger == 'sort-desc-btn-hidden':
-            return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'desc'}
+            return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'desc'}, dash.no_update
         
         elif trigger == 'popup-menu-btn':
             return {
                 "position": "absolute", 
                 "backgroundColor": "white", 
-                "padding": "4px 0",
+                "padding": "15px",
                 "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
                 "zIndex": "1000",
                 "display": "block",
                 "minWidth": "160px",
-                "top": "200px",
-                "left": "50px"
-            }, True, dash.no_update
+                "top": "213px",
+                "left": "209px"
+            }, True, dash.no_update, dash.no_update
         
         elif trigger == 'popup-source-btn':
             return {
@@ -723,7 +967,19 @@ def register_callbacks(app):
                 "zIndex": "1000",
                 "display": "none",
                 "minWidth": "160px"
-            }, False, {'type': 'source', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+            }, False, {'type': 'source', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}, {
+                "position": "absolute",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "none",
+                "color": "#333",
+            }
         
         elif trigger == 'popup-alphabetic-btn':
             return {
@@ -734,13 +990,79 @@ def register_callbacks(app):
                 "zIndex": "1000",
                 "display": "none",
                 "minWidth": "160px"
-            }, False, {'type': 'alphabetic', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+            }, False, {'type': 'alphabetic', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}, {
+                "position": "absolute",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "none",
+                "color": "#333",
+            }
         
-        elif trigger == 'popup-field-btn':
-            return dash.no_update, dash.no_update, {'type': 'field', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+        elif trigger == 'popup-field-btn' or trigger == 'field-sort-btn':
+            # Show SUM text box but keep popup open for Field menu item
+            return dash.no_update, dash.no_update, {'type': 'field', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}, {
+                "position": "absolute",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "block",
+                "color": "#333",
+                "top": "286px",
+                "left": "353px"
+            }
         
-        elif trigger == 'popup-nested-btn':
-            return dash.no_update, dash.no_update, {'type': 'nested', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+        elif trigger == 'popup-nested-btn' or trigger == 'nested-sort-btn':
+            # Show SUM text box but keep popup open for Nested menu item
+            return dash.no_update, dash.no_update, {'type': 'nested', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}, {
+                "position": "absolute",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "block",
+                "color": "#333",
+                "top": "316px",
+                "left": "351px"
+            }
+        
+        elif trigger == 'sum-text-box':
+            # When SUM text box is clicked, close popup and show combined data
+            return {
+                "position": "absolute", 
+                "backgroundColor": "white", 
+                "padding": "4px 0",
+                "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
+                "zIndex": "1000",
+                "display": "none",
+                "minWidth": "160px"
+            }, False, {'type': 'field', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}, {
+                "position": "absolute",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "none",
+                "color": "#333",
+            }
         
         return {
             "position": "absolute", 
@@ -750,7 +1072,19 @@ def register_callbacks(app):
             "zIndex": "1000",
             "display": "none",
             "minWidth": "160px"
-        }, False, dash.no_update
+        }, False, dash.no_update, {
+            "position": "absolute",
+            "backgroundColor": "white",
+            "border": "1px solid #ccc",
+            "padding": "8px 12px",
+            "borderRadius": "4px",
+            "fontSize": "12px",
+            "fontFamily": "Arial",
+            "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+            "zIndex": "1002",
+            "display": "none",
+            "color": "#333",
+        }
 
     # Apply sorting when sort order changes
     @app.callback(
@@ -795,7 +1129,7 @@ def register_callbacks(app):
         else:
             df_sorted = df
         
-        # Convert back to dict and add SUM row
+        # Convert back to dict and add SUM row only if sum_row exists (not in combined mode)
         sorted_data = df_sorted.to_dict('records')
         if sum_row:
             sorted_data.append(sum_row)
@@ -901,18 +1235,24 @@ def register_callbacks(app):
 
     @app.callback(
         Output('crude-comparison-table', 'style_data_conditional'),
-        [Input('selected-cell-store', 'data')],
+        [Input('selected-cell-store', 'data'),
+         Input('is-combined-mode', 'data')],
         [State('crude-comparison-table', 'data')]
     )
-    def update_table_styles(selected_cell, current_data):
+    def update_table_styles(selected_cell, is_combined, current_data):
         default_styles = [
             {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"},
             {"if": {"column_id": "CrudeOil"}, "color": "#1f3263"},
             {"if": {"column_id": [str(year) for year in range(2007, 2025)]}, "cursor": "pointer"},
-            {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
-            {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
         ]
         
+        # Only add SUM row styling if NOT in combined mode
+        if not is_combined:
+            default_styles.extend([
+                {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
+                {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
+            ])
+    
         if selected_cell:
             numeric_columns = [col for col in (current_data[0].keys() if current_data else []) if col != "CrudeOil"]
             
@@ -921,9 +1261,15 @@ def register_callbacks(app):
                 {"if": {"column_id": "CrudeOil"}, "color": "#1f3263", "backgroundColor": "white", "cursor": "pointer"},
                 {"if": {"column_id": numeric_columns}, "color": "#f0f0f0", "backgroundColor": "white", "cursor": "pointer"},
                 {"if": {"row_index": selected_cell['row'], "column_id": selected_cell['column']}, "color": "#1f3263", "backgroundColor": "#e6f3ff", "fontWeight": "bold", "border": "2px solid #1f3263", "cursor": "pointer"},
-                {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
-                {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
             ]
+            
+            # Only add SUM row styling if NOT in combined mode
+            if not is_combined:
+                style_conditions.extend([
+                    {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
+                    {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
+                ])
+                
             return style_conditions
         
         return default_styles
@@ -947,6 +1293,7 @@ def register_callbacks(app):
         """
         function(n) {
             setTimeout(function() {
+                // Add A/Z and SVG sort icon to CrudeOil header
                 const crudeHeader = document.querySelector('.dash-header[data-dash-column="CrudeOil"]');
                 if (crudeHeader && !crudeHeader.querySelector('.sort-order-container')) {
                     const sortContainer = document.createElement('div');
@@ -975,82 +1322,109 @@ def register_callbacks(app):
                     sortContainer.appendChild(aElement);
                     sortContainer.appendChild(zElement);
                     
-                    const popupMenu = document.createElement('div');
-                    popupMenu.className = 'popup-menu-indicator';
-                    popupMenu.innerHTML = '▼';
-                    popupMenu.title = 'Click to show sort options';
-                    popupMenu.onclick = function(e) {
+                    // Add SVG sort icon (same as year columns)
+                    const sortIndicator = document.createElement('div');
+                    sortIndicator.className = 'sort-indicator';
+                    sortIndicator.title = 'Click to show sort options';
+                    
+                    // Add the exact SVG from your file
+                    sortIndicator.innerHTML = `
+                        <svg fill="#000000" viewBox="0 0 301.219 301.219" xmlns="http://www.w3.org/2000/svg">
+                            <g>
+                                <path d="M159.365,23.736v-10c0-5.523-4.477-10-10-10H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h139.365
+                                    C154.888,33.736,159.365,29.259,159.365,23.736z"/>
+                                <path d="M130.586,66.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h120.586c5.523,0,10-4.477,10-10v-10
+                                    C140.586,71.213,136.109,66.736,130.586,66.736z"/>
+                                <path d="M111.805,129.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h101.805c5.523,0,10-4.477,10-10v-10
+                                    C121.805,134.213,117.328,129.736,111.805,129.736z"/>
+                                <path d="M93.025,199.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h83.025c5.522,0,10-4.477,10-10v-10
+                                    C103.025,204.213,98.548,199.736,93.025,199.736z"/>
+                                <path d="M74.244,262.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h64.244c5.522,0,10-4.477,10-10v-10
+                                    C84.244,267.213,79.767,262.736,74.244,262.736z"/>
+                                <path d="M298.29,216.877l-7.071-7.071c-1.875-1.875-4.419-2.929-7.071-2.929c-2.652,0-5.196,1.054-7.072,2.929l-34.393,34.393
+                                    V18.736c0-5.523-4.477-10-10-10h-10c-5.523,0-10,4.477-10,10v225.462l-34.393-34.393c-1.876-1.875-4.419-2.929-7.071-2.929
+                                    c-2.652,0-5.196,1.054-7.071,2.929l-7.072,7.071c-3.904,3.905-3.904,10.237,0,14.142l63.536,63.536
+                                    c1.953,1.953,4.512,2.929,7.071,2.929c2.559,0,5.119-0.976,7.071-2.929l63.536-63.536
+                                    C302.195,227.113,302.195,220.781,298.29,216.877z"/>
+                            </g>
+                        </svg>
+                    `;
+                    
+                    sortIndicator.onclick = function(e) {
                         e.stopPropagation();
                         const btn = document.getElementById('popup-menu-btn');
                         if (btn) btn.click();
                     };
                     
                     crudeHeader.appendChild(sortContainer);
-                    crudeHeader.appendChild(popupMenu);
+                    crudeHeader.appendChild(sortIndicator);
                 }
+                
+                // Add SVG sort icons to ALL year columns (2024, 2023, etc.)
+                const yearHeaders = document.querySelectorAll('.dash-header:not([data-dash-column="CrudeOil"])');
+                yearHeaders.forEach(header => {
+                    if (!header.querySelector('.sort-indicator')) {
+                        const sortIndicator = document.createElement('div');
+                        sortIndicator.className = 'sort-indicator';
+                        sortIndicator.title = 'Sorted descending by sum of Exports/Production Value within CrudeOil, broken down by Source: Energy Intelligence/COPYRIGHT © 2001-2025 ENERGY INTELLIGENCE GROUP, INC. / ENERGY INTELLIGENCE GROUP (UK) LIMITED./2024.';
+                        
+                        // Add the exact SVG from your file
+                        sortIndicator.innerHTML = `
+                            <svg fill="#000000" viewBox="0 0 301.219 301.219" xmlns="http://www.w3.org/2000/svg">
+                                <g>
+                                    <path d="M159.365,23.736v-10c0-5.523-4.477-10-10-10H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h139.365
+                                        C154.888,33.736,159.365,29.259,159.365,23.736z"/>
+                                    <path d="M130.586,66.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h120.586c5.523,0,10-4.477,10-10v-10
+                                        C140.586,71.213,136.109,66.736,130.586,66.736z"/>
+                                    <path d="M111.805,129.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h101.805c5.523,0,10-4.477,10-10v-10
+                                        C121.805,134.213,117.328,129.736,111.805,129.736z"/>
+                                    <path d="M93.025,199.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h83.025c5.522,0,10-4.477,10-10v-10
+                                        C103.025,204.213,98.548,199.736,93.025,199.736z"/>
+                                    <path d="M74.244,262.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h64.244c5.522,0,10-4.477,10-10v-10
+                                        C84.244,267.213,79.767,262.736,74.244,262.736z"/>
+                                    <path d="M298.29,216.877l-7.071-7.071c-1.875-1.875-4.419-2.929-7.071-2.929c-2.652,0-5.196,1.054-7.072,2.929l-34.393,34.393
+                                        V18.736c0-5.523-4.477-10-10-10h-10c-5.523,0-10,4.477-10,10v225.462l-34.393-34.393c-1.876-1.875-4.419-2.929-7.071-2.929
+                                        c-2.652,0-5.196,1.054-7.071,2.929l-7.072,7.071c-3.904,3.905-3.904,10.237,0,14.142l63.536,63.536
+                                        c1.953,1.953,4.512,2.929,7.071,2.929c2.559,0,5.119-0.976,7.071-2.929l63.536-63.536
+                                        C302.195,227.113,302.195,220.781,298.29,216.877z"/>
+                                </g>
+                            </svg>
+                        `;
+                        
+                        sortIndicator.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById('year-column-btn');
+                            if (btn) btn.click();
+                        };
+                        
+                        header.appendChild(sortIndicator);
+                    }
+                });
                 
                 // Add mouseover tooltips for Field and Nested arrows
                 const fieldArrow = document.getElementById('field-arrow-btn');
                 const nestedArrow = document.getElementById('nested-arrow-btn');
                 
                 if (fieldArrow) {
-                    fieldArrow.title = 'SUM(Exports/Production Value)';
+                    fieldArrow.title = 'Click to show SUM(Exports/Production Value)';
                     
-                    // Create custom tooltip
-                    fieldArrow.addEventListener('mouseover', function(e) {
-                        const tooltip = document.createElement('div');
-                        tooltip.className = 'arrow-tooltip';
-                        tooltip.textContent = 'SUM(Exports/Production Value)';
-                        tooltip.style.left = (e.pageX + 10) + 'px';
-                        tooltip.style.top = (e.pageY - 25) + 'px';
-                        document.body.appendChild(tooltip);
-                        
-                        fieldArrow._tooltip = tooltip;
-                    });
-                    
-                    fieldArrow.addEventListener('mouseout', function(e) {
-                        if (fieldArrow._tooltip) {
-                            fieldArrow._tooltip.remove();
-                            fieldArrow._tooltip = null;
-                        }
-                    });
-                    
-                    fieldArrow.addEventListener('mousemove', function(e) {
-                        if (fieldArrow._tooltip) {
-                            fieldArrow._tooltip.style.left = (e.pageX + 10) + 'px';
-                            fieldArrow._tooltip.style.top = (e.pageY - 25) + 'px';
-                        }
-                    });
+                    // Make Field arrow clickable
+                    fieldArrow.onclick = function(e) {
+                        e.stopPropagation();
+                        const btn = document.getElementById('field-sort-btn');
+                        if (btn) btn.click();
+                    };
                 }
                 
                 if (nestedArrow) {
-                    nestedArrow.title = 'SUM(Exports/Production Value)';
+                    nestedArrow.title = 'Click to show SUM(Exports/Production Value)';
                     
-                    // Create custom tooltip
-                    nestedArrow.addEventListener('mouseover', function(e) {
-                        const tooltip = document.createElement('div');
-                        tooltip.className = 'arrow-tooltip';
-                        tooltip.textContent = 'SUM(Exports/Production Value)';
-                        tooltip.style.left = (e.pageX + 10) + 'px';
-                        tooltip.style.top = (e.pageY - 25) + 'px';
-                        document.body.appendChild(tooltip);
-                        
-                        nestedArrow._tooltip = tooltip;
-                    });
-                    
-                    nestedArrow.addEventListener('mouseout', function(e) {
-                        if (nestedArrow._tooltip) {
-                            nestedArrow._tooltip.remove();
-                            nestedArrow._tooltip = null;
-                        }
-                    });
-                    
-                    nestedArrow.addEventListener('mousemove', function(e) {
-                        if (nestedArrow._tooltip) {
-                            nestedArrow._tooltip.style.left = (e.pageX + 10) + 'px';
-                            nestedArrow._tooltip.style.top = (e.pageY - 25) + 'px';
-                        }
-                    });
+                    // Make Nested arrow clickable
+                    nestedArrow.onclick = function(e) {
+                        e.stopPropagation();
+                        const btn = document.getElementById('nested-sort-btn');
+                        if (btn) btn.click();
+                    };
                 }
                 
             }, 100);
@@ -1061,3 +1435,12 @@ def register_callbacks(app):
         Input('crude-comparison-table', 'columns'),
         prevent_initial_call=False
     )
+    
+    
+    
+def create_crude_comparison_dashboard(server, url_base_pathname="/dash/crude-comparison"):
+    """Create the Crude Overview dashboard"""
+    dash_app = create_dash_app(server, url_base_pathname)
+    dash_app.layout = create_layout(server)
+    register_callbacks(dash_app)
+    return dash_app
