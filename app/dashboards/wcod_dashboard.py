@@ -101,7 +101,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                     background: #e9ecef;
                 }
                 .submenu-item.active {
-                    background: #007bff;
+                    background: #1b365d;
                     color: white;
                 }
                 /* Tab styling for Image 1 design - pixel perfect */
@@ -786,9 +786,9 @@ def create_wcod_dashboard(server, url_base_pathname):
                         'display': 'inline-block',
                         'padding': '8px 20px',
                         'margin': '0 8px 8px 0',
-                        'background': '#007bff' if item['value'] == default_value else '#f8f9fa',
+                        'background': '#1b365d' if item['value'] == default_value else '#f8f9fa',
                         'color': 'white' if item['value'] == default_value else '#2c3e50',
-                        'border': '1px solid #007bff' if item['value'] == default_value else '1px solid #e0e0e0',
+                        'border': '1px solid #ffffff' if item['value'] == default_value else '1px solid #e0e0e0',
                         'borderRadius': '20px',
                         'cursor': 'pointer',
                         'transition': 'all 0.3s',
