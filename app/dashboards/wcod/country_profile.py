@@ -1535,6 +1535,27 @@ def register_callbacks(dash_app, server):
                 font-weight: 600;
                 color: #1f2d3d !important;
             }
+            #production-table .dash-spreadsheet-container td.production-row-selected {
+                opacity: 1 !important;
+                background-color: #e6f1ff !important;
+                color: #102a43 !important;
+            }
+            #production-table .dash-spreadsheet-container td.production-row-label-selected {
+                font-weight: 600;
+                color: #102a43 !important;
+            }
+            #production-table .dash-spreadsheet-container td.production-row-label-selected::before {
+                content: '';
+                display: inline-block;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background-color: #fe5000;
+                margin-right: 8px;
+                position: relative;
+                top: -1px;
+                box-shadow: 0 0 0 2px #ffffff;
+            }
             #world-map-chart .plotly .choroplethlayer {
                 z-index: 10 !important;
                 pointer-events: auto !important;
@@ -1830,6 +1851,12 @@ def register_callbacks(dash_app, server):
                     spreadsheet.querySelectorAll('.production-cell-selected').forEach(function(cell) {
                         cell.classList.remove('production-cell-selected');
                     });
+                    spreadsheet.querySelectorAll('.production-row-selected').forEach(function(cell) {
+                        cell.classList.remove('production-row-selected');
+                    });
+                    spreadsheet.querySelectorAll('.production-row-label-selected').forEach(function(cell) {
+                        cell.classList.remove('production-row-label-selected');
+                    });
                 }
                 
                 function enhanceTable(tableElement) {
@@ -1850,10 +1877,42 @@ def register_callbacks(dash_app, server):
                         }
                         
                         const columnId = cell.getAttribute('data-dash-column');
+                        const rowIndex = cell.getAttribute('data-dash-row');
+                        
+                        // Create a unique key for row selection (use row index as key)
+                        const rowKey = 'row-' + rowIndex;
+                        
+                        // If clicking on Crude column, use row-based selection
                         if (columnId === 'Crude') {
+                            if (spreadsheet.dataset.selectedKey === rowKey) {
+                                clearSelection(spreadsheet);
+                                return;
+                            }
+                            
+                            spreadsheet.dataset.selectedKey = rowKey;
+                            spreadsheet.classList.add('production-selection-active');
+                            spreadsheet.querySelectorAll('.production-cell-selected').forEach(function(selectedCell) {
+                                selectedCell.classList.remove('production-cell-selected');
+                            });
+                            spreadsheet.querySelectorAll('.production-row-selected').forEach(function(rowCell) {
+                                rowCell.classList.remove('production-row-selected');
+                            });
+                            spreadsheet.querySelectorAll('.production-row-label-selected').forEach(function(labelCell) {
+                                labelCell.classList.remove('production-row-label-selected');
+                            });
+                            
+                            // Highlight entire row
+                            const selectedRowCells = spreadsheet.querySelectorAll('td[data-dash-row="' + rowIndex + '"]');
+                            selectedRowCells.forEach(function(rowCell) {
+                                rowCell.classList.add('production-row-selected');
+                                if (rowCell.getAttribute('data-dash-column') === 'Crude') {
+                                    rowCell.classList.add('production-row-label-selected');
+                                }
+                            });
                             return;
                         }
                         
+                        // For data cells, use cell-based selection (highlight only the clicked cell)
                         const cellKey = cell.getAttribute('data-dash-row') + '-' + columnId;
                         
                         if (spreadsheet.dataset.selectedKey === cellKey) {
@@ -1865,6 +1924,12 @@ def register_callbacks(dash_app, server):
                         spreadsheet.classList.add('production-selection-active');
                         spreadsheet.querySelectorAll('.production-cell-selected').forEach(function(selectedCell) {
                             selectedCell.classList.remove('production-cell-selected');
+                        });
+                        spreadsheet.querySelectorAll('.production-row-selected').forEach(function(rowCell) {
+                            rowCell.classList.remove('production-row-selected');
+                        });
+                        spreadsheet.querySelectorAll('.production-row-label-selected').forEach(function(labelCell) {
+                            labelCell.classList.remove('production-row-label-selected');
                         });
                         cell.classList.add('production-cell-selected');
                     });
