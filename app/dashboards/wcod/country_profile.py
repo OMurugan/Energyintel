@@ -880,7 +880,12 @@ def create_production_table(country_name, time_period='Yearly'):
                 crudes.append('Total')
         
         # Build columns with nested structure (three-level headers: Date -> Year -> Month)
-        columns = [{'name': ['', '', 'Crude'], 'id': 'Crude', 'type': 'text', 'sortable': True}]
+        columns = [{
+            'name': ['', 'Crude'],
+            'id': 'Crude',
+            'type': 'text',
+            'sortable': True
+        }]
         
         # Add "Date" parent header
         date_cols = []
@@ -894,7 +899,7 @@ def create_production_table(country_name, time_period='Yearly'):
             for month in year_months:
                 col_id = f"{year}_{month}"
                 date_cols.append({
-                    'name': ['Date', str(year), month],
+                    'name': [str(year), month],
                     'id': col_id,
                     'type': 'numeric',
                     'format': {'specifier': ',.0f'},
@@ -948,11 +953,16 @@ def create_production_table(country_name, time_period='Yearly'):
                 # If Thunder Horse not found, append at end
                 crudes.append('Total')
         
-        columns = [{'name': ['', 'Crude'], 'id': 'Crude', 'type': 'text', 'sortable': True}]
+        columns = [{
+            'name': ['', 'Crude'],
+            'id': 'Crude',
+            'type': 'text',
+            'sortable': True
+        }]
         for year in years:
             year_id = str(year)
             columns.append({
-                'name': ['Date', year_id],
+                'name': ['Year', year_id],
                 'id': year_id,
                 'type': 'numeric',
                 'format': {'specifier': ',.0f'},
@@ -974,9 +984,9 @@ def create_production_table(country_name, time_period='Yearly'):
                     row[str(year)] = ''
             table_data.append(row)
     
-    return dash_table.DataTable(
+    production_table = dash_table.DataTable(
         id='production-table',
-        data=table_data, 
+        data=table_data,
         columns=columns,
         sort_action='native',
         sort_mode='single',
@@ -1088,6 +1098,14 @@ def create_production_table(country_name, time_period='Yearly'):
             }
         ]
     )
+    
+    return html.Div([
+        production_table,
+        html.Div(
+            id='production-table-dropdown-container',
+            className='production-table-dropdown-container'
+        )
+    ])
 
 
 def create_port_details_table(country_name):
@@ -1556,6 +1574,99 @@ def register_callbacks(dash_app, server):
                 top: -1px;
                 box-shadow: 0 0 0 2px #ffffff;
             }
+            #production-table th.dash-header {
+                overflow: visible !important;
+            }
+            #production-table th.dash-header[data-dash-column="Crude"] {
+                position: relative;
+                padding-right: 28px;
+            }
+            #production-table .crude-header-toggle {
+                position: absolute;
+                top: 50%;
+                right: 6px;
+                transform: translateY(-50%);
+                width: 22px;
+                height: 22px;
+                border: none;
+                background: transparent;
+                color: #5f6368;
+                border-radius: 3px;
+                cursor: pointer;
+                font-size: 13px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: background 0.2s ease, color 0.2s ease;
+                z-index: 12;
+            }
+            #production-table .crude-header-toggle:hover,
+            #production-table .crude-header-toggle.active {
+                background: rgba(95, 99, 104, 0.18);
+                color: #1f2d3d;
+            }
+            #production-table .crude-sort-menu {
+                position: absolute;
+                top: calc(100% + 6px);
+                left: -1px;
+                min-width: 170px;
+                background: #ffffff;
+                border: 1px solid #d9dde3;
+                border-radius: 3px;
+                box-shadow: 0 10px 28px rgba(31, 45, 61, 0.25);
+                padding: 4px 0;
+                display: none;
+                z-index: 1000;
+            }
+            #production-table .crude-sort-menu.open {
+                display: block;
+            }
+            #production-table .crude-sort-item {
+                width: 100%;
+                padding: 6px 14px;
+                text-align: left;
+                background: transparent;
+                border: none;
+                color: #1f2d3d;
+                font-size: 13px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+            }
+            #production-table .crude-sort-item:hover {
+                background: rgba(95, 99, 104, 0.12);
+            }
+            #production-table .crude-sort-item.has-submenu {
+                position: relative;
+            }
+            #production-table .crude-sort-item .submenu-arrow {
+                font-size: 11px;
+                color: #5f6368;
+            }
+            #production-table .crude-sort-submenu {
+                position: absolute;
+                top: -4px;
+                left: 100%;
+                margin-left: 2px;
+                min-width: 160px;
+                background: #ffffff;
+                border: 1px solid #d9dde3;
+                border-radius: 3px;
+                box-shadow: 0 8px 18px rgba(31, 45, 61, 0.2);
+                padding: 4px 0;
+                display: none;
+            }
+            #production-table .crude-sort-item.has-submenu:hover .crude-sort-submenu {
+                display: block;
+            }
+            #production-table .crude-sort-submenu .crude-sort-item {
+                padding: 6px 12px;
+            }
+            #production-table .crude-row-hidden {
+                display: none !important;
+            }
             #production-table .dash-table-tooltip {
                 background-color: #ffffff !important;
                 color: #1f2933 !important;
@@ -1875,6 +1986,183 @@ def register_callbacks(dash_app, server):
                     });
                 }
                 
+                function closeAllCrudeMenus(eventTarget, forceAll) {
+                    document.querySelectorAll('#production-table .crude-sort-menu.open').forEach(function(menu) {
+                        const toggle = menu._toggleButton;
+                        if (forceAll || (!menu.contains(eventTarget) && (!toggle || !toggle.contains(eventTarget)))) {
+                            menu.classList.remove('open');
+                            if (toggle) {
+                                toggle.classList.remove('active');
+                            }
+                        }
+                    });
+                }
+                
+                function captureOriginalOrder(spreadsheet) {
+                    if (spreadsheet.dataset.originalCrudeOrder) {
+                        return;
+                    }
+                    const order = Array.from(spreadsheet.querySelectorAll('td[data-dash-column="Crude"]')).map(function(cell) {
+                        return {
+                            rowKey: cell.getAttribute('data-dash-row'),
+                            label: cell.textContent.trim()
+                        };
+                    });
+                    spreadsheet.dataset.originalCrudeOrder = JSON.stringify(order);
+                }
+                
+                function sortRows(spreadsheet, comparator) {
+                    const tbody = spreadsheet.querySelector('tbody');
+                    if (!tbody) {
+                        return;
+                    }
+                    const rows = Array.from(tbody.querySelectorAll('tr[data-dash-row]'));
+                    if (!rows.length) {
+                        return;
+                    }
+                    rows.sort(comparator);
+                    const fragment = document.createDocumentFragment();
+                    rows.forEach(function(row) {
+                        fragment.appendChild(row);
+                    });
+                    tbody.appendChild(fragment);
+                }
+                
+                function getRowLabel(row) {
+                    const labelCell = row.querySelector('td[data-dash-column="Crude"]');
+                    return labelCell ? labelCell.textContent.trim() : '';
+                }
+                
+                function getRowLatestValue(row) {
+                    const cells = Array.from(row.querySelectorAll('td'));
+                    for (let i = 0; i < cells.length; i += 1) {
+                        const colId = cells[i].getAttribute('data-dash-column');
+                        if (colId && colId !== 'Crude') {
+                            const numeric = parseFloat((cells[i].textContent || '').replace(/,/g, ''));
+                            if (!isNaN(numeric)) {
+                                return numeric;
+                            }
+                        }
+                    }
+                    return -Infinity;
+                }
+                
+                function applyCrudeSort(spreadsheet, mode) {
+                    const originalData = spreadsheet.dataset.originalCrudeOrder ? JSON.parse(spreadsheet.dataset.originalCrudeOrder) : [];
+                    if (mode === 'data-source' && originalData.length) {
+                        const indexMap = {};
+                        originalData.forEach(function(item, idx) {
+                            indexMap[item.rowKey] = idx;
+                        });
+                        sortRows(spreadsheet, function(a, b) {
+                            const aKey = a.getAttribute('data-dash-row');
+                            const bKey = b.getAttribute('data-dash-row');
+                            return (indexMap[aKey] || 0) - (indexMap[bKey] || 0);
+                        });
+                        return;
+                    }
+                    
+                    if (mode === 'alphabetic' || mode === 'field-crude') {
+                        sortRows(spreadsheet, function(a, b) {
+                            return getRowLabel(a).localeCompare(getRowLabel(b));
+                        });
+                        return;
+                    }
+                    
+                    if (mode === 'field-date' || mode === 'nested') {
+                        sortRows(spreadsheet, function(a, b) {
+                            return getRowLatestValue(b) - getRowLatestValue(a);
+                        });
+                        return;
+                    }
+                }
+                
+                function setupCrudeSortMenu(tableElement, spreadsheet) {
+                    if (!tableElement || !spreadsheet) {
+                        return;
+                    }
+                    const headerCells = tableElement.querySelectorAll('th.dash-header[data-dash-column="Crude"]');
+                    const headerCell = headerCells.length ? headerCells[headerCells.length - 1] : null;
+                    if (!headerCell || headerCell.dataset.crudeMenuAttached === 'true') {
+                        return;
+                    }
+                    headerCell.dataset.crudeMenuAttached = 'true';
+                    captureOriginalOrder(spreadsheet);
+                    
+                    const toggle = document.createElement('button');
+                    toggle.type = 'button';
+                    toggle.className = 'crude-header-toggle';
+                    toggle.setAttribute('aria-label', 'Sort options');
+                    toggle.innerHTML = '&#9662;';
+                    
+                    const menu = document.createElement('div');
+                    menu.className = 'crude-sort-menu';
+                    menu._toggleButton = toggle;
+                    
+                    function createMenuButton(label, sortKey) {
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'crude-sort-item';
+                        btn.textContent = label;
+                        btn.setAttribute('data-sort', sortKey);
+                        return btn;
+                    }
+                    
+                    const dataSourceBtn = createMenuButton('Data source order', 'data-source');
+                    const alphabeticBtn = createMenuButton('Alphabetic', 'alphabetic');
+                    const nestedBtn = createMenuButton('Nested', 'nested');
+                    
+                    const fieldWrapper = document.createElement('div');
+                    fieldWrapper.className = 'crude-sort-item has-submenu';
+                    const fieldText = document.createElement('span');
+                    fieldText.textContent = 'Field';
+                    const submenuArrow = document.createElement('span');
+                    submenuArrow.className = 'submenu-arrow';
+                    submenuArrow.innerHTML = '&#9656;';
+                    fieldWrapper.appendChild(fieldText);
+                    fieldWrapper.appendChild(submenuArrow);
+                    
+                    const fieldSubmenu = document.createElement('div');
+                    fieldSubmenu.className = 'crude-sort-submenu';
+                    const fieldCrudeBtn = createMenuButton('Crude', 'field-crude');
+                    const fieldDateBtn = createMenuButton('Date', 'field-date');
+                    fieldSubmenu.appendChild(fieldCrudeBtn);
+                    fieldSubmenu.appendChild(fieldDateBtn);
+                    fieldWrapper.appendChild(fieldSubmenu);
+                    
+                    menu.appendChild(dataSourceBtn);
+                    menu.appendChild(alphabeticBtn);
+                    menu.appendChild(fieldWrapper);
+                    menu.appendChild(nestedBtn);
+                    
+                    menu.addEventListener('click', function(event) {
+                        event.stopPropagation();
+                    });
+                    
+                    headerCell.appendChild(toggle);
+                    headerCell.appendChild(menu);
+                    
+                    toggle.addEventListener('click', function(event) {
+                        event.stopPropagation();
+                        const isOpen = menu.classList.contains('open');
+                        closeAllCrudeMenus(toggle, true);
+                        if (!isOpen) {
+                            menu.classList.add('open');
+                            toggle.classList.add('active');
+                        }
+                    });
+                    
+                    menu.querySelectorAll('button[data-sort]').forEach(function(button) {
+                        button.addEventListener('click', function(event) {
+                            event.stopPropagation();
+                            const sortKey = this.getAttribute('data-sort');
+                            applyCrudeSort(spreadsheet, sortKey);
+                            menu.classList.remove('open');
+                            toggle.classList.remove('active');
+                        });
+                    });
+                }
+                
                 function enhanceTable(tableElement) {
                     if (!tableElement || tableElement.dataset.productionEnhanced === 'true') {
                         return;
@@ -1949,9 +2237,12 @@ def register_callbacks(dash_app, server):
                         });
                         cell.classList.add('production-cell-selected');
                     });
+                    
+                    setupCrudeSortMenu(tableElement, spreadsheet);
                 }
                 
                 document.addEventListener('click', function(event) {
+                    closeAllCrudeMenus(event.target, false);
                     document.querySelectorAll('#production-table .dash-spreadsheet-container.production-selection-active').forEach(function(spreadsheet) {
                         const wrapper = spreadsheet.closest('#production-table');
                         if (wrapper && !wrapper.contains(event.target)) {
