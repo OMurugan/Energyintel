@@ -21,6 +21,7 @@ from dash import dcc, html, Input, Output, State, dash_table, dash, no_update
 import dash.dependencies as dd
 import plotly.graph_objects as go
 import plotly.express as px
+from plotly.subplots import make_subplots
 import pandas as pd
 import os
 import re
@@ -491,6 +492,9 @@ def load_table():
             monthly_raw["Year of Date"] = monthly_raw["Year of Date"].astype(int)
             years = sorted(monthly_raw["Year of Date"].dropna().unique(), reverse=True)
             
+            # Collect all new columns in a dictionary to avoid DataFrame fragmentation
+            new_columns = {}
+            
             for year in years:
                 year_str = str(year)
                 year_to_month_cols[year_str] = []
@@ -511,8 +515,14 @@ def load_table():
                         continue
                     
                     col_name = f"{year_str}_{month}"
-                    monthly_df[col_name] = monthly_df.index.map(month_values)
+                    # Map values and store in dictionary instead of assigning directly
+                    new_columns[col_name] = monthly_df.index.map(month_values)
                     year_to_month_cols[year_str].append({"month": month, "column": col_name})
+            
+            # Concatenate all new columns at once to avoid fragmentation
+            if new_columns:
+                new_cols_df = pd.DataFrame(new_columns, index=monthly_df.index)
+                monthly_df = pd.concat([monthly_df, new_cols_df], axis=1)
             
             monthly_df.reset_index(inplace=True)
             
@@ -2123,87 +2133,98 @@ def register_callbacks(dash_app, server):
                 
                 print(f"DEBUG BREAKDOWN MONTHLY: Final verification - all months in data: {sorted(all_months_in_data)}")
                 
-                # Use 0 spacing when we have multiple years (we'll set custom domains)
-                # Otherwise use default spacing for single year
-                spacing = 0.0 if len(selected_years_sorted) > 1 else 0.04
+                cols = min(4, len(selected_years_sorted)) if selected_years_sorted else 1
+                rows = math.ceil(len(selected_years_sorted) / cols) if selected_years_sorted else 1
+                horizontal_spacing = 0.02 if cols == 1 else 0.03
+                vertical_spacing = 0.06 if rows == 1 else 0.08
+                subplot_titles = [str(y) for y in selected_years_sorted] if selected_years_sorted else []
                 
-                fig = px.bar(
-                    agg_for_chart, 
-                    x="month",  # use month labels directly
-                    y="value",
-                    color="Stream",
-                    color_discrete_map=color_map,
-                    color_discrete_sequence=get_color_sequence("monthly"),
-                    category_orders={
-                        "Stream": stream_categories,
-                        "year": selected_years_sorted
-                        # DO NOT set month in category_orders - let each facet control its own months
-                    },
-                    facet_col="year",
-                    facet_col_spacing=spacing,
-                    labels={"value":"Avg. Value", "month":"Month", "Stream":"Stream", "year":"Year"},
-                    barmode="stack",
-                    custom_data=["month", "country_display", "year_label"]
-                )
-                # Increase individual bar width after chart creation
-                fig.update_traces(width=0.95, selector=dict(type='bar'))
-                
-                # Debug: Check how many traces were created and which streams they represent
-                print(f"DEBUG BREAKDOWN MONTHLY: Number of traces created by Plotly: {len(fig.data)}")
-                trace_names = [trace.name for trace in fig.data if trace.name]
-                print(f"DEBUG BREAKDOWN MONTHLY: Trace names: {trace_names}")
-                print(f"DEBUG BREAKDOWN MONTHLY: Expected streams: {stream_categories}")
-                
-                # Check if all streams have traces
-                missing_traces = [s for s in stream_categories if s not in trace_names]
-                if missing_traces:
-                    print(f"DEBUG BREAKDOWN MONTHLY: WARNING - Streams without traces: {missing_traces}")
-                
-                # Check data points per trace
-                for trace in fig.data:
-                    if trace.name:
-                        x_len = len(trace.x) if hasattr(trace, 'x') and trace.x is not None else 0
-                        y_max = max(trace.y) if hasattr(trace, 'y') and trace.y is not None and len(trace.y) > 0 else 'N/A'
-                        print(f"DEBUG BREAKDOWN MONTHLY: Trace '{trace.name}': {x_len} data points, max y: {y_max}")
-                
-                # Verify colors are applied correctly and fix if needed
-                print(f"DEBUG BREAKDOWN MONTHLY: Verifying trace colors:")
-                for trace in fig.data:
-                    if trace.name and trace.name in color_map:
-                        expected_color = color_map[trace.name]
-                        # Get current color from trace
-                        current_color = None
-                        if hasattr(trace, 'marker') and hasattr(trace.marker, 'color'):
-                            current_color = trace.marker.color
-                        
-                        # Explicitly set the color to ensure it's correct
-                        if hasattr(trace, 'marker'):
-                            trace.marker.color = expected_color
-                            print(f"  Trace '{trace.name}': Set color to {expected_color}")
-                
-                stack_order = list(reversed(stream_categories))
-                order_lookup = {name: idx for idx, name in enumerate(stack_order)}
-                fig.data = tuple(
-                    sorted(fig.data, key=lambda trace: order_lookup.get(trace.name, len(order_lookup)))
+                fig = make_subplots(
+                    rows=rows,
+                    cols=cols,
+                    subplot_titles=subplot_titles,
+                    shared_yaxes=True,
+                    horizontal_spacing=horizontal_spacing,
+                    vertical_spacing=vertical_spacing
                 )
                 
-                # Ensure month labels only show months with data for each year
-                fig.update_traces(
-                    marker=dict(line=dict(width=1, color='white')),
-                    hovertemplate=(
-                        "Month of Date: %{customdata[0]}<br>"
-                        "Country: %{customdata[1]}<br>"
-                        "Stream Name: %{fullData.name}<br>"
-                        "Year of Date: %{customdata[2]}<br>"
-                        "Production Volume: %{y:,.0f} (\\'000 b/d)"
-                        "<extra></extra>"
+                print(f"DEBUG BREAKDOWN MONTHLY: Creating custom subplots with rows={rows}, cols={cols}")
+                
+                year_month_counts = {}
+                
+                # Build stacked bars manually to gain precise control over axes
+                for idx, year in enumerate(selected_years_sorted):
+                    row = (idx // cols) + 1
+                    col = (idx % cols) + 1
+                    year_str = str(year)
+                    year_data = agg_for_chart[agg_for_chart["year"] == year]
+                    if len(year_data) == 0:
+                        print(f"DEBUG BREAKDOWN MONTHLY: Year {year_str} has no data after filtering, skipping subplot")
+                        continue
+                    
+                    month_info = (
+                        year_data[["month", "month_order"]]
+                        .drop_duplicates()
+                        .sort_values("month_order", ascending=True)
                     )
-                )
-                
-                fig.update_yaxes(matches='y')
-                # Update general x-axis styling first
-                fig.for_each_xaxis(
-                    lambda axis: axis.update(
+                    month_info["month_position"] = range(len(month_info))
+                    month_count = len(month_info)
+                    year_month_counts[str(year)] = max(1, month_count)
+                    month_pos_map = dict(zip(month_info["month"], month_info["month_position"]))
+                    year_data = year_data.copy()
+                    year_data["month_position"] = year_data["month"].map(month_pos_map)
+                    
+                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year_str} month positions: {month_pos_map}")
+                    
+                    for stream in stream_categories:
+                        stream_data = year_data[year_data["Stream"] == stream]
+                        if len(stream_data) == 0:
+                            continue
+                        
+                        customdata = list(zip(
+                            stream_data["month"],
+                            stream_data["country_display"],
+                            stream_data["year_label"]
+                        ))
+                        
+                        fig.add_trace(
+                            go.Bar(
+                                x=stream_data["month_position"],
+                                y=stream_data["value"],
+                                name=stream,
+                                marker=dict(
+                                    color=color_map.get(stream),
+                                    line=dict(width=1, color="white")
+                                ),
+                                legendgroup=stream,
+                                showlegend=False,
+                                customdata=customdata,
+                                hovertemplate=(
+                                    "Month of Date: %{customdata[0]}<br>"
+                                    "Country: %{customdata[1]}<br>"
+                                    "Stream Name: %{fullData.name}<br>"
+                                    "Year of Date: %{customdata[2]}<br>"
+                                    "Production Volume: %{y:,.0f} (\\'000 b/d)"
+                                    "<extra></extra>"
+                                ),
+                                width=0.95
+                            ),
+                            row=row,
+                            col=col
+                        )
+                    
+                    tickvals = month_info["month_position"].tolist()
+                    ticktext = month_info["month"].tolist()
+                    axis_range = [-0.5, tickvals[-1] + 0.5] if tickvals else [-0.5, 0.5]
+                    
+                    fig.update_xaxes(
+                        row=row,
+                        col=col,
+                        type="linear",
+                        tickmode="array",
+                        tickvals=tickvals,
+                        ticktext=ticktext,
+                        range=axis_range,
                         showgrid=True,
                         gridcolor="#e0e0e0",
                         tickfont=dict(size=9, color="#2c3e50"),
@@ -2213,75 +2234,71 @@ def register_callbacks(dash_app, server):
                         linecolor="#c0c0c0",
                         title=""
                     )
+                
+                fig.update_yaxes(
+                    showgrid=True,
+                    gridcolor="#e0e0e0",
+                    tickformat='s',
+                    showline=True,
+                    linewidth=1,
+                    linecolor="#c0c0c0"
                 )
                 
-                # Apply per-year month ordering to x-axes - only show months with data
-                # Chart months should be in forward order (January to December), NOT reversed
-                # Reverse order is only for the table, not the chart
-                print(f"DEBUG BREAKDOWN MONTHLY: Applying x-axis configuration to remove blank months")
-                for idx, year in enumerate(selected_years_sorted, start=1):
-                    axis_key = f"xaxis{idx}" if idx > 1 else "xaxis"
-                    year_data = agg_for_chart[agg_for_chart["year"] == year]
-                    months_for_axis = []
-                    if len(year_data) > 0:
-                        # Sort in forward order (January to December) - ascending=True
-                        months_for_axis = (
-                            year_data[["month", "month_order"]]
-                            .drop_duplicates()
-                            .sort_values("month_order", ascending=True)["month"]
-                            .tolist()
-                        )
-                    
-                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year} ({axis_key}): months with data = {months_for_axis}")
-                    
-                    if axis_key in fig.layout and months_for_axis:
-                        fig.layout[axis_key].update(
-                            type="category",
-                            categoryorder="array",
-                            categoryarray=months_for_axis,
-                            tickmode="array",
-                            tickvals=months_for_axis,
-                            ticktext=months_for_axis,
-                            title=""
-                        )
-                        print(f"DEBUG BREAKDOWN MONTHLY: Set {axis_key} to show only {len(months_for_axis)} months: {months_for_axis}")
-                    elif axis_key in fig.layout:
-                        # No data for this year - hide axis
-                        print(f"DEBUG BREAKDOWN MONTHLY: No months with data for year {year}, hiding {axis_key}")
-                        fig.layout[axis_key].update(
-                            showticklabels=False,
-                            showgrid=False,
-                            title=""
-                        )
-                fig.for_each_yaxis(
-                    lambda axis: axis.update(
-                        showgrid=True,
-                        gridcolor="#e0e0e0",
-                        title="Avg. Value" if axis.anchor == 'x1' else "",
-                        tickformat='s',
-                        showline=True,
-                        linewidth=1,
-                        linecolor="#c0c0c0"
-                    )
-                )
                 if "yaxis" in fig.layout:
                     fig.layout["yaxis"].update(title="Avg. Value", tickformat='s')
-                if "yaxis" in fig.layout:
-                    fig.layout["yaxis"].update(title="Avg. Value")
-                fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1], font=dict(size=11, color="#2c3e50")))
+                for axis_name in fig.layout:
+                    if axis_name.startswith("yaxis") and axis_name != "yaxis":
+                        fig.layout[axis_name].update(title="")
                 
-                cols = min(4, len(selected_years_sorted)) if selected_years_sorted else 1
-                rows = math.ceil(len(selected_years_sorted) / cols) if selected_years_sorted else 1
-                base_height = 520  # Increased to give monthly facets more vertical space
+                # Adjust subplot domains to keep bar width consistent across years
+                if selected_years_sorted:
+                    total_weight = sum(year_month_counts.get(str(year), 1) for year in selected_years_sorted)
+                    total_weight = total_weight if total_weight > 0 else len(selected_years_sorted)
+                    n_years = len(selected_years_sorted)
+                    gap = 0.02
+                    usable_width = 1.0 - gap * (n_years - 1)
+                    usable_width = max(0.2, usable_width)
+                    current_start = 0.0
+                    axis_centers = {}
+                    
+                    for idx, year in enumerate(selected_years_sorted):
+                        year_str = str(year)
+                        weight = year_month_counts.get(year_str, 1)
+                        width = usable_width * (weight / total_weight) if total_weight > 0 else usable_width / n_years
+                        domain_start = current_start
+                        domain_end = domain_start + width
+                        axis_key = "xaxis" if idx == 0 else f"xaxis{idx+1}"
+                        yaxis_key = "yaxis" if idx == 0 else f"yaxis{idx+1}"
+                        
+                        if axis_key in fig.layout:
+                            fig.layout[axis_key].domain = [domain_start, domain_end]
+                            axis_centers[year_str] = (domain_start + domain_end) / 2
+                            print(f"DEBUG BREAKDOWN MONTHLY: Set {axis_key}.domain to {[domain_start, domain_end]} for year {year_str} (weight={weight})")
+                        if yaxis_key in fig.layout:
+                            fig.layout[yaxis_key].domain = [0.0, 1.0]
+                        
+                        current_start = domain_end + (gap if idx < n_years - 1 else 0)
+                    
+                    # Reposition subplot titles to match new domains
+                    if hasattr(fig.layout, "annotations"):
+                        for ann in fig.layout.annotations:
+                            if ann.text:
+                                ann_year = ann.text.strip()
+                                if ann_year in axis_centers:
+                                    ann.update(x=axis_centers[ann_year])
+                                    print(f"DEBUG BREAKDOWN MONTHLY: Repositioned annotation for {ann_year} to {axis_centers[ann_year]}")
                 
                 fig.update_layout(
                     title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                     showlegend=False,
                     plot_bgcolor="white",
                     paper_bgcolor="white",
-                    margin=dict(l=70, r=30, t=80, b=120),
+                    margin=dict(l=60, r=10, t=80, b=120),
                     hovermode='closest',
-                    height=base_height * rows,
+                    height=520 * rows,
+                    barmode='stack',
+                    bargap=0.02,
+                    bargroupgap=0.0,
                     shapes=[dict(
                         type="rect",
                         xref="paper",
@@ -2294,79 +2311,7 @@ def register_callbacks(dash_app, server):
                         fillcolor="rgba(0,0,0,0)"
                     )]
                 )
-
-                # Adjust spacing/width for monthly bars (visual only, data unchanged)
-                fig.update_layout(bargap=0.02, bargroupgap=0.0)
-                fig.update_traces(width=0.96, selector=dict(type='bar'))
-
-                # Dynamically allocate facet widths based on months count per year
-                if len(selected_years_sorted) > 1:
-                    year_month_counts = {}
-                    # Ensure we're comparing strings consistently
-                    agg_for_chart["year"] = agg_for_chart["year"].astype(str)
-                    
-                    for year in selected_years_sorted:
-                        year_str = str(year)
-                        year_data = agg_for_chart[agg_for_chart["year"] == year_str]
-                        months_for_year = year_data["month"].nunique() if len(year_data) > 0 else 0
-                        year_month_counts[year_str] = max(1, months_for_year)
-                        print(f"DEBUG BREAKDOWN MONTHLY: Year {year_str} has {year_month_counts[year_str]} months")
-
-                    MIN_FACET_MONTH_WEIGHT = 8  # minimum visual width (in months) for a year facet
-                    year_weights = {}
-                    for year_str, month_count in year_month_counts.items():
-                        weight = month_count
-                        # Apply minimum width to avoid overly thin facets when months are missing
-                        if len(year_month_counts) > 1:
-                            weight = max(month_count, MIN_FACET_MONTH_WEIGHT)
-                        year_weights[year_str] = weight
-                        print(f"DEBUG BREAKDOWN MONTHLY: Year {year_str} month_count={month_count}, weight={weight}")
-
-                    total_weight = sum(year_weights.values())
-                    if total_weight == 0:
-                        total_weight = len(selected_years_sorted)
-                    n_years = len(selected_years_sorted)
-                    gap = 0.0 if n_years > 1 else 0.02
-                    usable_width = 1.0 - gap * (n_years - 1)
-                    usable_width = max(0.3, usable_width)
-                    unit = usable_width / total_weight if total_weight > 0 else usable_width / n_years
-                    current_start = 0.0
-                    axis_centers = {}
-
-                    print(f"DEBUG BREAKDOWN MONTHLY: Total weight: {total_weight}, Unit width: {unit}, Usable width: {usable_width}")
-
-                    for idx, year in enumerate(selected_years_sorted, start=1):
-                        year_str = str(year)
-                        width = unit * year_weights.get(year_str, 1)
-                        domain_start = current_start
-                        domain_end = domain_start + width
-                        # Don't force last year to 1.0 - calculate proportionally
-                        # Only ensure we don't exceed 1.0
-                        domain_end = min(1.0, domain_end)
-                        axis_key = f"xaxis{idx}" if idx > 1 else "xaxis"
-                        yaxis_key = f"yaxis{idx}" if idx > 1 else "yaxis"
-
-                        print(f"DEBUG BREAKDOWN MONTHLY: Year {year_str} ({axis_key}): domain=[{domain_start:.4f}, {domain_end:.4f}], width={width:.4f}, months={year_month_counts.get(year_str, 1)}")
-
-                        # Update xaxis domain - must be done directly on layout for faceted charts
-                        if axis_key in fig.layout:
-                            # Force update the domain
-                            fig.layout[axis_key].domain = [domain_start, domain_end]
-                            axis_centers[year_str] = (domain_start + domain_end) / 2
-                            print(f"DEBUG BREAKDOWN MONTHLY: Updated {axis_key}.domain to [{domain_start:.4f}, {domain_end:.4f}]")
-                        if yaxis_key in fig.layout:
-                            fig.layout[yaxis_key].domain = [0.0, 1.0]
-
-                        current_start = domain_end + (gap if idx < n_years else 0)
-
-                    # Reposition annotations (year labels) to align with new facet widths
-                    if hasattr(fig.layout, "annotations"):
-                        for ann in fig.layout.annotations:
-                            if ann.text:
-                                ann_year = ann.text.strip()
-                                if ann_year in axis_centers:
-                                    ann.update(x=axis_centers[ann_year])
-                                    print(f"DEBUG BREAKDOWN MONTHLY: Repositioned annotation for {ann_year} to x={axis_centers[ann_year]:.4f}")
+                fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1], font=dict(size=11, color="#2c3e50")))
                 
                 print(f"DEBUG BREAKDOWN MONTHLY: Faceted chart layout updated, returning figure")
                 return fig, title_text
