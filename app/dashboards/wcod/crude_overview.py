@@ -796,7 +796,7 @@ def create_layout(server=None):
                 dcc.Dropdown(
                     id="crude-country-dropdown", 
                     options=[{"label":c,"value":c} for c in COUNTRIES], 
-                    value=[COUNTRIES[0]] if COUNTRIES else None,
+                    value=None,
                     multi=True,
                     placeholder="Select countries",
                     style={"fontSize":"12px"}
@@ -866,6 +866,7 @@ def create_layout(server=None):
                 columns=[{"name":str(c),"id":str(c)} for c in TABLE_DF_YEARLY.columns.tolist()] if not TABLE_DF_YEARLY.empty else [],
                 data=TABLE_DF_YEARLY.to_dict("records") if not TABLE_DF_YEARLY.empty else [],
                 page_action='none',
+                markdown_options={"link_target": "_blank"},
                 style_table={
                     "overflowX": "auto", 
                     "overflowY": "auto", 
@@ -2432,7 +2433,7 @@ def register_callbacks(dash_app, server):
             year_cols = [str(c) for c in year_cols]
             
             # Filter to only show selected years if specified
-            if year:
+            if year and isinstance(year, (list, tuple, set)):
                 year_strs = [str(y) for y in year if str(y) in year_cols]
                 if year_strs:
                     year_cols = year_strs
@@ -2440,21 +2441,60 @@ def register_callbacks(dash_app, server):
             display_cols = [c for c in display_metadata_cols if c in df.columns] + year_cols
             columns = []
             for c in display_cols:
-                col_def = {"name": str(c), "id": str(c)}
-                if c == "CrudeOil":
-                    col_def.update({"type": "text", "presentation": "markdown"})
+                col_def = {
+                    "name": str(c),
+                    "id": str(c),
+                    "type": "text",
+                    "presentation": "markdown"
+                }
                 columns.append(col_def)
             
             df_display = df[display_cols].copy()
+            if "CrudeOil" in df_display.columns:
+                df_display = df_display.sort_values("CrudeOil", key=lambda s: s.astype(str).str.lower())
+            if 'Year of YearReported' in df.columns:
+                all_years_in_data = (
+                    df['Year of YearReported']
+                    .dropna()
+                    .unique()
+                    .tolist()
+                )
+            else:
+                all_years_in_data = year_cols[:]
+            for year in all_years_in_data:
+                year_str = str(int(year))
+                if year_str not in df_display.columns:
+                    df_display[year_str] = ""
+            df_display = df_display.reset_index(drop=True)
             records = df_display.to_dict("records")
             link_col = "profile_url" if "profile_url" in df.columns else None
+            link_series = None
+            if link_col and link_col in df.columns:
+                link_series = df[link_col].reset_index(drop=True)
+            
+            year_columns_set = set(year_cols + [str(int(y)) for y in all_years_in_data])
+            
             for idx, record in enumerate(records):
+                for year_col in year_columns_set:
+                    value = record.get(year_col, "")
+                    if value is None or str(value).strip() == "":
+                        record[year_col] = ""
+                        continue
+                    try:
+                        numeric_value = float(str(value).replace(",", ""))
+                        record[year_col] = f"{numeric_value:,.0f}"
+                    except (ValueError, TypeError):
+                        record[year_col] = str(value)
                 link = None
-                if link_col and idx < len(df):
-                    link_value = df.at[idx, link_col]
+                if link_series is not None and idx < len(link_series):
+                    link_value = link_series.iloc[idx]
                     if pd.notna(link_value):
-                        link = link_value
-                record["CrudeOil"] = format_with_link(record.get("CrudeOil", ""), link)
+                        link = str(link_value).strip()
+                if link:
+                    for col in display_cols:
+                        record[col] = format_with_link(record.get(col, ""), link)
+                else:
+                    record["CrudeOil"] = format_with_link(record.get("CrudeOil", ""), link)
             
             return records, columns
         else:
