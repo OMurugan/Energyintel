@@ -4,6 +4,7 @@ import os
 import chardet
 import dash
 import re
+from app import create_dash_app
 
 # ------------------------------------------------------------------------------
 # PATH CONSTANTS
@@ -1384,3 +1385,18 @@ def register_callbacks(app):
         Input('crude-comparison-table', 'columns'),
         prevent_initial_call=False
     )
+
+# ------------------------------------------------------------------------------
+# CREATE DASHBOARD
+# ------------------------------------------------------------------------------
+def create_crude_comparison_dashboard(server, url_base_pathname="/dash/crude-comparison/"):
+    """Create and configure the crude comparison dashboard"""
+    dash_app = create_dash_app(server, url_base_pathname)
+    
+    # Set layout
+    dash_app.layout = create_layout(server)
+    
+    # Register callbacks
+    register_callbacks(dash_app)
+    
+    return dash_app

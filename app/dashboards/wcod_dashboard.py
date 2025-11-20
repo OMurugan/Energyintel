@@ -63,6 +63,9 @@ def create_wcod_dashboard(server, url_base_pathname):
                     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                     background-color: #f5f5f5;
                 }
+                .tab-style1 {
+                    padding: 0 30px;
+                }
                 .kpi-card {
                     background: white;
                     border-radius: 8px;
@@ -84,7 +87,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                     padding: 20px;
                     background: white;
                     border-radius: 8px;
-                    margin-top: 20px;
+                    margin-top: 0;
                 }
                 .submenu-item {
                     padding: 10px 15px;
@@ -101,6 +104,27 @@ def create_wcod_dashboard(server, url_base_pathname):
                     background: #007bff;
                     color: white;
                 }
+                /* Tab styling for Image 1 design - pixel perfect */
+                #tab-link-country, #tab-link-crude, #tab-link-trade, 
+                #tab-link-prices, #tab-link-projects, #tab-link-methodology {
+                    display: inline-block;
+                    background: #e5e5e5;
+                    border-radius: 8px 8px 0 0;
+                    margin-bottom: 0;
+                    position: relative;
+                    z-index: 1;
+                }
+                /* Icon styling */
+                #tab-icon-country, #tab-icon-crude, #tab-icon-trade, #tab-icon-prices {
+                    flex-shrink: 0;
+                    object-fit: contain;
+                }
+                /* Ensure tab container has proper background */
+                .tab-container {
+                    background: #e5e5e5;
+                    padding: 8px 8px 0 8px;
+                }
+
             </style>
         </head>
         <body>
@@ -163,90 +187,198 @@ def create_wcod_dashboard(server, url_base_pathname):
             ], className="container-fluid", style={'padding': '30px', 'background': 'white', 'marginBottom': '0'})
         ]),  # Close header-container
         
-        # Filter & Search heading - above main tabs (matching Energy Intelligence design)
+        # Filter & Search Section Header
         html.Div([
             html.Div([
-                html.H5(
+                html.H2(
                     "Filter & Search",
                     style={
-                        'fontSize': '16px',
+                        'fontSize': '14px',
                         'fontWeight': '600',
-                        'color': '#2c3e50',
-                        'marginBottom': '0',
-                        'padding': '15px 30px',
-                        'borderBottom': '1px solid #e0e0e0'
+                        'color': '#666666',
+                        'textTransform': 'uppercase',
+                        'letterSpacing': '0.5px',
+                        'margin': '0',
+                        'padding': '16px 30px 12px 30px',
+                        'lineHeight': '1.2'
                     }
                 )
-            ], className='col-md-12', style={
-                'background': '#ffffff'
-            })
-        ], className='row', style={'margin': '0', 'background': 'white'}),
+            ], style={'background': '#e5e5e5', 'borderBottom': 'none', 'margin': '0', 'padding': '0'})
+        ], className="container-fluid", style={'padding': '0', 'background': '#e5e5e5', 'width': '100%', 'margin': '0'}),
         
-        # Tab Navigation - matching Energy Intelligence design
+        # Tab Navigation - matching Image 1 design (white tabs with rounded corners on light gray background)
         html.Div([
             html.Div([
                 dcc.Link(
                     html.Div([
-                        html.Span('🌍', style={'marginRight': '8px', 'fontSize': '18px'}),
-                        html.Span('Country', style={'fontSize': '16px', 'fontWeight': '500'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'padding': '12px 24px', 'cursor': 'pointer'}),
+                        html.Img(
+                            src="https://www.energyintel.com/styleguide/assets/tabs/svgs/globe_inactive.svg",
+                            id="tab-icon-country",
+                            style={
+                                'height': '40px',
+                                'marginRight': '10px',
+                                'display': 'inline-block',
+                                'verticalAlign': 'middle'
+                            }
+                        ),
+                        html.Span('Country', style={
+                            'fontSize': '18px',
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'display': 'inline-block',
+                            'verticalAlign': 'middle'
+                        })
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '15px 40px',
+                        'cursor': 'pointer',
+                        'height': '100%'
+                    }),
                     href='/wcod/',
                     id='tab-link-country',
-                    style={'textDecoration': 'none', 'color': '#2c3e50', 'borderBottom': '3px solid transparent', 'transition': 'all 0.3s'}
+                    style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
-                        html.Span('🛢️', style={'marginRight': '8px', 'fontSize': '18px'}),
-                        html.Span('Crude', style={'fontSize': '16px', 'fontWeight': '500'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'padding': '12px 24px', 'cursor': 'pointer'}),
+                        html.Img(
+                            src="https://www.energyintel.com/styleguide/assets/tabs/svgs/oil_inactive.svg",
+                            id='tab-icon-crude',
+                            style={
+                                'height': '40px',
+                                'marginRight': '10px',
+                                'display': 'inline-block',
+                                'verticalAlign': 'middle'
+                            }
+                        ),
+                        html.Span('Crude', style={
+                            'fontSize': '18px',
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'display': 'inline-block',
+                            'verticalAlign': 'middle'
+                        })
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '15px 40px',
+                        'cursor': 'pointer',
+                        'height': '100%'
+                    }),
                     href='/wcod/crude-overview',
                     id='tab-link-crude',
-                    style={'textDecoration': 'none', 'color': '#2c3e50', 'borderBottom': '3px solid transparent', 'transition': 'all 0.3s'}
+                    style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
-                        html.Span('📦', style={'marginRight': '8px', 'fontSize': '18px'}),
-                        html.Span('Trade', style={'fontSize': '16px', 'fontWeight': '500'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'padding': '12px 24px', 'cursor': 'pointer'}),
+                        html.Img(
+                            src="https://www.energyintel.com/styleguide/assets/tabs/svgs/trade_inactive.svg",
+                            id='tab-icon-trade',
+                            style={
+                                'height': '40px',
+                                'marginRight': '10px',
+                                'display': 'inline-block',
+                                'verticalAlign': 'middle'
+                            }
+                        ),
+                        html.Span('Trade', style={
+                            'fontSize': '18px',
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'display': 'inline-block',
+                            'verticalAlign': 'middle'
+                        })
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '15px 40px',
+                        'cursor': 'pointer',
+                        'height': '100%'
+                    }),
                     href='/wcod/trade/imports-country-detail',
                     id='tab-link-trade',
-                    style={'textDecoration': 'none', 'color': '#2c3e50', 'borderBottom': '3px solid transparent', 'transition': 'all 0.3s'}
+                    style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
-                        html.Span('💰', style={'marginRight': '8px', 'fontSize': '18px'}),
-                        html.Span('Prices', style={'fontSize': '16px', 'fontWeight': '500'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'padding': '12px 24px', 'cursor': 'pointer'}),
+                        html.Img(
+                            src="https://www.energyintel.com/styleguide/assets/tabs/svgs/prices_inactive.svg",
+                            id='tab-icon-prices',
+                            style={
+                                'height': '40px',
+                                'marginRight': '10px',
+                                'display': 'inline-block',
+                                'verticalAlign': 'middle'
+                            }
+                        ),
+                        html.Span('Prices', style={
+                            'fontSize': '18px',
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'display': 'inline-block',
+                            'verticalAlign': 'middle'
+                        })
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '15px 40px',
+                        'cursor': 'pointer',
+                        'height': '100%'
+                    }),
                     href='/wcod/prices/global-crude-prices',
                     id='tab-link-prices',
-                    style={'textDecoration': 'none', 'color': '#2c3e50', 'borderBottom': '3px solid transparent', 'transition': 'all 0.3s'}
+                    style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
-                        html.Span('🏗️', style={'marginRight': '8px', 'fontSize': '18px'}),
-                        html.Span('Upstream Projects', style={'fontSize': '16px', 'fontWeight': '500'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'padding': '12px 24px', 'cursor': 'pointer'}),
+                        html.Span('Upstream Projects', style={
+                            'fontSize': '18px',
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'display': 'inline-block',
+                            'verticalAlign': 'middle'
+                        })
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '15px 40px',
+                        'cursor': 'pointer',
+                        'height': '100%'
+                    }),
                     href='/wcod/upstream-projects/projects-by-country',
                     id='tab-link-projects',
-                    style={'textDecoration': 'none', 'color': '#2c3e50', 'borderBottom': '3px solid transparent', 'transition': 'all 0.3s'}
+                    style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
-                        html.Span('📊', style={'marginRight': '8px', 'fontSize': '18px'}),
-                        html.Span('Methodology', style={'fontSize': '16px', 'fontWeight': '500'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'padding': '12px 24px', 'cursor': 'pointer'}),
+                        html.Span('Methodology', style={
+                            'fontSize': '18px',
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'display': 'inline-block',
+                            'verticalAlign': 'middle'
+                        })
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '15px 40px',
+                        'cursor': 'pointer',
+                        'height': '100%'
+                    }),
                     href='/wcod-upstream-oil-projects-tracker-methodology',
                     id='tab-link-methodology',
-                    style={'textDecoration': 'none', 'color': '#2c3e50', 'borderBottom': '3px solid transparent', 'transition': 'all 0.3s'}
+                    style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
             ], style={
-                'display': 'flex', 
-                'borderBottom': '2px solid #e0e0e0', 
-                'background': 'white',
-                'padding': '0',
+                'display': 'flex',
+                'background': '#e5e5e5',
+                'padding': '8px 20px 0 30px',
                 'margin': '0',
-                'overflowX': 'auto'
-            }),
+                'overflowX': 'auto',
+                'gap': '4px',
+                'minHeight': '56px',
+                'alignItems': 'flex-end'
+            }, className='tab-style1'),
             # Hidden tabs component for state management
             dcc.Tabs(
                 id='main-tabs',
@@ -261,7 +393,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                 ],
                 style={'display': 'none'}
             )
-        ], className="container-fluid", style={'padding': '0', 'background': 'white'}),
+        ], className="container-fluid", style={'padding': '0', 'background': '#e5e5e5', 'width': '100%'}),
         
         # Sub-menu - horizontal oval buttons below tabs (matching Energy Intelligence design)
         # This will be dynamically updated by the update_submenu callback based on the active tab
@@ -436,28 +568,51 @@ def create_wcod_dashboard(server, url_base_pathname):
          Output('tab-link-trade', 'style'),
          Output('tab-link-prices', 'style'),
          Output('tab-link-projects', 'style'),
-         Output('tab-link-methodology', 'style')],
+         Output('tab-link-methodology', 'style'),
+         Output('tab-icon-country', 'src'),
+         Output('tab-icon-crude', 'src'),
+         Output('tab-icon-trade', 'src'),
+         Output('tab-icon-prices', 'src')],
         Input('main-tabs', 'value'),
         prevent_initial_call=False
     )
     def update_tab_styles(active_tab):
-        """Update tab link styles based on active tab"""
+        """Update tab link styles based on active tab - matching Image 1 design"""
         # Default to country-tab if active_tab is None or not set
         if not active_tab:
             active_tab = 'country-tab'
         
+        # Base style for inactive tabs - light gray background (blends with container)
         base_style = {
             'textDecoration': 'none',
-            'color': '#2c3e50',
-            'borderBottom': '3px solid transparent',
-            'transition': 'all 0.3s'
+            'transition': 'all 0.2s ease',
+            'background': '#fff',
+            'borderRadius': '8px 8px 0 0',
+            'boxShadow': 'none',
+            'position': 'relative',
+            'zIndex': '1',
+            'height': '75px',
+            'transform': 'translateY(0)'
         }
+        
+        # Active style - white background, elevated with prominent shadow (matching image)
         active_style = {
-            **base_style,
-            'color': '#007bff',
-            'borderBottom': '3px solid #007bff',
-            'fontWeight': '600'
+            'textDecoration': 'none',
+            'transition': 'all 0.2s ease',
+            'background': 'white',
+            'borderRadius': '8px 8px 0 0',
+            'boxShadow': '0 -3px 12px rgba(0, 0, 0, 0.15), 0 -1px 4px rgba(0, 0, 0, 0.1)',
+            'position': 'relative',
+            'zIndex': '2',
+            'padding': '10px',
+            'transform': 'translateY(-4px)'
         }
+        
+        # Icon sources - switch between active and inactive SVGs (using external URLs)
+        country_icon = 'https://www.energyintel.com/styleguide/assets/tabs/svgs/globe_active.svg' if active_tab == 'country-tab' else 'https://www.energyintel.com/styleguide/assets/tabs/svgs/globe_inactive.svg'
+        crude_icon = 'https://www.energyintel.com/styleguide/assets/tabs/svgs/oil_active.svg' if active_tab == 'crude-tab' else 'https://www.energyintel.com/styleguide/assets/tabs/svgs/oil_inactive.svg'
+        trade_icon = 'https://www.energyintel.com/styleguide/assets/tabs/svgs/trade_active.svg' if active_tab == 'trade-tab' else 'https://www.energyintel.com/styleguide/assets/tabs/svgs/trade_inactive.svg'
+        prices_icon = 'https://www.energyintel.com/styleguide/assets/tabs/svgs/prices_active.svg' if active_tab == 'prices-tab' else 'https://www.energyintel.com/styleguide/assets/tabs/svgs/prices_inactive.svg'
         
         return [
             active_style if active_tab == 'country-tab' else base_style,
@@ -466,6 +621,10 @@ def create_wcod_dashboard(server, url_base_pathname):
             active_style if active_tab == 'prices-tab' else base_style,
             active_style if active_tab == 'projects-tab' else base_style,
             active_style if active_tab == 'methodology-tab' else base_style,
+            country_icon,
+            crude_icon,
+            trade_icon,
+            prices_icon,
         ]
     
     # Callback to update sub-menu based on main tab and submenu changes
