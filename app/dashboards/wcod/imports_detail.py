@@ -60,19 +60,23 @@ def load_imports_by_region_data():
         year_cols = [str(year) for year in range(2025, 2005, -1)]
         
         # Filter to only rows with region totals (rows where Exporter == 'Total')
-        region_totals = df[df['Exporter'] == 'Total'].copy()
+        # Exclude 'Grand Total' row - we only want individual regions
+        region_totals = df[(df['Exporter'] == 'Total') & (df['Exporting Region'] != 'Grand Total')].copy()
         
         # Melt the dataframe to long format
         data_rows = []
         for _, row in region_totals.iterrows():
             region = row['Exporting Region']
-            if pd.isna(region) or region == '':
+            if pd.isna(region) or region == '' or region == 'Grand Total':
                 continue
             for year in year_cols:
                 if year in row.index:
                     value = row[year]
                     if pd.notna(value) and value != '':
                         try:
+                            # Handle comma-separated numbers (e.g., "2,223" -> 2223)
+                            if isinstance(value, str):
+                                value = value.replace(',', '').strip()
                             value = float(value)
                             if value > 0:
                                 data_rows.append({
@@ -174,12 +178,31 @@ def create_layout():
         
         # Country Selector
         html.Div([
-            html.Label("Select Importing Country", style={'fontWeight': 'bold', 'marginBottom': '5px'}),
+            html.Label(
+                "Select Importing Country",
+                style={
+                    'fontWeight': 'bold',
+                    'fontSize': '16px',
+                    'lineHeight': '18px',
+                    'color': '#1b365d',
+                    'marginBottom': '5px',
+                    'display': 'block',
+                    'fontFamily': '"Lato", "Benton Sans", "Arial", "Helvetica", sans-serif',
+                    'textAlign': 'left'
+                }
+            ),
             dcc.Dropdown(
                 id='importing-country-select',
                 options=[{'label': country, 'value': country} for country in available_countries],
                 value='Japan',
-                style={'width': '300px'}
+                style={
+                    'width': '1200px',
+                    'fontSize': '13px',
+                    'fontFamily': '"Lato", "Benton Sans", "Arial", "Helvetica", sans-serif',
+                    'color': '#1b365d',
+                    'align': 'center',
+                },
+                className='importing-country-dropdown'
             )
         ], style={'marginBottom': '20px'}),
         
@@ -206,6 +229,8 @@ def create_layout():
             html.H4(id='imports-table-title', children="Japan Crude Oil Imports by Region and Country", className='imports-table-title'),
             dash_table.DataTable(
                 id='imports-detail-table',
+                data=[],
+                columns=[],
                 style_table={
                     'overflowX': 'auto',
                     'overflowY': 'auto',
@@ -311,15 +336,26 @@ def create_imports_by_region_chart(selected_country='Japan'):
     # Group by Region and Year, sum volumes
     df_grouped = df.groupby(['Region', 'Year'])['Volume'].sum().reset_index()
     
-    # Get all years
-    years = sorted(df_grouped['Year'].unique())
+    # Get all years from 2006 to 2025 (matching Figure 1)
+    years = sorted([y for y in df_grouped['Year'].unique() if 2006 <= y <= 2025])
     
-    # Get available regions from data and sort them alphabetically
-    regions = sorted(df_grouped['Region'].unique().tolist())
+    # Define stacking order to match Figure 1: Middle East at bottom, then others
+    # Order: Middle East (bottom), Africa, Asia-Pacific, Europe, FSU, Latin America, North America, Others (top)
+    region_order = ['Middle East', 'Africa', 'Asia-Pacific', 'Europe', 'FSU', 'Latin America', 'North America', 'Others']
+    
+    # Get available regions from data
+    available_regions = df_grouped['Region'].unique().tolist()
+    
+    # Sort regions according to the stacking order (only include regions that exist in data)
+    regions = [r for r in region_order if r in available_regions]
+    # Add any remaining regions not in the predefined order
+    for r in sorted(available_regions):
+        if r not in regions:
+            regions.append(r)
     
     fig = go.Figure()
     
-    # Add a trace for each region in alphabetical order
+    # Add a trace for each region in the specified stacking order
     # In stacked bars, first trace is at bottom, last trace is at top
     for region in regions:
         region_data = df_grouped[df_grouped['Region'] == region]
@@ -336,7 +372,7 @@ def create_imports_by_region_chart(selected_country='Japan'):
             y=volumes,
             name=region,
             marker_color=color_map.get(region, '#CCCCCC'),
-            hovertemplate=f'Region: {region}<br>Year: %{{x}}<br>Traded Volume: %{{y:,.6f}} (\'000 b/d)<extra></extra>'
+            hovertemplate=f'Region: {region}<br>Year: %{{x}}<br>Import Volume: %{{y:,.0f}} (\'000 b/d)<extra></extra>'
         ))
     
     # Calculate total volumes for each year to display on top of bars
@@ -355,25 +391,81 @@ def create_imports_by_region_chart(selected_country='Japan'):
         textfont=dict(size=11, color='#000000')
     ))
     
-    # Update layout
+    # Update layout to match Figure 1 exactly
     fig.update_layout(
         title={
             'text': f"{selected_country}'s Crude Imports by Exporting Region",
             'x': 0.5,
-            'xanchor': 'center'
+            'xanchor': 'center',
+            'font': {
+                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                'size': 16,
+                'color': '#ff7f0e'  # Orange color matching Figure 1
+            }
         },
-        xaxis_title="Year",
-        yaxis_title="Import Volume ('000 b/d)",
+        xaxis=dict(
+            title="Year",
+            tickmode='linear',
+            tick0=2006,
+            dtick=1,  # Show every year
+            range=[2005.5, 2025.5],  # Slight padding for better visibility
+            tickfont={
+                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                'size': 11,
+                'color': '#333333'
+            },
+            titlefont={
+                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                'size': 13,
+                'color': '#333333'
+            },
+            showgrid=True,
+            gridcolor='#e0e0e0',
+            gridwidth=1,
+            linecolor='#d3d3d3',
+            linewidth=1
+        ),
+        yaxis=dict(
+            title="Import Volume ('000 b/d)",
+            range=[0, 4500],  # Set range to 0-4500 to show up to 4000 clearly
+            tickmode='linear',
+            tick0=0,
+            dtick=1000,  # Show ticks at 0, 1000, 2000, 3000, 4000
+            tickfont={
+                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                'size': 11,
+                'color': '#333333'
+            },
+            titlefont={
+                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                'size': 13,
+                'color': '#333333'
+            },
+            showgrid=True,
+            gridcolor='#e0e0e0',
+            gridwidth=1,
+            linecolor='#d3d3d3',
+            linewidth=1
+        ),
         barmode='stack',
         height=400,
         plot_bgcolor='white',
         paper_bgcolor='white',
+        margin=dict(l=60, r=200, t=60, b=50),
         legend=dict(
             orientation='v',
             yanchor='top',
             y=1,
             xanchor='left',
-            x=1.02
+            x=1.02,
+            font={
+                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                'size': 11,
+                'color': '#333333'
+            },
+            bgcolor='rgba(255,255,255,0.8)',
+            bordercolor='#d3d3d3',
+            borderwidth=1
         ),
         hovermode='closest',
         hoverlabel=dict(
@@ -404,6 +496,10 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
     if df_filtered.empty:
         return go.Figure()
     
+    # Remove duplicates based on Exporter, Crude, and DataValue
+    # Keep only the first occurrence of each unique combination
+    df_filtered = df_filtered.drop_duplicates(subset=['Exporter', 'Crude', 'DataValue'], keep='first')
+    
     # Group by Exporter and Crude, sum volumes
     # Note: Color column contains crude names, not actual colors
     df_grouped = df_filtered.groupby(['Exporter', 'Crude'])['DataValue'].sum().reset_index()
@@ -412,18 +508,62 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
     exporter_totals = df_grouped.groupby('Exporter')['DataValue'].sum().sort_values(ascending=False)
     exporters = exporter_totals.index.tolist()
     
-    # Get unique crudes and assign colors from a consistent palette
-    crudes = sorted(df_grouped['Crude'].unique())
-    import plotly.colors as pc
-    # Use a large color palette to ensure unique colors for each crude
-    qualitative_colors = (pc.qualitative.Set3 + pc.qualitative.Pastel + 
-                         pc.qualitative.Dark2 + pc.qualitative.Pastel1 + 
-                         pc.qualitative.Set1 + pc.qualitative.Set2)
+    # Define exact color mapping for each crude type
+    crude_color_map = {
+        'Al-Shaheen': '#2ca02c',
+        'Arab Extra Light': '#ff9896',
+        'Arab Heavy': '#9467bd',
+        'Arab Light': '#c5b0d5',
+        'Arab Medium': '#c49c94',
+        'Arab Super Light': '#f7b6d2',
+        'Bach Ho': '#d62728',
+        'Banoco Arab Medium': '#c7c7c7',
+        'Champion': '#7f7f7f',
+        'Clifhead': '#c7c7c7',
+        'Cossack': '#8c564b',
+        'Das Blend': '#2ca02c',
+        'Deodorized Field Condensate': '#98df8a',
+        'Dubai': '#ff9896',
+        'Ichthys Condensate': '#7f7f7f',
+        'Isthmus': '#c7c7c7',
+        'Ketapang': '#c7c7c7',
+        'Khafji': '#d62728',
+        'Kikeh': '#dbdb8d',
+        'Kuwait': '#8c564b',
+        'Kuwait Super Light': '#f7b6d2',
+        'Lalang': '#1f77b4',
+        'Mares Blend': '#aec7e8',
+        'Mars Blend': '#ff7f0e',
+        'Mubarras Blend': '#1f77b4',
+        'Murban': '#aec7e8',
+        'Napo': '#98df8a',
+        'Nile Blend Sudan': '#d62728',
+        'Oman': '#8c564b',
+        'Oriente': '#ff9896',
+        'Pyrenees': '#c49c94',
+        'Qatar Land': '#c7c7c7',
+        'Qatar Low Sulphur Condensate': '#bcbd22',
+        'Qatar Marine': '#dbdb8d',
+        'Ruby': '#f7b6d2',
+        'Sakhalin Blend': '#ff9896',
+        'Sepat': '#bcbd22',
+        'Seria Light': '#17becf',
+        'Stag': '#9edae5',
+        'Thang Long': '#ffbb78',
+        'Umm Lulu': '#bcbd22',
+        'Upper Zakum': '#9edae5',
+        'Wandoo': '#2ca02c',
+        'West Texas Intermediate': '#aec7e8',
+        'West Texas Light': '#ff7f0e'
+    }
     
-    crude_color_map = {crude: qualitative_colors[i % len(qualitative_colors)] 
-                       for i, crude in enumerate(crudes)}
+    # Get unique crudes from data
+    crudes = sorted(df_grouped['Crude'].unique())
     
     fig = go.Figure()
+    
+    # Store volumes for each crude to calculate cumulative positions for text labels
+    crude_volumes_dict = {}
     
     # Add a trace for each crude
     for crude in crudes:
@@ -445,21 +585,13 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
                 y=volumes,
                 name=crude,
                 marker_color=crude_color_map.get(crude, '#CCCCCC'),
-                hovertemplate=f'Crude: {crude}<br>Year: {year_str}<br>Traded Volume: %{{y:,.0f}}(\'000 b/d)<extra></extra>'
+                hovertemplate=f'Crude: {crude}<br>Year: {year_str}<br>Traded Volume: %{{y:,.1f}}(\'000 b/d)<extra></extra>',
+                text=[f'{v:,.1f}' if v >= 10 else '' for v in volumes],  # Show value if >= 10
+                textposition='inside',
+                textangle=-90,  # Rotate text vertically
+                textfont=dict(size=10, color='#000000')
             ))
-    
-    # Add total values on top of bars (only for bars with significant values)
-    exporter_totals_list = [exporter_totals[exp] for exp in exporters]
-    fig.add_trace(go.Scatter(
-        x=exporters,
-        y=exporter_totals_list,
-        mode='text',
-        text=[f'{val:,.1f}' if val >= 0.5 else '' for val in exporter_totals_list],  # Only show if >= 0.5
-        textposition='top center',
-        showlegend=False,
-        hoverinfo='skip',
-        textfont=dict(size=10)
-    ))
+            crude_volumes_dict[crude] = volumes
     
     # Update layout
     fig.update_layout(
@@ -489,11 +621,11 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
                 'color': '#666666'
             },
             tickangle=90,  # Vertical labels (straight up)
-            gridcolor='#e0e0e0',
-            gridwidth=1,
-            showgrid=True,
+            showgrid=False,  # Remove vertical grid lines to avoid square boxes
+            showline=True,  # Show the axis line
             linecolor='#d3d3d3',
-            linewidth=1
+            linewidth=1,
+            mirror=True  # Show axis line on all sides
         ),
         yaxis=dict(
             title={
@@ -509,11 +641,17 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
                 'size': 11,
                 'color': '#666666'
             },
+            range=[0, 1100],  # Set range to 0-1100 to show up to 1000 clearly (matching Figure 1)
+            tickmode='linear',
+            tick0=0,
+            dtick=200,  # Show ticks at 0, 200, 400, 600, 800, 1000 (matching Figure 1)
             gridcolor='#e0e0e0',
             gridwidth=1,
-            showgrid=True,
+            showgrid=False,  # Remove horizontal grid lines
+            showline=True,  # Show the axis line
             linecolor='#d3d3d3',
-            linewidth=1
+            linewidth=1,
+            mirror=True  # Show axis line on all sides
         ),
         barmode='stack',
         height=520,
@@ -582,8 +720,11 @@ def create_imports_table(selected_country='Japan'):
                 if pd.isna(value) or value == '':
                     record[key] = ''
                 elif isinstance(value, (int, float)):
-                    # Format numeric values - keep 0 as 0
-                    record[key] = value
+                    # Format numeric values - keep 0 as 0, ensure it's a valid number
+                    if pd.isna(value) or pd.isinf(value):
+                        record[key] = ''
+                    else:
+                        record[key] = float(value) if not pd.isna(value) else ''
         
         # Hierarchical grouping: only show region/exporter/company once per group
         if current_region and current_region == prev_region:
@@ -682,6 +823,17 @@ def register_callbacks(dash_app, server):
         """Update imports detail table"""
         if submenu != 'imports-detail':
             return [], [], ""
-        data, columns = create_imports_table(selected_country)
-        title = f"{selected_country} Crude Oil Imports by Region and Country"
-        return data, columns, title
+        try:
+            data, columns = create_imports_table(selected_country)
+            # Ensure data and columns are lists
+            if not isinstance(data, list):
+                data = []
+            if not isinstance(columns, list):
+                columns = []
+            title = f"{selected_country} Crude Oil Imports by Region and Country"
+            return data, columns, title
+        except Exception as e:
+            print(f"Error updating imports table: {e}")
+            import traceback
+            traceback.print_exc()
+            return [], [], ""
