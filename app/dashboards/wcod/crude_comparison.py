@@ -4,6 +4,7 @@ import os
 import chardet
 import dash
 import re
+from app import create_dash_app
 
 # ------------------------------------------------------------------------------
 # PATH CONSTANTS
@@ -129,7 +130,7 @@ def load_crude_data(mode):
 # CALCULATE COMBINED SUM DATA (Production + Exports) - SORTED BY TOTAL SUM DESC
 # ------------------------------------------------------------------------------
 def calculate_combined_sums():
-    """Calculate combined sums of Production and Exports for each crude oil and year, sorted by total sum descending"""
+    """Calculate combined sums of Production and Exports for each crude oil and year, sorted by maximum value descending"""
     
     # Load both datasets
     production_data, production_cols = load_crude_data("production")
@@ -142,7 +143,7 @@ def calculate_combined_sums():
     # Get numeric columns (years)
     numeric_cols = [col for col in prod_df.columns if col != 'CrudeOil']
     
-    # Create combined data with total sums
+    # Create combined data with maximum values
     combined_data = []
     
     # Get all unique crude oils from both datasets
@@ -150,7 +151,7 @@ def calculate_combined_sums():
     
     for crude in all_crudes:
         combined_row = {'CrudeOil': crude}
-        total_sum = 0  # Track total sum for sorting
+        max_value = 0  # Track maximum value for sorting
         
         # Find this crude in production data
         prod_row = prod_df[prod_df['CrudeOil'] == crude]
@@ -184,18 +185,21 @@ def calculate_combined_sums():
             # Calculate combined sum
             combined_val = prod_val + exp_val
             combined_row[col] = f"{combined_val:,.0f}" if combined_val > 0 else ""
-            total_sum += combined_val
+            
+            # Update maximum value if this year's value is higher
+            if combined_val > max_value:
+                max_value = combined_val
         
-        # Add total sum for sorting
-        combined_row['_total_sum'] = total_sum
+        # Add maximum value for sorting
+        combined_row['_max_value'] = max_value
         combined_data.append(combined_row)
     
-    # Sort by total sum in descending order (highest first)
-    combined_data_sorted = sorted(combined_data, key=lambda x: x['_total_sum'], reverse=True)
+    # Sort by maximum value in descending order (highest first)
+    combined_data_sorted = sorted(combined_data, key=lambda x: x['_max_value'], reverse=True)
     
-    # Remove the temporary _total_sum field
+    # Remove the temporary _max_value field
     for row in combined_data_sorted:
-        row.pop('_total_sum', None)
+        row.pop('_max_value', None)
     
     return combined_data_sorted
 
@@ -1431,3 +1435,12 @@ def register_callbacks(app):
         Input('crude-comparison-table', 'columns'),
         prevent_initial_call=False
     )
+    
+    
+    
+def create_crude_comparison_dashboard(server, url_base_pathname="/dash/crude-comparison"):
+    """Create the Crude Overview dashboard"""
+    dash_app = create_dash_app(server, url_base_pathname)
+    dash_app.layout = create_layout(server)
+    register_callbacks(dash_app)
+    return dash_app
