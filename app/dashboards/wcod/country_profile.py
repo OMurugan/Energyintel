@@ -1664,6 +1664,14 @@ def register_callbacks(dash_app, server):
             #production-table .crude-sort-submenu .crude-sort-item {
                 padding: 6px 12px;
             }
+            #production-table .crude-sort-submenu .crude-sort-item.aggregator-info {
+                cursor: default;
+                font-style: italic;
+                color: #5f6368;
+                justify-content: flex-start;
+                gap: 6px;
+                pointer-events: none;
+            }
             #production-table .crude-row-hidden {
                 display: none !important;
             }
@@ -2104,13 +2112,32 @@ def register_callbacks(dash_app, server):
                         btn.type = 'button';
                         btn.className = 'crude-sort-item';
                         btn.textContent = label;
-                        btn.setAttribute('data-sort', sortKey);
+                        if (sortKey) {
+                            btn.setAttribute('data-sort', sortKey);
+                        }
                         return btn;
+                    }
+                    
+                    function createSubmenuInfo(label) {
+                        const info = document.createElement('div');
+                        info.className = 'crude-sort-item aggregator-info';
+                        info.textContent = label;
+                        return info;
                     }
                     
                     const dataSourceBtn = createMenuButton('Data source order', 'data-source');
                     const alphabeticBtn = createMenuButton('Alphabetic', 'alphabetic');
+                    
                     const nestedBtn = createMenuButton('Nested', 'nested');
+                    nestedBtn.classList.add('has-submenu');
+                    const nestedArrow = document.createElement('span');
+                    nestedArrow.className = 'submenu-arrow';
+                    nestedArrow.innerHTML = '&#9656;';
+                    nestedBtn.appendChild(nestedArrow);
+                    const nestedSubmenu = document.createElement('div');
+                    nestedSubmenu.className = 'crude-sort-submenu';
+                    nestedSubmenu.appendChild(createSubmenuInfo('AVG(Value)'));
+                    nestedBtn.appendChild(nestedSubmenu);
                     
                     const fieldWrapper = document.createElement('div');
                     fieldWrapper.className = 'crude-sort-item has-submenu';
@@ -2124,10 +2151,7 @@ def register_callbacks(dash_app, server):
                     
                     const fieldSubmenu = document.createElement('div');
                     fieldSubmenu.className = 'crude-sort-submenu';
-                    const fieldCrudeBtn = createMenuButton('Crude', 'field-crude');
-                    const fieldDateBtn = createMenuButton('Date', 'field-date');
-                    fieldSubmenu.appendChild(fieldCrudeBtn);
-                    fieldSubmenu.appendChild(fieldDateBtn);
+                    fieldSubmenu.appendChild(createSubmenuInfo('AVG(Value)'));
                     fieldWrapper.appendChild(fieldSubmenu);
                     
                     menu.appendChild(dataSourceBtn);
