@@ -6,11 +6,8 @@ def format_with_link(value, link):
         return text
     if not text.strip():
         return text
-    # Use markdown format for Dash DataTable
     safe_text = text.strip()
     safe_link = link.strip()
-    # Escape special markdown characters in text
-    safe_text = safe_text.replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)')
     return f'[{safe_text}]({safe_link})'
 """
 Crude Overview View
@@ -622,6 +619,21 @@ FALLBACK_COLORS = [
     '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5',
     '#c49c94', '#f7b6d3', '#c7c7c7', '#dbdb8d', '#9edae5'
 ]
+TABLE_LINK_COLUMNS = ["Crude", "CrudeOil"]
+TABLE_LINK_STYLE = [
+    {"if": {"column_id": col}, "color": "#1b365d"}
+    for col in TABLE_LINK_COLUMNS
+]
+TABLE_LINK_CSS = [
+    {
+        "selector": ".dash-cell-value a",
+        "rule": "color: #1b365d !important; text-decoration: none !important;"
+    },
+    {
+        "selector": ".dash-cell-value a:hover",
+        "rule": "color: #1b365d !important; text-decoration: none !important;"
+    }
+]
 
 
 def get_stream_order(tab="yearly"):
@@ -662,12 +674,12 @@ def create_layout(server=None):
             dcc.Markdown(
                 """
                 <style>
-                    #crude-table a {
-                        color: #2c3e50 !important;
-                        text-decoration: none !important;
-                    }
-                    #crude-table a:hover {
-                        color: #2c3e50 !important;
+                    #crude-table .dash-cell-value a,
+                    #crude-table .dash-cell-value a:link,
+                    #crude-table .dash-cell-value a:visited,
+                    #crude-table .dash-cell-value a:hover,
+                    #crude-table .dash-cell-value a:active {
+                        color: #1b365d !important;
                         text-decoration: none !important;
                     }
                 </style>
@@ -866,6 +878,8 @@ def create_layout(server=None):
                     "textAlign": "center",
                     "fontWeight": "bold"
                 },
+                style_data_conditional=TABLE_LINK_STYLE,
+                css=TABLE_LINK_CSS,
                 merge_duplicate_headers=True
             )
             ], className='col-md-9', style={'padding': '15px', 'minHeight': '400px'}),
