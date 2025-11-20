@@ -1,7 +1,3 @@
-/* RangeSlider Custom Styling - D-shaped handles and gray selected range */
-/* Exact styling to match the image */
-
-/* Base handle styling - white with dark gray border */
 .rc-slider-handle {
     width: 20px !important;
     height: 20px !important;
@@ -14,32 +10,11 @@
     overflow: hidden !important;
 }
 
-/* Left handle - D shape: half circle on left, flat edge on right (facing inward) */
-/* The flat side faces right (toward center of slider) */
-.rc-slider .rc-slider-handle:first-child,
-.rc-slider-handle:first-of-type,
-div[id*="range-slider"] .rc-slider-handle:first-child,
-.rc-slider-handle[aria-valuenow]:nth-of-type(1) {
-    /* Create half circle on left using border-radius */
-    border-radius: 50% 0 0 50% !important;
-    /* Clip right half to create flat edge - this creates the D-shape */
-    clip-path: inset(0 50% 0 0) !important;
-    /* Ensure the border is visible on the curved side */
-    border-right: none !important;
-}
-
-/* Right handle - D shape: half circle on right, flat edge on left (facing inward) */
-/* The flat side faces left (toward center of slider) */
-.rc-slider .rc-slider-handle:last-child,
-.rc-slider-handle:last-of-type,
-div[id*="range-slider"] .rc-slider-handle:last-child,
-.rc-slider-handle[aria-valuenow]:nth-of-type(2) {
-    /* Create half circle on right using border-radius */
-    border-radius: 0 50% 50% 0 !important;
-    /* Clip left half to create flat edge - this creates the D-shape */
-    clip-path: inset(0 0 0 50%) !important;
-    /* Ensure the border is visible on the curved side */
-    border-left: none !important;
+/* Slider handles - circular shape (matching first image) */
+.rc-slider-handle {
+    border-radius: 50% !important;
+    clip-path: none !important;
+    border: 2px solid #666 !important;
 }
 
 /* Handle focus, hover, and active states */
@@ -63,10 +38,14 @@ div[id*="range-slider"] .rc-slider-handle:last-child,
 .rc-slider-track-1,
 .rc-slider-track-2,
 .rc-slider .rc-slider-track,
-div[id*="range-slider"] .rc-slider-track {
+div[id*="range-slider"] .rc-slider-track,
+.rc-slider .rc-slider-track-1,
+.rc-slider .rc-slider-track-2 {
     background-color: #d3d3d3 !important;
     background: #d3d3d3 !important;
+    background-image: none !important;
     height: 4px !important;
+    border: none !important;
 }
 
 /* Unselected range track - light gray (matching image) */
@@ -107,7 +86,6 @@ div[id*="range-slider"] .rc-slider-rail {
 }
 
 /* Plotly hover tooltip styling - static white background, matching image format */
-/* Target all possible Plotly tooltip containers */
 .hoverlayer,
 .js-plotly-plot .hoverlayer,
 .plotly .hoverlayer,
@@ -115,7 +93,7 @@ div[class*="hoverlayer"] {
     pointer-events: none !important;
 }
 
-/* Target the actual tooltip text element - exact styles as provided */
+/* Tooltip text */
 .hovertext,
 .js-plotly-plot .hoverlayer .hovertext,
 .plotly .hovertext,
@@ -187,4 +165,83 @@ div[class*="hovertext"],
     padding: 12px !important;
     overflow: hidden !important;
     user-select: text !important;
+}
+
+/* Checklist styling to match image */
+input[type="checkbox"] {
+    margin-right: 8px !important;
+    cursor: pointer !important;
+}
+
+label {
+    cursor: pointer !important;
+    font-size: 12px !important;
+    color: #1a1a1a !important;
+    margin-bottom: 2px !important;
+    display: block !important;
+}
+
+/* Remove borders from Plotly chart container */
+.js-plotly-plot,
+.plotly,
+div[id*="crude-quality-chart"] {
+    border: none !important;
+    outline: none !important;
+}
+
+/* Remove any frame/border around the plot area */
+.plotly .plot-container {
+    border: none !important;
+}
+
+/* Ensure no gridlines or extra lines in the plot */
+.plotly .gridlayer {
+    display: none !important;
+}
+
+/* Strikethrough styling with minimal gap (solid red line) */
+.strikethrough {
+    position: relative !important;
+    display: block !important;
+}
+
+.strikethrough::after {
+    content: '' !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 50% !important;
+    width: 100% !important;
+    height: 2.5px !important;
+    background-color: #FF0000 !important;
+    transform: translateY(-50%) !important;
+    z-index: 10 !important;
+    display: block !important;
+}
+
+/* D-shaped range slider handle */
+.rc-slider-handle {
+    width: 20px !important;
+    height: 20px !important;
+    background-color: #ffffff !important;
+    border: 2px solid #6E6E6E !important;
+    border-radius: 0 12px 12px 0 !important;  /* Right D shape */
+    margin-top: -8px !important;
+    box-shadow: none !important;
+}
+
+/* Selected range track must be grey */
+.rc-slider-track,
+.rc-slider-track-1,
+.rc-slider-track-2,
+.rc-slider .rc-slider-track,
+.rc-slider .rc-slider-track-1,
+.rc-slider .rc-slider-track-2,
+div[class*="rc-slider-track"] {
+    background: #6E6E6E !important;
+    background-color: #6E6E6E !important;
+}
+
+/* Rail (unselected bar) lighter grey */
+.rc-slider-rail {
+    background: #D0D0D0 !important;
 }

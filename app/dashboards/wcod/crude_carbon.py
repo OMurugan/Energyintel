@@ -2,13 +2,15 @@
 Crude Carbon Intensity View
 Carbon intensity metrics for different crude types
 """
-from dash import dcc, html, Input, Output, callback, State
+from dash import dcc, html, Input, Output, State
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 import os
 from app import db
 from app.models import Crude, Country
+from app import create_dash_app
+
 
 
 def create_layout():
@@ -443,7 +445,7 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for Crude Carbon Intensity"""
     
     # Callback to handle country dropdown expand/collapse
-    @callback(
+    @dash_app.callback(
         [Output('country-checklist-container', 'style'),
          Output('country-dropdown-icon', 'children')],
         Input('country-dropdown-header', 'n_clicks'),
@@ -465,7 +467,7 @@ def register_callbacks(dash_app, server):
         return new_style, icon
     
     # Callback to handle "(All)" selection - check/uncheck all countries
-    @callback(
+    @dash_app.callback(
         [Output('carbon-country-select', 'value', allow_duplicate=True),
          Output('country-selection-store', 'data')],
         Input('carbon-country-select', 'value'),
@@ -524,23 +526,20 @@ def register_callbacks(dash_app, server):
         # Case 6: Normal selection - return as is
         return selected_countries, selected_countries
     
-    @callback(
+    @dash_app.callback(
         Output('crude-carbon-chart', 'figure'),
-        [Input('current-submenu', 'data'),
-         Input('carbon-year-select', 'value'),
+        [Input('carbon-year-select', 'value'),
          Input('carbon-country-select', 'value'),
          Input('carbon-crude-filter', 'value'),
          Input('carbon-intensity-filter', 'value')],
         prevent_initial_call=False
     )
-    def update_crude_carbon(submenu, year, country_filter, crude_filter, intensity_filter):
+    def update_crude_carbon(year, country_filter, crude_filter, intensity_filter):
         """Update crude carbon intensity treemap"""
         print(f"=== CALLBACK TRIGGERED ===")
-        print(f"submenu={submenu}, year={year}, country={country_filter}, crude={crude_filter}, intensity={intensity_filter}")
+        print(f"year={year}, country={country_filter}, crude={crude_filter}, intensity={intensity_filter}")
         
         # Handle None inputs
-        if submenu is None:
-            submenu = ''
         if country_filter is None:
             country_filter = ['(All)']
         # Ensure country_filter is a list
@@ -627,3 +626,9 @@ def register_callbacks(dash_app, server):
         
         print(f"=== RETURNING FIGURE ===")
         return fig
+def create_crude_carbon_dashboard(server, url_base_pathname="/dash/crude-carbon/"):
+    """Create the Crude Carbon Intensity dashboard"""
+    dash_app = create_dash_app(server, url_base_pathname)
+    dash_app.layout = create_layout()
+    register_callbacks(dash_app, server)
+    return dash_app
