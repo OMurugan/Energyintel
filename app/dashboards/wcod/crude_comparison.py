@@ -844,13 +844,14 @@ def register_callbacks(app):
             return {
                 "position": "absolute", 
                 "backgroundColor": "white", 
-                "padding": "4px 0",
+                # "padding": "4px 0",
+                "padding": "15px",
                 "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
                 "zIndex": "1000",
                 "display": "block",
                 "minWidth": "160px",
-                "top": "200px",
-                "left": "50px"
+                "top": "213px",
+                "left": "209px"
             }, True, dash.no_update
         
         elif trigger == 'popup-source-btn':
@@ -1211,12 +1212,12 @@ def register_callbacks(app):
                 const nestedArrow = document.getElementById('nested-arrow-btn');
                 
                 if (fieldArrow) {
-                    fieldArrow.title = 'Click to show combined Production + Exports data';
+                    fieldArrow.title = 'SUM(Exports/Production Value)';
                     
                     fieldArrow.addEventListener('mouseover', function(e) {
                         const tooltip = document.createElement('div');
                         tooltip.className = 'arrow-tooltip';
-                        tooltip.textContent = 'Click to show combined Production + Exports data';
+                        tooltip.textContent = 'SUM(Exports/Production Value)';
                         tooltip.style.left = (e.pageX + 10) + 'px';
                         tooltip.style.top = (e.pageY - 25) + 'px';
                         document.body.appendChild(tooltip);
@@ -1247,12 +1248,12 @@ def register_callbacks(app):
                 }
                 
                 if (nestedArrow) {
-                    nestedArrow.title = 'Click to show combined Production + Exports data';
+                    nestedArrow.title = 'SUM(Exports/Production Value)';
                     
                     nestedArrow.addEventListener('mouseover', function(e) {
                         const tooltip = document.createElement('div');
                         tooltip.className = 'arrow-tooltip';
-                        tooltip.textContent = 'Click to show combined Production + Exports data';
+                        tooltip.textContent = 'SUM(Exports/Production Value)';
                         tooltip.style.left = (e.pageX + 10) + 'px';
                         tooltip.style.top = (e.pageY - 25) + 'px';
                         document.body.appendChild(tooltip);
