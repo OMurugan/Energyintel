@@ -126,10 +126,10 @@ def load_crude_data(mode):
     ]
 
 # ------------------------------------------------------------------------------
-# CALCULATE COMBINED SUM DATA (Production + Exports)
+# CALCULATE COMBINED SUM DATA (Production + Exports) - SORTED BY TOTAL SUM DESC
 # ------------------------------------------------------------------------------
 def calculate_combined_sums():
-    """Calculate combined sums of Production and Exports for each crude oil and year"""
+    """Calculate combined sums of Production and Exports for each crude oil and year, sorted by total sum descending"""
     
     # Load both datasets
     production_data, production_cols = load_crude_data("production")
@@ -142,7 +142,7 @@ def calculate_combined_sums():
     # Get numeric columns (years)
     numeric_cols = [col for col in prod_df.columns if col != 'CrudeOil']
     
-    # Create combined data
+    # Create combined data with total sums
     combined_data = []
     
     # Get all unique crude oils from both datasets
@@ -150,6 +150,7 @@ def calculate_combined_sums():
     
     for crude in all_crudes:
         combined_row = {'CrudeOil': crude}
+        total_sum = 0  # Track total sum for sorting
         
         # Find this crude in production data
         prod_row = prod_df[prod_df['CrudeOil'] == crude]
@@ -183,36 +184,20 @@ def calculate_combined_sums():
             # Calculate combined sum
             combined_val = prod_val + exp_val
             combined_row[col] = f"{combined_val:,.0f}" if combined_val > 0 else ""
+            total_sum += combined_val
         
+        # Add total sum for sorting
+        combined_row['_total_sum'] = total_sum
         combined_data.append(combined_row)
     
-    return combined_data
-
-# ------------------------------------------------------------------------------
-# CALCULATE SUM ROW FOR COMBINED DATA
-# ------------------------------------------------------------------------------
-def calculate_combined_sum_row(combined_data):
-    """Calculate sum row for combined data"""
-    if not combined_data:
-        return None
+    # Sort by total sum in descending order (highest first)
+    combined_data_sorted = sorted(combined_data, key=lambda x: x['_total_sum'], reverse=True)
     
-    df = pd.DataFrame(combined_data)
-    numeric_cols = [col for col in df.columns if col != 'CrudeOil']
+    # Remove the temporary _total_sum field
+    for row in combined_data_sorted:
+        row.pop('_total_sum', None)
     
-    sum_row = {'CrudeOil': 'SUM'}
-    
-    for col in numeric_cols:
-        col_sum = 0
-        for val in df[col]:
-            if val and str(val).strip() and str(val).strip() != '':
-                try:
-                    clean_val = str(val).replace(',', '')
-                    col_sum += float(clean_val)
-                except (ValueError, TypeError):
-                    continue
-        sum_row[col] = f"{col_sum:,.0f}"
-    
-    return sum_row
+    return combined_data_sorted
 
 # ------------------------------------------------------------------------------
 # CALCULATE SUM ROW FOR REGULAR DATA
@@ -806,13 +791,11 @@ def register_callbacks(app):
         
         # If Field, Nested, or Year icon is clicked, switch to combined mode
         if trigger in ['field-sort-btn', 'nested-sort-btn', 'year-column-btn']:
-            # Use combined data
+            # Use combined data WITHOUT sum row
             combined_data = calculate_combined_sums()
-            sum_row = calculate_combined_sum_row(combined_data)
-            table_data_with_sum = combined_data + [sum_row] if sum_row else combined_data
-            return table_data_with_sum, combined_data, sum_row, True
+            return combined_data, combined_data, None, True
         else:
-            # Use individual dataset (Production or Exports)
+            # Use individual dataset (Production or Exports) WITH sum row
             crude_data, columns = load_crude_data(mode)
             sum_row = calculate_sum_row(crude_data)
             table_data_with_sum = crude_data + [sum_row] if sum_row else crude_data
@@ -951,7 +934,7 @@ def register_callbacks(app):
         else:
             df_sorted = df
         
-        # Convert back to dict and add SUM row
+        # Convert back to dict and add SUM row only if sum_row exists (not in combined mode)
         sorted_data = df_sorted.to_dict('records')
         if sum_row:
             sorted_data.append(sum_row)
@@ -1057,18 +1040,24 @@ def register_callbacks(app):
 
     @app.callback(
         Output('crude-comparison-table', 'style_data_conditional'),
-        [Input('selected-cell-store', 'data')],
+        [Input('selected-cell-store', 'data'),
+         Input('is-combined-mode', 'data')],
         [State('crude-comparison-table', 'data')]
     )
-    def update_table_styles(selected_cell, current_data):
+    def update_table_styles(selected_cell, is_combined, current_data):
         default_styles = [
             {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"},
             {"if": {"column_id": "CrudeOil"}, "color": "#1f3263"},
             {"if": {"column_id": [str(year) for year in range(2007, 2025)]}, "cursor": "pointer"},
-            {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
-            {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
         ]
         
+        # Only add SUM row styling if NOT in combined mode
+        if not is_combined:
+            default_styles.extend([
+                {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
+                {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
+            ])
+    
         if selected_cell:
             numeric_columns = [col for col in (current_data[0].keys() if current_data else []) if col != "CrudeOil"]
             
@@ -1077,9 +1066,15 @@ def register_callbacks(app):
                 {"if": {"column_id": "CrudeOil"}, "color": "#1f3263", "backgroundColor": "white", "cursor": "pointer"},
                 {"if": {"column_id": numeric_columns}, "color": "#f0f0f0", "backgroundColor": "white", "cursor": "pointer"},
                 {"if": {"row_index": selected_cell['row'], "column_id": selected_cell['column']}, "color": "#1f3263", "backgroundColor": "#e6f3ff", "fontWeight": "bold", "border": "2px solid #1f3263", "cursor": "pointer"},
-                {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
-                {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
             ]
+            
+            # Only add SUM row styling if NOT in combined mode
+            if not is_combined:
+                style_conditions.extend([
+                    {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
+                    {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
+                ])
+                
             return style_conditions
         
         return default_styles
@@ -1176,7 +1171,7 @@ def register_callbacks(app):
                     if (!header.querySelector('.sort-indicator')) {
                         const sortIndicator = document.createElement('div');
                         sortIndicator.className = 'sort-indicator';
-                        sortIndicator.title = 'Click to show combined Production + Exports data';
+                        sortIndicator.title = 'Sorted descending by sum of Exports/Production Value within CrudeOil, broken down by Source: Energy Intelligence/COPYRIGHT © 2001-2025 ENERGY INTELLIGENCE GROUP, INC. / ENERGY INTELLIGENCE GROUP (UK) LIMITED./2024.';
                         
                         // Add the exact SVG from your file
                         sortIndicator.innerHTML = `
