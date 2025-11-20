@@ -1556,6 +1556,22 @@ def register_callbacks(dash_app, server):
                 top: -1px;
                 box-shadow: 0 0 0 2px #ffffff;
             }
+            #production-table .dash-table-tooltip {
+                background-color: #ffffff !important;
+                color: #1f2933 !important;
+                border: 1px solid #d5d9dd !important;
+                box-shadow: 0 4px 12px rgba(31, 45, 61, 0.15) !important;
+                padding: 10px 12px !important;
+                border-radius: 6px !important;
+                font-family: 'Arial', 'Helvetica', sans-serif !important;
+                font-size: 12px !important;
+                line-height: 1.5 !important;
+                white-space: pre-wrap !important;
+                max-width: 220px !important;
+            }
+            #production-table .dash-table-tooltip span {
+                display: block;
+            }
             #world-map-chart .plotly .choroplethlayer {
                 z-index: 10 !important;
                 pointer-events: auto !important;
