@@ -291,6 +291,19 @@ def create_layout(server):
                     z-index: 1003;
                     pointer-events: none;
                 }
+                .sum-text-box {
+                    position: absolute;
+                    background-color: white;
+                    border: 1px solid #ccc;
+                    padding: 8px 12px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                    font-family: Arial;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                    z-index: 1002;
+                    white-space: nowrap;
+                    color: #333;
+                }
                 /* Sort indicator icon styles for ALL headers */
                 .sort-indicator {
                     position: absolute;
@@ -366,6 +379,25 @@ def create_layout(server):
                 </style>
             """, dangerously_allow_html=True),
 
+            # SUM Text Box (initially hidden)
+            html.Div(
+                "SUM(Exports/Production Value)",
+                id="sum-text-box",
+                style={
+                    "position": "absolute",
+                    "backgroundColor": "white",
+                    "border": "1px solid #ccc",
+                    "padding": "8px 12px",
+                    "borderRadius": "4px",
+                    "fontSize": "12px",
+                    "fontFamily": "Arial",
+                    "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                    "zIndex": "1002",
+                    "display": "none",
+                    "color": "#333",
+                }
+            ),
+
             # Sorting controls popup (initially hidden)
             html.Div([
                 html.Div([
@@ -429,11 +461,13 @@ def create_layout(server):
             ], id="sorting-controls", style={
                 "position": "absolute", 
                 "backgroundColor": "white", 
-                "padding": "4px 0",
+                "padding": "15px",
                 "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
                 "zIndex": "1000",
                 "display": "none",
-                "minWidth": "160px"
+                "minWidth": "160px",
+                "top": "213px",
+                "left": "209px"
             }),
 
             dash_table.DataTable(
@@ -809,11 +843,57 @@ def register_callbacks(app):
         _, columns = load_crude_data(mode)
         return columns
 
+    # Handle SUM text box display
+    @app.callback(
+        Output('sum-text-box', 'style'),
+        [Input('popup-field-btn', 'n_clicks'),
+         Input('popup-nested-btn', 'n_clicks'),
+         Input('field-arrow-btn', 'n_clicks'),
+         Input('nested-arrow-btn', 'n_clicks')],
+        [State('show-sorting-controls', 'data')]
+    )
+    def handle_sum_text_box(field_clicks, nested_clicks, field_arrow_clicks, nested_arrow_clicks, show_controls):
+        trigger = ctx.triggered_id
+        
+        # Show SUM text box when hovering over Field/Nested arrows
+        if trigger in ['popup-field-btn', 'popup-nested-btn', 'field-arrow-btn', 'nested-arrow-btn']:
+            if show_controls:
+                return {
+                    "position": "absolute",
+                    "backgroundColor": "white",
+                    "border": "1px solid #ccc",
+                    "padding": "8px 12px",
+                    "borderRadius": "4px",
+                    "fontSize": "12px",
+                    "fontFamily": "Arial",
+                    "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                    "zIndex": "1002",
+                    "display": "block",
+                    "color": "#333",
+                    "top": "286px",
+                    "left": "353px"
+                }
+        
+        return {
+            "position": "absolute",
+            "backgroundColor": "white",
+            "border": "1px solid #ccc",
+            "padding": "8px 12px",
+            "borderRadius": "4px",
+            "fontSize": "12px",
+            "fontFamily": "Arial",
+            "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+            "zIndex": "1002",
+            "display": "none",
+            "color": "#333",
+        }
+
     # Handle header clicks (both sort order and popup menu)
     @app.callback(
         [Output('sorting-controls', 'style'),
          Output('show-sorting-controls', 'data'),
-         Output('current-sort-order', 'data', allow_duplicate=True)],
+         Output('current-sort-order', 'data', allow_duplicate=True),
+         Output('sum-text-box', 'style', allow_duplicate=True)],
         [Input('sort-asc-btn-hidden', 'n_clicks'),
          Input('sort-desc-btn-hidden', 'n_clicks'),
          Input('popup-menu-btn', 'n_clicks'),
@@ -835,16 +915,15 @@ def register_callbacks(app):
         trigger = ctx.triggered_id
         
         if trigger == 'sort-asc-btn-hidden':
-            return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'asc'}
+            return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'asc'}, dash.no_update
         
         elif trigger == 'sort-desc-btn-hidden':
-            return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'desc'}
+            return dash.no_update, dash.no_update, {'type': 'alphabetic', 'direction': 'desc'}, dash.no_update
         
         elif trigger == 'popup-menu-btn':
             return {
                 "position": "absolute", 
                 "backgroundColor": "white", 
-                # "padding": "4px 0",
                 "padding": "15px",
                 "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
                 "zIndex": "1000",
@@ -852,7 +931,7 @@ def register_callbacks(app):
                 "minWidth": "160px",
                 "top": "213px",
                 "left": "209px"
-            }, True, dash.no_update
+            }, True, dash.no_update, dash.no_update
         
         elif trigger == 'popup-source-btn':
             return {
@@ -863,7 +942,19 @@ def register_callbacks(app):
                 "zIndex": "1000",
                 "display": "none",
                 "minWidth": "160px"
-            }, False, {'type': 'source', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+            }, False, {'type': 'source', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}, {
+                "position": "absolute",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "none",
+                "color": "#333",
+            }
         
         elif trigger == 'popup-alphabetic-btn':
             return {
@@ -874,13 +965,53 @@ def register_callbacks(app):
                 "zIndex": "1000",
                 "display": "none",
                 "minWidth": "160px"
-            }, False, {'type': 'alphabetic', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+            }, False, {'type': 'alphabetic', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}, {
+                "position": "absolute",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "none",
+                "color": "#333",
+            }
         
         elif trigger == 'popup-field-btn' or trigger == 'field-sort-btn':
-            return dash.no_update, dash.no_update, {'type': 'field', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+            return dash.no_update, dash.no_update, {'type': 'field', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}, {
+                "position": "absolute",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "block",
+                "color": "#333",
+                "top": "286px",
+                "left": "353px"
+            }
         
         elif trigger == 'popup-nested-btn' or trigger == 'nested-sort-btn':
-            return dash.no_update, dash.no_update, {'type': 'nested', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}
+            return dash.no_update, dash.no_update, {'type': 'nested', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}, {
+                "position": "absolute",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "block",
+                "color": "#333",
+                "top": "316px",
+                "left": "351px"
+            }
         
         return {
             "position": "absolute", 
@@ -890,7 +1021,19 @@ def register_callbacks(app):
             "zIndex": "1000",
             "display": "none",
             "minWidth": "160px"
-        }, False, dash.no_update
+        }, False, dash.no_update, {
+            "position": "absolute",
+            "backgroundColor": "white",
+            "border": "1px solid #ccc",
+            "padding": "8px 12px",
+            "borderRadius": "4px",
+            "fontSize": "12px",
+            "fontFamily": "Arial",
+            "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+            "zIndex": "1002",
+            "display": "none",
+            "color": "#333",
+        }
 
     # Apply sorting when sort order changes
     @app.callback(
@@ -1212,32 +1355,7 @@ def register_callbacks(app):
                 const nestedArrow = document.getElementById('nested-arrow-btn');
                 
                 if (fieldArrow) {
-                    fieldArrow.title = 'SUM(Exports/Production Value)';
-                    
-                    fieldArrow.addEventListener('mouseover', function(e) {
-                        const tooltip = document.createElement('div');
-                        tooltip.className = 'arrow-tooltip';
-                        tooltip.textContent = 'SUM(Exports/Production Value)';
-                        tooltip.style.left = (e.pageX + 10) + 'px';
-                        tooltip.style.top = (e.pageY - 25) + 'px';
-                        document.body.appendChild(tooltip);
-                        
-                        fieldArrow._tooltip = tooltip;
-                    });
-                    
-                    fieldArrow.addEventListener('mouseout', function(e) {
-                        if (fieldArrow._tooltip) {
-                            fieldArrow._tooltip.remove();
-                            fieldArrow._tooltip = null;
-                        }
-                    });
-                    
-                    fieldArrow.addEventListener('mousemove', function(e) {
-                        if (fieldArrow._tooltip) {
-                            fieldArrow._tooltip.style.left = (e.pageX + 10) + 'px';
-                            fieldArrow._tooltip.style.top = (e.pageY - 25) + 'px';
-                        }
-                    });
+                    fieldArrow.title = 'Click to show SUM(Exports/Production Value)';
                     
                     // Make Field arrow clickable
                     fieldArrow.onclick = function(e) {
@@ -1248,32 +1366,7 @@ def register_callbacks(app):
                 }
                 
                 if (nestedArrow) {
-                    nestedArrow.title = 'SUM(Exports/Production Value)';
-                    
-                    nestedArrow.addEventListener('mouseover', function(e) {
-                        const tooltip = document.createElement('div');
-                        tooltip.className = 'arrow-tooltip';
-                        tooltip.textContent = 'SUM(Exports/Production Value)';
-                        tooltip.style.left = (e.pageX + 10) + 'px';
-                        tooltip.style.top = (e.pageY - 25) + 'px';
-                        document.body.appendChild(tooltip);
-                        
-                        nestedArrow._tooltip = tooltip;
-                    });
-                    
-                    nestedArrow.addEventListener('mouseout', function(e) {
-                        if (nestedArrow._tooltip) {
-                            nestedArrow._tooltip.remove();
-                            nestedArrow._tooltip = null;
-                        }
-                    });
-                    
-                    nestedArrow.addEventListener('mousemove', function(e) {
-                        if (nestedArrow._tooltip) {
-                            nestedArrow._tooltip.style.left = (e.pageX + 10) + 'px';
-                            nestedArrow._tooltip.style.top = (e.pageY - 25) + 'px';
-                        }
-                    });
+                    nestedArrow.title = 'Click to show SUM(Exports/Production Value)';
                     
                     // Make Nested arrow clickable
                     nestedArrow.onclick = function(e) {
