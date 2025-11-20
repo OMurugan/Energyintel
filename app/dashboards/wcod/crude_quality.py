@@ -460,14 +460,6 @@ def create_layout(dash_app=None):
                     crudeoil_col_id = col
                     break
     
-    # Debug: print found column IDs
-    print(f'\n{"="*70}')
-    print(f'DEBUG: Found column IDs')
-    print(f'  Country column ID: {country_col_id}')
-    print(f'  CrudeOil column ID: {crudeoil_col_id}')
-    print(f'  Quality DF columns: {list(quality_df.columns)[:10] if not quality_df.empty else "Empty"}')
-    print(f'  Quality DF shape: {quality_df.shape if not quality_df.empty else "Empty"}')
-    print(f'{"="*70}\n')
     try:
         yield_df = load_yield_volume_table()
     except Exception as e:
@@ -538,8 +530,8 @@ def create_layout(dash_app=None):
                         ),
                     ], style={'width': '386px', 'marginBottom': '10px', 'position': 'relative'}),
                     html.Div([
-                dcc.RangeSlider(
-                    id="x-range-slider",
+                        dcc.RangeSlider(
+                            id="x-range-slider",
                             min=df[default_x].min() if default_x and default_x in df.columns else 0,
                             max=df[default_x].max() if default_x and default_x in df.columns else 100, step=0.1, value=[df[default_x].min() if default_x and default_x in df.columns else 0, df[default_x].max() if default_x and default_x in df.columns else 100],
                             marks=None,
@@ -631,7 +623,6 @@ def create_layout(dash_app=None):
                     ], style={'width': '386px', 'margin': '0', 'padding': '0'}),
                 ], style={'width': '100%', 'position': 'relative'}),
             ], style={'width': '32%', 'display': 'inline-block', 'marginLeft': '2%'}),
-
         ]),
 
         html.Br(),
