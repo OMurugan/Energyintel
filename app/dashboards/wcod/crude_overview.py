@@ -2581,10 +2581,10 @@ def register_callbacks(dash_app, server):
                                     try:
                                         num_value = pd.to_numeric(str(value).replace(',', ''), errors='coerce')
                                         if pd.notna(num_value):
-                                            formatted = f"{num_value:,.2f}"
+                                            formatted = f"{num_value:,.0f}"
                                         else:
                                             formatted = str(value) if value else ''
-                                    except:
+                                    except Exception:
                                         formatted = str(value) if value else ''
                                 else:
                                     formatted = ''
