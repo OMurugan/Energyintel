@@ -1,27 +1,26 @@
 """
-Crude Profile View - Exact Match to Image
-Individual crude type profile with detailed specifications
+Crude Profile Dashboard - Complete Implementation
 """
-from dash import dcc, html, Input, Output
+from dash import dcc, html, Dash
 import plotly.graph_objects as go
-from app import create_dash_app
+import plotly.express as px
 
 # Static content that matches the provided design EXACTLY
 ASSAY_DATA = [
     {"Property": "Barrels", "Unit": "Per Metric Ton", "Value": "7.13"},
     {"Property": "", "Unit": "Total", "Value": ""},
     {"Property": "Gravity", "Unit": "API at 60 F", "Value": "28.51"},
-    {"Property": "Mercaptan Sulfur", "Unit": "ppm", "Value": "26.00"},
+    {"Property": "Mercaptan Sulfur", "Unit": "ppm", "Value": "28.00"},
     {"Property": "Micro Carbon Residue", "Unit": "% Wt", "Value": "6.52"},
     {"Property": "Nickel", "Unit": "ppm", "Value": "22.13"},
     {"Property": "Pour Point", "Unit": "Temp. C", "Value": "-33.00"},
-    {"Property": "Reid Vapor Pressure", "Unit": "psi at 37.8 C", "Value": "6.06"},
+    {"Property": "Reid Vapor Pressure", "Unit": "psi at 37.8 C", "Value": "6.66"},
     {"Property": "Sulfur Content", "Unit": "% Wt", "Value": "2.21"},
     {"Property": "Total Acid Number", "Unit": "Mg KOH/g", "Value": "0.46"},
     {"Property": "Vanadium", "Unit": "ppm", "Value": "62.24"},
     {"Property": "Viscosity", "Unit": "cSt at 20 C", "Value": "28.88"},
     {"Property": "", "Unit": "cSt at 40 C", "Value": "14.82"},
-    {"Property": "", "Unit": "cSt at 50 C", "Value": "11.28"}
+    {"Property": "", "Unit": "cSt at 50 C", "Value": "11.23"}
 ]
 
 REFINED_PRODUCTS = [
@@ -35,8 +34,8 @@ REFINED_PRODUCTS = [
         ("Yield Volume", "%", "8.44"),
         ("Yield Weight", "%", "7.18"),
         ("Aromatics", "% Wt", "9.07"),
-        ("Naphthenes", "% Wt", "53.13"),
-        ("Paraffins", "% Wt", "37.80"),
+        ("Naphthenes", "% Wt", "33.13"),
+        ("Paraffins", "% Wt", "57.80"),
     ]),
     ("Heavy Residue", ">370", [
         ("Yield Volume", "%", "47.77"),
@@ -44,11 +43,11 @@ REFINED_PRODUCTS = [
         ("Nickel", "ppm", "41.34"),
         ("Pour Point", "Temp. C", "26.64"),
         ("Sulfur Content", "% Wt", "3.57"),
-        ("Vanadium", "ppm", "116.29"),
+        ("Vanadium", "ppm", "116.23"),
     ]),
     ("Int. Gasoil", "250-300", [
         ("Yield Volume", "%", "7.92"),
-        ("Yield Weight", "%", "7.70"),
+        ("Yield Weight", "%", "7.60"),
         ("Cetane Index", "", "51.28"),
         ("Cloud Point", "Temp. C", "-25.53"),
         ("Sulfur Content", "% Wt", "0.92"),
@@ -63,24 +62,24 @@ REFINED_PRODUCTS = [
     ("Kerosene", "150-200", [
         ("Yield Volume", "%", "6.44"),
         ("Yield Weight", "%", "5.73"),
-        ("Freeze Point", "Temp. C", "-53.90"),
+        ("Freeze Point", "Temp. C", "-63.90"),
         ("Smoke Point", "mm", "23.20"),
     ]),
     ("Light Gasoil", "200-250", [
-        ("Yield Volume", "%", "7.38"),
-        ("Yield Weight", "%", "6.63"),
+        ("Yield Volume", "%", "7.98"),
+        ("Yield Weight", "%", "6.83"),
         ("Cetane Index", "", "46.98"),
         ("Pour Point", "Temp. C", "-54.20"),
     ]),
     ("Light Naphtha", "C5-65", [
-        ("Yield Volume", "%", "4.36"),
+        ("Yield Volume", "%", "4.95"),
         ("Yield Weight", "%", "3.19"),
         ("Octane", "RON clear", "77.62"),
     ]),
-    ("Residue", "350-370", [
-        ("Yield Volume", "%", "2.93"),
+    ("Light Residue", "350-370", [
+        ("Yield Volume", "%", "2.89"),
         ("Yield Weight", "%", "2.93"),
-        ("Viscosity", "cSt at 50 C", "6.95"),
+        ("Viscosity", "cSt at 50 C", "8.95"),
     ])
 ]
 
@@ -108,51 +107,71 @@ PORT_DETAILS = [
 # HELPER FUNCTIONS
 # ------------------------------------------------------------------------------
 def create_production_chart():
-    """Create production and exports bar chart matching the image design."""
+    """Create production and exports chart matching the image design."""
     fig = go.Figure()
     
     years = ['2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013', '2014', 
              '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024']
     
-    production = [250, 300, 280, 260, 240, 220, 200, 210, 230, 200, 220, 240, 260, 280, 270, 250, 240, 230, 220]
-    exports = [50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 170, 160, 150, 140, 130]
+    # Data from the image
+    production = [235, 290, 220, 225, 200, 190, 150, 145, 170, 100, 200, 205, 225, 280, 270, 250, 235, 220, 215]
+    exports = [5, 5, 5, 5, 5, 5, 5, 5, 75, 65, 50, 75, 115, 170, 110, 150, 160, 160, 115]
     
+    # Crude Production as dark blue bars
     fig.add_trace(go.Bar(
         name="Crude Production",
         x=years,
         y=production,
-        marker_color='#1f77b4'
+        marker_color='#1f3263',
+        marker_line_color='#1f3263',
+        marker_line_width=0
     ))
     
-    fig.add_trace(go.Bar(
-        name="Crude Exports", 
+    # Crude Exports as orange circular data points (scatter)
+    fig.add_trace(go.Scatter(
+        name="Crude Exports",
         x=years,
         y=exports,
-        marker_color='#ff7f0e'
+        mode='markers',
+        marker=dict(
+            color='#d65a00',
+            size=8,
+            symbol='circle',
+            line=dict(width=0)
+        )
     ))
     
     fig.update_layout(
-        barmode='group',
         height=300,
-        margin=dict(l=40, r=40, t=40, b=40),
+        margin=dict(l=50, r=20, t=20, b=50),
         legend=dict(
             orientation="h",
             yanchor="bottom",
             y=1.02,
             xanchor="right",
-            x=1
+            x=1,
+            font=dict(size=11)
         ),
         xaxis=dict(
             tickangle=-45,
             showgrid=True,
-            gridcolor='lightgray'
+            gridcolor='#e0e0e0',
+            gridwidth=1,
+            tickfont=dict(size=10)
         ),
         yaxis=dict(
-            title="Value (000 b/d)",
+            title="Volume ('000 b/d)",
             showgrid=True,
-            gridcolor='lightgray'
+            gridcolor='#e0e0e0',
+            gridwidth=1,
+            range=[0, 300],
+            dtick=50,
+            tickfont=dict(size=10),
+            titlefont=dict(size=11)
         ),
-        plot_bgcolor='white'
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        font=dict(family='Arial', size=11)
     )
     
     return fig
@@ -354,58 +373,62 @@ def create_refined_products_table():
     ])
 
 def create_quality_specs_table():
-    """Create the quality specs table."""
+    """Create the quality specs table matching the image exactly."""
     return html.Table(style={
         "width": "100%",
         "borderCollapse": "collapse",
-        "marginBottom": "15px",
-        "fontFamily": "Arial, sans-serif"
+        "border": "1px solid #ddd",
+        "fontSize": "12px",
+        "marginBottom": "10px"
     }, children=[
         html.Thead(html.Tr([
             html.Th("Gravity (API at 60F)", style={
-                "border": "1px solid #ddd",
-                "padding": "10px",
-                "backgroundColor": "#f5f5f5", 
-                "fontWeight": "bold",
                 "textAlign": "center",
+                "padding": "10px",
+                "border": "1px solid #ddd",
+                "backgroundColor": "#f5f5f5",
+                "fontWeight": "bold",
                 "fontSize": "12px"
             }),
             html.Th("Sulfur Content (% Wt)", style={
-                "border": "1px solid #ddd",
+                "textAlign": "center",
                 "padding": "10px",
+                "border": "1px solid #ddd",
                 "backgroundColor": "#f5f5f5",
                 "fontWeight": "bold",
-                "textAlign": "center",
                 "fontSize": "12px"
             }),
             html.Th("TAN (mg KOH/g)", style={
-                "border": "1px solid #ddd",
+                "textAlign": "center",
                 "padding": "10px",
+                "border": "1px solid #ddd",
                 "backgroundColor": "#f5f5f5",
                 "fontWeight": "bold",
-                "textAlign": "center", 
                 "fontSize": "12px"
             })
         ])),
         html.Tbody(html.Tr([
             html.Td("28.40", style={
-                "border": "1px solid #ddd",
-                "padding": "10px",
                 "textAlign": "center",
+                "padding": "10px",
+                "border": "1px solid #ddd",
+                "backgroundColor": "white",
                 "fontWeight": "bold",
                 "fontSize": "12px"
             }),
             html.Td("2.17", style={
-                "border": "1px solid #ddd", 
-                "padding": "10px",
                 "textAlign": "center",
+                "padding": "10px",
+                "border": "1px solid #ddd",
+                "backgroundColor": "white",
                 "fontWeight": "bold",
                 "fontSize": "12px"
             }),
             html.Td("0.48", style={
-                "border": "1px solid #ddd",
-                "padding": "10px",
                 "textAlign": "center",
+                "padding": "10px",
+                "border": "1px solid #ddd",
+                "backgroundColor": "white",
                 "fontWeight": "bold",
                 "fontSize": "12px"
             })
@@ -527,11 +550,13 @@ def create_layout():
             "borderBottom": "2px solid #f0f0f0",
             "paddingBottom": "15px"
         }, children=[
-            html.Div(style={"display": "flex", "alignItems": "center", "gap": "10px"}, children=[
-                html.Span("Select Crude:", style={
-                    "color": "#ff6600",
+            html.Div(style={"display": "block"}, children=[
+                html.Div("Select Crude:", style={
+                    "color": "#d65a00",
                     "fontWeight": "bold",
-                    "fontSize": "14px"
+                    "fontSize": "14px",
+                    "display": "block",
+                    "marginBottom": "5px"
                 }),
                 dcc.Dropdown(
                     id="crude-select",
@@ -539,103 +564,37 @@ def create_layout():
                     value="mars",
                     clearable=False,
                     style={
-                        "width": "200px",
-                        "fontSize": "13px"
+                        "width": "650px",
+                        "fontSize": "13px",
+                        "display": "block"
                     }
                 )
             ]),
             html.A(
                 "Click here to see the Crude's Profile",
-                href="#",
+                href="https://www.energyintel.com/wcod/crude-profile/Mars-Blend",
+                target="_blank",
                 style={
-                    "color": "#ff6600",
-                    "textDecoration": "none",
-                    "fontWeight": "bold",
-                    "fontSize": "13px"
+                    "color": "#d65a00",
+                    "textDecoration": "underline",
+                    "fontStyle": "italic",
+                    "fontSize": "13px",
+                    "fontWeight": "normal"
                 }
             )
         ]),
         
-        # Summary Section
+        # Quality Specs Section
         html.Div(style={
-            "display": "flex",
-            "justifyContent": "space-between",
-            "marginBottom": "25px",
-            "backgroundColor": "#f8f8f8",
-            "padding": "15px",
-            "borderRadius": "5px"
+            "marginBottom": "20px"
         }, children=[
-            html.Table(style={
-                "width": "70%",
-                "borderCollapse": "collapse"
-            }, children=[
-                html.Thead(html.Tr([
-                    html.Th("Alternate Crude Names", style={
-                        "backgroundColor": "#e8e8e8",
-                        "padding": "10px",
-                        "textAlign": "left",
-                        "border": "1px solid #ddd",
-                        "fontWeight": "bold",
-                        "fontSize": "12px"
-                    }),
-                    html.Th("Country", style={
-                        "backgroundColor": "#e8e8e8",
-                        "padding": "10px",
-                        "textAlign": "left", 
-                        "border": "1px solid #ddd",
-                        "fontWeight": "bold",
-                        "fontSize": "12px"
-                    }),
-                    html.Th("Assay Date", style={
-                        "backgroundColor": "#e8e8e8",
-                        "padding": "10px",
-                        "textAlign": "left",
-                        "border": "1px solid #ddd",
-                        "fontWeight": "bold",
-                        "fontSize": "12px"
-                    })
-                ])),
-                html.Tbody(html.Tr([
-                    html.Td("Mars Blend", style={
-                        "padding": "10px",
-                        "border": "1px solid #ddd",
-                        "backgroundColor": "white",
-                        "fontSize": "12px"
-                    }),
-                    html.Td("United States", style={
-                        "padding": "10px",
-                        "border": "1px solid #ddd", 
-                        "backgroundColor": "white",
-                        "fontSize": "12px"
-                    }),
-                    html.Td("2025", style={
-                        "padding": "10px",
-                        "border": "1px solid #ddd",
-                        "backgroundColor": "white",
-                        "fontSize": "12px"
-                    })
-                ]))
-            ]),
-            html.Div(style={
-                "background": "linear-gradient(135deg, #fff9e6, #ffedcc)",
-                "border": "1px solid #e6b800",
-                "padding": "15px 25px",
-                "borderRadius": "5px",
-                "textAlign": "center",
-                "minWidth": "150px"
-            }, children=[
-                html.Div("Carbon Intensity", style={
-                    "color": "#b38600",
-                    "fontWeight": "bold",
-                    "fontSize": "14px",
-                    "marginBottom": "5px"
-                }),
-                html.Div("Low", style={
-                    "color": "#805500", 
-                    "fontWeight": "bold",
-                    "fontSize": "16px"
-                })
-            ])
+            html.Div("Latest Quality Specs", style={
+                "color": "#d65a00",
+                "fontWeight": "bold",
+                "fontSize": "16px",
+                "marginBottom": "10px"
+            }),
+            create_quality_specs_table()
         ]),
         
         # Two Column Layout
@@ -648,21 +607,21 @@ def create_layout():
             # Left Column
             html.Div(children=[
                 html.Div("Mars Blend Assay", style={
-                    "color": "#ff6600",
+                    "color": "#d65a00",
                     "fontWeight": "bold",
                     "fontSize": "16px",
-                    "margin": "25px 0 10px 0",
-                    "borderBottom": "1px solid #ff6600",
+                    "margin": "20px 0 10px 0",
+                    "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
                 create_assay_table(),
                 
                 html.Div("Sellers and Producers", style={
-                    "color": "#ff6600",
+                    "color": "#d65a00",
                     "fontWeight": "bold", 
                     "fontSize": "16px",
                     "margin": "25px 0 10px 0",
-                    "borderBottom": "1px solid #ff6600",
+                    "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
                 create_producers_table(),
@@ -671,24 +630,25 @@ def create_layout():
                     style={
                         "fontSize": "11px",
                         "color": "#666",
-                        "marginTop": "6px",
+                        "marginTop": "10px",
                         "fontStyle": "italic"
                     }
                 ),
                 
                 html.Div("Production and Exports", style={
-                    "color": "#ff6600",
+                    "color": "#d65a00",
                     "fontWeight": "bold",
                     "fontSize": "16px", 
                     "margin": "25px 0 10px 0",
-                    "borderBottom": "1px solid #ff6600",
+                    "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
                 html.Div(style={
                     "border": "1px solid #ddd",
                     "padding": "15px",
-                    "borderRadius": "5px",
-                    "margin": "10px 0"
+                    "borderRadius": "4px",
+                    "margin": "10px 0",
+                    "backgroundColor": "white"
                 }, children=[
                     dcc.Graph(figure=production_fig, config={"displayModeBar": False})
                 ])
@@ -697,70 +657,56 @@ def create_layout():
             # Right Column
             html.Div(children=[
                 html.Div("Refined Products Breakdown & Properties", style={
-                    "color": "#ff6600",
+                    "color": "#d65a00",
                     "fontWeight": "bold",
                     "fontSize": "16px",
-                    "margin": "25px 0 10px 0", 
-                    "borderBottom": "1px solid #ff6600",
+                    "margin": "20px 0 10px 0", 
+                    "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
                 create_refined_products_table(),
                 
-                html.Div("Latest Quality Specs", style={
-                    "color": "#ff6600",
-                    "fontWeight": "bold",
-                    "fontSize": "16px",
-                    "margin": "25px 0 10px 0",
-                    "borderBottom": "1px solid #ff6600",
-                    "paddingBottom": "5px"
-                }),
-                html.Div(style={
-                    "border": "1px solid #ddd",
-                    "padding": "15px",
-                    "borderRadius": "5px",
-                    "marginBottom": "15px"
-                }, children=[
-                    create_quality_specs_table()
-                ]),
-                
                 html.Div("Loading Ports", style={
-                    "color": "#ff6600",
+                    "color": "#d65a00",
                     "fontWeight": "bold",
                     "fontSize": "16px",
                     "margin": "25px 0 10px 0",
-                    "borderBottom": "1px solid #ff6600", 
+                    "borderBottom": "2px solid #d65a00", 
                     "paddingBottom": "5px"
                 }),
                 html.Div(style={
                     "border": "1px solid #ddd",
                     "padding": "15px",
-                    "borderRadius": "5px",
+                    "borderRadius": "4px",
                     "margin": "10px 0",
-                    "height": "300px"
+                    "backgroundColor": "white",
+                    "minHeight": "300px"
                 }, children=[
                     dcc.Graph(figure=map_fig, config={"displayModeBar": False}),
                     html.Div("© 2025 Mapbox © OpenStreetMap", style={
                         "fontSize": "10px",
                         "color": "#999",
-                        "margin": "5px 0"
+                        "marginTop": "10px",
+                        "textAlign": "center"
                     }),
                     html.Div(
                         "Inland points represent terminals for pipeline-delivered crudes.",
                         style={
                             "fontSize": "11px",
                             "color": "#666", 
-                            "marginTop": "6px",
-                            "fontStyle": "italic"
+                            "marginTop": "8px",
+                            "fontStyle": "italic",
+                            "textAlign": "center"
                         }
                     )
                 ]),
                 
                 html.Div("Port Details", style={
-                    "color": "#ff6600",
+                    "color": "#d65a00",
                     "fontWeight": "bold",
                     "fontSize": "16px",
                     "margin": "25px 0 10px 0",
-                    "borderBottom": "1px solid #ff6600",
+                    "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
                 create_port_details_table()
@@ -769,36 +715,15 @@ def create_layout():
     ])
 
 # ------------------------------------------------------------------------------
-# CALLBACKS
-# ------------------------------------------------------------------------------
-def register_callbacks(dash_app):
-    """Register callbacks for the dashboard."""
-    
-    @dash_app.callback(
-        Output("crude-select", "value"),
-        Input("crude-select", "value")
-    )
-    def keep_value(value):
-        """Keep the current value."""
-        return value
-
-# ------------------------------------------------------------------------------
 # DASH APP CREATION
 # ------------------------------------------------------------------------------
-def create_crude_profile_dashboard(server, url_base_pathname="/dash/crude-profile/"):
+def create_crude_profile_dashboard():
     """Create and configure the crude profile dashboard."""
-    from app import create_dash_app
-    dash_app = create_dash_app(server, url_base_pathname)
-    dash_app.layout = create_layout()
-    register_callbacks(dash_app)
-    return dash_app
+    app = Dash(__name__)
+    app.layout = create_layout()
+    return app
 
 # For standalone testing
 if __name__ == "__main__":
-    # This allows testing the layout directly
-    app = create_dash_app(__name__, "/")
-    app.layout = create_layout()
-    register_callbacks(app)
-    
-    if __name__ == "__main__":
-        app.run_server(debug=True)
+    app = create_crude_profile_dashboard()
+    app.run_server(debug=True, port=8050)
