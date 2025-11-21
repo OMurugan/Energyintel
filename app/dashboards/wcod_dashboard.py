@@ -590,16 +590,24 @@ def create_wcod_dashboard(server, url_base_pathname):
                                 'borderRadius': '4px',
                                 'fontSize': '14px',
                                 'fontWeight': '600',
-                                'margin': '0 1rem',
                                 'cursor': 'pointer'
                             }
                         ),
                         html.Div([
-                            html.Span("👤", style={'fontSize': '20px'})
-                        ], style={'marginLeft': '1rem', 'cursor': 'pointer'})
+                            html.Img(
+                                src="/assets/images/user_icon.jpeg",
+                                style={
+                                    'width': '36px',
+                                    'height': '42px',
+                                    'borderRadius': '50%',
+                                    'objectFit': 'cover',
+                                    'cursor': 'pointer'
+                                }
+                            )
+                        ], style={'marginLeft': '1rem', 'cursor': 'pointer', 'display': 'flex', 'alignItems': 'center'})
                     ], className="header-menu", style={'display': 'flex', 'alignItems': 'center', 'marginLeft': 'auto'})
-                ], style={'display': 'flex', 'alignItems': 'center', 'width': '100%', 'maxWidth': '1400px', 'margin': '0 auto', 'padding': '1rem 40px'})
-            ], className="top-header", style={'background': '#ffffff', 'borderBottom': '1px solid #e0e0e0', 'padding': '0'}),
+                ], style={'display': 'flex', 'alignItems': 'center', 'width': '100%', 'maxWidth': '1400px', 'margin': '0 auto', 'padding': '1rem 22px'})
+            ], className="top-header", style={'background': '#ffffff', 'borderBottom': '1px solid #e0e0e0', 'padding': '4px'}),
             
             # Secondary Navigation Bar - Dark Blue
             html.Nav([
@@ -674,6 +682,12 @@ def create_wcod_dashboard(server, url_base_pathname):
                 html.Div([
                     html.Div([
                         html.Div([
+                            html.A("Country", href="/wcod/", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
+                            html.A("Crude", href="/crude-overview", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
+                            html.A("Trade", href="/trade/imports-country-detail", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
                             html.A("Prices", href="/prices/global-crude-prices", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
                             html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
                             html.A("Upstream Projects", href="/upstream-projects/projects-by-country", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
@@ -699,12 +713,11 @@ def create_wcod_dashboard(server, url_base_pathname):
                         'display': 'flex',
                         'alignItems': 'center',
                         'justifyContent': 'space-between',
-                        'maxWidth': '1200px',
-                        'margin': '0 auto'
+                        'maxWidth': '1320px',
                     })
                 ], style={
                     'background': '#2c3e50',
-                    'padding': '15px 40px',
+                    'padding': '15px 10px',
                     'position': 'relative',
                     'zIndex': '1',
                     'top': '31px'
