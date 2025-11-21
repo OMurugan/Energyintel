@@ -1,0 +1,44 @@
+,,,,Source: Energy Intelligence
+,,,,"COPYRIGHT © 2001-2025 ENERGY INTELLIGENCE GROUP, INC. / ENERGY INTELLIGENCE GROUP (UK) LIMITED."
+Product,Cut Points (ºC),Property,Unit,Value
+Heavy Gasoil,300-350, ,Yield Volume (%),7.80
+,,,Yield Weight (%),7.74
+, ,Pour Point,Temp. C,-6.83
+,,Sulfur Content,% Wt,1.57
+Heavy Naphtha,100-150, ,Yield Volume (%),8.44
+,,,Yield Weight (%),7.18
+, ,Aromatics,% Wt,9.07
+,,Naphthenes,% Wt,33.13
+,,Paraffins,% Wt,57.80
+Heavy Residue,>370, ,Yield Volume (%),47.77
+,,,Yield Weight (%),53.54
+, ,Nickel,ppm,41.34
+,,Pour Point,Temp. C,26.64
+,,Sulfur Content,% Wt,3.57
+,,Vanadium,ppm,116.23
+Int. Gasoil,250-300, ,Yield Volume (%),7.92
+,,,Yield Weight (%),7.60
+, ,Cetane Index, ,51.28
+,,Cloud Point,Temp. C,-25.53
+,,Sulfur Content,% Wt,0.92
+Int. Naphtha,65-100, ,Yield Volume (%),4.99
+,,,Yield Weight (%),3.98
+, ,Aromatics,% Wt,1.47
+,,Naphthenes,% Wt,26.11
+,,Paraffins,% Wt,72.42
+Kerosene,150-200, ,Yield Volume (%),6.44
+,,,Yield Weight (%),5.73
+, ,Freeze Point,Temp. C,-63.90
+,,Smoke Point,mm,23.20
+Light Gasoil,200-250, ,Yield Volume (%),7.38
+,,,Yield Weight (%),6.83
+, ,Cetane Index, ,46.98
+,,Pour Point,Temp. C,-54.20
+Light Naphtha,C5-65, ,Yield Volume (%),4.36
+,,,Yield Weight (%),3.19
+, ,Octane,RON clear,77.62
+Light Residue,350-370, ,Yield Volume (%),2.89
+,,,Yield Weight (%),2.93
+, ,Viscosity,cSt at 50 C,8.95
+LPG,<C5, ,Yield Volume (%),2.01
+,,,Yield Weight (%),1.28
