@@ -26,61 +26,61 @@ ASSAY_DATA = [
 
 REFINED_PRODUCTS = [
     ("Heavy Gasoil", "300-350", [
-        ("", "", "Yield Volume (%)", "7.80"),
-        ("", "", "Yield Weight (%)", "7.74"),
-        ("", "", "Pour Point", "Temp. C", "-6.83"),
-        ("", "", "Sulfur Content", "% Wt", "1.57"),
+        ("Yield Volume", "%", "7.80"),
+        ("Yield Weight", "%", "7.74"),
+        ("Pour Point", "Temp. C", "-6.83"),
+        ("Sulfur Content", "% Wt", "1.57"),
     ]),
     ("Heavy Naphtha", "100-150", [
-        ("", "", "Yield Volume (%)", "8.44"),
-        ("", "", "Yield Weight (%)", "7.18"),
-        ("", "", "Aromatics", "% Wt", "9.07"),
-        ("", "", "Naphthenes", "% Wt", "53.13"),
-        ("", "", "Paraffins", "% Wt", "37.80"),
+        ("Yield Volume", "%", "8.44"),
+        ("Yield Weight", "%", "7.18"),
+        ("Aromatics", "% Wt", "9.07"),
+        ("Naphthenes", "% Wt", "53.13"),
+        ("Paraffins", "% Wt", "37.80"),
     ]),
     ("Heavy Residue", ">370", [
-        ("", "", "Yield Volume (%)", "47.77"),
-        ("", "", "Yield Weight (%)", "53.54"),
-        ("", "", "Nickel", "ppm", "41.34"),
-        ("", "", "Pour Point", "Temp. C", "26.64"),
-        ("", "", "Sulfur Content", "% Wt", "3.57"),
-        ("", "", "Vanadium", "ppm", "116.29"),
+        ("Yield Volume", "%", "47.77"),
+        ("Yield Weight", "%", "53.54"),
+        ("Nickel", "ppm", "41.34"),
+        ("Pour Point", "Temp. C", "26.64"),
+        ("Sulfur Content", "% Wt", "3.57"),
+        ("Vanadium", "ppm", "116.29"),
     ]),
     ("Int. Gasoil", "250-300", [
-        ("", "", "Yield Volume (%)", "7.92"),
-        ("", "", "Yield Weight (%)", "7.70"),
-        ("", "", "Cetane Index", "", "51.28"),
-        ("", "", "Cloud Point", "Temp. C", "-25.53"),
-        ("", "", "Sulfur Content", "% Wt", "0.92"),
+        ("Yield Volume", "%", "7.92"),
+        ("Yield Weight", "%", "7.70"),
+        ("Cetane Index", "", "51.28"),
+        ("Cloud Point", "Temp. C", "-25.53"),
+        ("Sulfur Content", "% Wt", "0.92"),
     ]),
     ("Int. Naphtha", "65-100", [
-        ("", "", "Yield Volume (%)", "4.99"),
-        ("", "", "Yield Weight (%)", "3.98"),
-        ("", "", "Aromatics", "% Wt", "1.47"),
-        ("", "", "Naphthenes", "% Wt", "26.11"),
-        ("", "", "Paraffins", "% Wt", "72.42"),
+        ("Yield Volume", "%", "4.99"),
+        ("Yield Weight", "%", "3.98"),
+        ("Aromatics", "% Wt", "1.47"),
+        ("Naphthenes", "% Wt", "26.11"),
+        ("Paraffins", "% Wt", "72.42"),
     ]),
     ("Kerosene", "150-200", [
-        ("", "", "Yield Volume (%)", "6.44"),
-        ("", "", "Yield Weight (%)", "5.73"),
-        ("", "", "Freeze Point", "Temp. C", "-53.90"),
-        ("", "", "Smoke Point", "mm", "23.20"),
+        ("Yield Volume", "%", "6.44"),
+        ("Yield Weight", "%", "5.73"),
+        ("Freeze Point", "Temp. C", "-53.90"),
+        ("Smoke Point", "mm", "23.20"),
     ]),
     ("Light Gasoil", "200-250", [
-        ("", "", "Yield Volume (%)", "7.38"),
-        ("", "", "Yield Weight (%)", "6.63"),
-        ("", "", "Cetane Index", "", "46.98"),
-        ("", "", "Pour Point", "Temp. C", "-54.20"),
+        ("Yield Volume", "%", "7.38"),
+        ("Yield Weight", "%", "6.63"),
+        ("Cetane Index", "", "46.98"),
+        ("Pour Point", "Temp. C", "-54.20"),
     ]),
     ("Light Naphtha", "C5-65", [
-        ("", "", "Yield Volume (%)", "4.36"),
-        ("", "", "Yield Weight (%)", "3.19"),
-        ("", "", "Octane", "RON clear", "77.62"),
+        ("Yield Volume", "%", "4.36"),
+        ("Yield Weight", "%", "3.19"),
+        ("Octane", "RON clear", "77.62"),
     ]),
     ("Residue", "350-370", [
-        ("", "", "Yield Volume (%)", "2.93"),
-        ("", "", "Yield Weight (%)", "2.93"),
-        ("", "", "Viscosity", "cSt at 50 C", "6.95"),
+        ("Yield Volume", "%", "2.93"),
+        ("Yield Weight", "%", "2.93"),
+        ("Viscosity", "cSt at 50 C", "6.95"),
     ])
 ]
 
@@ -111,7 +111,6 @@ def create_production_chart():
     """Create production and exports bar chart matching the image design."""
     fig = go.Figure()
     
-    # Sample data for the chart
     years = ['2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013', '2014', 
              '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024']
     
@@ -162,10 +161,9 @@ def create_map_chart():
     """Create loading ports map matching the image."""
     fig = go.Figure()
     
-    # Add a simple scatter plot for the map location
-    fig.add_trace(go.Scatter(
-        x=[-90.5, -90.4, -90.3],
-        y=[28.5, 29.0, 29.5],
+    fig.add_trace(go.Scattergeo(
+        lon=[-90.0715],
+        lat=[29.1175],
         mode='markers',
         marker=dict(
             size=20,
@@ -177,12 +175,14 @@ def create_map_chart():
     ))
     
     fig.update_layout(
+        geo=dict(
+            scope='north america',
+            showland=True,
+            landcolor='rgb(243, 243, 243)',
+            countrycolor='rgb(204, 204, 204)',
+        ),
         height=250,
         margin=dict(l=10, r=10, t=10, b=10),
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        plot_bgcolor='white',
-        paper_bgcolor='white'
     )
     
     return fig
@@ -193,10 +193,10 @@ def create_assay_table():
     for row in ASSAY_DATA:
         rows.append(html.Tr([
             html.Td(row["Property"], style={
-                "fontWeight": "bold" if row["Property"] else "normal",
                 "border": "1px solid #ddd",
                 "padding": "6px 8px",
-                "fontSize": "12px"
+                "fontSize": "12px",
+                "fontWeight": "bold" if row["Property"] else "normal"
             }),
             html.Td(row["Unit"], style={
                 "border": "1px solid #ddd", 
@@ -213,7 +213,8 @@ def create_assay_table():
     return html.Table(style={
         "width": "100%", 
         "borderCollapse": "collapse",
-        "marginBottom": "15px"
+        "marginBottom": "15px",
+        "fontFamily": "Arial, sans-serif"
     }, children=[
         html.Thead(html.Tr([
             html.Th("Property", style={
@@ -279,11 +280,6 @@ def create_refined_products_table():
                         "border": "1px solid #ddd",
                         "padding": "6px 8px",
                         "fontSize": "11px"
-                    }),
-                    html.Td(prop[3], style={
-                        "border": "1px solid #ddd",
-                        "padding": "6px 8px",
-                        "fontSize": "11px"
                     })
                 ]))
                 first_row = False
@@ -303,18 +299,14 @@ def create_refined_products_table():
                         "border": "1px solid #ddd",
                         "padding": "6px 8px", 
                         "fontSize": "11px"
-                    }),
-                    html.Td(prop[3], style={
-                        "border": "1px solid #ddd",
-                        "padding": "6px 8px",
-                        "fontSize": "11px"
                     })
                 ]))
     
     return html.Table(style={
         "width": "100%",
         "borderCollapse": "collapse",
-        "marginBottom": "15px"
+        "marginBottom": "15px",
+        "fontFamily": "Arial, sans-serif"
     }, children=[
         html.Thead(html.Tr([
             html.Th("Product", style={
@@ -333,20 +325,12 @@ def create_refined_products_table():
                 "textAlign": "left",
                 "fontSize": "11px"
             }),
-            html.Th("", style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "textAlign": "left",
-                "fontSize": "11px"
-            }),
             html.Th("Property", style={
                 "border": "1px solid #ddd",
                 "padding": "8px 10px",
                 "backgroundColor": "#f5f5f5",
                 "fontWeight": "bold",
-                "textAlign": "left", 
+                "textAlign": "left",
                 "fontSize": "11px"
             }),
             html.Th("Unit", style={
@@ -354,7 +338,7 @@ def create_refined_products_table():
                 "padding": "8px 10px",
                 "backgroundColor": "#f5f5f5",
                 "fontWeight": "bold",
-                "textAlign": "left",
+                "textAlign": "left", 
                 "fontSize": "11px"
             }),
             html.Th("Value", style={
@@ -374,7 +358,8 @@ def create_quality_specs_table():
     return html.Table(style={
         "width": "100%",
         "borderCollapse": "collapse",
-        "marginBottom": "15px"
+        "marginBottom": "15px",
+        "fontFamily": "Arial, sans-serif"
     }, children=[
         html.Thead(html.Tr([
             html.Th("Gravity (API at 60F)", style={
@@ -432,7 +417,8 @@ def create_producers_table():
     return html.Table(style={
         "width": "100%",
         "borderCollapse": "collapse",
-        "marginBottom": "10px"
+        "marginBottom": "10px",
+        "fontFamily": "Arial, sans-serif"
     }, children=[
         html.Thead(html.Tr([
             html.Th("Producers", style={
@@ -489,7 +475,8 @@ def create_port_details_table():
     return html.Table(style={
         "width": "100%",
         "borderCollapse": "collapse",
-        "marginBottom": "15px"
+        "marginBottom": "15px",
+        "fontFamily": "Arial, sans-serif"
     }, children=[
         html.Thead(html.Tr([
             html.Th("Measure", style={
@@ -588,38 +575,44 @@ def create_layout():
                         "padding": "10px",
                         "textAlign": "left",
                         "border": "1px solid #ddd",
-                        "fontWeight": "bold"
+                        "fontWeight": "bold",
+                        "fontSize": "12px"
                     }),
                     html.Th("Country", style={
                         "backgroundColor": "#e8e8e8",
                         "padding": "10px",
                         "textAlign": "left", 
                         "border": "1px solid #ddd",
-                        "fontWeight": "bold"
+                        "fontWeight": "bold",
+                        "fontSize": "12px"
                     }),
                     html.Th("Assay Date", style={
                         "backgroundColor": "#e8e8e8",
                         "padding": "10px",
                         "textAlign": "left",
                         "border": "1px solid #ddd",
-                        "fontWeight": "bold"
+                        "fontWeight": "bold",
+                        "fontSize": "12px"
                     })
                 ])),
                 html.Tbody(html.Tr([
                     html.Td("Mars Blend", style={
                         "padding": "10px",
                         "border": "1px solid #ddd",
-                        "backgroundColor": "white"
+                        "backgroundColor": "white",
+                        "fontSize": "12px"
                     }),
                     html.Td("United States", style={
                         "padding": "10px",
                         "border": "1px solid #ddd", 
-                        "backgroundColor": "white"
+                        "backgroundColor": "white",
+                        "fontSize": "12px"
                     }),
                     html.Td("2025", style={
                         "padding": "10px",
                         "border": "1px solid #ddd",
-                        "backgroundColor": "white"
+                        "backgroundColor": "white",
+                        "fontSize": "12px"
                     })
                 ]))
             ]),
