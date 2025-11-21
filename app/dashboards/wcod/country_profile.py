@@ -9,7 +9,9 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 import os
+from datetime import datetime
 from app import create_dash_app
+from app.database import execute_query
 
 # CSV paths
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Country_Profile')
@@ -18,205 +20,215 @@ MONTHLY_PRODUCTION_CSV = os.path.join(DATA_DIR, 'Monthly_Production.csv')
 PORT_DETAIL_CSV = os.path.join(DATA_DIR, 'Port-Detail_data.csv')
 KEY_FIGURES_CSV = os.path.join(DATA_DIR, 'Key Figures_data.csv')
 
-# Load CSV data
+# Load map data from database
 try:
-    map_df = pd.read_csv(MAP_CSV)
-    map_df.columns = map_df.columns.str.strip()
+    # Query map data from database (schema is set in connection, so don't include it in query)
+    map_query = """
+    SELECT
+        A."country_id",
+        A."country_long_name",
+        CASE
+            WHEN A."country_long_name" = 'Abu Dhabi' THEN 'https://www.energyintel.com/wcod/country-profile/abu-dhabi'
+            WHEN A."country_long_name" = 'Algeria' THEN 'https://www.energyintel.com/wcod/country-profile/algeria'
+            WHEN A."country_long_name" = 'Angola' THEN 'https://www.energyintel.com/wcod/country-profile/angola'
+            WHEN A."country_long_name" = 'Argentina' THEN 'https://www.energyintel.com/wcod/country-profile/argentina'
+            WHEN A."country_long_name" = 'Australia' THEN 'https://www.energyintel.com/wcod/country-profile/australia'
+            WHEN A."country_long_name" = 'Azerbaijan' THEN 'https://www.energyintel.com/wcod/country-profile/azerbaijan'
+            WHEN A."country_long_name" = 'Brazil' THEN 'https://www.energyintel.com/wcod/country-profile/brazil'
+            WHEN A."country_long_name" = 'Brunei' THEN 'https://www.energyintel.com/wcod/country-profile/brunei'
+            WHEN A."country_long_name" = 'Canada' THEN 'https://www.energyintel.com/wcod/country-profile/canada'
+            WHEN A."country_long_name" = 'Chad' THEN 'https://www.energyintel.com/wcod/country-profile/chad'
+            WHEN A."country_long_name" = 'China' THEN 'https://www.energyintel.com/wcod/country-profile/china'
+            WHEN A."country_long_name" = 'Colombia' THEN 'https://www.energyintel.com/wcod/country-profile/colombia'
+            WHEN A."country_long_name" = 'Congo (Brazzaville)' THEN 'https://www.energyintel.com/wcod/country-profile/republic-of-the-congo'
+            WHEN A."country_long_name" = 'Denmark' THEN 'https://www.energyintel.com/wcod/country-profile/denmark'
+            WHEN A."country_long_name" = 'Dubai' THEN 'https://www.energyintel.com/wcod/country-profile/dubai'
+            WHEN A."country_long_name" = 'Ecuador' THEN 'https://www.energyintel.com/wcod/country-profile/ecuador'
+            WHEN A."country_long_name" = 'Egypt' THEN 'https://www.energyintel.com/wcod/country-profile/egypt'
+            WHEN A."country_long_name" = 'Equatorial Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/equatorial-guinea'
+            WHEN A."country_long_name" = 'Gabon' THEN 'https://www.energyintel.com/wcod/country-profile/gabon'
+            WHEN A."country_long_name" = 'Ghana' THEN 'https://www.energyintel.com/wcod/country-profile/ghana'
+            WHEN A."country_long_name" = 'Guyana' THEN 'https://www.energyintel.com/wcod/country-profile/guyana'
+            WHEN A."country_long_name" = 'Indonesia' THEN 'https://www.energyintel.com/wcod/country-profile/indonesia'
+            WHEN A."country_long_name" = 'Iran' THEN 'https://www.energyintel.com/wcod/country-profile/iran'
+            WHEN A."country_long_name" = 'Iraq' THEN 'https://www.energyintel.com/wcod/country-profile/iraq'
+            WHEN A."country_long_name" = 'Kazakhstan' THEN 'https://www.energyintel.com/wcod/country-profile/kazakhstan'
+            WHEN A."country_long_name" = 'Kuwait' THEN 'https://www.energyintel.com/wcod/country-profile/kuwait'
+            WHEN A."country_long_name" = 'Libya' THEN 'https://www.energyintel.com/wcod/country-profile/libya'
+            WHEN A."country_long_name" = 'Malaysia' THEN 'https://www.energyintel.com/wcod/country-profile/malaysia'
+            WHEN A."country_long_name" = 'Mexico' THEN 'https://www.energyintel.com/wcod/country-profile/mexico'
+            WHEN A."country_long_name" = 'Neutral Zone' THEN 'https://www.energyintel.com/wcod/country-profile/neutral-zone'
+            WHEN A."country_long_name" = 'Nigeria' THEN 'https://www.energyintel.com/wcod/country-profile/nigeria'
+            WHEN A."country_long_name" = 'Norway' THEN 'https://www.energyintel.com/wcod/country-profile/norway'
+            WHEN A."country_long_name" = 'Oman' THEN 'https://www.energyintel.com/wcod/country-profile/oman'
+            WHEN A."country_long_name" = 'Papua New Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/papua-new-guinea'
+            WHEN A."country_long_name" = 'Qatar' THEN 'https://www.energyintel.com/wcod/country-profile/qatar'
+            WHEN A."country_long_name" = 'Russia' THEN 'https://www.energyintel.com/wcod/country-profile/russia'
+            WHEN A."country_long_name" = 'Saudi Arabia' THEN 'https://www.energyintel.com/wcod/country-profile/saudi-arabia'
+            WHEN A."country_long_name" = 'South Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/south-sudan'
+            WHEN A."country_long_name" = 'Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/sudan'
+            WHEN A."country_long_name" = 'Syria' THEN 'https://www.energyintel.com/wcod/country-profile/syria'
+            WHEN A."country_long_name" = 'Turkmenistan' THEN 'https://www.energyintel.com/wcod/country-profile/turkmenistan'
+            WHEN A."country_long_name" = 'United Kingdom' THEN 'https://www.energyintel.com/wcod/country-profile/united-kingdom'
+            WHEN A."country_long_name" = 'United States' THEN 'https://www.energyintel.com/wcod/country-profile/united-states'
+            WHEN A."country_long_name" = 'Venezuela' THEN 'https://www.energyintel.com/wcod/country-profile/venezuela'
+            WHEN A."country_long_name" = 'Vietnam' THEN 'https://www.energyintel.com/wcod/country-profile/vietnam'
+            WHEN A."country_long_name" = 'Yemen' THEN 'https://www.energyintel.com/wcod/country-profile/yemen'
+            ELSE NULL
+        END AS profile_url,
+        P."port_name",
+        P."latitude",
+        P."longitude",
+        P."coordinates",
+        P."measure_name",
+        P."value",
+        A."yr",
+        A."output",
+        A."exports",
+        A."reserves"
+    FROM fact_wcod_country A
+    FULL JOIN fact_wcod_port P
+        ON P."country_id" = A."country_id"
+    WHERE A."country_long_name" IS NOT NULL
+      AND A."to_be_deleted" IS NULL
+    """
     
-    # Handle duplicate column names - pandas adds .1, .2 etc. for duplicates
-    # Find the country_long_name column that has actual data (not empty)
-    country_cols = [col for col in map_df.columns if 'country_long_name' in col]
-    if len(country_cols) > 1:
-        # Use the column that has the MOST non-null/non-empty values
-        data_col = None
-        max_non_empty = 0
-        for col in sorted(country_cols):  # Check in order
-            if col in map_df.columns:
-                # Check if column has non-empty values (not just 'nan' strings)
-                col_values = map_df[col].astype(str).str.strip()
-                non_empty = col_values[~col_values.isin(['', 'nan', 'None', 'NaN'])]
-                non_empty_count = len(non_empty)
-                # Use the column with the most non-empty values
-                if non_empty_count > max_non_empty:
-                    max_non_empty = non_empty_count
-                    data_col = col
+    # Execute query and convert to DataFrame
+    map_results = execute_query(map_query)
+    map_df = pd.DataFrame(map_results)
+    
+    if not map_df.empty:
+        # Clean and standardize column names
+        map_df.columns = map_df.columns.str.strip()
         
-        # If we found a column with data, use it
-        if data_col:
-            map_df['country_long_name'] = map_df[data_col].astype(str).str.strip()
-            # Drop duplicate columns
-            for dup_col in country_cols:
-                if dup_col != 'country_long_name' and dup_col in map_df.columns:
-                    map_df = map_df.drop(columns=[dup_col])
-        else:
-            # If no data found, use the first one
-            map_df['country_long_name'] = map_df[country_cols[0]].astype(str).str.strip()
-    elif 'country_long_name' in map_df.columns:
-        map_df['country_long_name'] = map_df['country_long_name'].astype(str).str.strip()
-    
-    # Get unique countries from map data for dropdown
-    if not map_df.empty and 'country_long_name' in map_df.columns:
-        country_list = sorted(map_df['country_long_name'].dropna().unique().tolist())
-        country_list = [str(c).strip() for c in country_list if c and str(c).strip() and str(c).strip() != 'nan']  # Remove empty strings and NaN
-        # Set default to United States
-        default_country = 'United States' if 'United States' in country_list else (country_list[0] if country_list else None)
+        # Rename port_name to Port Name for compatibility with existing code
+        if 'port_name' in map_df.columns:
+            map_df['Port Name'] = map_df['port_name'].astype(str).str.strip()
+        
+        # Ensure country_long_name is properly formatted
+        if 'country_long_name' in map_df.columns:
+            map_df['country_long_name'] = map_df['country_long_name'].astype(str).str.strip()
+        
+        print(f"Loaded map data with {len(map_df)} records from database")
     else:
-        country_list = []
-        default_country = None
+        map_df = pd.DataFrame()
+        print("Warning: No map data loaded from database")
+        
 except Exception as e:
-    print(f"Error loading map data: {e}")
+    print(f"Error loading map data from database: {e}")
     import traceback
     traceback.print_exc()
     map_df = pd.DataFrame()
-    country_list = []
-    default_country = None
 
+# Initialize country list - will be populated from database
+country_list = []
+default_country = None
+
+# Load production data from database
 try:
-    # The CSV has nested headers: Row 1 = "Date" repeated, Row 2 = Years, Row 3 = "Crude", "Monthly production dynamic title", then months
-    # Try different encodings and separators
-    header_df = None
-    data_df = None
+    # Query production data from database
+    query = """
+    SELECT 
+        "t_wcod_monthly_stream_production"."added_by" AS added_by,
+        "t_wcod_monthly_stream_production"."commodity" AS commodity,
+        "t_wcod_monthly_stream_production"."commodity_id" AS commodity_id,
+        "t_wcod_monthly_stream_production"."country" AS country,
+        (CASE 
+            WHEN "country" = 'Abu Dhabi' THEN 'https://www.energyintel.com/wcod/country-profile/abu-dhabi'
+            WHEN "country" = 'Algeria' THEN 'https://www.energyintel.com/wcod/country-profile/algeria'
+            WHEN "country" = 'Angola' THEN 'https://www.energyintel.com/wcod/country-profile/angola'
+            WHEN "country" = 'Argentina' THEN 'https://www.energyintel.com/wcod/country-profile/argentina'
+            WHEN "country" = 'Australia' THEN 'https://www.energyintel.com/wcod/country-profile/australia'
+            WHEN "country" = 'Azerbaijan' THEN 'https://www.energyintel.com/wcod/country-profile/azerbaijan'
+            WHEN "country" = 'Brazil' THEN 'https://www.energyintel.com/wcod/country-profile/brazil'
+            WHEN "country" = 'Brunei' THEN 'https://www.energyintel.com/wcod/country-profile/brunei'
+            WHEN "country" = 'Canada' THEN 'https://www.energyintel.com/wcod/country-profile/canada'
+            WHEN "country" = 'Chad' THEN 'https://www.energyintel.com/wcod/country-profile/chad'
+            WHEN "country" = 'China' THEN 'https://www.energyintel.com/wcod/country-profile/china'
+            WHEN "country" = 'Colombia' THEN 'https://www.energyintel.com/wcod/country-profile/colombia'
+            WHEN "country" = 'Congo (Brazzaville)' THEN 'https://www.energyintel.com/wcod/country-profile/republic-of-the-congo'
+            WHEN "country" = 'Denmark' THEN 'https://www.energyintel.com/wcod/country-profile/denmark'
+            WHEN "country" = 'Dubai' THEN 'https://www.energyintel.com/wcod/country-profile/dubai'
+            WHEN "country" = 'Ecuador' THEN 'https://www.energyintel.com/wcod/country-profile/ecuador'
+            WHEN "country" = 'Egypt' THEN 'https://www.energyintel.com/wcod/country-profile/egypt'
+            WHEN "country" = 'Equatorial Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/equatorial-guinea'
+            WHEN "country" = 'Gabon' THEN 'https://www.energyintel.com/wcod/country-profile/gabon'
+            WHEN "country" = 'Ghana' THEN 'https://www.energyintel.com/wcod/country-profile/ghana'
+            WHEN "country" = 'Guyana' THEN 'https://www.energyintel.com/wcod/country-profile/guyana'
+            WHEN "country" = 'Indonesia' THEN 'https://www.energyintel.com/wcod/country-profile/indonesia'
+            WHEN "country" = 'Iran' THEN 'https://www.energyintel.com/wcod/country-profile/iran'
+            WHEN "country" = 'Iraq' THEN 'https://www.energyintel.com/wcod/country-profile/iraq'
+            WHEN "country" = 'Kazakhstan' THEN 'https://www.energyintel.com/wcod/country-profile/kazakhstan'
+            WHEN "country" = 'Kuwait' THEN 'https://www.energyintel.com/wcod/country-profile/kuwait'
+            WHEN "country" = 'Libya' THEN 'https://www.energyintel.com/wcod/country-profile/libya'
+            WHEN "country" = 'Malaysia' THEN 'https://www.energyintel.com/wcod/country-profile/malaysia'
+            WHEN "country" = 'Mexico' THEN 'https://www.energyintel.com/wcod/country-profile/mexico'
+            WHEN "country" = 'Neutral Zone' THEN 'https://www.energyintel.com/wcod/country-profile/neutral-zone'
+            WHEN "country" = 'Nigeria' THEN 'https://www.energyintel.com/wcod/country-profile/nigeria'
+            WHEN "country" = 'Norway' THEN 'https://www.energyintel.com/wcod/country-profile/norway'
+            WHEN "country" = 'Oman' THEN 'https://www.energyintel.com/wcod/country-profile/oman'
+            WHEN "country" = 'Papua New Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/papua-new-guinea'
+            WHEN "country" = 'Qatar' THEN 'https://www.energyintel.com/wcod/country-profile/qatar'
+            WHEN "country" = 'Russia' THEN 'https://www.energyintel.com/wcod/country-profile/russia'
+            WHEN "country" = 'Saudi Arabia' THEN 'https://www.energyintel.com/wcod/country-profile/saudi-arabia'
+            WHEN "country" = 'South Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/south-sudan'
+            WHEN "country" = 'Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/sudan'
+            WHEN "country" = 'Syria' THEN 'https://www.energyintel.com/wcod/country-profile/syria'
+            WHEN "country" = 'Turkmenistan' THEN 'https://www.energyintel.com/wcod/country-profile/turkmenistan'
+            WHEN "country" = 'United Kingdom' THEN 'https://www.energyintel.com/wcod/country-profile/united-kingdom'
+            WHEN "country" = 'United States' THEN 'https://www.energyintel.com/wcod/country-profile/united-states'
+            WHEN "country" = 'Venezuela' THEN 'https://www.energyintel.com/wcod/country-profile/venezuela'
+            WHEN "country" = 'Vietnam' THEN 'https://www.energyintel.com/wcod/country-profile/vietnam'
+            WHEN "country" = 'Yemen' THEN 'https://www.energyintel.com/wcod/country-profile/yemen'
+            ELSE NULL
+        END) AS profile_url,
+        "t_wcod_monthly_stream_production"."country_id" AS country_id,
+        "t_wcod_monthly_stream_production"."date" AS date,
+        "t_wcod_monthly_stream_production"."date_added" AS date_added,
+        "t_wcod_monthly_stream_production"."date_modified" AS date_modified,
+        "t_wcod_monthly_stream_production"."is_forecast" AS is_forecast,
+        "t_wcod_monthly_stream_production"."modified_by" AS modified_by,
+        "t_wcod_monthly_stream_production"."record_id" AS record_id,
+        "t_wcod_monthly_stream_production"."stream_name" AS stream_name,
+        "t_wcod_monthly_stream_production"."unit" AS unit,
+        "t_wcod_monthly_stream_production"."value" AS value
+    FROM "dev"."t_wcod_monthly_stream_production"
+    """
     
-    # Try different combinations of encoding and separator
-    # UTF-16 with BOM is common for Excel exports
-    encodings = ['utf-16', 'utf-16-le', 'utf-16-be', 'utf-8-sig', 'utf-8', 'latin-1']
-    separators = ['\t', ',', ';']
+    # Execute query and convert to DataFrame
+    results = execute_query(query)
+    monthly_prod_df = pd.DataFrame(results)
     
-    for encoding in encodings:
-        for sep in separators:
-            try:
-                # Read first 3 rows to understand structure
-                try:
-                    header_df = pd.read_csv(MONTHLY_PRODUCTION_CSV, encoding=encoding, sep=sep, nrows=3, header=None, on_bad_lines='skip')
-                except TypeError:
-                    # Older pandas versions don't have on_bad_lines
-                    header_df = pd.read_csv(MONTHLY_PRODUCTION_CSV, encoding=encoding, sep=sep, nrows=3, header=None, error_bad_lines=False)
-                
-                # Read the full data starting from row 4 (index 3)
-                # Skip first 2 rows (row 0 and row 1), use row 2 as header, then read data from row 3 onwards
-                try:
-                    data_df = pd.read_csv(MONTHLY_PRODUCTION_CSV, encoding=encoding, sep=sep, skiprows=2, header=0, on_bad_lines='skip')
-                except TypeError:
-                    # Older pandas versions don't have on_bad_lines
-                    data_df = pd.read_csv(MONTHLY_PRODUCTION_CSV, encoding=encoding, sep=sep, skiprows=2, header=0, error_bad_lines=False)
-                
-                print(f"Successfully loaded CSV with encoding={encoding}, sep='{sep}'")
-                break
-            except Exception as e:
-                continue
-        if header_df is not None and data_df is not None:
-            break
-    
-    if header_df is None or data_df is None:
-        raise Exception("Could not read CSV file with any encoding/separator combination")
-    
-    # Get header rows
-    row1 = header_df.iloc[0].tolist() if len(header_df) > 0 else []
-    row2 = header_df.iloc[1].tolist() if len(header_df) > 1 else []
-    row3 = header_df.iloc[2].tolist() if len(header_df) > 2 else []
-    
-    # Clean column names (remove special characters and whitespace)
-    data_df.columns = data_df.columns.astype(str).str.strip()
-    
-    # Find the "Crude" column (first column) and "Monthly production dynamic title" (second column)
-    crude_col = data_df.columns[0] if len(data_df.columns) > 0 else None
-    title_col = data_df.columns[1] if len(data_df.columns) > 1 else None
-    
-    # Also try to find the title column by name in case column order is different
-    if title_col and 'production' not in title_col.lower() and 'monthly' not in title_col.lower():
-        # Try to find it by searching column names
-        for col in data_df.columns:
-            if 'monthly' in col.lower() and 'production' in col.lower() and 'dynamic' in col.lower():
-                title_col = col
-                break
-    
-    print(f"DEBUG: CSV loading - crude_col='{crude_col}', title_col='{title_col}', total columns={len(data_df.columns)}")
-    
-    # Transform from wide to long format
-    monthly_prod_list = []
-    
-    # Get data columns (skip first 2: Crude and Monthly production dynamic title)
-    data_cols = data_df.columns[2:].tolist() if len(data_df.columns) > 2 else []
-    
-    for idx, row in data_df.iterrows():
-        crude = str(row[crude_col]).strip() if crude_col and pd.notna(row[crude_col]) else ''
-        title = str(row[title_col]).strip() if title_col and pd.notna(row[title_col]) else ''
+    if not monthly_prod_df.empty:
+        # Extract year and month from date field
+        monthly_prod_df['date'] = pd.to_datetime(monthly_prod_df['date'], errors='coerce')
+        monthly_prod_df['Year of Date'] = monthly_prod_df['date'].dt.year
+        monthly_prod_df['Month of Date'] = monthly_prod_df['date'].dt.strftime('%B')  # Full month name
         
-        # Skip empty rows
-        if not crude or crude.lower() in ['', 'nan', 'none']:
-            continue
+        # Map columns to match expected format
+        monthly_prod_df['Crude'] = monthly_prod_df['stream_name']
+        monthly_prod_df['Monthly production dynamic title'] = monthly_prod_df['country'] + ' Production'
+        monthly_prod_df['Avg. Value'] = pd.to_numeric(monthly_prod_df['value'], errors='coerce')
         
-        # Process each data column
-        for col_idx, col_name in enumerate(data_cols):
-            # Get year from row2 (offset by 2 for first two columns)
-            # data_cols[0] corresponds to data_df.columns[2], which should align with row2[2] and row3[2]
-            year = ''
-            month = ''
-            
-            # The data column index in the original CSV (accounting for first 2 columns: Crude and Title)
-            csv_col_idx = col_idx + 2
-            
-            if csv_col_idx < len(row2):
-                year_val = row2[csv_col_idx]
-                if pd.notna(year_val):
-                    year = str(year_val).strip()
-            
-            if csv_col_idx < len(row3):
-                month_val = row3[csv_col_idx]
-                if pd.notna(month_val):
-                    month = str(month_val).strip()
-            
-            # Skip if year or month is invalid
-            if not year or not year.isdigit() or not month or month.lower() in ['', 'nan', 'none', 'date', 'monthly production dynamic title']:
-                continue
-            
-            # Get value
-            value = row[col_name] if col_name in row.index else None
-            
-            # Convert value to numeric
-            try:
-                if pd.isna(value):
-                    # Allow empty values for some cells (they'll show as empty in table)
-                    # But still create the record so the table structure is correct
-                    value_num = None
-                else:
-                    # Remove commas and convert
-                    value_str = str(value).replace(',', '').strip()
-                    if value_str and value_str.lower() not in ['', 'nan', 'none', 'null']:
-                        value_num = float(value_str)
-                    else:
-                        value_num = None
-                
-                # Add record - use NaN for empty values (pandas handles this better)
-                monthly_prod_list.append({
-                    'Crude': crude,
-                    'Monthly production dynamic title': title,
-                    'Year of Date': int(year),
-                    'Month of Date': month,
-                    'Avg. Value': value_num if value_num is not None else pd.NA
-                })
-            except (ValueError, TypeError) as e:
-                # Skip invalid values
-                continue
-    
-    monthly_prod_df = pd.DataFrame(monthly_prod_list)
-    
-    if monthly_prod_df.empty:
-        print(f"Warning: No production data loaded from {MONTHLY_PRODUCTION_CSV}")
+        # Get unique countries for dropdown from database
+        country_list = sorted(monthly_prod_df['country'].dropna().unique().tolist())
+        country_list = [str(c).strip() for c in country_list if c and str(c).strip() and str(c).strip() != 'nan']
+        default_country = 'United States' if 'United States' in country_list else (country_list[0] if country_list else None)
+        
+        print(f"Loaded {len(monthly_prod_df)} production records from database")
+        print(f"Available countries: {len(country_list)} countries")
+        print(f"Available crudes: {monthly_prod_df['stream_name'].nunique()} types")
     else:
-        print(f"Loaded {len(monthly_prod_df)} production records from {MONTHLY_PRODUCTION_CSV}")
-        if 'Monthly production dynamic title' in monthly_prod_df.columns:
-            unique_countries = monthly_prod_df['Monthly production dynamic title'].unique()
-            print(f"Available countries in data: {list(unique_countries)}")
-        if 'Crude' in monthly_prod_df.columns:
-            unique_crudes = monthly_prod_df['Crude'].unique()
-            print(f"Available crudes: {len(unique_crudes)} types (e.g., {list(unique_crudes[:3])})")
+        monthly_prod_df = pd.DataFrame()
+        print("Warning: No production data loaded from database")
         
 except Exception as e:
-    print(f"Error loading monthly production data: {e}")
+    print(f"Error loading monthly production data from database: {e}")
     import traceback
     traceback.print_exc()
     monthly_prod_df = pd.DataFrame()
+    country_list = []
+    default_country = None
 
 try:
     port_df = pd.read_csv(PORT_DETAIL_CSV, quotechar='"', skipinitialspace=True)
@@ -429,7 +441,7 @@ def get_port_details_for_hover(port_name):
 
 
 def create_world_map(selected_country=None):
-    """Create world map choropleth using Map_data.csv, filtered by selected country"""
+    """Create world map choropleth using database map data, filtered by selected country"""
     if map_df.empty:
         return create_empty_map()
     
@@ -456,6 +468,7 @@ def create_world_map(selected_country=None):
         port_cols = ['Port Name', 'latitude', 'longitude']
         if 'country_long_name' in filtered_map.columns:
             port_cols.append('country_long_name')
+        # Port column may not exist in database, so check before adding
         if 'Port' in filtered_map.columns:
             port_cols.append('Port')
         port_data = filtered_map[port_cols].copy()
@@ -575,10 +588,11 @@ def create_world_map(selected_country=None):
             # Format: "Port name: [Port Name]" with port name in bold
             hover_text = f"Port name: <b>{port_name}</b>"
             
-            # Determine symbol based on Port value
+            # Determine symbol based on Port value (if available)
             # Port 513 = plus/cross symbol, Port 342 = square, others (171) = circle
+            # Note: Port column may not exist in database, default to circle
             port_value = None
-            if 'Port' in row and pd.notna(row['Port']):
+            if 'Port' in row and pd.notna(row.get('Port')):
                 try:
                     port_value = int(float(row['Port']))
                 except (ValueError, TypeError):
@@ -611,8 +625,10 @@ def create_world_map(selected_country=None):
     else:
         # For all countries, show aggregated data
         if 'country_long_name' in filtered_map.columns:
+            # Count ports using Port Name if Port column doesn't exist
+            count_col = 'Port Name' if 'Port Name' in filtered_map.columns else ('Port' if 'Port' in filtered_map.columns else 'port_name')
             country_data = filtered_map.groupby('country_long_name').agg({
-                'Port': 'count',
+                count_col: 'count',
                 'latitude': 'mean',
                 'longitude': 'mean'
             }).reset_index()
@@ -767,29 +783,23 @@ def create_empty_map():
 
 
 def get_production_data(country_name, time_period='Yearly'):
-    """Get production data for a country from Monthly_Production_data.csv"""
+    """Get production data for a country from database"""
     if monthly_prod_df.empty:
         print(f"DEBUG: monthly_prod_df is empty for country: {country_name}")
         return pd.DataFrame()
     
-    # Filter by country name (from Monthly production dynamic title column)
-    # The column contains format like "United States Production"
-    # So we check if country name is in the title
-    if 'Monthly production dynamic title' not in monthly_prod_df.columns:
-        print(f"DEBUG: 'Monthly production dynamic title' column not found. Available columns: {list(monthly_prod_df.columns)}")
+    # Filter by country name directly from database
+    if 'country' not in monthly_prod_df.columns:
+        print(f"DEBUG: 'country' column not found. Available columns: {list(monthly_prod_df.columns)}")
         return pd.DataFrame()
     
-    # Create a pattern to match: "CountryName Production"
-    # Handle variations like "United States" matching "United States Production"
-    pattern = f"{country_name} Production"
-    
-    # Try exact match first, then contains
+    # Filter by exact country match
     country_data = monthly_prod_df[
-        monthly_prod_df['Monthly production dynamic title'].str.contains(pattern, case=False, na=False)
+        monthly_prod_df['country'].astype(str).str.strip() == str(country_name).strip()
     ].copy()
     
     if country_data.empty:
-        print(f"DEBUG: No data found for country '{country_name}' with pattern '{pattern}'. Available titles: {monthly_prod_df['Monthly production dynamic title'].unique()[:5]}")
+        print(f"DEBUG: No data found for country '{country_name}'. Available countries: {monthly_prod_df['country'].unique()[:5]}")
         return pd.DataFrame()
     
     print(f"DEBUG: Found {len(country_data)} records for country '{country_name}'")
@@ -810,33 +820,41 @@ def get_production_data(country_name, time_period='Yearly'):
 
 
 def get_port_details(country_name):
-    """Return port details for a country; fallback to full dataset when mapping is incomplete."""
-    if port_df.empty:
+    """Return port details for a country from database map data."""
+    if map_df.empty:
         return pd.DataFrame()
     
-    port_df_clean = port_df.copy()
-    port_df_clean['Port Name Clean'] = port_df_clean['Port Name'].astype(str).str.strip().str.strip('"')
-    port_df_clean['Port Name'] = port_df_clean['Port Name'].astype(str).str.strip().str.strip('"')
-    port_df_clean['Coordinates'] = port_df_clean['Coordinates'].astype(str).str.strip()
+    # Filter map data by country
+    if 'country_long_name' not in map_df.columns:
+        return pd.DataFrame()
     
-    if not map_df.empty and 'country_long_name' in map_df.columns and 'Port Name' in map_df.columns:
-        country_ports = map_df[
-            map_df['country_long_name'].astype(str).str.strip() == str(country_name).strip()
-        ]['Port Name'].dropna().unique()
-        
-        if len(country_ports) > 0:
-            country_ports_clean = [str(p).strip().strip('"') for p in country_ports]
-            port_data = port_df_clean[port_df_clean['Port Name Clean'].isin(country_ports_clean)].copy()
-            
-            # If mapping captured only a subset (or none), show the full dataset for completeness
-            if port_data.empty or port_data['Port Name Clean'].nunique() < port_df_clean['Port Name Clean'].nunique():
-                port_data = port_df_clean.copy()
-            
-            if 'Port Name Clean' in port_data.columns:
-                port_data = port_data.drop(columns=['Port Name Clean'])
-            return port_data
+    # Filter by country name
+    country_data = map_df[
+        map_df['country_long_name'].astype(str).str.strip() == str(country_name).strip()
+    ].copy()
     
-    return port_df_clean.drop(columns=['Port Name Clean'])
+    if country_data.empty:
+        return pd.DataFrame()
+    
+    # Ensure we have the required columns
+    required_cols = ['port_name', 'coordinates', 'measure_name', 'value']
+    if not all(col in country_data.columns for col in required_cols):
+        return pd.DataFrame()
+    
+    # Clean and prepare the data
+    port_data = country_data[required_cols].copy()
+    port_data['Port Name'] = port_data['port_name'].astype(str).str.strip()
+    port_data['Coordinates'] = port_data['coordinates'].astype(str).str.strip()
+    
+    # Filter out rows with empty port names or coordinates
+    port_data = port_data[
+        (port_data['Port Name'].str.strip() != '') & 
+        (port_data['Port Name'].str.strip().str.lower() != 'nan') &
+        (port_data['Coordinates'].str.strip() != '') &
+        (port_data['Coordinates'].str.strip().str.lower() != 'nan')
+    ].copy()
+    
+    return port_data
 
 
 def create_production_table(country_name, time_period='Yearly'):
@@ -1109,7 +1127,7 @@ def create_production_table(country_name, time_period='Yearly'):
 
 
 def create_port_details_table(country_name):
-    """Create port details table from Port-Detail_data.csv"""
+    """Create port details table from database map data"""
     port_data = get_port_details(country_name)
     
     if port_data.empty:
@@ -1125,50 +1143,93 @@ def create_port_details_table(country_name):
             }
         )
     
-    # Clean port names
-    port_data['Port Name'] = port_data['Port Name'].astype(str).str.strip().str.strip('"')
+    # Map measure_name from database to display column names
+    measure_name_mapping = {
+        'berths': 'Berths',
+        'max_draft': 'Max Draft',
+        'max_length': 'Max length',
+        'max_loading_rate': 'Max Loading Rate (bbl/hour)',
+        'max_tonnage': 'Max. Tonnage (dwt)',
+        'mooring_type': 'Mooring Type',
+        'storage_cap': 'Storage Capacity (million bbl)'
+    }
+    
+    # Clean and prepare values
+    port_data['value'] = port_data['value'].astype(str).str.strip()
+    port_data['value'] = port_data['value'].replace(['', 'nan', 'NaN', 'None', 'null', 'NULL'], pd.NA)
+    
+    # Remove duplicates before pivoting (same port and measure_name)
+    # Group by Port Name only, not by Coordinates
+    port_data = port_data.drop_duplicates(subset=['Port Name', 'measure_name'], keep='first')
+    
+    # Get the first coordinates for each port (in case a port has multiple coordinates)
+    port_coords = port_data.groupby('Port Name')['Coordinates'].first().reset_index()
+    port_coords.columns = ['Port Name', 'Coordinates']
     
     # Pivot the data to show ports as rows and measures as columns
-    # Handle empty values properly
-    port_data['value'] = port_data['value'].astype(str).str.strip()
-    port_data['value'] = port_data['value'].replace(['', 'nan', 'NaN', 'None'], pd.NA)
-    
+    # Group by Port Name only - each port appears once with all measures as columns
     pivot_port = port_data.pivot_table(
-        index=['Port Name', 'Coordinates'],
+        index='Port Name',
         columns='measure_name',
         values='value',
         aggfunc='first',
         dropna=False
-    ).reset_index()
+    )
+    
+    # Flatten column names if MultiIndex (pivot_table sometimes creates MultiIndex)
+    if isinstance(pivot_port.columns, pd.MultiIndex):
+        pivot_port.columns = pivot_port.columns.droplevel(0)
+    
+    # Reset index to make Port Name a regular column
+    pivot_port = pivot_port.reset_index()
+    
+    # Merge with coordinates to get the first coordinates for each port
+    pivot_port = pivot_port.merge(port_coords, on='Port Name', how='left')
+    
+    # Remove any duplicate rows (shouldn't happen after pivot, but just in case)
+    pivot_port = pivot_port.drop_duplicates(subset=['Port Name'], keep='first')
     
     # Helper function to format cell values (handle NaN, None, empty strings)
     def format_cell_value(val):
         if pd.isna(val) or val is None:
             return ''
         val_str = str(val).strip()
-        if val_str == '' or val_str.lower() in ['nan', 'none', 'null']:
+        if val_str == '' or val_str.lower() in ['nan', 'none', 'null', 'null']:
             return ''
         return val_str
     
-    # Prepare table data - ensure all ports are included
+    # Prepare table data - map measure_name to display names
     table_data = []
+    seen_ports = set()  # Track unique ports
+    
     for _, row in pivot_port.iterrows():
         port_name = format_cell_value(row.get('Port Name', ''))
         coordinates = format_cell_value(row.get('Coordinates', ''))
-        if not port_name or not coordinates:
+        
+        if not port_name:
             continue
-            
-        table_data.append({
+        
+        # Skip if we've already processed this port
+        if port_name in seen_ports:
+            continue
+        
+        seen_ports.add(port_name)
+        
+        # Map each measure_name to its display column name in the correct order
+        # Access columns directly by their measure_name values
+        row_data = {
             'Port Name': port_name,
-            'Coordinates': coordinates,
-            'Storage Capacity (million bbl)': format_cell_value(row.get('Storage Capacity (million bbl)', '')),
-            'Mooring Type': format_cell_value(row.get('Mooring Type', '')),
-            'Max. Tonnage (dwt)': format_cell_value(row.get('Max. Tonnage (dwt)', '')),
-            'Max Loading Rate (bbl/hour)': format_cell_value(row.get('Max Loading Rate (bbl/hour)', '')),
-            'Max length': format_cell_value(row.get('Max length', '')),
-            'Max Draft': format_cell_value(row.get('Max Draft', '')),
-            'Berths': format_cell_value(row.get('Berths', ''))
-        })
+            'Coordinates': format_cell_value(coordinates),
+            'Berths': format_cell_value(row.get('berths', '')),
+            'Max Draft': format_cell_value(row.get('max_draft', '')),
+            'Max length': format_cell_value(row.get('max_length', '')),
+            'Max Loading Rate (bbl/hour)': format_cell_value(row.get('max_loading_rate', '')),
+            'Max. Tonnage (dwt)': format_cell_value(row.get('max_tonnage', '')),
+            'Mooring Type': format_cell_value(row.get('mooring_type', '')),
+            'Storage Capacity (million bbl)': format_cell_value(row.get('storage_cap', ''))
+        }
+        
+        table_data.append(row_data)
     
     columns = [
         {'name': 'Port Name', 'id': 'Port Name', 'type': 'text'},
@@ -1513,6 +1574,14 @@ def register_callbacks(dash_app, server):
         """Update profile link when country changes"""
         country = selected_country or default_country
         if country:
+            # Try to get profile_url from database if available
+            if not monthly_prod_df.empty and 'profile_url' in monthly_prod_df.columns:
+                country_data = monthly_prod_df[monthly_prod_df['country'] == country]
+                if not country_data.empty:
+                    profile_url = country_data['profile_url'].iloc[0]
+                    if pd.notna(profile_url) and profile_url:
+                        return str(profile_url)
+            # Fallback to manual generation
             return f"https://www.energyintel.com/wcod/country-profile/{country.lower().replace(' ', '-')}"
         return "#"
     
@@ -1940,10 +2009,30 @@ def register_callbacks(dash_app, server):
                 setTimeout(enforceZoomLimits, 1000);
                 
                 // Listen for ALL relayout events (zoom, pan, etc.) and enforce both zoom limits
-                mapElement.on('plotly_relayout', function(eventData) {
-                    // Enforce limits on any relayout event (more aggressive)
-                    setTimeout(enforceZoomLimits, 10);
-                });
+                // Use a polling mechanism since Plotly event system may not be available in Dash
+                let lastLayout = null;
+                const checkLayoutChange = function() {
+                    if (plotlyDiv && plotlyDiv._fullLayout) {
+                        const currentLayout = JSON.stringify(plotlyDiv._fullLayout.geo);
+                        if (currentLayout !== lastLayout) {
+                            lastLayout = currentLayout;
+                            enforceZoomLimits();
+                        }
+                    }
+                };
+                
+                // Poll for layout changes
+                const layoutInterval = setInterval(checkLayoutChange, 100);
+                
+                // Also check on mouse events
+                if (plotlyDiv) {
+                    plotlyDiv.addEventListener('mousedown', function() {
+                        setTimeout(enforceZoomLimits, 10);
+                    });
+                    plotlyDiv.addEventListener('wheel', function() {
+                        setTimeout(enforceZoomLimits, 10);
+                    }, { passive: true });
+                }
                 
                 // Also intercept wheel events for more immediate control
                 const geoDiv = plotlyDiv.querySelector('.geo');

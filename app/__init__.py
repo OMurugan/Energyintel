@@ -18,6 +18,10 @@ def create_app(config_name='default'):
     app = Flask(__name__)
     app.config.from_object(config[config_name])
     
+    # Apply SQLAlchemy engine options if configured
+    if hasattr(config[config_name], 'SQLALCHEMY_ENGINE_OPTIONS'):
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = config[config_name].SQLALCHEMY_ENGINE_OPTIONS
+    
     # Initialize extensions
     db.init_app(app)
     cache.init_app(app)
