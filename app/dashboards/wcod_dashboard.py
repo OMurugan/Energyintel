@@ -521,6 +521,63 @@ def create_wcod_dashboard(server, url_base_pathname):
                     box-sizing: border-box !important;
                 }
 
+                /* Russian Exports Table - Fix fixed column overflow and scrollable column clipping */
+                #russian-exports-table .dash-table-container {
+                    overflow: hidden !important;
+                    position: relative !important;
+                    width: 100% !important;
+                }
+                
+                #russian-exports-table .dash-spreadsheet-container {
+                    overflow-x: auto !important;
+                    overflow-y: auto !important;
+                    position: relative !important;
+                    width: 100% !important;
+                }
+                
+                /* Hide overflow from fixed column wrapper */
+                #russian-exports-table .dash-table-container > div {
+                    overflow: hidden !important;
+                }
+                
+                /* Fix the border issue on fixed columns - ensure Company column has proper right border */
+                #russian-exports-table .dash-table-container table thead tr th:nth-child(2),
+                #russian-exports-table .dash-table-container table tbody tr td:nth-child(2) {
+                    border-right: 2px solid #ddd !important;
+                    position: relative !important;
+                    z-index: 10 !important;
+                    box-shadow: 2px 0 0 0 #fff !important;
+                }
+                
+                /* Hide any overflow from the fixed columns container */
+                #russian-exports-table .dash-table-container .dash-spreadsheet-container > div:first-child {
+                    overflow: hidden !important;
+                }
+                
+                /* Ensure scrollable columns container properly clips overflow */
+                #russian-exports-table .dash-spreadsheet-container > div:last-child {
+                    overflow: hidden !important;
+                    position: relative !important;
+                }
+                
+                /* Ensure the scrollable table wrapper clips properly */
+                #russian-exports-table .dash-spreadsheet-container .dash-spreadsheet {
+                    overflow: hidden !important;
+                    width: 100% !important;
+                }
+                
+                /* Clip scrollable columns that extend beyond viewport */
+                #russian-exports-table .dash-spreadsheet-container table {
+                    table-layout: auto !important;
+                }
+                
+                /* Ensure scrollable column cells (3rd column onwards) are clipped */
+                #russian-exports-table .dash-spreadsheet-container table thead tr th:nth-child(n+3),
+                #russian-exports-table .dash-spreadsheet-container table tbody tr td:nth-child(n+3) {
+                    overflow: hidden !important;
+                    max-width: 200px !important;
+                }
+
             </style>
         </head>
         <body>
