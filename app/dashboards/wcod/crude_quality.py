@@ -631,7 +631,6 @@ def create_layout(dash_app=None):
         # MAIN CONTENT (CHART + RIGHT SIDEBAR)
         # --------------------------------------------------
         html.Div([
-
             # Chart
             html.Div([
                 dcc.Graph(
@@ -1090,7 +1089,7 @@ def create_layout(dash_app=None):
             ], style={'marginTop': '30px', 'marginBottom': '30px'})
         ])
 
-        ], style={'marginLeft': '10px', 'marginRight': '80px', 'padding': '20px'})
+        ], style={'marginLeft': '10px', 'marginRight': '28px', 'padding': '20px'})
     ])
 
 

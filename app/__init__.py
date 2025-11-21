@@ -26,14 +26,14 @@ def create_app(config_name='default'):
     from app.routes import main_bp
     app.register_blueprint(main_bp)
     
-    # Import and register dashboards
-    from app.dashboards import register_dashboards
-    register_dashboards(app)
-    
-    # Register WCoD dashboard routes after dashboards are registered
+    # Register WCoD routes
     from app.routes.views import register_wcod_routes
     register_wcod_routes(app)
     
+    # Import and register dashboards
+    from app.dashboards import register_dashboards
+    register_dashboards(app)
+
     return app
 
 
