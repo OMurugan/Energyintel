@@ -1331,54 +1331,232 @@ def format_key_figure_value(measure, value):
     return f"{value:,.2f}"
 
 
-def create_key_figures_table(country_name):
-    """Create Key Figures table from Key Figures CSV"""
-    if key_figures_df.empty:
-        return dash_table.DataTable(
-            data=[],
-            columns=[],
-            style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
+def create_key_figures_table(country_name, time_period='Monthly'):
+    """Create Key Figures table from database (Yearly) or CSV (Monthly)"""
+    
+    if time_period == 'Yearly':
+        # Use database data from map_df query
+        if map_df.empty:
+            return dash_table.DataTable(
+                data=[],
+                columns=[],
+                style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
+            )
+        
+        # Filter map data by country
+        if 'country_long_name' not in map_df.columns:
+            print(f"DEBUG: 'country_long_name' column not found in map_df. Available columns: {list(map_df.columns)}")
+            return dash_table.DataTable(data=[], columns=[])
+        
+        # Check required columns
+        required_cols = ['yr', 'output', 'exports', 'reserves']
+        if not all(col in map_df.columns for col in required_cols):
+            print(f"DEBUG: Missing required columns. Available: {list(map_df.columns)}")
+            return dash_table.DataTable(data=[], columns=[])
+        
+        # Filter by country name (case-insensitive, handle whitespace)
+        country_data = map_df[
+            map_df['country_long_name'].astype(str).str.strip().str.lower() == str(country_name).strip().lower()
+        ].copy()
+        
+        if country_data.empty:
+            # Try to see what countries are available
+            available_countries = map_df['country_long_name'].dropna().unique()[:10]
+            print(f"DEBUG: No data found for country '{country_name}' in map_df. Available countries (sample): {list(available_countries)}")
+            return dash_table.DataTable(data=[], columns=[])
+        
+        print(f"DEBUG: Found {len(country_data)} rows for country '{country_name}'")
+        
+        # Filter out rows where yr is NULL (we need at least yr to create the table)
+        # Also ensure we have at least one of output, exports, or reserves (country data exists)
+        country_data = country_data[
+            (country_data['yr'].notna()) & 
+            ((country_data['output'].notna()) | (country_data['exports'].notna()) | (country_data['reserves'].notna()))
+        ].copy()
+        
+        if country_data.empty:
+            print(f"DEBUG: No data with valid 'yr' and country metrics for country '{country_name}'")
+            return dash_table.DataTable(data=[], columns=[])
+        
+        # Extract year from date field (yr is a date like '2024-01-01')
+        # Convert to datetime if it's not already
+        country_data['yr'] = pd.to_datetime(country_data['yr'], errors='coerce')
+        country_data = country_data.dropna(subset=['yr'])
+        
+        # Extract year as integer
+        country_data['year'] = country_data['yr'].dt.year
+        
+        # Remove duplicates and prepare data - keep first occurrence for each year
+        # This handles cases where FULL JOIN creates multiple rows per year (one per port)
+        # Group by year and take first non-null values for output, exports, reserves
+        country_data = country_data.sort_values('year', ascending=False)
+        
+        # For each year, take the first row with non-null values
+        yearly_data = []
+        for year_val in country_data['year'].unique():
+            year_rows = country_data[country_data['year'] == year_val]
+            # Get first row with at least one non-null value
+            first_row = year_rows.iloc[0]
+            yearly_data.append({
+                'year': int(year_val),
+                'output': first_row['output'] if pd.notna(first_row['output']) else None,
+                'exports': first_row['exports'] if pd.notna(first_row['exports']) else None,
+                'reserves': first_row['reserves'] if pd.notna(first_row['reserves']) else None
+            })
+        
+        if not yearly_data:
+            print(f"DEBUG: No yearly data extracted for country '{country_name}'")
+            return dash_table.DataTable(data=[], columns=[])
+        
+        # Convert to DataFrame for easier handling - use a new variable name to avoid confusion
+        yearly_df = pd.DataFrame(yearly_data)
+        yearly_df = yearly_df.sort_values('year', ascending=False)
+        
+        # Get unique years
+        years = yearly_df['year'].unique().tolist()
+        years = sorted([int(y) for y in years if pd.notna(y)], reverse=True)
+        
+        print(f"DEBUG: Found {len(years)} unique years for country '{country_name}': {years[:10]}")
+        
+        if not years:
+            print(f"DEBUG: No years found after processing for country '{country_name}'")
+            return dash_table.DataTable(data=[], columns=[])
+        
+        # Prepare table data
+        table_data = []
+        
+        # Helper function to format values
+        def format_value(val, measure_type):
+            if pd.isna(val) or val is None:
+                return ''
+            try:
+                val_float = float(val)
+                if measure_type == 'reserves':
+                    return f"{val_float:,.0f}"
+                elif measure_type in ['production', 'exports']:
+                    return f"{val_float:,.0f}"
+                elif measure_type == 'rp_ratio':
+                    # Round to nearest integer (no decimal places)
+                    rounded = round(val_float)
+                    return f"{rounded:,.0f}"
+                return f"{val_float:,.2f}"
+            except (ValueError, TypeError):
+                return ''
+        
+        # Create rows for each measure
+        measures = [
+            ('Reserves (Billion bbl)', 'reserves'),
+            ("Production ('000 b/d)", 'production'),
+            ("Exports ('000 b/d)", 'exports'),
+            ('R/P Ratio (Year)', 'rp_ratio')
+        ]
+        
+        for measure_name, measure_type in measures:
+            row = {'Measure': measure_name}
+            
+            for year in years:
+                # Get data for this year
+                year_row = yearly_df[yearly_df['year'] == year]
+                if year_row.empty:
+                    row[str(year)] = ''
+                    continue
+                
+                year_row_data = year_row.iloc[0]
+                
+                if measure_type == 'reserves':
+                    value = year_row_data['reserves'] if pd.notna(year_row_data['reserves']) else None
+                elif measure_type == 'production':
+                    value = year_row_data['output'] if pd.notna(year_row_data['output']) else None
+                elif measure_type == 'exports':
+                    value = year_row_data['exports'] if pd.notna(year_row_data['exports']) else None
+                elif measure_type == 'rp_ratio':
+                    # Calculate R/P ratio: (reserves * 1000000) / (365 * output)
+                    reserves = year_row_data['reserves'] if pd.notna(year_row_data['reserves']) else None
+                    output = year_row_data['output'] if pd.notna(year_row_data['output']) else None
+                    
+                    if reserves is not None and output is not None and output != 0:
+                        try:
+                            value = (float(reserves) * 1000000) / (365 * float(output))
+                        except (ValueError, TypeError, ZeroDivisionError):
+                            value = None
+                    else:
+                        value = None
+                else:
+                    value = None
+                
+                row[str(year)] = format_value(value, measure_type)
+            
+            table_data.append(row)
+        
+        print(f"DEBUG: Created {len(table_data)} rows for Key Figures table")
+        
+        if not table_data:
+            return dash_table.DataTable(
+                data=[],
+                columns=[],
+                style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
+            )
+        
+        # Create columns
+        columns = [{'name': ['', 'Measure'], 'id': 'Measure', 'type': 'text'}]
+        for year in years:
+            columns.append({
+                'name': ['Date', str(year)],
+                'id': str(year),
+                'type': 'text'
+            })
+        
+        # Return DataTable for yearly view (shared return statement is below)
+        # Continue to shared return statement
+    
+    else:
+        # Use CSV data for Monthly view (original implementation)
+        if key_figures_df.empty:
+            return dash_table.DataTable(
+                data=[],
+                columns=[],
+                style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
+            )
+        
+        df = key_figures_df.copy()
+        if 'Measure Names' not in df.columns or 'Quarter of Year' not in df.columns or 'Measure Values' not in df.columns:
+            return dash_table.DataTable(data=[], columns=[])
+        
+        df['Measure Names'] = df['Measure Names'].astype(str).str.strip()
+        df['Quarter of Year'] = df['Quarter of Year'].astype(str).str.strip()
+        
+        pivot_df = df.pivot_table(
+            index='Measure Names',
+            columns='Quarter of Year',
+            values='Measure Values',
+            aggfunc='first'
         )
-    
-    df = key_figures_df.copy()
-    if 'Measure Names' not in df.columns or 'Quarter of Year' not in df.columns or 'Measure Values' not in df.columns:
-        return dash_table.DataTable(data=[], columns=[])
-    
-    df['Measure Names'] = df['Measure Names'].astype(str).str.strip()
-    df['Quarter of Year'] = df['Quarter of Year'].astype(str).str.strip()
-    
-    pivot_df = df.pivot_table(
-        index='Measure Names',
-        columns='Quarter of Year',
-        values='Measure Values',
-        aggfunc='first'
-    )
-    
-    quarters = sorted(pivot_df.columns.tolist(), key=quarter_sort_key, reverse=True)
-    pivot_df = pivot_df[quarters]
-    measure_order = [
-        'Reserves (Billion bbl)',
-        "Production ('000 b/d)",
-        "Exports ('000 b/d)",
-        'R/P Ratio (Year)'
-    ]
-    measures = [m for m in measure_order if m in pivot_df.index] + [m for m in pivot_df.index if m not in measure_order]
-    
-    table_data = []
-    for measure in measures:
-        row = {'Measure': measure}
+        
+        quarters = sorted(pivot_df.columns.tolist(), key=quarter_sort_key, reverse=True)
+        pivot_df = pivot_df[quarters]
+        measure_order = [
+            'Reserves (Billion bbl)',
+            "Production ('000 b/d)",
+            "Exports ('000 b/d)",
+            'R/P Ratio (Year)'
+        ]
+        measures = [m for m in measure_order if m in pivot_df.index] + [m for m in pivot_df.index if m not in measure_order]
+        
+        table_data = []
+        for measure in measures:
+            row = {'Measure': measure}
+            for quarter in quarters:
+                value = pivot_df.loc[measure, quarter] if quarter in pivot_df.columns else ''
+                row[quarter] = format_key_figure_value(measure, value)
+            table_data.append(row)
+        
+        columns = [{'name': ['', 'Measure'], 'id': 'Measure', 'type': 'text'}]
         for quarter in quarters:
-            value = pivot_df.loc[measure, quarter] if quarter in pivot_df.columns else ''
-            row[quarter] = format_key_figure_value(measure, value)
-        table_data.append(row)
-    
-    columns = [{'name': ['', 'Measure'], 'id': 'Measure', 'type': 'text'}]
-    for quarter in quarters:
-        columns.append({
-            'name': ['Date', quarter],
-            'id': quarter,
-            'type': 'text'
-        })
+            columns.append({
+                'name': ['Date', quarter],
+                'id': quarter,
+                'type': 'text'
+            })
     
     return dash_table.DataTable(
         data=table_data,
@@ -1488,7 +1666,7 @@ def register_callbacks(dash_app, server):
                             }
                         ),
                 html.Div([
-                            create_key_figures_table(country_name)
+                            create_key_figures_table(country_name, time_period)
                         ], style={'background': 'white', 'padding': '20px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
                     ], className='col-md-12', style={'padding': '15px'})
                 ], className='row', style={'margin': '30px 0', 'padding': '0 15px'})
