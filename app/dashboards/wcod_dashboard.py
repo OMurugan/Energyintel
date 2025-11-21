@@ -1158,7 +1158,7 @@ def create_wcod_dashboard(server, url_base_pathname):
     country_overview.register_callbacks(dash_app, server)
     country_profile.register_callbacks(dash_app, server)
     crude_overview.register_callbacks(dash_app, server)
-    crude_profile.register_callbacks(dash_app, server)
+    crude_profile.register_callbacks(dash_app)
     crude_comparison.register_callbacks(dash_app)
     crude_quality.register_callbacks(dash_app, server)
     crude_carbon.register_callbacks(dash_app, server)
