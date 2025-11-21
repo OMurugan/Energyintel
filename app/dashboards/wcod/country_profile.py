@@ -9,7 +9,9 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 import os
+from datetime import datetime
 from app import create_dash_app
+from app.database import execute_query
 
 # CSV paths
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Country_Profile')
@@ -18,205 +20,215 @@ MONTHLY_PRODUCTION_CSV = os.path.join(DATA_DIR, 'Monthly_Production.csv')
 PORT_DETAIL_CSV = os.path.join(DATA_DIR, 'Port-Detail_data.csv')
 KEY_FIGURES_CSV = os.path.join(DATA_DIR, 'Key Figures_data.csv')
 
-# Load CSV data
+# Load map data from database
 try:
-    map_df = pd.read_csv(MAP_CSV)
-    map_df.columns = map_df.columns.str.strip()
+    # Query map data from database (schema is set in connection, so don't include it in query)
+    map_query = """
+    SELECT
+        A."country_id",
+        A."country_long_name",
+        CASE
+            WHEN A."country_long_name" = 'Abu Dhabi' THEN 'https://www.energyintel.com/wcod/country-profile/abu-dhabi'
+            WHEN A."country_long_name" = 'Algeria' THEN 'https://www.energyintel.com/wcod/country-profile/algeria'
+            WHEN A."country_long_name" = 'Angola' THEN 'https://www.energyintel.com/wcod/country-profile/angola'
+            WHEN A."country_long_name" = 'Argentina' THEN 'https://www.energyintel.com/wcod/country-profile/argentina'
+            WHEN A."country_long_name" = 'Australia' THEN 'https://www.energyintel.com/wcod/country-profile/australia'
+            WHEN A."country_long_name" = 'Azerbaijan' THEN 'https://www.energyintel.com/wcod/country-profile/azerbaijan'
+            WHEN A."country_long_name" = 'Brazil' THEN 'https://www.energyintel.com/wcod/country-profile/brazil'
+            WHEN A."country_long_name" = 'Brunei' THEN 'https://www.energyintel.com/wcod/country-profile/brunei'
+            WHEN A."country_long_name" = 'Canada' THEN 'https://www.energyintel.com/wcod/country-profile/canada'
+            WHEN A."country_long_name" = 'Chad' THEN 'https://www.energyintel.com/wcod/country-profile/chad'
+            WHEN A."country_long_name" = 'China' THEN 'https://www.energyintel.com/wcod/country-profile/china'
+            WHEN A."country_long_name" = 'Colombia' THEN 'https://www.energyintel.com/wcod/country-profile/colombia'
+            WHEN A."country_long_name" = 'Congo (Brazzaville)' THEN 'https://www.energyintel.com/wcod/country-profile/republic-of-the-congo'
+            WHEN A."country_long_name" = 'Denmark' THEN 'https://www.energyintel.com/wcod/country-profile/denmark'
+            WHEN A."country_long_name" = 'Dubai' THEN 'https://www.energyintel.com/wcod/country-profile/dubai'
+            WHEN A."country_long_name" = 'Ecuador' THEN 'https://www.energyintel.com/wcod/country-profile/ecuador'
+            WHEN A."country_long_name" = 'Egypt' THEN 'https://www.energyintel.com/wcod/country-profile/egypt'
+            WHEN A."country_long_name" = 'Equatorial Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/equatorial-guinea'
+            WHEN A."country_long_name" = 'Gabon' THEN 'https://www.energyintel.com/wcod/country-profile/gabon'
+            WHEN A."country_long_name" = 'Ghana' THEN 'https://www.energyintel.com/wcod/country-profile/ghana'
+            WHEN A."country_long_name" = 'Guyana' THEN 'https://www.energyintel.com/wcod/country-profile/guyana'
+            WHEN A."country_long_name" = 'Indonesia' THEN 'https://www.energyintel.com/wcod/country-profile/indonesia'
+            WHEN A."country_long_name" = 'Iran' THEN 'https://www.energyintel.com/wcod/country-profile/iran'
+            WHEN A."country_long_name" = 'Iraq' THEN 'https://www.energyintel.com/wcod/country-profile/iraq'
+            WHEN A."country_long_name" = 'Kazakhstan' THEN 'https://www.energyintel.com/wcod/country-profile/kazakhstan'
+            WHEN A."country_long_name" = 'Kuwait' THEN 'https://www.energyintel.com/wcod/country-profile/kuwait'
+            WHEN A."country_long_name" = 'Libya' THEN 'https://www.energyintel.com/wcod/country-profile/libya'
+            WHEN A."country_long_name" = 'Malaysia' THEN 'https://www.energyintel.com/wcod/country-profile/malaysia'
+            WHEN A."country_long_name" = 'Mexico' THEN 'https://www.energyintel.com/wcod/country-profile/mexico'
+            WHEN A."country_long_name" = 'Neutral Zone' THEN 'https://www.energyintel.com/wcod/country-profile/neutral-zone'
+            WHEN A."country_long_name" = 'Nigeria' THEN 'https://www.energyintel.com/wcod/country-profile/nigeria'
+            WHEN A."country_long_name" = 'Norway' THEN 'https://www.energyintel.com/wcod/country-profile/norway'
+            WHEN A."country_long_name" = 'Oman' THEN 'https://www.energyintel.com/wcod/country-profile/oman'
+            WHEN A."country_long_name" = 'Papua New Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/papua-new-guinea'
+            WHEN A."country_long_name" = 'Qatar' THEN 'https://www.energyintel.com/wcod/country-profile/qatar'
+            WHEN A."country_long_name" = 'Russia' THEN 'https://www.energyintel.com/wcod/country-profile/russia'
+            WHEN A."country_long_name" = 'Saudi Arabia' THEN 'https://www.energyintel.com/wcod/country-profile/saudi-arabia'
+            WHEN A."country_long_name" = 'South Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/south-sudan'
+            WHEN A."country_long_name" = 'Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/sudan'
+            WHEN A."country_long_name" = 'Syria' THEN 'https://www.energyintel.com/wcod/country-profile/syria'
+            WHEN A."country_long_name" = 'Turkmenistan' THEN 'https://www.energyintel.com/wcod/country-profile/turkmenistan'
+            WHEN A."country_long_name" = 'United Kingdom' THEN 'https://www.energyintel.com/wcod/country-profile/united-kingdom'
+            WHEN A."country_long_name" = 'United States' THEN 'https://www.energyintel.com/wcod/country-profile/united-states'
+            WHEN A."country_long_name" = 'Venezuela' THEN 'https://www.energyintel.com/wcod/country-profile/venezuela'
+            WHEN A."country_long_name" = 'Vietnam' THEN 'https://www.energyintel.com/wcod/country-profile/vietnam'
+            WHEN A."country_long_name" = 'Yemen' THEN 'https://www.energyintel.com/wcod/country-profile/yemen'
+            ELSE NULL
+        END AS profile_url,
+        P."port_name",
+        P."latitude",
+        P."longitude",
+        P."coordinates",
+        P."measure_name",
+        P."value",
+        A."yr",
+        A."output",
+        A."exports",
+        A."reserves"
+    FROM fact_wcod_country A
+    FULL JOIN fact_wcod_port P
+        ON P."country_id" = A."country_id"
+    WHERE A."country_long_name" IS NOT NULL
+      AND A."to_be_deleted" IS NULL
+    """
     
-    # Handle duplicate column names - pandas adds .1, .2 etc. for duplicates
-    # Find the country_long_name column that has actual data (not empty)
-    country_cols = [col for col in map_df.columns if 'country_long_name' in col]
-    if len(country_cols) > 1:
-        # Use the column that has the MOST non-null/non-empty values
-        data_col = None
-        max_non_empty = 0
-        for col in sorted(country_cols):  # Check in order
-            if col in map_df.columns:
-                # Check if column has non-empty values (not just 'nan' strings)
-                col_values = map_df[col].astype(str).str.strip()
-                non_empty = col_values[~col_values.isin(['', 'nan', 'None', 'NaN'])]
-                non_empty_count = len(non_empty)
-                # Use the column with the most non-empty values
-                if non_empty_count > max_non_empty:
-                    max_non_empty = non_empty_count
-                    data_col = col
+    # Execute query and convert to DataFrame
+    map_results = execute_query(map_query)
+    map_df = pd.DataFrame(map_results)
+    
+    if not map_df.empty:
+        # Clean and standardize column names
+        map_df.columns = map_df.columns.str.strip()
         
-        # If we found a column with data, use it
-        if data_col:
-            map_df['country_long_name'] = map_df[data_col].astype(str).str.strip()
-            # Drop duplicate columns
-            for dup_col in country_cols:
-                if dup_col != 'country_long_name' and dup_col in map_df.columns:
-                    map_df = map_df.drop(columns=[dup_col])
-        else:
-            # If no data found, use the first one
-            map_df['country_long_name'] = map_df[country_cols[0]].astype(str).str.strip()
-    elif 'country_long_name' in map_df.columns:
-        map_df['country_long_name'] = map_df['country_long_name'].astype(str).str.strip()
-    
-    # Get unique countries from map data for dropdown
-    if not map_df.empty and 'country_long_name' in map_df.columns:
-        country_list = sorted(map_df['country_long_name'].dropna().unique().tolist())
-        country_list = [str(c).strip() for c in country_list if c and str(c).strip() and str(c).strip() != 'nan']  # Remove empty strings and NaN
-        # Set default to United States
-        default_country = 'United States' if 'United States' in country_list else (country_list[0] if country_list else None)
+        # Rename port_name to Port Name for compatibility with existing code
+        if 'port_name' in map_df.columns:
+            map_df['Port Name'] = map_df['port_name'].astype(str).str.strip()
+        
+        # Ensure country_long_name is properly formatted
+        if 'country_long_name' in map_df.columns:
+            map_df['country_long_name'] = map_df['country_long_name'].astype(str).str.strip()
+        
+        print(f"Loaded map data with {len(map_df)} records from database")
     else:
-        country_list = []
-        default_country = None
+        map_df = pd.DataFrame()
+        print("Warning: No map data loaded from database")
+        
 except Exception as e:
-    print(f"Error loading map data: {e}")
+    print(f"Error loading map data from database: {e}")
     import traceback
     traceback.print_exc()
     map_df = pd.DataFrame()
-    country_list = []
-    default_country = None
 
+# Initialize country list - will be populated from database
+country_list = []
+default_country = None
+
+# Load production data from database
 try:
-    # The CSV has nested headers: Row 1 = "Date" repeated, Row 2 = Years, Row 3 = "Crude", "Monthly production dynamic title", then months
-    # Try different encodings and separators
-    header_df = None
-    data_df = None
+    # Query production data from database
+    query = """
+    SELECT 
+        "t_wcod_monthly_stream_production"."added_by" AS added_by,
+        "t_wcod_monthly_stream_production"."commodity" AS commodity,
+        "t_wcod_monthly_stream_production"."commodity_id" AS commodity_id,
+        "t_wcod_monthly_stream_production"."country" AS country,
+        (CASE 
+            WHEN "country" = 'Abu Dhabi' THEN 'https://www.energyintel.com/wcod/country-profile/abu-dhabi'
+            WHEN "country" = 'Algeria' THEN 'https://www.energyintel.com/wcod/country-profile/algeria'
+            WHEN "country" = 'Angola' THEN 'https://www.energyintel.com/wcod/country-profile/angola'
+            WHEN "country" = 'Argentina' THEN 'https://www.energyintel.com/wcod/country-profile/argentina'
+            WHEN "country" = 'Australia' THEN 'https://www.energyintel.com/wcod/country-profile/australia'
+            WHEN "country" = 'Azerbaijan' THEN 'https://www.energyintel.com/wcod/country-profile/azerbaijan'
+            WHEN "country" = 'Brazil' THEN 'https://www.energyintel.com/wcod/country-profile/brazil'
+            WHEN "country" = 'Brunei' THEN 'https://www.energyintel.com/wcod/country-profile/brunei'
+            WHEN "country" = 'Canada' THEN 'https://www.energyintel.com/wcod/country-profile/canada'
+            WHEN "country" = 'Chad' THEN 'https://www.energyintel.com/wcod/country-profile/chad'
+            WHEN "country" = 'China' THEN 'https://www.energyintel.com/wcod/country-profile/china'
+            WHEN "country" = 'Colombia' THEN 'https://www.energyintel.com/wcod/country-profile/colombia'
+            WHEN "country" = 'Congo (Brazzaville)' THEN 'https://www.energyintel.com/wcod/country-profile/republic-of-the-congo'
+            WHEN "country" = 'Denmark' THEN 'https://www.energyintel.com/wcod/country-profile/denmark'
+            WHEN "country" = 'Dubai' THEN 'https://www.energyintel.com/wcod/country-profile/dubai'
+            WHEN "country" = 'Ecuador' THEN 'https://www.energyintel.com/wcod/country-profile/ecuador'
+            WHEN "country" = 'Egypt' THEN 'https://www.energyintel.com/wcod/country-profile/egypt'
+            WHEN "country" = 'Equatorial Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/equatorial-guinea'
+            WHEN "country" = 'Gabon' THEN 'https://www.energyintel.com/wcod/country-profile/gabon'
+            WHEN "country" = 'Ghana' THEN 'https://www.energyintel.com/wcod/country-profile/ghana'
+            WHEN "country" = 'Guyana' THEN 'https://www.energyintel.com/wcod/country-profile/guyana'
+            WHEN "country" = 'Indonesia' THEN 'https://www.energyintel.com/wcod/country-profile/indonesia'
+            WHEN "country" = 'Iran' THEN 'https://www.energyintel.com/wcod/country-profile/iran'
+            WHEN "country" = 'Iraq' THEN 'https://www.energyintel.com/wcod/country-profile/iraq'
+            WHEN "country" = 'Kazakhstan' THEN 'https://www.energyintel.com/wcod/country-profile/kazakhstan'
+            WHEN "country" = 'Kuwait' THEN 'https://www.energyintel.com/wcod/country-profile/kuwait'
+            WHEN "country" = 'Libya' THEN 'https://www.energyintel.com/wcod/country-profile/libya'
+            WHEN "country" = 'Malaysia' THEN 'https://www.energyintel.com/wcod/country-profile/malaysia'
+            WHEN "country" = 'Mexico' THEN 'https://www.energyintel.com/wcod/country-profile/mexico'
+            WHEN "country" = 'Neutral Zone' THEN 'https://www.energyintel.com/wcod/country-profile/neutral-zone'
+            WHEN "country" = 'Nigeria' THEN 'https://www.energyintel.com/wcod/country-profile/nigeria'
+            WHEN "country" = 'Norway' THEN 'https://www.energyintel.com/wcod/country-profile/norway'
+            WHEN "country" = 'Oman' THEN 'https://www.energyintel.com/wcod/country-profile/oman'
+            WHEN "country" = 'Papua New Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/papua-new-guinea'
+            WHEN "country" = 'Qatar' THEN 'https://www.energyintel.com/wcod/country-profile/qatar'
+            WHEN "country" = 'Russia' THEN 'https://www.energyintel.com/wcod/country-profile/russia'
+            WHEN "country" = 'Saudi Arabia' THEN 'https://www.energyintel.com/wcod/country-profile/saudi-arabia'
+            WHEN "country" = 'South Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/south-sudan'
+            WHEN "country" = 'Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/sudan'
+            WHEN "country" = 'Syria' THEN 'https://www.energyintel.com/wcod/country-profile/syria'
+            WHEN "country" = 'Turkmenistan' THEN 'https://www.energyintel.com/wcod/country-profile/turkmenistan'
+            WHEN "country" = 'United Kingdom' THEN 'https://www.energyintel.com/wcod/country-profile/united-kingdom'
+            WHEN "country" = 'United States' THEN 'https://www.energyintel.com/wcod/country-profile/united-states'
+            WHEN "country" = 'Venezuela' THEN 'https://www.energyintel.com/wcod/country-profile/venezuela'
+            WHEN "country" = 'Vietnam' THEN 'https://www.energyintel.com/wcod/country-profile/vietnam'
+            WHEN "country" = 'Yemen' THEN 'https://www.energyintel.com/wcod/country-profile/yemen'
+            ELSE NULL
+        END) AS profile_url,
+        "t_wcod_monthly_stream_production"."country_id" AS country_id,
+        "t_wcod_monthly_stream_production"."date" AS date,
+        "t_wcod_monthly_stream_production"."date_added" AS date_added,
+        "t_wcod_monthly_stream_production"."date_modified" AS date_modified,
+        "t_wcod_monthly_stream_production"."is_forecast" AS is_forecast,
+        "t_wcod_monthly_stream_production"."modified_by" AS modified_by,
+        "t_wcod_monthly_stream_production"."record_id" AS record_id,
+        "t_wcod_monthly_stream_production"."stream_name" AS stream_name,
+        "t_wcod_monthly_stream_production"."unit" AS unit,
+        "t_wcod_monthly_stream_production"."value" AS value
+    FROM "dev"."t_wcod_monthly_stream_production"
+    """
     
-    # Try different combinations of encoding and separator
-    # UTF-16 with BOM is common for Excel exports
-    encodings = ['utf-16', 'utf-16-le', 'utf-16-be', 'utf-8-sig', 'utf-8', 'latin-1']
-    separators = ['\t', ',', ';']
+    # Execute query and convert to DataFrame
+    results = execute_query(query)
+    monthly_prod_df = pd.DataFrame(results)
     
-    for encoding in encodings:
-        for sep in separators:
-            try:
-                # Read first 3 rows to understand structure
-                try:
-                    header_df = pd.read_csv(MONTHLY_PRODUCTION_CSV, encoding=encoding, sep=sep, nrows=3, header=None, on_bad_lines='skip')
-                except TypeError:
-                    # Older pandas versions don't have on_bad_lines
-                    header_df = pd.read_csv(MONTHLY_PRODUCTION_CSV, encoding=encoding, sep=sep, nrows=3, header=None, error_bad_lines=False)
-                
-                # Read the full data starting from row 4 (index 3)
-                # Skip first 2 rows (row 0 and row 1), use row 2 as header, then read data from row 3 onwards
-                try:
-                    data_df = pd.read_csv(MONTHLY_PRODUCTION_CSV, encoding=encoding, sep=sep, skiprows=2, header=0, on_bad_lines='skip')
-                except TypeError:
-                    # Older pandas versions don't have on_bad_lines
-                    data_df = pd.read_csv(MONTHLY_PRODUCTION_CSV, encoding=encoding, sep=sep, skiprows=2, header=0, error_bad_lines=False)
-                
-                print(f"Successfully loaded CSV with encoding={encoding}, sep='{sep}'")
-                break
-            except Exception as e:
-                continue
-        if header_df is not None and data_df is not None:
-            break
-    
-    if header_df is None or data_df is None:
-        raise Exception("Could not read CSV file with any encoding/separator combination")
-    
-    # Get header rows
-    row1 = header_df.iloc[0].tolist() if len(header_df) > 0 else []
-    row2 = header_df.iloc[1].tolist() if len(header_df) > 1 else []
-    row3 = header_df.iloc[2].tolist() if len(header_df) > 2 else []
-    
-    # Clean column names (remove special characters and whitespace)
-    data_df.columns = data_df.columns.astype(str).str.strip()
-    
-    # Find the "Crude" column (first column) and "Monthly production dynamic title" (second column)
-    crude_col = data_df.columns[0] if len(data_df.columns) > 0 else None
-    title_col = data_df.columns[1] if len(data_df.columns) > 1 else None
-    
-    # Also try to find the title column by name in case column order is different
-    if title_col and 'production' not in title_col.lower() and 'monthly' not in title_col.lower():
-        # Try to find it by searching column names
-        for col in data_df.columns:
-            if 'monthly' in col.lower() and 'production' in col.lower() and 'dynamic' in col.lower():
-                title_col = col
-                break
-    
-    print(f"DEBUG: CSV loading - crude_col='{crude_col}', title_col='{title_col}', total columns={len(data_df.columns)}")
-    
-    # Transform from wide to long format
-    monthly_prod_list = []
-    
-    # Get data columns (skip first 2: Crude and Monthly production dynamic title)
-    data_cols = data_df.columns[2:].tolist() if len(data_df.columns) > 2 else []
-    
-    for idx, row in data_df.iterrows():
-        crude = str(row[crude_col]).strip() if crude_col and pd.notna(row[crude_col]) else ''
-        title = str(row[title_col]).strip() if title_col and pd.notna(row[title_col]) else ''
+    if not monthly_prod_df.empty:
+        # Extract year and month from date field
+        monthly_prod_df['date'] = pd.to_datetime(monthly_prod_df['date'], errors='coerce')
+        monthly_prod_df['Year of Date'] = monthly_prod_df['date'].dt.year
+        monthly_prod_df['Month of Date'] = monthly_prod_df['date'].dt.strftime('%B')  # Full month name
         
-        # Skip empty rows
-        if not crude or crude.lower() in ['', 'nan', 'none']:
-            continue
+        # Map columns to match expected format
+        monthly_prod_df['Crude'] = monthly_prod_df['stream_name']
+        monthly_prod_df['Monthly production dynamic title'] = monthly_prod_df['country'] + ' Production'
+        monthly_prod_df['Avg. Value'] = pd.to_numeric(monthly_prod_df['value'], errors='coerce')
         
-        # Process each data column
-        for col_idx, col_name in enumerate(data_cols):
-            # Get year from row2 (offset by 2 for first two columns)
-            # data_cols[0] corresponds to data_df.columns[2], which should align with row2[2] and row3[2]
-            year = ''
-            month = ''
-            
-            # The data column index in the original CSV (accounting for first 2 columns: Crude and Title)
-            csv_col_idx = col_idx + 2
-            
-            if csv_col_idx < len(row2):
-                year_val = row2[csv_col_idx]
-                if pd.notna(year_val):
-                    year = str(year_val).strip()
-            
-            if csv_col_idx < len(row3):
-                month_val = row3[csv_col_idx]
-                if pd.notna(month_val):
-                    month = str(month_val).strip()
-            
-            # Skip if year or month is invalid
-            if not year or not year.isdigit() or not month or month.lower() in ['', 'nan', 'none', 'date', 'monthly production dynamic title']:
-                continue
-            
-            # Get value
-            value = row[col_name] if col_name in row.index else None
-            
-            # Convert value to numeric
-            try:
-                if pd.isna(value):
-                    # Allow empty values for some cells (they'll show as empty in table)
-                    # But still create the record so the table structure is correct
-                    value_num = None
-                else:
-                    # Remove commas and convert
-                    value_str = str(value).replace(',', '').strip()
-                    if value_str and value_str.lower() not in ['', 'nan', 'none', 'null']:
-                        value_num = float(value_str)
-                    else:
-                        value_num = None
-                
-                # Add record - use NaN for empty values (pandas handles this better)
-                monthly_prod_list.append({
-                    'Crude': crude,
-                    'Monthly production dynamic title': title,
-                    'Year of Date': int(year),
-                    'Month of Date': month,
-                    'Avg. Value': value_num if value_num is not None else pd.NA
-                })
-            except (ValueError, TypeError) as e:
-                # Skip invalid values
-                continue
-    
-    monthly_prod_df = pd.DataFrame(monthly_prod_list)
-    
-    if monthly_prod_df.empty:
-        print(f"Warning: No production data loaded from {MONTHLY_PRODUCTION_CSV}")
+        # Get unique countries for dropdown from database
+        country_list = sorted(monthly_prod_df['country'].dropna().unique().tolist())
+        country_list = [str(c).strip() for c in country_list if c and str(c).strip() and str(c).strip() != 'nan']
+        default_country = 'United States' if 'United States' in country_list else (country_list[0] if country_list else None)
+        
+        print(f"Loaded {len(monthly_prod_df)} production records from database")
+        print(f"Available countries: {len(country_list)} countries")
+        print(f"Available crudes: {monthly_prod_df['stream_name'].nunique()} types")
     else:
-        print(f"Loaded {len(monthly_prod_df)} production records from {MONTHLY_PRODUCTION_CSV}")
-        if 'Monthly production dynamic title' in monthly_prod_df.columns:
-            unique_countries = monthly_prod_df['Monthly production dynamic title'].unique()
-            print(f"Available countries in data: {list(unique_countries)}")
-        if 'Crude' in monthly_prod_df.columns:
-            unique_crudes = monthly_prod_df['Crude'].unique()
-            print(f"Available crudes: {len(unique_crudes)} types (e.g., {list(unique_crudes[:3])})")
+        monthly_prod_df = pd.DataFrame()
+        print("Warning: No production data loaded from database")
         
 except Exception as e:
-    print(f"Error loading monthly production data: {e}")
+    print(f"Error loading monthly production data from database: {e}")
     import traceback
     traceback.print_exc()
     monthly_prod_df = pd.DataFrame()
+    country_list = []
+    default_country = None
 
 try:
     port_df = pd.read_csv(PORT_DETAIL_CSV, quotechar='"', skipinitialspace=True)
@@ -429,7 +441,7 @@ def get_port_details_for_hover(port_name):
 
 
 def create_world_map(selected_country=None):
-    """Create world map choropleth using Map_data.csv, filtered by selected country"""
+    """Create world map choropleth using database map data, filtered by selected country"""
     if map_df.empty:
         return create_empty_map()
     
@@ -456,6 +468,7 @@ def create_world_map(selected_country=None):
         port_cols = ['Port Name', 'latitude', 'longitude']
         if 'country_long_name' in filtered_map.columns:
             port_cols.append('country_long_name')
+        # Port column may not exist in database, so check before adding
         if 'Port' in filtered_map.columns:
             port_cols.append('Port')
         port_data = filtered_map[port_cols].copy()
@@ -575,10 +588,11 @@ def create_world_map(selected_country=None):
             # Format: "Port name: [Port Name]" with port name in bold
             hover_text = f"Port name: <b>{port_name}</b>"
             
-            # Determine symbol based on Port value
+            # Determine symbol based on Port value (if available)
             # Port 513 = plus/cross symbol, Port 342 = square, others (171) = circle
+            # Note: Port column may not exist in database, default to circle
             port_value = None
-            if 'Port' in row and pd.notna(row['Port']):
+            if 'Port' in row and pd.notna(row.get('Port')):
                 try:
                     port_value = int(float(row['Port']))
                 except (ValueError, TypeError):
@@ -611,8 +625,10 @@ def create_world_map(selected_country=None):
     else:
         # For all countries, show aggregated data
         if 'country_long_name' in filtered_map.columns:
+            # Count ports using Port Name if Port column doesn't exist
+            count_col = 'Port Name' if 'Port Name' in filtered_map.columns else ('Port' if 'Port' in filtered_map.columns else 'port_name')
             country_data = filtered_map.groupby('country_long_name').agg({
-                'Port': 'count',
+                count_col: 'count',
                 'latitude': 'mean',
                 'longitude': 'mean'
             }).reset_index()
@@ -767,29 +783,23 @@ def create_empty_map():
 
 
 def get_production_data(country_name, time_period='Yearly'):
-    """Get production data for a country from Monthly_Production_data.csv"""
+    """Get production data for a country from database"""
     if monthly_prod_df.empty:
         print(f"DEBUG: monthly_prod_df is empty for country: {country_name}")
         return pd.DataFrame()
     
-    # Filter by country name (from Monthly production dynamic title column)
-    # The column contains format like "United States Production"
-    # So we check if country name is in the title
-    if 'Monthly production dynamic title' not in monthly_prod_df.columns:
-        print(f"DEBUG: 'Monthly production dynamic title' column not found. Available columns: {list(monthly_prod_df.columns)}")
+    # Filter by country name directly from database
+    if 'country' not in monthly_prod_df.columns:
+        print(f"DEBUG: 'country' column not found. Available columns: {list(monthly_prod_df.columns)}")
         return pd.DataFrame()
     
-    # Create a pattern to match: "CountryName Production"
-    # Handle variations like "United States" matching "United States Production"
-    pattern = f"{country_name} Production"
-    
-    # Try exact match first, then contains
+    # Filter by exact country match
     country_data = monthly_prod_df[
-        monthly_prod_df['Monthly production dynamic title'].str.contains(pattern, case=False, na=False)
+        monthly_prod_df['country'].astype(str).str.strip() == str(country_name).strip()
     ].copy()
     
     if country_data.empty:
-        print(f"DEBUG: No data found for country '{country_name}' with pattern '{pattern}'. Available titles: {monthly_prod_df['Monthly production dynamic title'].unique()[:5]}")
+        print(f"DEBUG: No data found for country '{country_name}'. Available countries: {monthly_prod_df['country'].unique()[:5]}")
         return pd.DataFrame()
     
     print(f"DEBUG: Found {len(country_data)} records for country '{country_name}'")
@@ -810,33 +820,41 @@ def get_production_data(country_name, time_period='Yearly'):
 
 
 def get_port_details(country_name):
-    """Return port details for a country; fallback to full dataset when mapping is incomplete."""
-    if port_df.empty:
+    """Return port details for a country from database map data."""
+    if map_df.empty:
         return pd.DataFrame()
     
-    port_df_clean = port_df.copy()
-    port_df_clean['Port Name Clean'] = port_df_clean['Port Name'].astype(str).str.strip().str.strip('"')
-    port_df_clean['Port Name'] = port_df_clean['Port Name'].astype(str).str.strip().str.strip('"')
-    port_df_clean['Coordinates'] = port_df_clean['Coordinates'].astype(str).str.strip()
+    # Filter map data by country
+    if 'country_long_name' not in map_df.columns:
+        return pd.DataFrame()
     
-    if not map_df.empty and 'country_long_name' in map_df.columns and 'Port Name' in map_df.columns:
-        country_ports = map_df[
-            map_df['country_long_name'].astype(str).str.strip() == str(country_name).strip()
-        ]['Port Name'].dropna().unique()
-        
-        if len(country_ports) > 0:
-            country_ports_clean = [str(p).strip().strip('"') for p in country_ports]
-            port_data = port_df_clean[port_df_clean['Port Name Clean'].isin(country_ports_clean)].copy()
-            
-            # If mapping captured only a subset (or none), show the full dataset for completeness
-            if port_data.empty or port_data['Port Name Clean'].nunique() < port_df_clean['Port Name Clean'].nunique():
-                port_data = port_df_clean.copy()
-            
-            if 'Port Name Clean' in port_data.columns:
-                port_data = port_data.drop(columns=['Port Name Clean'])
-            return port_data
+    # Filter by country name
+    country_data = map_df[
+        map_df['country_long_name'].astype(str).str.strip() == str(country_name).strip()
+    ].copy()
     
-    return port_df_clean.drop(columns=['Port Name Clean'])
+    if country_data.empty:
+        return pd.DataFrame()
+    
+    # Ensure we have the required columns
+    required_cols = ['port_name', 'coordinates', 'measure_name', 'value']
+    if not all(col in country_data.columns for col in required_cols):
+        return pd.DataFrame()
+    
+    # Clean and prepare the data
+    port_data = country_data[required_cols].copy()
+    port_data['Port Name'] = port_data['port_name'].astype(str).str.strip()
+    port_data['Coordinates'] = port_data['coordinates'].astype(str).str.strip()
+    
+    # Filter out rows with empty port names or coordinates
+    port_data = port_data[
+        (port_data['Port Name'].str.strip() != '') & 
+        (port_data['Port Name'].str.strip().str.lower() != 'nan') &
+        (port_data['Coordinates'].str.strip() != '') &
+        (port_data['Coordinates'].str.strip().str.lower() != 'nan')
+    ].copy()
+    
+    return port_data
 
 
 def create_production_table(country_name, time_period='Yearly'):
@@ -880,7 +898,12 @@ def create_production_table(country_name, time_period='Yearly'):
                 crudes.append('Total')
         
         # Build columns with nested structure (three-level headers: Date -> Year -> Month)
-        columns = [{'name': ['', '', 'Crude'], 'id': 'Crude', 'type': 'text', 'sortable': True}]
+        columns = [{
+            'name': ['', 'Crude'],
+            'id': 'Crude',
+            'type': 'text',
+            'sortable': True
+        }]
         
         # Add "Date" parent header
         date_cols = []
@@ -894,7 +917,7 @@ def create_production_table(country_name, time_period='Yearly'):
             for month in year_months:
                 col_id = f"{year}_{month}"
                 date_cols.append({
-                    'name': ['Date', str(year), month],
+                    'name': [str(year), month],
                     'id': col_id,
                     'type': 'numeric',
                     'format': {'specifier': ',.0f'},
@@ -948,11 +971,16 @@ def create_production_table(country_name, time_period='Yearly'):
                 # If Thunder Horse not found, append at end
                 crudes.append('Total')
         
-        columns = [{'name': ['', 'Crude'], 'id': 'Crude', 'type': 'text', 'sortable': True}]
+        columns = [{
+            'name': ['', 'Crude'],
+            'id': 'Crude',
+            'type': 'text',
+            'sortable': True
+        }]
         for year in years:
             year_id = str(year)
             columns.append({
-                'name': ['Date', year_id],
+                'name': ['Year', year_id],
                 'id': year_id,
                 'type': 'numeric',
                 'format': {'specifier': ',.0f'},
@@ -974,9 +1002,9 @@ def create_production_table(country_name, time_period='Yearly'):
                     row[str(year)] = ''
             table_data.append(row)
     
-    return dash_table.DataTable(
+    production_table = dash_table.DataTable(
         id='production-table',
-        data=table_data, 
+        data=table_data,
         columns=columns,
         sort_action='native',
         sort_mode='single',
@@ -1088,10 +1116,18 @@ def create_production_table(country_name, time_period='Yearly'):
             }
         ]
     )
+    
+    return html.Div([
+        production_table,
+        html.Div(
+            id='production-table-dropdown-container',
+            className='production-table-dropdown-container'
+        )
+    ])
 
 
 def create_port_details_table(country_name):
-    """Create port details table from Port-Detail_data.csv"""
+    """Create port details table from database map data"""
     port_data = get_port_details(country_name)
     
     if port_data.empty:
@@ -1107,50 +1143,93 @@ def create_port_details_table(country_name):
             }
         )
     
-    # Clean port names
-    port_data['Port Name'] = port_data['Port Name'].astype(str).str.strip().str.strip('"')
+    # Map measure_name from database to display column names
+    measure_name_mapping = {
+        'berths': 'Berths',
+        'max_draft': 'Max Draft',
+        'max_length': 'Max length',
+        'max_loading_rate': 'Max Loading Rate (bbl/hour)',
+        'max_tonnage': 'Max. Tonnage (dwt)',
+        'mooring_type': 'Mooring Type',
+        'storage_cap': 'Storage Capacity (million bbl)'
+    }
+    
+    # Clean and prepare values
+    port_data['value'] = port_data['value'].astype(str).str.strip()
+    port_data['value'] = port_data['value'].replace(['', 'nan', 'NaN', 'None', 'null', 'NULL'], pd.NA)
+    
+    # Remove duplicates before pivoting (same port and measure_name)
+    # Group by Port Name only, not by Coordinates
+    port_data = port_data.drop_duplicates(subset=['Port Name', 'measure_name'], keep='first')
+    
+    # Get the first coordinates for each port (in case a port has multiple coordinates)
+    port_coords = port_data.groupby('Port Name')['Coordinates'].first().reset_index()
+    port_coords.columns = ['Port Name', 'Coordinates']
     
     # Pivot the data to show ports as rows and measures as columns
-    # Handle empty values properly
-    port_data['value'] = port_data['value'].astype(str).str.strip()
-    port_data['value'] = port_data['value'].replace(['', 'nan', 'NaN', 'None'], pd.NA)
-    
+    # Group by Port Name only - each port appears once with all measures as columns
     pivot_port = port_data.pivot_table(
-        index=['Port Name', 'Coordinates'],
+        index='Port Name',
         columns='measure_name',
         values='value',
         aggfunc='first',
         dropna=False
-    ).reset_index()
+    )
+    
+    # Flatten column names if MultiIndex (pivot_table sometimes creates MultiIndex)
+    if isinstance(pivot_port.columns, pd.MultiIndex):
+        pivot_port.columns = pivot_port.columns.droplevel(0)
+    
+    # Reset index to make Port Name a regular column
+    pivot_port = pivot_port.reset_index()
+    
+    # Merge with coordinates to get the first coordinates for each port
+    pivot_port = pivot_port.merge(port_coords, on='Port Name', how='left')
+    
+    # Remove any duplicate rows (shouldn't happen after pivot, but just in case)
+    pivot_port = pivot_port.drop_duplicates(subset=['Port Name'], keep='first')
     
     # Helper function to format cell values (handle NaN, None, empty strings)
     def format_cell_value(val):
         if pd.isna(val) or val is None:
             return ''
         val_str = str(val).strip()
-        if val_str == '' or val_str.lower() in ['nan', 'none', 'null']:
+        if val_str == '' or val_str.lower() in ['nan', 'none', 'null', 'null']:
             return ''
         return val_str
     
-    # Prepare table data - ensure all ports are included
+    # Prepare table data - map measure_name to display names
     table_data = []
+    seen_ports = set()  # Track unique ports
+    
     for _, row in pivot_port.iterrows():
         port_name = format_cell_value(row.get('Port Name', ''))
         coordinates = format_cell_value(row.get('Coordinates', ''))
-        if not port_name or not coordinates:
+        
+        if not port_name:
             continue
-            
-        table_data.append({
+        
+        # Skip if we've already processed this port
+        if port_name in seen_ports:
+            continue
+        
+        seen_ports.add(port_name)
+        
+        # Map each measure_name to its display column name in the correct order
+        # Access columns directly by their measure_name values
+        row_data = {
             'Port Name': port_name,
-            'Coordinates': coordinates,
-            'Storage Capacity (million bbl)': format_cell_value(row.get('Storage Capacity (million bbl)', '')),
-            'Mooring Type': format_cell_value(row.get('Mooring Type', '')),
-            'Max. Tonnage (dwt)': format_cell_value(row.get('Max. Tonnage (dwt)', '')),
-            'Max Loading Rate (bbl/hour)': format_cell_value(row.get('Max Loading Rate (bbl/hour)', '')),
-            'Max length': format_cell_value(row.get('Max length', '')),
-            'Max Draft': format_cell_value(row.get('Max Draft', '')),
-            'Berths': format_cell_value(row.get('Berths', ''))
-        })
+            'Coordinates': format_cell_value(coordinates),
+            'Berths': format_cell_value(row.get('berths', '')),
+            'Max Draft': format_cell_value(row.get('max_draft', '')),
+            'Max length': format_cell_value(row.get('max_length', '')),
+            'Max Loading Rate (bbl/hour)': format_cell_value(row.get('max_loading_rate', '')),
+            'Max. Tonnage (dwt)': format_cell_value(row.get('max_tonnage', '')),
+            'Mooring Type': format_cell_value(row.get('mooring_type', '')),
+            'Storage Capacity (million bbl)': format_cell_value(row.get('storage_cap', ''))
+        }
+        
+        table_data.append(row_data)
     
     columns = [
         {'name': 'Port Name', 'id': 'Port Name', 'type': 'text'},
@@ -1252,54 +1331,232 @@ def format_key_figure_value(measure, value):
     return f"{value:,.2f}"
 
 
-def create_key_figures_table(country_name):
-    """Create Key Figures table from Key Figures CSV"""
-    if key_figures_df.empty:
-        return dash_table.DataTable(
-            data=[],
-            columns=[],
-            style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
+def create_key_figures_table(country_name, time_period='Monthly'):
+    """Create Key Figures table from database (Yearly) or CSV (Monthly)"""
+    
+    if time_period == 'Yearly':
+        # Use database data from map_df query
+        if map_df.empty:
+            return dash_table.DataTable(
+                data=[],
+                columns=[],
+                style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
+            )
+        
+        # Filter map data by country
+        if 'country_long_name' not in map_df.columns:
+            print(f"DEBUG: 'country_long_name' column not found in map_df. Available columns: {list(map_df.columns)}")
+            return dash_table.DataTable(data=[], columns=[])
+        
+        # Check required columns
+        required_cols = ['yr', 'output', 'exports', 'reserves']
+        if not all(col in map_df.columns for col in required_cols):
+            print(f"DEBUG: Missing required columns. Available: {list(map_df.columns)}")
+            return dash_table.DataTable(data=[], columns=[])
+        
+        # Filter by country name (case-insensitive, handle whitespace)
+        country_data = map_df[
+            map_df['country_long_name'].astype(str).str.strip().str.lower() == str(country_name).strip().lower()
+        ].copy()
+        
+        if country_data.empty:
+            # Try to see what countries are available
+            available_countries = map_df['country_long_name'].dropna().unique()[:10]
+            print(f"DEBUG: No data found for country '{country_name}' in map_df. Available countries (sample): {list(available_countries)}")
+            return dash_table.DataTable(data=[], columns=[])
+        
+        print(f"DEBUG: Found {len(country_data)} rows for country '{country_name}'")
+        
+        # Filter out rows where yr is NULL (we need at least yr to create the table)
+        # Also ensure we have at least one of output, exports, or reserves (country data exists)
+        country_data = country_data[
+            (country_data['yr'].notna()) & 
+            ((country_data['output'].notna()) | (country_data['exports'].notna()) | (country_data['reserves'].notna()))
+        ].copy()
+        
+        if country_data.empty:
+            print(f"DEBUG: No data with valid 'yr' and country metrics for country '{country_name}'")
+            return dash_table.DataTable(data=[], columns=[])
+        
+        # Extract year from date field (yr is a date like '2024-01-01')
+        # Convert to datetime if it's not already
+        country_data['yr'] = pd.to_datetime(country_data['yr'], errors='coerce')
+        country_data = country_data.dropna(subset=['yr'])
+        
+        # Extract year as integer
+        country_data['year'] = country_data['yr'].dt.year
+        
+        # Remove duplicates and prepare data - keep first occurrence for each year
+        # This handles cases where FULL JOIN creates multiple rows per year (one per port)
+        # Group by year and take first non-null values for output, exports, reserves
+        country_data = country_data.sort_values('year', ascending=False)
+        
+        # For each year, take the first row with non-null values
+        yearly_data = []
+        for year_val in country_data['year'].unique():
+            year_rows = country_data[country_data['year'] == year_val]
+            # Get first row with at least one non-null value
+            first_row = year_rows.iloc[0]
+            yearly_data.append({
+                'year': int(year_val),
+                'output': first_row['output'] if pd.notna(first_row['output']) else None,
+                'exports': first_row['exports'] if pd.notna(first_row['exports']) else None,
+                'reserves': first_row['reserves'] if pd.notna(first_row['reserves']) else None
+            })
+        
+        if not yearly_data:
+            print(f"DEBUG: No yearly data extracted for country '{country_name}'")
+            return dash_table.DataTable(data=[], columns=[])
+        
+        # Convert to DataFrame for easier handling - use a new variable name to avoid confusion
+        yearly_df = pd.DataFrame(yearly_data)
+        yearly_df = yearly_df.sort_values('year', ascending=False)
+        
+        # Get unique years
+        years = yearly_df['year'].unique().tolist()
+        years = sorted([int(y) for y in years if pd.notna(y)], reverse=True)
+        
+        print(f"DEBUG: Found {len(years)} unique years for country '{country_name}': {years[:10]}")
+        
+        if not years:
+            print(f"DEBUG: No years found after processing for country '{country_name}'")
+            return dash_table.DataTable(data=[], columns=[])
+        
+        # Prepare table data
+        table_data = []
+        
+        # Helper function to format values
+        def format_value(val, measure_type):
+            if pd.isna(val) or val is None:
+                return ''
+            try:
+                val_float = float(val)
+                if measure_type == 'reserves':
+                    return f"{val_float:,.0f}"
+                elif measure_type in ['production', 'exports']:
+                    return f"{val_float:,.0f}"
+                elif measure_type == 'rp_ratio':
+                    # Round to nearest integer (no decimal places)
+                    rounded = round(val_float)
+                    return f"{rounded:,.0f}"
+                return f"{val_float:,.2f}"
+            except (ValueError, TypeError):
+                return ''
+        
+        # Create rows for each measure
+        measures = [
+            ('Reserves (Billion bbl)', 'reserves'),
+            ("Production ('000 b/d)", 'production'),
+            ("Exports ('000 b/d)", 'exports'),
+            ('R/P Ratio (Year)', 'rp_ratio')
+        ]
+        
+        for measure_name, measure_type in measures:
+            row = {'Measure': measure_name}
+            
+            for year in years:
+                # Get data for this year
+                year_row = yearly_df[yearly_df['year'] == year]
+                if year_row.empty:
+                    row[str(year)] = ''
+                    continue
+                
+                year_row_data = year_row.iloc[0]
+                
+                if measure_type == 'reserves':
+                    value = year_row_data['reserves'] if pd.notna(year_row_data['reserves']) else None
+                elif measure_type == 'production':
+                    value = year_row_data['output'] if pd.notna(year_row_data['output']) else None
+                elif measure_type == 'exports':
+                    value = year_row_data['exports'] if pd.notna(year_row_data['exports']) else None
+                elif measure_type == 'rp_ratio':
+                    # Calculate R/P ratio: (reserves * 1000000) / (365 * output)
+                    reserves = year_row_data['reserves'] if pd.notna(year_row_data['reserves']) else None
+                    output = year_row_data['output'] if pd.notna(year_row_data['output']) else None
+                    
+                    if reserves is not None and output is not None and output != 0:
+                        try:
+                            value = (float(reserves) * 1000000) / (365 * float(output))
+                        except (ValueError, TypeError, ZeroDivisionError):
+                            value = None
+                    else:
+                        value = None
+                else:
+                    value = None
+                
+                row[str(year)] = format_value(value, measure_type)
+            
+            table_data.append(row)
+        
+        print(f"DEBUG: Created {len(table_data)} rows for Key Figures table")
+        
+        if not table_data:
+            return dash_table.DataTable(
+                data=[],
+                columns=[],
+                style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
+            )
+        
+        # Create columns
+        columns = [{'name': ['', 'Measure'], 'id': 'Measure', 'type': 'text'}]
+        for year in years:
+            columns.append({
+                'name': ['Date', str(year)],
+                'id': str(year),
+                'type': 'text'
+            })
+        
+        # Return DataTable for yearly view (shared return statement is below)
+        # Continue to shared return statement
+    
+    else:
+        # Use CSV data for Monthly view (original implementation)
+        if key_figures_df.empty:
+            return dash_table.DataTable(
+                data=[],
+                columns=[],
+                style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
+            )
+        
+        df = key_figures_df.copy()
+        if 'Measure Names' not in df.columns or 'Quarter of Year' not in df.columns or 'Measure Values' not in df.columns:
+            return dash_table.DataTable(data=[], columns=[])
+        
+        df['Measure Names'] = df['Measure Names'].astype(str).str.strip()
+        df['Quarter of Year'] = df['Quarter of Year'].astype(str).str.strip()
+        
+        pivot_df = df.pivot_table(
+            index='Measure Names',
+            columns='Quarter of Year',
+            values='Measure Values',
+            aggfunc='first'
         )
-    
-    df = key_figures_df.copy()
-    if 'Measure Names' not in df.columns or 'Quarter of Year' not in df.columns or 'Measure Values' not in df.columns:
-        return dash_table.DataTable(data=[], columns=[])
-    
-    df['Measure Names'] = df['Measure Names'].astype(str).str.strip()
-    df['Quarter of Year'] = df['Quarter of Year'].astype(str).str.strip()
-    
-    pivot_df = df.pivot_table(
-        index='Measure Names',
-        columns='Quarter of Year',
-        values='Measure Values',
-        aggfunc='first'
-    )
-    
-    quarters = sorted(pivot_df.columns.tolist(), key=quarter_sort_key, reverse=True)
-    pivot_df = pivot_df[quarters]
-    measure_order = [
-        'Reserves (Billion bbl)',
-        "Production ('000 b/d)",
-        "Exports ('000 b/d)",
-        'R/P Ratio (Year)'
-    ]
-    measures = [m for m in measure_order if m in pivot_df.index] + [m for m in pivot_df.index if m not in measure_order]
-    
-    table_data = []
-    for measure in measures:
-        row = {'Measure': measure}
+        
+        quarters = sorted(pivot_df.columns.tolist(), key=quarter_sort_key, reverse=True)
+        pivot_df = pivot_df[quarters]
+        measure_order = [
+            'Reserves (Billion bbl)',
+            "Production ('000 b/d)",
+            "Exports ('000 b/d)",
+            'R/P Ratio (Year)'
+        ]
+        measures = [m for m in measure_order if m in pivot_df.index] + [m for m in pivot_df.index if m not in measure_order]
+        
+        table_data = []
+        for measure in measures:
+            row = {'Measure': measure}
+            for quarter in quarters:
+                value = pivot_df.loc[measure, quarter] if quarter in pivot_df.columns else ''
+                row[quarter] = format_key_figure_value(measure, value)
+            table_data.append(row)
+        
+        columns = [{'name': ['', 'Measure'], 'id': 'Measure', 'type': 'text'}]
         for quarter in quarters:
-            value = pivot_df.loc[measure, quarter] if quarter in pivot_df.columns else ''
-            row[quarter] = format_key_figure_value(measure, value)
-        table_data.append(row)
-    
-    columns = [{'name': ['', 'Measure'], 'id': 'Measure', 'type': 'text'}]
-    for quarter in quarters:
-        columns.append({
-            'name': ['Date', quarter],
-            'id': quarter,
-            'type': 'text'
-        })
+            columns.append({
+                'name': ['Date', quarter],
+                'id': quarter,
+                'type': 'text'
+            })
     
     return dash_table.DataTable(
         data=table_data,
@@ -1409,7 +1666,7 @@ def register_callbacks(dash_app, server):
                             }
                         ),
                 html.Div([
-                            create_key_figures_table(country_name)
+                            create_key_figures_table(country_name, time_period)
                         ], style={'background': 'white', 'padding': '20px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
                     ], className='col-md-12', style={'padding': '15px'})
                 ], className='row', style={'margin': '30px 0', 'padding': '0 15px'})
@@ -1495,6 +1752,14 @@ def register_callbacks(dash_app, server):
         """Update profile link when country changes"""
         country = selected_country or default_country
         if country:
+            # Try to get profile_url from database if available
+            if not monthly_prod_df.empty and 'profile_url' in monthly_prod_df.columns:
+                country_data = monthly_prod_df[monthly_prod_df['country'] == country]
+                if not country_data.empty:
+                    profile_url = country_data['profile_url'].iloc[0]
+                    if pd.notna(profile_url) and profile_url:
+                        return str(profile_url)
+            # Fallback to manual generation
             return f"https://www.energyintel.com/wcod/country-profile/{country.lower().replace(' ', '-')}"
         return "#"
     
@@ -1535,6 +1800,144 @@ def register_callbacks(dash_app, server):
                 font-weight: 600;
                 color: #1f2d3d !important;
             }
+            #production-table .dash-spreadsheet-container td.production-row-selected {
+                opacity: 1 !important;
+                background-color: #e6f1ff !important;
+                color: #102a43 !important;
+            }
+            #production-table .dash-spreadsheet-container td.production-row-label-selected {
+                font-weight: 600;
+                color: #102a43 !important;
+            }
+            #production-table .dash-spreadsheet-container td.production-row-label-selected::before {
+                content: '';
+                display: inline-block;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background-color: #fe5000;
+                margin-right: 8px;
+                position: relative;
+                top: -1px;
+                box-shadow: 0 0 0 2px #ffffff;
+            }
+            #production-table th.dash-header {
+                overflow: visible !important;
+            }
+            #production-table th.dash-header[data-dash-column="Crude"] {
+                position: relative;
+                padding-right: 28px;
+            }
+            #production-table .crude-header-toggle {
+                position: absolute;
+                top: 50%;
+                right: 6px;
+                transform: translateY(-50%);
+                width: 22px;
+                height: 22px;
+                border: none;
+                background: transparent;
+                color: #5f6368;
+                border-radius: 3px;
+                cursor: pointer;
+                font-size: 13px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: background 0.2s ease, color 0.2s ease;
+                z-index: 12;
+            }
+            #production-table .crude-header-toggle:hover,
+            #production-table .crude-header-toggle.active {
+                background: rgba(95, 99, 104, 0.18);
+                color: #1f2d3d;
+            }
+            #production-table .crude-sort-menu {
+                position: absolute;
+                top: calc(100% + 6px);
+                left: -1px;
+                min-width: 170px;
+                background: #ffffff;
+                border: 1px solid #d9dde3;
+                border-radius: 3px;
+                box-shadow: 0 10px 28px rgba(31, 45, 61, 0.25);
+                padding: 4px 0;
+                display: none;
+                z-index: 1000;
+            }
+            #production-table .crude-sort-menu.open {
+                display: block;
+            }
+            #production-table .crude-sort-item {
+                width: 100%;
+                padding: 6px 14px;
+                text-align: left;
+                background: transparent;
+                border: none;
+                color: #1f2d3d;
+                font-size: 13px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+            }
+            #production-table .crude-sort-item:hover {
+                background: rgba(95, 99, 104, 0.12);
+            }
+            #production-table .crude-sort-item.has-submenu {
+                position: relative;
+            }
+            #production-table .crude-sort-item .submenu-arrow {
+                font-size: 11px;
+                color: #5f6368;
+            }
+            #production-table .crude-sort-submenu {
+                position: absolute;
+                top: -4px;
+                left: 100%;
+                margin-left: 2px;
+                min-width: 160px;
+                background: #ffffff;
+                border: 1px solid #d9dde3;
+                border-radius: 3px;
+                box-shadow: 0 8px 18px rgba(31, 45, 61, 0.2);
+                padding: 4px 0;
+                display: none;
+            }
+            #production-table .crude-sort-item.has-submenu:hover .crude-sort-submenu {
+                display: block;
+            }
+            #production-table .crude-sort-submenu .crude-sort-item {
+                padding: 6px 12px;
+            }
+            #production-table .crude-row-hidden {
+                display: none !important;
+            }
+            #production-table .dash-table-tooltip {
+                background-color: #ffffff !important;
+                color: #1f2933 !important;
+                border: 1px solid #d5d9dd !important;
+                box-shadow: 0 4px 12px rgba(31, 45, 61, 0.15) !important;
+                padding: 10px 12px !important;
+                border-radius: 6px !important;
+                font-family: 'Arial', 'Helvetica', sans-serif !important;
+                font-size: 12px !important;
+                line-height: 1.5 !important;
+                white-space: pre-wrap !important;
+                max-width: 220px !important;
+            }
+            #production-table .dash-table-tooltip span {
+                display: block;
+            }
+            #world-map-chart .plotly .choroplethlayer {
+                z-index: 10 !important;
+                pointer-events: auto !important;
+            }
+            #world-map-chart .plotly .scatterlayer,
+            #world-map-chart .plotly .scattergeo {
+                z-index: 20 !important;
+            }
             #world-map-chart .plotly .choroplethlayer path {
                 pointer-events: auto !important;
                 stroke: none !important;
@@ -1543,10 +1946,17 @@ def register_callbacks(dash_app, server):
             }
             #world-map-chart .plotly .choroplethlayer path:hover {
                 stroke: black !important;
-                stroke-width: 2px !important;
+                stroke-width: 1px !important;
+            }
+            /* Hide country border when port is being hovered */
+            #world-map-chart.port-hovering .plotly .choroplethlayer path:hover {
+                stroke: none !important;
+                stroke-width: 0 !important;
+                pointer-events: none !important;
             }
             #world-map-chart .plotly .scattergeo .points path {
                 pointer-events: auto !important;
+                cursor: pointer;
             }
             #world-map-chart .plotly .scattergeo .points path:hover {
                 stroke: none !important;
@@ -1563,6 +1973,64 @@ def register_callbacks(dash_app, server):
             const MIN_LON_RANGE = 60;       // Minimum longitude range (degrees) - zoom in limit
             const MAX_LAT_RANGE = ZOOM_OUT_MAX_LAT - ZOOM_OUT_MIN_LAT;  // Maximum allowed latitude range (155 degrees)
             const MAX_LON_RANGE = ZOOM_OUT_MAX_LON - ZOOM_OUT_MIN_LON;  // Maximum allowed longitude range (360 degrees)
+            
+            function setupPortHoverEffects() {
+                const mapElement = document.getElementById('world-map-chart');
+                if (!mapElement) {
+                    setTimeout(setupPortHoverEffects, 500);
+                    return;
+                }
+                const plotlyDiv = mapElement.querySelector('.plotly');
+                if (!plotlyDiv) {
+                    setTimeout(setupPortHoverEffects, 500);
+                    return;
+                }
+                
+                function bindPortListeners() {
+                    const portMarkers = plotlyDiv.querySelectorAll('.scattergeo .points path');
+                    if (!portMarkers || !portMarkers.length) {
+                        return;
+                    }
+                    
+                    portMarkers.forEach(function(marker) {
+                        if (marker.dataset.portHoverBound === 'true') {
+                            return;
+                        }
+                        marker.dataset.portHoverBound = 'true';
+                        
+                        const addHoverClass = function() {
+                            mapElement.classList.add('port-hovering');
+                        };
+                        const removeHoverClass = function() {
+                            mapElement.classList.remove('port-hovering');
+                        };
+                        
+                        marker.addEventListener('mouseenter', addHoverClass);
+                        marker.addEventListener('mouseleave', removeHoverClass);
+                        marker.addEventListener('focus', addHoverClass);
+                        marker.addEventListener('blur', removeHoverClass);
+                        marker.addEventListener('touchstart', addHoverClass, { passive: true });
+                        marker.addEventListener('touchend', removeHoverClass);
+                        marker.addEventListener('touchcancel', removeHoverClass);
+                    });
+                }
+                
+                bindPortListeners();
+                
+                if (mapElement._portHoverObserver) {
+                    mapElement._portHoverObserver.disconnect();
+                }
+                
+                const observer = new MutationObserver(function() {
+                    bindPortListeners();
+                });
+                observer.observe(plotlyDiv, { childList: true, subtree: true });
+                mapElement._portHoverObserver = observer;
+                
+                mapElement.addEventListener('mouseleave', function() {
+                    mapElement.classList.remove('port-hovering');
+                });
+            }
             
             // Limit zoom in and zoom out on map
             function enforceZoomLimits() {
@@ -1719,10 +2187,30 @@ def register_callbacks(dash_app, server):
                 setTimeout(enforceZoomLimits, 1000);
                 
                 // Listen for ALL relayout events (zoom, pan, etc.) and enforce both zoom limits
-                mapElement.on('plotly_relayout', function(eventData) {
-                    // Enforce limits on any relayout event (more aggressive)
-                    setTimeout(enforceZoomLimits, 10);
-                });
+                // Use a polling mechanism since Plotly event system may not be available in Dash
+                let lastLayout = null;
+                const checkLayoutChange = function() {
+                    if (plotlyDiv && plotlyDiv._fullLayout) {
+                        const currentLayout = JSON.stringify(plotlyDiv._fullLayout.geo);
+                        if (currentLayout !== lastLayout) {
+                            lastLayout = currentLayout;
+                            enforceZoomLimits();
+                        }
+                    }
+                };
+                
+                // Poll for layout changes
+                const layoutInterval = setInterval(checkLayoutChange, 100);
+                
+                // Also check on mouse events
+                if (plotlyDiv) {
+                    plotlyDiv.addEventListener('mousedown', function() {
+                        setTimeout(enforceZoomLimits, 10);
+                    });
+                    plotlyDiv.addEventListener('wheel', function() {
+                        setTimeout(enforceZoomLimits, 10);
+                    }, { passive: true });
+                }
                 
                 // Also intercept wheel events for more immediate control
                 const geoDiv = plotlyDiv.querySelector('.geo');
@@ -1757,6 +2245,189 @@ def register_callbacks(dash_app, server):
                     spreadsheet.querySelectorAll('.production-cell-selected').forEach(function(cell) {
                         cell.classList.remove('production-cell-selected');
                     });
+                    spreadsheet.querySelectorAll('.production-row-selected').forEach(function(cell) {
+                        cell.classList.remove('production-row-selected');
+                    });
+                    spreadsheet.querySelectorAll('.production-row-label-selected').forEach(function(cell) {
+                        cell.classList.remove('production-row-label-selected');
+                    });
+                }
+                
+                function closeAllCrudeMenus(eventTarget, forceAll) {
+                    document.querySelectorAll('#production-table .crude-sort-menu.open').forEach(function(menu) {
+                        const toggle = menu._toggleButton;
+                        if (forceAll || (!menu.contains(eventTarget) && (!toggle || !toggle.contains(eventTarget)))) {
+                            menu.classList.remove('open');
+                            if (toggle) {
+                                toggle.classList.remove('active');
+                            }
+                        }
+                    });
+                }
+                
+                function captureOriginalOrder(spreadsheet) {
+                    if (spreadsheet.dataset.originalCrudeOrder) {
+                        return;
+                    }
+                    const order = Array.from(spreadsheet.querySelectorAll('td[data-dash-column="Crude"]')).map(function(cell) {
+                        return {
+                            rowKey: cell.getAttribute('data-dash-row'),
+                            label: cell.textContent.trim()
+                        };
+                    });
+                    spreadsheet.dataset.originalCrudeOrder = JSON.stringify(order);
+                }
+                
+                function sortRows(spreadsheet, comparator) {
+                    const tbody = spreadsheet.querySelector('tbody');
+                    if (!tbody) {
+                        return;
+                    }
+                    const rows = Array.from(tbody.querySelectorAll('tr[data-dash-row]'));
+                    if (!rows.length) {
+                        return;
+                    }
+                    rows.sort(comparator);
+                    const fragment = document.createDocumentFragment();
+                    rows.forEach(function(row) {
+                        fragment.appendChild(row);
+                    });
+                    tbody.appendChild(fragment);
+                }
+                
+                function getRowLabel(row) {
+                    const labelCell = row.querySelector('td[data-dash-column="Crude"]');
+                    return labelCell ? labelCell.textContent.trim() : '';
+                }
+                
+                function getRowLatestValue(row) {
+                    const cells = Array.from(row.querySelectorAll('td'));
+                    for (let i = 0; i < cells.length; i += 1) {
+                        const colId = cells[i].getAttribute('data-dash-column');
+                        if (colId && colId !== 'Crude') {
+                            const numeric = parseFloat((cells[i].textContent || '').replace(/,/g, ''));
+                            if (!isNaN(numeric)) {
+                                return numeric;
+                            }
+                        }
+                    }
+                    return -Infinity;
+                }
+                
+                function applyCrudeSort(spreadsheet, mode) {
+                    const originalData = spreadsheet.dataset.originalCrudeOrder ? JSON.parse(spreadsheet.dataset.originalCrudeOrder) : [];
+                    if (mode === 'data-source' && originalData.length) {
+                        const indexMap = {};
+                        originalData.forEach(function(item, idx) {
+                            indexMap[item.rowKey] = idx;
+                        });
+                        sortRows(spreadsheet, function(a, b) {
+                            const aKey = a.getAttribute('data-dash-row');
+                            const bKey = b.getAttribute('data-dash-row');
+                            return (indexMap[aKey] || 0) - (indexMap[bKey] || 0);
+                        });
+                        return;
+                    }
+                    
+                    if (mode === 'alphabetic' || mode === 'field-crude') {
+                        sortRows(spreadsheet, function(a, b) {
+                            return getRowLabel(a).localeCompare(getRowLabel(b));
+                        });
+                        return;
+                    }
+                    
+                    if (mode === 'field-date' || mode === 'nested') {
+                        sortRows(spreadsheet, function(a, b) {
+                            return getRowLatestValue(b) - getRowLatestValue(a);
+                        });
+                        return;
+                    }
+                }
+                
+                function setupCrudeSortMenu(tableElement, spreadsheet) {
+                    if (!tableElement || !spreadsheet) {
+                        return;
+                    }
+                    const headerCells = tableElement.querySelectorAll('th.dash-header[data-dash-column="Crude"]');
+                    const headerCell = headerCells.length ? headerCells[headerCells.length - 1] : null;
+                    if (!headerCell || headerCell.dataset.crudeMenuAttached === 'true') {
+                        return;
+                    }
+                    headerCell.dataset.crudeMenuAttached = 'true';
+                    captureOriginalOrder(spreadsheet);
+                    
+                    const toggle = document.createElement('button');
+                    toggle.type = 'button';
+                    toggle.className = 'crude-header-toggle';
+                    toggle.setAttribute('aria-label', 'Sort options');
+                    toggle.innerHTML = '&#9662;';
+                    
+                    const menu = document.createElement('div');
+                    menu.className = 'crude-sort-menu';
+                    menu._toggleButton = toggle;
+                    
+                    function createMenuButton(label, sortKey) {
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'crude-sort-item';
+                        btn.textContent = label;
+                        btn.setAttribute('data-sort', sortKey);
+                        return btn;
+                    }
+                    
+                    const dataSourceBtn = createMenuButton('Data source order', 'data-source');
+                    const alphabeticBtn = createMenuButton('Alphabetic', 'alphabetic');
+                    const nestedBtn = createMenuButton('Nested', 'nested');
+                    
+                    const fieldWrapper = document.createElement('div');
+                    fieldWrapper.className = 'crude-sort-item has-submenu';
+                    const fieldText = document.createElement('span');
+                    fieldText.textContent = 'Field';
+                    const submenuArrow = document.createElement('span');
+                    submenuArrow.className = 'submenu-arrow';
+                    submenuArrow.innerHTML = '&#9656;';
+                    fieldWrapper.appendChild(fieldText);
+                    fieldWrapper.appendChild(submenuArrow);
+                    
+                    const fieldSubmenu = document.createElement('div');
+                    fieldSubmenu.className = 'crude-sort-submenu';
+                    const fieldCrudeBtn = createMenuButton('Crude', 'field-crude');
+                    const fieldDateBtn = createMenuButton('Date', 'field-date');
+                    fieldSubmenu.appendChild(fieldCrudeBtn);
+                    fieldSubmenu.appendChild(fieldDateBtn);
+                    fieldWrapper.appendChild(fieldSubmenu);
+                    
+                    menu.appendChild(dataSourceBtn);
+                    menu.appendChild(alphabeticBtn);
+                    menu.appendChild(fieldWrapper);
+                    menu.appendChild(nestedBtn);
+                    
+                    menu.addEventListener('click', function(event) {
+                        event.stopPropagation();
+                    });
+                    
+                    headerCell.appendChild(toggle);
+                    headerCell.appendChild(menu);
+                    
+                    toggle.addEventListener('click', function(event) {
+                        event.stopPropagation();
+                        const isOpen = menu.classList.contains('open');
+                        closeAllCrudeMenus(toggle, true);
+                        if (!isOpen) {
+                            menu.classList.add('open');
+                            toggle.classList.add('active');
+                        }
+                    });
+                    
+                    menu.querySelectorAll('button[data-sort]').forEach(function(button) {
+                        button.addEventListener('click', function(event) {
+                            event.stopPropagation();
+                            const sortKey = this.getAttribute('data-sort');
+                            applyCrudeSort(spreadsheet, sortKey);
+                            menu.classList.remove('open');
+                            toggle.classList.remove('active');
+                        });
+                    });
                 }
                 
                 function enhanceTable(tableElement) {
@@ -1777,10 +2448,42 @@ def register_callbacks(dash_app, server):
                         }
                         
                         const columnId = cell.getAttribute('data-dash-column');
+                        const rowIndex = cell.getAttribute('data-dash-row');
+                        
+                        // Create a unique key for row selection (use row index as key)
+                        const rowKey = 'row-' + rowIndex;
+                        
+                        // If clicking on Crude column, use row-based selection
                         if (columnId === 'Crude') {
+                            if (spreadsheet.dataset.selectedKey === rowKey) {
+                                clearSelection(spreadsheet);
+                                return;
+                            }
+                            
+                            spreadsheet.dataset.selectedKey = rowKey;
+                            spreadsheet.classList.add('production-selection-active');
+                            spreadsheet.querySelectorAll('.production-cell-selected').forEach(function(selectedCell) {
+                                selectedCell.classList.remove('production-cell-selected');
+                            });
+                            spreadsheet.querySelectorAll('.production-row-selected').forEach(function(rowCell) {
+                                rowCell.classList.remove('production-row-selected');
+                            });
+                            spreadsheet.querySelectorAll('.production-row-label-selected').forEach(function(labelCell) {
+                                labelCell.classList.remove('production-row-label-selected');
+                            });
+                            
+                            // Highlight entire row
+                            const selectedRowCells = spreadsheet.querySelectorAll('td[data-dash-row="' + rowIndex + '"]');
+                            selectedRowCells.forEach(function(rowCell) {
+                                rowCell.classList.add('production-row-selected');
+                                if (rowCell.getAttribute('data-dash-column') === 'Crude') {
+                                    rowCell.classList.add('production-row-label-selected');
+                                }
+                            });
                             return;
                         }
                         
+                        // For data cells, use cell-based selection (highlight only the clicked cell)
                         const cellKey = cell.getAttribute('data-dash-row') + '-' + columnId;
                         
                         if (spreadsheet.dataset.selectedKey === cellKey) {
@@ -1793,11 +2496,20 @@ def register_callbacks(dash_app, server):
                         spreadsheet.querySelectorAll('.production-cell-selected').forEach(function(selectedCell) {
                             selectedCell.classList.remove('production-cell-selected');
                         });
+                        spreadsheet.querySelectorAll('.production-row-selected').forEach(function(rowCell) {
+                            rowCell.classList.remove('production-row-selected');
+                        });
+                        spreadsheet.querySelectorAll('.production-row-label-selected').forEach(function(labelCell) {
+                            labelCell.classList.remove('production-row-label-selected');
+                        });
                         cell.classList.add('production-cell-selected');
                     });
+                    
+                    setupCrudeSortMenu(tableElement, spreadsheet);
                 }
                 
                 document.addEventListener('click', function(event) {
+                    closeAllCrudeMenus(event.target, false);
                     document.querySelectorAll('#production-table .dash-spreadsheet-container.production-selection-active').forEach(function(spreadsheet) {
                         const wrapper = spreadsheet.closest('#production-table');
                         if (wrapper && !wrapper.contains(event.target)) {
@@ -1824,6 +2536,7 @@ def register_callbacks(dash_app, server):
             // Start setup
             setupZoomLimits();
             initProductionTableEnhancements();
+            setupPortHoverEffects();
             
             return window.dash_clientside.no_update;
         }
