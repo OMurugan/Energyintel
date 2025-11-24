@@ -4,6 +4,7 @@ import os
 import chardet
 import dash
 import re
+
 from app import create_dash_app
 
 # ------------------------------------------------------------------------------
@@ -127,7 +128,7 @@ def load_crude_data(mode):
     ]
 
 # ------------------------------------------------------------------------------
-# CALCULATE COMBINED SUM DATA (Production + Exports) - SORTED BY TOTAL SUM DESC
+# CALCULATE COMBINED SUM DATA (Production + Exports) - SORTED BY MAXIMUM VALUE DESC
 # ------------------------------------------------------------------------------
 def calculate_combined_sums():
     """Calculate combined sums of Production and Exports for each crude oil and year, sorted by maximum value descending"""
@@ -228,6 +229,41 @@ def calculate_sum_row(data):
         sum_row[col] = f"{col_sum:,.0f}"
     
     return sum_row
+
+# ------------------------------------------------------------------------------
+# SORT DATA BY MAXIMUM VALUE (For Field/Nested sorting)
+# ------------------------------------------------------------------------------
+def sort_by_maximum_value(data, direction='desc'):
+    """Sort data by maximum value across all years"""
+    if not data:
+        return data
+    
+    df = pd.DataFrame(data)
+    numeric_cols = [col for col in df.columns if col != 'CrudeOil']
+    
+    # Calculate maximum value for each row
+    def get_max_value(row):
+        max_val = 0
+        for col in numeric_cols:
+            val = row[col]
+            if val and str(val).strip() and str(val).strip() != '':
+                try:
+                    clean_val = str(val).replace(',', '')
+                    float_val = float(clean_val)
+                    if float_val > max_val:
+                        max_val = float_val
+                except (ValueError, TypeError):
+                    continue
+        return max_val
+    
+    df['_max_value'] = df.apply(get_max_value, axis=1)
+    
+    # Sort by maximum value
+    ascending = (direction == 'asc')
+    df_sorted = df.sort_values('_max_value', ascending=ascending)
+    df_sorted = df_sorted.drop('_max_value', axis=1)
+    
+    return df_sorted.to_dict('records')
 
 # ------------------------------------------------------------------------------
 # INITIAL LOAD
@@ -464,7 +500,7 @@ def create_layout(server):
                            "fontSize": "12px",
                            "cursor": "pointer",
                            "fontFamily": "Arial",
-                           "color": "#333",
+                           "color": "333",
                            "display": "flex",
                            "alignItems": "center",
                            "justifyContent": "space-between",
@@ -837,17 +873,15 @@ def register_callbacks(app):
          Output("sum-row-store", "data"),
          Output("is-combined-mode", "data")],
         [Input("export-production-dropdown", "value"),
-         Input("field-sort-btn", "n_clicks"),
-         Input("nested-sort-btn", "n_clicks"),
-         Input("year-column-btn", "n_clicks"),
-         Input("sum-text-box", "n_clicks")],
+         Input("sum-text-box", "n_clicks"),
+         Input("year-column-btn", "n_clicks")],
         [State("is-combined-mode", "data")]
     )
-    def reload_data(mode, field_clicks, nested_clicks, year_clicks, sum_text_clicks, is_combined):
+    def reload_data(mode, sum_text_clicks, year_clicks, is_combined):
         trigger = ctx.triggered_id
         
-        # If Field, Nested, Year icon, or SUM text box is clicked, switch to combined mode
-        if trigger in ['field-sort-btn', 'nested-sort-btn', 'year-column-btn', 'sum-text-box']:
+        # SUM text box OR Year icon click switches to combined mode
+        if trigger in ['sum-text-box', 'year-column-btn']:
             # Use combined data WITHOUT sum row
             combined_data = calculate_combined_sums()
             return combined_data, combined_data, None, True
@@ -926,7 +960,8 @@ def register_callbacks(app):
          Input('popup-nested-btn', 'n_clicks'),
          Input('field-sort-btn', 'n_clicks'),
          Input('nested-sort-btn', 'n_clicks'),
-         Input('sum-text-box', 'n_clicks')],
+         Input('sum-text-box', 'n_clicks'),
+         Input('year-column-btn', 'n_clicks')],
         [State('show-sorting-controls', 'data'),
          State('current-sort-order', 'data')],
         prevent_initial_call=True
@@ -935,7 +970,7 @@ def register_callbacks(app):
                                   popup_source_clicks, popup_alpha_clicks,
                                   popup_field_clicks, popup_nested_clicks,
                                   field_sort_clicks, nested_sort_clicks,
-                                  sum_text_clicks,
+                                  sum_text_clicks, year_clicks,
                                   show_controls, current_sort):
         trigger = ctx.triggered_id
         
@@ -1040,8 +1075,8 @@ def register_callbacks(app):
                 "left": "351px"
             }
         
-        elif trigger == 'sum-text-box':
-            # When SUM text box is clicked, close popup and show combined data
+        elif trigger == 'sum-text-box' or trigger == 'year-column-btn':
+            # When SUM text box OR Year icon is clicked, close popup and show combined data with maximum value sorting
             return {
                 "position": "absolute", 
                 "backgroundColor": "white", 
@@ -1050,7 +1085,7 @@ def register_callbacks(app):
                 "zIndex": "1000",
                 "display": "none",
                 "minWidth": "160px"
-            }, False, {'type': 'field', 'direction': current_sort.get('direction', 'asc') if current_sort else 'asc'}, {
+            }, False, {'type': 'field', 'direction': 'desc'}, {
                 "position": "absolute",
                 "backgroundColor": "white",
                 "border": "1px solid #ccc",
@@ -1086,46 +1121,38 @@ def register_callbacks(app):
             "color": "#333",
         }
 
-    # Apply sorting when sort order changes
+    # Apply sorting when sort order changes - UPDATED FOR MAXIMUM VALUE SORTING
     @app.callback(
         [Output('crude-comparison-table', 'data', allow_duplicate=True),
          Output('current-sort-order', 'data', allow_duplicate=True)],
         [Input('current-sort-order', 'data')],
         [State('original-data-store', 'data'),
          State('export-production-dropdown', 'value'),
-         State('sum-row-store', 'data')],
+         State('sum-row-store', 'data'),
+         State('is-combined-mode', 'data')],
         prevent_initial_call=True
     )
-    def apply_sort_order(current_sort, original_data, mode, sum_row):
+    def apply_sort_order(current_sort, original_data, mode, sum_row, is_combined):
         if not original_data or not current_sort:
             return dash.no_update, dash.no_update
             
         sort_type = current_sort.get('type', 'alphabetic')
         direction = current_sort.get('direction', 'asc')
         
+        # If we're in combined mode, use the combined data directly
+        if is_combined:
+            combined_data = calculate_combined_sums()
+            return combined_data, dash.no_update
+            
         # Convert back to DataFrame for sorting
         df = pd.DataFrame(original_data)
         
         if sort_type == 'alphabetic':
             df_sorted = df.sort_values('CrudeOil', ascending=(direction == 'asc'), na_position='last')
         elif sort_type in ['field', 'nested']:
-            numeric_cols = [col for col in df.columns if col != 'CrudeOil']
-            
-            def calculate_sum(row):
-                total = 0
-                for col in numeric_cols:
-                    val = row[col]
-                    if val and str(val).strip() and str(val).strip() != '':
-                        try:
-                            clean_val = str(val).replace(',', '')
-                            total += float(clean_val)
-                        except (ValueError, TypeError):
-                            continue
-                return total
-            
-            df['_sum'] = df.apply(calculate_sum, axis=1)
-            df_sorted = df.sort_values('_sum', ascending=(direction == 'asc'))
-            df_sorted = df_sorted.drop('_sum', axis=1)
+            # Use maximum value sorting for Field and Nested
+            df_sorted_data = sort_by_maximum_value(original_data, direction)
+            df_sorted = pd.DataFrame(df_sorted_data)
         else:
             df_sorted = df
         
@@ -1136,7 +1163,7 @@ def register_callbacks(app):
         
         return sorted_data, dash.no_update
 
-    # Handle sorting from popup menu text options
+    # Handle sorting from popup menu text options - UPDATED FOR MAXIMUM VALUE SORTING
     @app.callback(
         [Output('crude-comparison-table', 'data', allow_duplicate=True),
          Output('current-sort-order', 'data', allow_duplicate=True)],
@@ -1147,12 +1174,13 @@ def register_callbacks(app):
         [State('original-data-store', 'data'),
          State('current-sort-order', 'data'),
          State('export-production-dropdown', 'value'),
-         State('sum-row-store', 'data')],
+         State('sum-row-store', 'data'),
+         State('is-combined-mode', 'data')],
         prevent_initial_call=True
     )
     def handle_popup_sorting(popup_source_clicks, popup_alpha_clicks,
                            popup_field_clicks, popup_nested_clicks,
-                           original_data, current_sort, mode, sum_row):
+                           original_data, current_sort, mode, sum_row, is_combined):
         if not original_data:
             return dash.no_update, dash.no_update
             
@@ -1171,28 +1199,19 @@ def register_callbacks(app):
         
         direction = current_sort.get('direction', 'asc')
         
+        # If we're in combined mode, use the combined data directly
+        if is_combined:
+            combined_data = calculate_combined_sums()
+            return combined_data, {'type': sort_type, 'direction': direction}
+            
         df = pd.DataFrame(original_data)
         
         if sort_type == 'alphabetic':
             df_sorted = df.sort_values('CrudeOil', ascending=(direction == 'asc'), na_position='last')
         elif sort_type in ['field', 'nested']:
-            numeric_cols = [col for col in df.columns if col != 'CrudeOil']
-            
-            def calculate_sum(row):
-                total = 0
-                for col in numeric_cols:
-                    val = row[col]
-                    if val and str(val).strip() and str(val).strip() != '':
-                        try:
-                            clean_val = str(val).replace(',', '')
-                            total += float(clean_val)
-                        except (ValueError, TypeError):
-                            continue
-                return total
-            
-            df['_sum'] = df.apply(calculate_sum, axis=1)
-            df_sorted = df.sort_values('_sum', ascending=(direction == 'asc'))
-            df_sorted = df_sorted.drop('_sum', axis=1)
+            # Use maximum value sorting for Field and Nested
+            sorted_data = sort_by_maximum_value(original_data, direction)
+            df_sorted = pd.DataFrame(sorted_data)
         else:
             df_sorted = df
         
@@ -1366,7 +1385,7 @@ def register_callbacks(app):
                     if (!header.querySelector('.sort-indicator')) {
                         const sortIndicator = document.createElement('div');
                         sortIndicator.className = 'sort-indicator';
-                        sortIndicator.title = 'Sorted descending by sum of Exports/Production Value within CrudeOil, broken down by Source: Energy Intelligence/COPYRIGHT © 2001-2025 ENERGY INTELLIGENCE GROUP, INC. / ENERGY INTELLIGENCE GROUP (UK) LIMITED./2024.';
+                        sortIndicator.title = 'Click to sort by maximum value (Production + Exports)';
                         
                         // Add the exact SVG from your file
                         sortIndicator.innerHTML = `
@@ -1408,9 +1427,10 @@ def register_callbacks(app):
                 if (fieldArrow) {
                     fieldArrow.title = 'Click to show SUM(Exports/Production Value)';
                     
-                    // Make Field arrow clickable
+                    // Make Field arrow clickable - ONLY SHOW SUM TEXT BOX, DON'T SWITCH TO COMBINED MODE
                     fieldArrow.onclick = function(e) {
                         e.stopPropagation();
+                        // Only show SUM text box, don't trigger combined mode
                         const btn = document.getElementById('field-sort-btn');
                         if (btn) btn.click();
                     };
@@ -1419,9 +1439,10 @@ def register_callbacks(app):
                 if (nestedArrow) {
                     nestedArrow.title = 'Click to show SUM(Exports/Production Value)';
                     
-                    // Make Nested arrow clickable
+                    // Make Nested arrow clickable - ONLY SHOW SUM TEXT BOX, DON'T SWITCH TO COMBINED MODE
                     nestedArrow.onclick = function(e) {
                         e.stopPropagation();
+                        // Only show SUM text box, don't trigger combined mode
                         const btn = document.getElementById('nested-sort-btn');
                         if (btn) btn.click();
                     };
@@ -1435,8 +1456,6 @@ def register_callbacks(app):
         Input('crude-comparison-table', 'columns'),
         prevent_initial_call=False
     )
-    
-    
     
 def create_crude_comparison_dashboard(server, url_base_pathname="/dash/crude-comparison"):
     """Create the Crude Overview dashboard"""
