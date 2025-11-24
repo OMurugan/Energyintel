@@ -513,8 +513,30 @@ def create_layout():
                 id='imports-matrix-table-container',
                 children=[],
                 style={'marginTop': '10px'}
+            ),
+            html.Div(
+                id='imports-footnotes',
+                children=[
+                    html.Div("EIA Data is through June 2025", className='footnote-item', **{'data-note-key': 'eia'}),
+                    html.Div("Energy Intelligence Data is through July 2025", className='footnote-item', **{'data-note-key': 'ei'}),
+                    html.Div("OECD Data is through July 2025", className='footnote-item', **{'data-note-key': 'oecd'}),
+                    html.Div("Russian Imports Data is through August 2022", className='footnote-item', **{'data-note-key': 'russia'}),
+                    html.Div("South Korea trade data source: KNOC", className='footnote-static'),
+                    html.Div("Countries: Select jurisdictions are included under countries for data presentation purposes.", className='footnote-static')
+                ],
+                style={
+                    'fontSize': '11px',
+                    'color': '#6c7a89',
+                    'lineHeight': '1.4',
+                    'marginTop': '12px',
+                    'textAlign': 'left',
+                    'display': 'flex',
+                    'flexDirection': 'column',
+                    'gap': '4px'
+                }
             )
-        ], style={'width': '100%', 'marginTop': '30px'})
+        ], style={'width': '100%', 'marginTop': '30px'}),
+        html.Div(id='imports-table-enhancer-anchor', style={'display': 'none'})
     ], className='tab-content', style={'padding': '20px'})
 
 
@@ -981,3 +1003,263 @@ def register_callbacks(dash_app, server):
         label = '■' if playing else '▶'
         interval_disabled = not playing
         return playing, label, interval_disabled
+
+    dash_app.clientside_callback(
+        """
+        function(_id) {
+            try {
+                const styleId = 'imports-table-selection-css';
+                if (!document.getElementById(styleId)) {
+                    const style = document.createElement('style');
+                    style.id = styleId;
+                    style.type = 'text/css';
+                    style.innerHTML = `
+#imports-annual-table .dash-spreadsheet-container,
+#imports-matrix-table .dash-spreadsheet-container {
+    cursor: pointer;
+}
+#imports-annual-table .dash-spreadsheet-container.imports-selection-active td:not([data-dash-column="Importer"]),
+#imports-matrix-table .dash-spreadsheet-container.imports-selection-active td:not([data-dash-column="Exporter"]) {
+    opacity: 0.18;
+    transition: opacity 0.2s ease-in-out;
+}
+#imports-annual-table .dash-spreadsheet-container.imports-selection-active td.imports-cell-selected,
+#imports-matrix-table .dash-spreadsheet-container.imports-selection-active td.imports-cell-selected,
+#imports-annual-table .dash-spreadsheet-container.imports-selection-active td.imports-row-selected,
+#imports-matrix-table .dash-spreadsheet-container.imports-selection-active td.imports-row-selected {
+    opacity: 1 !important;
+}
+#imports-annual-table .dash-spreadsheet-container td.imports-cell-selected,
+#imports-matrix-table .dash-spreadsheet-container td.imports-cell-selected {
+    background-color: #f7fbff !important;
+    box-shadow: inset 0 0 0 2px #0075A8 !important;
+    font-weight: 600;
+    color: #1f2d3d !important;
+}
+#imports-annual-table .dash-spreadsheet-container td.imports-row-selected,
+#imports-matrix-table .dash-spreadsheet-container td.imports-row-selected {
+    background-color: #e6f1ff !important;
+    color: #102a43 !important;
+}
+#imports-annual-table .dash-spreadsheet-container td.imports-row-label-selected,
+#imports-matrix-table .dash-spreadsheet-container td.imports-row-label-selected {
+    font-weight: 600;
+    color: #102a43 !important;
+}
+#imports-annual-table .dash-spreadsheet-container td.imports-row-label-selected::before,
+#imports-matrix-table .dash-spreadsheet-container td.imports-row-label-selected::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #fe5000;
+    margin-right: 8px;
+    position: relative;
+    top: -1px;
+    box-shadow: 0 0 0 2px #ffffff;
+}
+#imports-footnotes {
+    position: relative;
+}
+#imports-footnotes .footnote-item {
+    cursor: pointer;
+    transition: color 0.2s ease, opacity 0.2s ease, background-color 0.2s ease;
+    padding: 2px 0;
+}
+#imports-footnotes .footnote-item:hover {
+    color: #1b365d;
+}
+#imports-footnotes.footnote-selection-active .footnote-item {
+    opacity: 0.2;
+}
+#imports-footnotes .footnote-item.footnote-item-selected {
+    color: #d35400;
+    font-weight: 600;
+    opacity: 1 !important;
+}
+#imports-footnotes .footnote-static {
+    opacity: 0.9;
+    padding: 2px 0;
+}
+                    `;
+                    document.head.appendChild(style);
+                }
+
+                const TABLE_CONFIGS = [
+                    { id: 'imports-annual-table', labelColumn: 'Importer' },
+                    { id: 'imports-matrix-table', labelColumn: 'Exporter' }
+                ];
+
+                function resetSelectionClasses(spreadsheet) {
+                    if (!spreadsheet) {
+                        return;
+                    }
+                    spreadsheet.querySelectorAll('.imports-cell-selected').forEach(function(cell) {
+                        cell.classList.remove('imports-cell-selected');
+                    });
+                    spreadsheet.querySelectorAll('.imports-row-selected').forEach(function(cell) {
+                        cell.classList.remove('imports-row-selected');
+                    });
+                    spreadsheet.querySelectorAll('.imports-row-label-selected').forEach(function(cell) {
+                        cell.classList.remove('imports-row-label-selected');
+                    });
+                }
+
+                function clearSelection(spreadsheet) {
+                    if (!spreadsheet) {
+                        return;
+                    }
+                    resetSelectionClasses(spreadsheet);
+                    spreadsheet.classList.remove('imports-selection-active');
+                    spreadsheet.dataset.selectedKey = '';
+                }
+
+                function highlightEntireRow(spreadsheet, rowIndex, labelColumn) {
+                    const rowCells = spreadsheet.querySelectorAll('td[data-dash-row=\"' + rowIndex + '\"]');
+                    rowCells.forEach(function(rowCell) {
+                        rowCell.classList.add('imports-row-selected');
+                        if (rowCell.getAttribute('data-dash-column') === labelColumn) {
+                            rowCell.classList.add('imports-row-label-selected');
+                        }
+                    });
+                }
+
+                function enhanceTable(tableId, labelColumn) {
+                    const tableEl = document.getElementById(tableId);
+                    if (!tableEl) {
+                        return;
+                    }
+                    const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet || spreadsheet.dataset.importsSelectionBound === 'true') {
+                        return;
+                    }
+                    spreadsheet.dataset.importsSelectionBound = 'true';
+                    spreadsheet.dataset.selectedKey = '';
+
+                    spreadsheet.addEventListener('click', function(event) {
+                        const cell = event.target.closest('td[data-dash-row]');
+                        if (!cell) {
+                            return;
+                        }
+                        const columnId = cell.getAttribute('data-dash-column');
+                        const rowIndex = cell.getAttribute('data-dash-row');
+                        if (!columnId || rowIndex === null) {
+                            return;
+                        }
+
+                        const rowKey = 'row-' + rowIndex;
+                        const cellKey = rowIndex + '-' + columnId;
+
+                        if (columnId === labelColumn) {
+                            if (spreadsheet.dataset.selectedKey === rowKey) {
+                                clearSelection(spreadsheet);
+                                return;
+                            }
+                            spreadsheet.dataset.selectedKey = rowKey;
+                            spreadsheet.classList.add('imports-selection-active');
+                            resetSelectionClasses(spreadsheet);
+                            highlightEntireRow(spreadsheet, rowIndex, labelColumn);
+                            return;
+                        }
+
+                        if (spreadsheet.dataset.selectedKey === cellKey) {
+                            clearSelection(spreadsheet);
+                            return;
+                        }
+
+                        spreadsheet.dataset.selectedKey = cellKey;
+                        spreadsheet.classList.add('imports-selection-active');
+                        resetSelectionClasses(spreadsheet);
+                        cell.classList.add('imports-cell-selected');
+                    });
+                }
+
+                function clearFootnoteSelection(container) {
+                    if (!container) {
+                        return;
+                    }
+                    container.classList.remove('footnote-selection-active');
+                    container.dataset.selectedKey = '';
+                    container.querySelectorAll('.footnote-item').forEach(function(item) {
+                        item.classList.remove('footnote-item-selected');
+                    });
+                }
+
+                function initFootnoteSelection() {
+                    const container = document.getElementById('imports-footnotes');
+                    if (!container || container.dataset.footnoteEnhanced === 'true') {
+                        return;
+                    }
+                    container.dataset.footnoteEnhanced = 'true';
+                    container.dataset.selectedKey = '';
+
+                    container.addEventListener('click', function(event) {
+                        const item = event.target.closest('.footnote-item');
+                        if (!item) {
+                            return;
+                        }
+                        const key = item.getAttribute('data-note-key') || '';
+                        if (!key) {
+                            return;
+                        }
+                        if (container.dataset.selectedKey === key) {
+                            clearFootnoteSelection(container);
+                            return;
+                        }
+                        container.dataset.selectedKey = key;
+                        container.classList.add('footnote-selection-active');
+                        container.querySelectorAll('.footnote-item').forEach(function(node) {
+                            node.classList.remove('footnote-item-selected');
+                        });
+                        item.classList.add('footnote-item-selected');
+                    });
+
+                    document.addEventListener('click', function(event) {
+                        if (!container.contains(event.target)) {
+                            clearFootnoteSelection(container);
+                        }
+                    });
+                }
+
+                function applyEnhancements() {
+                    TABLE_CONFIGS.forEach(function(cfg) {
+                        enhanceTable(cfg.id, cfg.labelColumn);
+                    });
+                    initFootnoteSelection();
+                }
+
+                if (!window.importsTablesMutationObserver) {
+                    window.importsTablesMutationObserver = new MutationObserver(function() {
+                        applyEnhancements();
+                    });
+                    window.importsTablesMutationObserver.observe(document.body, { childList: true, subtree: true });
+                }
+
+                if (!window.importsTablesOutsideClickHandler) {
+                    window.importsTablesOutsideClickHandler = function(event) {
+                        TABLE_CONFIGS.forEach(function(cfg) {
+                            const tableEl = document.getElementById(cfg.id);
+                            if (!tableEl || tableEl.contains(event.target)) {
+                                return;
+                            }
+                            const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                            if (spreadsheet && spreadsheet.classList.contains('imports-selection-active')) {
+                                clearSelection(spreadsheet);
+                            }
+                        });
+                    };
+                    document.addEventListener('click', window.importsTablesOutsideClickHandler);
+                }
+
+                applyEnhancements();
+            } catch (error) {
+                console.error('Imports table enhancer error:', error);
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('imports-table-enhancer-anchor', 'children'),
+        Input('imports-table-enhancer-anchor', 'id'),
+        prevent_initial_call=False
+    )
