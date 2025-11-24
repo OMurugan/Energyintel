@@ -1,7 +1,7 @@
 """
 Main Flask routes for Energy Intelligence website
 """
-from flask import render_template, jsonify, request
+from flask import render_template, jsonify, request, redirect, url_for
 from app.routes import main_bp
 from app import db, cache
 from app.models import Country, Production, Exports, Reserves, Imports
@@ -186,91 +186,146 @@ def get_production_trend():
 
 
 def register_wcod_routes(app):
-    """Register WCoD dashboard routes with HTML templates"""
+    """Register WCoD dashboard routes - all routes serve Dash app for Python header"""
     
+    # All WCoD routes are handled by the Dash app at /wcod/
+    # These Flask routes serve the Dash app directly to ensure Python header always loads
+    # Routes starting with /wcod/ are handled directly by Dash app, no Flask route needed
+    
+    def serve_wcod_dash(path=None):
+        """Serve the WCoD Dash app - it will handle routing internally"""
+        if hasattr(app, 'dash_apps') and 'wcod' in app.dash_apps:
+            dash_app = app.dash_apps['wcod']
+            # Serve the Dash app's index - it will handle the pathname via client-side routing
+            return dash_app.index()
+        # Fallback: redirect to /wcod/ if Dash app not available
+        return redirect('/wcod/')
+    
+    # New routes without /wcod/ prefix
+    # Country tab routes
+    @app.route('/country-overview')
+    def country_overview():
+        return serve_wcod_dash()
+    
+    # Crude tab routes
+    @app.route('/crude-overview')
+    def crude_overview():
+        return serve_wcod_dash()
+    
+    @app.route('/crude-profile')
+    def crude_profile():
+        return serve_wcod_dash()
+    
+    @app.route('/crude-comparison')
+    def crude_comparison():
+        return serve_wcod_dash()
+    
+    @app.route('/crude-quality-comparison')
+    def crude_quality():
+        return serve_wcod_dash()
+    
+    @app.route('/crude-carbon-intensity')
+    def crude_carbon():
+        return serve_wcod_dash()
+    
+    # Trade tab routes
+    @app.route('/trade/imports-country-detail')
+    def trade_imports_detail():
+        return serve_wcod_dash()
+    
+    @app.route('/trade/imports-country-comparison')
+    def trade_imports_comparison():
+        return serve_wcod_dash()
+    
+    @app.route('/trade/global-exports')
+    def trade_global_exports():
+        return serve_wcod_dash()
+    
+    @app.route('/trade/russian-exports-by-terminal-and-exporting-company')
+    def trade_russian_exports():
+        return serve_wcod_dash()
+    
+    # Prices tab routes
+    @app.route('/prices/global-crude-prices')
+    def prices_global_prices():
+        return serve_wcod_dash()
+    
+    @app.route('/prices/price-scorecard-for-key-world-oil-grades')
+    def prices_scorecard():
+        return serve_wcod_dash()
+    
+    @app.route('/prices/gross-product-worth-and-margins')
+    def prices_gpw_margins():
+        return serve_wcod_dash()
+    
+    # Upstream Projects routes
+    @app.route('/upstream-projects/projects-by-country')
+    def projects_by_country():
+        return serve_wcod_dash()
+    
+    @app.route('/upstream-projects/projects-by-company')
+    def projects_by_company():
+        return serve_wcod_dash()
+    
+    @app.route('/upstream-projects/projects-by-time')
+    def projects_by_time():
+        return serve_wcod_dash()
+    
+    @app.route('/upstream-projects/projects-by-status')
+    def projects_by_status():
+        return serve_wcod_dash()
+    
+    @app.route('/upstream-projects-related-articles')
+    def projects_latest():
+        return serve_wcod_dash()
+    
+    # Methodology tab routes
+    @app.route('/upstream-oil-projects-tracker-methodology')
+    def projects_tracker():
+        return serve_wcod_dash()
+    
+    @app.route('/carbon-intensity-methodology')
+    def projects_carbon():
+        return serve_wcod_dash()
+    
+    # Keep old routes for backward compatibility
     # Country tab routes
     @app.route('/wcod-country-overview')
     def wcod_country_profile():
-        return render_template('wcod/country_profile.html')
+        return serve_wcod_dash()
     
     # Crude tab routes
-    @app.route('/wcod/crude-overview')
-    def wcod_crude_overview():
-        return render_template('wcod/crude_overview.html')
-    
     @app.route('/wcod-crude-profile')
     def wcod_crude_profile():
-        return render_template('wcod/crude_profile.html')
+        return serve_wcod_dash()
     
     @app.route('/wcod-crude-comparison')
     def wcod_crude_comparison():
-        return render_template('wcod/crude_comparison.html')
+        return serve_wcod_dash()
     
     @app.route('/wcod-crude-quality-comparison')
     def wcod_crude_quality():
-        return render_template('wcod/crude_quality.html')
+        return serve_wcod_dash()
     
     @app.route('/wcod-crude-carbon-intensity')
     def wcod_crude_carbon():
-        return render_template('wcod/crude_carbon.html')
+        return serve_wcod_dash()
     
-    # Trade tab routes
-    @app.route('/wcod/trade/imports-country-detail')
-    def wcod_imports_detail():
-        return render_template('wcod/imports_detail.html')
-    
-    @app.route('/wcod/trade/imports-country-comparison')
-    def wcod_imports_comparison():
-        return render_template('wcod/imports_comparison.html')
-    
-    @app.route('/wcod/trade/global-exports')
-    def wcod_global_exports():
-        return render_template('wcod/global_exports.html')
-    
-    @app.route('/wcod/trade/russian-exports-by-terminal-and-exporting-company')
-    def wcod_russian_exports():
-        return render_template('wcod/russian_exports.html')
-    
-    # Prices tab routes
-    @app.route('/wcod/prices/global-crude-prices')
-    def wcod_global_prices():
-        return render_template('wcod/global_prices.html')
-    
-    @app.route('/wcod/prices/price-scorecard-for-key-world-oil-grades')
-    def wcod_price_scorecard():
-        return render_template('wcod/price_scorecard.html')
-    
-    @app.route('/wcod/prices/gross-product-worth-and-margins')
-    def wcod_gpw_margins():
-        return render_template('wcod/gpw_margins.html')
-    
-    # Upstream Projects tab routes
-    @app.route('/wcod/upstream-projects/projects-by-country')
-    def wcod_projects_by_country():
-        return render_template('wcod/projects_by_country.html')
-    
-    @app.route('/wcod/upstream-projects/projects-by-company')
-    def wcod_projects_by_company():
-        return render_template('wcod/projects_by_company.html')
-    
-    @app.route('/wcod/upstream-projects/projects-by-time')
-    def wcod_projects_by_time():
-        return render_template('wcod/projects_by_time.html')
-    
+    # Upstream Projects routes (not starting with /wcod/)
     @app.route('/wcod-upstream-projects/projects-by-status')
     def wcod_projects_by_status():
-        return render_template('wcod/projects_by_status.html')
+        return serve_wcod_dash()
     
     @app.route('/wcod-upstream-projects-related-articles')
     def wcod_projects_latest():
-        return render_template('wcod/projects_latest.html')
+        return serve_wcod_dash()
     
     # Methodology tab routes
     @app.route('/wcod-upstream-oil-projects-tracker-methodology')
     def wcod_projects_tracker():
-        return render_template('wcod/projects_tracker.html')
+        return serve_wcod_dash()
     
     @app.route('/wcod-carbon-intensity-methodology')
     def wcod_projects_carbon():
-        return render_template('wcod/projects_carbon.html')
+        return serve_wcod_dash()
 
