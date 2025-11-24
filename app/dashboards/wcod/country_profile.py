@@ -1623,6 +1623,35 @@ def create_key_figures_table(country_name, time_period='Monthly'):
     )
 
 
+def get_profile_url_for_country(country):
+    """Return the profile URL for a given country using DB data when possible."""
+    if not country:
+        return "#"
+
+    # Prefer URL from map query (fact_wcod_country) because it is authoritative
+    if not map_df.empty and 'country_long_name' in map_df.columns and 'profile_url' in map_df.columns:
+        subset = map_df[
+            map_df['country_long_name'].astype(str).str.strip().str.lower() == str(country).strip().lower()
+        ]
+        if not subset.empty:
+            url = subset['profile_url'].dropna().astype(str).str.strip()
+            if not url.empty and url.iloc[0]:
+                return url.iloc[0]
+
+    # Fallback to monthly production query (if available)
+    if not monthly_prod_df.empty and 'profile_url' in monthly_prod_df.columns:
+        subset = monthly_prod_df[
+            monthly_prod_df['country'].astype(str).str.strip().str.lower() == str(country).strip().lower()
+        ]
+        if not subset.empty:
+            url = subset['profile_url'].dropna().astype(str).str.strip()
+            if not url.empty and url.iloc[0]:
+                return url.iloc[0]
+
+    # Last resort: construct URL slug manually
+    return f"https://www.energyintel.com/wcod/country-profile/{str(country).strip().lower().replace(' ', '-')}"
+
+
 def register_callbacks(dash_app, server):
     """Register all callbacks for Country Profile"""
     
@@ -1648,7 +1677,7 @@ def register_callbacks(dash_app, server):
             return html.Div("Please select a country", style={'padding': '20px', 'textAlign': 'center'}), None
         
         # Create profile URL
-        profile_url = f"https://www.energyintel.com/wcod/country-profile/{country_name.lower().replace(' ', '-')}"
+        profile_url = get_profile_url_for_country(country_name)
         
         sections = []
         
@@ -1745,23 +1774,14 @@ def register_callbacks(dash_app, server):
     
     @dash_app.callback(
         Output('profile-link', 'href'),
-        Input('country-select-profile', 'value'),
+        [Input('selected-country-profile-store', 'data'),
+         Input('country-select-profile', 'value')],
         prevent_initial_call=False
     )
-    def update_profile_link(selected_country):
+    def update_profile_link(selected_country_from_store, selected_country_dropdown):
         """Update profile link when country changes"""
-        country = selected_country or default_country
-        if country:
-            # Try to get profile_url from database if available
-            if not monthly_prod_df.empty and 'profile_url' in monthly_prod_df.columns:
-                country_data = monthly_prod_df[monthly_prod_df['country'] == country]
-                if not country_data.empty:
-                    profile_url = country_data['profile_url'].iloc[0]
-                    if pd.notna(profile_url) and profile_url:
-                        return str(profile_url)
-            # Fallback to manual generation
-            return f"https://www.energyintel.com/wcod/country-profile/{country.lower().replace(' ', '-')}"
-        return "#"
+        country = selected_country_from_store or selected_country_dropdown or default_country
+        return get_profile_url_for_country(country)
     
     # Clientside callback to inject CSS for hover effects and limit zoom
     dash_app.clientside_callback(

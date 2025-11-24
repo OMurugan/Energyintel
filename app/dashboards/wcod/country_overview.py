@@ -5,64 +5,208 @@ Replicates Energy Intelligence WCoD Country Overview functionality
 from dash import dcc, html, Input, Output, State, callback, dash_table, dash
 import plotly.graph_objects as go
 import pandas as pd
-import os
+import numpy as np
 
-CSV_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Table_Country_Profile_data.csv')
+from app.database import execute_query
 
-# Load data from CSV once during module import
-try:
-    raw_df = pd.read_csv(CSV_PATH)
-    raw_df.columns = raw_df.columns.str.strip()
+COUNTRY_OVERVIEW_QUERY = """
+SELECT
+        A."country_id",
+        A."country_long_name",
+        CASE
+            WHEN A."country_long_name" = 'Abu Dhabi' THEN 'https://www.energyintel.com/wcod/country-profile/abu-dhabi'
+            WHEN A."country_long_name" = 'Algeria' THEN 'https://www.energyintel.com/wcod/country-profile/algeria'
+            WHEN A."country_long_name" = 'Angola' THEN 'https://www.energyintel.com/wcod/country-profile/angola'
+            WHEN A."country_long_name" = 'Argentina' THEN 'https://www.energyintel.com/wcod/country-profile/argentina'
+            WHEN A."country_long_name" = 'Australia' THEN 'https://www.energyintel.com/wcod/country-profile/australia'
+            WHEN A."country_long_name" = 'Azerbaijan' THEN 'https://www.energyintel.com/wcod/country-profile/azerbaijan'
+            WHEN A."country_long_name" = 'Brazil' THEN 'https://www.energyintel.com/wcod/country-profile/brazil'
+            WHEN A."country_long_name" = 'Brunei' THEN 'https://www.energyintel.com/wcod/country-profile/brunei'
+            WHEN A."country_long_name" = 'Canada' THEN 'https://www.energyintel.com/wcod/country-profile/canada'
+            WHEN A."country_long_name" = 'Chad' THEN 'https://www.energyintel.com/wcod/country-profile/chad'
+            WHEN A."country_long_name" = 'China' THEN 'https://www.energyintel.com/wcod/country-profile/china'
+            WHEN A."country_long_name" = 'Colombia' THEN 'https://www.energyintel.com/wcod/country-profile/colombia'
+            WHEN A."country_long_name" = 'Congo (Brazzaville)' THEN 'https://www.energyintel.com/wcod/country-profile/republic-of-the-congo'
+            WHEN A."country_long_name" = 'Denmark' THEN 'https://www.energyintel.com/wcod/country-profile/denmark'
+            WHEN A."country_long_name" = 'Dubai' THEN 'https://www.energyintel.com/wcod/country-profile/dubai'
+            WHEN A."country_long_name" = 'Ecuador' THEN 'https://www.energyintel.com/wcod/country-profile/ecuador'
+            WHEN A."country_long_name" = 'Egypt' THEN 'https://www.energyintel.com/wcod/country-profile/egypt'
+            WHEN A."country_long_name" = 'Equatorial Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/equatorial-guinea'
+            WHEN A."country_long_name" = 'Gabon' THEN 'https://www.energyintel.com/wcod/country-profile/gabon'
+            WHEN A."country_long_name" = 'Ghana' THEN 'https://www.energyintel.com/wcod/country-profile/ghana'
+            WHEN A."country_long_name" = 'Guyana' THEN 'https://www.energyintel.com/wcod/country-profile/guyana'
+            WHEN A."country_long_name" = 'Indonesia' THEN 'https://www.energyintel.com/wcod/country-profile/indonesia'
+            WHEN A."country_long_name" = 'Iran' THEN 'https://www.energyintel.com/wcod/country-profile/iran'
+            WHEN A."country_long_name" = 'Iraq' THEN 'https://www.energyintel.com/wcod/country-profile/iraq'
+            WHEN A."country_long_name" = 'Kazakhstan' THEN 'https://www.energyintel.com/wcod/country-profile/kazakhstan'
+            WHEN A."country_long_name" = 'Kuwait' THEN 'https://www.energyintel.com/wcod/country-profile/kuwait'
+            WHEN A."country_long_name" = 'Libya' THEN 'https://www.energyintel.com/wcod/country-profile/libya'
+            WHEN A."country_long_name" = 'Malaysia' THEN 'https://www.energyintel.com/wcod/country-profile/malaysia'
+            WHEN A."country_long_name" = 'Mexico' THEN 'https://www.energyintel.com/wcod/country-profile/mexico'
+            WHEN A."country_long_name" = 'Neutral Zone' THEN 'https://www.energyintel.com/wcod/country-profile/neutral-zone'
+            WHEN A."country_long_name" = 'Nigeria' THEN 'https://www.energyintel.com/wcod/country-profile/nigeria'
+            WHEN A."country_long_name" = 'Norway' THEN 'https://www.energyintel.com/wcod/country-profile/norway'
+            WHEN A."country_long_name" = 'Oman' THEN 'https://www.energyintel.com/wcod/country-profile/oman'
+            WHEN A."country_long_name" = 'Papua New Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/papua-new-guinea'
+            WHEN A."country_long_name" = 'Qatar' THEN 'https://www.energyintel.com/wcod/country-profile/qatar'
+            WHEN A."country_long_name" = 'Russia' THEN 'https://www.energyintel.com/wcod/country-profile/russia'
+            WHEN A."country_long_name" = 'Saudi Arabia' THEN 'https://www.energyintel.com/wcod/country-profile/saudi-arabia'
+            WHEN A."country_long_name" = 'South Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/south-sudan'
+            WHEN A."country_long_name" = 'Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/sudan'
+            WHEN A."country_long_name" = 'Syria' THEN 'https://www.energyintel.com/wcod/country-profile/syria'
+            WHEN A."country_long_name" = 'Turkmenistan' THEN 'https://www.energyintel.com/wcod/country-profile/turkmenistan'
+            WHEN A."country_long_name" = 'United Kingdom' THEN 'https://www.energyintel.com/wcod/country-profile/united-kingdom'
+            WHEN A."country_long_name" = 'United States' THEN 'https://www.energyintel.com/wcod/country-profile/united-states'
+            WHEN A."country_long_name" = 'Venezuela' THEN 'https://www.energyintel.com/wcod/country-profile/venezuela'
+            WHEN A."country_long_name" = 'Vietnam' THEN 'https://www.energyintel.com/wcod/country-profile/vietnam'
+            WHEN A."country_long_name" = 'Yemen' THEN 'https://www.energyintel.com/wcod/country-profile/yemen'
+            ELSE NULL
+        END AS profile_url,
+        P."port_name",
+        P."latitude",
+        P."longitude",
+        P."coordinates",
+        P."measure_name",
+        P."value",
+        A."yr",
+        A."output",
+        A."exports",
+        A."reserves"
+    FROM fact_wcod_country A
+    FULL JOIN fact_wcod_port P
+        ON P."country_id" = A."country_id"
+    WHERE A."country_long_name" IS NOT NULL
+      AND A."to_be_deleted" IS NULL
+"""
 
-    pivot_df = raw_df.pivot_table(
-        index=['country_long_name', 'profile_url'],
-        columns=['Measure Names', 'Year of Year'],
-        values='Measure Values',
-        aggfunc='first'
-    ).reset_index()
+METRIC_CONFIG = [
+    ('Exports', 'Exports', ',.0f'),
+    ('Production', 'Production', ',.0f'),
+    ('R/P Ratio', 'R_P_Ratio', ',.1f'),
+    ('Reserves', 'Reserves', ',.1f')
+]
 
-    pivot_df.columns = ['_'.join(map(str, col)).strip('_') for col in pivot_df.columns]
 
-    column_mapping = {
-        'country_long_name': 'Country',
-        'profile_url': 'Profile_URL',
-        "Exports ('000 b/d)_2023": 'Exports_2023',
-        "Exports ('000 b/d)_2024": 'Exports_2024',
-        "Production ('000 b/d)_2023": 'Production_2023',
-        "Production ('000 b/d)_2024": 'Production_2024',
-        'R/P Ratio (Year)_2023': 'R_P_Ratio_2023',
-        'R/P Ratio (Year)_2024': 'R_P_Ratio_2024',
-        'Reserves (Billion bbl)_2023': 'Reserves_2023',
-        'Reserves (Billion bbl)_2024': 'Reserves_2024'
-    }
-    pivot_df = pivot_df.rename(columns=column_mapping)
+def build_data_columns(years):
+    columns = []
+    for metric_name, prefix, spec in METRIC_CONFIG:
+        for year in years:
+            columns.append({
+                "name": [metric_name, str(year)],
+                "id": f"{prefix}_{year}",
+                "type": "numeric",
+                "format": {"specifier": spec}
+            })
+    return columns
 
-    numeric_columns = [
-        'Exports_2023', 'Exports_2024',
-        'Production_2023', 'Production_2024',
-        'R_P_Ratio_2023', 'R_P_Ratio_2024',
-        'Reserves_2023', 'Reserves_2024'
-    ]
+
+def load_country_overview_data():
+    empty_df = pd.DataFrame(columns=['Country', 'Profile_URL'])
+    empty_bar = pd.DataFrame(columns=['Country', 'Profile_URL'])
+    empty_map = {}
+    empty_years = []
+    empty_columns = build_data_columns(empty_years)
+
+    try:
+        query_results = execute_query(COUNTRY_OVERVIEW_QUERY)
+    except Exception as exc:
+        print(f"Error loading country overview data: {exc}")
+        return empty_df, empty_bar, empty_map, empty_years, empty_columns
+
+    df = pd.DataFrame(query_results)
+    if df.empty:
+        return empty_df, empty_bar, empty_map, empty_years, empty_columns
+
+    df.columns = df.columns.str.strip()
+    required_cols = ['country_long_name', 'profile_url', 'yr', 'output', 'exports', 'reserves']
+    available_cols = [col for col in required_cols if col in df.columns]
+
+    if len(available_cols) < len(required_cols):
+        missing = set(required_cols) - set(available_cols)
+        print(f"Missing expected columns in country overview data: {missing}")
+        return empty_df, empty_bar, empty_map, empty_years, empty_columns
+
+    df = df[required_cols].copy()
+    df['country_long_name'] = df['country_long_name'].astype(str).str.strip()
+    df['Profile_URL'] = df['profile_url'].astype(str).str.strip()
+    df['yr_value'] = pd.to_datetime(df['yr'], errors='coerce')
+    df['Year'] = df['yr_value'].dt.year
+    df['Production'] = pd.to_numeric(df['output'], errors='coerce')
+    df['Exports'] = pd.to_numeric(df['exports'], errors='coerce')
+    df['Reserves'] = pd.to_numeric(df['reserves'], errors='coerce')
+
+    production_series = df['Production'].replace(0, np.nan)
+    df['R_P_Ratio'] = (df['Reserves'] * 1_000_000) / (365 * production_series)
+
+    df = df.dropna(subset=['country_long_name', 'Year'])
+    df = df.sort_values(['country_long_name', 'Year', 'yr_value'], ascending=[True, False, False])
+    df = df.drop_duplicates(subset=['country_long_name', 'Profile_URL', 'Year'])
+
+    years = sorted(df['Year'].dropna().unique(), reverse=True)[:2]
+    if not years:
+        return empty_df, empty_bar, empty_map, empty_years, empty_columns
+
+    country_records = []
+    for (country, profile_url), group in df.groupby(['country_long_name', 'Profile_URL']):
+        row = {
+            'Country': country,
+            'Profile_URL': profile_url
+        }
+        for year in years:
+            year_subset = group[group['Year'] == year]
+            if year_subset.empty:
+                continue
+            latest = year_subset.iloc[0]
+            row[f'Exports_{year}'] = latest['Exports']
+            row[f'Production_{year}'] = latest['Production']
+            row[f'Reserves_{year}'] = latest['Reserves']
+            row[f'R_P_Ratio_{year}'] = latest['R_P_Ratio']
+        country_records.append(row)
+
+    pivot_df = pd.DataFrame(country_records)
+    if pivot_df.empty:
+        return empty_df, empty_bar, empty_map, empty_years, empty_columns
+
+    numeric_columns = []
+    for _, prefix, _ in METRIC_CONFIG:
+        for year in years:
+            numeric_columns.append(f'{prefix}_{year}')
 
     for col in numeric_columns:
-        pivot_df[col] = pd.to_numeric(pivot_df[col], errors='coerce').fillna(0)
+        if col in pivot_df.columns:
+            pivot_df[col] = pd.to_numeric(pivot_df[col], errors='coerce').fillna(0)
+        else:
+            pivot_df[col] = 0
 
-    required_cols = ['Country', 'Exports_2024', 'Production_2024']
-    bar_chart_data = pivot_df[required_cols + ['Profile_URL']].sort_values('Exports_2024', ascending=False).head(9)
+    pivot_df['Country'] = pivot_df['Country'].astype(str).str.strip()
+    pivot_df['Profile_URL'] = pivot_df['Profile_URL'].replace({'nan': '', 'None': '', 'none': ''}).fillna('')
+
+    latest_year = years[0]
+    exports_col = f'Exports_{latest_year}'
+    production_col = f'Production_{latest_year}'
+    for col in (exports_col, production_col):
+        if col not in pivot_df.columns:
+            pivot_df[col] = 0
+
+    bar_chart_data = (
+        pivot_df[['Country', exports_col, production_col, 'Profile_URL']]
+        .sort_values(exports_col, ascending=False)
+        .head(9)
+        .reset_index(drop=True)
+    )
+
     country_url_map = {
         row['Country']: row.get('Profile_URL', '')
         for _, row in pivot_df.iterrows() if row.get('Profile_URL')
     }
-except Exception:
-    # If CSV is missing or unreadable, fallback to empty structures
-    pivot_df = pd.DataFrame(columns=[
-        'Country', 'Profile_URL', 'Exports_2023', 'Exports_2024',
-        'Production_2023', 'Production_2024',
-        'R_P_Ratio_2023', 'R_P_Ratio_2024',
-        'Reserves_2023', 'Reserves_2024'
-    ])
-    bar_chart_data = pd.DataFrame(columns=['Country', 'Exports_2024', 'Production_2024', 'Profile_URL'])
-    country_url_map = {}
+
+    data_columns = build_data_columns(years)
+    return pivot_df, bar_chart_data, country_url_map, years, data_columns
+
+
+pivot_df, bar_chart_data, country_url_map, YEARS_TO_DISPLAY, DATA_COLUMNS = load_country_overview_data()
+LATEST_YEAR = YEARS_TO_DISPLAY[0] if YEARS_TO_DISPLAY else None
+
 
 # Time dimension column definitions
 TIME_DIMENSION_COLUMNS = [
@@ -70,18 +214,6 @@ TIME_DIMENSION_COLUMNS = [
     {"name": ["", "Quarter of Year"], "id": "Quarter_of_Year", "type": "numeric", "format": {"specifier": ",.0f"}},
     {"name": ["", "Month of Year"], "id": "Month_of_Year", "type": "text"},
     {"name": ["", "Day of Year"], "id": "Day_of_Year", "type": "numeric", "format": {"specifier": ",.0f"}},
-]
-
-# Base data columns
-DATA_COLUMNS = [
-    {"name": ["Exports", "2024"], "id": "Exports_2024", "type": "numeric", "format": {"specifier": ",.0f"}},
-    {"name": ["Exports", "2023"], "id": "Exports_2023", "type": "numeric", "format": {"specifier": ",.0f"}},
-    {"name": ["Production", "2024"], "id": "Production_2024", "type": "numeric", "format": {"specifier": ",.0f"}},
-    {"name": ["Production", "2023"], "id": "Production_2023", "type": "numeric", "format": {"specifier": ",.0f"}},
-    {"name": ["R/P Ratio", "2024"], "id": "R_P_Ratio_2024", "type": "numeric", "format": {"specifier": ",.1f"}},
-    {"name": ["R/P Ratio", "2023"], "id": "R_P_Ratio_2023", "type": "numeric", "format": {"specifier": ",.1f"}},
-    {"name": ["Reserves", "2024"], "id": "Reserves_2024", "type": "numeric", "format": {"specifier": ",.1f"}},
-    {"name": ["Reserves", "2023"], "id": "Reserves_2023", "type": "numeric", "format": {"specifier": ",.1f"}}
 ]
 
 # Data table columns (without time dimensions)
@@ -356,12 +488,25 @@ def create_layout():
 
 def create_ranking_chart(selected_country=None, time_visibility=None):
     """Create horizontal bar chart ranking crude oil exporters"""
-    if bar_chart_data.empty:
+    if bar_chart_data.empty or not LATEST_YEAR:
         return go.Figure()
 
-    sorted_df = bar_chart_data[['Country', 'Exports_2024', 'Production_2024']].sort_values('Exports_2024', ascending=True).copy()
+    exports_col = f'Exports_{LATEST_YEAR}'
+    production_col = f'Production_{LATEST_YEAR}'
+
+    chart_columns = ['Country', exports_col]
+    if production_col in bar_chart_data.columns:
+        chart_columns.append(production_col)
+
+    sorted_df = bar_chart_data[chart_columns].sort_values(exports_col, ascending=True).copy()
     if sorted_df.empty:
         return go.Figure()
+
+    sorted_df = sorted_df.rename(columns={exports_col: 'Exports_Value'})
+    if production_col in sorted_df.columns:
+        sorted_df = sorted_df.rename(columns={production_col: 'Production_Value'})
+    else:
+        sorted_df['Production_Value'] = 0
 
     fig = go.Figure()
     country_list_original = sorted_df['Country'].astype(str).str.strip().tolist()
@@ -369,7 +514,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None):
     # Build y-axis labels with time dimensions if visible
     country_list = country_list_original.copy()
     if time_visibility:
-        year_value = 2024
+        year_value = LATEST_YEAR
         quarter_value = 4
         month_value = "December"
         day_value = 31
@@ -377,7 +522,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None):
         y_labels = []
         for country in country_list_original:
             label_parts = [country]
-            if time_visibility.get('Year', True):
+            if time_visibility.get('Year', True) and year_value:
                 label_parts.append(str(year_value))
             if time_visibility.get('Quarter', False):
                 label_parts.append(f"Q{quarter_value}")
@@ -396,19 +541,20 @@ def create_ranking_chart(selected_country=None, time_visibility=None):
     export_colors = ['#0075A8' if country == selected_country else 'rgb(0, 117, 168)' for country in country_list_original]
     production_colors = ['#595959' if country == selected_country else 'rgb(89, 89, 89)' for country in country_list_original]
 
-    if 'Production_2024' in sorted_df.columns:
+    if sorted_df['Production_Value'].any():
         fig.add_trace(go.Bar(
             y=country_list,
-            x=sorted_df['Production_2024'].tolist(),
+            x=sorted_df['Production_Value'].tolist(),
+            customdata=country_list_original,
             orientation='h',
             marker=dict(
                 color=production_colors,
                 line=dict(color=production_colors, width=1.5 if selected_country else 0.5)
             ),
-            text=sorted_df['Production_2024'].apply(lambda x: f'{x:,.0f}' if pd.notna(x) else '').tolist(),
+            text=sorted_df['Production_Value'].apply(lambda x: f'{x:,.0f}' if pd.notna(x) and x else '').tolist(),
             textposition='outside',
             name='Production',
-            hovertemplate='<b>%{y}</b><br>Production: %{x:,.0f} (\'000 b/d)<br>Year: 2024<extra></extra>',
+            hovertemplate=f'<b>%{{y}}</b><br>Production: %{{x:,.0f}} (\'000 b/d)<br>Year: {LATEST_YEAR}<extra></extra>',
             showlegend=True,
             legendgroup='production',
             offsetgroup='production',
@@ -417,24 +563,25 @@ def create_ranking_chart(selected_country=None, time_visibility=None):
 
     fig.add_trace(go.Bar(
         y=country_list,
-        x=sorted_df['Exports_2024'].tolist(),
+        x=sorted_df['Exports_Value'].tolist(),
+        customdata=country_list_original,
         orientation='h',
         marker=dict(
             color=export_colors,
             line=dict(color=export_colors, width=1.5 if selected_country else 0.5)
         ),
-        text=sorted_df['Exports_2024'].apply(lambda x: f'{x:,.0f}' if pd.notna(x) else '').tolist(),
+        text=sorted_df['Exports_Value'].apply(lambda x: f'{x:,.0f}' if pd.notna(x) else '').tolist(),
         textposition='outside',
         name='Exports',
-        hovertemplate='<b>%{y}</b><br>Exports: %{x:,.0f} (\'000 b/d)<br>Year: 2024<extra></extra>',
+        hovertemplate=f'<b>%{{y}}</b><br>Exports: %{{x:,.0f}} (\'000 b/d)<br>Year: {LATEST_YEAR}<extra></extra>',
         showlegend=True,
         legendgroup='exports',
         offsetgroup='exports',
         width=0.4
     ))
 
-    max_export = sorted_df['Exports_2024'].max() if len(sorted_df) else 0
-    max_production = sorted_df['Production_2024'].max() if 'Production_2024' in sorted_df.columns and len(sorted_df) else 0
+    max_export = sorted_df['Exports_Value'].max() if len(sorted_df) else 0
+    max_production = sorted_df['Production_Value'].max() if len(sorted_df) else 0
     max_val = max(max_export, max_production) if max(max_export, max_production) > 0 else 1000
 
     fig.update_layout(
@@ -562,22 +709,26 @@ def register_callbacks(dash_app, server):
             return [], DATA_TABLE_COLUMNS
 
         table_data = []
-        for _, row in pivot_df.sort_values('Exports_2024', ascending=False).iterrows():
+        if 'Country' in pivot_df.columns:
+            iter_df = pivot_df.sort_values('Country', key=lambda col: col.str.lower(), ascending=True)
+        else:
+            iter_df = pivot_df
+
+        for _, row in iter_df.iterrows():
             country_name = row.get('Country', '')
             profile_url = row.get('Profile_URL', '') or country_url_map.get(country_name, '')
-            table_data.append({
+            row_data = {
                 'Country': f"[{country_name}]({profile_url})" if profile_url else country_name,
                 'Country_Original': country_name,
-                'Profile_URL': profile_url,
-                'Exports_2024': row.get('Exports_2024', 0),
-                'Exports_2023': row.get('Exports_2023', 0),
-                'Production_2024': row.get('Production_2024', 0),
-                'Production_2023': row.get('Production_2023', 0),
-                'R_P_Ratio_2024': row.get('R_P_Ratio_2024', 0),
-                'R_P_Ratio_2023': row.get('R_P_Ratio_2023', 0),
-                'Reserves_2024': row.get('Reserves_2024', 0),
-                'Reserves_2023': row.get('Reserves_2023', 0)
-            })
+                'Profile_URL': profile_url
+            }
+
+            for year in YEARS_TO_DISPLAY:
+                for _, prefix, _ in METRIC_CONFIG:
+                    column_id = f'{prefix}_{year}'
+                    row_data[column_id] = row.get(column_id, 0)
+
+            table_data.append(row_data)
 
         return table_data, DATA_TABLE_COLUMNS
 
@@ -591,7 +742,13 @@ def register_callbacks(dash_app, server):
     )
     def update_selected_country_from_chart(clickData, click_counter):
         if clickData and 'points' in clickData and len(clickData['points']) > 0:
-            country_name = clickData['points'][0]['y']
+            point = clickData['points'][0]
+            custom_country = point.get('customdata')
+            if isinstance(custom_country, list) and custom_country:
+                custom_country = custom_country[0]
+            country_name = custom_country or point.get('y')
+            if country_name and isinstance(country_name, str):
+                country_name = country_name.split('   ')[0]
             profile_url = country_url_map.get(country_name)
             new_counter = (click_counter or 0) + 1
             return country_name, profile_url, new_counter
