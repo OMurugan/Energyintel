@@ -500,7 +500,7 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
                 ),
                 tiling=dict(pad=1, packing="squarify", squarifyratio=1.0),
                 maxdepth=2,
-                pathbar=dict(visible=False),
+                pathbar=dict(visible=True, side="top", thickness=20, edgeshape=">"),
                 domain=position,
                 root=dict(color="rgba(255,255,255,0)")
             )
