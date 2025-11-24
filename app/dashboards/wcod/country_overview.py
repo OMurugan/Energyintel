@@ -121,7 +121,7 @@ def create_layout():
                             'textAlign': 'center',
                             'marginTop': '30px',
                             'marginBottom': '20px',
-                            'color': '#fe5000',
+                            'color': '#1b365d',
                             'fontWeight': 'bold',
                             'fontSize': '21px',
                             'fontFamily': 'Arial, sans-serif',
@@ -274,7 +274,7 @@ def create_layout():
                     'textAlign': 'center',
                     'marginTop': '30px',
                     'marginBottom': '20px',
-                    'color': '#fe5000',
+                    'color': '#1b365d',
                     'fontWeight': 'bold',
                     'fontSize': '21px',
                     'fontFamily': 'Arial, sans-serif',
@@ -314,7 +314,7 @@ def create_layout():
                         'textAlign': 'left',
                         'fontWeight': 'bold',
                         'minWidth': '150px',
-                        'color': '#2c3e50'
+                        'color': '#1b365d'
                     }
                 ],
                 style_data_conditional=[
@@ -482,7 +482,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None):
         yaxis=dict(
             categoryorder='array',
             categoryarray=country_list,
-            tickfont=dict(size=11, family='Arial, sans-serif', color='#2c3e50'),
+            tickfont=dict(size=11, family='Arial Black, Arial, sans-serif', color='#1b365d'),
             showline=True,
             linecolor='#000000',
             linewidth=1,

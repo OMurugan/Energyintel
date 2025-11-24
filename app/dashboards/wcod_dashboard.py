@@ -47,7 +47,27 @@ from app.dashboards.wcod import (
 
 def create_wcod_dashboard(server, url_base_pathname):
     """Create comprehensive WCoD dashboard with tab navigation"""
+    from pathlib import Path
+    from flask import send_from_directory
+    
     dash_app = create_dash_app(server, url_base_pathname)
+    
+    # Configure assets folder and add route to serve assets
+    current_dir = Path(__file__).parent
+    assets_dir = current_dir / "assets"
+    
+    # Add route to serve assets from /wcod/assets/ path
+    @server.route('/wcod/assets/<path:filename>')
+    def serve_wcod_assets(filename):
+        """Serve static assets for WCoD dashboard"""
+        return send_from_directory(str(assets_dir), filename)
+    
+    # Add route to serve assets from app/assets/ directory
+    app_assets_dir = Path(__file__).parent.parent / "assets"
+    @server.route('/assets/<path:filename>')
+    def serve_app_assets(filename):
+        """Serve static assets from app/assets/ directory"""
+        return send_from_directory(str(app_assets_dir), filename)
     
     # Custom CSS for Tableau-like styling
     dash_app.index_string = '''
@@ -101,7 +121,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                     background: #e9ecef;
                 }
                 .submenu-item.active {
-                    background: #007bff;
+                    background: #1b365d;
                     color: white;
                 }
                 /* Tab styling for Image 1 design - pixel perfect */
@@ -123,6 +143,382 @@ def create_wcod_dashboard(server, url_base_pathname):
                 .tab-container {
                     background: #e5e5e5;
                     padding: 8px 8px 0 8px;
+                }
+                /* WCoD Header gradient background with wave patterns */
+                #header-container > div:last-child {
+                    position: relative;
+                }
+                #header-container > div:last-child::before {
+                    content: '';
+                    position: absolute;
+                    bottom: 0;
+                    left: 0;
+                    width: 300px;
+                    height: 150px;
+                    background: 
+                        radial-gradient(ellipse at 20% 80%, rgba(255,255,255,0.15) 0%, transparent 50%),
+                        radial-gradient(ellipse at 60% 90%, rgba(255,255,255,0.1) 0%, transparent 50%);
+                    opacity: 0.4;
+                    pointer-events: none;
+                }
+                #header-container > div:last-child::after {
+                    content: '';
+                    position: absolute;
+                    bottom: 0;
+                    right: 0;
+                    width: 300px;
+                    height: 150px;
+                    background: 
+                        radial-gradient(ellipse at 80% 80%, rgba(255,255,255,0.15) 0%, transparent 50%),
+                        radial-gradient(ellipse at 40% 90%, rgba(255,255,255,0.1) 0%, transparent 50%);
+                    opacity: 0.4;
+                    pointer-events: none;
+                }
+
+                .top-header .header-menu a {
+                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                }
+
+                /* Crude Quality Dashboard CSS */
+                /* Support table scrolling - Dash handles sticky via DataTable props */
+                #crude-quality-table .dash-table-container,
+                #yield-volume-table .dash-table-container {
+                    position: relative !important;
+                    overflow-x: auto !important;
+                }
+                
+                #crude-quality-table .dash-table-container .dash-spreadsheet-container,
+                #yield-volume-table .dash-table-container .dash-spreadsheet-container {
+                    overflow-x: auto !important;
+                    overflow-y: auto !important;
+                }
+                
+                #crude-quality-table table,
+                #yield-volume-table table {
+                    border-collapse: separate !important;
+                    border-spacing: 0 !important;
+                    width: 100% !important;
+                }
+                
+                /* Ensure proper table cell borders and spacing */
+                #crude-quality-table td,
+                #crude-quality-table th,
+                #yield-volume-table td,
+                #yield-volume-table th {
+                    border: 1px solid #E6E6E6 !important;
+                }
+                
+                /* Remove top border for empty country cells to create grouping effect */
+                #crude-quality-table tbody tr td:first-child:empty,
+                #yield-volume-table tbody tr td:first-child:empty {
+                    border-top: none !important;
+                }
+                
+                /* Ensure table rows have consistent spacing */
+                #crude-quality-table tbody tr,
+                #yield-volume-table tbody tr {
+                    height: auto !important;
+                }
+                
+                /* Ensure sticky columns maintain proper background */
+                #crude-quality-table .dash-table-container table thead tr th:first-child,
+                #crude-quality-table .dash-table-container table tbody tr td:first-child,
+                #yield-volume-table .dash-table-container table thead tr th:first-child,
+                #yield-volume-table .dash-table-container table tbody tr td:first-child {
+                    background-color: white !important;
+                }
+                
+                #crude-quality-table .dash-table-container table thead tr th:nth-child(2),
+                #crude-quality-table .dash-table-container table tbody tr td:nth-child(2),
+                #yield-volume-table .dash-table-container table thead tr th:nth-child(2),
+                #yield-volume-table .dash-table-container table tbody tr td:nth-child(2) {
+                    background-color: white !important;
+                }
+                
+                /* === Slider Handle Styles === */
+                .rc-slider-handle-1 {
+                    width: 10px !important;
+                    height: 14px !important;
+                    background: #FFFFFF !important;
+                    border: 2px solid #6E6E6E !important;
+                    border-radius: 0 7px 7px 0 !important;
+                    margin-top: -6px !important;
+                    box-shadow: none !important;
+                }
+
+                .rc-slider-handle-2 {
+                    width: 10px !important;
+                    height: 14px !important;
+                    background: #FFFFFF !important;
+                    border: 2px solid #6E6E6E !important;
+                    border-radius: 7px 0 0 7px !important;
+                    margin-top: -6px !important;
+                    box-shadow: none !important;
+                }
+
+                .rc-slider-handle {
+                    width: 10px !important;
+                    height: 14px !important;
+                    background-color: #FFFFFF !important;
+                    border: 2px solid #6E6E6E !important;
+                    margin-top: -6px !important;
+                    box-shadow: none !important;
+                    cursor: pointer !important;
+                }
+
+                .rc-slider-handle-1 {
+                    border-radius: 7px 0 0 7px !important;
+                }
+                .rc-slider-handle-2 {
+                    border-radius: 0 7px 7px 0 !important;
+                }
+
+                .rc-slider-handle:hover {
+                    border-color: #4D4D4D !important;
+                }
+
+                .rc-slider-handle:active {
+                    border-color: #3A3A3A !important;
+                }
+
+                .rc-slider-track,
+                .rc-slider-track-1,
+                .rc-slider-track-2,
+                div[class*="rc-slider-track"] {
+                    background: #6E6E6E !important;
+                    height: 4px !important;
+                }
+
+                .rc-slider-rail {
+                    background: #D3D3D3 !important;
+                    height: 4px !important;
+                }
+
+                .rc-slider-tooltip-inner {
+                    background: #ffffff !important;
+                    color: black !important;
+                    border: 1px solid #999 !important;
+                }
+
+                /* Dropdown Styling */
+                .Select-control {
+                    font-size: 12px !important;
+                    height: 22px !important;
+                    min-height: 22px !important;
+                    border-radius: 0 !important;
+                }
+                
+                .Select-value-label {
+                    font-size: 12px !important;
+                    line-height: 20px !important;
+                    color: rgb(27, 54, 93) !important;
+                }
+                
+                .Select-input {
+                    font-size: 12px !important;
+                    height: 20px !important;
+                    line-height: 20px !important;
+                    color: rgb(27, 54, 93) !important;
+                }
+                
+                .Select-input > input {
+                    font-size: 12px !important;
+                    line-height: 20px !important;
+                    color: rgb(27, 54, 93) !important;
+                }
+                
+                .Select-menu-outer {
+                    font-size: 12px !important;
+                    border-radius: 0 !important;
+                }
+                
+                .Select-option {
+                    font-size: 12px !important;
+                    padding: 4px 10px !important;
+                }
+                
+                .Select-placeholder {
+                    font-size: 12px !important;
+                    line-height: 20px !important;
+                    color: rgb(27, 54, 93) !important;
+                }
+                
+                .Select--single > .Select-control .Select-value {
+                    font-size: 12px !important;
+                    line-height: 20px !important;
+                    color: rgb(27, 54, 93) !important;
+                }
+                
+                .Select--single > .Select-control .Select-value .Select-value-label {
+                    font-size: 12px !important;
+                    line-height: 20px !important;
+                    color: rgb(27, 54, 93) !important;
+                }
+                
+                #x-axis-dropdown .Select-control,
+                #y-axis-dropdown .Select-control,
+                #bubble-size-dropdown .Select-control {
+                    font-size: 12px !important;
+                    height: 22px !important;
+                    min-height: 22px !important;
+                    border-radius: 0 !important;
+                }
+                
+                #x-axis-dropdown .Select-value-label,
+                #y-axis-dropdown .Select-value-label,
+                #bubble-size-dropdown .Select-value-label {
+                    font-size: 12px !important;
+                    line-height: 20px !important;
+                    color: rgb(27, 54, 93) !important;
+                }
+                
+                #x-axis-dropdown .Select-input,
+                #y-axis-dropdown .Select-input,
+                #bubble-size-dropdown .Select-input {
+                    height: 20px !important;
+                    line-height: 20px !important;
+                    color: rgb(27, 54, 93) !important;
+                }
+                
+                #x-axis-dropdown .Select-input > input,
+                #y-axis-dropdown .Select-input > input,
+                #bubble-size-dropdown .Select-input > input {
+                    color: rgb(27, 54, 93) !important;
+                }
+                
+                .Select-menu-outer *,
+                .Select-menu *,
+                .Select-option *,
+                div[id*="dropdown"] .Select-menu-outer *,
+                div[id*="dropdown"] .Select-menu * {
+                    font-family: Arial, Helvetica, sans-serif !important;
+                    font-size: 12px !important;
+                }
+                
+                .Select-menu-outer .Select-option,
+                .Select-menu .Select-option,
+                div[id*="dropdown"] .Select-menu-outer .Select-option {
+                    font-family: Arial, Helvetica, sans-serif !important;
+                    font-size: 12px !important;
+                    padding: 6px 10px !important;
+                    color: #000000 !important;
+                    background-color: #fff !important;
+                    line-height: 1.5 !important;
+                    white-space: nowrap !important;
+                }
+                
+                .Select-menu-outer .Select-option:hover,
+                .Select-menu .Select-option:hover {
+                    background-color: #f0f0f0 !important;
+                    color: #000000 !important;
+                }
+                
+                .Select-menu-outer .Select-option.is-selected,
+                .Select-menu .Select-option.is-selected {
+                    background-color: #e6f3ff !important;
+                    color: #000000 !important;
+                }
+                
+                /* Range input fields - show as text by default, input box on hover */
+                #x-range-min-input,
+                #x-range-max-input,
+                #y-range-min-input,
+                #y-range-max-input,
+                #bubble-range-min-input,
+                #bubble-range-max-input {
+                    border: none !important;
+                    background: transparent !important;
+                    padding: 0 !important;
+                    font-size: 12px !important;
+                    color: #1b365d !important;
+                    width: auto !important;
+                    min-width: 150px !important;
+                    max-width: 80px !important;
+                    height: 18px !important;
+                    line-height: 18px !important;
+                    outline: none !important;
+                    box-shadow: none !important;
+                    top: 0 !important;
+                    vertical-align: top !important;
+                    margin: 0 !important;
+                }
+                
+                #x-range-min-input,
+                #y-range-min-input,
+                #bubble-range-min-input {
+                    left: 0 !important;
+                    text-align: left !important;
+                }
+                
+                #x-range-max-input,
+                #y-range-max-input,
+                #bubble-range-max-input {
+                    text-align: right !important;
+                    float: right !important;
+                    margin-right: 0 !important;
+                    padding-right: 0 !important;
+                }
+                
+                #x-range-min-input[type="text"],
+                #x-range-min-input[type="number"],
+                #x-range-max-input[type="text"],
+                #x-range-max-input[type="number"],
+                #y-range-min-input[type="text"],
+                #y-range-min-input[type="number"],
+                #y-range-max-input[type="text"],
+                #y-range-max-input[type="number"],
+                #bubble-range-min-input[type="text"],
+                #bubble-range-min-input[type="number"],
+                #bubble-range-max-input[type="text"],
+                #bubble-range-max-input[type="number"] {
+                    vertical-align: top !important;
+                    margin: 0 !important;
+                    display: inline-block !important;
+                }
+                
+                #x-range-min-input:hover,
+                #x-range-max-input:hover,
+                #y-range-min-input:hover,
+                #y-range-max-input:hover,
+                #bubble-range-min-input:hover,
+                #bubble-range-max-input:hover {
+                    border: 1px solid #ccc !important;
+                    background: #ffffff !important;
+                    padding: 1px 3px !important;
+                }
+                
+                #x-range-min-input:focus,
+                #x-range-max-input:focus,
+                #y-range-min-input:focus,
+                #y-range-max-input:focus,
+                #bubble-range-min-input:focus,
+                #bubble-range-max-input:focus {
+                    border: 1px solid #999 !important;
+                    background: #ffffff !important;
+                    padding: 1px 3px !important;
+                }
+                
+                div[id*="range-slider"] {
+                    margin-left: 0 !important;
+                    padding-left: 0 !important;
+                    margin-right: 0 !important;
+                    padding-right: 0 !important;
+                }
+                
+                .rc-slider {
+                    margin-left: 0 !important;
+                    padding-left: 0 !important;
+                    margin-right: 0 !important;
+                    padding-right: 0 !important;
+                    width: 100% !important;
+                    box-sizing: border-box !important;
+                }
+                
+                .rc-slider-rail {
+                    margin-left: 0 !important;
+                    margin-right: 0 !important;
+                    width: 100% !important;
+                    box-sizing: border-box !important;
                 }
 
             </style>
@@ -147,44 +543,193 @@ def create_wcod_dashboard(server, url_base_pathname):
         
         # Header Navigation (hidden for country profile iframe)
         html.Div(id='header-container', children=[
+            # Top Header - Energy Intelligence
             html.Nav([
                 html.Div([
-                    html.A(
-                        "Energy Intelligence",
-                        href="/",
-                        className="navbar-brand",
+                    # Logo with SVG icon
+                    html.Div([
+                        html.Img(
+                            src="/assets/images/logo.svg",
+                            alt="Energy Intelligence",
+                            style={
+                                'height': '40px',
+                                'width': 'auto',
+                                'marginRight': '12px',
+                                'display': 'block'
+                            }
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center'}),
+                    # Right side navigation
+                    html.Div([
+                        html.A([
+                            "Energy Debate",
+                            html.Span(" ▼", style={'fontSize': '10px', 'marginLeft': '4px'})
+                        ], href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 1rem', 'fontSize': '14px', 'display': 'inline-flex', 'alignItems': 'center'}),
+                        html.A([
+                            "Products",
+                            html.Span(" ▼", style={'fontSize': '10px', 'marginLeft': '4px'})
+                        ], href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px', 'display': 'inline-flex', 'alignItems': 'center'}),
+                        html.A([
+                            "What We Do",
+                            html.Span(" ▼", style={'fontSize': '10px', 'marginLeft': '4px'})
+                        ], href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px', 'display': 'inline-flex', 'alignItems': 'center'}),
+                        html.A([
+                            "Who We Are",
+                            html.Span(" ▼", style={'fontSize': '10px', 'marginLeft': '4px'})
+                        ], href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px', 'display': 'inline-flex', 'alignItems': 'center'}),
+                        html.A("In the Media", href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 1rem', 'fontSize': '14px'}),
+                        html.A("Contact Us", href="/contact", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px'}),
+                        html.A("Logout", href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px'}),
+                        html.Button(
+                            "MY EI",
+                            style={
+                                'background': '#FF6B35',
+                                'color': '#ffffff',
+                                'border': 'none',
+                                'padding': '4px 16px',
+                                'borderRadius': '4px',
+                                'fontSize': '14px',
+                                'fontWeight': '600',
+                                'cursor': 'pointer'
+                            }
+                        ),
+                        html.Div([
+                            html.Img(
+                                src="/assets/images/user_icon.jpeg",
+                                style={
+                                    'width': '36px',
+                                    'height': '42px',
+                                    'borderRadius': '50%',
+                                    'objectFit': 'cover',
+                                    'cursor': 'pointer'
+                                }
+                            )
+                        ], style={'marginLeft': '1rem', 'cursor': 'pointer', 'display': 'flex', 'alignItems': 'center'})
+                    ], className="header-menu", style={'display': 'flex', 'alignItems': 'center', 'marginLeft': 'auto'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'width': '100%', 'maxWidth': '1400px', 'margin': '0 auto', 'padding': '1rem 22px'})
+            ], className="top-header", style={'background': '#ffffff', 'borderBottom': '1px solid #e0e0e0', 'padding': '4px'}),
+            
+            # Secondary Navigation Bar - Dark Blue
+            html.Nav([
+                html.Div([
+                    html.Div([
+                        html.A("Low-Carbon Energy", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
+                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
+                        html.A("Oil Markets", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
+                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
+                        html.A("Gas and LNG", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
+                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
+                        html.A("Risk", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
+                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
+                        html.A("Competitive Intelligence", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
+                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
+                        html.A("Energy Intelligence Premium", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
+                    ], style={'display': 'flex', 'alignItems': 'center'}),
+                    # Search bar
+                    html.Div([
+                        dcc.Input(
+                            type="text",
+                            placeholder="Search...",
+                            id='header-search-input',
+                            style={
+                                'padding': '3px 12px',
+                                'border': '1px solid #ccc',
+                                'borderRadius': '4px',
+                                'fontSize': '14px',
+                                'width': '200px',
+                                'marginRight': '8px'
+                            }
+                        ),
+                        html.Span("🔍", style={'fontSize': '18px', 'cursor': 'pointer'})
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginLeft': 'auto'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'width': '100%', 'maxWidth': '1400px', 'margin': '0 auto', 'padding': '5px 10px'})
+            ], style={'background': '#1b365d', 'padding': '0'}),
+            
+            # WCoD Header Section - Gradient Background with Banner
+            html.Div([
+                html.Div([
+                    html.H1(
+                        "WORLD CRUDE OIL DATA",
                         style={
-                            'fontWeight': '600',
-                            'fontSize': '1.5rem',
-                            'color': '#fff',
-                            'textDecoration': 'none'
+                            'fontSize': '2.5rem',
+                            'fontWeight': '700',
+                            'color': '#ffffff',
+                            'textTransform': 'uppercase',
+                            'letterSpacing': '2px',
+                            'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
                         }
                     ),
+                    html.P(
+                        "Analysis on the top 200 global crudes, including data on production, trade, quality and pricing",
+                        style={
+                            'fontSize': '1.1rem',
+                            'color': '#ffffff',
+                            'marginBottom': '0',
+                            'fontWeight': '400',
+                            'lineHeight': '1.6',
+                            'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+                        }
+                    )
+                ], style={
+                    'background': 'rgba(27, 54, 93, .8)',
+                    'padding': '25px 20px',
+                    'margin': '40px 0',
+                    'maxWidth': '880px',
+                    'position': 'relative',
+                    'zIndex': '1'
+                }),
+                # Bottom Navigation Bar
+                html.Div([
                     html.Div([
-                        html.A("Home", href="/", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                        html.A("News", href="/news", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                        html.A("Data", href="/data", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                        html.A("WCoD", href="/wcod/", className="nav-link", style={'color': '#fff', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontWeight': '600'}),
-                        html.A("Research", href="/research", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                        html.A("Services", href="/services", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                        html.A("About", href="/about", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                        html.A("Contact", href="/contact", className="nav-link", style={'color': '#b0b0b0', 'textDecoration': 'none', 'margin': '0 0.5rem'}),
-                    ], style={'display': 'flex', 'alignItems': 'center', 'marginLeft': 'auto'})
-                ], style={'display': 'flex', 'alignItems': 'center', 'width': '100%', 'maxWidth': '1200px', 'margin': '0 auto', 'padding': '0 20px'})
-            ], style={'background': '#1a1a1a', 'padding': '1rem 0', 'marginBottom': '0'}),
-            
-            # Page Header
-            html.Div([
-                html.H1(
-                    "World Crude Oil Data",
-                    className="mb-2",
-                    style={'color': '#2c3e50', 'fontWeight': '600', 'fontSize': '32px'}
-                ),
-                html.P(
-                    "Crude fundamentals, including production, trade, quality and pricing data.",
-                    style={'color': '#7f8c8d', 'marginBottom': '20px', 'fontSize': '16px'}
-                )
-            ], className="container-fluid", style={'padding': '30px', 'background': 'white', 'marginBottom': '0'})
+                        html.Div([
+                            html.A("Country", href="/wcod/", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
+                            html.A("Crude", href="/crude-overview", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
+                            html.A("Trade", href="/trade/imports-country-detail", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
+                            html.A("Prices", href="/prices/global-crude-prices", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
+                            html.A("Upstream Projects", href="/upstream-projects/projects-by-country", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
+                            html.A("Methodology", href="/upstream-oil-projects-tracker-methodology", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
+                            html.A("API Access", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
+                        ], style={'display': 'flex', 'alignItems': 'center'}),
+                        html.A(
+                            "Learn more about World Crude Oil Data >",
+                            href="#",
+                            style={
+                                'color': '#ffffff',
+                                'textDecoration': 'none',
+                                'fontSize': '14px',
+                                'fontWeight': '400',
+                                'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+                                'transition': 'opacity 0.3s',
+                                'marginLeft': 'auto'
+                            }
+                        )
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'justifyContent': 'space-between',
+                        'maxWidth': '1320px',
+                    })
+                ], style={
+                    'background': '#2c3e50',
+                    'padding': '15px 10px',
+                    'position': 'relative',
+                    'zIndex': '1',
+                    'top': '31px'
+                })
+            ], style={
+                'position': 'relative',
+                'background': 'linear-gradient(to top, #1a4a5c 0%, #2c5f7a 50%, #4a9bb8 100%)',
+                'padding': '0',
+                'overflow': 'hidden',
+                'minHeight': '300px',
+                'marginBottom': '0'
+            })
         ]),  # Close header-container
         
         # Filter & Search Section Header
@@ -193,10 +738,10 @@ def create_wcod_dashboard(server, url_base_pathname):
                 html.H2(
                     "Filter & Search",
                     style={
-                        'fontSize': '14px',
-                        'fontWeight': '600',
-                        'color': '#666666',
-                        'textTransform': 'uppercase',
+                        'fontSize': '2.0rem',
+                        'fontFamily': "Helvetica, sans-serif",
+                        'fontWeight': '500',
+                        'color': '#1b365d',
                         'letterSpacing': '0.5px',
                         'margin': '0',
                         'padding': '16px 30px 12px 30px',
@@ -212,10 +757,10 @@ def create_wcod_dashboard(server, url_base_pathname):
                 dcc.Link(
                     html.Div([
                         html.Img(
-                            src="https://www.energyintel.com/styleguide/assets/tabs/svgs/globe_inactive.svg",
+                            src="/assets/images/globe_inactive.svg",
                             id="tab-icon-country",
                             style={
-                                'height': '40px',
+                                'height': '35px',
                                 'marginRight': '10px',
                                 'display': 'inline-block',
                                 'verticalAlign': 'middle'
@@ -231,7 +776,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                     ], style={
                         'display': 'flex',
                         'alignItems': 'center',
-                        'padding': '15px 40px',
+                        'padding': '15px 20px',
                         'cursor': 'pointer',
                         'height': '100%'
                     }),
@@ -242,7 +787,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                 dcc.Link(
                     html.Div([
                         html.Img(
-                            src="https://www.energyintel.com/styleguide/assets/tabs/svgs/oil_inactive.svg",
+                            src="/assets/images/oil_inactive.svg",
                             id='tab-icon-crude',
                             style={
                                 'height': '40px',
@@ -261,18 +806,18 @@ def create_wcod_dashboard(server, url_base_pathname):
                     ], style={
                         'display': 'flex',
                         'alignItems': 'center',
-                        'padding': '15px 40px',
+                        'padding': '15px 20px',
                         'cursor': 'pointer',
                         'height': '100%'
                     }),
-                    href='/wcod/crude-overview',
+                    href='/crude-overview',
                     id='tab-link-crude',
                     style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
                         html.Img(
-                            src="https://www.energyintel.com/styleguide/assets/tabs/svgs/trade_inactive.svg",
+                            src="/assets/images/trade_inactive.svg",
                             id='tab-icon-trade',
                             style={
                                 'height': '40px',
@@ -291,18 +836,18 @@ def create_wcod_dashboard(server, url_base_pathname):
                     ], style={
                         'display': 'flex',
                         'alignItems': 'center',
-                        'padding': '15px 40px',
+                        'padding': '15px 20px',
                         'cursor': 'pointer',
                         'height': '100%'
                     }),
-                    href='/wcod/trade/imports-country-detail',
+                    href='/trade/imports-country-detail',
                     id='tab-link-trade',
                     style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
                         html.Img(
-                            src="https://www.energyintel.com/styleguide/assets/tabs/svgs/prices_inactive.svg",
+                            src="/assets/images/prices_inactive.svg",
                             id='tab-icon-prices',
                             style={
                                 'height': '40px',
@@ -321,11 +866,11 @@ def create_wcod_dashboard(server, url_base_pathname):
                     ], style={
                         'display': 'flex',
                         'alignItems': 'center',
-                        'padding': '15px 40px',
+                        'padding': '15px 20px',
                         'cursor': 'pointer',
                         'height': '100%'
                     }),
-                    href='/wcod/prices/global-crude-prices',
+                    href='/prices/global-crude-prices',
                     id='tab-link-prices',
                     style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
@@ -341,11 +886,11 @@ def create_wcod_dashboard(server, url_base_pathname):
                     ], style={
                         'display': 'flex',
                         'alignItems': 'center',
-                        'padding': '15px 40px',
+                        'padding': '15px 20px',
                         'cursor': 'pointer',
                         'height': '100%'
                     }),
-                    href='/wcod/upstream-projects/projects-by-country',
+                    href='/upstream-projects/projects-by-country',
                     id='tab-link-projects',
                     style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
@@ -361,11 +906,11 @@ def create_wcod_dashboard(server, url_base_pathname):
                     ], style={
                         'display': 'flex',
                         'alignItems': 'center',
-                        'padding': '15px 40px',
+                        'padding': '15px 20px',
                         'cursor': 'pointer',
                         'height': '100%'
                     }),
-                    href='/wcod-upstream-oil-projects-tracker-methodology',
+                    href='/upstream-oil-projects-tracker-methodology',
                     id='tab-link-methodology',
                     style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
@@ -405,7 +950,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                 'background': '#ffffff',
                 'borderBottom': '1px solid #e0e0e0'
             })
-        ], className='row', style={'margin': '0', 'background': 'white'}),
+        ], className='row cover-menu', style={'margin': '0', 'background': 'white'}),
         
         # Main Content Area
         html.Div([
@@ -484,17 +1029,32 @@ def create_wcod_dashboard(server, url_base_pathname):
                     break
         
         iframe_pages = [
+            '/country-overview',
+            '/crude-overview',
+            '/crude-profile',
+            '/crude-comparison',
+            '/crude-quality-comparison',
+            '/crude-carbon-intensity',
+            '/trade/',
+            '/prices/',
+            '/upstream-projects/',
+            # Keep old paths for backward compatibility
             '/wcod-country-overview',
             '/wcod/crude-overview',
             '/wcod-crude-profile',
             '/wcod-crude-comparison',
+            '/wcod/wcod-crude-quality-comparison',
             '/wcod-crude-quality-comparison',
             '/wcod-crude-carbon-intensity',
             '/wcod/trade/',
             '/wcod/prices/',
             '/wcod/upstream-projects/'
         ]
-        is_wcod_path = pathname_str.startswith('/wcod') or pathname_str.startswith('/wcod-')
+        is_wcod_path = (pathname_str.startswith('/wcod') or pathname_str.startswith('/wcod-') or
+                        pathname_str.startswith('/crude') or pathname_str.startswith('/trade') or
+                        pathname_str.startswith('/prices') or pathname_str.startswith('/upstream') or
+                        pathname_str.startswith('/country-overview') or pathname_str.startswith('/carbon-intensity') or
+                        pathname_str.startswith('/upstream-oil'))
         should_hide = (bool(is_iframe) or embed_flag) and (is_wcod_path or any(page in pathname_str for page in iframe_pages))
         if should_hide:
             return {'display': 'none'}, {'display': 'none'}
@@ -531,29 +1091,56 @@ def create_wcod_dashboard(server, url_base_pathname):
             # Country tab - /wcod shows Country Overview
             '/wcod/': ('country-tab', 'country-overview'),
             '/wcod': ('country-tab', 'country-overview'),
+            '/country-overview': ('country-tab', 'country-profile'),
+            # Keep old paths for backward compatibility
             '/wcod-country-overview': ('country-tab', 'country-profile'),
             # Crude tab
+            '/crude-overview': ('crude-tab', 'crude-overview'),
+            '/crude-profile': ('crude-tab', 'crude-profile'),
+            '/crude-comparison': ('crude-tab', 'crude-comparison'),
+            '/crude-quality-comparison': ('crude-tab', 'crude-quality'),
+            '/crude-carbon-intensity': ('crude-tab', 'crude-carbon'),
+            # Keep old paths for backward compatibility
             '/wcod/crude-overview': ('crude-tab', 'crude-overview'),
             '/wcod-crude-profile': ('crude-tab', 'crude-profile'),
             '/wcod-crude-comparison': ('crude-tab', 'crude-comparison'),
+            '/wcod/wcod-crude-quality-comparison': ('crude-tab', 'crude-quality'),
             '/wcod-crude-quality-comparison': ('crude-tab', 'crude-quality'),
             '/wcod-crude-carbon-intensity': ('crude-tab', 'crude-carbon'),
             # Trade tab
+            '/trade/imports-country-detail': ('trade-tab', 'imports-detail'),
+            '/trade/imports-country-comparison': ('trade-tab', 'imports-comparison'),
+            '/trade/global-exports': ('trade-tab', 'global-exports'),
+            '/trade/russian-exports-by-terminal-and-exporting-company': ('trade-tab', 'russian-exports'),
+            # Keep old paths for backward compatibility
             '/wcod/trade/imports-country-detail': ('trade-tab', 'imports-detail'),
             '/wcod/trade/imports-country-comparison': ('trade-tab', 'imports-comparison'),
             '/wcod/trade/global-exports': ('trade-tab', 'global-exports'),
             '/wcod/trade/russian-exports-by-terminal-and-exporting-company': ('trade-tab', 'russian-exports'),
             # Prices tab
+            '/prices/global-crude-prices': ('prices-tab', 'global-prices'),
+            '/prices/price-scorecard-for-key-world-oil-grades': ('prices-tab', 'price-scorecard'),
+            '/prices/gross-product-worth-and-margins': ('prices-tab', 'gpw-margins'),
+            # Keep old paths for backward compatibility
             '/wcod/prices/global-crude-prices': ('prices-tab', 'global-prices'),
             '/wcod/prices/price-scorecard-for-key-world-oil-grades': ('prices-tab', 'price-scorecard'),
             '/wcod/prices/gross-product-worth-and-margins': ('prices-tab', 'gpw-margins'),
             # Upstream Projects tab
+            '/upstream-projects/projects-by-country': ('projects-tab', 'projects-country'),
+            '/upstream-projects/projects-by-company': ('projects-tab', 'projects-company'),
+            '/upstream-projects/projects-by-time': ('projects-tab', 'projects-time'),
+            '/upstream-projects/projects-by-status': ('projects-tab', 'projects-status'),
+            '/upstream-projects-related-articles': ('projects-tab', 'projects-latest'),
+            # Keep old paths for backward compatibility
             '/wcod/upstream-projects/projects-by-country': ('projects-tab', 'projects-country'),
             '/wcod/upstream-projects/projects-by-company': ('projects-tab', 'projects-company'),
             '/wcod/upstream-projects/projects-by-time': ('projects-tab', 'projects-time'),
             '/wcod-upstream-projects/projects-by-status': ('projects-tab', 'projects-status'),
             '/wcod-upstream-projects-related-articles': ('projects-tab', 'projects-latest'),
             # Methodology tab
+            '/upstream-oil-projects-tracker-methodology': ('methodology-tab', 'projects-tracker'),
+            '/carbon-intensity-methodology': ('methodology-tab', 'projects-carbon'),
+            # Keep old paths for backward compatibility
             '/wcod-upstream-oil-projects-tracker-methodology': ('methodology-tab', 'projects-tracker'),
             '/wcod-carbon-intensity-methodology': ('methodology-tab', 'projects-carbon'),
         }
@@ -591,8 +1178,9 @@ def create_wcod_dashboard(server, url_base_pathname):
             'boxShadow': 'none',
             'position': 'relative',
             'zIndex': '1',
+            'padding': '10px 25px',
             'height': '75px',
-            'transform': 'translateY(0)'
+            'transform': 'translateY(-3px)'
         }
         
         # Active style - white background, elevated with prominent shadow (matching image)
@@ -604,15 +1192,15 @@ def create_wcod_dashboard(server, url_base_pathname):
             'boxShadow': '0 -3px 12px rgba(0, 0, 0, 0.15), 0 -1px 4px rgba(0, 0, 0, 0.1)',
             'position': 'relative',
             'zIndex': '2',
-            'padding': '10px',
-            'transform': 'translateY(-4px)'
+            'padding': '13px 35px',
+            'transform': 'translateY(0px)'
         }
         
-        # Icon sources - switch between active and inactive SVGs (using external URLs)
-        country_icon = 'https://www.energyintel.com/styleguide/assets/tabs/svgs/globe_active.svg' if active_tab == 'country-tab' else 'https://www.energyintel.com/styleguide/assets/tabs/svgs/globe_inactive.svg'
-        crude_icon = 'https://www.energyintel.com/styleguide/assets/tabs/svgs/oil_active.svg' if active_tab == 'crude-tab' else 'https://www.energyintel.com/styleguide/assets/tabs/svgs/oil_inactive.svg'
-        trade_icon = 'https://www.energyintel.com/styleguide/assets/tabs/svgs/trade_active.svg' if active_tab == 'trade-tab' else 'https://www.energyintel.com/styleguide/assets/tabs/svgs/trade_inactive.svg'
-        prices_icon = 'https://www.energyintel.com/styleguide/assets/tabs/svgs/prices_active.svg' if active_tab == 'prices-tab' else 'https://www.energyintel.com/styleguide/assets/tabs/svgs/prices_inactive.svg'
+        # Icon sources - switch between active and inactive SVGs (using local assets)
+        country_icon = '/assets/images/globe_active.svg' if active_tab == 'country-tab' else '/assets/images/globe_inactive.svg'
+        crude_icon = '/assets/images/oil_active.svg' if active_tab == 'crude-tab' else '/assets/images/oil_inactive.svg'
+        trade_icon = '/assets/images/trade_active.svg' if active_tab == 'trade-tab' else '/assets/images/trade_inactive.svg'
+        prices_icon = '/assets/images/prices_active.svg' if active_tab == 'prices-tab' else '/assets/images/prices_inactive.svg'
         
         return [
             active_style if active_tab == 'country-tab' else base_style,
@@ -692,7 +1280,8 @@ def create_wcod_dashboard(server, url_base_pathname):
                 '/wcod/crude-overview': 'crude-overview',
                 '/wcod-crude-profile': 'crude-profile',
                 '/wcod-crude-comparison': 'crude-comparison',
-                '/wcod-crude-quality-comparison': 'crude-quality',
+                '/wcod/wcod-crude-quality-comparison': 'crude-quality',
+                '/wcod-crude-quality-comparison': 'crude-quality',  # Keep old path for backward compatibility
                 '/wcod-crude-carbon-intensity': 'crude-carbon',
                 '/wcod/trade/imports-country-detail': 'imports-detail',
                 '/wcod/trade/imports-country-comparison': 'imports-comparison',
@@ -727,26 +1316,26 @@ def create_wcod_dashboard(server, url_base_pathname):
         # Create URL paths for each submenu item - matching exact user-provided URLs
         url_paths = {
             'country-overview': '/wcod/',
-            'country-profile': '/wcod-country-overview',
-            'crude-overview': '/wcod/crude-overview',
-            'crude-profile': '/wcod-crude-profile',
-            'crude-comparison': '/wcod-crude-comparison',
-            'crude-quality': '/wcod-crude-quality-comparison',
-            'crude-carbon': '/wcod-crude-carbon-intensity',
-            'imports-detail': '/wcod/trade/imports-country-detail',
-            'imports-comparison': '/wcod/trade/imports-country-comparison',
-            'global-exports': '/wcod/trade/global-exports',
-            'russian-exports': '/wcod/trade/russian-exports-by-terminal-and-exporting-company',
-            'global-prices': '/wcod/prices/global-crude-prices',
-            'price-scorecard': '/wcod/prices/price-scorecard-for-key-world-oil-grades',
-            'gpw-margins': '/wcod/prices/gross-product-worth-and-margins',
-            'projects-country': '/wcod/upstream-projects/projects-by-country',
-            'projects-company': '/wcod/upstream-projects/projects-by-company',
-            'projects-time': '/wcod/upstream-projects/projects-by-time',
-            'projects-status': '/wcod-upstream-projects/projects-by-status',
-            'projects-latest': '/wcod-upstream-projects-related-articles',
-            'projects-tracker': '/wcod-upstream-oil-projects-tracker-methodology',
-            'projects-carbon': '/wcod-carbon-intensity-methodology',
+            'country-profile': '/country-overview',
+            'crude-overview': '/crude-overview',
+            'crude-profile': '/crude-profile',
+            'crude-comparison': '/crude-comparison',
+            'crude-quality': '/crude-quality-comparison',
+            'crude-carbon': '/crude-carbon-intensity',
+            'imports-detail': '/trade/imports-country-detail',
+            'imports-comparison': '/trade/imports-country-comparison',
+            'global-exports': '/trade/global-exports',
+            'russian-exports': '/trade/russian-exports-by-terminal-and-exporting-company',
+            'global-prices': '/prices/global-crude-prices',
+            'price-scorecard': '/prices/price-scorecard-for-key-world-oil-grades',
+            'gpw-margins': '/prices/gross-product-worth-and-margins',
+            'projects-country': '/upstream-projects/projects-by-country',
+            'projects-company': '/upstream-projects/projects-by-company',
+            'projects-time': '/upstream-projects/projects-by-time',
+            'projects-status': '/upstream-projects/projects-by-status',
+            'projects-latest': '/upstream-projects-related-articles',
+            'projects-tracker': '/upstream-oil-projects-tracker-methodology',
+            'projects-carbon': '/carbon-intensity-methodology',
         }
         
         # Icons for submenu items - matching Energy Intelligence design
@@ -786,9 +1375,9 @@ def create_wcod_dashboard(server, url_base_pathname):
                         'display': 'inline-block',
                         'padding': '8px 20px',
                         'margin': '0 8px 8px 0',
-                        'background': '#007bff' if item['value'] == default_value else '#f8f9fa',
+                        'background': '#1b365d' if item['value'] == default_value else '#f8f9fa',
                         'color': 'white' if item['value'] == default_value else '#2c3e50',
-                        'border': '1px solid #007bff' if item['value'] == default_value else '1px solid #e0e0e0',
+                        'border': '1px solid #ffffff' if item['value'] == default_value else '1px solid #e0e0e0',
                         'borderRadius': '20px',
                         'cursor': 'pointer',
                         'transition': 'all 0.3s',
@@ -851,7 +1440,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                     return render_crude_profile()
                 elif '/wcod-crude-comparison' in effective_page:
                     return render_crude_comparison()
-                elif '/wcod-crude-quality-comparison' in effective_page:
+                elif '/wcod/wcod-crude-quality-comparison' in effective_page or '/wcod-crude-quality-comparison' in effective_page:
                     return render_crude_quality()
                 # Default to crude-overview if we can't determine
                 return render_crude_overview()
@@ -970,26 +1559,26 @@ def create_wcod_dashboard(server, url_base_pathname):
         menu_items = submenus.get(active_tab, [])
         url_paths = {
             'country-overview': '/wcod/',
-            'country-profile': '/wcod-country-overview',
-            'crude-overview': '/wcod/crude-overview',
-            'crude-profile': '/wcod-crude-profile',
-            'crude-comparison': '/wcod-crude-comparison',
-            'crude-quality': '/wcod-crude-quality-comparison',
-            'crude-carbon': '/wcod-crude-carbon-intensity',
-            'imports-detail': '/wcod/trade/imports-country-detail',
-            'imports-comparison': '/wcod/trade/imports-country-comparison',
-            'global-exports': '/wcod/trade/global-exports',
-            'russian-exports': '/wcod/trade/russian-exports-by-terminal-and-exporting-company',
-            'global-prices': '/wcod/prices/global-crude-prices',
-            'price-scorecard': '/wcod/prices/price-scorecard-for-key-world-oil-grades',
-            'gpw-margins': '/wcod/prices/gross-product-worth-and-margins',
-            'projects-country': '/wcod/upstream-projects/projects-by-country',
-            'projects-company': '/wcod/upstream-projects/projects-by-company',
-            'projects-time': '/wcod/upstream-projects/projects-by-time',
-            'projects-status': '/wcod-upstream-projects/projects-by-status',
-            'projects-latest': '/wcod-upstream-projects-related-articles',
-            'projects-tracker': '/wcod-upstream-oil-projects-tracker-methodology',
-            'projects-carbon': '/wcod-carbon-intensity-methodology',
+            'country-profile': '/country-overview',
+            'crude-overview': '/crude-overview',
+            'crude-profile': '/crude-profile',
+            'crude-comparison': '/crude-comparison',
+            'crude-quality': '/crude-quality-comparison',
+            'crude-carbon': '/crude-carbon-intensity',
+            'imports-detail': '/trade/imports-country-detail',
+            'imports-comparison': '/trade/imports-country-comparison',
+            'global-exports': '/trade/global-exports',
+            'russian-exports': '/trade/russian-exports-by-terminal-and-exporting-company',
+            'global-prices': '/prices/global-crude-prices',
+            'price-scorecard': '/prices/price-scorecard-for-key-world-oil-grades',
+            'gpw-margins': '/prices/gross-product-worth-and-margins',
+            'projects-country': '/upstream-projects/projects-by-country',
+            'projects-company': '/upstream-projects/projects-by-company',
+            'projects-time': '/upstream-projects/projects-by-time',
+            'projects-status': '/upstream-projects/projects-by-status',
+            'projects-latest': '/upstream-projects-related-articles',
+            'projects-tracker': '/upstream-oil-projects-tracker-methodology',
+            'projects-carbon': '/carbon-intensity-methodology',
         }
         
         # Icons for submenu items
