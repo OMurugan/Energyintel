@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 import os
+import re
 
 # ------------------------------------------------------------------------------
 # FILE PATHS
@@ -27,18 +28,26 @@ CSV_PATHS = {
 # ------------------------------------------------------------------------------
 # DATA LOADING FUNCTIONS
 # ------------------------------------------------------------------------------
-def load_csv_data(file_path, fallback_data=None):
+def load_csv_data(file_path, fallback_data=None, **read_kwargs):
     """Load CSV data with fallback to sample data if file not found."""
     if not os.path.exists(file_path):
         print(f"❌ File not found: {file_path}")
         return fallback_data
     
-    encodings_to_try = ["utf-8", "utf-8-sig", "latin-1", "utf-16"]
+    if "encoding" in read_kwargs:
+        encodings_to_try = [read_kwargs.pop("encoding")]
+    else:
+        encodings_to_try = ["utf-8", "utf-8-sig", "latin-1", "utf-16"]
+    
     last_error = None
+    base_kwargs = read_kwargs or {}
     
     for enc in encodings_to_try:
         try:
-            df = pd.read_csv(file_path, encoding=enc)
+            kwargs = dict(base_kwargs)
+            if enc:
+                kwargs["encoding"] = enc
+            df = pd.read_csv(file_path, **kwargs)
             print(f"✅ Loaded {os.path.basename(file_path)} (encoding={enc})")
             return df
         except UnicodeDecodeError as e:
@@ -82,19 +91,19 @@ def load_mars_assay():
     if df is None or df.empty:
         return [
             {"Property": "Barrels", "Unit": "Per Metric Ton", "Value": "7.13"},
-            {"Property": "", "Unit": "Total", "Value": ""},
-            {"Property": "Gravity", "Unit": "API at 60 F", "Value": "28.51"},
-            {"Property": "Mercaptan Sulfur", "Unit": "ppm", "Value": "28.00"},
-            {"Property": "Micro Carbon Residue", "Unit": "% Wt", "Value": "6.52"},
-            {"Property": "Nickel", "Unit": "ppm", "Value": "22.13"},
-            {"Property": "Pour Point", "Unit": "Temp. C", "Value": "-33.00"},
-            {"Property": "Reid Vapor Pressure", "Unit": "psi at 37.8 C", "Value": "6.66"},
-            {"Property": "Sulfur Content", "Unit": "% Wt", "Value": "2.21"},
-            {"Property": "Total Acid Number", "Unit": "Mg KOH/g", "Value": "0.46"},
-            {"Property": "Vanadium", "Unit": "ppm", "Value": "62.24"},
-            {"Property": "Viscosity", "Unit": "cSt at 20 C", "Value": "28.88"},
-            {"Property": "", "Unit": "cSt at 40 C", "Value": "14.82"},
-            {"Property": "", "Unit": "cSt at 50 C", "Value": "11.23"}
+            # {"Property": "", "Unit": "Total", "Value": ""},
+            # {"Property": "Gravity", "Unit": "API at 60 F", "Value": "28.51"},
+            # {"Property": "Mercaptan Sulfur", "Unit": "ppm", "Value": "28.00"},
+            # {"Property": "Micro Carbon Residue", "Unit": "% Wt", "Value": "6.52"},
+            # {"Property": "Nickel", "Unit": "ppm", "Value": "22.13"},
+            # {"Property": "Pour Point", "Unit": "Temp. C", "Value": "-33.00"},
+            # {"Property": "Reid Vapor Pressure", "Unit": "psi at 37.8 C", "Value": "6.66"},
+            # {"Property": "Sulfur Content", "Unit": "% Wt", "Value": "2.21"},
+            # {"Property": "Total Acid Number", "Unit": "Mg KOH/g", "Value": "0.46"},
+            # {"Property": "Vanadium", "Unit": "ppm", "Value": "62.24"},
+            # {"Property": "Viscosity", "Unit": "cSt at 20 C", "Value": "28.88"},
+            # {"Property": "", "Unit": "cSt at 40 C", "Value": "14.82"},
+            # {"Property": "", "Unit": "cSt at 50 C", "Value": "11.23"}
         ]
     
     assay_data = []
@@ -108,83 +117,106 @@ def load_mars_assay():
 
 def load_refined_products():
     """Load refined products breakdown data."""
-    df = load_csv_data(CSV_PATHS["refined_products"])
-    if df is None or df.empty:
-        return [
-            ("Heavy Gasoil", "300-350", [
-                ("Yield Volume", "%", "7.80"),
-                ("Yield Weight", "%", "7.74"),
-                ("Pour Point", "Temp. C", "-6.83"),
-                ("Sulfur Content", "% Wt", "1.57"),
-            ]),
-            ("Heavy Naphtha", "100-150", [
-                ("Yield Volume", "%", "8.44"),
-                ("Yield Weight", "%", "7.18"),
-                ("Aromatics", "% Wt", "9.07"),
-                ("Naphthenes", "% Wt", "33.13"),
-                ("Paraffins", "% Wt", "57.80"),
-            ]),
-            ("Heavy Residue", ">370", [
-                ("Yield Volume", "%", "47.77"),
-                ("Yield Weight", "%", "53.54"),
-                ("Nickel", "ppm", "41.34"),
-                ("Pour Point", "Temp. C", "26.64"),
-                ("Sulfur Content", "% Wt", "3.57"),
-                ("Vanadium", "ppm", "116.23"),
-            ]),
-            ("Int. Gasoil", "250-300", [
-                ("Yield Volume", "%", "7.92"),
-                ("Yield Weight", "%", "7.60"),
-                ("Cetane Index", "", "51.28"),
-                ("Cloud Point", "Temp. C", "-25.53"),
-                ("Sulfur Content", "% Wt", "0.92"),
-            ]),
-            ("Int. Naphtha", "65-100", [
-                ("Yield Volume", "%", "4.99"),
-                ("Yield Weight", "%", "3.98"),
-                ("Aromatics", "% Wt", "1.47"),
-                ("Naphthenes", "% Wt", "26.11"),
-                ("Paraffins", "% Wt", "72.42"),
-            ]),
-            ("Kerosene", "150-200", [
-                ("Yield Volume", "%", "6.44"),
-                ("Yield Weight", "%", "5.73"),
-                ("Freeze Point", "Temp. C", "-63.90"),
-                ("Smoke Point", "mm", "23.20"),
-            ]),
-            ("Light Gasoil", "200-250", [
-                ("Yield Volume", "%", "7.98"),
-                ("Yield Weight", "%", "6.83"),
-                ("Cetane Index", "", "46.98"),
-                ("Pour Point", "Temp. C", "-54.20"),
-            ]),
-            ("Light Naphtha", "C5-65", [
-                ("Yield Volume", "%", "4.95"),
-                ("Yield Weight", "%", "3.19"),
-                ("Octane", "RON clear", "77.62"),
-            ]),
-            ("Light Residue", "350-370", [
-                ("Yield Volume", "%", "2.89"),
-                ("Yield Weight", "%", "2.93"),
-                ("Viscosity", "cSt at 50 C", "8.95"),
-            ])
-        ]
+    fallback = [
+        ("Heavy Gasoil", "300-350", [
+            ("Yield Volume", "%", "7.80"),
+            ("Yield Weight", "%", "7.74"),
+            ("Pour Point", "Temp. C", "-6.83"),
+            ("Sulfur Content", "% Wt", "1.57"),
+        ])
+        # ("Heavy Naphtha", "100-150", [
+        #     ("Yield Volume", "%", "8.44"),
+        #     ("Yield Weight", "%", "7.18"),
+        #     ("Aromatics", "% Wt", "9.07"),
+        #     ("Naphthenes", "% Wt", "33.13"),
+        #     ("Paraffins", "% Wt", "57.80"),
+        # ]),
+        # ("Heavy Residue", ">370", [
+        #     ("Yield Volume", "%", "47.77"),
+        #     ("Yield Weight", "%", "53.54"),
+        #     ("Nickel", "ppm", "41.34"),
+        #     ("Pour Point", "Temp. C", "26.64"),
+        #     ("Sulfur Content", "% Wt", "3.57"),
+        #     ("Vanadium", "ppm", "116.23"),
+        # ]),
+        # ("Int. Gasoil", "250-300", [
+        #     ("Yield Volume", "%", "7.92"),
+        #     ("Yield Weight", "%", "7.60"),
+        #     ("Cetane Index", "", "51.28"),
+        #     ("Cloud Point", "Temp. C", "-25.53"),
+        #     ("Sulfur Content", "% Wt", "0.92"),
+        # ]),
+        # ("Int. Naphtha", "65-100", [
+        #     ("Yield Volume", "%", "4.99"),
+        #     ("Yield Weight", "%", "3.98"),
+        #     ("Aromatics", "% Wt", "1.47"),
+        #     ("Naphthenes", "% Wt", "26.11"),
+        #     ("Paraffins", "% Wt", "72.42"),
+        # ]),
+        # ("Kerosene", "150-200", [
+        #     ("Yield Volume", "%", "6.44"),
+        #     ("Yield Weight", "%", "5.73"),
+        #     ("Freeze Point", "Temp. C", "-63.90"),
+        #     ("Smoke Point", "mm", "23.20"),
+        # ]),
+        # ("Light Gasoil", "200-250", [
+        #     ("Yield Volume", "%", "7.98"),
+        #     ("Yield Weight", "%", "6.83"),
+        #     ("Cetane Index", "", "46.98"),
+        #     ("Pour Point", "Temp. C", "-54.20"),
+        # ]),
+        # ("Light Naphtha", "C5-65", [
+        #     ("Yield Volume", "%", "4.95"),
+        #     ("Yield Weight", "%", "3.19"),
+        #     ("Octane", "RON clear", "77.62"),
+        # ]),
+        # ("Light Residue", "350-370", [
+        #     ("Yield Volume", "%", "2.89"),
+        #     ("Yield Weight", "%", "2.93"),
+        #     ("Viscosity", "cSt at 50 C", "8.95"),
+        # ])
+    ]
     
-    # Group by product and cut points
+    df = load_csv_data(CSV_PATHS["refined_products"], header=2)
+    if df is None or df.empty or "Product" not in df.columns:
+        return fallback
+    
+    df = df.dropna(how="all")
+    df["Product"] = df["Product"].ffill()
+    if "Cut Points (ºC)" in df.columns:
+        df["Cut Points (ºC)"] = df["Cut Points (ºC)"].ffill()
+        cut_col = "Cut Points (ºC)"
+    else:
+        df["Cut Points (°C)"] = df.get("Cut Points (°C)", "").ffill()
+        cut_col = "Cut Points (°C)"
+    
+    df["Value"] = df["Value"].astype(str).str.strip()
+    
+    def parse_property_unit(prop_raw, unit_raw):
+        prop = str(prop_raw).strip() if prop_raw is not None else ""
+        unit = str(unit_raw).strip() if unit_raw is not None else ""
+        if prop:
+            return prop, unit
+        if unit:
+            match = re.match(r"^(?P<name>.+?)\s*\((?P<unit>.+)\)$", unit)
+            if match:
+                return match.group("name").strip(), match.group("unit").strip()
+            return unit, ""
+        return "", ""
+    
     products_data = []
     current_product = None
     current_cut_points = None
     current_properties = []
     
     for _, row in df.iterrows():
-        product = row.get("Product", "")
-        cut_points = row.get("Cut_Points", "")
-        property_name = row.get("Property", "")
-        unit = row.get("Unit", "")
+        product = str(row.get("Product", "")).strip()
+        cut_points = str(row.get(cut_col, "")).strip()
+        property_name, unit = parse_property_unit(row.get("Property"), row.get("Unit"))
         value = row.get("Value", "")
         
         if product and product != current_product:
-            if current_product:
+            if current_product and current_properties:
                 products_data.append((current_product, current_cut_points, current_properties))
             current_product = product
             current_cut_points = cut_points
@@ -193,10 +225,10 @@ def load_refined_products():
         if property_name:
             current_properties.append((property_name, unit, value))
     
-    if current_product:
+    if current_product and current_properties:
         products_data.append((current_product, current_cut_points, current_properties))
     
-    return products_data
+    return products_data or fallback
 
 def load_production_exports():
     """Load production and exports data for chart."""
@@ -228,35 +260,99 @@ def load_production_exports():
 
 def load_port_details():
     """Load port details data."""
-    df = load_csv_data(CSV_PATHS["port_details"])
-    if df is None or df.empty:
-        return [
-            ("Berths", "4"),
-            ("Max Draft (meters)", "23.5"),
-            ("Max Length (meters)", "366"),
-            ("Max Loading Rate (bbl/hour)", "80,000"),
-            ("Max Tonnage (dwt)", "250,000"),
-            ("Mooring Type", "Single Point"),
-            ("Storage Capacity (million bbl)", "12.5")
-        ]
+    fallback_rows = [
+        ("Berths", "4"),
+        # ("Max Draft (meters)", "23.5"),
+        # ("Max Length (meters)", "366"),
+        # ("Max Loading Rate (bbl/hour)", "80,000"),
+        # ("Max Tonnage (dwt)", "250,000"),
+        # ("Mooring Type", "Single Point"),
+        # ("Storage Capacity (million bbl)", "12.5")
+    ]
+    fallback_label = "Loop, Clovelly"
+    
+    df = load_csv_data(CSV_PATHS["port_details"], header=2)
+    if df is None or df.empty or "Measure" not in df.columns:
+        return {"label": fallback_label, "rows": fallback_rows}
+    
+    value_columns = [col for col in df.columns if col != "Measure"]
+    if not value_columns:
+        return {"label": fallback_label, "rows": fallback_rows}
+    value_col = value_columns[0]
+    column_label = value_col
+    
+    df[value_col] = df[value_col].fillna("").astype(str).str.strip()
     
     port_details = []
     for _, row in df.iterrows():
-        if "Measure" in df.columns and "Value" in df.columns:
-            port_details.append((row["Measure"], row["Value"]))
-    return port_details
+        measure = str(row.get("Measure", "")).strip()
+        value = str(row.get(value_col, "")).strip()
+        if measure:
+            port_details.append((measure, value if value else ""))
+    
+    has_real_value = any(val for _, val in port_details)
+    rows = port_details if has_real_value else fallback_rows
+    label = column_label if has_real_value else fallback_label
+    
+    return {
+        "label": label,
+        "rows": rows
+    }
+
+def load_loading_ports():
+    """Load loading ports data for the map."""
+    fallback = [{
+        "port": "Loop, Clovelly",
+        # "country": "United States",
+        # "latitude": 29.1175,
+        # "longitude": -90.0715
+    }]
+    
+    df = load_csv_data(
+        CSV_PATHS["loading_ports"],
+        encoding="utf-16",
+        sep="\t"
+    )
+    if df is None or df.empty:
+        return fallback
+    
+    df["Latitude"] = pd.to_numeric(df.get("Latitude"), errors="coerce")
+    df["Longitude"] = pd.to_numeric(df.get("Longitude"), errors="coerce")
+    df["Port Name"] = df.get("Port Name", "").fillna("").astype(str).str.strip()
+    df["Country"] = df.get("Country", "").fillna("").astype(str).str.strip()
+    
+    records = []
+    for _, row in df.iterrows():
+        lat = row.get("Latitude")
+        lon = row.get("Longitude")
+        name = row.get("Port Name", "")
+        if pd.notna(lat) and pd.notna(lon) and name:
+            records.append({
+                "port": name,
+                "country": row.get("Country", ""),
+                "latitude": lat,
+                "longitude": lon
+            })
+    
+    return records or fallback
+
 
 def load_producers_sellers():
     """Load producers and sellers data."""
-    df = load_csv_data(CSV_PATHS["producers_sellers"])
-    if df is None or df.empty:
-        return [("BP, ConocoPhillips, Exxon Mobil, Shell", "BP America Inc., ConocoPhillips, Exxon Mobil, Shell")]
+    fallback = [("BP, ConocoPhillips, Exxon Mobil, Shell", "BP America Inc., ConocoPhillips, Exxon Mobil, Shell")]
     
-    producers_sellers = []
+    df = load_csv_data(CSV_PATHS["producers_sellers"], header=2)
+    if df is None or df.empty or "Producers" not in df.columns:
+        return fallback
+    
+    records = []
     for _, row in df.iterrows():
-        if "Producers" in df.columns and "Sellers" in df.columns:
-            producers_sellers.append((row["Producers"], row["Sellers"]))
-    return producers_sellers
+        producers = str(row.get("Producers", "")).strip()
+        sellers = str(row.get("Sellers", "")).strip()
+        if producers or sellers:
+            records.append((producers, sellers))
+    
+    return records or fallback
 
 # ------------------------------------------------------------------------------
 # HELPER FUNCTIONS (UPDATED TO USE DYNAMIC DATA)
@@ -506,21 +602,33 @@ def create_production_chart():
 
 def create_map_chart():
     """Create loading ports map matching the image."""
-    # Note: You would need to load coordinate data from Loading_Ports_Country_Map.csv
-    # For now, using static data as placeholder
-    fig = go.Figure()
+    ports = load_loading_ports()
+    lons = [p["longitude"] for p in ports]
+    lats = [p["latitude"] for p in ports]
+    labels = [f"{p['port']} ({p['country']})" if p.get("country") else p["port"] for p in ports]
     
+    fig = go.Figure()
     fig.add_trace(go.Scattergeo(
-        lon=[-90.0715],
-        lat=[29.1175],
+        lon=lons,
+        lat=lats,
         mode='markers',
+        text=labels,
+        hoverinfo='text',
         marker=dict(
-            size=20,
+            size=10,
             color='#d65a00',
-            symbol='triangle-up'
+            symbol='circle',
+            line=dict(width=1, color='#ffffff')
         ),
-        name='Loop, Clovelly'
+        name='Loading Ports'
     ))
+    
+    lon_min = min(lons) if lons else -90
+    lon_max = max(lons) if lons else -90
+    lat_min = min(lats) if lats else 29
+    lat_max = max(lats) if lats else 29
+    lon_padding = max(1, (lon_max - lon_min) * 0.1 or 1)
+    lat_padding = max(1, (lat_max - lat_min) * 0.1 or 1)
     
     fig.update_geos(
         visible=True,
@@ -534,8 +642,8 @@ def create_map_chart():
         showocean=True,
         oceancolor='#cce5ff',
         projection_type='natural earth',
-        lonaxis_range=[-100, -80],
-        lataxis_range=[25, 35]
+        lonaxis_range=[lon_min - lon_padding, lon_max + lon_padding],
+        lataxis_range=[lat_min - lat_padding, lat_max + lat_padding]
     )
     
     fig.update_layout(
@@ -557,7 +665,9 @@ def create_layout(server=None):
     # Load dynamic data
     assay_details = load_assay_details()
     quality_specs = load_quality_specs()
-    port_details = load_port_details()
+    port_details_data = load_port_details()
+    port_details_rows = port_details_data.get("rows", [])
+    port_details_label = port_details_data.get("label", "Port Details")
     producers_sellers = load_producers_sellers()
     
     production_fig = create_production_chart()
@@ -852,7 +962,7 @@ def create_layout(server=None):
                             "textAlign": "left",
                             "fontSize": "12px"
                         }),
-                        html.Th("Loop, Clovelly", style={
+                        html.Th(port_details_label, style={
                             "border": "1px solid #ddd",
                             "padding": "10px",
                             "backgroundColor": "#f5f5f5",
@@ -872,7 +982,7 @@ def create_layout(server=None):
                             "padding": "10px",
                             "fontSize": "12px"
                         })
-                    ]) for port in port_details])
+                    ]) for port in port_details_rows])
                 ])
             ]),
             # Bottom Row spanning first two columns: Sellers and Producers
