@@ -1,7 +1,7 @@
 """
 Crude Profile Dashboard - Complete Implementation
 """
-from dash import dcc, html, Dash
+from dash import dcc, html, Dash, Input, Output
 import plotly.graph_objects as go
 import plotly.express as px
 
@@ -372,68 +372,7 @@ def create_refined_products_table():
         html.Tbody(rows)
     ])
 
-def create_quality_specs_table():
-    """Create the quality specs table matching the image exactly."""
-    return html.Table(style={
-        "width": "100%",
-        "borderCollapse": "collapse",
-        "border": "1px solid #ddd",
-        "fontSize": "12px",
-        "marginBottom": "10px"
-    }, children=[
-        html.Thead(html.Tr([
-            html.Th("Gravity (API at 60F)", style={
-                "textAlign": "center",
-                "padding": "10px",
-                "border": "1px solid #ddd",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "fontSize": "12px"
-            }),
-            html.Th("Sulfur Content (% Wt)", style={
-                "textAlign": "center",
-                "padding": "10px",
-                "border": "1px solid #ddd",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "fontSize": "12px"
-            }),
-            html.Th("TAN (mg KOH/g)", style={
-                "textAlign": "center",
-                "padding": "10px",
-                "border": "1px solid #ddd",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "fontSize": "12px"
-            })
-        ])),
-        html.Tbody(html.Tr([
-            html.Td("28.40", style={
-                "textAlign": "center",
-                "padding": "10px",
-                "border": "1px solid #ddd",
-                "backgroundColor": "white",
-                "fontWeight": "bold",
-                "fontSize": "12px"
-            }),
-            html.Td("2.17", style={
-                "textAlign": "center",
-                "padding": "10px",
-                "border": "1px solid #ddd",
-                "backgroundColor": "white",
-                "fontWeight": "bold",
-                "fontSize": "12px"
-            }),
-            html.Td("0.48", style={
-                "textAlign": "center",
-                "padding": "10px",
-                "border": "1px solid #ddd",
-                "backgroundColor": "white",
-                "fontWeight": "bold",
-                "fontSize": "12px"
-            })
-        ]))
-    ])
+
 
 def create_producers_table():
     """Create producers and sellers table."""
@@ -527,7 +466,7 @@ def create_port_details_table():
 # ------------------------------------------------------------------------------
 # LAYOUT
 # ------------------------------------------------------------------------------
-def create_layout():
+def create_layout(server=None):
     """Layout exactly matching the provided image design."""
     
     production_fig = create_production_chart()
@@ -584,19 +523,186 @@ def create_layout():
             )
         ]),
         
-        # Quality Specs Section
+        # Summary Section - Three parts: Crude Details, Carbon Intensity, Latest Quality Specs
         html.Div(style={
-            "marginBottom": "20px"
+            "display": "flex",
+            "justifyContent": "space-between",
+            "alignItems": "flex-start",
+            "gap": "20px",
+            "marginBottom": "25px",
+            "marginTop": "20px"
         }, children=[
-            html.Div("Latest Quality Specs", style={
-                "color": "#d65a00",
-                "fontWeight": "bold",
-                "fontSize": "16px",
-                "marginBottom": "10px"
-            }),
-            create_quality_specs_table()
+            # Left: Crude Details (Alternate Crude Names, Country, Assay Date)
+            html.Div(style={
+                "flex": "1",
+                "minWidth": "200px"
+            }, children=[
+                html.Div(style={
+                    "display": "flex",
+                    "flexDirection": "column",
+                    "gap": "12px"
+                }, children=[
+                    html.Div(style={
+                        "display": "flex",
+                        "flexDirection": "column",
+                        "gap": "4px"
+                    }, children=[
+                        html.Div("Alternate Crude Names", style={
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "fontSize": "13px",
+                            "marginBottom": "4px"
+                        }),
+                        html.Div("", style={
+                            "color": "#666",
+                            "fontSize": "13px"
+                        })
+                    ]),
+                    html.Div(style={
+                        "display": "flex",
+                        "flexDirection": "column",
+                        "gap": "4px"
+                    }, children=[
+                        html.Div("Country", style={
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "fontSize": "13px",
+                            "marginBottom": "4px"
+                        }),
+                        html.Div("United States", style={
+                            "color": "#666",
+                            "fontSize": "13px"
+                        })
+                    ]),
+                    html.Div(style={
+                        "display": "flex",
+                        "flexDirection": "column",
+                        "gap": "4px"
+                    }, children=[
+                        html.Div("Assay Date", style={
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "fontSize": "13px",
+                            "marginBottom": "4px"
+                        }),
+                        html.Div("2025", style={
+                            "color": "#666",
+                            "fontSize": "13px"
+                        })
+                    ])
+                ])
+            ]),
+            
+            # Middle: Carbon Intensity Box
+            html.Div(style={
+                "background": "linear-gradient(135deg, #fff9e6, #ffedcc)",
+                "border": "1px solid #e6b800",
+                "padding": "20px 30px",
+                "borderRadius": "5px",
+                "textAlign": "center",
+                "minWidth": "150px",
+                "flexShrink": "0"
+            }, children=[
+                html.Div("Carbon Intensity", style={
+                    "color": "#1f3263",
+                    "fontWeight": "bold",
+                    "fontSize": "14px",
+                    "marginBottom": "8px"
+                }),
+                html.Div("Low", style={
+                    "color": "#1f3263",
+                    "fontWeight": "bold",
+                    "fontSize": "16px"
+                })
+            ]),
+            
+            # Right: Latest Quality Specs
+            html.Div(style={
+                "flex": "1",
+                "minWidth": "300px"
+            }, children=[
+                html.Div("Latest Quality Specs", style={
+                    "color": "#d65a00",
+                    "fontWeight": "bold",
+                    "fontSize": "15px",
+                    "marginBottom": "12px",
+                    "borderBottom": "2px solid #d65a00",
+                    "paddingBottom": "5px"
+                }),
+                html.Div(style={
+                    "display": "flex",
+                    "gap": "15px"
+                }, children=[
+                    html.Div(style={
+                        "flex": "1",
+                        "display": "flex",
+                        "flexDirection": "column",
+                        "gap": "6px"
+                    }, children=[
+                        html.Div("Gravity (API at 60F)", style={
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "fontSize": "12px"
+                        }),
+                        html.Div("28.40", style={
+                            "color": "#666",
+                            "fontSize": "13px"
+                        })
+                    ]),
+                    html.Div(style={
+                        "flex": "1",
+                        "display": "flex",
+                        "flexDirection": "column",
+                        "gap": "6px"
+                    }, children=[
+                        html.Div("Sulfur Content (% Wt)", style={
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "fontSize": "12px"
+                        }),
+                        html.Div("2.17", style={
+                            "color": "#666",
+                            "fontSize": "13px"
+                        })
+                    ]),
+                    html.Div(style={
+                        "flex": "1",
+                        "display": "flex",
+                        "flexDirection": "column",
+                        "gap": "6px"
+                    }, children=[
+                        html.Div("TAN (mg KOH/g)", style={
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "fontSize": "12px"
+                        }),
+                        html.Div("0.48", style={
+                            "color": "#666",
+                            "fontSize": "13px"
+                        })
+                    ])
+                ])
+            ])
         ]),
         
+        html.Div("Production and Exports", style={
+                "color": "#d65a00",
+                "fontWeight": "bold",
+                "fontSize": "16px", 
+                "margin": "25px 0 10px 0",
+                "borderBottom": "2px solid #d65a00",
+                "paddingBottom": "5px"
+            }),
+            html.Div(style={
+                "border": "1px solid #ddd",
+                "padding": "15px",
+                "borderRadius": "4px",
+                "margin": "10px 0",
+                "backgroundColor": "white"
+            }, children=[
+                dcc.Graph(figure=production_fig, config={"displayModeBar": False})
+            ]),
+                
         # Two Column Layout
         html.Div(style={
             "display": "grid",
@@ -635,23 +741,7 @@ def create_layout():
                     }
                 ),
                 
-                html.Div("Production and Exports", style={
-                    "color": "#d65a00",
-                    "fontWeight": "bold",
-                    "fontSize": "16px", 
-                    "margin": "25px 0 10px 0",
-                    "borderBottom": "2px solid #d65a00",
-                    "paddingBottom": "5px"
-                }),
-                html.Div(style={
-                    "border": "1px solid #ddd",
-                    "padding": "15px",
-                    "borderRadius": "4px",
-                    "margin": "10px 0",
-                    "backgroundColor": "white"
-                }, children=[
-                    dcc.Graph(figure=production_fig, config={"displayModeBar": False})
-                ])
+              
             ]),
             
             # Right Column
@@ -713,17 +803,31 @@ def create_layout():
             ])
         ])
     ])
+    
+
 
 # ------------------------------------------------------------------------------
 # DASH APP CREATION
 # ------------------------------------------------------------------------------
-def create_crude_profile_dashboard():
-    """Create and configure the crude profile dashboard."""
-    app = Dash(__name__)
-    app.layout = create_layout()
-    return app
+def register_callbacks(dash_app):
+    """Register callbacks for the dashboard"""
+    @dash_app.callback(
+        Output("crude-select", "value"),
+        Input("crude-select", "value")
+    )
+    def update_crude(selected_crude):
+        return selected_crude
+
+def create_crude_profile_dashboard(server, url_base_pathname="/dash/crude-profile/"):
+    """Create and configure the crude profile dashboard"""
+    from app import create_dash_app
+    dash_app = create_dash_app(server, url_base_pathname)
+    dash_app.layout = create_layout()
+    register_callbacks(dash_app)
+    return dash_app
 
 # For standalone testing
 if __name__ == "__main__":
-    app = create_crude_profile_dashboard()
+    app = Dash(__name__)
+    app.layout = create_layout()
     app.run_server(debug=True, port=8050)
