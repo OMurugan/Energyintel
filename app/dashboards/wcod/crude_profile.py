@@ -106,6 +106,174 @@ PORT_DETAILS = [
 # ------------------------------------------------------------------------------
 # HELPER FUNCTIONS
 # ------------------------------------------------------------------------------
+def create_assay_table():
+    """Create the Mars Blend Assay table with 3 columns."""
+    rows = []
+    for item in ASSAY_DATA:
+        rows.append(html.Tr([
+            html.Td(item["Property"], style={
+                "border": "1px solid #ddd",
+                "padding": "8px 10px",
+                "fontSize": "12px",
+                "textAlign": "left"
+            }),
+            html.Td(item["Unit"], style={
+                "border": "1px solid #ddd",
+                "padding": "8px 10px",
+                "fontSize": "12px",
+                "textAlign": "left"
+            }),
+            html.Td(item["Value"], style={
+                "border": "1px solid #ddd",
+                "padding": "8px 10px",
+                "fontSize": "12px",
+                "textAlign": "left"
+            })
+        ]))
+    
+    return html.Table(style={
+        "width": "100%",
+        "borderCollapse": "collapse",
+        "marginBottom": "15px",
+        "fontFamily": "Arial, sans-serif"
+    }, children=[
+        html.Thead(html.Tr([
+            html.Th("Property", style={
+                "border": "1px solid #ddd",
+                "padding": "10px",
+                "backgroundColor": "#f5f5f5",
+                "fontWeight": "bold",
+                "textAlign": "left",
+                "fontSize": "12px"
+            }),
+            html.Th("Unit", style={
+                "border": "1px solid #ddd",
+                "padding": "10px",
+                "backgroundColor": "#f5f5f5",
+                "fontWeight": "bold",
+                "textAlign": "left",
+                "fontSize": "12px"
+            }),
+            html.Th("Value", style={
+                "border": "1px solid #ddd",
+                "padding": "10px",
+                "backgroundColor": "#f5f5f5",
+                "fontWeight": "bold",
+                "textAlign": "left",
+                "fontSize": "12px"
+            })
+        ])),
+        html.Tbody(rows)
+    ])
+
+def create_refined_products_table():
+    """Create the Refined Products Breakdown & Properties table with 4 columns."""
+    rows = []
+    for product, cut_points, properties in REFINED_PRODUCTS:
+        first_row = True
+        for prop in properties:
+            if first_row:
+                rows.append(html.Tr([
+                    html.Td(product, style={
+                        "border": "1px solid #ddd",
+                        "padding": "8px 10px",
+                        "fontWeight": "bold",
+                        "verticalAlign": "top",
+                        "fontSize": "11px"
+                    }, rowSpan=len(properties)),
+                    html.Td(cut_points, style={
+                        "border": "1px solid #ddd",
+                        "padding": "8px 10px", 
+                        "verticalAlign": "top",
+                        "fontSize": "11px"
+                    }, rowSpan=len(properties)),
+                    html.Td(prop[0], style={
+                        "border": "1px solid #ddd",
+                        "padding": "8px 10px",
+                        "fontSize": "11px"
+                    }),
+                    html.Td(prop[1], style={
+                        "border": "1px solid #ddd",
+                        "padding": "8px 10px",
+                        "fontSize": "11px"
+                    }),
+                    html.Td(prop[2], style={
+                        "border": "1px solid #ddd",
+                        "padding": "8px 10px",
+                        "fontSize": "11px"
+                    })
+                ]))
+                first_row = False
+            else:
+                rows.append(html.Tr([
+                    html.Td(prop[0], style={
+                        "border": "1px solid #ddd",
+                        "padding": "8px 10px",
+                        "fontSize": "11px"
+                    }),
+                    html.Td(prop[1], style={
+                        "border": "1px solid #ddd",
+                        "padding": "8px 10px",
+                        "fontSize": "11px"
+                    }),
+                    html.Td(prop[2], style={
+                        "border": "1px solid #ddd",
+                        "padding": "8px 10px", 
+                        "fontSize": "11px"
+                    })
+                ]))
+    
+    return html.Table(style={
+        "width": "100%",
+        "borderCollapse": "collapse",
+        "marginBottom": "15px",
+        "fontFamily": "Arial, sans-serif"
+    }, children=[
+        html.Thead(html.Tr([
+            html.Th("Product", style={
+                "border": "1px solid #ddd",
+                "padding": "8px 10px",
+                "backgroundColor": "#f5f5f5",
+                "fontWeight": "bold",
+                "textAlign": "left",
+                "fontSize": "11px"
+            }),
+            html.Th("Cut Points (°C)", style={
+                "border": "1px solid #ddd",
+                "padding": "8px 10px",
+                "backgroundColor": "#f5f5f5",
+                "fontWeight": "bold",
+                "textAlign": "left",
+                "fontSize": "11px"
+            }),
+            html.Th("Property", style={
+                "border": "1px solid #ddd",
+                "padding": "8px 10px",
+                "backgroundColor": "#f5f5f5",
+                "fontWeight": "bold",
+                "textAlign": "left",
+                "fontSize": "11px"
+            }),
+            html.Th("Unit", style={
+                "border": "1px solid #ddd",
+                "padding": "8px 10px",
+                "backgroundColor": "#f5f5f5",
+                "fontWeight": "bold",
+                "textAlign": "left",
+                "fontSize": "11px"
+            }),
+            html.Th("Value", style={
+                "border": "1px solid #ddd",
+                "padding": "8px 10px",
+                "backgroundColor": "#f5f5f5",
+                "fontWeight": "bold",
+                "textAlign": "left",
+                "fontSize": "11px"
+            })
+        ])),
+        html.Tbody(rows)
+    ])
+
 def create_production_chart():
     """Create production and exports chart matching the image design."""
     fig = go.Figure()
@@ -186,282 +354,43 @@ def create_map_chart():
         mode='markers',
         marker=dict(
             size=20,
-            color='orange',
-            symbol='circle'
+            color='#d65a00',
+            symbol='triangle-up'
         ),
-        text=['Loop, Clovelly'],
-        hoverinfo='text'
+        name='Loop, Clovelly'
     ))
     
+    fig.update_geos(
+        visible=True,
+        resolution=50,
+        showcountries=True,
+        countrycolor='#cccccc',
+        showcoastlines=True,
+        coastlinecolor='#cccccc',
+        showland=True,
+        landcolor='#e6f3e6',
+        showocean=True,
+        oceancolor='#cce5ff',
+        projection_type='natural earth',
+        lonaxis_range=[-100, -80],
+        lataxis_range=[25, 35]
+    )
+    
     fig.update_layout(
+        height=300,
+        margin=dict(l=0, r=0, t=0, b=0),
         geo=dict(
-            scope='north america',
-            showland=True,
-            landcolor='rgb(243, 243, 243)',
-            countrycolor='rgb(204, 204, 204)',
-        ),
-        height=250,
-        margin=dict(l=10, r=10, t=10, b=10),
+            bgcolor='white'
+        )
     )
     
     return fig
 
-def create_assay_table():
-    """Create the assay data table matching the image exactly."""
-    rows = []
-    for row in ASSAY_DATA:
-        rows.append(html.Tr([
-            html.Td(row["Property"], style={
-                "border": "1px solid #ddd",
-                "padding": "6px 8px",
-                "fontSize": "12px",
-                "fontWeight": "bold" if row["Property"] else "normal"
-            }),
-            html.Td(row["Unit"], style={
-                "border": "1px solid #ddd", 
-                "padding": "6px 8px",
-                "fontSize": "12px"
-            }),
-            html.Td(row["Value"], style={
-                "border": "1px solid #ddd",
-                "padding": "6px 8px", 
-                "fontSize": "12px"
-            })
-        ]))
-    
-    return html.Table(style={
-        "width": "100%", 
-        "borderCollapse": "collapse",
-        "marginBottom": "15px",
-        "fontFamily": "Arial, sans-serif"
-    }, children=[
-        html.Thead(html.Tr([
-            html.Th("Property", style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "textAlign": "left",
-                "fontSize": "12px"
-            }),
-            html.Th("Unit", style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px", 
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "textAlign": "left",
-                "fontSize": "12px"
-            }),
-            html.Th("Value", style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "backgroundColor": "#f5f5f5", 
-                "fontWeight": "bold",
-                "textAlign": "left",
-                "fontSize": "12px"
-            })
-        ])),
-        html.Tbody(rows)
-    ])
-
-def create_refined_products_table():
-    """Create the refined products table matching the image exactly."""
-    rows = []
-    for product, cut_points, properties in REFINED_PRODUCTS:
-        first_row = True
-        for prop in properties:
-            if first_row:
-                rows.append(html.Tr([
-                    html.Td(product, style={
-                        "border": "1px solid #ddd",
-                        "padding": "6px 8px",
-                        "fontWeight": "bold",
-                        "verticalAlign": "top",
-                        "fontSize": "11px"
-                    }, rowSpan=len(properties)),
-                    html.Td(cut_points, style={
-                        "border": "1px solid #ddd",
-                        "padding": "6px 8px", 
-                        "verticalAlign": "top",
-                        "fontSize": "11px"
-                    }, rowSpan=len(properties)),
-                    html.Td(prop[0], style={
-                        "border": "1px solid #ddd",
-                        "padding": "6px 8px",
-                        "fontSize": "11px"
-                    }),
-                    html.Td(prop[1], style={
-                        "border": "1px solid #ddd",
-                        "padding": "6px 8px",
-                        "fontSize": "11px" 
-                    }),
-                    html.Td(prop[2], style={
-                        "border": "1px solid #ddd",
-                        "padding": "6px 8px",
-                        "fontSize": "11px"
-                    })
-                ]))
-                first_row = False
-            else:
-                rows.append(html.Tr([
-                    html.Td(prop[0], style={
-                        "border": "1px solid #ddd",
-                        "padding": "6px 8px",
-                        "fontSize": "11px"
-                    }),
-                    html.Td(prop[1], style={
-                        "border": "1px solid #ddd",
-                        "padding": "6px 8px",
-                        "fontSize": "11px"
-                    }),
-                    html.Td(prop[2], style={
-                        "border": "1px solid #ddd",
-                        "padding": "6px 8px", 
-                        "fontSize": "11px"
-                    })
-                ]))
-    
-    return html.Table(style={
-        "width": "100%",
-        "borderCollapse": "collapse",
-        "marginBottom": "15px",
-        "fontFamily": "Arial, sans-serif"
-    }, children=[
-        html.Thead(html.Tr([
-            html.Th("Product", style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "textAlign": "left",
-                "fontSize": "11px"
-            }),
-            html.Th("Cut Points (°C)", style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold", 
-                "textAlign": "left",
-                "fontSize": "11px"
-            }),
-            html.Th("Property", style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "textAlign": "left",
-                "fontSize": "11px"
-            }),
-            html.Th("Unit", style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "textAlign": "left", 
-                "fontSize": "11px"
-            }),
-            html.Th("Value", style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "textAlign": "left",
-                "fontSize": "11px"
-            })
-        ])),
-        html.Tbody(rows)
-    ])
 
 
 
-def create_producers_table():
-    """Create producers and sellers table."""
-    return html.Table(style={
-        "width": "100%",
-        "borderCollapse": "collapse",
-        "marginBottom": "10px",
-        "fontFamily": "Arial, sans-serif"
-    }, children=[
-        html.Thead(html.Tr([
-            html.Th("Producers", style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "textAlign": "left",
-                "fontSize": "12px"
-            }),
-            html.Th("Sellers", style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "textAlign": "left", 
-                "fontSize": "12px"
-            })
-        ])),
-        html.Tbody([
-            html.Tr([
-                html.Td("BP, ConocoPhillips, Exxon Mobil, Shell", style={
-                    "border": "1px solid #ddd",
-                    "padding": "8px 10px",
-                    "fontSize": "12px"
-                }),
-                html.Td("BP America Inc., ConocoPhillips, Exxon Mobil, Shell", style={
-                    "border": "1px solid #ddd",
-                    "padding": "8px 10px",
-                    "fontSize": "12px"
-                })
-            ])
-        ])
-    ])
 
-def create_port_details_table():
-    """Create port details table."""
-    rows = []
-    for measure, value in PORT_DETAILS:
-        rows.append(html.Tr([
-            html.Td(measure, style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "fontWeight": "bold",
-                "fontSize": "12px"
-            }),
-            html.Td(value, style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "fontSize": "12px"
-            })
-        ]))
-    
-    return html.Table(style={
-        "width": "100%",
-        "borderCollapse": "collapse",
-        "marginBottom": "15px",
-        "fontFamily": "Arial, sans-serif"
-    }, children=[
-        html.Thead(html.Tr([
-            html.Th("Measure", style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "textAlign": "left",
-                "fontSize": "12px",
-                "width": "50%"
-            }),
-            html.Th("Loop, Clovelly", style={
-                "border": "1px solid #ddd",
-                "padding": "8px 10px",
-                "backgroundColor": "#f5f5f5",
-                "fontWeight": "bold",
-                "textAlign": "left",
-                "fontSize": "12px",
-                "width": "50%"
-            })
-        ])),
-        html.Tbody(rows)
-    ])
+
 
 # ------------------------------------------------------------------------------
 # LAYOUT
@@ -523,7 +452,7 @@ def create_layout(server=None):
             )
         ]),
         
-        # Summary Section - Three parts: Crude Details, Carbon Intensity, Latest Quality Specs
+        # Summary Section - Three parts: Left (Headers + Values), Center (Carbon Intensity), Right (Latest Quality Specs)
         html.Div(style={
             "display": "flex",
             "justifyContent": "space-between",
@@ -532,68 +461,60 @@ def create_layout(server=None):
             "marginBottom": "25px",
             "marginTop": "20px"
         }, children=[
-            # Left: Crude Details (Alternate Crude Names, Country, Assay Date)
+            # Left: Headers row and Values row
             html.Div(style={
                 "flex": "1",
-                "minWidth": "200px"
+                "minWidth": "250px"
             }, children=[
+                # Headers row
                 html.Div(style={
                     "display": "flex",
-                    "flexDirection": "column",
-                    "gap": "12px"
+                    "gap": "15px",
+                    "marginBottom": "8px"
                 }, children=[
-                    html.Div(style={
-                        "display": "flex",
-                        "flexDirection": "column",
-                        "gap": "4px"
-                    }, children=[
-                        html.Div("Alternate Crude Names", style={
-                            "color": "#1f3263",
-                            "fontWeight": "bold",
-                            "fontSize": "13px",
-                            "marginBottom": "4px"
-                        }),
-                        html.Div("", style={
-                            "color": "#666",
-                            "fontSize": "13px"
-                        })
-                    ]),
-                    html.Div(style={
-                        "display": "flex",
-                        "flexDirection": "column",
-                        "gap": "4px"
-                    }, children=[
-                        html.Div("Country", style={
-                            "color": "#1f3263",
-                            "fontWeight": "bold",
-                            "fontSize": "13px",
-                            "marginBottom": "4px"
-                        }),
-                        html.Div("United States", style={
-                            "color": "#666",
-                            "fontSize": "13px"
-                        })
-                    ]),
-                    html.Div(style={
-                        "display": "flex",
-                        "flexDirection": "column",
-                        "gap": "4px"
-                    }, children=[
-                        html.Div("Assay Date", style={
-                            "color": "#1f3263",
-                            "fontWeight": "bold",
-                            "fontSize": "13px",
-                            "marginBottom": "4px"
-                        }),
-                        html.Div("2025", style={
-                            "color": "#666",
-                            "fontSize": "13px"
-                        })
-                    ])
+                    html.Div("Alternate Crude Names", style={
+                        "color": "#1f3263",
+                        "fontWeight": "bold",
+                        "fontSize": "13px",
+                        "flex": "1"
+                    }),
+                    html.Div("Country", style={
+                        "color": "#1f3263",
+                        "fontWeight": "bold",
+                        "fontSize": "13px",
+                        "flex": "1"
+                    }),
+                    html.Div("Assay Date", style={
+                        "color": "#1f3263",
+                        "fontWeight": "bold",
+                        "fontSize": "13px",
+                        "flex": "1"
+                    })
+                ]),
+                # Values row
+                html.Div(style={
+                    "display": "flex",
+                    "gap": "15px"
+                }, children=[
+                    html.Div("", style={
+                        "color": "#666",
+                        "fontSize": "13px",
+                        "flex": "1"
+                    }),
+                    html.Div("United States", style={
+                        "color": "#666",
+                        "fontSize": "13px",
+                        "flex": "1"
+                    }),
+                    html.Div("2025", style={
+                        "color": "#666",
+                        "fontSize": "13px",
+                        "flex": "1"
+                    })
                 ])
             ]),
             
-            # Middle: Carbon Intensity Box
+            # Center: Carbon Intensity Box
             html.Div(style={
                 "background": "linear-gradient(135deg, #fff9e6, #ffedcc)",
                 "border": "1px solid #e6b800",
@@ -619,7 +540,7 @@ def create_layout(server=None):
             # Right: Latest Quality Specs
             html.Div(style={
                 "flex": "1",
-                "minWidth": "300px"
+                "minWidth": "350px"
             }, children=[
                 html.Div("Latest Quality Specs", style={
                     "color": "#d65a00",
@@ -629,88 +550,62 @@ def create_layout(server=None):
                     "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
+                # Headers row
+                html.Div(style={
+                    "display": "flex",
+                    "gap": "15px",
+                    "marginBottom": "8px"
+                }, children=[
+                    html.Div("Gravity (API at 60F)", style={
+                        "color": "#1f3263",
+                        "fontWeight": "bold",
+                        "fontSize": "12px",
+                        "flex": "1"
+                    }),
+                    html.Div("Sulfur Content (% Wt)", style={
+                        "color": "#1f3263",
+                        "fontWeight": "bold",
+                        "fontSize": "12px",
+                        "flex": "1"
+                    }),
+                    html.Div("TAN (mg KOH/g)", style={
+                        "color": "#1f3263",
+                        "fontWeight": "bold",
+                        "fontSize": "12px",
+                        "flex": "1"
+                    })
+                ]),
+                # Values row
                 html.Div(style={
                     "display": "flex",
                     "gap": "15px"
                 }, children=[
-                    html.Div(style={
-                        "flex": "1",
-                        "display": "flex",
-                        "flexDirection": "column",
-                        "gap": "6px"
-                    }, children=[
-                        html.Div("Gravity (API at 60F)", style={
-                            "color": "#1f3263",
-                            "fontWeight": "bold",
-                            "fontSize": "12px"
-                        }),
-                        html.Div("28.40", style={
-                            "color": "#666",
-                            "fontSize": "13px"
-                        })
-                    ]),
-                    html.Div(style={
-                        "flex": "1",
-                        "display": "flex",
-                        "flexDirection": "column",
-                        "gap": "6px"
-                    }, children=[
-                        html.Div("Sulfur Content (% Wt)", style={
-                            "color": "#1f3263",
-                            "fontWeight": "bold",
-                            "fontSize": "12px"
-                        }),
-                        html.Div("2.17", style={
-                            "color": "#666",
-                            "fontSize": "13px"
-                        })
-                    ]),
-                    html.Div(style={
-                        "flex": "1",
-                        "display": "flex",
-                        "flexDirection": "column",
-                        "gap": "6px"
-                    }, children=[
-                        html.Div("TAN (mg KOH/g)", style={
-                            "color": "#1f3263",
-                            "fontWeight": "bold",
-                            "fontSize": "12px"
-                        }),
-                        html.Div("0.48", style={
-                            "color": "#666",
-                            "fontSize": "13px"
-                        })
-                    ])
+                    html.Div("28.40", style={
+                        "color": "#666",
+                        "fontSize": "13px",
+                        "flex": "1"
+                    }),
+                    html.Div("2.17", style={
+                        "color": "#666",
+                        "fontSize": "13px",
+                        "flex": "1"
+                    }),
+                    html.Div("0.48", style={
+                        "color": "#666",
+                        "fontSize": "13px",
+                        "flex": "1"
+                    })
                 ])
             ])
         ]),
         
-        html.Div("Production and Exports", style={
-                "color": "#d65a00",
-                "fontWeight": "bold",
-                "fontSize": "16px", 
-                "margin": "25px 0 10px 0",
-                "borderBottom": "2px solid #d65a00",
-                "paddingBottom": "5px"
-            }),
-            html.Div(style={
-                "border": "1px solid #ddd",
-                "padding": "15px",
-                "borderRadius": "4px",
-                "margin": "10px 0",
-                "backgroundColor": "white"
-            }, children=[
-                dcc.Graph(figure=production_fig, config={"displayModeBar": False})
-            ]),
-                
-        # Two Column Layout
+        # First Row Grid: Assay, Refined Products, Production Chart
         html.Div(style={
             "display": "grid",
-            "gridTemplateColumns": "1fr 1fr",
+            "gridTemplateColumns": "3fr 4fr 4fr",
             "gap": "20px",
             "marginBottom": "20px"
         }, children=[
-            # Left Column
             html.Div(children=[
                 html.Div("Mars Blend Assay", style={
                     "color": "#d65a00",
@@ -720,17 +615,93 @@ def create_layout(server=None):
                     "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
-                create_assay_table(),
-                
+                create_assay_table()
+            ]),
+            html.Div(children=[
+                html.Div("Refined Products Breakdown & Properties", style={
+                    "color": "#d65a00",
+                    "fontWeight": "bold",
+                    "fontSize": "16px",
+                    "margin": "20px 0 10px 0",
+                    "borderBottom": "2px solid #d65a00",
+                    "paddingBottom": "5px"
+                }),
+                create_refined_products_table()
+            ]),
+            html.Div(children=[
+                html.Div("Production and Exports", style={
+                    "color": "#d65a00",
+                    "fontWeight": "bold",
+                    "fontSize": "16px", 
+                    "margin": "20px 0 10px 0",
+                    "borderBottom": "2px solid #d65a00",
+                    "paddingBottom": "5px"
+                }),
+                html.Div(style={
+                    "border": "1px solid #ddd",
+                    "padding": "15px",
+                    "borderRadius": "4px",
+                    "margin": "10px 0",
+                    "backgroundColor": "white"
+                }, children=[
+                    dcc.Graph(figure=production_fig, config={"displayModeBar": False})
+                ])
+            ])
+        ]),
+        
+        # Second Row Grid: Sellers/Producers and Loading Ports/Port Details
+        html.Div(style={
+            "display": "grid",
+            "gridTemplateColumns": "1fr 1fr",
+            "gap": "20px",
+            "marginBottom": "20px"
+        }, children=[
+            html.Div(children=[
                 html.Div("Sellers and Producers", style={
                     "color": "#d65a00",
                     "fontWeight": "bold", 
                     "fontSize": "16px",
-                    "margin": "25px 0 10px 0",
+                    "margin": "20px 0 10px 0",
                     "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
-                create_producers_table(),
+                html.Table(style={
+                    "width": "100%",
+                    "borderCollapse": "collapse",
+                    "marginBottom": "15px",
+                    "fontFamily": "Arial, sans-serif"
+                }, children=[
+                    html.Thead(html.Tr([
+                        html.Th("Producers", style={
+                            "border": "1px solid #ddd",
+                            "padding": "10px",
+                            "backgroundColor": "#f5f5f5",
+                            "fontWeight": "bold",
+                            "textAlign": "left",
+                            "fontSize": "12px"
+                        }),
+                        html.Th("Sellers", style={
+                            "border": "1px solid #ddd",
+                            "padding": "10px",
+                            "backgroundColor": "#f5f5f5",
+                            "fontWeight": "bold",
+                            "textAlign": "left",
+                            "fontSize": "12px"
+                        })
+                    ])),
+                    html.Tbody(html.Tr([
+                        html.Td(PRODUCERS_SELLERS[0][0], style={
+                            "border": "1px solid #ddd",
+                            "padding": "10px",
+                            "fontSize": "12px"
+                        }),
+                        html.Td(PRODUCERS_SELLERS[0][1], style={
+                            "border": "1px solid #ddd",
+                            "padding": "10px",
+                            "fontSize": "12px"
+                        })
+                    ]))
+                ]),
                 html.Div(
                     "Countries: Select jurisdictions are included under countries for data presentation purposes.",
                     style={
@@ -739,29 +710,15 @@ def create_layout(server=None):
                         "marginTop": "10px",
                         "fontStyle": "italic"
                     }
-                ),
-                
-              
+                )
             ]),
-            
-            # Right Column
             html.Div(children=[
-                html.Div("Refined Products Breakdown & Properties", style={
-                    "color": "#d65a00",
-                    "fontWeight": "bold",
-                    "fontSize": "16px",
-                    "margin": "20px 0 10px 0", 
-                    "borderBottom": "2px solid #d65a00",
-                    "paddingBottom": "5px"
-                }),
-                create_refined_products_table(),
-                
                 html.Div("Loading Ports", style={
                     "color": "#d65a00",
                     "fontWeight": "bold",
                     "fontSize": "16px",
-                    "margin": "25px 0 10px 0",
-                    "borderBottom": "2px solid #d65a00", 
+                    "margin": "20px 0 10px 0",
+                    "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
                 html.Div(style={
@@ -769,26 +726,9 @@ def create_layout(server=None):
                     "padding": "15px",
                     "borderRadius": "4px",
                     "margin": "10px 0",
-                    "backgroundColor": "white",
-                    "minHeight": "300px"
+                    "backgroundColor": "white"
                 }, children=[
-                    dcc.Graph(figure=map_fig, config={"displayModeBar": False}),
-                    html.Div("© 2025 Mapbox © OpenStreetMap", style={
-                        "fontSize": "10px",
-                        "color": "#999",
-                        "marginTop": "10px",
-                        "textAlign": "center"
-                    }),
-                    html.Div(
-                        "Inland points represent terminals for pipeline-delivered crudes.",
-                        style={
-                            "fontSize": "11px",
-                            "color": "#666", 
-                            "marginTop": "8px",
-                            "fontStyle": "italic",
-                            "textAlign": "center"
-                        }
-                    )
+                    dcc.Graph(figure=map_fig, config={"displayModeBar": False})
                 ]),
                 
                 html.Div("Port Details", style={
@@ -799,11 +739,46 @@ def create_layout(server=None):
                     "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
-                create_port_details_table()
+                html.Table(style={
+                    "width": "100%",
+                    "borderCollapse": "collapse",
+                    "marginBottom": "15px",
+                    "fontFamily": "Arial, sans-serif"
+                }, children=[
+                    html.Thead(html.Tr([
+                        html.Th("Measure", style={
+                            "border": "1px solid #ddd",
+                            "padding": "10px",
+                            "backgroundColor": "#f5f5f5",
+                            "fontWeight": "bold",
+                            "textAlign": "left",
+                            "fontSize": "12px"
+                        }),
+                        html.Th("Loop, Clovelly", style={
+                            "border": "1px solid #ddd",
+                            "padding": "10px",
+                            "backgroundColor": "#f5f5f5",
+                            "fontWeight": "bold",
+                            "textAlign": "left",
+                            "fontSize": "12px"
+                        })
+                    ])),
+                    html.Tbody([html.Tr([
+                        html.Td(port[0], style={
+                            "border": "1px solid #ddd",
+                            "padding": "10px",
+                            "fontSize": "12px"
+                        }),
+                        html.Td(port[1], style={
+                            "border": "1px solid #ddd",
+                            "padding": "10px",
+                            "fontSize": "12px"
+                        })
+                    ]) for port in PORT_DETAILS])
+                ])
             ])
         ])
     ])
-    
 
 
 # ------------------------------------------------------------------------------
