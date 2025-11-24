@@ -7,6 +7,16 @@ from app import create_dash_app
 import os
 import numpy as np
 
+
+def _set_df_metadata(df, **metadata):
+    """Attach custom metadata to a DataFrame using the attrs dict."""
+    df.attrs.update(metadata)
+
+
+def _get_df_metadata(df, key, default=None):
+    """Retrieve custom metadata from a DataFrame."""
+    return df.attrs.get(key, default)
+
 CSV_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'CrossPlot.csv')
 
 # ===================================
@@ -129,21 +139,25 @@ def load_crude_quality_table():
     # Rename columns to unique IDs
     df.columns = unique_column_ids
 
-    # Attach meta so create_grouped_columns can use it without relying on dynamic attributes
-    df.attrs["column_info"] = column_info
-    df.attrs["parent_headers"] = parent_headers
-    df.attrs["sub_headers"] = sub_headers
+    # Attach meta so create_grouped_columns can use it
+    _set_df_metadata(
+        df,
+        column_info=column_info,
+        parent_headers=parent_headers,
+        sub_headers=sub_headers
+    )
 
     return df
 
 
 def create_grouped_columns(df):
     """Create columns with grouped headers for DataTable"""
-    if df.empty or "column_info" not in df.attrs:
+    column_info = _get_df_metadata(df, "column_info")
+    if df.empty or not column_info:
         return [{"name": col, "id": col} for col in df.columns]
-
+    
     # Create a mapping from column ID to column info
-    info_map = {info["id"]: info for info in df.attrs.get("column_info", [])}
+    info_map = {info["id"]: info for info in column_info}
     
     columns = []
     for idx, col_id in enumerate(df.columns):
@@ -355,9 +369,12 @@ def load_yield_volume_table():
         df[crudeoil_col] = df[crudeoil_col].fillna("").astype(str).str.strip()
     
     # Store parent and sub headers for grouped column creation (like Quality table)
-    df.attrs["parent_headers"] = valid_parent_headers
-    df.attrs["sub_headers"] = valid_sub_headers
-    df.attrs["column_info"] = column_info
+    _set_df_metadata(
+        df,
+        parent_headers=valid_parent_headers,
+        sub_headers=valid_sub_headers,
+        column_info=column_info
+    )
     
     return df
 
@@ -375,8 +392,9 @@ def process_yield_table_data(df):
     country_col_id = None
     crudeoil_col_id = None
     
-    if "column_info" in df.attrs:
-        for info in df.attrs["column_info"]:
+    column_info = _get_df_metadata(df, "column_info")
+    if column_info:
+        for info in column_info:
             if info.get('sub') == 'Country':
                 country_col_id = info.get('id')
             elif info.get('sub') == 'CrudeOil':
@@ -442,8 +460,9 @@ def create_layout(dash_app=None):
     country_col_id = None
     crudeoil_col_id = None
     if not quality_df.empty:
-        if "column_info" in quality_df.attrs:
-            for info in quality_df.attrs["column_info"]:
+        quality_column_info = _get_df_metadata(quality_df, "column_info")
+        if quality_column_info:
+            for info in quality_column_info:
                 if info.get('sub') == 'Country':
                     country_col_id = info.get('id')
                 elif info.get('sub') == 'CrudeOil':
@@ -469,8 +488,9 @@ def create_layout(dash_app=None):
     yield_country_col_id = None
     yield_crudeoil_col_id = None
     if not yield_df.empty:
-        if "column_info" in yield_df.attrs:
-            for info in yield_df.attrs["column_info"]:
+        yield_column_info = _get_df_metadata(yield_df, "column_info")
+        if yield_column_info:
+            for info in yield_column_info:
                 if info.get('sub') == 'Country':
                     yield_country_col_id = info.get('id')
                 elif info.get('sub') == 'CrudeOil':
