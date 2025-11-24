@@ -599,14 +599,16 @@ def create_layout(server=None):
             ])
         ]),
         
-        # First Row Grid: Assay, Refined Products, Production Chart
+        # Main Grid Layout matching reference design
         html.Div(style={
             "display": "grid",
             "gridTemplateColumns": "3fr 4fr 4fr",
             "gap": "20px",
-            "marginBottom": "20px"
+            "marginBottom": "20px",
+            "alignItems": "start"
         }, children=[
-            html.Div(children=[
+            # Column 1: Mars Blend Assay
+            html.Div(style={"gridColumn": "1 / 2"}, children=[
                 html.Div("Mars Blend Assay", style={
                     "color": "#d65a00",
                     "fontWeight": "bold",
@@ -617,7 +619,8 @@ def create_layout(server=None):
                 }),
                 create_assay_table()
             ]),
-            html.Div(children=[
+            # Column 2: Refined Products Breakdown & Properties
+            html.Div(style={"gridColumn": "2 / 3"}, children=[
                 html.Div("Refined Products Breakdown & Properties", style={
                     "color": "#d65a00",
                     "fontWeight": "bold",
@@ -628,7 +631,8 @@ def create_layout(server=None):
                 }),
                 create_refined_products_table()
             ]),
-            html.Div(children=[
+            # Column 3: Right-side stack (Production chart + Loading Ports + Port Details)
+            html.Div(style={"gridColumn": "3 / 4", "display": "flex", "flexDirection": "column"}, children=[
                 html.Div("Production and Exports", style={
                     "color": "#d65a00",
                     "fontWeight": "bold",
@@ -645,18 +649,72 @@ def create_layout(server=None):
                     "backgroundColor": "white"
                 }, children=[
                     dcc.Graph(figure=production_fig, config={"displayModeBar": False})
+                ]),
+                html.Div("Loading Ports", style={
+                    "color": "#d65a00",
+                    "fontWeight": "bold",
+                    "fontSize": "16px",
+                    "margin": "25px 0 10px 0",
+                    "borderBottom": "2px solid #d65a00",
+                    "paddingBottom": "5px"
+                }),
+                html.Div(style={
+                    "border": "1px solid #ddd",
+                    "padding": "15px",
+                    "borderRadius": "4px",
+                    "margin": "10px 0",
+                    "backgroundColor": "white"
+                }, children=[
+                    dcc.Graph(figure=map_fig, config={"displayModeBar": False})
+                ]),
+                html.Div("Port Details", style={
+                    "color": "#d65a00",
+                    "fontWeight": "bold",
+                    "fontSize": "16px",
+                    "margin": "25px 0 10px 0",
+                    "borderBottom": "2px solid #d65a00",
+                    "paddingBottom": "5px"
+                }),
+                html.Table(style={
+                    "width": "100%",
+                    "borderCollapse": "collapse",
+                    "marginBottom": "15px",
+                    "fontFamily": "Arial, sans-serif"
+                }, children=[
+                    html.Thead(html.Tr([
+                        html.Th("Measure", style={
+                            "border": "1px solid #ddd",
+                            "padding": "10px",
+                            "backgroundColor": "#f5f5f5",
+                            "fontWeight": "bold",
+                            "textAlign": "left",
+                            "fontSize": "12px"
+                        }),
+                        html.Th("Loop, Clovelly", style={
+                            "border": "1px solid #ddd",
+                            "padding": "10px",
+                            "backgroundColor": "#f5f5f5",
+                            "fontWeight": "bold",
+                            "textAlign": "left",
+                            "fontSize": "12px"
+                        })
+                    ])),
+                    html.Tbody([html.Tr([
+                        html.Td(port[0], style={
+                            "border": "1px solid #ddd",
+                            "padding": "10px",
+                            "fontSize": "12px"
+                        }),
+                        html.Td(port[1], style={
+                            "border": "1px solid #ddd",
+                            "padding": "10px",
+                            "fontSize": "12px"
+                        })
+                    ]) for port in PORT_DETAILS])
                 ])
-            ])
-        ]),
-        
-        # Second Row Grid: Sellers/Producers and Loading Ports/Port Details
-        html.Div(style={
-            "display": "grid",
-            "gridTemplateColumns": "1fr 1fr",
-            "gap": "20px",
-            "marginBottom": "20px"
-        }, children=[
-            html.Div(children=[
+            ]),
+            # Bottom Row spanning first two columns: Sellers and Producers
+            html.Div(style={"gridColumn": "1 / 3"}, children=[
                 html.Div("Sellers and Producers", style={
                     "color": "#d65a00",
                     "fontWeight": "bold", 
@@ -711,71 +769,6 @@ def create_layout(server=None):
                         "fontStyle": "italic"
                     }
                 )
-            ]),
-            html.Div(children=[
-                html.Div("Loading Ports", style={
-                    "color": "#d65a00",
-                    "fontWeight": "bold",
-                    "fontSize": "16px",
-                    "margin": "20px 0 10px 0",
-                    "borderBottom": "2px solid #d65a00",
-                    "paddingBottom": "5px"
-                }),
-                html.Div(style={
-                    "border": "1px solid #ddd",
-                    "padding": "15px",
-                    "borderRadius": "4px",
-                    "margin": "10px 0",
-                    "backgroundColor": "white"
-                }, children=[
-                    dcc.Graph(figure=map_fig, config={"displayModeBar": False})
-                ]),
-                
-                html.Div("Port Details", style={
-                    "color": "#d65a00",
-                    "fontWeight": "bold",
-                    "fontSize": "16px",
-                    "margin": "25px 0 10px 0",
-                    "borderBottom": "2px solid #d65a00",
-                    "paddingBottom": "5px"
-                }),
-                html.Table(style={
-                    "width": "100%",
-                    "borderCollapse": "collapse",
-                    "marginBottom": "15px",
-                    "fontFamily": "Arial, sans-serif"
-                }, children=[
-                    html.Thead(html.Tr([
-                        html.Th("Measure", style={
-                            "border": "1px solid #ddd",
-                            "padding": "10px",
-                            "backgroundColor": "#f5f5f5",
-                            "fontWeight": "bold",
-                            "textAlign": "left",
-                            "fontSize": "12px"
-                        }),
-                        html.Th("Loop, Clovelly", style={
-                            "border": "1px solid #ddd",
-                            "padding": "10px",
-                            "backgroundColor": "#f5f5f5",
-                            "fontWeight": "bold",
-                            "textAlign": "left",
-                            "fontSize": "12px"
-                        })
-                    ])),
-                    html.Tbody([html.Tr([
-                        html.Td(port[0], style={
-                            "border": "1px solid #ddd",
-                            "padding": "10px",
-                            "fontSize": "12px"
-                        }),
-                        html.Td(port[1], style={
-                            "border": "1px solid #ddd",
-                            "padding": "10px",
-                            "fontSize": "12px"
-                        })
-                    ]) for port in PORT_DETAILS])
-                ])
             ])
         ])
     ])
