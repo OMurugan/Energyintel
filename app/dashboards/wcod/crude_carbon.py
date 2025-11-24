@@ -411,11 +411,29 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
         if intensity_df.empty:
             continue
 
+        def _format_crude_list(rows):
+            unique_entries = []
+            for raw in rows:
+                entry = str(raw).strip()
+                if not entry or entry.lower() == "nan":
+                    continue
+                if entry not in unique_entries:
+                    unique_entries.append(entry)
+            return "; ".join(unique_entries)
+
+        if "Year" in intensity_df.columns and not intensity_df["Year"].isna().all():
+            try:
+                year_value = int(float(intensity_df["Year"].dropna().iloc[0]))
+            except (ValueError, TypeError, IndexError):
+                year_value = selected_year
+        else:
+            year_value = selected_year
+
         grouped = (
             intensity_df.groupby("Country")
             .agg({
                 "Production": "sum",
-                "Crude list": lambda rows: ", ".join(sorted({str(val).strip() for val in rows if str(val).strip() not in ("", "nan")})),
+                "Crude list": _format_crude_list,
             })
             .reset_index()
         )
@@ -441,15 +459,27 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
             labels.append(country_name)
             parents.append(intensity)
             values.append(production_value)
+            label_style = "color:#333333;"
+            value_style = "color:#000000;"
+
+            def value_span(v):
+                return f"<span style='{value_style}'><b>{v}</b></span>"
+
+            year_display = year_value if year_value is not None else "N/A"
+            production_display = f"{production_value:,.0f} ('000 b/d)"
+            crudes_display = crudes_str if crudes_str else "N/A"
+
             hover_texts.append(
-                f"Carbon Intensity: {intensity}<br>"
-                f"Country: {country_name}<br>"
-                f"Production: {production_value:,.0f} ('000 b/d)<br>"
-                f"Crudes: {crudes_str}"
+                f"<span style='{label_style}'>Carbon Intensity:</span> {value_span(intensity)}<br>"
+                f"<span style='{label_style}'>Country:</span> {value_span(country_name)}<br>"
+                f"<span style='{label_style}'>Year:</span> {value_span(year_display)}<br>"
+                f"<span style='{label_style}'>Production:</span> {value_span(production_display)}<br>"
+                f"<span style='{label_style}'>Crudes:</span> {value_span(crudes_display)}"
             )
             text_body = f"<b>{country_name}</b>"
             if crudes_str:
                 text_body += f"<br>{crudes_str}"
+            text_body += f"<br>{intensity}"
             text_entries.append(text_body)
             colors.append(color_map[intensity])
 
@@ -482,7 +512,7 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
             x=0.5,
             xanchor="center",
             y=0.98,
-            font=dict(size=20, color="#2c3e50", family="Arial, sans-serif")
+            font=dict(size=20, color="#E75224", family="Arial, sans-serif")
         ),
         height=700,
         margin=dict(l=10, r=10, t=60, b=10),
