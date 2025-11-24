@@ -2,7 +2,8 @@
 Crude Carbon Intensity View
 Carbon intensity metrics for different crude types
 """
-from dash import dcc, html, Input, Output, State
+from dash import dcc, html, Input, Output, State, callback
+import dash
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
@@ -16,7 +17,7 @@ from app import create_dash_app
 def create_layout():
     """Create the Crude Carbon Intensity layout"""
     # Get unique countries from CSV for dropdown
-    csv_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'Carbon Intensity.csv')
+    csv_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'Carbon Intensity_data.csv')
     countries = ['(All)']
     
     try:
@@ -38,25 +39,160 @@ def create_layout():
     except Exception:
         pass
     
+    # Year options for slider - update to include 2024
+    available_years = [2024, 2023, 2022, 2021, 2020, 2019, 2018]
+    min_year = min(available_years)
+    max_year = max(available_years)
+    
     return html.Div([
-        html.H3("Upstream Crude Oil Production by Carbon Intensity", style={'marginBottom': '20px'}),
         html.Div([
+            # Main visualization area (75% width)
             html.Div([
-                html.Label("Year:", style={'fontWeight': '500', 'marginBottom': '8px'}),
-                dcc.Dropdown(
-                    id='carbon-year-select',
-                    options=[{'label': str(year), 'value': year} for year in [2022, 2021, 2020, 2019, 2018]],
-                    value=2022,
-                    clearable=False,
-                    style={'marginBottom': '10px', 'width': '150px'}
+                dcc.Graph(id='crude-carbon-chart', style={'height': '700px'})
+            ], style={'width': '75%', 'float': 'left', 'paddingRight': '20px'}),
+            
+            # Control panel (25% width)
+            html.Div([
+                # Year selector with arrows and slider (matching Tableau)
+                html.Label("Year:", style={
+                    'fontWeight': '500', 
+                    'marginBottom': '8px',
+                    'fontSize': '12px',
+                    'color': '#2c3e50',
+                    'fontFamily': 'Arial, sans-serif'
+                }),
+                html.Div([
+                    html.Button("◄", id='carbon-year-decrement', n_clicks=0, style={
+                        'width': '30px',
+                        'height': '24px',
+                        'border': '1px solid #ddd',
+                        'backgroundColor': '#f8f9fa',
+                        'cursor': 'pointer',
+                        'fontSize': '12px',
+                        'padding': '0',
+                        'marginRight': '5px',
+                        'borderRadius': '2px'
+                    }),
+                    dcc.Input(
+                        id='carbon-year-input',
+                        type='number',
+                        value=2024,
+                        min=min_year,
+                        max=max_year,
+                        step=1,
+                        style={
+                            'width': '60px',
+                            'height': '22px',
+                            'textAlign': 'center',
+                            'border': '1px solid #ddd',
+                            'fontSize': '12px',
+                            'padding': '2px 5px'
+                        }
+                    ),
+                    html.Button("►", id='carbon-year-increment', n_clicks=0, style={
+                        'width': '30px',
+                        'height': '24px',
+                        'border': '1px solid #ddd',
+                        'backgroundColor': '#f8f9fa',
+                        'cursor': 'pointer',
+                        'fontSize': '12px',
+                        'padding': '0',
+                        'marginLeft': '5px',
+                        'borderRadius': '2px'
+                    })
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '10px'}),
+                dcc.Slider(
+                    id='carbon-year-slider',
+                    min=min_year,
+                    max=max_year,
+                    value=2024,
+                    step=1,
+                    marks={year: str(year) for year in available_years},
+                    tooltip={"placement": "bottom", "always_visible": False}
                 ),
+                html.Div(id='carbon-year-display', children="2024", style={'display': 'none'}),  # Hidden store for year value
+                
+                # Show history checkbox
                 dcc.Checklist(
                     id='carbon-show-history',
                     options=[{'label': 'Show history', 'value': 'show'}],
                     value=[],
-                    style={'marginBottom': '10px'}
+                    style={'marginBottom': '15px', 'marginTop': '10px'}
                 ),
-                html.Label("Carbon Intensity:", style={'fontWeight': '500', 'marginBottom': '8px', 'marginTop': '10px'}),
+                
+                # Carbon Intensity legend with color swatches (matching Tableau)
+                html.Label("Carbon Intensity:", style={
+                    'fontWeight': '500', 
+                    'marginBottom': '8px', 
+                    'marginTop': '10px',
+                    'fontSize': '12px',
+                    'color': '#2c3e50',
+                    'fontFamily': 'Arial, sans-serif'
+                }),
+                html.Div([
+                    html.Div([
+                        html.Div(style={
+                            'width': '16px',
+                            'height': '16px',
+                            'backgroundColor': '#313B49',
+                            'border': '1px solid #ccc',
+                            'display': 'inline-block',
+                            'marginRight': '8px',
+                            'verticalAlign': 'middle'
+                        }),
+                        html.Span('Medium', style={'fontSize': '12px', 'verticalAlign': 'middle'})
+                    ], style={'marginBottom': '5px', 'display': 'flex', 'alignItems': 'center'}),
+                    html.Div([
+                        html.Div(style={
+                            'width': '16px',
+                            'height': '16px',
+                            'backgroundColor': '#0075A8',
+                            'border': '1px solid #ccc',
+                            'display': 'inline-block',
+                            'marginRight': '8px',
+                            'verticalAlign': 'middle'
+                        }),
+                        html.Span('High', style={'fontSize': '12px', 'verticalAlign': 'middle'})
+                    ], style={'marginBottom': '5px', 'display': 'flex', 'alignItems': 'center'}),
+                    html.Div([
+                        html.Div(style={
+                            'width': '16px',
+                            'height': '16px',
+                            'backgroundColor': '#595959',
+                            'border': '1px solid #ccc',
+                            'display': 'inline-block',
+                            'marginRight': '8px',
+                            'verticalAlign': 'middle'
+                        }),
+                        html.Span('Low', style={'fontSize': '12px', 'verticalAlign': 'middle'})
+                    ], style={'marginBottom': '5px', 'display': 'flex', 'alignItems': 'center'}),
+                    html.Div([
+                        html.Div(style={
+                            'width': '16px',
+                            'height': '16px',
+                            'backgroundColor': '#A6A6A6',
+                            'border': '1px solid #ccc',
+                            'display': 'inline-block',
+                            'marginRight': '8px',
+                            'verticalAlign': 'middle'
+                        }),
+                        html.Span('Very Low', style={'fontSize': '12px', 'verticalAlign': 'middle'})
+                    ], style={'marginBottom': '5px', 'display': 'flex', 'alignItems': 'center'}),
+                    html.Div([
+                        html.Div(style={
+                            'width': '16px',
+                            'height': '16px',
+                            'backgroundColor': '#528DBA',
+                            'border': '1px solid #ccc',
+                            'display': 'inline-block',
+                            'marginRight': '8px',
+                            'verticalAlign': 'middle'
+                        }),
+                        html.Span('Very High', style={'fontSize': '12px', 'verticalAlign': 'middle'})
+                    ], style={'marginBottom': '5px', 'display': 'flex', 'alignItems': 'center'})
+                ], style={'marginBottom': '15px', 'padding': '10px', 'border': '1px solid #ddd', 'borderRadius': '4px', 'backgroundColor': 'white'}),
+                
+                # Carbon Intensity filter checklist (hidden but functional)
                 dcc.Checklist(
                     id='carbon-intensity-filter',
                     options=[
@@ -67,9 +203,18 @@ def create_layout():
                         {'label': 'Very Low', 'value': 'Very Low'}
                     ],
                     value=['Very High', 'High', 'Medium', 'Low', 'Very Low'],
-                    style={'marginBottom': '10px'}
+                    style={'display': 'none'}  # Hidden, controlled by legend clicks if needed
                 ),
-                html.Label("Country:", style={'fontWeight': '500', 'marginBottom': '8px', 'marginTop': '10px'}),
+                
+                # Country filter
+                html.Label("Country:", style={
+                    'fontWeight': '500', 
+                    'marginBottom': '8px', 
+                    'marginTop': '10px',
+                    'fontSize': '12px',
+                    'color': '#2c3e50',
+                    'fontFamily': 'Arial, sans-serif'
+                }),
                 html.Div([
                     html.Button([
                         html.Span("▼", id='country-dropdown-icon', style={
@@ -79,7 +224,7 @@ def create_layout():
                             'transition': 'transform 0.3s',
                             'userSelect': 'none'
                         }),
-                        html.Span("(All)", style={'fontSize': '12px', 'verticalAlign': 'middle'})
+                        html.Span("(All)", id='country-dropdown-text', style={'fontSize': '12px', 'verticalAlign': 'middle'})
                     ], id='country-dropdown-header', n_clicks=0, style={
                         'cursor': 'pointer',
                         'padding': '5px 8px',
@@ -90,37 +235,62 @@ def create_layout():
                         'width': '100%',
                         'textAlign': 'left',
                         'fontSize': '12px',
-                        'color': '#2c3e50'
+                        'color': '#2c3e50',
+                        'fontFamily': 'Arial, sans-serif'
                     }),
                     html.Div([
                         dcc.Checklist(
                             id='carbon-country-select',
-                            options=[{'label': c, 'value': c} for c in countries],  # Includes "(All)" as first option
-                            value=countries,  # All countries including "(All)" by default
+                            options=[{'label': c, 'value': c} for c in countries],
+                            value=countries,
                             style={
                                 'maxHeight': '300px',
                                 'overflowY': 'auto',
                                 'border': '1px solid #ddd',
                                 'padding': '10px',
                                 'borderRadius': '4px',
-                                'backgroundColor': 'white'
+                                'backgroundColor': 'white',
+                                'fontSize': '12px',
+                                'fontFamily': 'Arial, sans-serif'
                             }
                         ),
-                        dcc.Store(id='country-selection-store', data=countries)  # Store previous selection
+                        dcc.Store(id='country-selection-store', data=countries)
                     ], id='country-checklist-container', style={'marginBottom': '10px', 'display': 'block'})
                 ]),
-                html.Label("Crude list:", style={'fontWeight': '500', 'marginBottom': '8px', 'marginTop': '10px'}),
+                
+                # Crude list filter
+                html.Label("Crude list:", style={
+                    'fontWeight': '500', 
+                    'marginBottom': '8px', 
+                    'marginTop': '10px',
+                    'fontSize': '12px',
+                    'color': '#2c3e50',
+                    'fontFamily': 'Arial, sans-serif'
+                }),
                 dcc.Input(
                     id='carbon-crude-filter',
                     type='text',
                     placeholder='Filter crudes...',
-                    style={'width': '100%', 'marginBottom': '10px'}
+                    style={
+                        'width': '100%', 
+                        'marginBottom': '10px',
+                        'padding': '5px 8px',
+                        'border': '1px solid #ddd',
+                        'borderRadius': '4px',
+                        'fontSize': '12px',
+                        'fontFamily': 'Arial, sans-serif'
+                    }
                 )
-            ], style={'width': '250px', 'float': 'right', 'padding': '20px', 'background': '#f9f9f9', 'borderRadius': '5px'}),
-            html.Div([
-                dcc.Graph(id='crude-carbon-chart', style={'height': '700px'})
-            ], style={'marginRight': '280px'})
-        ], style={'position': 'relative'})
+            ], style={
+                'width': '25%', 
+                'float': 'right', 
+                'padding': '20px', 
+                'background': '#f9f9f9', 
+                'borderRadius': '5px',
+                'minHeight': '700px'
+            })
+        ], style={'position': 'relative', 'display': 'flex', 'width': '100%'}),
+        html.Div(style={'clear': 'both'})  # Clear float
     ], className='tab-content')
 
 
@@ -195,21 +365,22 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
 }
     
     # Create hierarchical structure for treemap matching Tableau visualization
-    # Level 1: Carbon Intensity (parent)
-    # Level 2: Country (child of Carbon Intensity)  
-    # Level 3: Crude (child of Country) - these are the visible blocks
+    # Level 1: Carbon Intensity (parent/root)
+    # Level 2: Country (leaf nodes - these are the visible blocks)
+    # Each country should be ONE block with all crudes listed inside
     
     labels = []
     parents = []
     values = []
     colors = []
     hover_texts = []
+    country_crudes_map = {}  # Store all crudes per country for display
     
-    # Sort by Carbon Intensity order for consistent display (matching Figure 1 layout)
-    # Order: Medium (top left), High (top right), Low (middle), Very Low (bottom left), Very High (bottom right)
-    intensity_order = ['Medium', 'High', 'Low', 'Very Low', 'Very High']
+    # Sort by Carbon Intensity order for consistent display (matching Tableau layout)
+    # Order: Very High, High, Medium, Low, Very Low (top to bottom)
+    intensity_order = ['Very High', 'High', 'Medium', 'Low', 'Very Low']
     
-    # Group by Carbon Intensity, then Country, then Crude
+    # Group by Carbon Intensity, then Country (each country is ONE block)
     for intensity in intensity_order:
         if intensity not in df['Carbon Intensity'].unique():
             continue
@@ -228,45 +399,35 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
         colors.append(color_map.get(intensity, '#CCCCCC'))
         hover_texts.append(f'<b>{intensity}</b><br>Total Production: {intensity_total:,.0f} (\'000 b/d)<extra></extra>')
         
-        # Add Country level - intermediate level
-        # Group by country first to ensure each country appears only once per intensity
+        # Group by country - each country becomes ONE block
         for country in sorted(intensity_df['Country'].unique()):
             country_df = intensity_df[intensity_df['Country'] == country]
             country_total = country_df['Production'].sum()
             
-            # Create unique country label by combining intensity and country to avoid ambiguity
-            # This ensures each country label is unique across different intensity levels
-            country_label = f"{intensity}|{country}"  # Use | as separator for uniqueness
+            # Collect all crudes for this country
+            crudes_list = sorted(country_df['Crude'].unique().tolist())
+            crudes_str = ', '.join(crudes_list)
             
+            # Create unique country label by combining intensity and country
+            country_label = f"{intensity}|{country}"
+            
+            # Store crudes for this country for text display
+            country_crudes_map[country_label] = crudes_list
+            
+            # Add Country as leaf node (visible block)
             labels.append(country_label)
             parents.append(intensity_label)
-            values.append(country_total)
+            values.append(country_total)  # Total production for this country
             colors.append(color_map.get(intensity, '#CCCCCC'))
-            hover_texts.append(f'<b>{country}</b><br>Production: {country_total:,.0f} (\'000 b/d)<br>Carbon Intensity: {intensity}<extra></extra>')
             
-            # Add Crude level - these are the visible leaf nodes
-            # Collect all crudes for this country to show in hover (matching Figure 2 format)
-            crudes_list = country_df['Crude'].tolist()
-            crudes_str = ', '.join(crudes_list)
-            country_total_production = country_df['Production'].sum()
-            
-            for _, row in country_df.iterrows():
-                # Format label as "Country Crude" (without colon) to match Tableau exactly
-                # Make crude label unique by including country and intensity
-                crude_label = f"{intensity}|{country}|{row['Crude']}"
-                
-                labels.append(crude_label)
-                parents.append(country_label)
-                values.append(row['Production'])
-                colors.append(color_map.get(intensity, '#CCCCCC'))
-                # Hover format matching Figure 2 exactly: Carbon Intensity, Country, Year, Production, Crudes
-                hover_texts.append(
-                    f'Carbon Intensity: {intensity}<br>'
-                    f'Country: {country}<br>'
-                    f'Year: 2022<br>'
-                    f'Production: {country_total_production:,.0f} (\'000 b/d)<br>'
-                    f'Crudes: {crudes_str}<extra></extra>'
-                )
+            # Hover format matching Tableau: Carbon Intensity, Country, Year, Production, Crudes
+            # Year will be dynamic based on user selection
+            hover_texts.append(
+                f'Carbon Intensity: {intensity}<br>'
+                f'Country: {country}<br>'
+                f'Production: {country_total:,.0f} (\'000 b/d)<br>'
+                f'Crudes: {crudes_str}<extra></extra>'
+            )
     
     if not labels:
         print("✗ WARNING: No labels created for treemap!")
@@ -285,20 +446,26 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
     
     print(f"✓ Created {len(labels)} labels, {len(values)} values for treemap")
     
-    # Create custom text for display (extract clean names from unique labels)
+    # Create custom text for display - format: Country (bold), Crude names, Intensity
     custom_text = []
-    for label in labels:
+    for i, label in enumerate(labels):
         if '|' in label:
-            # Extract the last part after the last | separator for display
-            custom_text.append(label.split('|')[-1])
+            parts = label.split('|')
+            if len(parts) == 2:  # intensity|country - this is the visible block
+                intensity_part, country_part = parts
+                # Get all crudes for this country
+                crudes_list = country_crudes_map.get(label, [])
+                if crudes_list:
+                    # Format: Country (bold), Crude names (comma-separated), Intensity level
+                    crudes_str = ', '.join(crudes_list)
+                    custom_text.append(f"<b>{country_part}</b><br>{crudes_str}<br>{intensity_part}")
+                else:
+                    custom_text.append(f"<b>{country_part}</b><br>{intensity_part}")
+            else:
+                custom_text.append(label.split("|")[-1])
         else:
-            # Root level (intensity) - keep as is
-            custom_text.append(label)
-    
-    # Create treemap with hierarchical structure
-    # Use unique labels for the hierarchy (to avoid ambiguity)
-    # Use custom_text for display
-    custom_text = [label.split("|")[-1] for label in labels]
+            # Root level (intensity) - keep as is (not visible)
+            custom_text.append("")
 
     fig = go.Figure(
         go.Treemap(
@@ -311,9 +478,11 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
 
             text=custom_text,
 
-            ### 🔵 CHANGED — better font
+            ### 🔵 CHANGED — better font with HTML support
             textinfo="text",
-            textfont=dict(size=10, color="#2c3e50"),
+            textfont=dict(size=11, color="#ffffff", family="Arial, sans-serif"),  # White text - works on dark backgrounds
+            # Note: Plotly doesn't support per-item text colors, so we use white which works on most dark backgrounds
+            # For Low and Very Low (light backgrounds), white text may have less contrast but matches Tableau behavior
 
             ### 🔵 CHANGED — subtle padding like Tableau
             tiling=dict(pad=1, packing="squarify"),
@@ -327,7 +496,7 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
                 colorscale=None
             ),
 
-            maxdepth=3,
+            maxdepth=2,  # Only 2 levels: Carbon Intensity (root) -> Country (leaf)
             pathbar=dict(visible=False),
         )
     )
@@ -336,14 +505,14 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
     fig.update_traces(root_color="white")
 
     # -------------------------------------------------------------------
-    # 3️⃣ **LAYOUT — match Tableau spacing & title**
+    # 3️⃣ **LAYOUT — match Tableau spacing & title (reddish-orange)**
     # -------------------------------------------------------------------
     fig.update_layout(
         title=dict(
             text="Upstream Crude Oil Production by Carbon Intensity",
             x=0.5,
             xanchor="center",
-            font=dict(size=18, color="#2c3e50")
+            font=dict(size=18, color="#2c3e50", family="Arial, sans-serif")  # Dark grey to match Tableau (not reddish-orange)
         ),
         height=700,
         margin=dict(l=10, r=10, t=50, b=10),
@@ -357,7 +526,7 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
 
 def load_carbon_data():
     """Load and transform carbon intensity data from CSV"""
-    csv_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'Carbon Intensity.csv')
+    csv_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'Carbon Intensity_data.csv')
     
     # Convert to absolute path
     if not os.path.isabs(csv_path):
@@ -366,30 +535,84 @@ def load_carbon_data():
     print(f"DEBUG: Loading CSV from: {csv_path}")
     print(f"DEBUG: File exists: {os.path.exists(csv_path)}")
     
+    if not os.path.exists(csv_path):
+        print(f"ERROR: CSV file not found at {csv_path}")
+        return pd.DataFrame()
+    
     try:
-        # Read CSV - it's tab-separated, skip first row (repeated headers), use second row as actual headers
-        # Try different encodings
+        # Try different encodings and separators
         df = None
-        for encoding in ['utf-16', 'latin-1', 'iso-8859-1', 'cp1252']:
-            try:
-                df = pd.read_csv(csv_path, skiprows=1, header=0, sep='\t', encoding=encoding)
-                if df.shape[1] > 2:  # Make sure we got multiple columns
-                    print(f"DEBUG: Successfully loaded with {encoding} encoding")
+        encodings = ['utf-16', 'utf-16-le', 'utf-16-be', 'utf-8-sig', 'utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
+        separators = ['\t', ',', ';']
+        
+        for encoding in encodings:
+            for sep in separators:
+                try:
+                    # First, try with skiprows=1 (skip first row, use second as header)
+                    test_df = pd.read_csv(csv_path, skiprows=1, header=0, sep=sep, encoding=encoding, on_bad_lines='skip', engine='python')
+                    if test_df.shape[1] > 2:  # Make sure we got multiple columns
+                        df = test_df
+                        print(f"DEBUG: Successfully loaded with encoding={encoding}, sep='{sep}' (tab/space), skiprows=1")
+                        break
+                except Exception as e:
+                    try:
+                        # Try without skiprows (use first row as header)
+                        test_df = pd.read_csv(csv_path, header=0, sep=sep, encoding=encoding, on_bad_lines='skip', engine='python')
+                        if test_df.shape[1] > 2:
+                            df = test_df
+                            print(f"DEBUG: Successfully loaded with encoding={encoding}, sep='{sep}', header=0 (no skiprows)")
+                            break
+                    except Exception as e2:
+                        continue
+                if df is not None:
                     break
-            except Exception as e:
-                print(f"DEBUG: Failed with {encoding}: {str(e)[:50]}")
-                continue
+            if df is not None:
+                break
         
         if df is None or df.shape[1] < 2:
-            print("ERROR: Could not load CSV or insufficient columns")
+            print("ERROR: Could not load CSV with any encoding/separator combination")
+            print(f"DEBUG: Attempted encodings: {encodings}")
+            print(f"DEBUG: Attempted separators: {separators}")
             return pd.DataFrame()
         
-        # The first two columns are Carbon Intensity and Country
-        carbon_intensity_col = df.columns[0]
-        country_col = df.columns[1]
+        print(f"DEBUG: Loaded CSV with shape: {df.shape}")
+        print(f"DEBUG: Columns: {list(df.columns)}")
         
-        # Get all crude type columns (everything after Country)
-        crude_columns = df.columns[2:].tolist()
+        # Clean up column names
+        df.columns = df.columns.str.strip()
+        
+        # Try to identify Carbon Intensity and Country columns
+        # Look for columns that might be named "Carbon Intensity" or similar
+        carbon_intensity_col = None
+        country_col = None
+        
+        # Try exact matches first
+        for col in df.columns:
+            col_lower = str(col).lower().strip()
+            if 'carbon' in col_lower and 'intensity' in col_lower:
+                carbon_intensity_col = col
+            elif 'country' in col_lower:
+                country_col = col
+        
+        # If not found, use first two columns as fallback
+        if carbon_intensity_col is None:
+            carbon_intensity_col = df.columns[0]
+            print(f"DEBUG: Using first column as Carbon Intensity: {carbon_intensity_col}")
+        if country_col is None:
+            country_col = df.columns[1]
+            print(f"DEBUG: Using second column as Country: {country_col}")
+        
+        print(f"DEBUG: Using Carbon Intensity column: {carbon_intensity_col}")
+        print(f"DEBUG: Using Country column: {country_col}")
+        
+        # Get all crude type columns (everything except Carbon Intensity and Country)
+        exclude_cols = [carbon_intensity_col, country_col]
+        crude_columns = [col for col in df.columns if col not in exclude_cols]
+        
+        print(f"DEBUG: Found {len(crude_columns)} crude columns")
+        if len(crude_columns) == 0:
+            print("ERROR: No crude columns found")
+            return pd.DataFrame()
         
         # Transform to long format
         data_rows = []
@@ -398,6 +621,10 @@ def load_carbon_data():
             country = row[country_col]
             
             if pd.isna(carbon_intensity) or pd.isna(country):
+                continue
+            
+            # Skip if carbon intensity or country is empty string
+            if str(carbon_intensity).strip() == '' or str(country).strip() == '':
                 continue
             
             # Process each crude type column
@@ -432,6 +659,11 @@ def load_carbon_data():
             print(f"DEBUG: Carbon Intensity values: {result_df['Carbon Intensity'].unique()}")
             print(f"DEBUG: Countries: {result_df['Country'].nunique()}")
             print(f"DEBUG: Total production: {result_df['Production'].sum():,.0f}")
+        else:
+            print("WARNING: No data rows created after transformation")
+            print(f"DEBUG: Original DataFrame shape: {df.shape}")
+            print(f"DEBUG: Sample of first few rows:")
+            print(df.head())
         return result_df
         
     except Exception as e:
@@ -443,6 +675,56 @@ def load_carbon_data():
 
 def register_callbacks(dash_app, server):
     """Register all callbacks for Crude Carbon Intensity"""
+    
+    # Callback to sync year input, slider, and buttons
+    @dash_app.callback(
+        [Output('carbon-year-input', 'value', allow_duplicate=True),
+         Output('carbon-year-slider', 'value', allow_duplicate=True),
+         Output('carbon-year-display', 'children', allow_duplicate=True)],
+        [Input('carbon-year-input', 'value'),
+         Input('carbon-year-slider', 'value'),
+         Input('carbon-year-increment', 'n_clicks'),
+         Input('carbon-year-decrement', 'n_clicks')],
+        [State('carbon-year-display', 'children')],
+        prevent_initial_call=True
+    )
+    def sync_year_controls(input_value, slider_value, inc_clicks, dec_clicks, current_year):
+        """Sync year input, slider, and increment/decrement buttons"""
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            # Initial call - set default
+            return 2024, 2024, "2024"
+        
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        available_years = [2024, 2023, 2022, 2021, 2020, 2019, 2018]
+        min_year = min(available_years)
+        max_year = max(available_years)
+        
+        # Get current year value
+        if current_year is None:
+            current_year = 2024
+        else:
+            try:
+                current_year = int(current_year)
+            except:
+                current_year = 2024
+        
+        if trigger_id == 'carbon-year-increment':
+            new_year = min(current_year + 1, max_year)
+        elif trigger_id == 'carbon-year-decrement':
+            new_year = max(current_year - 1, min_year)
+        elif trigger_id == 'carbon-year-input':
+            new_year = input_value if input_value is not None else current_year
+            new_year = max(min_year, min(new_year, max_year))
+        elif trigger_id == 'carbon-year-slider':
+            new_year = slider_value if slider_value is not None else current_year
+        else:
+            new_year = current_year
+        
+        # Ensure year is in available range
+        new_year = max(min_year, min(new_year, max_year))
+        
+        return new_year, new_year, str(new_year)
     
     # Callback to handle country dropdown expand/collapse
     @dash_app.callback(
@@ -528,14 +810,19 @@ def register_callbacks(dash_app, server):
     
     @dash_app.callback(
         Output('crude-carbon-chart', 'figure'),
-        [Input('carbon-year-select', 'value'),
+        [Input('carbon-year-display', 'children'),
          Input('carbon-country-select', 'value'),
          Input('carbon-crude-filter', 'value'),
          Input('carbon-intensity-filter', 'value')],
         prevent_initial_call=False
     )
-    def update_crude_carbon(year, country_filter, crude_filter, intensity_filter):
+    def update_crude_carbon(year_str, country_filter, crude_filter, intensity_filter):
         """Update crude carbon intensity treemap"""
+        # Convert year string to int
+        try:
+            year = int(year_str) if year_str else 2024
+        except:
+            year = 2024
         print(f"=== CALLBACK TRIGGERED ===")
         print(f"year={year}, country={country_filter}, crude={crude_filter}, intensity={intensity_filter}")
         

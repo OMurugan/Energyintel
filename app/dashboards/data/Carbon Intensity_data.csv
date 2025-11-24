@@ -1,0 +1,834 @@
+﻿Carbon Intensity,Country,Crude list,Year of YearReported (Custom SQL Query1),ProductionDataValue
+Very Low,United Kingdom,"Clair, Schiehallion Blend",2006,98
+Very Low,Saudi Arabia,"Arab Light, Arab Medium",2006,6550
+Very Low,Norway,"Ekofisk Blend, Gullfaks Blend, Heidrun, Statfjord Blend",2006,1138.42
+Very Low,Kuwait,Kuwait,2006,2370
+Low,United States,Mars Blend,2006,236.11
+Low,United Kingdom,Flotta Gold,2006,47
+Low,Saudi Arabia,Arab Heavy,2006,900
+Low,Nigeria,"Bonga, Bonny Light",2006,645.83
+Low,Mexico,Isthmus,2006,831.5
+Low,Kazakhstan,Tengiz,2006,10
+Low,Egypt,Belayim Blend,2006,150
+Medium,United States,Alaska North Slope,2006,758.9
+Medium,United Kingdom,Forties Blend,2006,501
+Medium,Syria,"Souedieh, Syrian Light",2006,370
+Medium,Saudi Arabia,Arab Extra Light,2006,1300
+Medium,Russia,"Urals, Sokol, Siberian Light",2006,8640
+Medium,Qatar,"Qatar Marine, Dukhan",2006,530
+Medium,Norway,"Troll, Oseberg, Asgard Blend",2006,606.34
+Medium,Nigeria,Amenam Blend,2006,189.1
+Medium,Neutral Zone,Wafra,2006,160
+Medium,Libya,Bouri,2006,60
+Medium,Iran,Foroozan Blend,2006,500
+Medium,Equatorial Guinea,"Alba Condensate, New Zafiro",2006,309
+High,Vietnam,"Su Tu Den, Bach Ho",2006,270
+High,United States,"West Texas Sour, West Texas Intermediate",2006,584.58
+High,Nigeria,"Okono Blend, Erha, Forcados",2006,272.1
+High,Mexico,Maya,2006,2243.8
+High,Malaysia,Tapis,2006,300
+High,Libya,"Amna, El-Sharara, Es Sider",2006,798
+High,Iraq,"Kirkuk, Basrah Light",2006,1800
+High,Iran,Nowruz-Soroush,2006,190
+High,Egypt,Suez Blend,2006,290
+Very High,Venezuela,"Boscan, Hamaca",2006,296
+Very High,Nigeria,"Brass River, Escravos, Qua Iboe",2006,907.5
+Very High,Malaysia,Miri,2006,75
+Very High,Libya,"Zueitina, Brega, Abu Attifel, Mellitah, Sarir, Sirtica",2006,866
+Very High,Iran,"Iran Heavy, Iran Light",2006,2950
+Very High,Indonesia,"Duri, Minas",2006,474
+Very High,Gabon,Rabi Light,2006,60.13
+Very Low,United Kingdom,"Schiehallion Blend, Clair",2007,82
+Very Low,Saudi Arabia,"Arab Medium, Arab Light",2007,6150
+Very Low,Norway,"Statfjord Blend, Heidrun, Gullfaks Blend, Ekofisk Blend",2007,1047.76
+Very Low,Kuwait,Kuwait,2007,2211
+Low,United States,"Mars Blend, Bakken",2007,429.85
+Low,United Kingdom,Flotta Gold,2007,53
+Low,Saudi Arabia,Arab Heavy,2007,900
+Low,Nigeria,"Bonny Light, Bonga",2007,541.05
+Low,Mexico,Isthmus,2007,837.7
+Low,Kazakhstan,Tengiz,2007,10
+Low,Egypt,Belayim Blend,2007,120
+Medium,United States,"Alaska North Slope, Eagle Ford",2007,791.47
+Medium,United Kingdom,Forties Blend,2007,603
+Medium,Syria,"Syrian Light, Souedieh",2007,320
+Medium,Saudi Arabia,Arab Extra Light,2007,1300
+Medium,Russia,"Siberian Light, Sokol, Urals",2007,9014
+Medium,Qatar,"Dukhan, Qatar Marine",2007,516.6
+Medium,Norway,"Asgard Blend, Oseberg, Troll",2007,616
+Medium,Nigeria,Amenam Blend,2007,179.73
+Medium,Neutral Zone,Wafra,2007,202
+Medium,Libya,Bouri,2007,55
+Medium,Iran,Foroozan Blend,2007,400
+Medium,Equatorial Guinea,"New Zafiro, Alba Condensate",2007,262
+High,Vietnam,"Bach Ho, Su Tu Den",2007,223
+High,United States,"West Texas Intermediate, West Texas Sour",2007,590.43
+High,Nigeria,"Forcados, Erha, Okono Blend",2007,299.78
+High,Mexico,Maya,2007,2039.4
+High,Malaysia,Tapis,2007,311
+High,Libya,"Es Sider, El-Sharara, Amna",2007,791
+High,Iraq,"Basrah Light, Kirkuk",2007,2000
+High,Iran,Nowruz-Soroush,2007,175
+High,Egypt,Suez Blend,2007,160
+Very High,Venezuela,"Hamaca, Boscan",2007,262
+Very High,Nigeria,"Qua Iboe, Escravos, Brass River",2007,824.06
+Very High,Malaysia,Miri,2007,61
+Very High,Libya,"Sirtica, Sarir, Mellitah, Abu Attifel, Brega, Zueitina",2007,733
+Very High,Iran,"Iran Light, Iran Heavy",2007,3100
+Very High,Indonesia,"Minas, Duri",2007,435
+Very High,Gabon,Rabi Light,2007,60.24
+Very Low,United Kingdom,"Clair, Schiehallion Blend",2008,91
+Very Low,Saudi Arabia,"Arab Light, Arab Medium",2008,6550
+Very Low,Norway,"Ekofisk Blend, Gullfaks Blend, Heidrun, Statfjord Blend",2008,946.41
+Very Low,Kuwait,Kuwait,2008,2410
+Low,United States,"Bakken, Mars Blend",2008,399.73
+Low,United Kingdom,Flotta Gold,2008,58
+Low,Saudi Arabia,Arab Heavy,2008,900
+Low,Nigeria,"Bonga, Bonny Light",2008,396.98
+Low,Mexico,Isthmus,2008,815.5
+Low,Kazakhstan,Tengiz,2008,46
+Low,Egypt,Belayim Blend,2008,125
+Medium,United States,"Eagle Ford, Alaska North Slope, Thunder Horse",2008,791.54
+Medium,United Kingdom,Forties Blend,2008,639
+Medium,Turkmenistan,Cheleken,2008,41
+Medium,Syria,"Souedieh, Syrian Light",2008,280
+Medium,Saudi Arabia,Arab Extra Light,2008,1300
+Medium,Russia,"Urals, Sokol, Siberian Light",2008,8931
+Medium,Qatar,"Qatar Marine, Dukhan",2008,550
+Medium,Norway,"Troll, Oseberg, Asgard Blend",2008,610.08
+Medium,Nigeria,Amenam Blend,2008,150
+Medium,Neutral Zone,Wafra,2008,180
+Medium,Libya,Bouri,2008,55
+Medium,Iran,Foroozan Blend,2008,335
+Medium,Equatorial Guinea,"Alba Condensate, New Zafiro",2008,260
+High,Vietnam,"Su Tu Den, Bach Ho",2008,210
+High,United States,"West Texas Sour, West Texas Intermediate",2008,618.57
+High,Nigeria,"Okono Blend, Erha, Forcados, Agbami",2008,455.4
+High,Mexico,Maya,2008,1765.6
+High,Malaysia,Tapis,2008,220
+High,Libya,"Amna, El-Sharara, Es Sider",2008,890
+High,Iraq,"Kirkuk, Basrah Light",2008,2198
+High,Iran,Nowruz-Soroush,2008,160
+High,Egypt,Suez Blend,2008,130
+Very High,Venezuela,"Boscan, Hamaca, Santa Barbara, Merey-16",2008,948.5
+Very High,Nigeria,"Brass River, Escravos, Qua Iboe",2008,756
+Very High,Malaysia,Miri,2008,74
+Very High,Libya,"Zueitina, Brega, Abu Attifel, Mellitah, Sarir, Sirtica",2008,707
+Very High,Iran,"Iran Heavy, Iran Light",2008,3100
+Very High,Indonesia,"Duri, Minas",2008,407
+Very High,Gabon,Rabi Light,2008,65
+Very Low,United Kingdom,"Schiehallion Blend, Clair",2009,68
+Very Low,Saudi Arabia,"Arab Medium, Arab Light",2009,5483
+Very Low,Norway,"Statfjord Blend, Heidrun, Gullfaks Blend, Ekofisk Blend",2009,792.08
+Very Low,Kuwait,Kuwait,2009,2025.29
+Very Low,Iran,South Pars Condensate,2009,200
+Low,United States,"Mars Blend, Bakken",2009,455.19
+Low,United Kingdom,Flotta Gold,2009,54
+Low,Saudi Arabia,Arab Heavy,2009,800
+Low,Nigeria,"Bonny Light, Bonga, Akpo Blend",2009,392.5
+Low,Mexico,Isthmus,2009,811.8
+Low,Kazakhstan,Tengiz,2009,122.04
+Low,Egypt,Belayim Blend,2009,125
+Medium,United States,"Thunder Horse, Alaska North Slope, Eagle Ford",2009,909.57
+Medium,United Kingdom,Forties Blend,2009,621
+Medium,Turkmenistan,Cheleken,2009,45
+Medium,Syria,"Syrian Light, Souedieh",2009,278
+Medium,Saudi Arabia,Arab Extra Light,2009,1400
+Medium,Russia,"Siberian Light, Sokol, Urals",2009,9649
+Medium,Qatar,"Dukhan, Qatar Marine",2009,485
+Medium,Norway,"Asgard Blend, Oseberg, Troll",2009,605.5
+Medium,Nigeria,Amenam Blend,2009,127
+Medium,Neutral Zone,Wafra,2009,174
+Medium,Libya,Bouri,2009,45
+Medium,Iran,Foroozan Blend,2009,300
+Medium,Equatorial Guinea,"New Zafiro, Alba Condensate",2009,270
+High,Vietnam,"Bach Ho, Su Tu Den",2009,223.5
+High,United States,"West Texas Intermediate, West Texas Sour",2009,623.77
+High,Nigeria,"Agbami, Forcados, Erha, Okono Blend",2009,573
+High,Mexico,Maya,2009,1519.9
+High,Malaysia,Tapis,2009,170
+High,Libya,"Es Sider, El-Sharara, Amna",2009,797.3
+High,Iraq,"Basrah Light, Kirkuk",2009,2312
+High,Iran,Nowruz-Soroush,2009,150
+High,Egypt,Suez Blend,2009,130
+Very High,Venezuela,"Merey-16, Santa Barbara, Hamaca, Boscan",2009,850
+Very High,Nigeria,"Qua Iboe, Escravos, Brass River",2009,613.23
+Very High,Malaysia,Miri,2009,70
+Very High,Libya,"Sirtica, Sarir, Mellitah, Abu Attifel, Brega, Zueitina",2009,615
+Very High,Iran,"Iran Light, Iran Heavy",2009,2900
+Very High,Indonesia,"Minas, Duri",2009,383
+Very High,Gabon,Rabi Light,2009,59
+Very Low,Saudi Arabia,"Arab Light, Arab Medium",2010,5354
+Very Low,Norway,"Ekofisk Blend, Gullfaks Blend, Heidrun, Statfjord Blend",2010,684.25
+Very Low,Kuwait,Kuwait,2010,2051.46
+Very Low,Iran,South Pars Condensate,2010,244
+Very Low,Egypt,Western Desert Blend,2010,170
+Low,United States,"Bakken, Mars Blend",2010,520.41
+Low,United Kingdom,Flotta Gold,2010,59.32
+Low,Saudi Arabia,Arab Heavy,2010,800
+Low,Nigeria,"Akpo Blend, Bonga, Bonny Light",2010,541
+Low,Mexico,Isthmus,2010,792.27
+Low,Kazakhstan,Tengiz,2010,182.5
+Low,Egypt,Belayim Blend,2010,140
+Medium,United States,"Eagle Ford, Alaska North Slope, Thunder Horse",2010,861.51
+Medium,United Kingdom,Forties Blend,2010,563.56
+Medium,Turkmenistan,Cheleken,2010,47
+Medium,Syria,"Souedieh, Syrian Light",2010,283
+Medium,Saudi Arabia,Arab Extra Light,2010,1500
+Medium,Russia,"Urals, Sokol, Siberian Light",2010,9540
+Medium,Qatar,"Qatar Marine, Dukhan",2010,500
+Medium,Norway,"Troll, Oseberg, Asgard Blend",2010,589.74
+Medium,Nigeria,Amenam Blend,2010,112
+Medium,Neutral Zone,Wafra,2010,166
+Medium,Libya,Bouri,2010,43.1
+Medium,Iran,Foroozan Blend,2010,290
+Medium,Ghana,Jubilee,2010,1
+Medium,Equatorial Guinea,"Alba Condensate, New Zafiro",2010,161.8
+High,Vietnam,"Su Tu Den, Bach Ho",2010,210
+High,United States,"West Texas Sour, West Texas Intermediate",2010,659.94
+High,Nigeria,"Okono Blend, Erha, Forcados, Agbami",2010,617.67
+High,Mexico,Maya,2010,1464.17
+High,Malaysia,Tapis,2010,160
+High,Libya,"Amna, El-Sharara, Es Sider",2010,860
+High,Iraq,"Kirkuk, Basrah Light",2010,2300
+High,Iran,Nowruz-Soroush,2010,150
+High,Egypt,Suez Blend,2010,79
+Very High,Venezuela,"Boscan, Hamaca, Santa Barbara, Merey-16",2010,881
+Very High,Nigeria,"Brass River, Escravos, Qua Iboe",2010,726
+Very High,Malaysia,Miri,2010,75
+Very High,Libya,"Zueitina, Brega, Abu Attifel, Mellitah, Sarir, Sirtica",2010,673.5
+Very High,Iran,"Iran Heavy, Iran Light",2010,2900
+Very High,Indonesia,"Duri, Minas",2010,370
+Very High,Gabon,Rabi Light,2010,72.13
+Very Low,United Kingdom,"Clair, Schiehallion Blend",2011,44
+Very Low,Saudi Arabia,"Arab Medium, Arab Light",2011,6467
+Very Low,Norway,"Statfjord Blend, Heidrun, Gullfaks Blend, Ekofisk Blend",2011,600.09
+Very Low,Kuwait,Kuwait,2011,2365.25
+Very Low,Iran,South Pars Condensate,2011,300
+Very Low,Egypt,Western Desert Blend,2011,180
+Low,United States,"Mars Blend, Bakken",2011,622.13
+Low,United Kingdom,Flotta Gold,2011,35
+Low,Saudi Arabia,Arab Heavy,2011,800
+Low,Nigeria,"Bonny Light, Bonga, Akpo Blend",2011,567.73
+Low,Mexico,Isthmus,2011,798
+Low,Kazakhstan,Tengiz,2011,190
+Low,Egypt,Belayim Blend,2011,130
+Medium,United States,"Thunder Horse, Alaska North Slope, Eagle Ford",2011,947.4
+Medium,United Kingdom,Forties Blend,2011,446
+Medium,Turkmenistan,Cheleken,2011,63.96
+Medium,Syria,"Syrian Light, Souedieh",2011,240
+Medium,Saudi Arabia,Arab Extra Light,2011,1500
+Medium,Russia,"Siberian Light, Sokol, Urals",2011,9463.5
+Medium,Qatar,"Dukhan, Qatar Marine",2011,415
+Medium,Norway,"Asgard Blend, Oseberg, Troll",2011,629.42
+Medium,Nigeria,Amenam Blend,2011,108.36
+Medium,Neutral Zone,Wafra,2011,154
+Medium,Libya,Bouri,2011,5
+Medium,Iran,Foroozan Blend,2011,260
+Medium,Ghana,Jubilee,2011,66.23
+Medium,Equatorial Guinea,"New Zafiro, Alba Condensate",2011,165
+High,Vietnam,"Bach Ho, Su Tu Den",2011,185
+High,United States,"West Texas Intermediate, West Texas Sour",2011,755.4
+High,Nigeria,"Agbami, Forcados, Erha, Okono Blend",2011,649.05
+High,Mexico,Maya,2011,1417
+High,Malaysia,Tapis,2011,126.7
+High,Libya,"Es Sider, El-Sharara, Amna",2011,189
+High,Iraq,"Basrah Light, Kirkuk",2011,2658.84
+High,Iran,Nowruz-Soroush,2011,170
+High,Egypt,Suez Blend,2011,70
+Very High,Venezuela,"Merey-16, Santa Barbara, Hamaca, Boscan",2011,855
+Very High,Nigeria,"Qua Iboe, Escravos, Brass River",2011,724.17
+Very High,Malaysia,Miri,2011,70
+Very High,Libya,"Sirtica, Sarir, Mellitah, Abu Attifel, Brega, Zueitina",2011,266
+Very High,Iran,"Iran Light, Iran Heavy",2011,2642
+Very High,Indonesia,"Minas, Duri",2011,358
+Very High,Gabon,Rabi Light,2011,66.86
+Very Low,United Kingdom,"Schiehallion Blend, Clair",2012,62
+Very Low,Saudi Arabia,"Arab Light, Arab Medium",2012,7205
+Very Low,Norway,"Ekofisk Blend, Gullfaks Blend, Heidrun, Statfjord Blend",2012,522
+Very Low,Kuwait,Kuwait,2012,2716.93
+Very Low,Iran,South Pars Condensate,2012,300
+Very Low,Egypt,Western Desert Blend,2012,195
+Low,United States,"Bakken, Mars Blend",2012,837.64
+Low,United Kingdom,Flotta Gold,2012,25
+Low,Saudi Arabia,Arab Heavy,2012,800
+Low,Nigeria,"Akpo Blend, Bonga, Bonny Light",2012,563.8
+Low,Mexico,Isthmus,2012,834
+Low,Kazakhstan,Tengiz,2012,170
+Low,Egypt,Belayim Blend,2012,130
+Medium,United States,"Eagle Ford, Alaska North Slope, Thunder Horse",2012,1241.58
+Medium,United Kingdom,Forties Blend,2012,351
+Medium,Turkmenistan,Cheleken,2012,69.92
+Medium,Syria,"Souedieh, Syrian Light",2012,110
+Medium,Saudi Arabia,Arab Extra Light,2012,1250
+Medium,Russia,"Urals, Sokol, Siberian Light",2012,9597.7
+Medium,Qatar,"Qatar Marine, Dukhan",2012,416
+Medium,Norway,"Troll, Oseberg, Asgard Blend",2012,610.5
+Medium,Nigeria,Amenam Blend,2012,100.46
+Medium,Neutral Zone,Wafra,2012,150.5
+Medium,Libya,Bouri,2012,34
+Medium,Iran,Foroozan Blend,2012,242
+Medium,Ghana,Jubilee,2012,71.73
+Medium,Equatorial Guinea,"Alba Condensate, New Zafiro",2012,161.68
+High,Vietnam,"Su Tu Den, Bach Ho",2012,177
+High,United States,"West Texas Sour, West Texas Intermediate",2012,881.11
+High,Nigeria,"Okono Blend, Erha, Forcados, Agbami, Usan",2012,666.32
+High,Mexico,Maya,2012,1385
+High,Malaysia,Tapis,2012,133.3
+High,Libya,"Amna, El-Sharara, Es Sider",2012,769
+High,Iraq,"Kirkuk, Basrah Light",2012,2941.58
+High,Iran,Nowruz-Soroush,2012,150
+High,Egypt,Suez Blend,2012,63
+Very High,Venezuela,"Boscan, Hamaca, Santa Barbara, Merey-16",2012,843.21
+Very High,Nigeria,"Brass River, Escravos, Qua Iboe",2012,672.8
+Very High,Malaysia,Miri,2012,70
+Very High,Libya,"Zueitina, Brega, Abu Attifel, Mellitah, Sarir, Sirtica",2012,621
+Very High,Iran,"Iran Heavy, Iran Light",2012,2003
+Very High,Indonesia,"Duri, Minas",2012,365
+Very High,Gabon,Rabi Light,2012,71.6
+Very Low,United Kingdom,"Clair, Schiehallion Blend",2013,12
+Very Low,Saudi Arabia,"Arab Medium, Arab Light",2013,7010.89
+Very Low,Norway,"Statfjord Blend, Heidrun, Gullfaks Blend, Ekofisk Blend",2013,540.83
+Very Low,Kuwait,Kuwait,2013,2683
+Very Low,Iran,South Pars Condensate,2013,330
+Very Low,Egypt,Western Desert Blend,2013,200
+Low,United States,"Mars Blend, Bakken",2013,1037.82
+Low,United Kingdom,Flotta Gold,2013,11
+Low,Saudi Arabia,Arab Heavy,2013,880
+Low,Norway,Skarv,2013,36.5
+Low,Nigeria,"Bonny Light, Bonga, Akpo Blend",2013,484.26
+Low,Mexico,Isthmus,2013,847
+Low,Kazakhstan,Tengiz,2013,157.19
+Low,Egypt,Belayim Blend,2013,105
+Medium,United States,"Thunder Horse, Alaska North Slope, Eagle Ford",2013,1615.57
+Medium,United Kingdom,Forties Blend,2013,382
+Medium,Turkmenistan,Cheleken,2013,73.97
+Medium,Saudi Arabia,Arab Extra Light,2013,1250
+Medium,Russia,"Siberian Light, Sokol, Urals",2013,9791.82
+Medium,Qatar,"Dukhan, Qatar Marine",2013,415
+Medium,Norway,"Asgard Blend, Oseberg, Troll",2013,530
+Medium,Nigeria,Amenam Blend,2013,81.07
+Medium,Neutral Zone,Wafra,2013,147
+Medium,Libya,Bouri,2013,37
+Medium,Iran,Foroozan Blend,2013,240
+Medium,Ghana,Jubilee,2013,97.52
+Medium,Equatorial Guinea,"New Zafiro, Alba Condensate",2013,126.51
+High,Vietnam,"Bach Ho, Su Tu Den",2013,182.5
+High,United States,"West Texas Intermediate, West Texas Sour",2013,1034.05
+High,Nigeria,"Usan, Agbami, Forcados, Erha, Okono Blend",2013,676.9
+High,Mexico,Maya,2013,1365
+High,Malaysia,Tapis,2013,120
+High,Libya,"Es Sider, El-Sharara, Amna",2013,520
+High,Iraq,"Basrah Light, Kirkuk",2013,2978.91
+High,Iran,Nowruz-Soroush,2013,130
+High,Egypt,Suez Blend,2013,58
+Very High,Venezuela,"Merey-16, Santa Barbara, Hamaca, Boscan",2013,880.8
+Very High,Nigeria,"Qua Iboe, Escravos, Brass River",2013,635.82
+Very High,Malaysia,Miri,2013,65
+Very High,Libya,"Sirtica, Sarir, Mellitah, Abu Attifel, Brega, Zueitina",2013,405
+Very High,Iran,"Iran Light, Iran Heavy",2013,1775
+Very High,Indonesia,"Minas, Duri",2013,350
+Very High,Gabon,Rabi Light,2013,63.33
+Very Low,Saudi Arabia,"Arab Light, Arab Medium",2014,6927.67
+Very Low,Norway,"Ekofisk Blend, Gullfaks Blend, Heidrun, Statfjord Blend, Gudrun Blend",2014,600.75
+Very Low,Kuwait,Kuwait,2014,2678
+Very Low,Iran,South Pars Condensate,2014,400
+Very Low,Egypt,Western Desert Blend,2014,220
+Low,United States,"Bakken, Mars Blend",2014,1283.56
+Low,Saudi Arabia,Arab Heavy,2014,1100
+Low,Norway,Skarv,2014,58.25
+Low,Nigeria,"Akpo Blend, Bonga, Bonny Light",2014,504.7
+Low,Mexico,Isthmus,2014,864
+Low,Kazakhstan,Tengiz,2014,60.04
+Low,Egypt,Belayim Blend,2014,88
+Medium,United States,"Eagle Ford, Alaska North Slope, Thunder Horse",2014,2027.54
+Medium,United Kingdom,Forties Blend,2014,329.7
+Medium,Turkmenistan,Cheleken,2014,78.79
+Medium,Saudi Arabia,Arab Extra Light,2014,1250
+Medium,Russia,"Urals, Sokol, Siberian Light",2014,9863.57
+Medium,Qatar,"Qatar Marine, Dukhan",2014,424
+Medium,Norway,"Troll, Oseberg, Asgard Blend",2014,499.66
+Medium,Nigeria,Amenam Blend,2014,72
+Medium,Neutral Zone,Wafra,2014,136.5
+Medium,Libya,Bouri,2014,34
+Medium,Iran,Foroozan Blend,2014,240
+Medium,Ghana,Jubilee,2014,102.03
+Medium,Equatorial Guinea,"Alba Condensate, New Zafiro",2014,121.33
+High,Vietnam,"Su Tu Den, Bach Ho",2014,192
+High,United States,"West Texas Sour, West Texas Intermediate",2014,1195.57
+High,Nigeria,"Okono Blend, Erha, Forcados, Agbami, Usan",2014,682.52
+High,Mexico,Maya,2014,1266
+High,Malaysia,Tapis,2014,110
+High,Libya,"Amna, El-Sharara, Es Sider",2014,223
+High,Iraq,"Kirkuk, Basrah Light",2014,3112.59
+High,Iran,Nowruz-Soroush,2014,100
+High,Egypt,Suez Blend,2014,58.8
+Very High,Venezuela,"Boscan, Hamaca, Santa Barbara, Merey-16",2014,801.52
+Very High,Nigeria,"Brass River, Escravos, Qua Iboe",2014,568.3
+Very High,Malaysia,Miri,2014,70
+Very High,Libya,"Zueitina, Brega, Abu Attifel, Mellitah, Sarir, Sirtica",2014,236
+Very High,Iran,"Iran Heavy, Iran Light",2014,1750
+Very High,Indonesia,"Duri, Minas",2014,295
+Very High,Gabon,Rabi Light,2014,60.86
+Very Low,Saudi Arabia,"Arab Medium, Arab Light",2015,6956.17
+Very Low,Norway,"Gudrun Blend, Statfjord Blend, Heidrun, Gullfaks Blend, Ekofisk Blend",2015,670
+Very Low,Kuwait,Kuwait,2015,2825.48
+Very Low,Iran,South Pars Condensate,2015,500
+Very Low,Egypt,Western Desert Blend,2015,228
+Low,United States,"Mars Blend, Bakken",2015,1338.3
+Low,Saudi Arabia,Arab Heavy,2015,1600
+Low,Norway,Skarv,2015,52.92
+Low,Nigeria,"Bonny Light, Bonga, Akpo Blend",2015,531.8
+Low,Mexico,Isthmus,2015,838
+Low,Kazakhstan,Tengiz,2015,73.48
+Low,Egypt,Belayim Blend,2015,96
+Medium,United States,"Thunder Horse, Alaska North Slope, Eagle Ford",2015,2168.8
+Medium,United Kingdom,Forties Blend,2015,414.54
+Medium,Turkmenistan,Cheleken,2015,92.65
+Medium,Syria,"Syrian Light, Souedieh",2015,59.5
+Medium,Saudi Arabia,Arab Extra Light,2015,1350
+Medium,Russia,"Siberian Light, Sokol, Sakhalin Blend, Urals",2015,9887.56
+Medium,Qatar,"Dukhan, Qatar Marine",2015,415
+Medium,Norway,"Asgard Blend, Oseberg, Troll",2015,457.66
+Medium,Nigeria,Amenam Blend,2015,68.5
+Medium,Neutral Zone,Wafra,2015,46.9
+Medium,Libya,Bouri,2015,40
+Medium,Iran,Foroozan Blend,2015,220
+Medium,Ghana,Jubilee,2015,106.71
+Medium,Equatorial Guinea,"New Zafiro, Alba Condensate",2015,114.54
+High,Vietnam,"Bach Ho, Su Tu Den",2015,170
+High,United States,"West Texas Intermediate, West Texas Sour",2015,1154.74
+High,Nigeria,"Usan, Agbami, Forcados, Erha, Okono Blend",2015,645
+High,Mexico,Maya,2015,1152
+High,Malaysia,Tapis,2015,103.3
+High,Libya,"Es Sider, El-Sharara, Amna",2015,59
+High,Iraq,"Basrah Light, Kirkuk, Basrah Heavy",2015,3996
+High,Iran,Nowruz-Soroush,2015,80
+High,Egypt,Suez Blend,2015,60.3
+Very High,Venezuela,"Merey-16, Santa Barbara, Hamaca, Boscan",2015,763.81
+Very High,Nigeria,"Qua Iboe, Escravos, Brass River",2015,626
+Very High,Malaysia,"Miri, Kimanis",2015,205
+Very High,Libya,"Sirtica, Sarir, Mellitah, Abu Attifel, Brega, Zueitina",2015,284
+Very High,Iran,"Iran Light, Iran Heavy",2015,2112
+Very High,Indonesia,"Minas, Duri",2015,252.51
+Very High,Gabon,"Rabi Light, Oguendjo Blend",2015,99
+Very Low,United Kingdom,Clair,2016,20
+Very Low,Saudi Arabia,"Arab Light, Arab Medium",2016,7100
+Very Low,Norway,"Ekofisk Blend, Gullfaks Blend, Heidrun, Statfjord Blend, Gudrun Blend",2016,662.76
+Very Low,Kuwait,Kuwait,2016,2954.27
+Very Low,Iran,South Pars Condensate,2016,630
+Very Low,Egypt,Western Desert Blend,2016,292.2
+Low,United States,"Bakken, Mars Blend",2016,1238
+Low,United Kingdom,Flotta Gold,2016,89
+Low,Saudi Arabia,Arab Heavy,2016,1800
+Low,Norway,Skarv,2016,39.58
+Low,Nigeria,"Akpo Blend, Bonga, Bonny Light",2016,529.58
+Low,Mexico,Isthmus,2016,785
+Low,Kazakhstan,Tengiz,2016,24.71
+Low,Egypt,Belayim Blend,2016,88
+Medium,United States,"Eagle Ford, Alaska North Slope, Thunder Horse",2016,1790.35
+Medium,United Kingdom,Forties Blend,2016,421
+Medium,Turkmenistan,Cheleken,2016,90.3
+Medium,Syria,"Souedieh, Syrian Light",2016,31.5
+Medium,Saudi Arabia,Arab Extra Light,2016,1310
+Medium,Russia,"Urals, Sakhalin Blend, Sokol, Siberian Light",2016,10146.31
+Medium,Qatar,"Qatar Marine, Dukhan",2016,376.27
+Medium,Norway,"Troll, Oseberg, Asgard Blend",2016,435.58
+Medium,Nigeria,Amenam Blend,2016,76.82
+Medium,Neutral Zone,Wafra,2016,0
+Medium,Libya,Bouri,2016,40
+Medium,Iran,Foroozan Blend,2016,242
+Medium,Ghana,Jubilee,2016,77.87
+Medium,Equatorial Guinea,"Alba Condensate, New Zafiro",2016,113.75
+High,Vietnam,"Su Tu Den, Bach Ho",2016,157.95
+High,United States,"West Texas Sour, West Texas Intermediate",2016,1220
+High,Nigeria,"Okono Blend, Erha, Forcados, Agbami, Usan",2016,508.05
+High,Mexico,Maya,2016,1103
+High,Malaysia,Tapis,2016,100
+High,Libya,"Amna, El-Sharara, Es Sider",2016,72
+High,Iraq,"Basrah Heavy, Kirkuk, Basrah Light",2016,4391
+High,Iran,Nowruz-Soroush,2016,100
+High,Egypt,Suez Blend,2016,67.7
+Very High,Venezuela,"Boscan, Hamaca, Santa Barbara, Merey-16",2016,738.76
+Very High,Nigeria,"Brass River, Escravos, Qua Iboe",2016,465.63
+Very High,Malaysia,"Kimanis, Miri",2016,230
+Very High,Libya,"Zueitina, Brega, Abu Attifel, Mellitah, Sarir, Sirtica",2016,287
+Very High,Iran,"Iran Heavy, Iran Light",2016,2665
+Very High,Indonesia,"Duri, Minas",2016,263
+Very High,Gabon,"Oguendjo Blend, Rabi Light",2016,104.81
+Very Low,United Kingdom,"Clair, Schiehallion Blend",2017,46
+Very Low,Saudi Arabia,"Arab Medium, Arab Light",2017,7043
+Very Low,Norway,"Gudrun Blend, Statfjord Blend, Heidrun, Gullfaks Blend, Ekofisk Blend",2017,614.01
+Very Low,Kuwait,Kuwait,2017,2704.54
+Very Low,Iran,South Pars Condensate,2017,560
+Very Low,Egypt,Western Desert Blend,2017,300
+Low,United States,"Mars Blend, Bakken",2017,1234.2
+Low,United Kingdom,Flotta Gold,2017,95
+Low,Saudi Arabia,Arab Heavy,2017,1348
+Low,Norway,Skarv,2017,27.67
+Low,Nigeria,"Bonny Light, Bonga, Akpo Blend",2017,476.98
+Low,Mexico,Isthmus,2017,689
+Low,Kazakhstan,Tengiz,2017,623.07
+Low,Egypt,Belayim Blend,2017,88
+Medium,United States,"Thunder Horse, Alaska North Slope, Eagle Ford",2017,1898.94
+Medium,United Kingdom,Forties Blend,2017,408
+Medium,Turkmenistan,Cheleken,2017,83.95
+Medium,Syria,"Syrian Light, Souedieh",2017,37
+Medium,Saudi Arabia,Arab Extra Light,2017,1310
+Medium,Russia,"Siberian Light, Sokol, Sakhalin Blend, Urals",2017,9982.62
+Medium,Qatar,"Dukhan, Qatar Marine",2017,342.55
+Medium,Norway,"Asgard Blend, Oseberg, Troll",2017,412.17
+Medium,Nigeria,Amenam Blend,2017,91.84
+Medium,Neutral Zone,Wafra,2017,0
+Medium,Libya,Bouri,2017,37
+Medium,Iran,Foroozan Blend,2017,242
+Medium,Ghana,"Jubilee, Sankofa",2017,102.64
+Medium,Equatorial Guinea,"New Zafiro, Alba Condensate",2017,96.21
+High,Vietnam,"Bach Ho, Su Tu Den",2017,121.29
+High,United States,"West Texas Intermediate, West Texas Sour",2017,1360
+High,Nigeria,"Usan, Agbami, Forcados, Erha, Okono Blend",2017,619.1
+High,Mexico,Maya,2017,1049
+High,Malaysia,Tapis,2017,83
+High,Libya,"Es Sider, El-Sharara, Amna",2017,424
+High,Iraq,"Basrah Light, Kirkuk, Basrah Heavy",2017,4421.58
+High,Iran,Nowruz-Soroush,2017,103
+High,Egypt,Suez Blend,2017,64.33
+Very High,Venezuela,"Merey-16, Santa Barbara, Hamaca, Boscan",2017,695.58
+Very High,Nigeria,"Qua Iboe, Escravos, Brass River",2017,482.27
+Very High,Malaysia,"Miri, Kimanis",2017,267.9
+Very High,Libya,"Sirtica, Sarir, Mellitah, Abu Attifel, Brega, Zueitina",2017,333
+Very High,Iran,"Iran Light, Iran Heavy",2017,2875
+Very High,Indonesia,"Minas, Duri",2017,226
+Very High,Gabon,"Rabi Light, Oguendjo Blend",2017,91.5
+Very Low,United Kingdom,"Schiehallion Blend, Clair",2018,114
+Very Low,Saudi Arabia,"Arab Light, Arab Medium",2018,7368
+Very Low,Norway,"Ekofisk Blend, Gullfaks Blend, Heidrun, Statfjord Blend, Gudrun Blend",2018,600.91
+Very Low,Kuwait,Kuwait,2018,2651.38
+Very Low,Iran,South Pars Condensate,2018,660
+Very Low,Egypt,Western Desert Blend,2018,318
+Low,United States,"Bakken, Mars Blend",2018,1488.23
+Low,United Kingdom,Flotta Gold,2018,65
+Low,Saudi Arabia,Arab Heavy,2018,1348
+Low,Norway,Skarv,2018,26.42
+Low,Nigeria,"Akpo Blend, Bonga, Bonny Light, Egina",2018,470.15
+Low,Mexico,Isthmus,2018,553
+Low,Kuwait,Kuwait Export Heavy,2018,12
+Low,Kazakhstan,Tengiz,2018,621.43
+Low,Egypt,Belayim Blend,2018,70
+Medium,United States,"Eagle Ford, Alaska North Slope, Thunder Horse",2018,2000.33
+Medium,United Kingdom,Forties Blend,2018,376
+Medium,Turkmenistan,Cheleken,2018,90
+Medium,Syria,"Souedieh, Syrian Light",2018,64
+Medium,Saudi Arabia,Arab Extra Light,2018,1350
+Medium,Russia,"Urals, Sakhalin Blend, Sokol, Siberian Light",2018,9839.05
+Medium,Qatar,"Qatar Marine, Dukhan",2018,337.3
+Medium,Norway,"Troll, Oseberg, Asgard Blend",2018,363.42
+Medium,Nigeria,Amenam Blend,2018,117.1
+Medium,Neutral Zone,Wafra,2018,0
+Medium,Libya,Bouri,2018,37
+Medium,Kuwait,Kuwait Super Light,2018,73.8
+Medium,Iran,Foroozan Blend,2018,190
+Medium,Ghana,"Sankofa, Jubilee",2018,109.31
+Medium,Equatorial Guinea,"Alba Condensate, New Zafiro",2018,84.24
+High,Vietnam,"Su Tu Den, Bach Ho",2018,111.84
+High,United States,"West Texas Sour, West Texas Intermediate (Midland), West Texas Intermediate",2018,4004
+High,Nigeria,"Okono Blend, Erha, Forcados, Agbami, Usan",2018,628.87
+High,Mexico,Maya,2018,1073
+High,Malaysia,Tapis,2018,83
+High,Libya,"Amna, El-Sharara, Es Sider",2018,476
+High,Iraq,"Basrah Heavy, Kirkuk, Basrah Light",2018,4416.96
+High,Iran,Nowruz-Soroush,2018,103
+High,Egypt,Suez Blend,2018,61.8
+Very High,Venezuela,"Boscan, Hamaca, Santa Barbara, Merey-16",2018,632.94
+Very High,Nigeria,"Brass River, Escravos, Qua Iboe",2018,495.6
+Very High,Malaysia,"Kimanis, Miri",2018,265.86
+Very High,Libya,"Zueitina, Brega, Abu Attifel, Mellitah, Sarir, Sirtica",2018,363
+Very High,Iran,"Iran Heavy, Iran Light",2018,2669
+Very High,Indonesia,"Duri, Minas",2018,206
+Very High,Gabon,"Oguendjo Blend, Rabi Light",2018,90.5
+Very Low,United Kingdom,"Clair, Schiehallion Blend",2019,138
+Very Low,Saudi Arabia,"Arab Medium, Arab Light",2019,7114.69
+Very Low,Norway,"Gudrun Blend, Johan Sverdrup, Statfjord Blend, Heidrun, Gullfaks Blend, Ekofisk Blend",2019,603.75
+Very Low,Kuwait,Kuwait,2019,2557.13
+Very Low,Iran,South Pars Condensate,2019,650
+Very Low,Egypt,Western Desert Blend,2019,333
+Low,United States,"Mars Blend, Bakken",2019,1687.58
+Low,United Kingdom,Flotta Gold,2019,57
+Low,Saudi Arabia,Arab Heavy,2019,1690.44
+Low,Norway,Skarv,2019,22
+Low,Nigeria,"Egina, Bonny Light, Bonga, Akpo Blend",2019,633.23
+Low,Mexico,Isthmus,2019,482
+Low,Kuwait,Kuwait Export Heavy,2019,11
+Low,Kazakhstan,Tengiz,2019,646.61
+Low,Egypt,Belayim Blend,2019,70
+Medium,United States,"Thunder Horse, Alaska North Slope, Eagle Ford",2019,1934
+Medium,United Kingdom,Forties Blend,2019,350
+Medium,Turkmenistan,Cheleken,2019,90
+Medium,Syria,"Syrian Light, Souedieh",2019,89
+Medium,Saudi Arabia,Arab Extra Light,2019,1030.58
+Medium,Russia,"Siberian Light, Sokol, Sakhalin Blend, Urals",2019,9219.34
+Medium,Qatar,"Dukhan, Qatar Marine",2019,321.75
+Medium,Norway,"Asgard Blend, Oseberg, Troll",2019,353.67
+Medium,Nigeria,Amenam Blend,2019,91.1
+Medium,Neutral Zone,Wafra,2019,0
+Medium,Libya,Bouri,2019,37
+Medium,Kuwait,Kuwait Super Light,2019,108.01
+Medium,Iran,Foroozan Blend,2019,55
+Medium,Guyana,Liza,2019,0
+Medium,Ghana,"Jubilee, Sankofa",2019,130.13
+Medium,Equatorial Guinea,"New Zafiro, Alba Condensate",2019,82.8
+High,Vietnam,"Bach Ho, Su Tu Den",2019,89
+High,United States,"West Texas Intermediate, West Texas Intermediate (Midland), West Texas Sour",2019,4481
+High,Nigeria,"Usan, Agbami, Forcados, Erha",2019,543.22
+High,Mexico,Maya,2019,1061
+High,Malaysia,Tapis,2019,90
+High,Libya,"Es Sider, El-Sharara, Amna",2019,660
+High,Iraq,"Basrah Light, Kirkuk, Basrah Heavy",2019,4528.72
+High,Iran,Nowruz-Soroush,2019,35
+High,Egypt,Suez Blend,2019,62.3
+Very High,Venezuela,"Merey-16, Santa Barbara, Hamaca, Boscan",2019,535
+Very High,Nigeria,"Qua Iboe, Escravos, Brass River",2019,480.58
+Very High,Malaysia,"Miri, Kimanis",2019,247.49
+Very High,Libya,"Sirtica, Sarir, Mellitah, Abu Attifel, Brega, Zueitina",2019,420
+Very High,Iran,"Iran Light, Iran Heavy",2019,1933
+Very High,Indonesia,"Minas, Duri",2019,190
+Very High,Gabon,"Rabi Light, Oguendjo Blend",2019,93.59
+Very Low,United Kingdom,"Schiehallion Blend, Clair",2020,134
+Very Low,Saudi Arabia,"Arab Light, Arab Medium",2020,6610
+Very Low,Norway,"Ekofisk Blend, Gullfaks Blend, Heidrun, Statfjord Blend, Johan Sverdrup, Gudrun Blend",2020,942.59
+Very Low,Kuwait,Kuwait,2020,2222.59
+Very Low,Iran,South Pars Condensate,2020,650
+Very Low,Egypt,Western Desert Blend,2020,308.6
+Low,United States,"Bakken, Mars Blend",2020,1436.33
+Low,United Kingdom,Flotta Gold,2020,51
+Low,Saudi Arabia,Arab Heavy,2020,1513.71
+Low,Norway,Skarv,2020,20.92
+Low,Nigeria,"Akpo Blend, Bonga, Bonny Light, Egina",2020,551.84
+Low,Mexico,Isthmus,2020,469
+Low,Kuwait,Kuwait Export Heavy,2020,17.86
+Low,Kazakhstan,Tengiz,2020,572.87
+Low,Egypt,Belayim Blend,2020,66.5
+Medium,United States,"Eagle Ford, Alaska North Slope, Thunder Horse",2020,1778
+Medium,United Kingdom,Forties Blend,2020,311
+Medium,Turkmenistan,Cheleken,2020,80
+Medium,Syria,"Souedieh, Syrian Light",2020,130
+Medium,Saudi Arabia,Arab Extra Light,2020,1035.77
+Medium,Russia,"Urals, Sakhalin Blend, Sokol, Siberian Light",2020,8390.82
+Medium,Qatar,"Qatar Marine, Dukhan",2020,335.92
+Medium,Norway,"Troll, Oseberg, Asgard Blend",2020,339.41
+Medium,Nigeria,Amenam Blend,2020,85.07
+Medium,Neutral Zone,Wafra,2020,22
+Medium,Libya,Bouri,2020,33
+Medium,Kuwait,Kuwait Super Light,2020,140.98
+Medium,Iraq,Basrah Medium,2020,0
+Medium,Iran,Foroozan Blend,2020,20
+Medium,Guyana,Liza,2020,74.64
+Medium,Ghana,"Sankofa, Jubilee",2020,129.76
+Medium,Equatorial Guinea,"Alba Condensate, New Zafiro",2020,84.84
+High,Vietnam,"Su Tu Den, Bach Ho",2020,93.02
+High,United States,"West Texas Sour, West Texas Intermediate (Midland), West Texas Intermediate",2020,4248
+High,Nigeria,"Erha, Forcados, Agbami, Usan",2020,492.37
+High,Mexico,Maya,2020,1039
+High,Malaysia,Tapis,2020,86.67
+High,Libya,"Amna, El-Sharara, Es Sider",2020,186
+High,Iraq,"Basrah Heavy, Kirkuk, Basrah Light",2020,3919.66
+High,Iran,Nowruz-Soroush,2020,15
+High,Egypt,Suez Blend,2020,59.2
+Very High,Venezuela,"Boscan, Hamaca, Santa Barbara, Merey-16",2020,451
+Very High,Nigeria,"Brass River, Escravos, Qua Iboe",2020,411.49
+Very High,Malaysia,"Kimanis, Miri",2020,159.86
+Very High,Libya,"Zueitina, Brega, Abu Attifel, Mellitah, Sarir, Sirtica",2020,140
+Very High,Iran,"Iran Heavy, Iran Light",2020,1733
+Very High,Indonesia,"Duri, Minas",2020,174
+Very High,Gabon,"Oguendjo Blend, Rabi Light",2020,85.52
+Very Low,United Kingdom,"Clair, Schiehallion Blend",2021,125
+Very Low,Saudi Arabia,"Arab Light, Arab Medium",2021,6416.7
+Very Low,Norway,"Gullfaks Blend, Heidrun, Ekofisk Blend, Gudrun Blend, Statfjord Blend, Johan Sverdrup",2021,1053.68
+Very Low,Kuwait,Kuwait,2021,2138
+Very Low,Iran,South Pars Condensate,2021,680
+Very Low,Egypt,Western Desert Blend,2021,277.65
+Low,United States,"Mars Blend, Bakken",2021,1339.67
+Low,United Kingdom,Flotta Gold,2021,50
+Low,Saudi Arabia,Arab Heavy,2021,1472.06
+Low,Norway,Skarv,2021,26.25
+Low,Nigeria,"Akpo Blend, Bonga, Bonny Light, Egina",2021,433.04
+Low,Mexico,Isthmus,2021,532
+Low,Kuwait,Kuwait Export Heavy,2021,38.35
+Low,Kazakhstan,Tengiz,2021,576.65
+Low,Egypt,Belayim Blend,2021,63.18
+Medium,United States,"Eagle Ford, Thunder Horse, Alaska North Slope",2021,1577
+Medium,United Kingdom,Forties Blend,2021,224
+Medium,Turkmenistan,Cheleken,2021,80
+Medium,Syria,"Souedieh, Syrian Light",2021,140
+Medium,Saudi Arabia,Arab Extra Light,2021,1160.81
+Medium,Russia,"Sakhalin Blend, Urals, Siberian Light, Sokol",2021,7906.47
+Medium,Qatar,"Dukhan, Qatar Marine",2021,298.95
+Medium,Norway,"Troll, Asgard Blend, Oseberg",2021,311.08
+Medium,Nigeria,Amenam Blend,2021,65.07
+Medium,Neutral Zone,Wafra,2021,60
+Medium,Libya,Bouri,2021,33
+Medium,Kuwait,Kuwait Super Light,2021,139.29
+Medium,Iraq,Basrah Medium,2021,1342
+Medium,Iran,Foroozan Blend,2021,35
+Medium,Guyana,Liza,2021,113.3
+Medium,Ghana,"Jubilee, Sankofa",2021,117.12
+Medium,Equatorial Guinea,"New Zafiro, Alba Condensate",2021,69.46
+High,Vietnam,"Bach Ho, Su Tu Den",2021,96.01
+High,United States,"West Texas Intermediate (Midland), West Texas Intermediate, West Texas Sour",2021,4702
+High,Nigeria,"Agbami, Forcados, Erha, Usan",2021,407.55
+High,Mexico,Maya,2021,1002
+High,Malaysia,Tapis,2021,83.33
+High,Libya,"El-Sharara, Es Sider, Amna",2021,696
+High,Iraq,"Kirkuk, Basrah Light, Basrah Heavy",2021,2598
+High,Iran,Nowruz-Soroush,2021,25
+High,Egypt,Suez Blend,2021,55.4
+Very High,Venezuela,"Merey-16, Boscan, Hamaca, Santa Barbara",2021,429
+Very High,Nigeria,"Brass River, Qua Iboe, Escravos",2021,336.49
+Very High,Malaysia,"Miri, Kimanis",2021,166.82
+Very High,Libya,"Brega, Mellitah, Abu Attifel, Zueitina, Sarir, Sirtica",2021,409.9
+Very High,Iran,"Iran Heavy, Iran Light",2021,2053
+Very High,Indonesia,"Minas, Duri",2021,160
+Very High,Gabon,"Rabi Light, Oguendjo Blend",2021,82.94
+Very Low,United Kingdom,"Schiehallion Blend, Clair",2022,123
+Very Low,Saudi Arabia,"Arab Light, Arab Medium",2022,7420.97
+Very Low,Norway,"Ekofisk Blend, Gullfaks Blend, Heidrun, Statfjord Blend, Gudrun Blend, Johan Sverdrup",2022,1029.24
+Very Low,Kuwait,Kuwait,2022,2353.28
+Very Low,Iran,South Pars Condensate,2022,700
+Very Low,Egypt,Western Desert Blend,2022,238
+Low,United States,"Bakken, Mars Blend",2022,1293
+Low,United Kingdom,Flotta Gold,2022,41
+Low,Saudi Arabia,Arab Heavy,2022,1945.2
+Low,Norway,Skarv,2022,25
+Low,Nigeria,"Akpo Blend, Bonga, Bonny Light, Egina",2022,348.17
+Low,Mexico,Isthmus,2022,503
+Low,Kuwait,Kuwait Export Heavy,2022,74.44
+Low,Kazakhstan,Tengiz,2022,633.29
+Low,Egypt,Belayim Blend,2022,64.44
+Medium,United States,"Eagle Ford, Thunder Horse, Alaska North Slope",2022,1589
+Medium,United Kingdom,Forties Blend,2022,238
+Medium,Turkmenistan,Cheleken,2022,79
+Medium,Syria,"Souedieh, Syrian Light",2022,160
+Medium,Saudi Arabia,Arab Extra Light,2022,1133.71
+Medium,Russia,"Urals, Sokol, Sakhalin Blend, Siberian Light",2022,8182.83
+Medium,Qatar,"Dukhan, Qatar Marine",2022,311.08
+Medium,Norway,"Asgard Blend, Troll, Oseberg",2022,290.09
+Medium,Nigeria,Amenam Blend,2022,75.75
+Medium,Neutral Zone,Wafra,2022,55
+Medium,Libya,Bouri,2022,28
+Medium,Kuwait,Kuwait Super Light,2022,155.2
+Medium,Iraq,Basrah Medium,2022,2541
+Medium,Iran,Foroozan Blend,2022,40
+Medium,Guyana,Liza,2022,128
+Medium,Ghana,"Jubilee, Sankofa",2022,114.52
+Medium,Equatorial Guinea,"Alba Condensate, New Zafiro",2022,54.23
+High,Vietnam,"Bach Ho, Su Tu Den",2022,94.18
+High,United States,"West Texas Intermediate (Midland), West Texas Intermediate, West Texas Sour",2022,5184
+High,Nigeria,"Forcados, Usan, Agbami, Erha",2022,353.57
+High,Mexico,Maya,2022,934
+High,Malaysia,Tapis,2022,70.4
+High,Libya,"Amna, El-Sharara, Es Sider",2022,592
+High,Iraq,"Kirkuk, Basrah Light, Basrah Heavy, Kurdish crude",2022,1816
+High,Iran,Nowruz-Soroush,2022,25
+High,Egypt,Suez Blend,2022,56.8
+Very High,Venezuela,"Merey-16, Santa Barbara, Boscan, Hamaca",2022,409
+Very High,Nigeria,"Escravos, Brass River, Qua Iboe",2022,306.93
+Very High,Malaysia,"Kimanis, Miri",2022,131.82
+Very High,Libya,"Brega, Abu Attifel, Mellitah, Sarir, Sirtica, Zueitina",2022,384.4
+Very High,Iran,"Iran Heavy, Iran Light",2022,2053
+Very High,Indonesia,"Duri, Minas",2022,157.95
+Very High,Gabon,"Rabi Light, Oguendjo Blend",2022,79.21
+Very Low,United Kingdom,"Schiehallion Blend, Clair",2023,113.48
+Very Low,Saudi Arabia,"Arab Light, Arab Medium",2023,6525.53
+Very Low,Norway,"Ekofisk Blend, Gullfaks Blend, Statfjord Blend, Johan Sverdrup, Heidrun, Gudrun Blend",2023,1207.41
+Very Low,Kuwait,Kuwait,2023,2206.4
+Very Low,Iran,South Pars Condensate,2023,700
+Very Low,Egypt,Western Desert Blend,2023,228.4
+Low,United States,"Mars Blend, Bakken",2023,1405.5
+Low,United Kingdom,Flotta Gold,2023,30.01
+Low,Saudi Arabia,Arab Heavy,2023,1821.08
+Low,Norway,Skarv,2023,20.75
+Low,Nigeria,"Egina, Akpo Blend, Bonga, Bonny Light",2023,389
+Low,Mexico,Isthmus,2023,453
+Low,Kuwait,Kuwait Export Heavy,2023,81.54
+Low,Kazakhstan,Tengiz,2023,627.03
+Low,Egypt,Belayim Blend,2023,64
+Medium,United States,"Alaska North Slope, Eagle Ford, Thunder Horse",2023,1625
+Medium,United Kingdom,Forties Blend,2023,191.78
+Medium,Turkmenistan,Cheleken,2023,77
+Medium,Syria,"Syrian Light, Souedieh",2023,120
+Medium,Saudi Arabia,Arab Extra Light,2023,1213.77
+Medium,Russia,"Urals, Siberian Light, Sokol, Sakhalin Blend",2023,8158.34
+Medium,Qatar,"Qatar Marine, Dukhan",2023,312.7
+Medium,Norway,"Oseberg, Troll, Asgard Blend",2023,247.17
+Medium,Nigeria,Amenam Blend,2023,109.55
+Medium,Neutral Zone,Wafra,2023,61
+Medium,Libya,Bouri,2023,24.2
+Medium,Kuwait,Kuwait Super Light,2023,163.45
+Medium,Iraq,Basrah Medium,2023,2618
+Medium,Iran,Foroozan Blend,2023,56
+Medium,Guyana,Liza,2023,142
+Medium,Ghana,"Sankofa, Jubilee",2023,112.29
+Medium,Equatorial Guinea,"Alba Condensate, New Zafiro",2023,27.7
+High,Vietnam,"Su Tu Den, Bach Ho",2023,90.73
+High,United States,"West Texas Intermediate, West Texas Sour, West Texas Intermediate (Midland)",2023,5942
+High,Nigeria,"Forcados, Agbami, Erha, Usan",2023,422.98
+High,Mexico,Maya,2023,970
+High,Malaysia,Tapis,2023,73.6
+High,Libya,"El-Sharara, Es Sider, Amna",2023,678.6
+High,Iraq,"Kurdish crude, Basrah Heavy, Kirkuk",2023,1599
+High,Iran,Nowruz-Soroush,2023,25
+High,Egypt,Suez Blend,2023,72.8
+Very High,Venezuela,"Santa Barbara, Merey-16, Hamaca, Boscan",2023,524
+Very High,Nigeria,"Escravos, Brass River, Qua Iboe",2023,286.9
+Very High,Malaysia,"Kimanis, Miri",2023,135.22
+Very High,Libya,"Brega, Mellitah, Zueitina, Sarir, Sirtica, Abu Attifel",2023,481.2
+Very High,Iran,"Iran Heavy, Iran Light",2023,2299.36
+Very High,Indonesia,"Duri, Minas",2023,159.27
+Very High,Gabon,Rabi Light,2023,79.8
+Very Low,United Kingdom,"Clair, Schiehallion Blend",2024,101
+Very Low,Saudi Arabia,"Arab Light, Arab Medium",2024,6400.6
+Very Low,Norway,"Gudrun Blend, Johan Sverdrup, Heidrun, Gullfaks Blend, Ekofisk Blend, Statfjord Blend",2024,1178.76
+Very Low,Kuwait,Kuwait,2024,2013.04
+Very Low,Iran,South Pars Condensate,2024,750
+Very Low,Egypt,Western Desert Blend,2024,237
+Low,United States,"Mars Blend, Bakken",2024,1404
+Low,United Kingdom,Flotta Gold,2024,31
+Low,Saudi Arabia,Arab Heavy,2024,1476
+Low,Norway,Skarv,2024,14
+Low,Nigeria,"Akpo Blend, Bonga, Bonny Light, Egina",2024,424
+Low,Mexico,Isthmus,2024,369
+Low,Kuwait,Kuwait Export Heavy,2024,85.85
+Low,Kazakhstan,Tengiz,2024,602.2
+Low,Egypt,Belayim Blend,2024,55
+Medium,United States,"Alaska North Slope, Eagle Ford, Thunder Horse",2024,1642
+Medium,United Kingdom,Forties Blend,2024,158
+Medium,Turkmenistan,Cheleken,2024,75
+Medium,Syria,"Souedieh, Syrian Light",2024,108
+Medium,Saudi Arabia,Arab Extra Light,2024,1055
+Medium,Russia,"Sakhalin Blend, Urals, Siberian Light, Sokol",2024,7769.6
+Medium,Qatar,"Qatar Marine, Dukhan",2024,312.7
+Medium,Norway,"Troll, Oseberg, Asgard Blend",2024,226
+Medium,Nigeria,Amenam Blend,2024,89
+Medium,Neutral Zone,Wafra,2024,65
+Medium,Kuwait,Kuwait Super Light,2024,167.6
+Medium,Iraq,Basrah Medium,2024,2488
+Medium,Iran,Foroozan Blend,2024,61
+Medium,Guyana,Liza,2024,149
+Medium,Ghana,"Jubilee, Sankofa",2024,115.9
+Medium,Equatorial Guinea,"Alba Condensate, New Zafiro",2024,30.8
+High,Vietnam,"Bach Ho, Su Tu Den",2024,79.83
+High,United States,"West Texas Intermediate (Midland), West Texas Intermediate, West Texas Sour",2024,6234
+High,Nigeria,"Agbami, Erha, Forcados",2024,393
+High,Mexico,Maya,2024,922
+High,Malaysia,Tapis,2024,65.9
+High,Libya,"Amna, El-Sharara, Es Sider",2024,597.4
+High,Iraq,"Kirkuk, Basrah Heavy, Kurdish crude",2024,1632
+High,Iran,Nowruz-Soroush,2024,50
+High,Egypt,Suez Blend,2024,56
+Very High,Venezuela,"Santa Barbara, Merey-16, Hamaca, Boscan",2024,664
+Very High,Nigeria,"Brass River, Escravos, Qua Iboe",2024,260
+Very High,Malaysia,"Miri, Kimanis",2024,122.06
+Very High,Libya,"Brega, Mellitah, Abu Attifel, Sarir, Sirtica",2024,446.35
+Very High,Iran,"Iran Heavy, Iran Light",2024,2644.26
+Very High,Indonesia,"Minas, Duri",2024,155.09
+Very High,Gabon,Rabi Light,2024,79.08
