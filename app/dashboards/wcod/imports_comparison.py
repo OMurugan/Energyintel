@@ -3,8 +3,7 @@ Imports - Country Comparison View
 Global Crude Imports Dashboard - Based on Tableau design
 """
 import dash
-from dash import dcc, html, Input, Output, State, callback
-import dash_table
+from dash import dcc, html, Input, Output, State, callback, dash_table
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
