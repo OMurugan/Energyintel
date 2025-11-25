@@ -577,6 +577,10 @@ def create_wcod_dashboard(server, url_base_pathname):
                     overflow: hidden !important;
                     max-width: 200px !important;
                 }
+                /* Global Exports slider padding override */
+                #global-exports-year-slider {
+                    padding: 0px 0px 25px !important;
+                }
 
             </style>
         </head>

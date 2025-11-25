@@ -131,6 +131,11 @@ def _prepare_table_df() -> pd.DataFrame:
 MAP_DF = _prepare_map_df()
 CHART_DF = _prepare_chart_df()
 TABLE_DF = _prepare_table_df()
+MAP_VALUE_MAX_LABEL = (
+    f"{(MAP_DF['value'].max() / 1000):,.3f}"
+    if not MAP_DF.empty and MAP_DF["value"].max() > 0
+    else "0"
+)
 
 _year_pool: List[int] = []
 if not MAP_DF.empty:
@@ -184,6 +189,33 @@ FALLBACK_COLORS = [
     "#cb6ce6",
     "#ffa600",
 ]
+MAP_COLOR_SCALE = [
+    "#f2f4f6",
+    "#e9edf2",
+    "#e1e6ee",
+    "#d9dee8",
+    "#d0d6e2",
+    "#c7cedc",
+    "#bec6d6",
+    "#b3bfd0",
+    "#a8b7ca",
+    "#9dafc4",
+    "#91a7be",
+    "#859fb9",
+    "#7a96b3",
+    "#6f8dae",
+    "#6384a8",
+    "#577ba2",
+    "#4d739b",
+    "#466b93",
+    "#41638b",
+    "#3c5a83",
+]
+MAP_COLOR_STEPS = [
+    (idx / (len(MAP_COLOR_SCALE) - 1), color)
+    for idx, color in enumerate(MAP_COLOR_SCALE)
+]
+COLOR_LEGEND_WIDTH = len(MAP_COLOR_SCALE) * 18
 
 YEAR_COLUMNS = sorted(TABLE_DF["year"].unique().tolist(), reverse=True) if not TABLE_DF.empty else []
 YEAR_COLUMN_IDS = [str(year) for year in YEAR_COLUMNS]
@@ -319,7 +351,7 @@ def _empty_figure(message: str, height: int = 420) -> go.Figure:
     return fig
 
 
-def _build_map_figure(year: Optional[int]) -> go.Figure:
+def _build_map_figure(year: Optional[int], highlight_country: Optional[str] = None) -> go.Figure:
     if MAP_DF.empty:
         return _empty_figure("No map data available")
     normalized_year = _normalize_year(year)
@@ -327,40 +359,19 @@ def _build_map_figure(year: Optional[int]) -> go.Figure:
     if df.empty:
         return _empty_figure("No data for the selected year")
     max_value = df["value"].max() if not df.empty else None
-    color_scale = [
-        "#d6e3f3",
-        "#a1c4e8",
-        "#6b9ed6",
-        "#336bb3",
-        "#1b365d",
-    ]
     fig = go.Figure(
         data=[
             go.Choropleth(
                 locations=df["country"],
                 z=df["value"],
                 locationmode="country names",
-                colorscale=color_scale,
+                colorscale=MAP_COLOR_STEPS,
                 zmin=0,
                 zmax=max_value if max_value else None,
                 marker_line_color="#ffffff",
                 marker_line_width=0.5,
                 hovertemplate="<b>%{location}</b><br>Exports: %{z:,.0f} ’000 b/d<extra></extra>",
-                colorbar=dict(
-                    title="Exports (‘000 b/d)",
-                    orientation="h",
-                    x=0.5,
-                    xanchor="center",
-                    y=-0.2,
-                    yanchor="top",
-                    len=0.6,
-                    thickness=16,
-                    outlinewidth=0,
-                    tickformat=",",
-                    tickfont=dict(size=11, color="#1b365d"),
-                    titlefont=dict(size=12, color="#1b365d"),
-                    bgcolor="rgba(255,255,255,0)",
-                ),
+                showscale=False,
             )
         ]
     )
@@ -381,11 +392,33 @@ def _build_map_figure(year: Optional[int]) -> go.Figure:
         margin=dict(l=10, r=10, t=20, b=110),
         template="plotly_white",
     )
-    fig.update_traces(colorbar=dict(tickmode="auto"))
+    if highlight_country:
+        highlight_list = (
+            highlight_country
+            if isinstance(highlight_country, list)
+            else [highlight_country]
+        )
+        highlight_list = [c for c in highlight_list if c]
+        if highlight_list:
+            fig.add_trace(
+                go.Choropleth(
+                    locations=highlight_list,
+                    locationmode="country names",
+                    z=[max_value or 1] * len(highlight_list),
+                    colorscale=[[0, "#2f3f5c"], [1, "#2f3f5c"]],
+                    showscale=False,
+                    marker_line_color="#182238",
+                    marker_line_width=1.6,
+                    hoverinfo="skip",
+                )
+            )
     return fig
 
 
-def _build_chart_figure(selected_streams: Optional[Sequence[str]] = None) -> go.Figure:
+def _build_chart_figure(
+    selected_streams: Optional[Sequence[str]] = None,
+    selected_countries: Optional[Sequence[str]] = None,
+) -> go.Figure:
     if CHART_DF.empty:
         return _empty_figure("No chart data available")
     streams = (
@@ -400,14 +433,33 @@ def _build_chart_figure(selected_streams: Optional[Sequence[str]] = None) -> go.
         & (CHART_DF["stream"].isin(streams))
     ].copy()
     if "country" in df.columns:
-        df = df[df["country"].str.lower() == "russia"]
+        if selected_countries:
+            if "ALL" in selected_countries:
+                # Show all countries
+                pass
+            else:
+                # Filter by selected countries (case-insensitive)
+                df = df[
+                    df["country"].str.lower().isin([c.lower() for c in selected_countries])
+                ]
+        else:
+            # Default to Russia if no selection
+            df = df[df["country"].str.lower() == "russia"]
     if df.empty:
         return _empty_figure("No data in the selected range")
-    country_label = (
-        df["country"].dropna().iloc[0]
-        if "country" in df.columns and not df["country"].dropna().empty
-        else "Russia"
-    )
+    # Determine country label for display
+    if selected_countries and "ALL" not in selected_countries and len(selected_countries) == 1:
+        country_label = selected_countries[0]
+    elif selected_countries and "ALL" in selected_countries:
+        country_label = "All Countries"
+    elif selected_countries and len(selected_countries) > 1:
+        country_label = f"{len(selected_countries)} Countries"
+    else:
+        country_label = (
+            df["country"].dropna().iloc[0]
+            if "country" in df.columns and not df["country"].dropna().empty
+            else "Russia"
+        )
     agg = df.groupby(["year", "stream"])["value"].sum().reset_index()
     agg["year"] = agg["year"].astype(int)
     agg = agg[(agg["year"] >= 2006) & (agg["year"] <= 2024)].copy()
@@ -526,9 +578,73 @@ def create_layout():
                             dcc.Graph(
                                 id="global-exports-map",
                                 config={"displayModeBar": False},
-                                figure=_build_map_figure(DEFAULT_YEAR),
+                                figure=_build_map_figure(
+                                    DEFAULT_YEAR,
+                                    "Russia" if "Russia" in COUNTRY_OPTIONS else None,
+                                ),
                                 style={"height": "520px"},
                             ),
+                    html.Div(
+                        [
+                            html.Div(
+                                "Export Volume (‘000 b/d)",
+                                style={
+                                    "fontWeight": "bold",
+                                    "fontSize": "12px",
+                                    "color": "#1b365d",
+                                    "marginTop": "12px",
+                                },
+                            ),
+                            html.Div(
+                                [
+                                    html.Div(
+                                        style={
+                                            "backgroundColor": color,
+                                            "width": "18px",
+                                            "height": "14px",
+                                        }
+                                    )
+                                    for color in MAP_COLOR_SCALE
+                                ],
+                                style={
+                                    "display": "flex",
+                                    "gap": "1px",
+                                    "marginTop": "4px",
+                                    "border": "1px solid #cdd3dd",
+                                    "padding": "2px",
+                                    "backgroundColor": "#f2f4f8",
+                                    "width": f"{COLOR_LEGEND_WIDTH}px",
+                                },
+                            ),
+                            html.Div(
+                                [
+                                    html.Span(
+                                        "0",
+                                        style={
+                                            "fontSize": "11px",
+                                            "color": "#1b365d",
+                                            "fontWeight": "bold",
+                                        },
+                                    ),
+                                    html.Span(
+                                        MAP_VALUE_MAX_LABEL,
+                                        style={
+                                            "fontSize": "11px",
+                                            "color": "#1b365d",
+                                            "fontWeight": "bold",
+                                        },
+                                    ),
+                                ],
+                                style={
+                                    "display": "flex",
+                                    "justifyContent": "space-between",
+                                    "marginTop": "2px",
+                                    "width": f"{COLOR_LEGEND_WIDTH}px",
+                                },
+                            ),
+                        ],
+                        style={"marginTop": "10px"},
+                    ),
                         ],
                         className="col-md-9",
                         style={"padding": "10px"},
@@ -545,6 +661,23 @@ def create_layout():
                             ),
                             html.Div(
                                 [
+                                    html.Button(
+                                        "◄◄",
+                                        id="global-exports-year-first",
+                                        n_clicks=0,
+                                        style={
+                                            "width": "32px",
+                                            "height": "28px",
+                                            "border": "1px solid #b3b3b3",
+                                            "backgroundColor": "#ffffff",
+                                            "cursor": "pointer",
+                                            "fontSize": "12px",
+                                            "padding": "0",
+                                            "marginRight": "4px",
+                                            "borderRadius": "3px",
+                                            "color": "#333333",
+                                        },
+                                    ),
                                     html.Button(
                                         "◄",
                                         id="global-exports-year-decrement",
@@ -597,22 +730,104 @@ def create_layout():
                                             "color": "#333333",
                                         },
                                     ),
+                                    html.Button(
+                                        "▶▶",
+                                        id="global-exports-year-last",
+                                        n_clicks=0,
+                                        style={
+                                            "width": "32px",
+                                            "height": "28px",
+                                            "border": "1px solid #b3b3b3",
+                                            "backgroundColor": "#ffffff",
+                                            "cursor": "pointer",
+                                            "fontSize": "12px",
+                                            "padding": "0",
+                                            "marginLeft": "4px",
+                                            "borderRadius": "3px",
+                                            "color": "#333333",
+                                        },
+                                    ),
                                 ],
                                 style={
                                     "display": "flex",
                                     "alignItems": "center",
                                     "marginBottom": "8px",
+                                    "gap": "4px",
                                 },
                             ),
-                            dcc.Slider(
-                                id="global-exports-year-slider",
-                                min=YEAR_MIN,
-                                max=YEAR_MAX,
-                                value=current_year_value,
-                                step=1,
-                                marks=slider_marks,
-                                tooltip={"placement": "bottom", "always_visible": False},
-                                disabled=slider_disabled,
+                            html.Div(
+                                dcc.Slider(
+                                    id="global-exports-year-slider",
+                                    min=YEAR_MIN,
+                                    max=YEAR_MAX,
+                                    value=current_year_value,
+                                    step=1,
+                                    marks=slider_marks,
+                                    tooltip={"placement": "bottom", "always_visible": False},
+                                    disabled=slider_disabled,
+                                ),
+                                className="global-exports-slider-wrapper",
+                                style={"paddingLeft": "0px"},
+                            ),
+                            html.Div(
+                                [
+                                    html.Button(
+                                        "◀",
+                                        id="global-exports-year-reverse",
+                                        n_clicks=0,
+                                        style={
+                                            "width": "28px",
+                                            "height": "28px",
+                                            "border": "1px solid #b3b3b3",
+                                            "backgroundColor": "#ffffff",
+                                            "cursor": "pointer",
+                                            "fontSize": "12px",
+                                            "padding": "0",
+                                            "marginLeft": "4px",
+                                            "borderRadius": "3px",
+                                            "color": "#333333",
+                                        },
+                                    ),
+                                    html.Button(
+                                        "⏹",
+                                        id="global-exports-year-stop",
+                                        n_clicks=0,
+                                        style={
+                                            "width": "28px",
+                                            "height": "28px",
+                                            "border": "1px solid #b3b3b3",
+                                            "backgroundColor": "#ffffff",
+                                            "cursor": "pointer",
+                                            "fontSize": "12px",
+                                            "padding": "0",
+                                            "marginLeft": "4px",
+                                            "borderRadius": "3px",
+                                            "color": "#333333",
+                                        },
+                                    ),
+                                    html.Button(
+                                        "▶",
+                                        id="global-exports-year-play",
+                                        n_clicks=0,
+                                        style={
+                                            "width": "28px",
+                                            "height": "28px",
+                                            "border": "1px solid #b3b3b3",
+                                            "backgroundColor": "#ffffff",
+                                            "cursor": "pointer",
+                                            "fontSize": "12px",
+                                            "padding": "0",
+                                            "marginLeft": "4px",
+                                            "borderRadius": "3px",
+                                            "color": "#333333",
+                                        },
+                                    ),
+                                ],
+                                style={
+                                    "display": "flex",
+                                    "gap": "6px",
+                                    "marginBottom": "10px",
+                                },
                             ),
                             html.Div(
                                 id="global-exports-year-display",
@@ -620,6 +835,28 @@ def create_layout():
                                 style={"display": "none"},
                             ),
                             html.Br(),
+                            html.Label(
+                                "Country",
+                                style={
+                                    "fontWeight": "bold",
+                                    "color": "#2c3e50",
+                                    "fontSize": "13px",
+                                    "marginBottom": "5px",
+                                },
+                            ),
+                            dcc.Dropdown(
+                                id="global-exports-country-filter",
+                                options=[
+                                    {"label": "ALL", "value": "ALL"}
+                                ] + [
+                                    {"label": country, "value": country}
+                                    for country in COUNTRY_OPTIONS
+                                ],
+                                value=["Russia"] if "Russia" in COUNTRY_OPTIONS else [],
+                                multi=True,
+                                clearable=False,
+                                placeholder="Select country(ies)",
+                            ),
                         ],
                         className="col-md-3",
                         style={"padding": "10px"},
@@ -627,12 +864,20 @@ def create_layout():
                 ],
                 className="row",
             ),
+            dcc.Interval(
+                id="global-exports-year-interval",
+                interval=1500,
+                n_intervals=0,
+                disabled=True,
+            ),
+            dcc.Store(id="global-exports-play-direction", data="stop"),
             html.Div(
                 [
                     html.Div(
                         [
                             html.H4(
-                                "Russia Annual Exports by Crude Stream",
+                                id="global-exports-chart-title",
+                                children="Russia Annual Exports by Crude Stream",
                                 style={
                                     "color": "#fe5000",
                                     "textAlign": "center",
@@ -642,7 +887,7 @@ def create_layout():
                             ),
                             dcc.Graph(
                                 id="global-exports-stream-chart",
-                                figure=_build_chart_figure(STREAM_ORDER),
+                                figure=_build_chart_figure(STREAM_ORDER, ["Russia"]),
                             ),
                         ],
                         className="col-md-9",
@@ -800,6 +1045,8 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input("global-exports-year-slider", "value"),
         Input("global-exports-year-increment", "n_clicks"),
         Input("global-exports-year-decrement", "n_clicks"),
+        Input("global-exports-year-first", "n_clicks"),
+        Input("global-exports-year-last", "n_clicks"),
         State("global-exports-year-display", "children"),
         State("global-exports-year-slider", "min"),
         State("global-exports-year-slider", "max"),
@@ -810,6 +1057,8 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         slider_value,
         inc_clicks,
         dec_clicks,
+        first_clicks,
+        last_clicks,
         current_year,
         min_year,
         max_year,
@@ -830,6 +1079,10 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             new_year = min(current_year_int + 1, max_year)
         elif trigger_id == "global-exports-year-decrement":
             new_year = max(current_year_int - 1, min_year)
+        elif trigger_id == "global-exports-year-first":
+            new_year = min_year
+        elif trigger_id == "global-exports-year-last":
+            new_year = max_year
         elif trigger_id == "global-exports-year-input":
             if input_value is None:
                 new_year = current_year_int
@@ -849,26 +1102,79 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Output("global-exports-map-title", "children"),
         Input("current-submenu", "data"),
         Input("global-exports-year-display", "children"),
+        Input("global-exports-country-filter", "value"),
     )
-    def update_map(submenu: str, year_str: Optional[str]):
+    def update_map(
+        submenu: str,
+        year_str: Optional[str],
+        country_value: Optional[Sequence[str]],
+    ):
         """Update the map when the submenu or year changes."""
         if submenu != "global-exports":
             return _empty_figure(""), no_update
         year_value = _parse_year_value(year_str)
         normalized_year = _normalize_year(year_value)
+        if country_value:
+            if "ALL" in country_value:
+                highlight = None
+            else:
+                highlight = country_value[0] if len(country_value) == 1 else None
+        else:
+            highlight = "Russia" if "Russia" in COUNTRY_OPTIONS else None
         title = f"Crude Exports — {normalized_year or 'N/A'}"
-        return _build_map_figure(normalized_year), title
+        return _build_map_figure(normalized_year, highlight), title
+
+    @callback(
+        Output("global-exports-country-filter", "value"),
+        Input("global-exports-map", "clickData"),
+        State("global-exports-country-filter", "value"),
+        prevent_initial_call=True,
+    )
+    def update_country_from_map(click_data, current_value):
+        """Sync dropdown selection when clicking map."""
+        if not click_data or not click_data.get("points"):
+            return dash.no_update
+        country = click_data["points"][0].get("location") or click_data["points"][0].get("text")
+        if not country:
+            return dash.no_update
+        if country not in COUNTRY_OPTIONS:
+            return dash.no_update
+        current_list = current_value if isinstance(current_value, list) else (
+            [current_value] if current_value else []
+        )
+        if country in current_list:
+            return dash.no_update
+        return current_list + [country]
 
     @callback(
         Output("global-exports-stream-chart", "figure"),
+        Output("global-exports-chart-title", "children"),
         Input("current-submenu", "data"),
         Input("global-exports-stream-filter", "value"),
+        Input("global-exports-country-filter", "value"),
     )
-    def update_chart(submenu: str, streams: Optional[Sequence[str]]):
+    def update_chart(
+        submenu: str,
+        streams: Optional[Sequence[str]],
+        countries: Optional[Sequence[str]],
+    ):
         """Update stacked area chart."""
         if submenu != "global-exports":
-            return _empty_figure("")
-        return _build_chart_figure(streams)
+            return _empty_figure(""), no_update
+        fig = _build_chart_figure(streams, countries)
+        # Update title based on selected countries
+        if countries:
+            if "ALL" in countries:
+                title = "All Countries Annual Exports by Crude Stream"
+            elif len(countries) == 1:
+                title = f"{countries[0]} Annual Exports by Crude Stream"
+            else:
+                # Join country names with commas
+                country_names = ", ".join(countries)
+                title = f"{country_names} Annual Exports by Crude Stream"
+        else:
+            title = "Russia Annual Exports by Crude Stream"
+        return fig, title
 
     @callback(
         Output("global-exports-stream-filter", "value"),
@@ -898,15 +1204,95 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Output("global-exports-table", "data"),
         Input("current-submenu", "data"),
         Input("global-exports-year-display", "children"),
+        Input("global-exports-stream-filter", "value"),
     )
     def update_table(
         submenu: str,
         year_str: Optional[str],
+        stream_filter_state: Optional[Sequence[str]],
     ):
         """Update table data."""
         if submenu != "global-exports":
             return []
         year_value = _parse_year_value(year_str)
+        # By default, show all countries (no country filter)
         filtered = _filter_table_data(year_value, None)
+        # When streams are filtered (not all streams selected), filter by selected streams
+        # This automatically shows only countries that have data for those streams
+        if stream_filter_state:
+            # Check if all streams are selected (default state)
+            all_streams_selected = (
+                set(stream_filter_state) == set(STREAM_ORDER)
+                if isinstance(stream_filter_state, (list, tuple))
+                else False
+            )
+            # Only filter if not all streams are selected (user has filtered)
+            if not all_streams_selected:
+                filtered = filtered[filtered["crude"].isin(stream_filter_state)]
         return _prepare_table_records(filtered)
+
+    @callback(
+        Output("global-exports-play-direction", "data"),
+        Input("global-exports-year-play", "n_clicks"),
+        Input("global-exports-year-stop", "n_clicks"),
+        Input("global-exports-year-reverse", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def update_play_direction(play_clicks, stop_clicks, reverse_clicks):
+        """Set play direction for year animation."""
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            return dash.no_update
+        trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+        if trigger == "global-exports-year-play":
+            return "forward"
+        if trigger == "global-exports-year-reverse":
+            return "reverse"
+        return "stop"
+
+    @callback(
+        Output("global-exports-year-interval", "disabled"),
+        Input("global-exports-play-direction", "data"),
+    )
+    def toggle_year_interval(direction):
+        """Enable or disable animation interval."""
+        return direction == "stop"
+
+    @callback(
+        Output("global-exports-year-slider", "value", allow_duplicate=True),
+        Output("global-exports-year-input", "value", allow_duplicate=True),
+        Output("global-exports-year-display", "children", allow_duplicate=True),
+        Input("global-exports-year-interval", "n_intervals"),
+        State("global-exports-play-direction", "data"),
+        State("global-exports-year-display", "children"),
+        State("global-exports-year-slider", "min"),
+        State("global-exports-year-slider", "max"),
+        prevent_initial_call=True,
+    )
+    def animate_year(
+        interval_count,
+        direction,
+        current_year,
+        min_year,
+        max_year,
+    ):
+        """Advance or reverse year based on play direction."""
+        del interval_count
+        if direction not in {"forward", "reverse"}:
+            return dash.no_update, dash.no_update, dash.no_update
+        min_year = min_year or YEAR_MIN
+        max_year = max_year or YEAR_MAX
+        try:
+            current_year_int = int(current_year) if current_year else max_year
+        except (TypeError, ValueError):
+            current_year_int = max_year
+        if direction == "forward":
+            new_year = current_year_int + 1
+            if new_year > max_year:
+                new_year = min_year
+        else:
+            new_year = current_year_int - 1
+            if new_year < min_year:
+                new_year = max_year
+        return new_year, new_year, str(new_year)
 
