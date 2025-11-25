@@ -502,8 +502,10 @@ def create_layout():
                         "Global Exports",
                         style={
                             "marginBottom": "20px",
-                            "color": "#d35400",
+                            "color": "#fe5000",
                             "textAlign": "center",
+                            "fontSize": "19px",
+                            "fontWeight": "bold",
                         },
                     ),
                 ]
@@ -631,7 +633,12 @@ def create_layout():
                         [
                             html.H4(
                                 "Russia Annual Exports by Crude Stream",
-                                style={"color": "#1b365d"},
+                                style={
+                                    "color": "#fe5000",
+                                    "textAlign": "center",
+                                    "fontWeight": "bold",
+                                    "fontSize": "19px",
+                                },
                             ),
                             dcc.Graph(
                                 id="global-exports-stream-chart",
@@ -699,7 +706,10 @@ def create_layout():
                         style={
                             "marginTop": "30px",
                             "marginBottom": "10px",
-                            "color": "#1b365d",
+                            "color": "#fe5000",
+                            "textAlign": "center",
+                            "fontWeight": "bold",
+                            "fontSize": "19px",
                         },
                     ),
                     dash_table.DataTable(
