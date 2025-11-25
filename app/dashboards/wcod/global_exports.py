@@ -4,6 +4,7 @@ Replicates Tableau Global Crude Exports dashboard with local CSV data
 """
 from __future__ import annotations
 
+import json
 import os
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -12,6 +13,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from dash import (
+    ALL,
     Input,
     Output,
     State,
@@ -143,6 +145,7 @@ if 2023 in UNIQUE_YEARS:
 else:
     DEFAULT_YEAR = UNIQUE_YEARS[-1] if UNIQUE_YEARS else None
 DEFAULT_YEAR_STR = str(DEFAULT_YEAR) if DEFAULT_YEAR is not None else ""
+YEAR_AXIS_FULL = [str(year) for year in range(2006, 2025)]
 
 if not CHART_DF.empty:
     CHART_MIN_YEAR = int(CHART_DF["year"].min())
@@ -151,15 +154,25 @@ else:
     CHART_MIN_YEAR = DEFAULT_YEAR or 0
     CHART_MAX_YEAR = DEFAULT_YEAR or 0
 
-DEFAULT_CHART_RANGE = (
-    max(CHART_MIN_YEAR, CHART_MAX_YEAR - 9),
-    CHART_MAX_YEAR,
-) if CHART_MAX_YEAR else (CHART_MIN_YEAR, CHART_MAX_YEAR)
-
 COUNTRY_OPTIONS = sorted(TABLE_DF["country"].unique().tolist()) if not TABLE_DF.empty else []
 DEFAULT_COUNTRY = ["Russia"] if "Russia" in COUNTRY_OPTIONS else (COUNTRY_OPTIONS[:1] if COUNTRY_OPTIONS else [])
-STREAM_ORDER = CHART_DF["stream"].dropna().unique().tolist() if not CHART_DF.empty else []
-COLOR_PALETTE = [
+
+STREAM_DISPLAY = [
+    ("Arco", "#0069aa"),
+    ("Espo Blend", "#20295e"),
+    ("Novy Port", "#a95b41"),
+    ("Other Crudes - Russia", "#a95b41"),
+    ("Sakhalin Blend", "#4e83bb"),
+    ("Siberian Light", "#313849"),
+    ("Sokol", "#cb4515"),
+    ("Urals", "#826ecc"),
+    ("Varandey", "#a6a6a6"),
+    ("Vityaz", "#0069aa"),
+    ("YK Blend", "#595959"),
+]
+STREAM_ORDER = [name for name, _ in STREAM_DISPLAY]
+STREAM_COLOR_MAP = {name: color for name, color in STREAM_DISPLAY}
+FALLBACK_COLORS = [
     "#f15a24",
     "#1b365d",
     "#5b9bd5",
@@ -171,32 +184,62 @@ COLOR_PALETTE = [
     "#cb6ce6",
     "#ffa600",
 ]
-STREAM_COLOR_MAP = {
-    stream: COLOR_PALETTE[idx % len(COLOR_PALETTE)]
-    for idx, stream in enumerate(STREAM_ORDER)
-}
 
-TABLE_COLUMNS = [
-    {"name": "Country", "id": "country"},
-    {"name": "Crude Stream", "id": "crude"},
-    {"name": "Year", "id": "year"},
-    {"name": "Volume (‘000 b/d)", "id": "value", "type": "numeric", "format": {"specifier": ",.0f"}},
+YEAR_COLUMNS = sorted(TABLE_DF["year"].unique().tolist(), reverse=True) if not TABLE_DF.empty else []
+YEAR_COLUMN_IDS = [str(year) for year in YEAR_COLUMNS]
+TABLE_STATIC_COLUMNS = [
+    {"name": "", "id": "country"},
+    {"name": "", "id": "crude"},
 ]
+TABLE_YEAR_COLUMNS = [
+    {"name": str(year), "id": str(year), "type": "numeric", "format": {"specifier": ",.0f"}}
+    for year in YEAR_COLUMNS
+]
+TABLE_COLUMNS = TABLE_STATIC_COLUMNS + TABLE_YEAR_COLUMNS
 
 
-def _build_slider_marks(years: Sequence[int]) -> Dict[int, str]:
-    marks: Dict[int, str] = {}
-    if not years:
-        return marks
-    for idx, year in enumerate(sorted(years)):
-        if idx == 0 or idx == len(years) - 1 or idx % 3 == 0:
-            marks[int(year)] = str(int(year))
-    return marks
-
-
-SLIDER_MARKS = _build_slider_marks(
-    CHART_DF["year"].unique().tolist() if not CHART_DF.empty else []
-)
+def _stream_filter_options() -> List[Dict[str, html.Span]]:
+    """Create checklist options with colored swatches."""
+    options: List[Dict[str, html.Span]] = []
+    for name, color in STREAM_DISPLAY:
+        label = html.Span(
+            [
+                html.Span(
+                    "",
+                    style={
+                        "display": "inline-block",
+                        "width": "14px",
+                        "height": "14px",
+                        "backgroundColor": color,
+                        "borderRadius": "2px",
+                        "marginRight": "10px",
+                        "border": "1px solid #cfd8e3",
+                        "boxShadow": "0 0 2px rgba(0,0,0,0.1)",
+                    },
+                ),
+                html.Button(
+                    name,
+                    id={"type": "stream-isolate-button", "stream": name},
+                    n_clicks=0,
+                    type="button",
+                    style={
+                        "border": "none",
+                        "background": "transparent",
+                        "padding": "0",
+                        "margin": "0",
+                        "textAlign": "left",
+                        "color": "#1b365d",
+                        "fontWeight": "600",
+                        "fontSize": "13px",
+                        "cursor": "pointer",
+                        "userSelect": "none",
+                    },
+                ),
+            ],
+            style={"display": "flex", "alignItems": "center", "width": "100%"},
+        )
+        options.append({"label": label, "value": name})
+    return options
 
 
 def _normalize_year(year: Optional[int]) -> Optional[int]:
@@ -217,17 +260,6 @@ def _parse_year_value(value: Optional[str]) -> Optional[int]:
         return DEFAULT_YEAR
 
 
-def _normalize_year_range(
-    value: Optional[Sequence[int]],
-) -> Tuple[int, int]:
-    if not value:
-        return DEFAULT_CHART_RANGE
-    start, end = value
-    if start is None or end is None:
-        return DEFAULT_CHART_RANGE
-    return int(start), int(end)
-
-
 def _filter_table_data(
     year: Optional[int],
     countries: Optional[Sequence[str]],
@@ -235,14 +267,34 @@ def _filter_table_data(
     if TABLE_DF.empty:
         return pd.DataFrame(columns=["country", "crude", "year", "value"])
     df = TABLE_DF.copy()
-    normalized_year = _normalize_year(year)
-    if normalized_year is not None:
-        df = df[df["year"] == normalized_year]
     if countries:
         if isinstance(countries, str):
             countries = [countries]
         df = df[df["country"].isin(countries)]
     return df.sort_values(["country", "crude"])
+
+
+def _prepare_table_records(df: pd.DataFrame) -> List[Dict[str, object]]:
+    """Pivot yearly values into wide format for the data table."""
+    if df.empty:
+        return []
+    years = YEAR_COLUMNS or sorted(df["year"].unique(), reverse=True)
+    pivot = (
+        df.pivot_table(index=["country", "crude"], columns="year", values="value", aggfunc="sum")
+        .reindex(columns=years, fill_value=None)
+        .reset_index()
+    )
+    pivot.columns = [str(col) for col in pivot.columns]
+    pivot = pivot.sort_values(["country", "crude"]).reset_index(drop=True)
+    records = pivot.to_dict("records")
+    last_country = None
+    for row in records:
+        country_value = row.get("country")
+        if country_value == last_country:
+            row["country"] = ""
+        else:
+            last_country = country_value
+    return records
 
 
 def _empty_figure(message: str, height: int = 420) -> go.Figure:
@@ -333,48 +385,101 @@ def _build_map_figure(year: Optional[int]) -> go.Figure:
     return fig
 
 
-def _build_chart_figure(year_range: Tuple[int, int]) -> go.Figure:
+def _build_chart_figure(selected_streams: Optional[Sequence[str]] = None) -> go.Figure:
     if CHART_DF.empty:
         return _empty_figure("No chart data available")
-    start, end = year_range
+    streams = (
+        [s for s in STREAM_ORDER if s in selected_streams]
+        if selected_streams
+        else STREAM_ORDER
+    )
+    if not streams:
+        return _empty_figure("Select at least one stream")
     df = CHART_DF[
-        (CHART_DF["year"] >= start) & (CHART_DF["year"] <= end)
-    ]
+        (CHART_DF["year"].between(2006, 2024))
+        & (CHART_DF["stream"].isin(streams))
+    ].copy()
+    if "country" in df.columns:
+        df = df[df["country"].str.lower() == "russia"]
     if df.empty:
         return _empty_figure("No data in the selected range")
-    fig = px.area(
-        df,
-        x="year",
-        y="value",
-        color="stream",
-        category_orders={"stream": STREAM_ORDER},
-        color_discrete_map=STREAM_COLOR_MAP,
+    country_label = (
+        df["country"].dropna().iloc[0]
+        if "country" in df.columns and not df["country"].dropna().empty
+        else "Russia"
     )
+    agg = df.groupby(["year", "stream"])["value"].sum().reset_index()
+    agg["year"] = agg["year"].astype(int)
+    agg = agg[(agg["year"] >= 2006) & (agg["year"] <= 2024)].copy()
+    agg = agg.sort_values(["year", "stream"])
+    available_streams = [s for s in STREAM_ORDER if s in agg["stream"].unique()]
+    if not available_streams:
+        return _empty_figure("No stream data available")
+    complete_index = pd.MultiIndex.from_product(
+        (YEAR_AXIS_FULL, available_streams), names=["year", "stream"]
+    )
+    agg = (
+        agg.assign(year=agg["year"].astype(str))
+        .set_index(["year", "stream"])
+        .reindex(complete_index, fill_value=0)
+        .reset_index()
+    )
+    fig = go.Figure()
+    fallback_idx = 0
+    years_sorted = YEAR_AXIS_FULL
+    for stream in available_streams:
+        stream_df = agg[agg["stream"] == stream]
+        if stream_df.empty:
+            continue
+        color = STREAM_COLOR_MAP.get(stream)
+        if not color:
+            color = FALLBACK_COLORS[fallback_idx % len(FALLBACK_COLORS)]
+            fallback_idx += 1
+        fig.add_bar(
+            x=stream_df["year"],
+            y=stream_df["value"],
+            name=stream,
+            marker_color=color,
+            hovertemplate=(
+                "<span style='color:#1b365d; font-weight:300;'>Country:</span> "
+                f"<span style='color:#1b365d; font-weight:700;'>{country_label}</span><br>"
+                "<span style='color:#1b365d; font-weight:300;'>Year:</span> "
+                "<span style='color:#1b365d; font-weight:700;'>%{x}</span><br>"
+                "<span style='color:#1b365d; font-weight:300;'>Exports Volume:</span> "
+                "<span style='color:#1b365d; font-weight:700;'>%{y:,.0f} ’000 b/d</span>"
+                "<extra></extra>"
+            ),
+        )
     fig.update_layout(
         height=460,
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=0, r=0, t=10, b=40),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=-0.3,
-            x=0,
-            font=dict(size=11),
+        margin=dict(l=20, r=20, t=40, b=40),
+        barmode="stack",
+        showlegend=False,
+        xaxis=dict(
+            title="",
+            tickformat="d",
+            categoryorder="array",
+            categoryarray=years_sorted,
         ),
-        hovermode="x unified",
-        xaxis=dict(title="", tickformat="d"),
-        yaxis=dict(title="‘000 b/d", separatethousands=True),
+        yaxis=dict(title="Export Volume ('000 b/d)", separatethousands=True),
+        hovermode="closest",
+        hoverlabel=dict(
+            bgcolor="#ffffff",
+            font=dict(color="#1b365d", size=12, family="Lato, Arial, sans-serif"),
+            bordercolor="#dfe3eb",
+        ),
     )
     return fig
 
 
-INITIAL_TABLE_DF = _filter_table_data(DEFAULT_YEAR, DEFAULT_COUNTRY)
+INITIAL_TABLE_RAW = _filter_table_data(DEFAULT_YEAR, None)
+INITIAL_TABLE_DATA = _prepare_table_records(INITIAL_TABLE_RAW)
 
 
 def create_layout():
     """Create the Global Exports layout."""
-    chart_range = DEFAULT_CHART_RANGE
     current_year_value = DEFAULT_YEAR or YEAR_MAX
     slider_disabled = not UNIQUE_YEARS
     slider_marks = {year: "" for year in UNIQUE_YEARS} if UNIQUE_YEARS else {}
@@ -385,20 +490,22 @@ def create_layout():
         [
             html.Div(
                 [
-                    html.H3(
-                        "Global Exports",
-                        style={
-                            "marginBottom": "4px",
-                            "color": "#d35400",
-                            "textAlign": "center",
-                        },
-                    ),
                     html.P(
                         "Click on a Country from the map to view annual exports volume below:",
                         style={
                             "textAlign": "left",
                             "color": "#6c757d",
-                            "marginBottom": "30px",
+                            "marginBottom": "10px",
+                        },
+                    ),
+                    html.H3(
+                        "Global Exports",
+                        style={
+                            "marginBottom": "20px",
+                            "color": "#fe5000",
+                            "textAlign": "center",
+                            "fontSize": "19px",
+                            "fontWeight": "bold",
                         },
                     ),
                 ]
@@ -513,17 +620,6 @@ def create_layout():
                                 style={"display": "none"},
                             ),
                             html.Br(),
-                            html.Label("Country filter"),
-                            dcc.Dropdown(
-                                id="global-exports-country-filter",
-                                options=[
-                                    {"label": country, "value": country}
-                                    for country in COUNTRY_OPTIONS
-                                ],
-                                value=DEFAULT_COUNTRY if DEFAULT_COUNTRY else None,
-                                multi=True,
-                                placeholder="All countries",
-                            ),
                         ],
                         className="col-md-3",
                         style={"padding": "10px"},
@@ -533,31 +629,74 @@ def create_layout():
             ),
             html.Div(
                 [
-                    html.H4(
-                        "Russia Annual Exports by Crude Stream",
-                        style={"color": "#1b365d", "marginTop": "30px"},
+                    html.Div(
+                        [
+                            html.H4(
+                                "Russia Annual Exports by Crude Stream",
+                                style={
+                                    "color": "#fe5000",
+                                    "textAlign": "center",
+                                    "fontWeight": "bold",
+                                    "fontSize": "19px",
+                                },
+                            ),
+                            dcc.Graph(
+                                id="global-exports-stream-chart",
+                                figure=_build_chart_figure(STREAM_ORDER),
+                            ),
+                        ],
+                        className="col-md-9",
+                        style={"padding": "15px"},
                     ),
                     html.Div(
                         [
-                            html.Label("Year range", style={"fontWeight": "bold"}),
-                            dcc.RangeSlider(
-                                id="global-exports-year-range",
-                                min=CHART_MIN_YEAR,
-                                max=CHART_MAX_YEAR,
-                                value=list(chart_range),
-                                marks=SLIDER_MARKS,
-                                allowCross=False,
-                                tooltip={"placement": "bottom", "always_visible": False},
-                                updatemode="mouseup",
+                            dcc.Checklist(
+                                id="global-exports-stream-filter",
+                                options=_stream_filter_options(),
+                                value=STREAM_ORDER,
+                                style={
+                                    "display": "flex",
+                                    "flexDirection": "column",
+                                    "gap": "2px",
+                                    "marginTop": "2px",
+                                },
+                                labelStyle={
+                                    "display": "flex",
+                                    "alignItems": "center",
+                                    "gap": "2px",
+                                    "padding": "2px 2px",
+                                    "borderRadius": "4px",
+                                    "border": "0px solid #dfe3eb",
+                                    "backgroundColor": "#ffffff",
+                                    "width": "100%",
+                                    "boxShadow": "0 1px 2px rgba(0,0,0,0.05)",
+                                    "cursor": "pointer",
+                                    "transition": "background-color 0.2s ease, border-color 0.2s ease",
+                                    "userSelect": "none",
+                                },
+                                inputStyle={
+                                    "marginRight": "12px",
+                                    "width": "18px",
+                                    "height": "18px",
+                                    "cursor": "pointer",
+                                },
                             ),
                         ],
-                        style={"margin": "10px 0 20px"},
-                    ),
-                    dcc.Graph(
-                        id="global-exports-stream-chart",
-                        figure=_build_chart_figure(chart_range),
+                        className="col-md-3",
+                        style={
+                            "padding": "25px 20px",
+                            "border": "0px solid #dfe3eb",
+                            "borderRadius": "6px",
+                            "backgroundColor": "#f8f9fb",
+                            "height": "100%",
+                            "maxHeight": "520px",
+                            "overflowY": "auto",
+                            "boxShadow": "0 2px 6px rgba(0,0,0,0.05)",
+                            "marginLeft": "0",
+                        },
                     ),
                 ],
+                className="row",
                 style={"marginTop": "30px"},
             ),
             html.Div(
@@ -567,39 +706,78 @@ def create_layout():
                         style={
                             "marginTop": "30px",
                             "marginBottom": "10px",
-                            "color": "#1b365d",
+                            "color": "#fe5000",
+                            "textAlign": "center",
+                            "fontWeight": "bold",
+                            "fontSize": "19px",
                         },
                     ),
                     dash_table.DataTable(
                         id="global-exports-table",
                         columns=TABLE_COLUMNS,
-                        data=INITIAL_TABLE_DF.to_dict("records"),
-                        page_action="native",
-                        page_size=25,
+                        data=INITIAL_TABLE_DATA,
                         sort_action="native",
+                        page_action="none",
                         style_table={
                             "overflowX": "auto",
+                            "overflowY": "auto",
                             "backgroundColor": "white",
+                            "maxHeight": "520px",
+                            "border": "1px solid #e6e9ef",
                         },
                         style_cell={
-                            "textAlign": "left",
                             "fontSize": "12px",
-                            "padding": "6px",
+                            "padding": "5px 8px",
                             "fontFamily": "Lato, Arial, sans-serif",
+                            "border": "1px solid #e6e9ef",
                         },
+                        style_cell_conditional=[
+                            {
+                                "if": {"column_id": "country"},
+                                "width": "160px",
+                                "fontWeight": "600",
+                                "color": "#1b365d",
+                                "textAlign": "left",
+                            },
+                            {
+                                "if": {"column_id": "crude"},
+                                "width": "220px",
+                                "color": "#1b365d",
+                                "textAlign": "left",
+                            },
+                        ]
+                        + [
+                            {
+                                "if": {"column_id": col_id},
+                                "textAlign": "right",
+                                "width": "70px",
+                            }
+                            for col_id in YEAR_COLUMN_IDS
+                        ],
                         style_header={
                             "backgroundColor": "#f0f2f5",
-                            "fontWeight": "bold",
+                            "fontWeight": "600",
                             "color": "#1b365d",
+                            "textAlign": "center",
+                            "border": "1px solid #dfe3eb",
                         },
                         style_data_conditional=[
                             {
                                 "if": {"row_index": "odd"},
                                 "backgroundColor": "#f9fbfd",
                             }
+                        ]
+                        + [
+                            {
+                                "if": {"column_id": col_id},
+                                "color": "#1b365d",
+                            }
+                            for col_id in YEAR_COLUMN_IDS
                         ],
                     ),
-                ]
+                ],
+                className="col-md-9",
+                style={"padding": "15px"},
             ),
             html.P(
                 "Source: Energy Intelligence (Global Crude Exports dashboard).",
@@ -613,7 +791,7 @@ def create_layout():
 
 def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     """Register callbacks for the Global Exports view."""
-
+    
     @callback(
         Output("global-exports-year-input", "value"),
         Output("global-exports-year-slider", "value"),
@@ -684,48 +862,51 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     @callback(
         Output("global-exports-stream-chart", "figure"),
         Input("current-submenu", "data"),
-        Input("global-exports-year-range", "value"),
+        Input("global-exports-stream-filter", "value"),
     )
-    def update_chart(submenu: str, year_range: Sequence[int]):
+    def update_chart(submenu: str, streams: Optional[Sequence[str]]):
         """Update stacked area chart."""
         if submenu != "global-exports":
             return _empty_figure("")
-        normalized_range = _normalize_year_range(year_range)
-        return _build_chart_figure(normalized_range)
+        return _build_chart_figure(streams)
+
+    @callback(
+        Output("global-exports-stream-filter", "value"),
+        Input({"type": "stream-isolate-button", "stream": ALL}, "n_clicks"),
+        State("global-exports-stream-filter", "value"),
+        prevent_initial_call=True,
+    )
+    def isolate_stream(_buttons, current_value):
+        """Single-click a stream name to solo that series."""
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            return dash.no_update
+        triggered = ctx.triggered[0]["prop_id"].split(".")[0]
+        try:
+            stream_id = json.loads(triggered)
+            stream_name = stream_id.get("stream")
+        except (ValueError, TypeError, AttributeError):
+            stream_name = None
+        if not stream_name:
+            return dash.no_update
+        current_value = current_value or STREAM_ORDER
+        if isinstance(current_value, list) and len(current_value) == 1 and current_value[0] == stream_name:
+            return STREAM_ORDER
+        return [stream_name]
 
     @callback(
         Output("global-exports-table", "data"),
         Input("current-submenu", "data"),
         Input("global-exports-year-display", "children"),
-        Input("global-exports-country-filter", "value"),
     )
     def update_table(
         submenu: str,
         year_str: Optional[str],
-        countries: Optional[Sequence[str]],
     ):
         """Update table data."""
         if submenu != "global-exports":
             return []
         year_value = _parse_year_value(year_str)
-        filtered = _filter_table_data(year_value, countries)
-        return filtered.to_dict("records")
-
-    @callback(
-        Output("global-exports-country-filter", "value"),
-        Input("global-exports-map", "clickData"),
-        State("global-exports-country-filter", "options"),
-        prevent_initial_call=True,
-    )
-    def sync_country_from_map(click_data, options):
-        """When a country is clicked on the map, update the dropdown selection."""
-        if not click_data or not click_data.get("points"):
-            return dash.no_update
-        country = click_data["points"][0].get("location") or click_data["points"][0].get("text")
-        if not country:
-            return dash.no_update
-        valid_values = {opt["value"] for opt in (options or [])}
-        if country not in valid_values:
-            return dash.no_update
-        return [country]
+        filtered = _filter_table_data(year_value, None)
+        return _prepare_table_records(filtered)
 
