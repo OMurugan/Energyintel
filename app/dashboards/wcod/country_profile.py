@@ -13,12 +13,12 @@ from datetime import datetime
 from app import create_dash_app
 from app.database import execute_query
 
-# CSV paths
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Country_Profile')
-MAP_CSV = os.path.join(DATA_DIR, 'Map_data.csv')
-MONTHLY_PRODUCTION_CSV = os.path.join(DATA_DIR, 'Monthly_Production.csv')
-PORT_DETAIL_CSV = os.path.join(DATA_DIR, 'Port-Detail_data.csv')
-KEY_FIGURES_CSV = os.path.join(DATA_DIR, 'Key Figures_data.csv')
+# # CSV paths
+# DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Country_Profile')
+# MAP_CSV = os.path.join(DATA_DIR, 'Map_data.csv')
+# MONTHLY_PRODUCTION_CSV = os.path.join(DATA_DIR, 'Monthly_Production.csv')
+# PORT_DETAIL_CSV = os.path.join(DATA_DIR, 'Port-Detail_data.csv')
+# KEY_FIGURES_CSV = os.path.join(DATA_DIR, 'Key Figures_data.csv')
 
 # Load map data from database
 try:
@@ -230,26 +230,26 @@ except Exception as e:
     country_list = []
     default_country = None
 
-try:
-    port_df = pd.read_csv(PORT_DETAIL_CSV, quotechar='"', skipinitialspace=True)
-    port_df.columns = port_df.columns.str.strip()
-    # Clean up port names (remove quotes if present)
-    if 'Port Name' in port_df.columns:
-        port_df['Port Name'] = port_df['Port Name'].astype(str).str.strip().str.strip('"')
-except Exception as e:
-    print(f"Error loading port data: {e}")
-    import traceback
-    traceback.print_exc()
-    port_df = pd.DataFrame()
+# try:
+#     port_df = pd.read_csv(PORT_DETAIL_CSV, quotechar='"', skipinitialspace=True)
+#     port_df.columns = port_df.columns.str.strip()
+#     # Clean up port names (remove quotes if present)
+#     if 'Port Name' in port_df.columns:
+#         port_df['Port Name'] = port_df['Port Name'].astype(str).str.strip().str.strip('"')
+# except Exception as e:
+#     print(f"Error loading port data: {e}")
+#     import traceback
+#     traceback.print_exc()
+#     port_df = pd.DataFrame()
 
-try:
-    key_figures_df = pd.read_csv(KEY_FIGURES_CSV)
-    key_figures_df.columns = key_figures_df.columns.str.strip()
-except Exception as e:
-    print(f"Error loading key figures data: {e}")
-    import traceback
-    traceback.print_exc()
-    key_figures_df = pd.DataFrame()
+# try:
+#     key_figures_df = pd.read_csv(KEY_FIGURES_CSV)
+#     key_figures_df.columns = key_figures_df.columns.str.strip()
+# except Exception as e:
+#     print(f"Error loading key figures data: {e}")
+#     import traceback
+#     traceback.print_exc()
+#     key_figures_df = pd.DataFrame()
 
 # Create the layout for the Country Profile page
 def create_layout(server):
