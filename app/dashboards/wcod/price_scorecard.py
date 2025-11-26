@@ -56,13 +56,30 @@ def load_csv_data(csv_filename):
     # Row 1: Country
     # Row 2: Crude type
     # Row 3: Pricing basis
+    # Row 4: Additional level (for Price Formula - 5th header)
     destination_row = raw.iloc[0].fillna("").astype(str).str.strip().tolist()
     country_row = raw.iloc[1].fillna("").astype(str).str.strip().tolist()
     crude_row = raw.iloc[2].fillna("").astype(str).str.strip().tolist()
     pricing_row = raw.iloc[3].fillna("").astype(str).str.strip().tolist()
     
-    # Data starts from row index 4
-    df = raw.iloc[4:].reset_index(drop=True)
+    # Check if there's a 5th header row (for Price Formula)
+    has_fifth_level = False
+    additional_row = []
+    # Price Formula CSV has 5 header levels
+    if 'Price_Formula' in csv_filename or 'Price Formula' in csv_filename:
+        if len(raw) > 4:
+            # Row 4 is the 5th header level for Price Formula
+            has_fifth_level = True
+            additional_row = raw.iloc[4].fillna("").astype(str).str.strip().tolist()
+            # Data starts from row index 5
+            df = raw.iloc[5:].reset_index(drop=True)
+        else:
+            # Data starts from row index 4
+            df = raw.iloc[4:].reset_index(drop=True)
+    else:
+        # Other CSVs have 4 header levels
+        # Data starts from row index 4
+        df = raw.iloc[4:].reset_index(drop=True)
     
     # First two columns are Year and Month (no headers in header rows)
     if len(df.columns) < 2:
@@ -154,12 +171,18 @@ def load_csv_data(csv_filename):
         # Add right-align styling for numeric columns in style_cell_conditional
         # This will be handled in the layout
         
+        # Get additional level if exists
+        additional = ""
+        if has_fifth_level and idx < len(additional_row):
+            additional = additional_row[idx].strip() if additional_row[idx] else ""
+        
         column_info.append({
             "id": col_id,
             "destination": dest,
             "country": country,
             "crude": crude,
-            "pricing": pricing
+            "pricing": pricing,
+            "additional": additional
         })
     
     # Rename data columns to match column IDs
@@ -179,6 +202,349 @@ def load_csv_data(csv_filename):
     return df, columns, column_info
 
 
+def build_html_table(df, column_info):
+    """Build HTML table with 4-level headers"""
+    if df is None or df.empty or not column_info:
+        return html.Div("No data available")
+    
+    # Extract header information from column_info in order
+    headers_data = []
+    has_additional_level = False
+    for info in column_info:
+        additional = info.get('additional', '').strip()
+        if additional:
+            has_additional_level = True
+        headers_data.append({
+            'id': info['id'],
+            'destination': info.get('destination', '').strip(),
+            'country': info.get('country', '').strip(),
+            'crude': info.get('crude', '').strip(),
+            'pricing': info.get('pricing', '').strip(),
+            'additional': additional
+        })
+    
+    # Determine number of header rows (4 or 5)
+    num_header_rows = 5 if has_additional_level else 4
+    
+    # Build header rows by calculating colspans
+    # Row 1: Destination/Region
+    row1_cells = [
+        html.Th("", rowSpan=num_header_rows, style={
+            'position': 'sticky',
+            'left': 0,
+            'zIndex': 5,
+            'backgroundColor': 'white',
+            'border': '1px solid #333',
+            'borderRight': 'none',
+            'padding': '8px',
+            'textAlign': 'center',
+            'verticalAlign': 'middle',
+            'fontWeight': 'bold',
+            'fontSize': '15px',
+            'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
+        }),
+        html.Th("", rowSpan=num_header_rows, style={
+            'position': 'sticky',
+            'zIndex': 5,
+            'backgroundColor': 'white',
+            'border': '1px solid #333',
+            'borderLeft': 'none',
+            'padding': '8px',
+            'textAlign': 'center',
+            'verticalAlign': 'middle',
+            'fontWeight': 'bold',
+            'fontSize': '13px',
+            'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
+        })
+    ]
+    
+    # Calculate colspans for destination
+    i = 0
+    while i < len(headers_data):
+        dest = headers_data[i]['destination']
+        if dest:
+            # Count consecutive columns with same destination
+            count = 0
+            j = i
+            while j < len(headers_data) and headers_data[j]['destination'] == dest:
+                count += 1
+                j += 1
+            row1_cells.append(html.Th(
+                dest,
+                colSpan=count,
+                style={
+                    'backgroundColor': 'white',
+                    'border': '1px solid #333',
+                    'padding': '8px',
+                    'textAlign': 'center',
+                    'verticalAlign': 'middle',
+                    'fontWeight': 'bold',
+                    'fontSize': '15px',
+                    'color': '#fe5000',
+                    'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
+                }
+            ))
+            i = j
+        else:
+            i += 1
+    
+    # Row 2: Country
+    row2_cells = []
+    i = 0
+    while i < len(headers_data):
+        country = headers_data[i]['country']
+        if country:
+            count = 0
+            j = i
+            while j < len(headers_data) and headers_data[j]['country'] == country:
+                count += 1
+                j += 1
+            row2_cells.append(html.Th(
+                country,
+                colSpan=count,
+                style={
+                    'backgroundColor': 'white',
+                    'border': '1px solid #333',
+                    'padding': '8px',
+                    'textAlign': 'center',
+                    'verticalAlign': 'middle',
+                    'fontWeight': 'bold',
+                    'fontSize': '13px',
+                    'color': '#1b365d',
+                    'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
+                }
+            ))
+            i = j
+        else:
+            i += 1
+    
+    # Row 3: Crude type
+    row3_cells = []
+    i = 0
+    while i < len(headers_data):
+        crude = headers_data[i]['crude']
+        if crude:
+            count = 0
+            j = i
+            while j < len(headers_data) and headers_data[j]['crude'] == crude:
+                count += 1
+                j += 1
+            row3_cells.append(html.Th(
+                crude,
+                colSpan=count,
+                style={
+                    'backgroundColor': 'white',
+                    'border': '1px solid #333',
+                    'padding': '8px',
+                    'textAlign': 'center',
+                    'verticalAlign': 'middle',
+                    'fontWeight': 'bold',
+                    'fontSize': '13px',
+                    'color': '#1b365d',
+                    'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
+                }
+            ))
+            i = j
+        else:
+            i += 1
+    
+    # Row 4: Pricing basis
+    row4_cells = []
+    for h in headers_data:
+        row4_cells.append(html.Th(
+            h['pricing'] if h['pricing'] else '',
+            style={
+                'backgroundColor': 'white',
+                'border': '1px solid #333',
+                'padding': '8px',
+                'textAlign': 'center',
+                'verticalAlign': 'middle',
+                'fontWeight': 'bold',
+                'fontSize': '13px',
+                'color': '#1b365d',
+                'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
+            }
+        ))
+    
+    # Row 5: Additional level (only for Price Formula with 5 headers)
+    row5_cells = []
+    if has_additional_level:
+        for h in headers_data:
+            row5_cells.append(html.Th(
+                h['additional'] if h['additional'] else '',
+                style={
+                    'backgroundColor': 'white',
+                    'border': '1px solid #333',
+                    'padding': '8px',
+                    'textAlign': 'center',
+                    'verticalAlign': 'middle',
+                    'fontWeight': 'bold',
+                    'fontSize': '13px',
+                    'color': '#1b365d',
+                    'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
+                }
+            ))
+    
+    header_rows = [
+        html.Tr(row1_cells),
+        html.Tr(row2_cells),
+        html.Tr(row3_cells),
+        html.Tr(row4_cells)
+    ]
+    
+    # Add row 5 if it exists
+    if has_additional_level:
+        header_rows.append(html.Tr(row5_cells))
+    
+    # Build data rows
+    data_rows = []
+    prev_year = None
+    year_end_indices = []  # Track last row of each year group
+    
+    # First pass: identify year boundaries
+    for idx, row in df.iterrows():
+        current_year = str(row['Year']).strip() if pd.notna(row['Year']) else ''
+        if current_year and current_year != prev_year and prev_year is not None:
+            # Previous row was the last of previous year
+            year_end_indices.append(idx - 1)
+        prev_year = current_year if current_year else prev_year
+    
+    # Mark the last row as end of last year group
+    if len(df) > 0:
+        year_end_indices.append(len(df) - 1)
+    
+    prev_year = None
+    
+    for idx, row in df.iterrows():
+        row_cells = []
+        is_year_end = idx in year_end_indices
+        
+        # Year column
+        year_val = str(row['Year']).strip() if pd.notna(row['Year']) else ''
+        # Remove decimal part if present (e.g., "2025.0" -> "2025")
+        if year_val:
+            try:
+                year_val = str(int(float(year_val)))
+            except (ValueError, TypeError):
+                pass  # Keep original value if conversion fails
+        if year_val == prev_year:
+            year_val = ''
+        else:
+            prev_year = year_val
+        
+        year_style = {
+            'position': 'sticky',
+            'left': 0,
+            'zIndex': 3,
+            'backgroundColor': '#ffffff' if idx % 2 == 0 else '#f8f9fa',
+            'padding': '8px',
+            'textAlign': 'left',
+            'fontWeight': 'bold',
+            'fontSize': '12px',
+            'color': '#1b365d',
+            'borderLeft': '1px solid #ddd',
+            'borderRight': '1px solid #ddd',
+            'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
+        }
+        # Only show top border for first row of year, bottom border for last row of year
+        if year_val != '':
+            year_style['borderTop'] = '1px solid #ddd'
+        else:
+            year_style['borderTop'] = 'none'
+        
+        if is_year_end:
+            year_style['borderBottom'] = '2px solid #ddd'
+        else:
+            year_style['borderBottom'] = 'none'
+        
+        row_cells.append(html.Td(year_val, style=year_style))
+        
+        # Month column
+        month_val = str(row['Month']).strip() if pd.notna(row['Month']) else ''
+        month_style = {
+            'position': 'sticky',
+            'zIndex': 3,
+            'backgroundColor': '#ffffff' if idx % 2 == 0 else '#f8f9fa',
+            'padding': '8px',
+            'textAlign': 'left',
+            'fontWeight': 'bold',
+            'fontSize': '12px',
+            'color': '#1b365d',
+            'borderRight': '1px solid #ddd',
+            'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
+        }
+        if year_val != '':
+            month_style['borderTop'] = '1px solid #ddd'
+        else:
+            month_style['borderTop'] = 'none'
+        
+        if is_year_end:
+            month_style['borderBottom'] = '2px solid #ddd'
+        else:
+            month_style['borderBottom'] = 'none'
+        
+        row_cells.append(html.Td(month_val, style=month_style))
+        
+        # Data columns
+        for h in headers_data:
+            col_id = h['id']
+            if col_id in df.columns:
+                value = row[col_id]
+                if pd.isna(value) or value == '':
+                    display_value = ''
+                elif isinstance(value, (int, float)):
+                    display_value = f"{float(value):.2f}"
+                else:
+                    display_value = str(value)
+            else:
+                display_value = ''
+            
+            data_style = {
+                'padding': '8px',
+                'textAlign': 'right',
+                'fontSize': '12px',
+                'fontWeight': 'bold',
+                'color': '#1b365d',
+                'backgroundColor': '#ffffff' if idx % 2 == 0 else '#f8f9fa',
+                'borderRight': '1px solid #ddd',
+                'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
+            }
+            if year_val != '':
+                data_style['borderTop'] = '1px solid #ddd'
+            else:
+                data_style['borderTop'] = 'none'
+            
+            if is_year_end:
+                data_style['borderBottom'] = '2px solid #ddd'
+            else:
+                data_style['borderBottom'] = 'none'
+            
+            row_cells.append(html.Td(display_value, style=data_style))
+        
+        data_rows.append(html.Tr(row_cells))
+    
+    # Build complete table
+    table = html.Table([
+        html.Thead(header_rows),
+        html.Tbody(data_rows)
+    ], style={
+        'width': '100%',
+        'borderCollapse': 'collapse',
+        'border': '1px solid #ddd',
+        'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif',
+        'tableLayout': 'auto'
+    })
+    
+    return html.Div([
+        html.Div(table, style={
+            'overflowX': 'auto',
+            'overflowY': 'auto',
+            'maxHeight': '600px',
+            'width': '100%'
+        })
+    ], style={'width': '100%'})
+
+
 def create_layout():
     """Create the Price Scorecard layout with three tabs"""
     return html.Div([
@@ -192,64 +558,74 @@ def create_layout():
                     label="Costs to Refiners",
                     value="costs-to-refiners",
                     style={
-                        "backgroundColor": "#f8f9fa",
-                        "border": "2px solid #d35400",
+                        "backgroundColor": "white",
+                        "border": "3px solid rgb(254, 80, 0)",
                         "padding": "10px 20px",
                         "fontWeight": "bold",
-                        "color": "#d35400",
-                        "borderRadius": "5px 5px 0 0"
+                        "fontSize": "19px",
+                        "color": "rgb(78, 121, 167)",
+                        "borderRadius": "5px 5px 0 0",
+                        "marginRight": "10px"
                     },
                     selected_style={
-                        "backgroundColor": "#d35400",
-                        "color": "white",
-                        "border": "2px solid #d35400",
+                        "backgroundColor": "#f8f9fa",
+                        "color": "rgb(78, 121, 167)",
+                        "fontSize": "19px",
+                        "border": "3px solid rgb(254, 80, 0)",
                         "padding": "10px 20px",
                         "fontWeight": "bold",
-                        "borderRadius": "5px 5px 0 0"
+                        "borderRadius": "5px 5px 0 0",
+                        "marginRight": "10px"
                     }
                 ),
                 dcc.Tab(
                     label="Port of Loading",
                     value="port-of-loading",
                     style={
-                        "backgroundColor": "#f8f9fa",
-                        "border": "2px solid #d35400",
+                        "backgroundColor": "white",
+                        "border": "3px solid rgb(254, 80, 0)",
                         "padding": "10px 20px",
                         "fontWeight": "bold",
-                        "color": "#d35400",
-                        "borderRadius": "5px 5px 0 0"
+                        "color": "rgb(78, 121, 167)",
+                        "fontSize": "19px",
+                        "borderRadius": "5px 5px 0 0",
+                        "marginRight": "10px"
                     },
                     selected_style={
-                        "backgroundColor": "#d35400",
-                        "color": "white",
-                        "border": "2px solid #d35400",
+                        "backgroundColor": "#f8f9fa",
+                        "color": "rgb(78, 121, 167)",
+                        "fontSize": "19px",
+                        "border": "3px solid rgb(254, 80, 0)",
                         "padding": "10px 20px",
                         "fontWeight": "bold",
-                        "borderRadius": "5px 5px 0 0"
+                        "borderRadius": "5px 5px 0 0",
+                        "marginRight": "10px"
                     }
                 ),
                 dcc.Tab(
                     label="Price Formula",
                     value="price-formula",
                     style={
-                        "backgroundColor": "#f8f9fa",
-                        "border": "2px solid #d35400",
+                        "backgroundColor": "white",
+                        "border": "3px solid rgb(254, 80, 0)",
                         "padding": "10px 20px",
                         "fontWeight": "bold",
-                        "color": "#d35400",
+                        "color": "rgb(78, 121, 167)",
+                        "fontSize": "19px",
                         "borderRadius": "5px 5px 0 0"
                     },
                     selected_style={
-                        "backgroundColor": "#d35400",
-                        "color": "white",
-                        "border": "2px solid #d35400",
+                        "backgroundColor": "#f8f9fa",
+                        "color": "rgb(78, 121, 167)",
+                        "fontSize": "19px",
+                        "border": "3px solid rgb(254, 80, 0)",
                         "padding": "10px 20px",
                         "fontWeight": "bold",
                         "borderRadius": "5px 5px 0 0"
                     }
                 ),
             ],
-            style={"marginBottom": "10px", "display": "flex", "justifyContent": "center"}
+            style={"marginBottom": "10px", "display": "flex", "justifyContent": "center", "backgroundColor": "white"}
         ),
         
         # Dynamic title (will be updated by callback) - below tabs, left aligned
@@ -257,7 +633,7 @@ def create_layout():
             id="price-scorecard-title",
             children="PIW SCORECARD -- COSTS TO REFINERS OF KEY FORMULA PRICED CRUDE OILS IN PRIMARY WORLD MARKETS ($/bbl)",
             style={
-                'color': '#d35400',
+                'color': 'rgb(254, 80, 0)',
                 'textAlign': 'left',
                 'fontSize': '18px',
                 'fontWeight': 'bold',
@@ -275,170 +651,11 @@ def create_layout():
         dcc.Loading(
             id="price-scorecard-loading",
             type="circle",  # Loading spinner type
-            color="#d35400",  # Match the orange-red theme
+            color="rgb(254, 80, 0)",  # Match the orange-red theme
             children=[
                 html.Div(
                     id="price-scorecard-table-container",
-                    children=[
-        dash_table.DataTable(
-            id='price-scorecard-table',
-            style_table={
-                'overflowX': 'auto',
-                'width': 'auto',
-                'minWidth': '100%',
-                'border': '1px solid #ddd'
-            },
-            style_cell={
-                'textAlign': 'right',  # Default to right-align for numeric columns
-                'padding': '2px 8px',
-                'fontSize': '12px',
-                'fontFamily': 'Lato',
-                'whiteSpace': 'normal',
-                'height': 'auto',
-                'minWidth': '80px',
-                'width': 'auto'
-            },
-            style_cell_conditional=[
-                {
-                    'if': {'column_id': 'Year'},
-                    'textAlign': 'left',
-                    'minWidth': '60px',
-                    'width': '60px',
-                    'fontSize': '12px'
-                },
-                {
-                    'if': {'column_id': 'Month'},
-                    'textAlign': 'left',
-                    'minWidth': '80px',
-                    'width': '80px',
-                    'fontSize': '12px'
-                },
-                {
-                    'if': {'column_id': ['Year', 'Month']},
-                    'position': 'sticky',
-                    'left': 0,
-                    'zIndex': 1,
-                    'backgroundColor': 'white'
-                }
-            ],
-            style_data_conditional=[
-                # Striped table rows - even rows (light gray)
-                {
-                    'if': {'row_index': 'even'},
-                    'backgroundColor': '#f8f9fa'
-                },
-                # Striped table rows - odd rows (white)
-                {
-                    'if': {'row_index': 'odd'},
-                    'backgroundColor': '#ffffff'
-                },
-                # Year and Month columns - maintain white background for sticky columns
-                {
-                    'if': {'column_id': 'Year'},
-                    'backgroundColor': 'white',
-                    'fontWeight': 'bold',
-                    'textAlign': 'left'
-                },
-                {
-                    'if': {'column_id': 'Month'},
-                    'backgroundColor': 'white',
-                    'fontWeight': 'bold',
-                    'textAlign': 'left'
-                },
-                {
-                    'if': {'row_index': 'even', 'column_id': 'Year'},
-                    'backgroundColor': '#f8f9fa'
-                },
-                {
-                    'if': {'row_index': 'even', 'column_id': 'Month'},
-                    'backgroundColor': '#f8f9fa'
-                },
-                # Add border at the end of each year group
-                {
-                    'if': {
-                        'filter_query': '{_is_year_end} = True'
-                    },
-                    'borderBottom': '2px solid #ddd'
-                },
-                # Remove top border for Year column when it's empty (merged appearance)
-                {
-                    'if': {
-                        'filter_query': '{Year} = ""',
-                        'column_id': 'Year'
-                    },
-                    'borderTop': 'none',
-                    'backgroundColor': 'white'
-                },
-                {
-                    'if': {
-                        'filter_query': '{Year} = ""',
-                        'column_id': 'Year',
-                        'row_index': 'even'
-                    },
-                    'backgroundColor': '#f8f9fa'
-                },
-                # Remove top border for all columns when Year is empty (merged appearance)
-                {
-                    'if': {
-                        'filter_query': '{Year} = ""'
-                    },
-                    'borderTop': 'none'
-                }
-            ],
-            style_header={
-                'backgroundColor': 'white',
-                'fontWeight': 'bold',
-                'textAlign': 'center',
-                'border': '1px solid #ddd',
-                'color': '#1b365d',
-                'fontSize': '14px',
-                'height': '45px',
-                'verticalAlign': 'middle',
-            },
-            style_header_conditional=[
-                {
-                    'if': {'column_id': 'Year'},
-                    'position': 'sticky',
-                    'left': 0,
-                    'zIndex': 2,
-                    'backgroundColor': 'white',
-                    'fontSize': '14px',
-                    'padding': '2px 8px',
-                    'lineHeight': '14px'
-                },
-                {
-                    'if': {'column_id': 'Month'},
-                    'position': 'sticky',
-                    'left': 0,
-                    'zIndex': 2,
-                    'backgroundColor': 'white',
-                    'fontSize': '14px',
-                    'padding': '2px 8px',
-                    'lineHeight': '14px'
-                }
-            ],
-            style_data={
-                'border': '1px solid #ddd',
-                'fontFamily': 'Lato',
-                'fontSize': '12px',
-                'fontStyle': 'normal',
-                'fontWeight': 'bold',
-                'textDecoration': 'none',
-                'color': 'rgb(27, 54, 93)',
-                'textAlign': 'left',
-                'padding': '8px',
-                'maxHeight': '60px'
-            },
-            merge_duplicate_headers=True,
-            fixed_rows={'headers': True},
-            fixed_columns={'headers': True, 'data': 2},
-            sort_action='native',
-            css=[{
-                "selector": "th",
-                "rule": "padding-right: 25px !important;"
-            }]
-        )
-                    ],
+                    children=html.Div(id='price-scorecard-table'),
                     style={'display': 'none'}  # Hidden until tab is selected
                 )
             ]
@@ -463,8 +680,7 @@ def register_callbacks(dash_app, server):
     @callback(
         [Output('price-scorecard-title', 'children', allow_duplicate=True),
          Output('price-scorecard-table-container', 'style', allow_duplicate=True),
-         Output('price-scorecard-table', 'data', allow_duplicate=True),
-         Output('price-scorecard-table', 'columns', allow_duplicate=True)],
+         Output('price-scorecard-table', 'children', allow_duplicate=True)],
         Input('price-scorecard-tabs', 'value'),
         State('price-scorecard-previous-tab', 'data'),
         prevent_initial_call=True
@@ -474,22 +690,21 @@ def register_callbacks(dash_app, server):
         # Only clear if tab actually changed
         if previous_tab is not None and previous_tab != selected_tab:
             # Return empty data and hide container to immediately hide old table and title
-            return "", {'display': 'none'}, [], []
+            return "", {'display': 'none'}, html.Div()
         raise PreventUpdate
     
     # Main callback to load data
     @callback(
         [Output('price-scorecard-title', 'children'),
          Output('price-scorecard-table-container', 'style'),
-         Output('price-scorecard-table', 'data'),
-         Output('price-scorecard-table', 'columns')],
+         Output('price-scorecard-table', 'children')],
         Input('price-scorecard-tabs', 'value'),
         prevent_initial_call=False
     )
     def update_price_scorecard(selected_tab):
         """Update price scorecard table based on selected tab"""
         if not selected_tab or selected_tab == "":
-            return "PIW SCORECARD", {'display': 'none'}, [], []
+            return "PIW SCORECARD", {'display': 'none'}, html.Div()
         
         # Map tab values to CSV filenames and titles
         tab_info = {
@@ -509,7 +724,7 @@ def register_callbacks(dash_app, server):
         
         tab_data = tab_info.get(selected_tab)
         if not tab_data:
-            return "PIW SCORECARD", {'display': 'none'}, [], []
+            return "PIW SCORECARD", {'display': 'none'}, html.Div()
         
         csv_filename = tab_data['csv']
         title = tab_data['title']
@@ -517,69 +732,32 @@ def register_callbacks(dash_app, server):
         # Load CSV data
         df, columns, column_info = load_csv_data(csv_filename)
         
-        if df is None or df.empty or not columns:
-            # Show container but with empty data (loader will show)
-            return title, {'display': 'block'}, [], []
+        if df is None or df.empty or not column_info:
+            # Show container but with empty data
+            return title, {'display': 'block'}, html.Div("No data available")
         
-        # Process Year column to show only once per year group (like Terminal, Country in russian_exports)
-        # Also identify last row of each year group for border styling
-        year_groups = []  # Track which rows are last in each year group
-        
+        # Process Year column to show only once per year group
         if 'Year' in df.columns:
             prev_year = None
-            
             for idx in df.index:
                 current_year = df.loc[idx, 'Year']
                 if pd.isna(current_year) or current_year is None:
                     current_year = ''
                 else:
-                    current_year = str(current_year).strip()
+                    # Remove decimal part if present (e.g., "2025.0" -> "2025")
+                    try:
+                        current_year = str(int(float(current_year)))
+                    except (ValueError, TypeError):
+                        current_year = str(current_year).strip()
                 
                 # If current year matches previous, clear it (except for first occurrence)
                 if current_year == prev_year and prev_year != '':
                     df.loc[idx, 'Year'] = ''
                 else:
-                    # Year changed - mark previous group's last row
-                    if prev_year is not None and prev_year != '' and idx > 0:
-                        year_groups.append(idx - 1)  # Previous row was last of previous year
                     prev_year = current_year
-            
-            # Mark the last row as end of last year group
-            if len(df) > 0:
-                year_groups.append(len(df) - 1)
         
-        # Convert dataframe to records
-        data = df.to_dict('records')
+        # Build HTML table
+        table_html = build_html_table(df, column_info)
         
-        # Add a flag to mark last row of each year group for border styling
-        for idx, record in enumerate(data):
-            record['_is_year_end'] = idx in year_groups
-        
-        # Clean data: replace NaN with empty strings and format numbers
-        for record in data:
-            for key, value in record.items():
-                # Skip the internal flag used for styling
-                if key == '_is_year_end':
-                    continue
-                if key in ['Year', 'Month']:
-                    # Keep Year and Month as strings
-                    if pd.isna(value):
-                        record[key] = ''
-                    else:
-                        record[key] = str(value).strip()
-                elif isinstance(value, (int, float)):
-                    # Format numeric values
-                    if pd.isna(value) or value != value or abs(value) == float('inf'):  # NaN or inf check
-                        record[key] = ''
-                    else:
-                        # Format to 2 decimal places
-                        record[key] = round(float(value), 2)
-                else:
-                    # Convert other types to string
-                    if pd.isna(value):
-                        record[key] = ''
-                    else:
-                        record[key] = str(value).strip()
-        
-        # Return with new data - container stays visible, loader will hide when this completes
-        return title, {'display': 'block'}, data, columns
+        # Return with new table - container stays visible
+        return title, {'display': 'block'}, table_html
