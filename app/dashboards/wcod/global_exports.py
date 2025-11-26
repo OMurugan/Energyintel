@@ -160,8 +160,11 @@ else:
     CHART_MAX_YEAR = DEFAULT_YEAR or 0
 
 COUNTRY_OPTIONS = sorted(TABLE_DF["country"].unique().tolist()) if not TABLE_DF.empty else []
-DEFAULT_COUNTRY = ["Russia"] if "Russia" in COUNTRY_OPTIONS else (COUNTRY_OPTIONS[:1] if COUNTRY_OPTIONS else [])
+DEFAULT_COUNTRY = (
+    ["Russia"] if "Russia" in COUNTRY_OPTIONS else (COUNTRY_OPTIONS[:1] if COUNTRY_OPTIONS else [])
+)
 
+# Base stream configuration – explicit ordering and colors requested by design
 STREAM_DISPLAY = [
     ("Arco", "#0069aa"),
     ("Espo Blend", "#20295e"),
@@ -177,6 +180,8 @@ STREAM_DISPLAY = [
 ]
 STREAM_ORDER = [name for name, _ in STREAM_DISPLAY]
 STREAM_COLOR_MAP = {name: color for name, color in STREAM_DISPLAY}
+
+# Fallback colors used for any additional streams that appear in the CSV data
 FALLBACK_COLORS = [
     "#f15a24",
     "#1b365d",
@@ -189,6 +194,28 @@ FALLBACK_COLORS = [
     "#cb6ce6",
     "#ffa600",
 ]
+
+# Extend stream list dynamically based on the chart CSV
+# This ensures that when Chart_Crude_data.csv contains multiple countries and
+# many crude streams (as in the Tableau "All Annual Exports by Crude Stream"
+# view), the chart and right-side filter include ALL available streams,
+# not just the original Russia-only list.
+if not CHART_DF.empty:
+    existing_streams = set(STREAM_COLOR_MAP.keys())
+    csv_streams = sorted(
+        {str(s).strip() for s in CHART_DF["stream"].dropna().unique().tolist()}
+    )
+    extra_streams = [s for s in csv_streams if s not in existing_streams]
+
+    if extra_streams:
+        for idx, stream_name in enumerate(extra_streams):
+            # Assign a fallback color; reuse the palette in a cycle
+            color = FALLBACK_COLORS[idx % len(FALLBACK_COLORS)]
+            STREAM_COLOR_MAP[stream_name] = color
+
+        # Preserve the explicit design order first, then append additional streams
+        STREAM_ORDER = STREAM_ORDER + extra_streams
+
 MAP_COLOR_SCALE = [
     "#f2f4f6",
     "#e9edf2",
@@ -230,10 +257,17 @@ TABLE_YEAR_COLUMNS = [
 TABLE_COLUMNS = TABLE_STATIC_COLUMNS + TABLE_YEAR_COLUMNS
 
 
-def _stream_filter_options() -> List[Dict[str, html.Span]]:
-    """Create checklist options with colored swatches."""
+def _stream_filter_options(stream_names: Sequence[str]) -> List[Dict[str, html.Span]]:
+    """Create checklist options with colored swatches for the given streams."""
     options: List[Dict[str, html.Span]] = []
-    for name, color in STREAM_DISPLAY:
+    for name in stream_names:
+        # Use explicit color mapping when available, otherwise fall back
+        color = STREAM_COLOR_MAP.get(name)
+        if not color:
+            # Deterministic fallback based on name hash so it is stable across reloads
+            idx = abs(hash(name)) % len(FALLBACK_COLORS)
+            color = FALLBACK_COLORS[idx]
+
         label = html.Span(
             [
                 html.Span(
@@ -272,6 +306,42 @@ def _stream_filter_options() -> List[Dict[str, html.Span]]:
         )
         options.append({"label": label, "value": name})
     return options
+
+
+def _streams_for_countries(
+    selected_countries: Optional[Sequence[str]],
+) -> List[str]:
+    """
+    Return ordered list of crude streams available for the given countries.
+
+    - If no countries are selected or "ALL" is included, use all countries.
+    - Order:
+        1. Streams in STREAM_ORDER that appear in the data.
+        2. Any additional streams for those countries, sorted alphabetically.
+    """
+    if CHART_DF.empty:
+        return STREAM_ORDER
+
+    df = CHART_DF.copy()
+    if "country" in df.columns and selected_countries and "ALL" not in selected_countries:
+        selected_lower = [c.lower() for c in selected_countries]
+        df = df[df["country"].str.strip().str.lower().isin(selected_lower)]
+        # If filtering by country removes everything, fall back to all data
+        if df.empty:
+            df = CHART_DF.copy()
+
+    if "stream" not in df.columns:
+        return STREAM_ORDER
+
+    streams_in_data = {
+        str(s).strip() for s in df["stream"].dropna().unique().tolist()
+    }
+
+    # Preserve explicit design order first
+    ordered = [s for s in STREAM_ORDER if s in streams_in_data]
+    # Then include any additional streams
+    extra = sorted([s for s in streams_in_data if s not in STREAM_ORDER])
+    return ordered + extra
 
 
 def _normalize_year(year: Optional[int]) -> Optional[int]:
@@ -428,24 +498,78 @@ def _build_chart_figure(
     )
     if not streams:
         return _empty_figure("Select at least one stream")
+    # First, determine which countries to include (before filtering by streams)
+    # Use selected countries directly, but match with data country names for consistency
+    if selected_countries:
+        if "ALL" in selected_countries:
+            # Get all countries from the full dataset
+            if "country" in CHART_DF.columns:
+                all_countries_in_data = CHART_DF["country"].str.strip().unique()
+                target_countries = sorted([c for c in all_countries_in_data if pd.notna(c)])
+            else:
+                target_countries = []
+        else:
+            # Start with selected countries, then match with data country names
+            target_countries = []
+            if "country" in CHART_DF.columns:
+                all_countries_in_data = CHART_DF["country"].str.strip().unique()
+                data_countries_lower = {c.lower(): c for c in all_countries_in_data if pd.notna(c)}
+                
+                # Match each selected country with data country names (case-insensitive)
+                for selected in selected_countries:
+                    selected_lower = selected.lower().strip()
+                    if selected_lower in data_countries_lower:
+                        # Use the exact name from data
+                        target_countries.append(data_countries_lower[selected_lower])
+                    else:
+                        # If not found in data, still include the selected name
+                        # (it might have data, or will show as 0)
+                        target_countries.append(selected)
+            else:
+                # No country column in data, use selected countries as-is
+                target_countries = selected_countries.copy()
+            target_countries = sorted(set(target_countries))
+    else:
+        # Default to Russia if no selection
+        if "country" in CHART_DF.columns:
+            all_countries_in_data = CHART_DF["country"].str.strip().unique()
+            russia_match = [c for c in all_countries_in_data if pd.notna(c) and c.lower().strip() == "russia"]
+            target_countries = russia_match if russia_match else ["Russia"]
+        else:
+            target_countries = ["Russia"]
+    
+    # Now filter by streams and years
     df = CHART_DF[
         (CHART_DF["year"].between(2006, 2024))
         & (CHART_DF["stream"].isin(streams))
     ].copy()
-    if "country" in df.columns:
-        if selected_countries:
-            if "ALL" in selected_countries:
-                # Show all countries
-                pass
-            else:
-                # Filter by selected countries (case-insensitive)
-                df = df[
-                    df["country"].str.lower().isin([c.lower() for c in selected_countries])
-                ]
-        else:
-            # Default to Russia if no selection
-            df = df[df["country"].str.lower() == "russia"]
-    if df.empty:
+    
+    # Filter by selected countries (case-insensitive, using exact names from target_countries)
+    if "country" in df.columns and target_countries:
+        # Normalize both data countries and target countries for matching
+        df_countries_normalized = df["country"].str.strip().str.lower()
+        target_countries_normalized = {c.lower().strip(): c for c in target_countries}
+        
+        # Filter df by matching countries (case-insensitive)
+        mask = df_countries_normalized.isin(target_countries_normalized.keys())
+        df = df[mask].copy()
+        
+        # Map country names to use exact names from target_countries
+        # This ensures consistency throughout the rest of the code
+        if not df.empty:
+            # Create reverse mapping: normalized data country -> target country name
+            country_name_map = {}
+            for data_country in df["country"].unique():
+                data_country_normalized = str(data_country).strip().lower()
+                if data_country_normalized in target_countries_normalized:
+                    country_name_map[data_country] = target_countries_normalized[data_country_normalized]
+                else:
+                    # Keep original if no match (shouldn't happen after mask, but safety)
+                    country_name_map[data_country] = data_country
+            
+            df["country"] = df["country"].map(country_name_map).fillna(df["country"])
+    
+    if df.empty and not target_countries:
         return _empty_figure("No data in the selected range")
     # Determine country label for display
     if selected_countries and "ALL" not in selected_countries and len(selected_countries) == 1:
@@ -460,48 +584,148 @@ def _build_chart_figure(
             if "country" in df.columns and not df["country"].dropna().empty
             else "Russia"
         )
-    agg = df.groupby(["year", "stream"])["value"].sum().reset_index()
-    agg["year"] = agg["year"].astype(int)
-    agg = agg[(agg["year"] >= 2006) & (agg["year"] <= 2024)].copy()
-    agg = agg.sort_values(["year", "stream"])
-    available_streams = [s for s in STREAM_ORDER if s in agg["stream"].unique()]
+    # Group by year, stream, and country to keep each country-crude combination separate
+    if not df.empty:
+        if "country" in df.columns:
+            agg = df.groupby(["year", "stream", "country"])["value"].sum().reset_index()
+            # Ensure country names match target_countries exactly (case-insensitive match)
+            if target_countries:
+                # Create mapping from current country names to target_countries names
+                country_mapping = {}
+                for country in agg["country"].unique():
+                    country_lower = str(country).lower().strip()
+                    for target in target_countries:
+                        if country_lower == target.lower().strip():
+                            country_mapping[country] = target
+                            break
+                    # If no match found, keep original
+                    if country not in country_mapping:
+                        country_mapping[country] = country
+                agg["country"] = agg["country"].map(country_mapping).fillna(agg["country"])
+        else:
+            agg = df.groupby(["year", "stream"])["value"].sum().reset_index()
+            agg["country"] = country_label
+        agg["year"] = agg["year"].astype(int)
+        agg = agg[(agg["year"] >= 2006) & (agg["year"] <= 2024)].copy()
+        agg = agg.sort_values(["year", "stream", "country"])
+        available_streams = [s for s in STREAM_ORDER if s in agg["stream"].unique()]
+    else:
+        # If df is empty, create empty agg but still use selected streams
+        agg = pd.DataFrame(columns=["year", "stream", "country", "value"])
+        available_streams = streams if streams else STREAM_ORDER
+    
     if not available_streams:
         return _empty_figure("No stream data available")
-    complete_index = pd.MultiIndex.from_product(
-        (YEAR_AXIS_FULL, available_streams), names=["year", "stream"]
-    )
-    agg = (
-        agg.assign(year=agg["year"].astype(str))
-        .set_index(["year", "stream"])
-        .reindex(complete_index, fill_value=0)
-        .reset_index()
-    )
+    
     fig = go.Figure()
     fallback_idx = 0
     years_sorted = YEAR_AXIS_FULL
-    for stream in available_streams:
-        stream_df = agg[agg["stream"] == stream]
-        if stream_df.empty:
-            continue
-        color = STREAM_COLOR_MAP.get(stream)
-        if not color:
-            color = FALLBACK_COLORS[fallback_idx % len(FALLBACK_COLORS)]
-            fallback_idx += 1
-        fig.add_bar(
-            x=stream_df["year"],
-            y=stream_df["value"],
-            name=stream,
-            marker_color=color,
-            hovertemplate=(
-                "<span style='color:#1b365d; font-weight:300;'>Country:</span> "
-                f"<span style='color:#1b365d; font-weight:700;'>{country_label}</span><br>"
-                "<span style='color:#1b365d; font-weight:300;'>Year:</span> "
-                "<span style='color:#1b365d; font-weight:700;'>%{x}</span><br>"
-                "<span style='color:#1b365d; font-weight:300;'>Exports Volume:</span> "
-                "<span style='color:#1b365d; font-weight:700;'>%{y:,.0f} ’000 b/d</span>"
-                "<extra></extra>"
-            ),
+    
+    # Get unique countries - use target_countries to ensure all selected countries are included
+    # target_countries already contains matched country names from data, so use it directly
+    if target_countries:
+        unique_countries = target_countries.copy()
+        # Also add any countries from the filtered data that might not be in target_countries
+        # (this handles edge cases where country names in data don't match exactly)
+        if "country" in df.columns and not df.empty:
+            for country in df["country"].unique():
+                country_str = str(country).strip()
+                # Check if this country is already in unique_countries (case-insensitive)
+                if not any(c.lower().strip() == country_str.lower() for c in unique_countries):
+                    unique_countries.append(country_str)
+        elif "country" in agg.columns and not agg.empty:
+            for country in agg["country"].unique():
+                country_str = str(country).strip()
+                if not any(c.lower().strip() == country_str.lower() for c in unique_countries):
+                    unique_countries.append(country_str)
+        unique_countries = sorted(set(unique_countries))
+    elif "country" in df.columns and not df.empty:
+        unique_countries = sorted(df["country"].unique().tolist())
+    elif "country" in agg.columns and not agg.empty:
+        unique_countries = sorted(agg["country"].unique().tolist())
+    else:
+        unique_countries = [country_label]
+    
+    # Create a complete index for all year-stream-country combinations
+    # Use unique_countries to ensure all selected countries are included
+    complete_index = pd.MultiIndex.from_product(
+        (YEAR_AXIS_FULL, available_streams, unique_countries),
+        names=["year", "stream", "country"]
+    )
+    
+    # Prepare agg for reindexing - ensure country column exists and has correct names
+    if not agg.empty:
+        if "country" in agg.columns:
+            # Ensure country names in agg match unique_countries (case-insensitive)
+            country_name_map = {}
+            for country in agg["country"].unique():
+                country_lower = str(country).lower().strip()
+                for unique_country in unique_countries:
+                    if country_lower == unique_country.lower().strip():
+                        country_name_map[country] = unique_country
+                        break
+                # If no match, keep original
+                if country not in country_name_map:
+                    country_name_map[country] = country
+            agg["country"] = agg["country"].map(country_name_map).fillna(agg["country"])
+        
+        # Convert year to string for reindexing
+        agg["year"] = agg["year"].astype(str)
+        agg_complete = (
+            agg.set_index(["year", "stream", "country"])
+            .reindex(complete_index, fill_value=0)
+            .reset_index()
         )
+    else:
+        # If agg is empty, create agg_complete directly from complete_index
+        agg_complete = pd.DataFrame(list(complete_index), columns=["year", "stream", "country"])
+        agg_complete["value"] = 0
+    
+    # Create a separate bar series for each country-stream combination
+    # This ensures each combination stacks separately in the chart
+    for stream in available_streams:
+        # Get color for this stream
+        stream_color = STREAM_COLOR_MAP.get(stream)
+        if not stream_color:
+            stream_color = FALLBACK_COLORS[fallback_idx % len(FALLBACK_COLORS)]
+            fallback_idx += 1
+        
+        # Create a series for each country with this stream
+        for country in unique_countries:
+            country_stream_df = agg_complete[
+                (agg_complete["stream"] == stream) & 
+                (agg_complete["country"] == country)
+            ]
+            
+            # Only skip if truly empty (shouldn't happen after reindex, but safety check)
+            if country_stream_df.empty:
+                continue
+            
+            # Check if this country-stream combination has any non-zero data
+            # If all values are 0, skip this combination
+            if country_stream_df["value"].sum() == 0:
+                continue
+            
+            # Create unique bar series name for each country-stream combination
+            # This ensures each combination is a separate series that stacks
+            # Use format that includes both country and stream for uniqueness
+            bar_name = f"{country} - {stream}"
+            
+            fig.add_bar(
+                x=country_stream_df["year"],
+                y=country_stream_df["value"],
+                name=bar_name,
+                marker_color=stream_color,
+                hovertemplate=(
+                    "<span style='color:#1b365d; font-weight:300;'>Country:</span> "
+                    f"<span style='color:#1b365d; font-weight:700;'>{country}</span><br>"
+                    "<span style='color:#1b365d; font-weight:300;'>Year:</span> "
+                    "<span style='color:#1b365d; font-weight:700;'>%{x}</span><br>"
+                    "<span style='color:#1b365d; font-weight:300;'>Exports Volume:</span> "
+                    "<span style='color:#1b365d; font-weight:700;'>%{y:,.0f} '000 b/d</span>"
+                    "<extra></extra>"
+                ),
+            )
     fig.update_layout(
         height=460,
         paper_bgcolor="white",
@@ -897,7 +1121,7 @@ def create_layout():
                         [
                             dcc.Checklist(
                                 id="global-exports-stream-filter",
-                                options=_stream_filter_options(),
+                                options=_stream_filter_options(STREAM_ORDER),
                                 value=STREAM_ORDER,
                                 style={
                                     "display": "flex",
@@ -1125,7 +1349,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         return _build_map_figure(normalized_year, highlight), title
 
     @callback(
-        Output("global-exports-country-filter", "value"),
+        Output("global-exports-country-filter", "value", allow_duplicate=True),
         Input("global-exports-map", "clickData"),
         State("global-exports-country-filter", "value"),
         prevent_initial_call=True,
@@ -1144,7 +1368,65 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         )
         if country in current_list:
             return dash.no_update
+        # If "ALL" is currently selected, replace it with the clicked country
+        if "ALL" in current_list:
+            return [country]
         return current_list + [country]
+
+    @callback(
+        Output("global-exports-country-filter", "value", allow_duplicate=True),
+        Input("global-exports-country-filter", "value"),
+        prevent_initial_call=True,
+    )
+    def normalize_country_filter(value: Optional[Sequence[str]]):
+        """
+        Ensure 'ALL' behaves as a true 'select all':
+        - If 'ALL' is selected, clear any other countries so the value becomes ['ALL'].
+        """
+        if not value:
+            return dash.no_update
+        # If ALL is present with others, reduce to just ALL
+        if isinstance(value, (list, tuple)) and "ALL" in value:
+            if len(value) == 1 and value[0] == "ALL":
+                return dash.no_update
+            return ["ALL"]
+        return dash.no_update
+
+    @callback(
+        Output("global-exports-stream-filter", "options"),
+        Output("global-exports-stream-filter", "value", allow_duplicate=True),
+        Input("current-submenu", "data"),
+        Input("global-exports-country-filter", "value"),
+        State("global-exports-stream-filter", "value"),
+        # Run on initial load, but still allow duplicate output updates safely.
+        prevent_initial_call="initial_duplicate",
+    )
+    def sync_stream_filter_options(
+        submenu: str,
+        countries: Optional[Sequence[str]],
+        current_value: Optional[Sequence[str]],
+    ):
+        """
+        Keep the crude stream filter in sync with the selected countries.
+
+        - When countries change, recompute the list of available streams for those countries.
+        - All available streams are selected by default (so the chart and table show full data).
+        - If the current selection is still valid, preserve it.
+        """
+        if submenu != "global-exports":
+            return no_update, no_update
+
+        available_streams = _streams_for_countries(countries)
+        if not available_streams:
+            # Fallback to global list
+            available_streams = STREAM_ORDER
+
+        # For each country selection change, always show all available crudes as checked.
+        # This matches the Tableau behaviour: the filter list updates and everything is
+        # selected by default for the chosen countries.
+        new_value = available_streams
+
+        return _stream_filter_options(available_streams), new_value
 
     @callback(
         Output("global-exports-stream-chart", "figure"),
@@ -1177,7 +1459,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         return fig, title
 
     @callback(
-        Output("global-exports-stream-filter", "value"),
+        Output("global-exports-stream-filter", "value", allow_duplicate=True),
         Input({"type": "stream-isolate-button", "stream": ALL}, "n_clicks"),
         State("global-exports-stream-filter", "value"),
         prevent_initial_call=True,
