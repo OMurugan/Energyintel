@@ -860,6 +860,7 @@ def create_layout(server):
                         "paddingLeft": "12px",
                         "paddingRight": "12px",
                         "color": "#1f3263",
+                        "cursor": "pointer",
                     },
                     {
                         "if": {"column_id": "CrudeOil", "header": True},
@@ -898,6 +899,12 @@ def create_layout(server):
                     },
                 ],
                 css=[
+                    {
+                        'selector': '.dash-cell[data-dash-column="CrudeOil"]',
+                        'rule': '''
+                            cursor: pointer !important;
+                        '''
+                    },
                     {
                         'selector': '.dash-cell[data-dash-column="CrudeOil"] a',
                         'rule': '''
@@ -1071,7 +1078,7 @@ def create_layout(server):
                 page_action="none",
                 sort_action="none",
                 filter_action="none",
-                markdown_options={"html": True},
+                        markdown_options={"html": True, "link_target": "_blank"},
             ),
 
             # Store components
@@ -1501,25 +1508,35 @@ def register_callbacks(app):
         prevent_initial_call=True
     )
     def handle_cell_click(active_cell, data, previous_selected):
-        if active_cell:
+        if active_cell and data:
             row = active_cell['row']
             column = active_cell['column_id']
             
-            if (column != "CrudeOil" and data and row is not None and 
-                row < len(data) and data[row].get('CrudeOil') != 'SUM'):
-                cell_value = data[row].get(column)
+            if row is not None and row < len(data):
                 crude_markdown = data[row].get('CrudeOil', '')
+                url_match = re.search(r'\[.*?\]\((.*?)\)', crude_markdown)
                 
-                if cell_value and str(cell_value).strip():
-                    url_match = re.search(r'\[.*?\]\((.*?)\)', crude_markdown)
-                    if url_match:
-                        external_url = url_match.group(1)
+                if url_match:
+                    external_url = url_match.group(1)
+                    
+                    if column == "CrudeOil":
+                        # Click on CrudeOil column - highlight entire row
                         selected_cell = {
                             'row': row,
-                            'column': column,
-                            'value': cell_value
+                            'column': 'row',  # Special marker for row highlighting
+                            'value': None
                         }
                         return external_url, selected_cell
+                    else:
+                        # Click on value column - highlight specific cell
+                        cell_value = data[row].get(column)
+                        if cell_value and str(cell_value).strip():
+                            selected_cell = {
+                                'row': row,
+                                'column': column,
+                                'value': cell_value
+                            }
+                            return external_url, selected_cell
         
         raise dash.exceptions.PreventUpdate
 
@@ -1536,21 +1553,53 @@ def register_callbacks(app):
             {"if": {"column_id": [str(year) for year in range(2007, 2025)]}, "cursor": "pointer"},
         ]
     
-        if selected_cell:
+        if selected_cell and current_data:
             numeric_columns = [col for col in (current_data[0].keys() if current_data else []) if col != "CrudeOil"]
+            selected_row = selected_cell['row']
+            selected_col = selected_cell['column']
             
-            style_conditions = [
-                {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"},
-                {"if": {"column_id": "CrudeOil"}, "color": "#1f3263", "backgroundColor": "white", "cursor": "pointer"},
-                {"if": {"column_id": numeric_columns}, "color": "#f0f0f0", "backgroundColor": "white", "cursor": "pointer"},
-                {"if": {"row_index": selected_cell['row'], "column_id": selected_cell['column']}, "color": "#1f3263", "backgroundColor": "#e6f3ff", "fontWeight": "bold", "border": "2px solid #1f3263", "cursor": "pointer"},
-            ]
+            # Check if it's a row highlight (CrudeOil click) or cell highlight (value click)
+            if selected_col == 'row':
+                # Highlight entire row - like fig1 (light blue background)
+                style_conditions = [
+                    # Dim all other rows
+                    {"if": {"row_index": "odd"}, "backgroundColor": "#f5f5f5", "opacity": "0.5"},
+                    {"if": {"row_index": "even"}, "backgroundColor": "#ffffff", "opacity": "0.5"},
+                    # Highlight the selected row
+                    {"if": {"row_index": selected_row}, "backgroundColor": "#e6f3ff", "opacity": "1", "fontWeight": "600"},
+                    # CrudeOil column styling
+                    {"if": {"column_id": "CrudeOil"}, "color": "#1f3263", "cursor": "pointer"},
+                    {"if": {"column_id": "CrudeOil", "row_index": selected_row}, "color": "#1f3263", "backgroundColor": "#e6f3ff", "fontWeight": "600"},
+                    # Year columns styling
+                    {"if": {"column_id": numeric_columns}, "cursor": "pointer"},
+                    {"if": {"column_id": numeric_columns, "row_index": selected_row}, "color": "#1f3263", "backgroundColor": "#e6f3ff", "fontWeight": "600"},
+                ]
+            else:
+                # Highlight specific cell and dim others
+                style_conditions = [
+                    # Dim all cells
+                    {"if": {"row_index": "odd"}, "backgroundColor": "#f5f5f5", "opacity": "0.4"},
+                    {"if": {"row_index": "even"}, "backgroundColor": "#ffffff", "opacity": "0.4"},
+                    # Highlight the selected cell
+                    {"if": {"row_index": selected_row, "column_id": selected_col}, 
+                     "color": "#1f3263", 
+                     "backgroundColor": "#e6f3ff", 
+                     "fontWeight": "bold", 
+                     "border": "2px solid #1f3263", 
+                     "opacity": "1",
+                     "cursor": "pointer"},
+                    # Keep CrudeOil column visible but dimmed
+                    {"if": {"column_id": "CrudeOil"}, "color": "#1f3263", "cursor": "pointer", "opacity": "0.6"},
+                    {"if": {"column_id": "CrudeOil", "row_index": selected_row}, "color": "#1f3263", "opacity": "0.8"},
+                    # Dim other year columns
+                    {"if": {"column_id": numeric_columns}, "cursor": "pointer", "opacity": "0.4"},
+                ]
                 
             return style_conditions
         
         return default_styles
 
-    # Client-side callback to open the external URL
+    # Client-side callback to open the external URL in a new tab
     app.clientside_callback(
         """
         function(url) {
@@ -1563,6 +1612,7 @@ def register_callbacks(app):
         Output('dummy-output', 'children'),
         Input('external-url-store', 'data')
     )
+    
 
     # Add custom CSS for the header elements and tooltips
     app.clientside_callback(
@@ -1704,6 +1754,41 @@ def register_callbacks(app):
                         if (btn) btn.click();
                     };
                 }
+                
+                // Handle CrudeOil cell clicks - prevent link navigation, open in new tab, and highlight row
+                const crudeCells = document.querySelectorAll('.dash-cell[data-dash-column="CrudeOil"]');
+                crudeCells.forEach(function(cell) {
+                    // Make the entire cell clickable
+                    cell.style.cursor = 'pointer';
+                    
+                    // Handle clicks on links inside the cell
+                    const links = cell.querySelectorAll('a');
+                    links.forEach(function(link) {
+                        // Remove target attribute (we'll handle it ourselves)
+                        link.removeAttribute('target');
+                        
+                        link.addEventListener('click', function(e) {
+                            // Prevent default link navigation (same tab)
+                            e.preventDefault();
+                            
+                            // Get URL and open in new tab
+                            const url = link.getAttribute('href');
+                            if (url) {
+                                window.open(url, '_blank');
+                            }
+                            
+                            // Don't stop propagation - let the event bubble to the cell
+                            // This allows DataTable's active_cell to fire
+                            // The cell click handler will then highlight the row
+                        }, false); // Use bubble phase so cell click can also fire
+                    });
+                    
+                    // Also handle clicks directly on the cell (not just the link)
+                    cell.addEventListener('click', function(e) {
+                        // If clicking on the cell (not the link), the active_cell will fire naturally
+                        // The Python callback will handle highlighting
+                    }, false);
+                });
                 
             }, 100);
             return '';
