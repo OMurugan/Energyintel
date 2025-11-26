@@ -567,8 +567,6 @@ def sort_by_maximum_value(data, direction='desc'):
 # INITIAL LOAD
 # ------------------------------------------------------------------------------
 production_data, production_columns = load_crude_data("production")
-production_sum_row = calculate_sum_row(production_data)
-table_data_with_sum = production_data + [production_sum_row] if production_sum_row else production_data
 
 # ------------------------------------------------------------------------------
 # LAYOUT
@@ -819,7 +817,7 @@ def create_layout(server):
 
             dash_table.DataTable(
                 id="crude-comparison-table",
-                data=table_data_with_sum,
+                data=production_data,
                 columns=production_columns,
                 style_table={
                     "overflowX": "auto",
@@ -898,21 +896,6 @@ def create_layout(server):
                         "color": "#333333",
                         "textAlign": "center",
                     },
-                    # Style for SUM row - DARK BLUE BACKGROUND
-                    {
-                        "if": {"filter_query": '{CrudeOil} = "SUM"'},
-                        "backgroundColor": "#1f3263",
-                        "color": "white",
-                        "fontWeight": "bold",
-                        "borderTop": "2px solid #d65a00",
-                    },
-                    {
-                        "if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"},
-                        "textAlign": "left",
-                        "backgroundColor": "#1f3263",
-                        "color": "white",
-                        "fontWeight": "bold",
-                    }
                 ],
                 css=[
                     {
@@ -1097,7 +1080,6 @@ def create_layout(server):
             dcc.Store(id='original-data-store', data=production_data),
             dcc.Store(id='current-sort-order', data={'type': 'source', 'direction': 'asc'}),
             dcc.Store(id='show-sorting-controls', data=False),
-            dcc.Store(id='sum-row-store', data=production_sum_row),
             dcc.Store(id='is-combined-mode', data=False),  # Track if we're in combined mode
             html.Div(id='dummy-output', style={'display': 'none'}),
             html.Div(id='dummy-output-2', style={'display': 'none'}),
@@ -1168,7 +1150,6 @@ def register_callbacks(app):
     @app.callback(
         [Output("crude-comparison-table", "data"),
          Output("original-data-store", "data"),
-         Output("sum-row-store", "data"),
          Output("is-combined-mode", "data")],
         [Input("export-production-dropdown", "value"),
          Input("sum-text-box", "n_clicks"),
@@ -1180,15 +1161,13 @@ def register_callbacks(app):
         
         # SUM text box OR Year icon click switches to combined mode
         if trigger in ['sum-text-box', 'year-column-btn']:
-            # Use combined data WITHOUT sum row
+            # Use combined data
             combined_data = calculate_combined_sums()
-            return combined_data, combined_data, None, True
+            return combined_data, combined_data, True
         else:
-            # Use individual dataset (Production or Exports) WITH sum row
+            # Use individual dataset (Production or Exports) - NO sum row
             crude_data, columns = load_crude_data(mode)
-            sum_row = calculate_sum_row(crude_data)
-            table_data_with_sum = crude_data + [sum_row] if sum_row else crude_data
-            return table_data_with_sum, crude_data, sum_row, False
+            return crude_data, crude_data, False
 
     @app.callback(
         Output("crude-comparison-table", "columns"),
@@ -1426,11 +1405,10 @@ def register_callbacks(app):
         [Input('current-sort-order', 'data')],
         [State('original-data-store', 'data'),
          State('export-production-dropdown', 'value'),
-         State('sum-row-store', 'data'),
          State('is-combined-mode', 'data')],
         prevent_initial_call=True
     )
-    def apply_sort_order(current_sort, original_data, mode, sum_row, is_combined):
+    def apply_sort_order(current_sort, original_data, mode, is_combined):
         if not original_data or not current_sort:
             return dash.no_update, dash.no_update
             
@@ -1454,10 +1432,8 @@ def register_callbacks(app):
         else:
             df_sorted = df
         
-        # Convert back to dict and add SUM row only if sum_row exists (not in combined mode)
+        # Convert back to dict (no SUM row)
         sorted_data = df_sorted.to_dict('records')
-        if sum_row:
-            sorted_data.append(sum_row)
         
         return sorted_data, dash.no_update
 
@@ -1472,13 +1448,12 @@ def register_callbacks(app):
         [State('original-data-store', 'data'),
          State('current-sort-order', 'data'),
          State('export-production-dropdown', 'value'),
-         State('sum-row-store', 'data'),
          State('is-combined-mode', 'data')],
         prevent_initial_call=True
     )
     def handle_popup_sorting(popup_source_clicks, popup_alpha_clicks,
                            popup_field_clicks, popup_nested_clicks,
-                           original_data, current_sort, mode, sum_row, is_combined):
+                           original_data, current_sort, mode, is_combined):
         if not original_data:
             return dash.no_update, dash.no_update
             
@@ -1514,8 +1489,6 @@ def register_callbacks(app):
             df_sorted = df
         
         sorted_data = df_sorted.to_dict('records')
-        if sum_row:
-            sorted_data.append(sum_row)
         
         return sorted_data, {'type': sort_type, 'direction': direction}
 
@@ -1562,13 +1535,6 @@ def register_callbacks(app):
             {"if": {"column_id": "CrudeOil"}, "color": "#1f3263"},
             {"if": {"column_id": [str(year) for year in range(2007, 2025)]}, "cursor": "pointer"},
         ]
-        
-        # Only add SUM row styling if NOT in combined mode
-        if not is_combined:
-            default_styles.extend([
-                {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
-                {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
-            ])
     
         if selected_cell:
             numeric_columns = [col for col in (current_data[0].keys() if current_data else []) if col != "CrudeOil"]
@@ -1579,13 +1545,6 @@ def register_callbacks(app):
                 {"if": {"column_id": numeric_columns}, "color": "#f0f0f0", "backgroundColor": "white", "cursor": "pointer"},
                 {"if": {"row_index": selected_cell['row'], "column_id": selected_cell['column']}, "color": "#1f3263", "backgroundColor": "#e6f3ff", "fontWeight": "bold", "border": "2px solid #1f3263", "cursor": "pointer"},
             ]
-            
-            # Only add SUM row styling if NOT in combined mode
-            if not is_combined:
-                style_conditions.extend([
-                    {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
-                    {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
-                ])
                 
             return style_conditions
         
