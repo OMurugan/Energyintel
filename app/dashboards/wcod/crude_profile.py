@@ -1,6 +1,6 @@
 # crude_profile.py
 """
-Crude Profile Dashboard - Complete Implementation with Mars Blend Assay Sorting
+Crude Profile Dashboard - Complete Implementation with Separate Sorting for Both Tables
 """
 from dash import dcc, html, Dash, Input, Output, State, callback_context, ctx, dash_table, no_update
 import dash
@@ -302,7 +302,7 @@ def load_producers_sellers():
     return records or fallback
 
 # ------------------------------------------------------------------------------
-# SORTING FUNCTIONS (Matching crude_comparison.py)
+# SORTING FUNCTIONS
 # ------------------------------------------------------------------------------
 def sort_assay_data_by_maximum_value(data, direction='desc'):
     """Sort assay data by maximum value across all properties"""
@@ -336,6 +336,26 @@ def sort_assay_data_alphabetically(data, column, direction='asc'):
     df = pd.DataFrame(data)
     df_sorted = df.sort_values(column, ascending=(direction == 'asc'), na_position='last')
     return df_sorted.to_dict('records')
+
+def sort_refined_products_data(data, column, sort_type, direction):
+    """Sort refined products data based on column and sort type."""
+    if not data:
+        return data
+    
+    data_copy = data.copy()
+    
+    if sort_type == 'source':
+        return data_copy
+    elif sort_type == 'alphabetic':
+        reverse = (direction == 'desc')
+        data_copy.sort(key=lambda x: str(x.get(column, '')).lower(), reverse=reverse)
+        return data_copy
+    elif sort_type in ['field', 'nested']:
+        # Sort by maximum value (for Property column only)
+        reverse = (direction == 'desc')
+        data_copy.sort(key=lambda x: float(str(x.get('Value', '0')).replace(',', '')) if str(x.get('Value', '0')).replace('.', '').replace('-', '').isdigit() else 0, reverse=reverse)
+        return data_copy
+    return data_copy
 
 def create_production_chart():
     """Create production and exports chart using dynamic data."""
@@ -533,170 +553,326 @@ def create_refined_products_table():
                 'selector': '.dash-header[data-dash-column="Property"]',
                 'rule': 'position: relative;'
             },
-            # Product header styles
-            {
-                'selector': '.dash-header[data-dash-column="Product"] .sort-order-container',
-                'rule': '''
-                    position: absolute;
-                    right: 25px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    display: flex;
-                    flex-direction: column;
-                    opacity: 0 !important;
-                    pointer-events: none;
-                    gap: 0px;
-                '''
-            },
-            {
-                'selector': '.dash-header[data-dash-column="Product"]:hover .sort-order-container',
-                'rule': 'opacity: 1 !important; pointer-events: auto;'
-            },
-            {
-                'selector': '.dash-header[data-dash-column="Product"] .sort-indicator',
-                'rule': '''
-                    position: absolute;
-                    right: 5px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    width: 12px;
-                    height: 12px;
-                    opacity: 0 !important;
-                    cursor: pointer;
-                '''
-            },
-            {
-                'selector': '.dash-header[data-dash-column="Product"]:hover .sort-indicator',
-                'rule': 'opacity: 1 !important;'
-            },
-            # Cut Points header styles
-            {
-                'selector': '.dash-header[data-dash-column="Cut Points (°C)"] .sort-order-container',
-                'rule': '''
-                    position: absolute;
-                    right: 25px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    display: flex;
-                    flex-direction: column;
-                    opacity: 0 !important;
-                    pointer-events: none;
-                    gap: 0px;
-                '''
-            },
-            {
-                'selector': '.dash-header[data-dash-column="Cut Points (°C)"]:hover .sort-order-container',
-                'rule': 'opacity: 1 !important; pointer-events: auto;'
-            },
-            {
-                'selector': '.dash-header[data-dash-column="Cut Points (°C)"] .sort-indicator',
-                'rule': '''
-                    position: absolute;
-                    right: 5px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    width: 12px;
-                    height: 12px;
-                    opacity: 0 !important;
-                    cursor: pointer;
-                '''
-            },
-            {
-                'selector': '.dash-header[data-dash-column="Cut Points (°C)"]:hover .sort-indicator',
-                'rule': 'opacity: 1 !important;'
-            },
-            # Property header styles
-            {
-                'selector': '.dash-header[data-dash-column="Property"] .sort-order-container',
-                'rule': '''
-                    position: absolute;
-                    right: 25px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    display: flex;
-                    flex-direction: column;
-                    opacity: 0 !important;
-                    pointer-events: none;
-                    gap: 0px;
-                '''
-            },
-            {
-                'selector': '.dash-header[data-dash-column="Property"]:hover .sort-order-container',
-                'rule': 'opacity: 1 !important; pointer-events: auto;'
-            },
-            {
-                'selector': '.dash-header[data-dash-column="Property"] .sort-indicator',
-                'rule': '''
-                    position: absolute;
-                    right: 5px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    width: 12px;
-                    height: 12px;
-                    opacity: 0 !important;
-                    cursor: pointer;
-                '''
-            },
-            {
-                'selector': '.dash-header[data-dash-column="Property"]:hover .sort-indicator',
-                'rule': 'opacity: 1 !important;'
-            },
-            # Unit header styles
             {
                 'selector': '.dash-header[data-dash-column="Unit"]',
                 'rule': 'position: relative;'
             },
+            # Sort indicator (SVG icon) for ALL headers - HIDDEN BY DEFAULT
+            {
+                'selector': '.dash-header .sort-indicator',
+                'rule': '''
+                    position: absolute;
+                    right: 8px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    width: 15px;
+                    height: 15px;
+                    cursor: pointer;
+                    opacity: 0;
+                    transition: opacity 0.2s ease;
+                '''
+            },
+            {
+                'selector': '.dash-header:hover .sort-indicator',
+                'rule': '''
+                    opacity: 1;
+                '''
+            },
+            {
+                'selector': '.dash-header .sort-indicator:hover',
+                'rule': '''
+                    background-color: #e6f3ff;
+                    border-radius: 2px;
+                '''
+            },
+            # A-Z vertical text for sort order - HIDDEN BY DEFAULT (Product)
+            {
+                'selector': '.dash-header[data-dash-column="Product"] .sort-order-container',
+                'rule': '''
+                    position: absolute;
+                    right: 30px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    font-size: 10px;
+                    color: #666;
+                    cursor: pointer;
+                    padding: 2px;
+                    border: 1px solid transparent;
+                    border-radius: 2px;
+                    line-height: 1;
+                    text-align: center;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 30px;
+                    opacity: 0;
+                    transition: opacity 0.2s ease;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Product"]:hover .sort-order-container',
+                'rule': '''
+                    opacity: 1;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Product"] .sort-order-container:hover',
+                'rule': '''
+                    background-color: #e6f3ff;
+                    border-color: #1f3263;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Product"] .sort-asc',
+                'rule': '''
+                    display: block;
+                    line-height: 1;
+                    cursor: pointer;
+                    padding: 1px 2px;
+                    border-radius: 1px;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Product"] .sort-asc:hover',
+                'rule': '''
+                    background-color: #d4e7ff;
+                    font-weight: bold;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Product"] .sort-desc',
+                'rule': '''
+                    display: block;
+                    line-height: 1;
+                    cursor: pointer;
+                    padding: 1px 2px;
+                    border-radius: 1px;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Product"] .sort-desc:hover',
+                'rule': '''
+                    background-color: #d4e7ff;
+                    font-weight: bold;
+                '''
+            },
+            # A-Z vertical text for sort order - HIDDEN BY DEFAULT (Cut Points)
+            {
+                'selector': '.dash-header[data-dash-column="Cut Points (°C)"] .sort-order-container',
+                'rule': '''
+                    position: absolute;
+                    right: 30px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    font-size: 10px;
+                    color: #666;
+                    cursor: pointer;
+                    padding: 2px;
+                    border: 1px solid transparent;
+                    border-radius: 2px;
+                    line-height: 1;
+                    text-align: center;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 30px;
+                    opacity: 0;
+                    transition: opacity 0.2s ease;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Cut Points (°C)"]:hover .sort-order-container',
+                'rule': '''
+                    opacity: 1;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Cut Points (°C)"] .sort-order-container:hover',
+                'rule': '''
+                    background-color: #e6f3ff;
+                    border-color: #1f3263;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Cut Points (°C)"] .sort-asc',
+                'rule': '''
+                    display: block;
+                    line-height: 1;
+                    cursor: pointer;
+                    padding: 1px 2px;
+                    border-radius: 1px;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Cut Points (°C)"] .sort-asc:hover',
+                'rule': '''
+                    background-color: #d4e7ff;
+                    font-weight: bold;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Cut Points (°C)"] .sort-desc',
+                'rule': '''
+                    display: block;
+                    line-height: 1;
+                    cursor: pointer;
+                    padding: 1px 2px;
+                    border-radius: 1px;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Cut Points (°C)"] .sort-desc:hover',
+                'rule': '''
+                    background-color: #d4e7ff;
+                    font-weight: bold;
+                '''
+            },
+            # A-Z vertical text for sort order - HIDDEN BY DEFAULT (Property)
+            {
+                'selector': '.dash-header[data-dash-column="Property"] .sort-order-container',
+                'rule': '''
+                    position: absolute;
+                    right: 30px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    font-size: 10px;
+                    color: #666;
+                    cursor: pointer;
+                    padding: 2px;
+                    border: 1px solid transparent;
+                    border-radius: 2px;
+                    line-height: 1;
+                    text-align: center;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 30px;
+                    opacity: 0;
+                    transition: opacity 0.2s ease;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Property"]:hover .sort-order-container',
+                'rule': '''
+                    opacity: 1;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Property"] .sort-order-container:hover',
+                'rule': '''
+                    background-color: #e6f3ff;
+                    border-color: #1f3263;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Property"] .sort-asc',
+                'rule': '''
+                    display: block;
+                    line-height: 1;
+                    cursor: pointer;
+                    padding: 1px 2px;
+                    border-radius: 1px;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Property"] .sort-asc:hover',
+                'rule': '''
+                    background-color: #d4e7ff;
+                    font-weight: bold;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Property"] .sort-desc',
+                'rule': '''
+                    display: block;
+                    line-height: 1;
+                    cursor: pointer;
+                    padding: 1px 2px;
+                    border-radius: 1px;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Property"] .sort-desc:hover',
+                'rule': '''
+                    background-color: #d4e7ff;
+                    font-weight: bold;
+                '''
+            },
+            # A-Z vertical text for sort order - HIDDEN BY DEFAULT (Unit)
             {
                 'selector': '.dash-header[data-dash-column="Unit"] .sort-order-container',
                 'rule': '''
                     position: absolute;
-                    right: 25px;
+                    right: 30px;
                     top: 50%;
                     transform: translateY(-50%);
+                    font-size: 10px;
+                    color: #666;
+                    cursor: pointer;
+                    padding: 2px;
+                    border: 1px solid transparent;
+                    border-radius: 2px;
+                    line-height: 1;
+                    text-align: center;
                     display: flex;
                     flex-direction: column;
-                    opacity: 0 !important;
-                    pointer-events: none;
-                    gap: 0px;
+                    align-items: center;
+                    justify-content: center;
+                    height: 30px;
+                    opacity: 0;
+                    transition: opacity 0.2s ease;
                 '''
             },
             {
                 'selector': '.dash-header[data-dash-column="Unit"]:hover .sort-order-container',
-                'rule': 'opacity: 1 !important; pointer-events: auto;'
-            },
-            {
-                'selector': '.dash-header[data-dash-column="Unit"] .sort-indicator',
                 'rule': '''
-                    position: absolute;
-                    right: 5px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    width: 12px;
-                    height: 12px;
-                    opacity: 0 !important;
-                    cursor: pointer;
+                    opacity: 1;
                 '''
             },
             {
-                'selector': '.dash-header[data-dash-column="Unit"]:hover .sort-indicator',
-                'rule': 'opacity: 1 !important;'
-            },
-            # Sort button styles
-            {
-                'selector': '.sort-asc, .sort-desc',
+                'selector': '.dash-header[data-dash-column="Unit"] .sort-order-container:hover',
                 'rule': '''
+                    background-color: #e6f3ff;
+                    border-color: #1f3263;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Unit"] .sort-asc',
+                'rule': '''
+                    display: block;
+                    line-height: 1;
                     cursor: pointer;
-                    font-size: 11px;
+                    padding: 1px 2px;
+                    border-radius: 1px;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Unit"] .sort-asc:hover',
+                'rule': '''
+                    background-color: #d4e7ff;
                     font-weight: bold;
-                    color: #333;
-                    padding: 2px 4px;
-                    user-select: none;
                 '''
             },
             {
-                'selector': '.sort-asc:hover, .sort-desc:hover',
-                'rule': 'background-color: #e0e0e0; border-radius: 2px;'
-            }
+                'selector': '.dash-header[data-dash-column="Unit"] .sort-desc',
+                'rule': '''
+                    display: block;
+                    line-height: 1;
+                    cursor: pointer;
+                    padding: 1px 2px;
+                    border-radius: 1px;
+                '''
+            },
+            {
+                'selector': '.dash-header[data-dash-column="Unit"] .sort-desc:hover',
+                'rule': '''
+                    background-color: #d4e7ff;
+                    font-weight: bold;
+                '''
+            },
         ],
         markdown_options={"html": True},
         editable=False,
@@ -732,7 +908,7 @@ for product, cut_points, properties in load_refined_products():
 # LAYOUT
 # ------------------------------------------------------------------------------
 def create_layout(server=None):
-    """Layout exactly matching the provided image design with dynamic data."""
+    """Layout with completely separate sorting functionality for both tables."""
     
     # Load dynamic data
     assay_details = load_assay_details()
@@ -740,6 +916,9 @@ def create_layout(server=None):
     port_details_data = load_port_details()
     port_details_rows = port_details_data.get("rows", [])
     port_details_label = port_details_data.get("label", "Port Details")
+    
+    # Convert port details to DataTable format
+    port_details_table_data = [{"Measure": row[0], port_details_label: row[1]} for row in port_details_rows]
     producers_sellers = load_producers_sellers()
     
     production_fig = create_production_chart()
@@ -753,7 +932,7 @@ def create_layout(server=None):
         "backgroundColor": "white",
         "color": "#333"
     }, children=[
-        # CSS Styles - EXACT MATCH TO crude_comparison.py
+        # CSS Styles
         html.Div(style={"display": "none"}, children=[
             dcc.Markdown("""
                 <style>
@@ -784,9 +963,11 @@ def create_layout(server=None):
                 .sort-indicator:hover svg {
                     fill: #1f3263;
                 }
-                /* Specific styles for Property and Unit headers - EXACT MATCH TO CrudeOil */
+                /* Specific styles for Property and Unit headers */
                 .dash-header[data-dash-column="Property"] .sort-order-container,
-                .dash-header[data-dash-column="Unit"] .sort-order-container {
+                .dash-header[data-dash-column="Unit"] .sort-order-container,
+                .dash-header[data-dash-column="Product"] .sort-order-container,
+                .dash-header[data-dash-column="Cut Points (°C)"] .sort-order-container {
                     position: absolute;
                     right: 30px;
                     top: 50%;
@@ -808,18 +989,26 @@ def create_layout(server=None):
                     transition: opacity 0.2s ease;
                 }
                 .dash-header[data-dash-column="Property"]:hover .sort-order-container,
-                .dash-header[data-dash-column="Unit"]:hover .sort-order-container {
+                .dash-header[data-dash-column="Unit"]:hover .sort-order-container,
+                .dash-header[data-dash-column="Product"]:hover .sort-order-container,
+                .dash-header[data-dash-column="Cut Points (°C)"]:hover .sort-order-container {
                     opacity: 1;
                 }
                 .dash-header[data-dash-column="Property"] .sort-order-container:hover,
-                .dash-header[data-dash-column="Unit"] .sort-order-container:hover {
+                .dash-header[data-dash-column="Unit"] .sort-order-container:hover,
+                .dash-header[data-dash-column="Product"] .sort-order-container:hover,
+                .dash-header[data-dash-column="Cut Points (°C)"] .sort-order-container:hover {
                     background-color: #e6f3ff;
                     border-color: #1f3263;
                 }
                 .dash-header[data-dash-column="Property"] .sort-asc,
                 .dash-header[data-dash-column="Property"] .sort-desc,
                 .dash-header[data-dash-column="Unit"] .sort-asc,
-                .dash-header[data-dash-column="Unit"] .sort-desc {
+                .dash-header[data-dash-column="Unit"] .sort-desc,
+                .dash-header[data-dash-column="Product"] .sort-asc,
+                .dash-header[data-dash-column="Product"] .sort-desc,
+                .dash-header[data-dash-column="Cut Points (°C)"] .sort-asc,
+                .dash-header[data-dash-column="Cut Points (°C)"] .sort-desc {
                     display: block;
                     line-height: 1;
                     cursor: pointer;
@@ -829,13 +1018,39 @@ def create_layout(server=None):
                 .dash-header[data-dash-column="Property"] .sort-asc:hover,
                 .dash-header[data-dash-column="Property"] .sort-desc:hover,
                 .dash-header[data-dash-column="Unit"] .sort-asc:hover,
-                .dash-header[data-dash-column="Unit"] .sort-desc:hover {
+                .dash-header[data-dash-column="Unit"] .sort-desc:hover,
+                .dash-header[data-dash-column="Product"] .sort-asc:hover,
+                .dash-header[data-dash-column="Product"] .sort-desc:hover,
+                .dash-header[data-dash-column="Cut Points (°C)"] .sort-asc:hover,
+                .dash-header[data-dash-column="Cut Points (°C)"] .sort-desc:hover {
                     background-color: #d4e7ff;
                     font-weight: bold;
                 }
                 
-                /* Popup menu styles - EXACT MATCH TO crude_comparison.py */
+                /* Popup menu styles */
                 .assay-popup-menu {
+                    position: absolute;
+                    background-color: white;
+                    padding: 4px 0;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    z-index: 1000;
+                    min-width: 160px;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                }
+                
+                .refined-popup-menu {
+                    position: absolute;
+                    background-color: white;
+                    padding: 4px 0;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    z-index: 1000;
+                    min-width: 160px;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                }
+                
+                .port-popup-menu {
                     position: absolute;
                     background-color: white;
                     padding: 4px 0;
@@ -861,29 +1076,11 @@ def create_layout(server=None):
                 .popup-menu-item:hover {
                     background-color: #f5f5f5;
                 }
-                
-                .popup-menu-item.with-arrow {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    position: relative;
-                }
-                
-                .arrow-btn {
-                    cursor: pointer;
-                    font-size: 10px;
-                    color: #666;
-                    margin-left: 8px;
-                }
-                
-                .arrow-btn:hover {
-                    color: #1f3263;
-                }
                 </style>
             """, dangerously_allow_html=True)
         ]),
         
-        # Hidden components for interactivity - MATCHING crude_comparison.py
+        # Hidden components for interactivity - MARS BLEND ASSAY TABLE
         html.Button("Assay Property Sort Asc", id="assay-property-sort-asc-btn", n_clicks=0, style={"display": "none"}),
         html.Button("Assay Property Sort Desc", id="assay-property-sort-desc-btn", n_clicks=0, style={"display": "none"}),
         html.Button("Assay Unit Sort Asc", id="assay-unit-sort-asc-btn", n_clicks=0, style={"display": "none"}),
@@ -903,7 +1100,56 @@ def create_layout(server=None):
         html.Button("Assay Unit Field Arrow Click", id="assay-unit-field-arrow-btn", n_clicks=0, style={"display": "none"}),
         html.Button("Assay Unit Nested Arrow Click", id="assay-unit-nested-arrow-btn", n_clicks=0, style={"display": "none"}),
         
-        # Popup menu (initially hidden) - MATCHING crude_comparison.py
+        # Hidden components for interactivity - REFINED PRODUCTS TABLE
+        html.Button("Refined Product Sort Asc", id="refined-product-sort-asc-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Product Sort Desc", id="refined-product-sort-desc-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Cut Points Sort Asc", id="refined-cutpoints-sort-asc-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Cut Points Sort Desc", id="refined-cutpoints-sort-desc-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Property Sort Asc", id="refined-property-sort-asc-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Property Sort Desc", id="refined-property-sort-desc-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Unit Sort Asc", id="refined-unit-sort-asc-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Unit Sort Desc", id="refined-unit-sort-desc-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Product Popup Menu Click", id="refined-product-popup-menu-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Cut Points Popup Menu Click", id="refined-cutpoints-popup-menu-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Property Popup Menu Click", id="refined-property-popup-menu-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Unit Popup Menu Click", id="refined-unit-popup-menu-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Product Popup Source Click", id="refined-product-popup-source-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Product Popup Alphabetic Click", id="refined-product-popup-alphabetic-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Product Popup Field Click", id="refined-product-popup-field-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Product Popup Nested Click", id="refined-product-popup-nested-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Product Field Arrow Click", id="refined-product-field-arrow-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Product Nested Arrow Click", id="refined-product-nested-arrow-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Cut Points Popup Source Click", id="refined-cutpoints-popup-source-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Cut Points Popup Alphabetic Click", id="refined-cutpoints-popup-alphabetic-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Cut Points Popup Field Click", id="refined-cutpoints-popup-field-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Cut Points Popup Nested Click", id="refined-cutpoints-popup-nested-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Cut Points Field Arrow Click", id="refined-cutpoints-field-arrow-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Cut Points Nested Arrow Click", id="refined-cutpoints-nested-arrow-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Property Popup Source Click", id="refined-property-popup-source-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Property Popup Alphabetic Click", id="refined-property-popup-alphabetic-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Property Popup Field Click", id="refined-property-popup-field-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Property Popup Nested Click", id="refined-property-popup-nested-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Property Field Arrow Click", id="refined-property-field-arrow-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Property Nested Arrow Click", id="refined-property-nested-arrow-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Unit Popup Source Click", id="refined-unit-popup-source-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Unit Popup Alphabetic Click", id="refined-unit-popup-alphabetic-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Unit Popup Field Click", id="refined-unit-popup-field-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Unit Popup Nested Click", id="refined-unit-popup-nested-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Unit Field Arrow Click", id="refined-unit-field-arrow-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Refined Unit Nested Arrow Click", id="refined-unit-nested-arrow-btn", n_clicks=0, style={"display": "none"}),
+        
+        # Hidden components for Port Details table
+        html.Button("Port Measure Sort Asc", id="port-measure-sort-asc-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Port Measure Sort Desc", id="port-measure-sort-desc-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Port Measure Popup Menu Click", id="port-measure-popup-menu-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Port Measure Popup Source Click", id="port-measure-popup-source-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Port Measure Popup Alphabetic Click", id="port-measure-popup-alphabetic-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Port Measure Popup Field Click", id="port-measure-popup-field-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Port Measure Popup Nested Click", id="port-measure-popup-nested-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Port Measure Field Arrow Click", id="port-measure-field-arrow-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Port Measure Nested Arrow Click", id="port-measure-nested-arrow-btn", n_clicks=0, style={"display": "none"}),
+        
+        # Popup menus for Mars Blend Assay table - SEPARATE CLASS NAMES
         html.Div([
             html.Div("Data source order", className="popup-menu-item assay-property-popup-source-item", 
                     style={
@@ -961,16 +1207,8 @@ def create_layout(server=None):
                    "justifyContent": "space-between",
                    "position": "relative",
                }),
-        ], id="assay-property-sorting-controls", style={
-            "position": "absolute", 
-            "backgroundColor": "white", 
-            "padding": "15px",
-            "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
-            "zIndex": "1000",
+        ], id="assay-property-sorting-controls", className="assay-popup-menu", style={
             "display": "none",
-            "minWidth": "160px",
-            "top":"213px",
-            "left":"209px",
         }),
         
         html.Div([
@@ -1030,83 +1268,11 @@ def create_layout(server=None):
                    "justifyContent": "space-between",
                    "position": "relative",
                }),
-        ], id="assay-unit-sorting-controls", style={
-            "position": "absolute", 
-            "backgroundColor": "white", 
-            "padding": "4px 0",
-            "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
-            "zIndex": "1000",
+        ], id="assay-unit-sorting-controls", className="assay-popup-menu", style={
             "display": "none",
-            "minWidth": "160px"
         }),
         
-        # Store components - MATCHING crude_comparison.py
-        dcc.Store(id='assay-current-sort-order', data={'column': None, 'type': 'source', 'direction': 'asc'}),
-        dcc.Store(id='assay-show-sorting-controls', data={'header': None}),
-        dcc.Store(id='assay-original-data', data=assay_data),
-        html.Div(id='assay-dummy-output', style={'display': 'none'}),
-        html.Div(id='assay-dummy-output-2', style={'display': 'none'}),
-        
-        # AVG(Value) Text Box (initially hidden, shows on hover over Field/Nested)
-        html.Div(
-            "AVG(Value)",
-            id="assay-avg-text-box",
-            n_clicks=0,
-            style={
-                "position": "absolute",
-                "backgroundColor": "white",
-                "border": "1px solid #ccc",
-                "padding": "8px 12px",
-                "borderRadius": "4px",
-                "fontSize": "12px",
-                "fontFamily": "Arial",
-                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
-                "zIndex": "1002",
-                "display": "none",
-                "color": "#333",
-                "cursor": "pointer",
-            }
-        ),
-        
-        # Hidden components for Refined Products table sorting
-        html.Button("Refined Product Sort Asc", id="refined-product-sort-asc-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Product Sort Desc", id="refined-product-sort-desc-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Cut Points Sort Asc", id="refined-cutpoints-sort-asc-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Cut Points Sort Desc", id="refined-cutpoints-sort-desc-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Property Sort Asc", id="refined-property-sort-asc-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Property Sort Desc", id="refined-property-sort-desc-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Unit Sort Asc", id="refined-unit-sort-asc-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Unit Sort Desc", id="refined-unit-sort-desc-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Product Popup Menu Click", id="refined-product-popup-menu-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Cut Points Popup Menu Click", id="refined-cutpoints-popup-menu-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Property Popup Menu Click", id="refined-property-popup-menu-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Unit Popup Menu Click", id="refined-unit-popup-menu-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Product Popup Source Click", id="refined-product-popup-source-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Product Popup Alphabetic Click", id="refined-product-popup-alphabetic-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Cut Points Popup Source Click", id="refined-cutpoints-popup-source-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Cut Points Popup Alphabetic Click", id="refined-cutpoints-popup-alphabetic-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Property Popup Source Click", id="refined-property-popup-source-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Property Popup Alphabetic Click", id="refined-property-popup-alphabetic-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Unit Popup Source Click", id="refined-unit-popup-source-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Unit Popup Alphabetic Click", id="refined-unit-popup-alphabetic-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Product Popup Field Click", id="refined-product-popup-field-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Product Popup Nested Click", id="refined-product-popup-nested-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Product Field Arrow Click", id="refined-product-field-arrow-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Product Nested Arrow Click", id="refined-product-nested-arrow-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Cut Points Popup Field Click", id="refined-cutpoints-popup-field-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Cut Points Popup Nested Click", id="refined-cutpoints-popup-nested-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Cut Points Field Arrow Click", id="refined-cutpoints-field-arrow-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Cut Points Nested Arrow Click", id="refined-cutpoints-nested-arrow-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Property Popup Field Click", id="refined-property-popup-field-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Property Popup Nested Click", id="refined-property-popup-nested-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Property Field Arrow Click", id="refined-property-field-arrow-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Property Nested Arrow Click", id="refined-property-nested-arrow-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Unit Popup Field Click", id="refined-unit-popup-field-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Unit Popup Nested Click", id="refined-unit-popup-nested-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Unit Field Arrow Click", id="refined-unit-field-arrow-btn", n_clicks=0, style={"display": "none"}),
-        html.Button("Refined Unit Nested Arrow Click", id="refined-unit-nested-arrow-btn", n_clicks=0, style={"display": "none"}),
-        
-        # Popup menus for Refined Products table (one for each header)
+        # Popup menus for Refined Products table - SEPARATE CLASS NAMES
         html.Div([
             html.Div("Data source order", className="popup-menu-item refined-product-popup-source-item", 
                     style={
@@ -1164,14 +1330,10 @@ def create_layout(server=None):
                    "justifyContent": "space-between",
                    "position": "relative",
                }),
-        ], id="refined-product-sorting-controls", style={
-            "position": "absolute", 
-            "backgroundColor": "white", 
-            "padding": "4px 0",
-            "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
-            "zIndex": "1000",
+        ], id="refined-product-sorting-controls", className="refined-popup-menu", style={
             "display": "none",
-            "minWidth": "160px"
+            "top": "1075px",
+            "left": "714px",
         }),
         
         html.Div([
@@ -1231,14 +1393,10 @@ def create_layout(server=None):
                    "justifyContent": "space-between",
                    "position": "relative",
                }),
-        ], id="refined-cutpoints-sorting-controls", style={
-            "position": "absolute", 
-            "backgroundColor": "white", 
-            "padding": "4px 0",
-            "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
-            "zIndex": "1000",
+        ], id="refined-cutpoints-sorting-controls", className="refined-popup-menu", style={
             "display": "none",
-            "minWidth": "160px"
+            "top": "1075px",
+            "left": "818px",
         }),
         
         html.Div([
@@ -1298,14 +1456,9 @@ def create_layout(server=None):
                    "justifyContent": "space-between",
                    "position": "relative",
                }),
-        ], id="refined-property-sorting-controls", style={
-            "position": "absolute", 
-            "backgroundColor": "white", 
-            "padding": "4px 0",
-            "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
-            "zIndex": "1000",
+        ], id="refined-property-sorting-controls", className="refined-popup-menu", style={
             "display": "none",
-            "minWidth": "160px"
+            "left": "869px",
         }),
         
         html.Div([
@@ -1365,24 +1518,116 @@ def create_layout(server=None):
                    "justifyContent": "space-between",
                    "position": "relative",
                }),
-        ], id="refined-unit-sorting-controls", style={
-            "position": "absolute", 
-            "backgroundColor": "white", 
-            "padding": "4px 0",
-            "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
-            "zIndex": "1000",
+        ], id="refined-unit-sorting-controls", className="refined-popup-menu", style={
             "display": "none",
-            "minWidth": "160px"
+            "left": "943px",
         }),
         
-        # Store components for Refined Products
+        # Popup menus for Port Details table
+        html.Div([
+            html.Div("Data source order", className="popup-menu-item port-measure-popup-source-item", 
+                    style={
+                        "padding": "6px 10px", 
+                        "fontSize": "12px",
+                        "cursor": "pointer",
+                        "fontFamily": "Arial",
+                        "color": "#333",
+                    }),
+            html.Div("Alphabetic", className="popup-menu-item port-measure-popup-alphabetic-item",
+                    style={
+                        "padding": "6px 10px", 
+                        "fontSize": "12px",
+                        "cursor": "pointer",
+                        "fontFamily": "Arial",
+                        "color": "#333",
+                    }),
+            html.Div([
+                html.Span("Field", style={"flex": "1"}),
+                html.Span("▶", className="port-measure-field-arrow-item", style={
+                    "cursor": "pointer",
+                    "fontSize": "10px",
+                    "color": "#666",
+                    "marginLeft": "8px",
+                }),
+            ], className="popup-menu-item port-measure-popup-field-item",
+               style={
+                   "padding": "6px 10px", 
+                   "fontSize": "12px",
+                   "cursor": "pointer",
+                   "fontFamily": "Arial",
+                   "color": "#333",
+                   "display": "flex",
+                   "alignItems": "center",
+                   "justifyContent": "space-between",
+                   "position": "relative",
+               }),
+            html.Div([
+                html.Span("Nested", style={"flex": "1"}),
+                html.Span("▶", className="port-measure-nested-arrow-item", style={
+                    "cursor": "pointer",
+                    "fontSize": "10px",
+                    "color": "#666",
+                    "marginLeft": "8px",
+                }),
+            ], className="popup-menu-item port-measure-popup-nested-item",
+               style={
+                   "padding": "6px 10px", 
+                   "fontSize": "12px",
+                   "cursor": "pointer",
+                   "fontFamily": "Arial",
+                   "color": "#333",
+                   "display": "flex",
+                   "alignItems": "center",
+                   "justifyContent": "space-between",
+                   "position": "relative",
+               }),
+        ], id="port-measure-sorting-controls", className="port-popup-menu", style={
+            "display": "none",
+        }),
+        
+        # Store components for both tables - COMPLETELY SEPARATE
+        dcc.Store(id='assay-current-sort-order', data={'column': None, 'type': 'source', 'direction': 'asc'}),
+        dcc.Store(id='assay-show-sorting-controls', data={'header': None}),
+        dcc.Store(id='assay-original-data', data=assay_data),
+        
         dcc.Store(id='refined-current-sort-order', data={'column': None, 'type': 'source', 'direction': 'asc'}),
         dcc.Store(id='refined-show-sorting-controls', data={'header': None}),
         dcc.Store(id='refined-original-data', data=refined_products_data),
+        
+        dcc.Store(id='port-current-sort-order', data={'column': None, 'type': 'source', 'direction': 'asc'}),
+        dcc.Store(id='port-show-sorting-controls', data={'header': None}),
+        dcc.Store(id='port-original-data', data=port_details_table_data),
+        
+        html.Div(id='assay-dummy-output', style={'display': 'none'}),
+        html.Div(id='assay-dummy-output-2', style={'display': 'none'}),
         html.Div(id='refined-dummy-output', style={'display': 'none'}),
         html.Div(id='refined-dummy-output-2', style={'display': 'none'}),
+        html.Div(id='port-dummy-output', style={'display': 'none'}),
+        html.Div(id='port-dummy-output-2', style={'display': 'none'}),
         
-        # AVG(Value) Text Box for Refined Products Property header
+        # AVG(Value) Text Box for Mars Blend Assay (initially hidden, shows on hover over Field/Nested)
+        html.Div(
+            "AVG(Value)",
+            id="assay-avg-text-box",
+            n_clicks=0,
+            style={
+                "position": "absolute",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "none",
+                "color": "#333",
+                "cursor": "pointer",
+                "left": "256px",
+            }
+        ),
+        
+        # AVG(Value) Text Box for Refined Products (initially hidden, shows on hover over Field/Nested)
         html.Div(
             "AVG(Value)",
             id="refined-avg-text-box",
@@ -1400,7 +1645,30 @@ def create_layout(server=None):
                 "display": "none",
                 "color": "#333",
                 "cursor": "pointer",
-                "left": "684px",
+                "left": "900px",
+            }
+        ),
+        
+        # AVG(Value) Text Box for Port Details (initially hidden, shows on hover over Field/Nested)
+        html.Div(
+            "AVG(Value)",
+            id="port-avg-text-box",
+            n_clicks=0,
+            style={
+                "position": "absolute",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "none",
+                "color": "#333",
+                "cursor": "pointer",
+                # "left": "2684px",
+                # "right": "50px",
             }
         ),
         
@@ -1602,7 +1870,7 @@ def create_layout(server=None):
             "marginBottom": "20px",
             "alignItems": "start"
         }, children=[
-            # Column 1: Mars Blend Assay - NOW USING DASH DATATABLE
+            # Column 1: Mars Blend Assay
             html.Div(style={"gridColumn": "1 / 2"}, children=[
                 html.Div("Mars Blend Assay", style={
                     "color": "#d65a00",
@@ -1907,7 +2175,7 @@ def create_layout(server=None):
                 )
             ]),
             
-            # Column 2: Refined Products Breakdown & Properties (keep as HTML table)
+            # Column 2: Refined Products Breakdown & Properties
             html.Div(style={"gridColumn": "2 / 3"}, children=[
                 html.Div("Refined Products Breakdown & Properties", style={
                     "color": "#d65a00",
@@ -1964,43 +2232,63 @@ def create_layout(server=None):
                     "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
-                html.Table(style={
-                    "width": "100%",
-                    "borderCollapse": "collapse",
-                    "marginBottom": "15px",
-                    "fontFamily": "Arial, sans-serif"
-                }, children=[
-                    html.Thead(html.Tr([
-                        html.Th("Measure", style={
-                            "border": "1px solid #ddd",
-                            "padding": "10px",
-                            "backgroundColor": "#f5f5f5",
-                            "fontWeight": "bold",
-                            "textAlign": "left",
-                            "fontSize": "12px"
-                        }),
-                        html.Th(port_details_label, style={
-                            "border": "1px solid #ddd",
-                            "padding": "10px",
-                            "backgroundColor": "#f5f5f5",
-                            "fontWeight": "bold",
-                            "textAlign": "left",
-                            "fontSize": "12px"
-                        })
-                    ])),
-                    html.Tbody([html.Tr([
-                        html.Td(port[0], style={
-                            "border": "1px solid #ddd",
-                            "padding": "10px",
-                            "fontSize": "12px"
-                        }),
-                        html.Td(port[1], style={
-                            "border": "1px solid #ddd",
-                            "padding": "10px",
-                            "fontSize": "12px"
-                        })
-                    ]) for port in port_details_rows])
-                ])
+                dash_table.DataTable(
+                    id="port-details-table",
+                    data=port_details_table_data,
+                    columns=[
+                        {"name": "Measure", "id": "Measure"},
+                        {"name": port_details_label, "id": port_details_label}
+                    ],
+                    style_table={
+                        "width": "100%",
+                        "marginBottom": "15px",
+                        "fontFamily": "Arial, sans-serif"
+                    },
+                    style_cell={
+                        "border": "1px solid #ddd",
+                        "padding": "10px",
+                        "fontSize": "12px",
+                        "textAlign": "left",
+                        "backgroundColor": "white"
+                    },
+                    style_header={
+                        "backgroundColor": "#f5f5f5",
+                        "fontWeight": "bold",
+                        "border": "1px solid #ddd",
+                        "padding": "10px"
+                    },
+                    style_data={
+                        "border": "1px solid #ddd"
+                    },
+                    css=[{
+                        "selector": ".dash-header[data-dash-column='Measure']",
+                        "rule": "position: relative;"
+                    },
+                    {
+                        "selector": ".dash-header[data-dash-column='Measure'] .sort-order-container",
+                        "rule": "display: flex; flex-direction: column; position: absolute; right: 30px; top: 50%; transform: translateY(-50%); opacity: 0; transition: opacity 0.2s;"
+                    },
+                    {
+                        "selector": ".dash-header[data-dash-column='Measure'] .sort-indicator",
+                        "rule": "position: absolute; right: 5px; top: 50%; transform: translateY(-50%); opacity: 0; transition: opacity 0.2s; cursor: pointer; width: 16px; height: 16px;"
+                    },
+                    {
+                        "selector": ".dash-header[data-dash-column='Measure']:hover .sort-order-container",
+                        "rule": "opacity: 1 !important;"
+                    },
+                    {
+                        "selector": ".dash-header[data-dash-column='Measure']:hover .sort-indicator",
+                        "rule": "opacity: 1 !important;"
+                    },
+                    {
+                        "selector": ".dash-header[data-dash-column='Measure'] .sort-asc, .dash-header[data-dash-column='Measure'] .sort-desc",
+                        "rule": "cursor: pointer; padding: 2px 4px; font-size: 11px; font-weight: bold; color: #333;"
+                    },
+                    {
+                        "selector": ".dash-header[data-dash-column='Measure'] .sort-asc:hover, .dash-header[data-dash-column='Measure'] .sort-desc:hover",
+                        "rule": "background-color: #d4e7ff; font-weight: bold;"
+                    }]
+                )
             ]),
             
             # Bottom Row: Sellers and Producers
@@ -2064,69 +2352,53 @@ def create_layout(server=None):
     ])
 
 # ------------------------------------------------------------------------------
-# CALLBACKS - MATCHING crude_comparison.py FUNCTIONALITY
+# CALLBACKS - COMPLETELY SEPARATE FOR BOTH TABLES
 # ------------------------------------------------------------------------------
 def register_callbacks(app):
-    """Register callbacks for the dashboard including assay table interactions"""
+    """Register callbacks for the dashboard with completely separate sorting for both tables"""
+    
+    # ==========================================================================
+    # MARS BLEND ASSAY TABLE CALLBACKS - ONLY HANDLES ASSAY TABLE
+    # ==========================================================================
     
     @app.callback(
-        Output("crude-select", "value"),
-        Input("crude-select", "value")
-    )
-    def update_crude(selected_crude):
-        return selected_crude
-
-    # Combined callback for sorting controls and popup menu
-    @app.callback(
-        [Output("assay-property-sorting-controls", "style", allow_duplicate=True),
-         Output("assay-unit-sorting-controls", "style", allow_duplicate=True),
+        [Output("assay-property-sorting-controls", "style"),
+         Output("assay-unit-sorting-controls", "style"),
          Output('assay-current-sort-order', 'data', allow_duplicate=True),
          Output('assay-show-sorting-controls', 'data', allow_duplicate=True)],
-        [Input('assay-property-sort-asc-btn', 'n_clicks'),
-         Input('assay-property-sort-desc-btn', 'n_clicks'),
-         Input('assay-unit-sort-asc-btn', 'n_clicks'),
-         Input('assay-unit-sort-desc-btn', 'n_clicks'),
-         Input('assay-property-popup-menu-btn', 'n_clicks'),
+        [Input('assay-property-popup-menu-btn', 'n_clicks'),
          Input('assay-unit-popup-menu-btn', 'n_clicks'),
          Input('assay-property-popup-source-btn', 'n_clicks'),
          Input('assay-property-popup-alphabetic-btn', 'n_clicks'),
-         Input('assay-property-popup-field-btn', 'n_clicks'),
-         Input('assay-property-popup-nested-btn', 'n_clicks'),
-         Input('assay-property-field-arrow-btn', 'n_clicks'),
-         Input('assay-property-nested-arrow-btn', 'n_clicks'),
          Input('assay-unit-popup-source-btn', 'n_clicks'),
          Input('assay-unit-popup-alphabetic-btn', 'n_clicks'),
-         Input('assay-unit-popup-field-btn', 'n_clicks'),
-         Input('assay-unit-popup-nested-btn', 'n_clicks'),
-         Input('assay-unit-field-arrow-btn', 'n_clicks'),
-         Input('assay-unit-nested-arrow-btn', 'n_clicks'),
-         Input('assay-avg-text-box', 'n_clicks')],
+         Input('assay-property-sort-asc-btn', 'n_clicks'),
+         Input('assay-property-sort-desc-btn', 'n_clicks'),
+         Input('assay-unit-sort-asc-btn', 'n_clicks'),
+         Input('assay-unit-sort-desc-btn', 'n_clicks')],
         [State('assay-show-sorting-controls', 'data'),
          State('assay-current-sort-order', 'data')],
         prevent_initial_call=True
     )
-    def handle_all_assay_sorting_interactions(prop_asc_clicks, prop_desc_clicks, unit_asc_clicks, unit_desc_clicks,
-                                            prop_popup_clicks, unit_popup_clicks,
-                                            prop_popup_source_clicks, prop_popup_alpha_clicks,
-                                            prop_popup_field_clicks, prop_popup_nested_clicks,
-                                            prop_field_arrow_clicks, prop_nested_arrow_clicks,
-                                            unit_popup_source_clicks, unit_popup_alpha_clicks,
-                                            unit_popup_field_clicks, unit_popup_nested_clicks,
-                                            unit_field_arrow_clicks, unit_nested_arrow_clicks,
-                                            avg_text_box_clicks, show_controls, current_sort):
+    def handle_assay_sorting_interactions(prop_popup_clicks, unit_popup_clicks,
+                                        prop_source_clicks, prop_alpha_clicks,
+                                        unit_source_clicks, unit_alpha_clicks,
+                                        prop_asc_clicks, prop_desc_clicks,
+                                        unit_asc_clicks, unit_desc_clicks,
+                                        show_controls, current_sort):
         trigger = ctx.triggered_id
         
         # Default popup styles
         property_popup_style = {"display": "none"}
         unit_popup_style = {"display": "none"}
         
-        # Handle popup menu visibility
+        # Handle popup menu visibility - ONLY FOR ASSAY TABLE
         if trigger == 'assay-property-popup-menu-btn':
             current_header = show_controls.get('header') if show_controls else None
             if current_header == 'Property':
                 return property_popup_style, unit_popup_style, no_update, {'header': None}
             else:
-                return {
+                property_style = {
                     "position": "absolute",
                     "backgroundColor": "white",
                     "padding": "4px 0",
@@ -2134,14 +2406,15 @@ def register_callbacks(app):
                     "zIndex": "1000",
                     "display": "block",
                     "minWidth": "160px"
-                }, unit_popup_style, no_update, {'header': 'Property'}
+                }
+                return property_style, unit_popup_style, no_update, {'header': 'Property'}
         
         elif trigger == 'assay-unit-popup-menu-btn':
             current_header = show_controls.get('header') if show_controls else None
             if current_header == 'Unit':
                 return property_popup_style, unit_popup_style, no_update, {'header': None}
             else:
-                return property_popup_style, {
+                unit_style = {
                     "position": "absolute",
                     "backgroundColor": "white",
                     "padding": "4px 0",
@@ -2149,34 +2422,23 @@ def register_callbacks(app):
                     "zIndex": "1000",
                     "display": "block",
                     "minWidth": "160px"
-                }, no_update, {'header': 'Unit'}
+                }
+                return property_popup_style, unit_style, no_update, {'header': 'Unit'}
         
-        # Handle AVG(Value) text box click - close popup
-        elif trigger == 'assay-avg-text-box':
-            return property_popup_style, unit_popup_style, no_update, {'header': None}
-        
-        # Handle sort order changes (close popup)
-        elif trigger in ['assay-property-popup-source-btn', 'assay-property-popup-alphabetic-btn', 
-                        'assay-property-popup-field-btn', 'assay-property-popup-nested-btn',
-                        'assay-property-field-arrow-btn', 'assay-property-nested-arrow-btn',
+        # Handle sort order changes (close popup) - ONLY FOR ASSAY TABLE
+        elif trigger in ['assay-property-popup-source-btn', 'assay-property-popup-alphabetic-btn',
                         'assay-unit-popup-source-btn', 'assay-unit-popup-alphabetic-btn',
-                        'assay-unit-popup-field-btn', 'assay-unit-popup-nested-btn',
-                        'assay-unit-field-arrow-btn', 'assay-unit-nested-arrow-btn',
                         'assay-property-sort-asc-btn', 'assay-property-sort-desc-btn',
                         'assay-unit-sort-asc-btn', 'assay-unit-sort-desc-btn']:
             
-            # Close all popups
+            # Close all assay popups
             popup_style = {"display": "none"}
             
-            # Update sort order based on trigger
+            # Update sort order based on trigger - ONLY FOR ASSAY TABLE
             if trigger == 'assay-property-popup-source-btn':
                 return popup_style, popup_style, {'column': 'Property', 'type': 'source', 'direction': 'asc'}, {'header': None}
             elif trigger == 'assay-property-popup-alphabetic-btn':
                 return popup_style, popup_style, {'column': 'Property', 'type': 'alphabetic', 'direction': 'asc'}, {'header': None}
-            elif trigger == 'assay-property-popup-field-btn' or trigger == 'assay-property-field-arrow-btn':
-                return popup_style, popup_style, {'column': 'Property', 'type': 'field', 'direction': 'asc'}, {'header': None}
-            elif trigger == 'assay-property-popup-nested-btn' or trigger == 'assay-property-nested-arrow-btn':
-                return popup_style, popup_style, {'column': 'Property', 'type': 'nested', 'direction': 'asc'}, {'header': None}
             elif trigger == 'assay-property-sort-asc-btn':
                 return popup_style, popup_style, {'column': 'Property', 'type': 'alphabetic', 'direction': 'asc'}, {'header': None}
             elif trigger == 'assay-property-sort-desc-btn':
@@ -2185,10 +2447,6 @@ def register_callbacks(app):
                 return popup_style, popup_style, {'column': 'Unit', 'type': 'source', 'direction': 'asc'}, {'header': None}
             elif trigger == 'assay-unit-popup-alphabetic-btn':
                 return popup_style, popup_style, {'column': 'Unit', 'type': 'alphabetic', 'direction': 'asc'}, {'header': None}
-            elif trigger == 'assay-unit-popup-field-btn' or trigger == 'assay-unit-field-arrow-btn':
-                return popup_style, popup_style, {'column': 'Unit', 'type': 'field', 'direction': 'asc'}, {'header': None}
-            elif trigger == 'assay-unit-popup-nested-btn' or trigger == 'assay-unit-nested-arrow-btn':
-                return popup_style, popup_style, {'column': 'Unit', 'type': 'nested', 'direction': 'asc'}, {'header': None}
             elif trigger == 'assay-unit-sort-asc-btn':
                 return popup_style, popup_style, {'column': 'Unit', 'type': 'alphabetic', 'direction': 'asc'}, {'header': None}
             elif trigger == 'assay-unit-sort-desc-btn':
@@ -2215,479 +2473,25 @@ def register_callbacks(app):
             # Return original data order
             return original_data
         elif sort_type == 'alphabetic':
-            if column in ['Property', 'Unit', 'property', 'unit']:
-                # Normalize column name to match data keys
-                col_key = 'Property' if column.lower() == 'property' else 'Unit'
-                return sort_assay_data_alphabetically(original_data, col_key, direction)
+            if column in ['Property', 'Unit']:
+                return sort_assay_data_alphabetically(original_data, column, direction)
             else:
                 return original_data
-        elif sort_type in ['field', 'nested']:
-            # Use maximum value sorting for Field and Nested
-            return sort_assay_data_by_maximum_value(original_data, direction)
         else:
             return original_data
 
-    # Client-side callback to handle the header interactions - EXACT MATCH TO crude_comparison.py
-    app.clientside_callback(
-        """
-        function(n) {
-            setTimeout(function() {
-                // Add A/Z and SVG sort icon to Property header
-                const propertyHeader = document.querySelector('.dash-header[data-dash-column="Property"]');
-                if (propertyHeader && !propertyHeader.querySelector('.sort-order-container')) {
-                    const sortContainer = document.createElement('div');
-                    sortContainer.className = 'sort-order-container';
-                    
-                    const aElement = document.createElement('div');
-                    aElement.className = 'sort-asc';
-                    aElement.textContent = 'A';
-                    aElement.title = 'Click for ascending alphabetical order';
-                    aElement.onclick = function(e) {
-                        e.stopPropagation();
-                        const btn = document.getElementById('assay-property-sort-asc-btn');
-                        if (btn) btn.click();
-                    };
-                    
-                    const zElement = document.createElement('div');
-                    zElement.className = 'sort-desc';
-                    zElement.textContent = 'Z';
-                    zElement.title = 'Click for descending alphabetical order';
-                    zElement.onclick = function(e) {
-                        e.stopPropagation();
-                        const btn = document.getElementById('assay-property-sort-desc-btn');
-                        if (btn) btn.click();
-                    };
-                    
-                    sortContainer.appendChild(aElement);
-                    sortContainer.appendChild(zElement);
-                    
-                    // Add SVG sort icon
-                    const sortIndicator = document.createElement('div');
-                    sortIndicator.className = 'sort-indicator';
-                    sortIndicator.title = 'Click to show sort options';
-                    
-                    sortIndicator.innerHTML = `
-                        <svg fill="#000000" viewBox="0 0 301.219 301.219" xmlns="http://www.w3.org/2000/svg">
-                            <g>
-                                <path d="M159.365,23.736v-10c0-5.523-4.477-10-10-10H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h139.365
-                                    C154.888,33.736,159.365,29.259,159.365,23.736z"/>
-                                <path d="M130.586,66.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h120.586c5.523,0,10-4.477,10-10v-10
-                                    C140.586,71.213,136.109,66.736,130.586,66.736z"/>
-                                <path d="M111.805,129.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h101.805c5.523,0,10-4.477,10-10v-10
-                                    C121.805,134.213,117.328,129.736,111.805,129.736z"/>
-                                <path d="M93.025,199.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h83.025c5.522,0,10-4.477,10-10v-10
-                                    C103.025,204.213,98.548,199.736,93.025,199.736z"/>
-                                <path d="M74.244,262.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h64.244c5.522,0,10-4.477,10-10v-10
-                                    C84.244,267.213,79.767,262.736,74.244,262.736z"/>
-                                <path d="M298.29,216.877l-7.071-7.071c-1.875-1.875-4.419-2.929-7.071-2.929c-2.652,0-5.196,1.054-7.072,2.929l-34.393,34.393
-                                    V18.736c0-5.523-4.477-10-10-10h-10c-5.523,0-10,4.477-10,10v225.462l-34.393-34.393c-1.876-1.875-4.419-2.929-7.071-2.929
-                                    c-2.652,0-5.196,1.054-7.071,2.929l-7.072,7.071c-3.904,3.905-3.904,10.237,0,14.142l63.536,63.536
-                                    c1.953,1.953,4.512,2.929,7.071,2.929c2.559,0,5.119-0.976,7.071-2.929l63.536-63.536
-                                    C302.195,227.113,302.195,220.781,298.29,216.877z"/>
-                            </g>
-                        </svg>
-                    `;
-                    
-                    sortIndicator.onclick = function(e) {
-                        e.stopPropagation();
-                        const btn = document.getElementById('assay-property-popup-menu-btn');
-                        if (btn) btn.click();
-                    };
-                    
-                    propertyHeader.appendChild(sortContainer);
-                    propertyHeader.appendChild(sortIndicator);
-                }
-                    
-                // Add A/Z and SVG sort icon to Unit header
-                const unitHeader = document.querySelector('.dash-header[data-dash-column="Unit"]');
-                if (unitHeader && !unitHeader.querySelector('.sort-order-container')) {
-                    const sortContainer = document.createElement('div');
-                    sortContainer.className = 'sort-order-container';
-                    
-                    const aElement = document.createElement('div');
-                    aElement.className = 'sort-asc';
-                    aElement.textContent = 'A';
-                    aElement.title = 'Click for ascending alphabetical order';
-                    aElement.onclick = function(e) {
-                        e.stopPropagation();
-                        const btn = document.getElementById('assay-unit-sort-asc-btn');
-                        if (btn) btn.click();
-                    };
-                    
-                    const zElement = document.createElement('div');
-                    zElement.className = 'sort-desc';
-                    zElement.textContent = 'Z';
-                    zElement.title = 'Click for descending alphabetical order';
-                    zElement.onclick = function(e) {
-                        e.stopPropagation();
-                        const btn = document.getElementById('assay-unit-sort-desc-btn');
-                        if (btn) btn.click();
-                    };
-                    
-                    sortContainer.appendChild(aElement);
-                    sortContainer.appendChild(zElement);
-                    
-                    // Add SVG sort icon
-                    const sortIndicator = document.createElement('div');
-                    sortIndicator.className = 'sort-indicator';
-                    sortIndicator.title = 'Click to show sort options';
-                    
-                    sortIndicator.innerHTML = `
-                        <svg fill="#000000" viewBox="0 0 301.219 301.219" xmlns="http://www.w3.org/2000/svg">
-                            <g>
-                                <path d="M159.365,23.736v-10c0-5.523-4.477-10-10-10H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h139.365
-                                    C154.888,33.736,159.365,29.259,159.365,23.736z"/>
-                                <path d="M130.586,66.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h120.586c5.523,0,10-4.477,10-10v-10
-                                    C140.586,71.213,136.109,66.736,130.586,66.736z"/>
-                                <path d="M111.805,129.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h101.805c5.523,0,10-4.477,10-10v-10
-                                    C121.805,134.213,117.328,129.736,111.805,129.736z"/>
-                                <path d="M93.025,199.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h83.025c5.522,0,10-4.477,10-10v-10
-                                    C103.025,204.213,98.548,199.736,93.025,199.736z"/>
-                                <path d="M74.244,262.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h64.244c5.522,0,10-4.477,10-10v-10
-                                    C84.244,267.213,79.767,262.736,74.244,262.736z"/>
-                                <path d="M298.29,216.877l-7.071-7.071c-1.875-1.875-4.419-2.929-7.071-2.929c-2.652,0-5.196,1.054-7.072,2.929l-34.393,34.393
-                                    V18.736c0-5.523-4.477-10-10-10h-10c-5.523,0-10,4.477-10,10v225.462l-34.393-34.393c-1.876-1.875-4.419-2.929-7.071-2.929
-                                    c-2.652,0-5.196,1.054-7.071,2.929l-7.072,7.071c-3.904,3.905-3.904,10.237,0,14.142l63.536,63.536
-                                    c1.953,1.953,4.512,2.929,7.071,2.929c2.559,0,5.119-0.976,7.071-2.929l63.536-63.536
-                                    C302.195,227.113,302.195,220.781,298.29,216.877z"/>
-                            </g>
-                        </svg>
-                    `;
-                    
-                    sortIndicator.onclick = function(e) {
-                        e.stopPropagation();
-                        const btn = document.getElementById('assay-unit-popup-menu-btn');
-                        if (btn) btn.click();
-                    };
-                    
-                    unitHeader.appendChild(sortContainer);
-                    unitHeader.appendChild(sortIndicator);
-                }
-                
-                // Add click handlers for Property popup menu items
-                const propertyPopup = document.getElementById('assay-property-sorting-controls');
-                if (propertyPopup) {
-                    const propSourceItem = propertyPopup.querySelector('.assay-property-popup-source-item');
-                    const propAlphaItem = propertyPopup.querySelector('.assay-property-popup-alphabetic-item');
-                    const propFieldItem = propertyPopup.querySelector('.assay-property-popup-field-item');
-                    const propNestedItem = propertyPopup.querySelector('.assay-property-popup-nested-item');
-                    
-                    if (propSourceItem) {
-                        propSourceItem.onclick = function(e) {
-                            e.stopPropagation();
-                            const btn = document.getElementById('assay-property-popup-source-btn');
-                            if (btn) btn.click();
-                        };
-                    }
-                    if (propAlphaItem) {
-                        propAlphaItem.onclick = function(e) {
-                            e.stopPropagation();
-                            const btn = document.getElementById('assay-property-popup-alphabetic-btn');
-                            if (btn) btn.click();
-                        };
-                    }
-                    if (propFieldItem) {
-                        propFieldItem.onclick = function(e) {
-                            e.stopPropagation();
-                            const btn = document.getElementById('assay-property-popup-field-btn');
-                            if (btn) btn.click();
-                        };
-                        
-                        // Add hover handlers to show AVG(Value) text box
-                        propFieldItem.addEventListener('mouseenter', function(e) {
-                            const textBox = document.getElementById('assay-avg-text-box');
-                            if (textBox) {
-                                const rect = propFieldItem.getBoundingClientRect();
-                                textBox.style.display = 'block';
-                                textBox.style.top = (rect.top + window.scrollY) + 'px';
-                                textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
-                            }
-                        });
-                        
-                        propFieldItem.addEventListener('mouseleave', function(e) {
-                            const textBox = document.getElementById('assay-avg-text-box');
-                            if (textBox) {
-                                const relatedTarget = e.relatedTarget;
-                                if (!relatedTarget || !textBox.contains(relatedTarget)) {
-                                    setTimeout(function() {
-                                        if (!textBox.matches(':hover') && document.activeElement !== textBox) {
-                                            textBox.style.display = 'none';
-                                        }
-                                    }, 150);
-                                }
-                            }
-                        });
-                    }
-                    if (propNestedItem) {
-                        propNestedItem.onclick = function(e) {
-                            e.stopPropagation();
-                            const btn = document.getElementById('assay-property-popup-nested-btn');
-                            if (btn) btn.click();
-                        };
-                        
-                        // Add hover handlers to show AVG(Value) text box
-                        propNestedItem.addEventListener('mouseenter', function(e) {
-                            const textBox = document.getElementById('assay-avg-text-box');
-                            if (textBox) {
-                                const rect = propNestedItem.getBoundingClientRect();
-                                textBox.style.display = 'block';
-                                textBox.style.top = (rect.top + window.scrollY) + 'px';
-                                textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
-                            }
-                        });
-                        
-                        propNestedItem.addEventListener('mouseleave', function(e) {
-                            const textBox = document.getElementById('assay-avg-text-box');
-                            if (textBox) {
-                                const relatedTarget = e.relatedTarget;
-                                if (!relatedTarget || !textBox.contains(relatedTarget)) {
-                                    setTimeout(function() {
-                                        if (!textBox.matches(':hover') && document.activeElement !== textBox) {
-                                            textBox.style.display = 'none';
-                                        }
-                                    }, 150);
-                                }
-                            }
-                        });
-                    }
-                }
-                
-                // Add click handlers for Unit popup menu items
-                const unitPopup = document.getElementById('assay-unit-sorting-controls');
-                if (unitPopup) {
-                    const unitSourceItem = unitPopup.querySelector('.assay-unit-popup-source-item');
-                    const unitAlphaItem = unitPopup.querySelector('.assay-unit-popup-alphabetic-item');
-                    const unitFieldItem = unitPopup.querySelector('.assay-unit-popup-field-item');
-                    const unitNestedItem = unitPopup.querySelector('.assay-unit-popup-nested-item');
-                    
-                    if (unitSourceItem) {
-                        unitSourceItem.onclick = function(e) {
-                            e.stopPropagation();
-                            const btn = document.getElementById('assay-unit-popup-source-btn');
-                            if (btn) btn.click();
-                        };
-                    }
-                    if (unitAlphaItem) {
-                        unitAlphaItem.onclick = function(e) {
-                            e.stopPropagation();
-                            const btn = document.getElementById('assay-unit-popup-alphabetic-btn');
-                            if (btn) btn.click();
-                        };
-                    }
-                    if (unitFieldItem) {
-                        unitFieldItem.onclick = function(e) {
-                            e.stopPropagation();
-                            const btn = document.getElementById('assay-unit-popup-field-btn');
-                            if (btn) btn.click();
-                        };
-                        
-                        // Add hover handlers to show AVG(Value) text box
-                        unitFieldItem.addEventListener('mouseenter', function(e) {
-                            const textBox = document.getElementById('assay-avg-text-box');
-                            if (textBox) {
-                                const rect = unitFieldItem.getBoundingClientRect();
-                                textBox.style.display = 'block';
-                                textBox.style.top = (rect.top + window.scrollY) + 'px';
-                                textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
-                            }
-                        });
-                        
-                        unitFieldItem.addEventListener('mouseleave', function(e) {
-                            const textBox = document.getElementById('assay-avg-text-box');
-                            if (textBox) {
-                                const relatedTarget = e.relatedTarget;
-                                if (!relatedTarget || !textBox.contains(relatedTarget)) {
-                                    setTimeout(function() {
-                                        if (!textBox.matches(':hover') && document.activeElement !== textBox) {
-                                            textBox.style.display = 'none';
-                                        }
-                                    }, 150);
-                                }
-                            }
-                        });
-                    }
-                    if (unitNestedItem) {
-                        unitNestedItem.onclick = function(e) {
-                            e.stopPropagation();
-                            const btn = document.getElementById('assay-unit-popup-nested-btn');
-                            if (btn) btn.click();
-                        };
-                        
-                        // Add hover handlers to show AVG(Value) text box
-                        unitNestedItem.addEventListener('mouseenter', function(e) {
-                            const textBox = document.getElementById('assay-avg-text-box');
-                            if (textBox) {
-                                const rect = unitNestedItem.getBoundingClientRect();
-                                textBox.style.display = 'block';
-                                textBox.style.top = (rect.top + window.scrollY) + 'px';
-                                textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
-                            }
-                        });
-                        
-                        unitNestedItem.addEventListener('mouseleave', function(e) {
-                            const textBox = document.getElementById('assay-avg-text-box');
-                            if (textBox) {
-                                const relatedTarget = e.relatedTarget;
-                                if (!relatedTarget || !textBox.contains(relatedTarget)) {
-                                    setTimeout(function() {
-                                        if (!textBox.matches(':hover') && document.activeElement !== textBox) {
-                                            textBox.style.display = 'none';
-                                        }
-                                    }, 150);
-                                }
-                            }
-                        });
-                    }
-                }
-                
-                // Keep text box visible when hovering over it
-                const textBox = document.getElementById('assay-avg-text-box');
-                if (textBox) {
-                    textBox.addEventListener('mouseenter', function(e) {
-                        this.style.display = 'block';
-                    });
-                    
-                    textBox.addEventListener('mouseleave', function(e) {
-                        this.style.display = 'none';
-                    });
-                }
-                
-                // Add mouseover tooltips for Field and Nested arrows
-                const propFieldArrow = document.querySelector('.assay-property-field-arrow-item');
-                const propNestedArrow = document.querySelector('.assay-property-nested-arrow-item');
-                const unitFieldArrow = document.querySelector('.assay-unit-field-arrow-item');
-                const unitNestedArrow = document.querySelector('.assay-unit-nested-arrow-item');
-                
-                if (propFieldArrow) {
-                    propFieldArrow.title = 'Click to sort by numeric value';
-                    propFieldArrow.onclick = function(e) {
-                        e.stopPropagation();
-                        const btn = document.getElementById('assay-property-field-arrow-btn');
-                        if (btn) btn.click();
-                    };
-                }
-                
-                if (propNestedArrow) {
-                    propNestedArrow.title = 'Click to sort by numeric value';
-                    propNestedArrow.onclick = function(e) {
-                        e.stopPropagation();
-                        const btn = document.getElementById('assay-property-nested-arrow-btn');
-                        if (btn) btn.click();
-                    };
-                }
-                
-                if (unitFieldArrow) {
-                    unitFieldArrow.title = 'Click to sort by numeric value';
-                    unitFieldArrow.onclick = function(e) {
-                        e.stopPropagation();
-                        const btn = document.getElementById('assay-unit-field-arrow-btn');
-                        if (btn) btn.click();
-                    };
-                }
-                
-                if (unitNestedArrow) {
-                    unitNestedArrow.title = 'Click to sort by numeric value';
-                    unitNestedArrow.onclick = function(e) {
-                        e.stopPropagation();
-                        const btn = document.getElementById('assay-unit-nested-arrow-btn');
-                        if (btn) btn.click();
-                    };
-                }
-                
-            }, 100);
-            return '';
-        }
-        """,
-        Output('assay-dummy-output', 'children'),
-        Input('assay-table', 'columns'),
-        prevent_initial_call=False
-    )
+    # ==========================================================================
+    # REFINED PRODUCTS TABLE CALLBACKS - ONLY HANDLES REFINED TABLE
+    # ==========================================================================
     
-    # Client-side callback to position assay popup menus when down arrow is clicked
-    app.clientside_callback(
-        """
-        function(showControls) {
-            if (showControls && showControls.header) {
-                setTimeout(function() {
-                    const headerName = showControls.header;
-                    let popup = null;
-                    
-                    if (headerName === 'Property') {
-                        popup = document.getElementById('assay-property-sorting-controls');
-                        if (popup) {
-                            // Fixed position for Property popup
-                            popup.style.top = '1082px';
-                            popup.style.left = '256px';
-                        }
-                    } else if (headerName === 'Unit') {
-                        popup = document.getElementById('assay-unit-sorting-controls');
-                        const targetHeader = document.querySelector('.dash-header[data-dash-column="Unit"]');
-                        if (popup && targetHeader) {
-                            const rect = targetHeader.getBoundingClientRect();
-                            const sortIndicator = targetHeader.querySelector('.sort-indicator');
-                            
-                            if (sortIndicator) {
-                                const indicatorRect = sortIndicator.getBoundingClientRect();
-                                popup.style.top = (indicatorRect.bottom + window.scrollY + 5) + 'px';
-                                popup.style.left = (indicatorRect.left + window.scrollX) + 'px';
-                            } else {
-                                popup.style.top = (rect.bottom + window.scrollY + 5) + 'px';
-                                popup.style.left = (rect.left + window.scrollX) + 'px';
-                            }
-                        }
-                    }
-                }, 50);
-            }
-            return '';
-        }
-        """,
-        Output('assay-dummy-output-2', 'children'),
-        Input('assay-show-sorting-controls', 'data'),
-        prevent_initial_call=True
-    )
-    
-    # ==============================================================================
-    # REFINED PRODUCTS TABLE SORTING CALLBACKS
-    # ==============================================================================
-    
-    # Helper function to sort refined products data
-    def sort_refined_products_data(data, column, sort_type, direction):
-        """Sort refined products data based on column and sort type."""
-        if not data:
-            return data
-        
-        data_copy = data.copy()
-        
-        if sort_type == 'source':
-            return data_copy
-        elif sort_type == 'alphabetic':
-            reverse = (direction == 'desc')
-            data_copy.sort(key=lambda x: str(x.get(column, '')).lower(), reverse=reverse)
-            return data_copy
-        elif sort_type in ['field', 'nested']:
-            # Sort by maximum value (for Property column only)
-            reverse = (direction == 'desc')
-            data_copy.sort(key=lambda x: float(str(x.get('Value', '0')).replace(',', '')) if str(x.get('Value', '0')).replace('.', '').replace('-', '').isdigit() else 0, reverse=reverse)
-            return data_copy
-        return data_copy
-    
-    # Handle all refined products sorting interactions
     @app.callback(
-        [Output('refined-product-sorting-controls', 'style', allow_duplicate=True),
-         Output('refined-cutpoints-sorting-controls', 'style', allow_duplicate=True),
-         Output('refined-property-sorting-controls', 'style', allow_duplicate=True),
-         Output('refined-unit-sorting-controls', 'style', allow_duplicate=True),
+        [Output('refined-product-sorting-controls', 'style'),
+         Output('refined-cutpoints-sorting-controls', 'style'),
+         Output('refined-property-sorting-controls', 'style'),
+         Output('refined-unit-sorting-controls', 'style'),
          Output('refined-current-sort-order', 'data', allow_duplicate=True),
          Output('refined-show-sorting-controls', 'data', allow_duplicate=True)],
-        [Input('refined-product-sort-asc-btn', 'n_clicks'),
-         Input('refined-product-sort-desc-btn', 'n_clicks'),
-         Input('refined-cutpoints-sort-asc-btn', 'n_clicks'),
-         Input('refined-cutpoints-sort-desc-btn', 'n_clicks'),
-         Input('refined-property-sort-asc-btn', 'n_clicks'),
-         Input('refined-property-sort-desc-btn', 'n_clicks'),
-         Input('refined-unit-sort-asc-btn', 'n_clicks'),
-         Input('refined-unit-sort-desc-btn', 'n_clicks'),
-         Input('refined-product-popup-menu-btn', 'n_clicks'),
+        [Input('refined-product-popup-menu-btn', 'n_clicks'),
          Input('refined-cutpoints-popup-menu-btn', 'n_clicks'),
          Input('refined-property-popup-menu-btn', 'n_clicks'),
          Input('refined-unit-popup-menu-btn', 'n_clicks'),
@@ -2697,39 +2501,26 @@ def register_callbacks(app):
          Input('refined-cutpoints-popup-alphabetic-btn', 'n_clicks'),
          Input('refined-property-popup-source-btn', 'n_clicks'),
          Input('refined-property-popup-alphabetic-btn', 'n_clicks'),
-         Input('refined-property-popup-field-btn', 'n_clicks'),
-         Input('refined-property-popup-nested-btn', 'n_clicks'),
-         Input('refined-property-field-arrow-btn', 'n_clicks'),
-         Input('refined-property-nested-arrow-btn', 'n_clicks'),
          Input('refined-unit-popup-source-btn', 'n_clicks'),
          Input('refined-unit-popup-alphabetic-btn', 'n_clicks'),
-         Input('refined-product-popup-field-btn', 'n_clicks'),
-         Input('refined-product-popup-nested-btn', 'n_clicks'),
-         Input('refined-product-field-arrow-btn', 'n_clicks'),
-         Input('refined-product-nested-arrow-btn', 'n_clicks'),
-         Input('refined-cutpoints-popup-field-btn', 'n_clicks'),
-         Input('refined-cutpoints-popup-nested-btn', 'n_clicks'),
-         Input('refined-cutpoints-field-arrow-btn', 'n_clicks'),
-         Input('refined-cutpoints-nested-arrow-btn', 'n_clicks'),
-         Input('refined-unit-popup-field-btn', 'n_clicks'),
-         Input('refined-unit-popup-nested-btn', 'n_clicks'),
-         Input('refined-unit-field-arrow-btn', 'n_clicks'),
-         Input('refined-unit-nested-arrow-btn', 'n_clicks'),
-         Input('refined-avg-text-box', 'n_clicks')],
+         Input('refined-product-sort-asc-btn', 'n_clicks'),
+         Input('refined-product-sort-desc-btn', 'n_clicks'),
+         Input('refined-cutpoints-sort-asc-btn', 'n_clicks'),
+         Input('refined-cutpoints-sort-desc-btn', 'n_clicks'),
+         Input('refined-property-sort-asc-btn', 'n_clicks'),
+         Input('refined-property-sort-desc-btn', 'n_clicks'),
+         Input('refined-unit-sort-asc-btn', 'n_clicks'),
+         Input('refined-unit-sort-desc-btn', 'n_clicks')],
         [State('refined-show-sorting-controls', 'data'),
          State('refined-current-sort-order', 'data')],
         prevent_initial_call=True
     )
-    def handle_all_refined_sorting_interactions(product_asc, product_desc, cutpoints_asc, cutpoints_desc,
-                                                property_asc, property_desc, unit_asc, unit_desc,
-                                                product_popup, cutpoints_popup, property_popup, unit_popup,
-                                                product_source, product_alpha, cutpoints_source, cutpoints_alpha,
-                                                property_source, property_alpha, property_field, property_nested,
-                                                property_field_arrow, property_nested_arrow, unit_source, unit_alpha,
-                                                product_field, product_nested, product_field_arrow, product_nested_arrow,
-                                                cutpoints_field, cutpoints_nested, cutpoints_field_arrow, cutpoints_nested_arrow,
-                                                unit_field, unit_nested, unit_field_arrow, unit_nested_arrow,
-                                                avg_text_box, show_controls, current_sort):
+    def handle_refined_sorting_interactions(product_popup, cutpoints_popup, property_popup, unit_popup,
+                                          product_source, product_alpha, cutpoints_source, cutpoints_alpha,
+                                          property_source, property_alpha, unit_source, unit_alpha,
+                                          product_asc, product_desc, cutpoints_asc, cutpoints_desc,
+                                          property_asc, property_desc, unit_asc, unit_desc,
+                                          show_controls, current_sort):
         trigger = ctx.triggered_id
         
         # Default popup styles
@@ -2738,13 +2529,13 @@ def register_callbacks(app):
         property_popup_style = {"display": "none"}
         unit_popup_style = {"display": "none"}
         
-        # Handle popup menu visibility
+        # Handle popup menu visibility - ONLY FOR REFINED TABLE
         if trigger == 'refined-product-popup-menu-btn':
             current_header = show_controls.get('header') if show_controls else None
             if current_header == 'Product':
-                return product_popup_style, cutpoints_popup_style, property_popup_style, no_update, {'header': None}
+                return product_popup_style, cutpoints_popup_style, property_popup_style, unit_popup_style, no_update, {'header': None}
             else:
-                return {
+                product_style = {
                     "position": "absolute",
                     "backgroundColor": "white",
                     "padding": "4px 0",
@@ -2752,14 +2543,15 @@ def register_callbacks(app):
                     "zIndex": "1000",
                     "display": "block",
                     "minWidth": "160px"
-                }, cutpoints_popup_style, property_popup_style, no_update, {'header': 'Product'}
+                }
+                return product_style, cutpoints_popup_style, property_popup_style, unit_popup_style, no_update, {'header': 'Product'}
         
         elif trigger == 'refined-cutpoints-popup-menu-btn':
             current_header = show_controls.get('header') if show_controls else None
             if current_header == 'Cut Points':
                 return product_popup_style, cutpoints_popup_style, property_popup_style, unit_popup_style, no_update, {'header': None}
             else:
-                return product_popup_style, {
+                cutpoints_style = {
                     "position": "absolute",
                     "backgroundColor": "white",
                     "padding": "4px 0",
@@ -2767,14 +2559,15 @@ def register_callbacks(app):
                     "zIndex": "1000",
                     "display": "block",
                     "minWidth": "160px"
-                }, property_popup_style, unit_popup_style, no_update, {'header': 'Cut Points'}
+                }
+                return product_popup_style, cutpoints_style, property_popup_style, unit_popup_style, no_update, {'header': 'Cut Points'}
         
         elif trigger == 'refined-property-popup-menu-btn':
             current_header = show_controls.get('header') if show_controls else None
             if current_header == 'Property':
                 return product_popup_style, cutpoints_popup_style, property_popup_style, unit_popup_style, no_update, {'header': None}
             else:
-                return product_popup_style, cutpoints_popup_style, {
+                property_style = {
                     "position": "absolute",
                     "backgroundColor": "white",
                     "padding": "4px 0",
@@ -2782,14 +2575,15 @@ def register_callbacks(app):
                     "zIndex": "1000",
                     "display": "block",
                     "minWidth": "160px"
-                }, unit_popup_style, no_update, {'header': 'Property'}
+                }
+                return product_popup_style, cutpoints_popup_style, property_style, unit_popup_style, no_update, {'header': 'Property'}
         
         elif trigger == 'refined-unit-popup-menu-btn':
             current_header = show_controls.get('header') if show_controls else None
             if current_header == 'Unit':
                 return product_popup_style, cutpoints_popup_style, property_popup_style, unit_popup_style, no_update, {'header': None}
             else:
-                return product_popup_style, cutpoints_popup_style, property_popup_style, {
+                unit_style = {
                     "position": "absolute",
                     "backgroundColor": "white",
                     "padding": "4px 0",
@@ -2797,42 +2591,27 @@ def register_callbacks(app):
                     "zIndex": "1000",
                     "display": "block",
                     "minWidth": "160px"
-                }, no_update, {'header': 'Unit'}
+                }
+                return product_popup_style, cutpoints_popup_style, property_popup_style, unit_style, no_update, {'header': 'Unit'}
         
-        # Handle AVG(Value) text box click - close popup
-        elif trigger == 'refined-avg-text-box':
-            return product_popup_style, cutpoints_popup_style, property_popup_style, unit_popup_style, no_update, {'header': None}
-        
-        # Handle sort order changes (close popup)
+        # Handle sort order changes (close popup) - ONLY FOR REFINED TABLE
         elif trigger in ['refined-product-popup-source-btn', 'refined-product-popup-alphabetic-btn',
-                        'refined-product-popup-field-btn', 'refined-product-popup-nested-btn',
-                        'refined-product-field-arrow-btn', 'refined-product-nested-arrow-btn',
                         'refined-cutpoints-popup-source-btn', 'refined-cutpoints-popup-alphabetic-btn',
-                        'refined-cutpoints-popup-field-btn', 'refined-cutpoints-popup-nested-btn',
-                        'refined-cutpoints-field-arrow-btn', 'refined-cutpoints-nested-arrow-btn',
                         'refined-property-popup-source-btn', 'refined-property-popup-alphabetic-btn',
-                        'refined-property-popup-field-btn', 'refined-property-popup-nested-btn',
-                        'refined-property-field-arrow-btn', 'refined-property-nested-arrow-btn',
                         'refined-unit-popup-source-btn', 'refined-unit-popup-alphabetic-btn',
-                        'refined-unit-popup-field-btn', 'refined-unit-popup-nested-btn',
-                        'refined-unit-field-arrow-btn', 'refined-unit-nested-arrow-btn',
                         'refined-product-sort-asc-btn', 'refined-product-sort-desc-btn',
                         'refined-cutpoints-sort-asc-btn', 'refined-cutpoints-sort-desc-btn',
                         'refined-property-sort-asc-btn', 'refined-property-sort-desc-btn',
                         'refined-unit-sort-asc-btn', 'refined-unit-sort-desc-btn']:
             
-            # Close all popups
+            # Close all refined popups
             popup_style = {"display": "none"}
             
-            # Update sort order based on trigger
+            # Update sort order based on trigger - ONLY FOR REFINED TABLE
             if trigger == 'refined-product-popup-source-btn':
                 return popup_style, popup_style, popup_style, popup_style, {'column': 'Product', 'type': 'source', 'direction': 'asc'}, {'header': None}
             elif trigger == 'refined-product-popup-alphabetic-btn':
                 return popup_style, popup_style, popup_style, popup_style, {'column': 'Product', 'type': 'alphabetic', 'direction': 'asc'}, {'header': None}
-            elif trigger == 'refined-product-popup-field-btn' or trigger == 'refined-product-field-arrow-btn':
-                return popup_style, popup_style, popup_style, popup_style, {'column': 'Product', 'type': 'field', 'direction': 'asc'}, {'header': None}
-            elif trigger == 'refined-product-popup-nested-btn' or trigger == 'refined-product-nested-arrow-btn':
-                return popup_style, popup_style, popup_style, popup_style, {'column': 'Product', 'type': 'nested', 'direction': 'asc'}, {'header': None}
             elif trigger == 'refined-product-sort-asc-btn':
                 return popup_style, popup_style, popup_style, popup_style, {'column': 'Product', 'type': 'alphabetic', 'direction': 'asc'}, {'header': None}
             elif trigger == 'refined-product-sort-desc-btn':
@@ -2841,10 +2620,6 @@ def register_callbacks(app):
                 return popup_style, popup_style, popup_style, popup_style, {'column': 'Cut Points (°C)', 'type': 'source', 'direction': 'asc'}, {'header': None}
             elif trigger == 'refined-cutpoints-popup-alphabetic-btn':
                 return popup_style, popup_style, popup_style, popup_style, {'column': 'Cut Points (°C)', 'type': 'alphabetic', 'direction': 'asc'}, {'header': None}
-            elif trigger == 'refined-cutpoints-popup-field-btn' or trigger == 'refined-cutpoints-field-arrow-btn':
-                return popup_style, popup_style, popup_style, popup_style, {'column': 'Cut Points (°C)', 'type': 'field', 'direction': 'asc'}, {'header': None}
-            elif trigger == 'refined-cutpoints-popup-nested-btn' or trigger == 'refined-cutpoints-nested-arrow-btn':
-                return popup_style, popup_style, popup_style, popup_style, {'column': 'Cut Points (°C)', 'type': 'nested', 'direction': 'asc'}, {'header': None}
             elif trigger == 'refined-cutpoints-sort-asc-btn':
                 return popup_style, popup_style, popup_style, popup_style, {'column': 'Cut Points (°C)', 'type': 'alphabetic', 'direction': 'asc'}, {'header': None}
             elif trigger == 'refined-cutpoints-sort-desc-btn':
@@ -2853,10 +2628,6 @@ def register_callbacks(app):
                 return popup_style, popup_style, popup_style, popup_style, {'column': 'Property', 'type': 'source', 'direction': 'asc'}, {'header': None}
             elif trigger == 'refined-property-popup-alphabetic-btn':
                 return popup_style, popup_style, popup_style, popup_style, {'column': 'Property', 'type': 'alphabetic', 'direction': 'asc'}, {'header': None}
-            elif trigger == 'refined-property-popup-field-btn' or trigger == 'refined-property-field-arrow-btn':
-                return popup_style, popup_style, popup_style, popup_style, {'column': 'Property', 'type': 'field', 'direction': 'asc'}, {'header': None}
-            elif trigger == 'refined-property-popup-nested-btn' or trigger == 'refined-property-nested-arrow-btn':
-                return popup_style, popup_style, popup_style, popup_style, {'column': 'Property', 'type': 'nested', 'direction': 'asc'}, {'header': None}
             elif trigger == 'refined-property-sort-asc-btn':
                 return popup_style, popup_style, popup_style, popup_style, {'column': 'Property', 'type': 'alphabetic', 'direction': 'asc'}, {'header': None}
             elif trigger == 'refined-property-sort-desc-btn':
@@ -2865,17 +2636,13 @@ def register_callbacks(app):
                 return popup_style, popup_style, popup_style, popup_style, {'column': 'Unit', 'type': 'source', 'direction': 'asc'}, {'header': None}
             elif trigger == 'refined-unit-popup-alphabetic-btn':
                 return popup_style, popup_style, popup_style, popup_style, {'column': 'Unit', 'type': 'alphabetic', 'direction': 'asc'}, {'header': None}
-            elif trigger == 'refined-unit-popup-field-btn' or trigger == 'refined-unit-field-arrow-btn':
-                return popup_style, popup_style, popup_style, popup_style, {'column': 'Unit', 'type': 'field', 'direction': 'asc'}, {'header': None}
-            elif trigger == 'refined-unit-popup-nested-btn' or trigger == 'refined-unit-nested-arrow-btn':
-                return popup_style, popup_style, popup_style, popup_style, {'column': 'Unit', 'type': 'nested', 'direction': 'asc'}, {'header': None}
             elif trigger == 'refined-unit-sort-asc-btn':
                 return popup_style, popup_style, popup_style, popup_style, {'column': 'Unit', 'type': 'alphabetic', 'direction': 'asc'}, {'header': None}
             elif trigger == 'refined-unit-sort-desc-btn':
                 return popup_style, popup_style, popup_style, popup_style, {'column': 'Unit', 'type': 'alphabetic', 'direction': 'desc'}, {'header': None}
         
         return no_update, no_update, no_update, no_update, no_update, no_update
-    
+
     # Apply sorting to refined products table data
     @app.callback(
         Output('refined-products-table', 'data', allow_duplicate=True),
@@ -2895,8 +2662,104 @@ def register_callbacks(app):
             return no_update
         
         return sort_refined_products_data(original_data, column, sort_type, direction)
+
+    # ==========================================================================
+    # PORT DETAILS TABLE CALLBACKS
+    # ==========================================================================
     
-    # Client-side callback to handle refined products header interactions
+    @app.callback(
+        [Output("port-measure-sorting-controls", "style"),
+         Output('port-current-sort-order', 'data', allow_duplicate=True),
+         Output('port-show-sorting-controls', 'data', allow_duplicate=True)],
+        [Input('port-measure-sort-asc-btn', 'n_clicks'),
+         Input('port-measure-sort-desc-btn', 'n_clicks'),
+         Input('port-measure-popup-menu-btn', 'n_clicks'),
+         Input('port-measure-popup-source-btn', 'n_clicks'),
+         Input('port-measure-popup-alphabetic-btn', 'n_clicks'),
+         Input('port-measure-popup-field-btn', 'n_clicks'),
+         Input('port-measure-popup-nested-btn', 'n_clicks')],
+        [State('port-current-sort-order', 'data'),
+         State('port-show-sorting-controls', 'data')],
+        prevent_initial_call=True
+    )
+    def handle_port_sorting_interactions(asc_clicks, desc_clicks, popup_clicks, source_clicks, 
+                                         alpha_clicks, field_clicks, nested_clicks,
+                                         current_sort, show_controls):
+        trigger = ctx.triggered_id
+        if not trigger:
+            return no_update, no_update, no_update
+        
+        popup_style_hidden = {"display": "none", "position": "absolute", "backgroundColor": "white", 
+                              "padding": "4px 0", "boxShadow": "0 2px 10px rgba(0,0,0,0.1)", 
+                              "zIndex": "1000", "minWidth": "160px", "border": "1px solid #ddd", 
+                              "borderRadius": "4px"}
+        popup_style_visible = {"display": "block", "position": "absolute", "backgroundColor": "white", 
+                              "padding": "4px 0", "boxShadow": "0 2px 10px rgba(0,0,0,0.1)", 
+                              "zIndex": "1000", "minWidth": "160px", "border": "1px solid #ddd", 
+                              "borderRadius": "4px"}
+        
+        if trigger == 'port-measure-popup-menu-btn':
+            if show_controls and show_controls.get('header') == 'Measure':
+                return popup_style_hidden, no_update, {'header': None}
+            else:
+                return popup_style_visible, no_update, {'header': 'Measure'}
+        elif trigger in ['port-measure-popup-source-btn', 'port-measure-popup-alphabetic-btn',
+                        'port-measure-popup-field-btn', 'port-measure-popup-nested-btn']:
+            sort_type = 'source' if trigger == 'port-measure-popup-source-btn' else \
+                       'alphabetic' if trigger == 'port-measure-popup-alphabetic-btn' else \
+                       'field' if trigger == 'port-measure-popup-field-btn' else 'nested'
+            return popup_style_hidden, {'column': 'Measure', 'type': sort_type, 'direction': 'asc'}, {'header': None}
+        elif trigger in ['port-measure-sort-asc-btn', 'port-measure-sort-desc-btn']:
+            direction = 'asc' if trigger == 'port-measure-sort-asc-btn' else 'desc'
+            current_type = current_sort.get('type', 'source') if current_sort else 'source'
+            return popup_style_hidden, {'column': 'Measure', 'type': current_type, 'direction': direction}, {'header': None}
+        
+        return no_update, no_update, no_update
+    
+    @app.callback(
+        Output('port-details-table', 'data', allow_duplicate=True),
+        Input('port-current-sort-order', 'data'),
+        State('port-original-data', 'data'),
+        prevent_initial_call=True
+    )
+    def apply_port_sort_order(sort_order, original_data):
+        if not sort_order or not original_data:
+            return no_update
+        
+        column = sort_order.get('column')
+        sort_type = sort_order.get('type', 'source')
+        direction = sort_order.get('direction', 'asc')
+        
+        if not column or column != 'Measure':
+            return no_update
+        
+        sorted_data = original_data.copy()
+        
+        if sort_type == 'source':
+            # Return original order
+            pass
+        elif sort_type == 'alphabetic':
+            sorted_data.sort(key=lambda x: str(x.get('Measure', '')).lower(), reverse=(direction == 'desc'))
+        elif sort_type == 'field':
+            # Sort by numeric value if available
+            def get_numeric_value(row):
+                val = str(row.get('Measure', '')).strip()
+                try:
+                    return float(re.sub(r'[^\d.]', '', val))
+                except:
+                    return float('inf')
+            sorted_data.sort(key=get_numeric_value, reverse=(direction == 'desc'))
+        elif sort_type == 'nested':
+            # Similar to field but with different logic if needed
+            sorted_data.sort(key=lambda x: str(x.get('Measure', '')).lower(), reverse=(direction == 'desc'))
+        
+        return sorted_data
+
+    # ==========================================================================
+    # CLIENT-SIDE CALLBACKS FOR ALL TABLES
+    # ==========================================================================
+    
+    # Client-side callback for Mars Blend Assay table headers
     app.clientside_callback(
         """
         function(n) {
@@ -2969,8 +2832,288 @@ def register_callbacks(app):
                     }
                 }
                 
-                // Find headers using multiple strategies with retries
-                function findHeader(columnName) {
+                // Add A/Z and SVG sort icon to Property header
+                const propertyHeader = document.querySelector('.dash-header[data-dash-column="Property"]');
+                if (propertyHeader) {
+                    addSortingControls(propertyHeader, 'Property', 
+                        'assay-property-sort-asc-btn', 
+                        'assay-property-sort-desc-btn',
+                        'assay-property-popup-menu-btn');
+                }
+                    
+                // Add A/Z and SVG sort icon to Unit header
+                const unitHeader = document.querySelector('.dash-header[data-dash-column="Unit"]');
+                if (unitHeader) {
+                    addSortingControls(unitHeader, 'Unit', 
+                        'assay-unit-sort-asc-btn', 
+                        'assay-unit-sort-desc-btn',
+                        'assay-unit-popup-menu-btn');
+                }
+                
+                // Add click handlers for Property popup menu items - ASSAY TABLE ONLY
+                const propertyPopup = document.getElementById('assay-property-sorting-controls');
+                if (propertyPopup) {
+                    const propSourceItem = propertyPopup.querySelector('.assay-property-popup-source-item');
+                    const propAlphaItem = propertyPopup.querySelector('.assay-property-popup-alphabetic-item');
+                    const propFieldItem = propertyPopup.querySelector('.assay-property-popup-field-item');
+                    const propNestedItem = propertyPopup.querySelector('.assay-property-popup-nested-item');
+                    
+                    if (propSourceItem) {
+                        propSourceItem.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById('assay-property-popup-source-btn');
+                            if (btn) btn.click();
+                        };
+                    }
+                    if (propAlphaItem) {
+                        propAlphaItem.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById('assay-property-popup-alphabetic-btn');
+                            if (btn) btn.click();
+                        };
+                    }
+                    if (propFieldItem) {
+                        propFieldItem.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById('assay-property-popup-field-btn');
+                            if (btn) btn.click();
+                        };
+                        
+                        // Add hover handlers to show AVG(Value) text box
+                        propFieldItem.addEventListener('mouseenter', function(e) {
+                            const textBox = document.getElementById('assay-avg-text-box');
+                            if (textBox) {
+                                const rect = propFieldItem.getBoundingClientRect();
+                                textBox.style.display = 'block';
+                                textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
+                            }
+                        });
+                        propFieldItem.addEventListener('mouseleave', function(e) {
+                            setTimeout(function() {
+                                const textBox = document.getElementById('assay-avg-text-box');
+                                if (textBox && !textBox.matches(':hover')) {
+                                    textBox.style.display = 'none';
+                                }
+                            }, 100);
+                        });
+                    }
+                    if (propNestedItem) {
+                        propNestedItem.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById('assay-property-popup-nested-btn');
+                            if (btn) btn.click();
+                        };
+                        
+                        // Add hover handlers to show AVG(Value) text box
+                        propNestedItem.addEventListener('mouseenter', function(e) {
+                            const textBox = document.getElementById('assay-avg-text-box');
+                            if (textBox) {
+                                const rect = propNestedItem.getBoundingClientRect();
+                                textBox.style.display = 'block';
+                                textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
+                            }
+                        });
+                        propNestedItem.addEventListener('mouseleave', function(e) {
+                            setTimeout(function() {
+                                const textBox = document.getElementById('assay-avg-text-box');
+                                if (textBox && !textBox.matches(':hover')) {
+                                    textBox.style.display = 'none';
+                                }
+                            }, 100);
+                        });
+                    }
+                }
+                
+                // Add click handlers for Unit popup menu items - ASSAY TABLE ONLY
+                const unitPopup = document.getElementById('assay-unit-sorting-controls');
+                if (unitPopup) {
+                    const unitSourceItem = unitPopup.querySelector('.assay-unit-popup-source-item');
+                    const unitAlphaItem = unitPopup.querySelector('.assay-unit-popup-alphabetic-item');
+                    const unitFieldItem = unitPopup.querySelector('.assay-unit-popup-field-item');
+                    const unitNestedItem = unitPopup.querySelector('.assay-unit-popup-nested-item');
+                    
+                    if (unitSourceItem) {
+                        unitSourceItem.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById('assay-unit-popup-source-btn');
+                            if (btn) btn.click();
+                        };
+                    }
+                    if (unitAlphaItem) {
+                        unitAlphaItem.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById('assay-unit-popup-alphabetic-btn');
+                            if (btn) btn.click();
+                        };
+                    }
+                    if (unitFieldItem) {
+                        unitFieldItem.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById('assay-unit-popup-field-btn');
+                            if (btn) btn.click();
+                        };
+                        
+                        // Add hover handlers to show AVG(Value) text box
+                        unitFieldItem.addEventListener('mouseenter', function(e) {
+                            const textBox = document.getElementById('assay-avg-text-box');
+                            if (textBox) {
+                                const rect = unitFieldItem.getBoundingClientRect();
+                                textBox.style.display = 'block';
+                                textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
+                            }
+                        });
+                        unitFieldItem.addEventListener('mouseleave', function(e) {
+                            setTimeout(function() {
+                                const textBox = document.getElementById('assay-avg-text-box');
+                                if (textBox && !textBox.matches(':hover')) {
+                                    textBox.style.display = 'none';
+                                }
+                            }, 100);
+                        });
+                    }
+                    if (unitNestedItem) {
+                        unitNestedItem.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById('assay-unit-popup-nested-btn');
+                            if (btn) btn.click();
+                        };
+                        
+                        // Add hover handlers to show AVG(Value) text box
+                        unitNestedItem.addEventListener('mouseenter', function(e) {
+                            const textBox = document.getElementById('assay-avg-text-box');
+                            if (textBox) {
+                                const rect = unitNestedItem.getBoundingClientRect();
+                                textBox.style.display = 'block';
+                                textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
+                            }
+                        });
+                        unitNestedItem.addEventListener('mouseleave', function(e) {
+                            setTimeout(function() {
+                                const textBox = document.getElementById('assay-avg-text-box');
+                                if (textBox && !textBox.matches(':hover')) {
+                                    textBox.style.display = 'none';
+                                }
+                            }, 100);
+                        });
+                    }
+                }
+                
+                // Keep text box visible when hovering over it and close popup on click
+                const assayTextBox = document.getElementById('assay-avg-text-box');
+                if (assayTextBox) {
+                    assayTextBox.addEventListener('mouseenter', function(e) {
+                        this.style.display = 'block';
+                    });
+                    
+                    assayTextBox.addEventListener('mouseleave', function(e) {
+                        this.style.display = 'none';
+                    });
+                    
+                    // Close popup menu when clicking the text box
+                    assayTextBox.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        // Close Property popup if open
+                        const propertyPopup = document.getElementById('assay-property-sorting-controls');
+                        if (propertyPopup && (propertyPopup.style.display === 'block' || window.getComputedStyle(propertyPopup).display === 'block')) {
+                            const btn = document.getElementById('assay-property-popup-menu-btn');
+                            if (btn) btn.click();
+                        }
+                        // Close Unit popup if open
+                        const unitPopup = document.getElementById('assay-unit-sorting-controls');
+                        if (unitPopup && (unitPopup.style.display === 'block' || window.getComputedStyle(unitPopup).display === 'block')) {
+                            const btn = document.getElementById('assay-unit-popup-menu-btn');
+                            if (btn) btn.click();
+                        }
+                    });
+                }
+            }, 100);
+            return '';
+        }
+        """,
+        Output('assay-dummy-output', 'children'),
+        Input('assay-table', 'columns'),
+        prevent_initial_call=False
+    )
+    
+    # Client-side callback for Refined Products table headers
+    app.clientside_callback(
+        """
+        function(n) {
+            setTimeout(function() {
+                // Helper function to add sorting controls to a header
+                function addSortingControls(header, columnName, ascBtnId, descBtnId, popupBtnId) {
+                    if (!header) return;
+                    if (header && !header.querySelector('.sort-order-container')) {
+                        const sortContainer = document.createElement('div');
+                        sortContainer.className = 'sort-order-container';
+                        
+                        const aElement = document.createElement('div');
+                        aElement.className = 'sort-asc';
+                        aElement.textContent = 'A';
+                        aElement.title = 'Click for ascending alphabetical order';
+                        aElement.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById(ascBtnId);
+                            if (btn) btn.click();
+                        };
+                        
+                        const zElement = document.createElement('div');
+                        zElement.className = 'sort-desc';
+                        zElement.textContent = 'Z';
+                        zElement.title = 'Click for descending alphabetical order';
+                        zElement.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById(descBtnId);
+                            if (btn) btn.click();
+                        };
+                        
+                        sortContainer.appendChild(aElement);
+                        sortContainer.appendChild(zElement);
+                        
+                        // Add SVG sort icon
+                        const sortIndicator = document.createElement('div');
+                        sortIndicator.className = 'sort-indicator';
+                        sortIndicator.title = 'Click to show sort options';
+                        
+                        sortIndicator.innerHTML = `
+                            <svg fill="#000000" viewBox="0 0 301.219 301.219" xmlns="http://www.w3.org/2000/svg">
+                                <g>
+                                    <path d="M159.365,23.736v-10c0-5.523-4.477-10-10-10H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h139.365
+                                        C154.888,33.736,159.365,29.259,159.365,23.736z"/>
+                                    <path d="M130.586,66.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h120.586c5.523,0,10-4.477,10-10v-10
+                                        C140.586,71.213,136.109,66.736,130.586,66.736z"/>
+                                    <path d="M111.805,129.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h101.805c5.523,0,10-4.477,10-10v-10
+                                        C121.805,134.213,117.328,129.736,111.805,129.736z"/>
+                                    <path d="M93.025,199.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h83.025c5.522,0,10-4.477,10-10v-10
+                                        C103.025,204.213,98.548,199.736,93.025,199.736z"/>
+                                    <path d="M74.244,262.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h64.244c5.522,0,10-4.477,10-10v-10
+                                        C84.244,267.213,79.767,262.736,74.244,262.736z"/>
+                                    <path d="M298.29,216.877l-7.071-7.071c-1.875-1.875-4.419-2.929-7.071-2.929c-2.652,0-5.196,1.054-7.072,2.929l-34.393,34.393
+                                        V18.736c0-5.523-4.477-10-10-10h-10c-5.523,0-10,4.477-10,10v225.462l-34.393-34.393c-1.876-1.875-4.419-2.929-7.071-2.929
+                                        c-2.652,0-5.196,1.054-7.071,2.929l-7.072,7.071c-3.904,3.905-3.904,10.237,0,14.142l63.536,63.536
+                                        c1.953,1.953,4.512,2.929,7.071,2.929c2.559,0,5.119-0.976,7.071-2.929l63.536-63.536
+                                        C302.195,227.113,302.195,220.781,298.29,216.877z"/>
+                                </g>
+                            </svg>
+                        `;
+                        
+                        sortIndicator.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById(popupBtnId);
+                            if (btn) btn.click();
+                        };
+                        
+                        header.appendChild(sortContainer);
+                        header.appendChild(sortIndicator);
+                    }
+                }
+                
+                // Find headers using multiple strategies with retries - REFINED TABLE ONLY
+                function findRefinedHeader(columnName) {
                     // Strategy 1: Search within refined products table first
                     const table = document.getElementById('refined-products-table');
                     if (table) {
@@ -2982,21 +3125,13 @@ def register_callbacks(app):
                     let header = document.querySelector('.dash-header[data-dash-column="' + columnName + '"]');
                     if (header) return header;
                     
-                    // Strategy 3: Search by text content
-                    const headers = document.querySelectorAll('.dash-header');
-                    for (let h of headers) {
-                        if (h.textContent && h.textContent.trim().includes(columnName)) {
-                            return h;
-                        }
-                    }
-                    
                     return null;
                 }
                 
-                // Function to initialize all headers
-                function initializeHeaders() {
+                // Function to initialize all headers - REFINED TABLE ONLY
+                function initializeRefinedHeaders() {
                     // Add controls to Product header
-                    let productHeader = findHeader('Product');
+                    let productHeader = findRefinedHeader('Product');
                     if (productHeader) {
                         addSortingControls(productHeader, 'Product', 
                             'refined-product-sort-asc-btn', 
@@ -3005,7 +3140,7 @@ def register_callbacks(app):
                     }
                     
                     // Add controls to Cut Points header
-                    let cutPointsHeader = findHeader('Cut Points (°C)');
+                    let cutPointsHeader = findRefinedHeader('Cut Points (°C)');
                     if (cutPointsHeader) {
                         addSortingControls(cutPointsHeader, 'Cut Points (°C)', 
                             'refined-cutpoints-sort-asc-btn', 
@@ -3014,7 +3149,7 @@ def register_callbacks(app):
                     }
                     
                     // Add controls to Property header
-                    let propertyHeader = findHeader('Property');
+                    let propertyHeader = findRefinedHeader('Property');
                     if (propertyHeader) {
                         addSortingControls(propertyHeader, 'Property', 
                             'refined-property-sort-asc-btn', 
@@ -3023,7 +3158,7 @@ def register_callbacks(app):
                     }
                     
                     // Add controls to Unit header
-                    let unitHeader = findHeader('Unit');
+                    let unitHeader = findRefinedHeader('Unit');
                     if (unitHeader) {
                         addSortingControls(unitHeader, 'Unit', 
                             'refined-unit-sort-asc-btn', 
@@ -3033,7 +3168,7 @@ def register_callbacks(app):
                 }
                 
                 // Try to initialize headers
-                initializeHeaders();
+                initializeRefinedHeaders();
                 
                 // Use MutationObserver to re-initialize if table is re-rendered
                 const table = document.getElementById('refined-products-table');
@@ -3046,7 +3181,7 @@ def register_callbacks(app):
                             }
                         });
                         if (shouldReinit) {
-                            setTimeout(initializeHeaders, 100);
+                            setTimeout(initializeRefinedHeaders, 100);
                         }
                     });
                     
@@ -3058,14 +3193,14 @@ def register_callbacks(app):
                 
                 // Also retry after a delay in case headers aren't ready yet
                 setTimeout(function() {
-                    initializeHeaders();
+                    initializeRefinedHeaders();
                 }, 300);
                 
                 setTimeout(function() {
-                    initializeHeaders();
+                    initializeRefinedHeaders();
                 }, 600);
                 
-                // Set up popup menu click handlers
+                // Set up popup menu click handlers for all refined products headers - REFINED TABLE ONLY
                 const productPopup = document.getElementById('refined-product-sorting-controls');
                 if (productPopup) {
                     const productSourceItem = productPopup.querySelector('.refined-product-popup-source-item');
@@ -3090,53 +3225,58 @@ def register_callbacks(app):
                             const btn = document.getElementById('refined-product-popup-field-btn');
                             if (btn) btn.click();
                         };
+                        
+                        // Find the arrow element within Field item
+                        const productFieldArrow = productFieldItem.querySelector('.refined-product-field-arrow-item');
+                        if (productFieldArrow) {
+                            // Add hover handlers to arrow to show AVG(Value) text box
+                            productFieldArrow.addEventListener('mouseenter', function(e) {
+                                const textBox = document.getElementById('refined-avg-text-box');
+                                if (textBox) {
+                                    const rect = productFieldArrow.getBoundingClientRect();
+                                    textBox.style.display = 'block';
+                                    textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                    textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
+                                }
+                            });
+                            productFieldArrow.addEventListener('mouseleave', function(e) {
+                                setTimeout(function() {
+                                    const textBox = document.getElementById('refined-avg-text-box');
+                                    if (textBox && !textBox.matches(':hover')) {
+                                        textBox.style.display = 'none';
+                                    }
+                                }, 100);
+                            });
+                        }
                     }
                     if (productNestedItem) {
                         productNestedItem.onclick = function() {
                             const btn = document.getElementById('refined-product-popup-nested-btn');
                             if (btn) btn.click();
                         };
-                    }
-                    
-                    // Add hover handlers for Field and Nested to show AVG(Value) text box
-                    if (productFieldItem) {
-                        productFieldItem.addEventListener('mouseenter', function(e) {
-                            const textBox = document.getElementById('refined-avg-text-box');
-                            if (textBox) {
-                                const rect = productFieldItem.getBoundingClientRect();
-                                textBox.style.display = 'block';
-                                textBox.style.top = (rect.top + window.scrollY) + 'px';
-                                textBox.style.left = '684px';
-                            }
-                        });
-                        productFieldItem.addEventListener('mouseleave', function(e) {
-                            setTimeout(function() {
+                        
+                        // Find the arrow element within Nested item
+                        const productNestedArrow = productNestedItem.querySelector('.refined-product-nested-arrow-item');
+                        if (productNestedArrow) {
+                            // Add hover handlers to arrow to show AVG(Value) text box
+                            productNestedArrow.addEventListener('mouseenter', function(e) {
                                 const textBox = document.getElementById('refined-avg-text-box');
-                                if (textBox && !textBox.matches(':hover')) {
-                                    textBox.style.display = 'none';
+                                if (textBox) {
+                                    const rect = productNestedArrow.getBoundingClientRect();
+                                    textBox.style.display = 'block';
+                                    textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                    textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
                                 }
-                            }, 100);
-                        });
-                    }
-                    
-                    if (productNestedItem) {
-                        productNestedItem.addEventListener('mouseenter', function(e) {
-                            const textBox = document.getElementById('refined-avg-text-box');
-                            if (textBox) {
-                                const rect = productNestedItem.getBoundingClientRect();
-                                textBox.style.display = 'block';
-                                textBox.style.top = (rect.top + window.scrollY) + 'px';
-                                textBox.style.left = '684px';
-                            }
-                        });
-                        productNestedItem.addEventListener('mouseleave', function(e) {
-                            setTimeout(function() {
-                                const textBox = document.getElementById('refined-avg-text-box');
-                                if (textBox && !textBox.matches(':hover')) {
-                                    textBox.style.display = 'none';
-                                }
-                            }, 100);
-                        });
+                            });
+                            productNestedArrow.addEventListener('mouseleave', function(e) {
+                                setTimeout(function() {
+                                    const textBox = document.getElementById('refined-avg-text-box');
+                                    if (textBox && !textBox.matches(':hover')) {
+                                        textBox.style.display = 'none';
+                                    }
+                                }, 100);
+                            });
+                        }
                     }
                 }
                 
@@ -3164,53 +3304,58 @@ def register_callbacks(app):
                             const btn = document.getElementById('refined-cutpoints-popup-field-btn');
                             if (btn) btn.click();
                         };
+                        
+                        // Find the arrow element within Field item
+                        const cutPointsFieldArrow = cutPointsFieldItem.querySelector('.refined-cutpoints-field-arrow-item');
+                        if (cutPointsFieldArrow) {
+                            // Add hover handlers to arrow to show AVG(Value) text box
+                            cutPointsFieldArrow.addEventListener('mouseenter', function(e) {
+                                const textBox = document.getElementById('refined-avg-text-box');
+                                if (textBox) {
+                                    const rect = cutPointsFieldArrow.getBoundingClientRect();
+                                    textBox.style.display = 'block';
+                                    textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                    textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
+                                }
+                            });
+                            cutPointsFieldArrow.addEventListener('mouseleave', function(e) {
+                                setTimeout(function() {
+                                    const textBox = document.getElementById('refined-avg-text-box');
+                                    if (textBox && !textBox.matches(':hover')) {
+                                        textBox.style.display = 'none';
+                                    }
+                                }, 100);
+                            });
+                        }
                     }
                     if (cutPointsNestedItem) {
                         cutPointsNestedItem.onclick = function() {
                             const btn = document.getElementById('refined-cutpoints-popup-nested-btn');
                             if (btn) btn.click();
                         };
-                    }
-                    
-                    // Add hover handlers for Field and Nested to show AVG(Value) text box
-                    if (cutPointsFieldItem) {
-                        cutPointsFieldItem.addEventListener('mouseenter', function(e) {
-                            const textBox = document.getElementById('refined-avg-text-box');
-                            if (textBox) {
-                                const rect = cutPointsFieldItem.getBoundingClientRect();
-                                textBox.style.display = 'block';
-                                textBox.style.top = (rect.top + window.scrollY) + 'px';
-                                textBox.style.left = '684px';
-                            }
-                        });
-                        cutPointsFieldItem.addEventListener('mouseleave', function(e) {
-                            setTimeout(function() {
+                        
+                        // Find the arrow element within Nested item
+                        const cutPointsNestedArrow = cutPointsNestedItem.querySelector('.refined-cutpoints-nested-arrow-item');
+                        if (cutPointsNestedArrow) {
+                            // Add hover handlers to arrow to show AVG(Value) text box
+                            cutPointsNestedArrow.addEventListener('mouseenter', function(e) {
                                 const textBox = document.getElementById('refined-avg-text-box');
-                                if (textBox && !textBox.matches(':hover')) {
-                                    textBox.style.display = 'none';
+                                if (textBox) {
+                                    const rect = cutPointsNestedArrow.getBoundingClientRect();
+                                    textBox.style.display = 'block';
+                                    textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                    textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
                                 }
-                            }, 100);
-                        });
-                    }
-                    
-                    if (cutPointsNestedItem) {
-                        cutPointsNestedItem.addEventListener('mouseenter', function(e) {
-                            const textBox = document.getElementById('refined-avg-text-box');
-                            if (textBox) {
-                                const rect = cutPointsNestedItem.getBoundingClientRect();
-                                textBox.style.display = 'block';
-                                textBox.style.top = (rect.top + window.scrollY) + 'px';
-                                textBox.style.left = '684px';
-                            }
-                        });
-                        cutPointsNestedItem.addEventListener('mouseleave', function(e) {
-                            setTimeout(function() {
-                                const textBox = document.getElementById('refined-avg-text-box');
-                                if (textBox && !textBox.matches(':hover')) {
-                                    textBox.style.display = 'none';
-                                }
-                            }, 100);
-                        });
+                            });
+                            cutPointsNestedArrow.addEventListener('mouseleave', function(e) {
+                                setTimeout(function() {
+                                    const textBox = document.getElementById('refined-avg-text-box');
+                                    if (textBox && !textBox.matches(':hover')) {
+                                        textBox.style.display = 'none';
+                                    }
+                                }, 100);
+                            });
+                        }
                     }
                 }
                 
@@ -3238,53 +3383,58 @@ def register_callbacks(app):
                             const btn = document.getElementById('refined-property-popup-field-btn');
                             if (btn) btn.click();
                         };
+                        
+                        // Find the arrow element within Field item
+                        const propertyFieldArrow = propertyFieldItem.querySelector('.refined-property-field-arrow-item');
+                        if (propertyFieldArrow) {
+                            // Add hover handlers to arrow to show AVG(Value) text box
+                            propertyFieldArrow.addEventListener('mouseenter', function(e) {
+                                const textBox = document.getElementById('refined-avg-text-box');
+                                if (textBox) {
+                                    const rect = propertyFieldArrow.getBoundingClientRect();
+                                    textBox.style.display = 'block';
+                                    textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                    textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
+                                }
+                            });
+                            propertyFieldArrow.addEventListener('mouseleave', function(e) {
+                                setTimeout(function() {
+                                    const textBox = document.getElementById('refined-avg-text-box');
+                                    if (textBox && !textBox.matches(':hover')) {
+                                        textBox.style.display = 'none';
+                                    }
+                                }, 100);
+                            });
+                        }
                     }
                     if (propertyNestedItem) {
                         propertyNestedItem.onclick = function() {
                             const btn = document.getElementById('refined-property-popup-nested-btn');
                             if (btn) btn.click();
                         };
-                    }
-                    
-                    // Add hover handlers for Field and Nested to show AVG(Value) text box
-                    if (propertyFieldItem) {
-                        propertyFieldItem.addEventListener('mouseenter', function(e) {
-                            const textBox = document.getElementById('refined-avg-text-box');
-                            if (textBox) {
-                                const rect = propertyFieldItem.getBoundingClientRect();
-                                textBox.style.display = 'block';
-                                textBox.style.top = (rect.top + window.scrollY) + 'px';
-                                textBox.style.left = '684px';
-                            }
-                        });
-                        propertyFieldItem.addEventListener('mouseleave', function(e) {
-                            setTimeout(function() {
+                        
+                        // Find the arrow element within Nested item
+                        const propertyNestedArrow = propertyNestedItem.querySelector('.refined-property-nested-arrow-item');
+                        if (propertyNestedArrow) {
+                            // Add hover handlers to arrow to show AVG(Value) text box
+                            propertyNestedArrow.addEventListener('mouseenter', function(e) {
                                 const textBox = document.getElementById('refined-avg-text-box');
-                                if (textBox && !textBox.matches(':hover')) {
-                                    textBox.style.display = 'none';
+                                if (textBox) {
+                                    const rect = propertyNestedArrow.getBoundingClientRect();
+                                    textBox.style.display = 'block';
+                                    textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                    textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
                                 }
-                            }, 100);
-                        });
-                    }
-                    
-                    if (propertyNestedItem) {
-                        propertyNestedItem.addEventListener('mouseenter', function(e) {
-                            const textBox = document.getElementById('refined-avg-text-box');
-                            if (textBox) {
-                                const rect = propertyNestedItem.getBoundingClientRect();
-                                textBox.style.display = 'block';
-                                textBox.style.top = (rect.top + window.scrollY) + 'px';
-                                textBox.style.left = '684px';
-                            }
-                        });
-                        propertyNestedItem.addEventListener('mouseleave', function(e) {
-                            setTimeout(function() {
-                                const textBox = document.getElementById('refined-avg-text-box');
-                                if (textBox && !textBox.matches(':hover')) {
-                                    textBox.style.display = 'none';
-                                }
-                            }, 100);
-                        });
+                            });
+                            propertyNestedArrow.addEventListener('mouseleave', function(e) {
+                                setTimeout(function() {
+                                    const textBox = document.getElementById('refined-avg-text-box');
+                                    if (textBox && !textBox.matches(':hover')) {
+                                        textBox.style.display = 'none';
+                                    }
+                                }, 100);
+                            });
+                        }
                     }
                 }
                 
@@ -3312,57 +3462,62 @@ def register_callbacks(app):
                             const btn = document.getElementById('refined-unit-popup-field-btn');
                             if (btn) btn.click();
                         };
+                        
+                        // Find the arrow element within Field item
+                        const unitFieldArrow = unitFieldItem.querySelector('.refined-unit-field-arrow-item');
+                        if (unitFieldArrow) {
+                            // Add hover handlers to arrow to show AVG(Value) text box
+                            unitFieldArrow.addEventListener('mouseenter', function(e) {
+                                const textBox = document.getElementById('refined-avg-text-box');
+                                if (textBox) {
+                                    const rect = unitFieldArrow.getBoundingClientRect();
+                                    textBox.style.display = 'block';
+                                    textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                    textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
+                                }
+                            });
+                            unitFieldArrow.addEventListener('mouseleave', function(e) {
+                                setTimeout(function() {
+                                    const textBox = document.getElementById('refined-avg-text-box');
+                                    if (textBox && !textBox.matches(':hover')) {
+                                        textBox.style.display = 'none';
+                                    }
+                                }, 100);
+                            });
+                        }
                     }
                     if (unitNestedItem) {
                         unitNestedItem.onclick = function() {
                             const btn = document.getElementById('refined-unit-popup-nested-btn');
                             if (btn) btn.click();
                         };
-                    }
-                    
-                    // Add hover handlers for Field and Nested to show AVG(Value) text box
-                    if (unitFieldItem) {
-                        unitFieldItem.addEventListener('mouseenter', function(e) {
-                            const textBox = document.getElementById('refined-avg-text-box');
-                            if (textBox) {
-                                const rect = unitFieldItem.getBoundingClientRect();
-                                textBox.style.display = 'block';
-                                textBox.style.top = (rect.top + window.scrollY) + 'px';
-                                textBox.style.left = '684px';
-                            }
-                        });
-                        unitFieldItem.addEventListener('mouseleave', function(e) {
-                            setTimeout(function() {
+                        
+                        // Find the arrow element within Nested item
+                        const unitNestedArrow = unitNestedItem.querySelector('.refined-unit-nested-arrow-item');
+                        if (unitNestedArrow) {
+                            // Add hover handlers to arrow to show AVG(Value) text box
+                            unitNestedArrow.addEventListener('mouseenter', function(e) {
                                 const textBox = document.getElementById('refined-avg-text-box');
-                                if (textBox && !textBox.matches(':hover')) {
-                                    textBox.style.display = 'none';
+                                if (textBox) {
+                                    const rect = unitNestedArrow.getBoundingClientRect();
+                                    textBox.style.display = 'block';
+                                    textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                    textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
                                 }
-                            }, 100);
-                        });
-                    }
-                    
-                    if (unitNestedItem) {
-                        unitNestedItem.addEventListener('mouseenter', function(e) {
-                            const textBox = document.getElementById('refined-avg-text-box');
-                            if (textBox) {
-                                const rect = unitNestedItem.getBoundingClientRect();
-                                textBox.style.display = 'block';
-                                textBox.style.top = (rect.top + window.scrollY) + 'px';
-                                textBox.style.left = '684px';
-                            }
-                        });
-                        unitNestedItem.addEventListener('mouseleave', function(e) {
-                            setTimeout(function() {
-                                const textBox = document.getElementById('refined-avg-text-box');
-                                if (textBox && !textBox.matches(':hover')) {
-                                    textBox.style.display = 'none';
-                                }
-                            }, 100);
-                        });
+                            });
+                            unitNestedArrow.addEventListener('mouseleave', function(e) {
+                                setTimeout(function() {
+                                    const textBox = document.getElementById('refined-avg-text-box');
+                                    if (textBox && !textBox.matches(':hover')) {
+                                        textBox.style.display = 'none';
+                                    }
+                                }, 100);
+                            });
+                        }
                     }
                 }
                 
-                // Keep text box visible when hovering over it
+                // Keep text box visible when hovering over it and close popup on click
                 const textBox = document.getElementById('refined-avg-text-box');
                 if (textBox) {
                     textBox.addEventListener('mouseenter', function(e) {
@@ -3371,6 +3526,35 @@ def register_callbacks(app):
                     
                     textBox.addEventListener('mouseleave', function(e) {
                         this.style.display = 'none';
+                    });
+                    
+                    // Close popup menu when clicking the text box
+                    textBox.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        // Close Product popup if open
+                        const productPopup = document.getElementById('refined-product-sorting-controls');
+                        if (productPopup && (productPopup.style.display === 'block' || window.getComputedStyle(productPopup).display === 'block')) {
+                            const btn = document.getElementById('refined-product-popup-menu-btn');
+                            if (btn) btn.click();
+                        }
+                        // Close Cut Points popup if open
+                        const cutPointsPopup = document.getElementById('refined-cutpoints-sorting-controls');
+                        if (cutPointsPopup && (cutPointsPopup.style.display === 'block' || window.getComputedStyle(cutPointsPopup).display === 'block')) {
+                            const btn = document.getElementById('refined-cutpoints-popup-menu-btn');
+                            if (btn) btn.click();
+                        }
+                        // Close Property popup if open
+                        const propertyPopup = document.getElementById('refined-property-sorting-controls');
+                        if (propertyPopup && (propertyPopup.style.display === 'block' || window.getComputedStyle(propertyPopup).display === 'block')) {
+                            const btn = document.getElementById('refined-property-popup-menu-btn');
+                            if (btn) btn.click();
+                        }
+                        // Close Unit popup if open
+                        const unitPopup = document.getElementById('refined-unit-sorting-controls');
+                        if (unitPopup && (unitPopup.style.display === 'block' || window.getComputedStyle(unitPopup).display === 'block')) {
+                            const btn = document.getElementById('refined-unit-popup-menu-btn');
+                            if (btn) btn.click();
+                        }
                     });
                 }
             }, 100);
@@ -3382,7 +3566,313 @@ def register_callbacks(app):
         prevent_initial_call=False
     )
     
-    # Popup positioning callback for refined products
+    # Client-side callback for Port Details table headers
+    app.clientside_callback(
+        """
+        function(n) {
+            setTimeout(function() {
+                // Helper function to add sorting controls to a header
+                function addSortingControls(header, columnName, ascBtnId, descBtnId, popupBtnId) {
+                    if (!header) return;
+                    if (header && !header.querySelector('.sort-order-container')) {
+                        const sortContainer = document.createElement('div');
+                        sortContainer.className = 'sort-order-container';
+                        
+                        const aElement = document.createElement('div');
+                        aElement.className = 'sort-asc';
+                        aElement.textContent = 'A';
+                        aElement.title = 'Click for ascending alphabetical order';
+                        aElement.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById(ascBtnId);
+                            if (btn) btn.click();
+                        };
+                        
+                        const zElement = document.createElement('div');
+                        zElement.className = 'sort-desc';
+                        zElement.textContent = 'Z';
+                        zElement.title = 'Click for descending alphabetical order';
+                        zElement.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById(descBtnId);
+                            if (btn) btn.click();
+                        };
+                        
+                        sortContainer.appendChild(aElement);
+                        sortContainer.appendChild(zElement);
+                        
+                        // Add SVG sort icon
+                        const sortIndicator = document.createElement('div');
+                        sortIndicator.className = 'sort-indicator';
+                        sortIndicator.title = 'Click to show sort options';
+                        
+                        sortIndicator.innerHTML = `
+                            <svg fill="#000000" viewBox="0 0 301.219 301.219" xmlns="http://www.w3.org/2000/svg">
+                                <g>
+                                    <path d="M159.365,23.736v-10c0-5.523-4.477-10-10-10H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h139.365
+                                        C154.888,33.736,159.365,29.259,159.365,23.736z"/>
+                                    <path d="M130.586,66.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h120.586c5.523,0,10-4.477,10-10v-10
+                                        C140.586,71.213,136.109,66.736,130.586,66.736z"/>
+                                    <path d="M111.805,129.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h101.805c5.523,0,10-4.477,10-10v-10
+                                        C121.805,134.213,117.328,129.736,111.805,129.736z"/>
+                                    <path d="M93.025,199.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h83.025c5.522,0,10-4.477,10-10v-10
+                                        C103.025,204.213,98.548,199.736,93.025,199.736z"/>
+                                    <path d="M74.244,262.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h64.244c5.522,0,10-4.477,10-10v-10
+                                        C84.244,267.213,79.767,262.736,74.244,262.736z"/>
+                                    <path d="M298.29,216.877l-7.071-7.071c-1.875-1.875-4.419-2.929-7.071-2.929c-2.652,0-5.196,1.054-7.072,2.929l-34.393,34.393
+                                        V18.736c0-5.523-4.477-10-10-10h-10c-5.523,0-10,4.477-10,10v225.462l-34.393-34.393c-1.876-1.875-4.419-2.929-7.071-2.929
+                                        c-2.652,0-5.196,1.054-7.071,2.929l-7.072,7.071c-3.904,3.905-3.904,10.237,0,14.142l63.536,63.536
+                                        c1.953,1.953,4.512,2.929,7.071,2.929c2.559,0,5.119-0.976,7.071-2.929l63.536-63.536
+                                        C302.195,227.113,302.195,220.781,298.29,216.877z"/>
+                                </g>
+                            </svg>
+                        `;
+                        
+                        sortIndicator.onclick = function(e) {
+                            e.stopPropagation();
+                            const btn = document.getElementById(popupBtnId);
+                            if (btn) btn.click();
+                        };
+                        
+                        header.appendChild(sortContainer);
+                        header.appendChild(sortIndicator);
+                    }
+                }
+                
+                // Find Measure header using multiple strategies with retries
+                function findPortHeader(columnName) {
+                    // Strategy 1: Search within port details table first
+                    const table = document.getElementById('port-details-table');
+                    if (table) {
+                        let header = table.querySelector('.dash-header[data-dash-column="' + columnName + '"]');
+                        if (header) return header;
+                        
+                        // Strategy 2: Search by text content within table
+                        const headers = table.querySelectorAll('.dash-header');
+                        for (let h of headers) {
+                            if (h.textContent && h.textContent.trim().includes(columnName)) {
+                                return h;
+                            }
+                        }
+                    }
+                    
+                    // Strategy 3: Global search
+                    let header = document.querySelector('.dash-header[data-dash-column="' + columnName + '"]');
+                    if (header) return header;
+                    
+                    // Strategy 4: Search by text content globally
+                    const allHeaders = document.querySelectorAll('.dash-header');
+                    for (let h of allHeaders) {
+                        if (h.textContent && h.textContent.trim().includes(columnName)) {
+                            return h;
+                        }
+                    }
+                    
+                    return null;
+                }
+                
+                // Function to initialize Measure header
+                function initializePortHeader() {
+                    let measureHeader = findPortHeader('Measure');
+                    if (measureHeader && !measureHeader.querySelector('.sort-order-container')) {
+                        addSortingControls(measureHeader, 'Measure', 
+                            'port-measure-sort-asc-btn', 
+                            'port-measure-sort-desc-btn',
+                            'port-measure-popup-menu-btn');
+                    }
+                }
+                
+                // Try to initialize header with multiple retries
+                initializePortHeader();
+                
+                // Retry after delays
+                setTimeout(initializePortHeader, 200);
+                setTimeout(initializePortHeader, 500);
+                setTimeout(initializePortHeader, 1000);
+                
+                // Use MutationObserver to re-initialize if table is re-rendered
+                const table = document.getElementById('port-details-table');
+                if (table) {
+                    const observer = new MutationObserver(function(mutations) {
+                        let shouldReinit = false;
+                        for (let mutation of mutations) {
+                            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                                shouldReinit = true;
+                                break;
+                            }
+                        }
+                        if (shouldReinit) {
+                            setTimeout(initializePortHeader, 100);
+                            setTimeout(initializePortHeader, 300);
+                        }
+                    });
+                    observer.observe(table, { childList: true, subtree: true });
+                }
+                
+                // Also observe document for table addition
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', function() {
+                        setTimeout(initializePortHeader, 100);
+                        setTimeout(initializePortHeader, 500);
+                    });
+                }
+                
+                // Add click handlers for Measure popup menu items
+                const measurePopup = document.getElementById('port-measure-sorting-controls');
+                if (measurePopup) {
+                    const measureSourceItem = measurePopup.querySelector('.port-measure-popup-source-item');
+                    const measureAlphaItem = measurePopup.querySelector('.port-measure-popup-alphabetic-item');
+                    const measureFieldItem = measurePopup.querySelector('.port-measure-popup-field-item');
+                    const measureNestedItem = measurePopup.querySelector('.port-measure-popup-nested-item');
+                    
+                    if (measureSourceItem) {
+                        measureSourceItem.onclick = function() {
+                            const btn = document.getElementById('port-measure-popup-source-btn');
+                            if (btn) btn.click();
+                        };
+                    }
+                    if (measureAlphaItem) {
+                        measureAlphaItem.onclick = function() {
+                            const btn = document.getElementById('port-measure-popup-alphabetic-btn');
+                            if (btn) btn.click();
+                        };
+                    }
+                    if (measureFieldItem) {
+                        measureFieldItem.onclick = function() {
+                            const btn = document.getElementById('port-measure-popup-field-btn');
+                            if (btn) btn.click();
+                        };
+                        
+                        // Find the arrow element within Field item
+                        const fieldArrow = measureFieldItem.querySelector('.port-measure-field-arrow-item');
+                        if (fieldArrow) {
+                            // Add hover handlers to arrow to show AVG(Value) text box
+                            fieldArrow.addEventListener('mouseenter', function(e) {
+                                const textBox = document.getElementById('port-avg-text-box');
+                                if (textBox) {
+                                    const rect = fieldArrow.getBoundingClientRect();
+                                    textBox.style.display = 'block';
+                                    textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                    textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
+                                }
+                            });
+                            fieldArrow.addEventListener('mouseleave', function(e) {
+                                setTimeout(function() {
+                                    const textBox = document.getElementById('port-avg-text-box');
+                                    if (textBox && !textBox.matches(':hover')) {
+                                        textBox.style.display = 'none';
+                                    }
+                                }, 100);
+                            });
+                        }
+                    }
+                    if (measureNestedItem) {
+                        measureNestedItem.onclick = function() {
+                            const btn = document.getElementById('port-measure-popup-nested-btn');
+                            if (btn) btn.click();
+                        };
+                        
+                        // Find the arrow element within Nested item
+                        const nestedArrow = measureNestedItem.querySelector('.port-measure-nested-arrow-item');
+                        if (nestedArrow) {
+                            // Add hover handlers to arrow to show AVG(Value) text box
+                            nestedArrow.addEventListener('mouseenter', function(e) {
+                                const textBox = document.getElementById('port-avg-text-box');
+                                if (textBox) {
+                                    const rect = nestedArrow.getBoundingClientRect();
+                                    textBox.style.display = 'block';
+                                    textBox.style.top = (rect.top + window.scrollY) + 'px';
+                                    textBox.style.left = (rect.right + window.scrollX + 5) + 'px';
+                                }
+                            });
+                            nestedArrow.addEventListener('mouseleave', function(e) {
+                                setTimeout(function() {
+                                    const textBox = document.getElementById('port-avg-text-box');
+                                    if (textBox && !textBox.matches(':hover')) {
+                                        textBox.style.display = 'none';
+                                    }
+                                }, 100);
+                            });
+                        }
+                    }
+                }
+                
+                // Keep text box visible when hovering over it and close popup on click
+                const portTextBox = document.getElementById('port-avg-text-box');
+                if (portTextBox) {
+                    portTextBox.addEventListener('mouseenter', function(e) {
+                        this.style.display = 'block';
+                    });
+                    
+                    portTextBox.addEventListener('mouseleave', function(e) {
+                        this.style.display = 'none';
+                    });
+                    
+                    // Close popup menu when clicking the text box
+                    portTextBox.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        // Close Measure popup if open
+                        const measurePopup = document.getElementById('port-measure-sorting-controls');
+                        if (measurePopup && (measurePopup.style.display === 'block' || window.getComputedStyle(measurePopup).display === 'block')) {
+                            const btn = document.getElementById('port-measure-popup-menu-btn');
+                            if (btn) btn.click();
+                        }
+                    });
+                }
+            }, 100);
+            return '';
+        }
+        """,
+        Output('port-dummy-output', 'children'),
+        [Input('port-details-table', 'columns'),
+         Input('port-details-table', 'data')],
+        prevent_initial_call=False
+    )
+    
+    # Popup positioning callback for Mars Blend Assay table
+    app.clientside_callback(
+        """
+        function(showControls) {
+            if (showControls && showControls.header) {
+                setTimeout(function() {
+                    const headerName = showControls.header;
+                    let popup = null;
+                    
+                    if (headerName === 'Property') {
+                        popup = document.getElementById('assay-property-sorting-controls');
+                        if (popup) {
+                            // Fixed position for Property popup
+                            popup.style.top = '1082px';
+                            popup.style.left = '256px';
+                        }
+                    } else if (headerName === 'Unit') {
+                        popup = document.getElementById('assay-unit-sorting-controls');
+                        const targetHeader = document.querySelector('.dash-header[data-dash-column="Unit"]');
+                        if (popup && targetHeader) {
+                            const rect = targetHeader.getBoundingClientRect();
+                            const sortIndicator = targetHeader.querySelector('.sort-indicator');
+                            
+                            if (sortIndicator) {
+                                const indicatorRect = sortIndicator.getBoundingClientRect();
+                                popup.style.top = (indicatorRect.bottom + window.scrollY + 5) + 'px';
+                                popup.style.left = (indicatorRect.left + window.scrollX) + 'px';
+                            } else {
+                                popup.style.top = (rect.bottom + window.scrollY + 5) + 'px';
+                                popup.style.left = (rect.left + window.scrollX) + 'px';
+                            }
+                        }
+                    }
+                }, 50);
+            }
+            return '';
+        }
+        """,
+        Output('assay-dummy-output-2', 'children'),
+        Input('assay-show-sorting-controls', 'data'),
+        prevent_initial_call=True
+    )
+    
+    # Popup positioning callback for Refined Products table
     app.clientside_callback(
         """
         function(showControls) {
@@ -3394,26 +3884,51 @@ def register_callbacks(app):
                     
                     if (headerName === 'Product') {
                         popup = document.getElementById('refined-product-sorting-controls');
-                        targetHeader = document.querySelector('.dash-header[data-dash-column="Product"]');
+                        if (popup) {
+                            // Fixed position for Product popup
+                            popup.style.top = '1075px';
+                            popup.style.left = '714px';
+                        }
                     } else if (headerName === 'Cut Points') {
                         popup = document.getElementById('refined-cutpoints-sorting-controls');
-                        targetHeader = document.querySelector('.dash-header[data-dash-column="Cut Points (°C)"]');
+                        if (popup) {
+                            // Fixed position for Cut Points popup
+                            popup.style.top = '1075px';
+                            popup.style.left = '818px';
+                        }
                     } else if (headerName === 'Property') {
                         popup = document.getElementById('refined-property-sorting-controls');
                         targetHeader = document.querySelector('.dash-header[data-dash-column="Property"]');
-                    }
-                    
-                    if (popup && targetHeader) {
-                        const rect = targetHeader.getBoundingClientRect();
-                        const sortIndicator = targetHeader.querySelector('.sort-indicator');
-                        
-                        if (sortIndicator) {
-                            const indicatorRect = sortIndicator.getBoundingClientRect();
-                            popup.style.top = (indicatorRect.bottom + window.scrollY + 5) + 'px';
-                            popup.style.left = (indicatorRect.left + window.scrollX) + 'px';
-                        } else {
-                            popup.style.top = (rect.bottom + window.scrollY + 5) + 'px';
-                            popup.style.left = (rect.left + window.scrollX) + 'px';
+                        if (popup && targetHeader) {
+                            const rect = targetHeader.getBoundingClientRect();
+                            const sortIndicator = targetHeader.querySelector('.sort-indicator');
+                            
+                            // Fixed left position for Property popup
+                            popup.style.left = '869px';
+                            
+                            if (sortIndicator) {
+                                const indicatorRect = sortIndicator.getBoundingClientRect();
+                                popup.style.top = (indicatorRect.bottom + window.scrollY + 5) + 'px';
+                            } else {
+                                popup.style.top = (rect.bottom + window.scrollY + 5) + 'px';
+                            }
+                        }
+                    } else if (headerName === 'Unit') {
+                        popup = document.getElementById('refined-unit-sorting-controls');
+                        targetHeader = document.querySelector('.dash-header[data-dash-column="Unit"]');
+                        if (popup && targetHeader) {
+                            const rect = targetHeader.getBoundingClientRect();
+                            const sortIndicator = targetHeader.querySelector('.sort-indicator');
+                            
+                            // Fixed left position for Unit popup
+                            popup.style.left = '943px';
+                            
+                            if (sortIndicator) {
+                                const indicatorRect = sortIndicator.getBoundingClientRect();
+                                popup.style.top = (indicatorRect.bottom + window.scrollY + 5) + 'px';
+                            } else {
+                                popup.style.top = (rect.bottom + window.scrollY + 5) + 'px';
+                            }
                         }
                     }
                 }, 50);
@@ -3423,6 +3938,43 @@ def register_callbacks(app):
         """,
         Output('refined-dummy-output-2', 'children'),
         Input('refined-show-sorting-controls', 'data'),
+        prevent_initial_call=True
+    )
+    
+    # Popup positioning callback for Port Details table
+    app.clientside_callback(
+        """
+        function(showControls) {
+            if (showControls && showControls.header) {
+                setTimeout(function() {
+                    const headerName = showControls.header;
+                    let popup = null;
+                    let targetHeader = null;
+                    
+                    if (headerName === 'Measure') {
+                        popup = document.getElementById('port-measure-sorting-controls');
+                        targetHeader = document.querySelector('.dash-header[data-dash-column="Measure"]');
+                        if (popup && targetHeader) {
+                            const rect = targetHeader.getBoundingClientRect();
+                            const sortIndicator = targetHeader.querySelector('.sort-indicator');
+                            
+                            if (sortIndicator) {
+                                const indicatorRect = sortIndicator.getBoundingClientRect();
+                                popup.style.top = (indicatorRect.bottom + window.scrollY + 5) + 'px';
+                                popup.style.left = (indicatorRect.left + window.scrollX) + 'px';
+                            } else {
+                                popup.style.top = (rect.bottom + window.scrollY + 5) + 'px';
+                                popup.style.left = (rect.left + window.scrollX) + 'px';
+                            }
+                        }
+                    }
+                }, 50);
+            }
+            return '';
+        }
+        """,
+        Output('port-dummy-output-2', 'children'),
+        Input('port-show-sorting-controls', 'data'),
         prevent_initial_call=True
     )
 
