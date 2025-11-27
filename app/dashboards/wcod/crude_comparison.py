@@ -7,12 +7,6 @@ import re
 from app import create_dash_app
 from app.database import execute_query
 
-# ------------------------------------------------------------------------------
-# GET SCHEMA FROM ENVIRONMENT
-# ------------------------------------------------------------------------------
-def get_schema():
-    """Get database schema from environment variable, default to 'dev'"""
-    return os.environ.get('DB_SCHEMA', 'dev')
 
 # ------------------------------------------------------------------------------
 # LOAD DATA FROM DATABASE
@@ -23,9 +17,8 @@ def load_crude_data(mode):
     mode: 'production' or 'exports'
     Returns: (data_dict_list, columns_list)
     """
-    schema = get_schema()
     
-    # Build the query with schema - using exact query provided by user
+    # Build the query - using exact query provided by user
     query = f"""
     SELECT 
         A.country_name AS "Country",
@@ -50,10 +43,10 @@ def load_crude_data(mode):
         A.last_update_date,
         A.last_update_by,
         A.to_be_deleted
-    FROM {schema}.fact_wcod_crude A
-    LEFT JOIN {schema}.dim_country GRP 
+    FROM fact_wcod_crude A
+    LEFT JOIN dim_country GRP 
            ON A.country_id = GRP.dim_country_id
-    LEFT JOIN {schema}.fact_wcod_crude_bsp_links B 
+    LEFT JOIN fact_wcod_crude_bsp_links B 
            ON A.crude_id = B.crude_id
     WHERE A.to_be_deleted IS NULL
       AND A.crude_name IS NOT NULL
@@ -64,8 +57,8 @@ def load_crude_data(mode):
         results = execute_query(query)
         
         if not results:
-            print(f"⚠️ No data found for {mode}. Using sample.")
-            # return get_sample()
+            print(f"⚠️ No data found for {mode}. Returning empty data.")
+            return [], []
         
         # Convert to DataFrame
         df = pd.DataFrame(results)
@@ -80,8 +73,8 @@ def load_crude_data(mode):
         df = df[df[value_col].notna() & (df[value_col] != 0)]
         
         if df.empty:
-            print(f"⚠️ No {mode} data found. Using sample.")
-            # return get_sample()
+            print(f"⚠️ No {mode} data found. Returning empty data.")
+            return [], []
         
         # Extract year from YearReported (handle both date and year formats)
         if 'YearReported' in df.columns:
@@ -112,16 +105,15 @@ def load_crude_data(mode):
                 # Replace 0 with NaN for invalid years
                 df.loc[df['Year'] == 0, 'Year'] = None
         else:
-            print(f"⚠️ YearReported column not found in results")
-            return get_sample()
+            print(f"⚠️ YearReported column not found in results. Returning empty data.")
+            return [], []
         
         # Remove rows where Year extraction failed
         df = df[df['Year'].notna() & (df['Year'] > 1900) & (df['Year'] < 2100)]
         
         if df.empty:
-            print(f"⚠️ No valid year data found. Using sample.")
-            # return get_sample()
-            return []
+            print(f"⚠️ No valid year data found. Returning empty data.")
+            return [], []
         
         # Get the full year range from the data
         min_year = int(df['Year'].min())
@@ -186,9 +178,8 @@ def load_crude_data(mode):
                     continue
         
         if not year_cols:
-            print(f"⚠️ No valid year columns found after pivot. Columns: {list(pivot_df.columns)}")
-            # return get_sample()
-            return []
+            print(f"⚠️ No valid year columns found after pivot. Columns: {list(pivot_df.columns)}. Returning empty data.")
+            return [], []
         
         # Sort years in descending order (newest first)
         year_cols.sort(key=lambda x: x[1], reverse=True)
@@ -249,11 +240,13 @@ def load_crude_data(mode):
         return data_records, columns
         
     except Exception as e:
-        print(f"❌ Error loading {mode} data from database: {e}")
+        error_msg = str(e)
+        print(f"❌ Error loading {mode} data from database:")
+        print(f"   {error_msg}")
         import traceback
         traceback.print_exc()
-        # return get_sample()
-        return []
+        print(f"\n⚠️ Returning empty data for {mode}. Please check database connection and configuration.")
+        return [], []
 
 # ------------------------------------------------------------------------------
 # SAMPLE DATA IF DATABASE QUERY FAILS
@@ -268,9 +261,7 @@ def load_crude_data(mode):
 # ------------------------------------------------------------------------------
 def calculate_combined_sums():
     """Calculate combined sums of Production and Exports for each crude oil and year, sorted by maximum value descending"""
-    
-    schema = get_schema()
-    
+        
     # Query to get both production and exports data - using exact query format
     query = f"""
     SELECT 
@@ -296,10 +287,10 @@ def calculate_combined_sums():
         A.last_update_date,
         A.last_update_by,
         A.to_be_deleted
-    FROM {schema}.fact_wcod_crude A
-    LEFT JOIN {schema}.dim_country GRP 
+    FROM fact_wcod_crude A
+    LEFT JOIN dim_country GRP 
            ON A.country_id = GRP.dim_country_id
-    LEFT JOIN {schema}.fact_wcod_crude_bsp_links B 
+    LEFT JOIN fact_wcod_crude_bsp_links B 
            ON A.crude_id = B.crude_id
     WHERE A.to_be_deleted IS NULL
       AND A.crude_name IS NOT NULL
