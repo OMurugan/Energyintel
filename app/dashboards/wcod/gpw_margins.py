@@ -1358,16 +1358,19 @@ def register_callbacks(dash_app, server):
         if not ctx.triggered:
             return dash.no_update, dash.no_update, dash.no_update
         
-        # Only process if triggered by the filter itself (not by sync from legend)
-        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
-        if trigger_id != 'gpw-crude-filter':
-            return dash.no_update, dash.no_update, dash.no_update
+        # Process all triggers - normalization should handle all value changes
+        # The sync callback will handle legend->filter sync separately
         
         # Skip normalization on initial load
         if is_initial_load:
             return dash.no_update, False, value
         
+        # Handle empty value - check if this is from unchecking ALL or initial state
         if not value:
+            # If we had ALL before and now value is empty, user unchecked ALL - clear everything
+            if had_all:
+                return [], False, []
+            # Otherwise, empty value is valid (user unchecked all items)
             return [], False, []
         
         if not isinstance(value, (list, tuple)):
@@ -1410,18 +1413,27 @@ def register_callbacks(dash_app, server):
             result = ['ALL'] + CRUDES.copy()
             return result, False, result
         
-        # Case 2: ALL is checked - detect if item was unclicked or if ALL was just checked
+        # Case 2: ALL is currently checked
         if has_all:
+            # If ALL is checked, ensure all items are also checked
             if non_all_set == all_items_set:
-                # ALL + all items - keep as is
+                # ALL + all items - keep as is (correct state)
                 result = ['ALL'] + CRUDES.copy()
                 return result, False, result
-            else:
-                # ALL is checked but not all items are present
+            elif len(non_all_items) > 0 and len(non_all_set) < len(all_items_set):
+                # ALL is checked but some items are missing
                 # This means user unclicked an item while ALL was checked
                 # Remove ALL and keep only the selected items
                 cleaned_items = [v for v in non_all_items if v in CRUDES]
                 return cleaned_items, False, cleaned_items
+            elif len(non_all_items) == 0:
+                # ALL is checked but no items are present - this shouldn't happen, but ensure all items
+                result = ['ALL'] + CRUDES.copy()
+                return result, False, result
+            else:
+                # Default: ensure ALL + all items
+                result = ['ALL'] + CRUDES.copy()
+                return result, False, result
         
         # Case 3: ALL was unchecked (had ALL before, don't have ALL now)
         if had_all and not has_all:
@@ -1526,44 +1538,117 @@ def register_callbacks(dash_app, server):
         return styles
     
     # Sync crude filter checkbox with crude legend checklist (one-way: legend -> filter)
-    # This sync only happens when legend changes, not when filter changes
+    # This sync happens when legend changes
     @dash_app.callback(
         Output('gpw-crude-filter', 'value', allow_duplicate=True),
         Input('gpw-crude-legend', 'value'),
+        State('gpw-crude-filter', 'value'),
         prevent_initial_call=True
     )
-    def sync_crude_filter_from_legend(crude_legend_values):
+    def sync_crude_filter_from_legend(crude_legend_values, current_filter_value):
         """Sync crude filter checkbox when legend checklist changes.
-        Pass legend values directly to filter - no ALL conversion.
-        Only runs when legend changes, allowing filter to work independently."""
+        When legend changes, update filter to reflect the same selection.
+        If all items are selected in legend, set filter to ALL + all items.
+        Otherwise, pass through individual legend values."""
+        ctx = callback_context
+        if not ctx.triggered:
+            return dash.no_update
+        
         if not crude_legend_values:
+            # Legend is empty - clear filter (if not already empty)
+            if not current_filter_value or (isinstance(current_filter_value, list) and len(current_filter_value) == 0):
+                return dash.no_update
             return []
-        # Pass through the legend values directly to filter (no conversion to ALL)
-        return crude_legend_values if isinstance(crude_legend_values, list) else [crude_legend_values]
+        
+        legend_list = crude_legend_values if isinstance(crude_legend_values, list) else [crude_legend_values]
+        legend_set = set(legend_list)
+        all_items_set = set(CRUDES)
+        
+        # If all items are selected in legend, set filter to ALL + all items
+        if legend_set == all_items_set:
+            expected_filter = ['ALL'] + CRUDES.copy()
+            # Check if filter already matches
+            if current_filter_value and isinstance(current_filter_value, list):
+                current_set = set(current_filter_value)
+                expected_set = set(expected_filter)
+                if current_set == expected_set:
+                    return dash.no_update
+            return expected_filter
+        
+        # Otherwise, pass through the legend values directly to filter (no ALL)
+        # Check if filter already matches
+        if current_filter_value and isinstance(current_filter_value, list):
+            current_set = set([c for c in current_filter_value if c != 'ALL'])
+            if current_set == legend_set:
+                return dash.no_update
+        return legend_list
     
-    # Sync crude legend from crude filter (only when ALL is set via normalization)
+    # Sync crude legend from crude filter (two-way sync)
     @dash_app.callback(
         Output('gpw-crude-legend', 'value', allow_duplicate=True),
         Input('gpw-crude-filter', 'value'),
+        State('gpw-crude-legend', 'value'),
         prevent_initial_call=True
     )
-    def sync_crude_legend_from_filter(crude_filter_values):
-        """Sync crude legend when filter changes, but only for ALL option.
-        Don't interfere with individual legend item selection or direct filter clicks."""
-        if not crude_filter_values:
+    def sync_crude_legend_from_filter(crude_filter_values, current_legend_values):
+        """Sync crude legend when filter changes.
+        Update legend to match filter selection.
+        If filter has ALL + all items, show all items in legend.
+        If filter has individual items, show those items in legend.
+        If filter is empty, clear legend."""
+        ctx = callback_context
+        if not ctx.triggered:
             return dash.no_update
         
-        # Only sync if ALL is in the filter and all items are selected
-        # This indicates normalization happened
-        if isinstance(crude_filter_values, list) and 'ALL' in crude_filter_values:
-            filter_set = set(crude_filter_values)
-            all_set_with_all = set(['ALL'] + CRUDES)
-            if filter_set == all_set_with_all:
-                # Normalization set ALL + all items - sync legend
-                return CRUDES.copy()
+        # Only sync if triggered by the filter (not by legend changes or normalization)
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+        if trigger_id != 'gpw-crude-filter':
+            return dash.no_update
         
-        # Don't sync for individual selections
-        return dash.no_update
+        # When filter is empty, clear legend
+        if not crude_filter_values or (isinstance(crude_filter_values, list) and len(crude_filter_values) == 0):
+            return []
+        
+        filter_list = crude_filter_values if isinstance(crude_filter_values, list) else [crude_filter_values]
+        filter_set = set(filter_list)
+        all_items_set = set(CRUDES)
+        all_set_with_all = set(['ALL'] + CRUDES)
+        
+        # Check if filter has ALL + all items
+        if filter_set == all_set_with_all:
+            # ALL + all items selected - sync legend to show all items
+            # Check if legend already matches
+            if current_legend_values and isinstance(current_legend_values, list):
+                legend_set = set(current_legend_values)
+                if legend_set == all_items_set:
+                    return dash.no_update
+            return CRUDES.copy()
+        
+        # Check if filter has ALL (but not all items - normalization will handle this case)
+        if 'ALL' in filter_list:
+            # ALL is present but not all items - wait for normalization to complete
+            # But if all items are present, sync them
+            non_all_items = [v for v in filter_list if v != 'ALL']
+            if set(non_all_items) == all_items_set:
+                # Check if legend already matches
+                if current_legend_values and isinstance(current_legend_values, list):
+                    legend_set = set(current_legend_values)
+                    if legend_set == all_items_set:
+                        return dash.no_update
+                return CRUDES.copy()
+            # Otherwise, don't sync yet (normalization will handle)
+            return dash.no_update
+        
+        # For individual selections (no ALL), sync to legend directly
+        # Filter out any invalid values and sync only valid crudes
+        valid_crudes = [c for c in filter_list if c in CRUDES]
+        # Check if legend already matches
+        if current_legend_values and isinstance(current_legend_values, list):
+            legend_set = set(current_legend_values)
+            valid_set = set(valid_crudes)
+            if legend_set == valid_set:
+                return dash.no_update
+        return valid_crudes
     
     # Handle ALL option normalization for refining complexity filter
     @dash_app.callback(
