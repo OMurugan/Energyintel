@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 from dash import html, dcc, Input, Output, callback_context
 from dash import dash_table
 from app import create_dash_app
+from app.database import execute_query
 import os
 import numpy as np
 
@@ -62,92 +63,628 @@ def load_crossplot_data():
 
 def load_crude_quality_table():
     """
-    Load data for 'Crudes Compared by Quality' table.
-
-    The file has:
-        - Row 1–2  : source / copyright
-        - Row 3    : parent headers  (Gravity, Sulfur Content, Pour Point, Viscosity, ...)
-        - Row 4    : sub headers     (Country, CrudeOil, API at 60 F, % Wt, Temp. C, ...)
-        - Row 5+   : data
+    Load data for 'Crudes Compared by Quality' table from database.
+    
+    Maps properties to parent headers:
+    - Gravity: gravity, API at 60 F
+    - Sulfur Content: sulphur, sulfur, mercaptan sulfur
+    - Pour Point: pourpoint, pour point
+    - Viscosity: viscosity, viscocity
+    - Barrels: barrels
+    - Nickel: nickel
+    - Total Acid Number: total acid number, total acidnumber
+    - Vanadium: vanadium
+    - Carbon Residue Conradson: carbon residue conradson, carbon residue
+    - Carbon Residue Upto Waxpoint: carbon residue upto waxpoint
+    - Paraffin: parafin, paraffin
     """
-    csv_path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)),
-        'data',
-        'crude_quality',
-        'table_Crude Quality.csv'
-    )
-
-    raw = pd.read_csv(
-        csv_path,
-        encoding="utf-16",
-        sep="\t",
-        header=None,
-        engine="python"
-    )
-
-    # Drop completely empty rows
-    raw = raw.dropna(how="all")
-
-    # Skip first two "Source / COPYRIGHT" rows
-    raw = raw.iloc[2:].reset_index(drop=True)
-
-    # Parent & sub headers
-    parent_headers = raw.iloc[0].fillna("").astype(str).str.strip().tolist()
-    sub_headers = raw.iloc[1].fillna("").astype(str).str.strip().tolist()
-
-    # Data starts from row index 2
-    df = raw.iloc[2:].reset_index(drop=True)
+    query = """
+    SELECT 
+        a.crude_id AS crude_id,
+        a.crude_name AS "Crudeoil",
+        b.bsp_link AS profile_url,
+        a.country_name,
+        a.product,
+        a.property,
+        a.value AS "Value",
+        a.unit,
+        a.cut_point,
+        a.cut_point_sort,
+        a.assay_yr,
+        c.crude_alias
+    FROM fact_wcod_assays a
+    LEFT JOIN fact_wcod_crude_bsp_links b 
+           ON a.crude_id = b.crude_id
+    LEFT JOIN fact_wcod_crude c 
+           ON a.crude_id = c.crude_id
+    WHERE a.to_be_deleted IS NULL
+    """
     
-    # Filter out empty columns first, keeping track of original indices
-    valid_indices = []
-    valid_sub_headers = []
-    valid_parent_headers = []
-    
-    for idx, (sub_h, parent_h) in enumerate(zip(sub_headers, parent_headers)):
-        sub_h_str = str(sub_h).strip() if pd.notna(sub_h) else ""
-        if sub_h_str and sub_h_str != '':
-            valid_indices.append(idx)
-            valid_sub_headers.append(sub_h_str)
-            # Normalize parent header - strip and normalize whitespace for consistent merging
-            parent_h_clean = str(parent_h).strip() if pd.notna(parent_h) and str(parent_h).strip() != '' else ""
-            # Normalize parent header to ensure identical headers merge (remove extra spaces)
-            if parent_h_clean:
-                parent_h_clean = ' '.join(parent_h_clean.split())  # Normalize multiple spaces to single space
-            valid_parent_headers.append(parent_h_clean)
-    
-    # Select only valid columns and create unique column names
-    df = df.iloc[:, valid_indices].copy()
-    
-    # Create unique column IDs by combining parent and sub header with index
-    # This handles duplicate sub-header names correctly
-    unique_column_ids = []
-    column_info = []
-    
-    for idx, (sub_h, parent_h) in enumerate(zip(valid_sub_headers, valid_parent_headers)):
-        # Create unique ID: use index to differentiate duplicates
-        unique_id = f"{sub_h}_{idx}" if valid_sub_headers.count(sub_h) > 1 else sub_h
-        unique_column_ids.append(unique_id)
+    try:
+        # Execute query
+        results = execute_query(query)
         
-        # Store mapping: unique_id -> original_sub_header
-        parent = parent_h if parent_h and parent_h != "" else ""
+        if not results:
+            print("⚠️ No data found for crude quality table. Returning empty DataFrame.")
+            return pd.DataFrame()
         
-        if parent and parent != sub_h and sub_h not in ["Country", "CrudeOil"]:
-            column_info.append({"id": unique_id, "parent": parent, "sub": sub_h, "original_idx": idx})
-        else:
-            column_info.append({"id": unique_id, "parent": "", "sub": sub_h, "original_idx": idx})
-    
-    # Rename columns to unique IDs
-    df.columns = unique_column_ids
-
-    # Attach meta so create_grouped_columns can use it
-    _set_df_metadata(
-        df,
-        column_info=column_info,
-        parent_headers=parent_headers,
-        sub_headers=sub_headers
-    )
-
-    return df
+        # Convert to DataFrame
+        df = pd.DataFrame(results)
+        
+        # Normalize property names (case-insensitive matching)
+        # Map various property name variations to standard parent headers
+        property_mapping = {
+            # Gravity
+            'gravity': 'Gravity',
+            'api at 60 f': 'Gravity',
+            'api at 60°f': 'Gravity',
+            'api at 60 f.': 'Gravity',
+            'api': 'Gravity',
+            'api gravity': 'Gravity',
+            # Sulfur Content
+            'sulphur': 'Sulfur Content',
+            'sulfur': 'Sulfur Content',
+            'sulphur content': 'Sulfur Content',
+            'sulfur content': 'Sulfur Content',
+            # Pour Point
+            'pourpoint': 'Pour Point',
+            'pour point': 'Pour Point',
+            'pour point temperature': 'Pour Point',
+            # Viscosity
+            'viscosity': 'Viscosity',
+            'viscocity': 'Viscosity',
+            'kinematic viscosity': 'Viscosity',
+            'dynamic viscosity': 'Viscosity',
+            # Barrels
+            'barrels': 'Barrels',
+            'barrels per metric ton': 'Barrels',
+            # Nickel
+            'nickel': 'Nickel',
+            'ni': 'Nickel',
+            # Total Acid Number
+            'total acid number': 'Total Acid Number',
+            'total acidnumber': 'Total Acid Number',
+            'tan': 'Total Acid Number',
+            'acid number': 'Total Acid Number',
+            # Vanadium
+            'vanadium': 'Vanadium',
+            'v': 'Vanadium',
+            # Mercaptan Sulfur (separate from Sulfur Content)
+            'mercaptan sulfur': 'Mercaptan Sulfur',
+            'mercaptan sulphur': 'Mercaptan Sulfur',
+            # Carbon Residue (separate from Carbon Residue Conradson)
+            'carbon residue': 'Carbon Residue',
+            # Carbon Residue Conradson
+            'carbon residue conradson': 'Carbon Residue Conradson',
+            'conradson carbon residue': 'Carbon Residue Conradson',
+            'conradson': 'Carbon Residue Conradson',
+            # Carbon Residue Upto Waxpoint
+            'carbon residue upto waxpoint': 'Carbon Residue Upto Waxpoint',
+            'carbon residue up to waxpoint': 'Carbon Residue Upto Waxpoint',
+            'carbon residue upto wax point': 'Carbon Residue Upto Waxpoint',
+            # Cloud Point
+            'cloud point': 'Cloud Point',
+            'cloudpoint': 'Cloud Point',
+            # Density
+            'density': 'Density',
+            # Gas <C4
+            'gas <c4': 'Gas <C4',
+            'gas c4': 'Gas <C4',
+            'gas less than c4': 'Gas <C4',
+            # Micro Carbon Residue
+            'micro carbon residue': 'Micro Carbon Residue',
+            'mcr': 'Micro Carbon Residue',
+            # Reid Vapor Pressure
+            'reid vapor pressure': 'Reid Vapor Pressure',
+            'rvp': 'Reid Vapor Pressure',
+            'reid vapour pressure': 'Reid Vapor Pressure',
+            # Salt Content
+            'salt content': 'Salt Content',
+            'salt': 'Salt Content',
+            # Vapor Pressure
+            'vapor pressure': 'Vapor Pressure',
+            'vapour pressure': 'Vapor Pressure',
+            # Wax Point
+            'wax point': 'Wax Point',
+            'waxpoint': 'Wax Point',
+            # Paraffin
+            'parafin': 'Paraffin',
+            'paraffin': 'Paraffin',
+            'paraffins': 'Paraffin',  # Handle plural form
+            'paraffin content': 'Paraffin',
+        }
+        
+        # Normalize property names
+        df['property_normalized'] = df['property'].astype(str).str.lower().str.strip()
+        df['parent_header'] = df['property_normalized'].map(property_mapping)
+        
+        # Debug: show unmapped properties
+        unmapped = df[df['parent_header'].isna()]['property'].unique()
+        if len(unmapped) > 0:
+            print(f"DEBUG: Unmapped properties (will be filtered out): {unmapped[:10]}")  # Show first 10
+        
+        # Filter out rows where property doesn't map to a known parent header
+        df = df[df['parent_header'].notna()]
+        
+        print(f"DEBUG: After property mapping, {len(df)} rows remain")
+        
+        if df.empty:
+            print("⚠️ No valid property data found after mapping. Returning empty DataFrame.")
+            return pd.DataFrame(columns=['Country', 'CrudeOil'])
+        
+        # IMPORTANT: Filter to only include 'Crude Oil' product (not Gasoil, Residue, etc.)
+        # This ensures we get the correct values for crude oil properties
+        if 'product' in df.columns:
+            original_count = len(df)
+            df = df[df['product'].astype(str).str.strip().str.lower() == 'crude oil']
+            print(f"DEBUG: Filtered to 'Crude Oil' product: {len(df)} rows remain (from {original_count})")
+        
+        if df.empty:
+            print("⚠️ No data found for 'Crude Oil' product. Returning empty DataFrame.")
+            return pd.DataFrame(columns=['Country', 'CrudeOil'])
+        
+        # Convert Value to numeric, handling errors
+        df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
+        
+        # Remove rows with null values after conversion
+        df = df[df['Value'].notna()]
+        
+        print(f"DEBUG: After numeric conversion, {len(df)} rows remain")
+        
+        if df.empty:
+            print("⚠️ No valid numeric values found. Returning empty DataFrame.")
+            return pd.DataFrame(columns=['Country', 'CrudeOil'])
+        
+        # Filter out Sulfur Content rows with "ppm" unit - we only want "% Wt"
+        # Mercaptan Sulfur will have its own parent header and can have "ppm"
+        if 'unit' in df.columns and 'property' in df.columns:
+            original_count = len(df)
+            # Remove rows where property is sulfur/sulphur and unit is ppm
+            sulfur_mask = df['property'].astype(str).str.lower().str.strip().isin(['sulphur', 'sulfur', 'sulphur content', 'sulfur content'])
+            ppm_mask = df['unit'].astype(str).str.lower().str.strip().str.contains('ppm', na=False)
+            df = df[~(sulfur_mask & ppm_mask)]
+            removed_count = original_count - len(df)
+            if removed_count > 0:
+                print(f"DEBUG: Removed {removed_count} Sulfur Content rows with 'ppm' unit (keeping only '% Wt')")
+        
+        # Create sub-header names: property name + unit (e.g., "API at 60 F", "Sulfur % Wt")
+        def create_sub_header(row):
+            prop = str(row['property']).strip() if pd.notna(row['property']) else ""
+            unit = str(row['unit']).strip() if pd.notna(row['unit']) else ""
+            prop_lower = prop.lower()
+            
+            # For common cases, create readable sub-headers matching CSV format
+            if prop_lower in ['gravity', 'api at 60 f', 'api at 60°f', 'api at 60 f.', 'api', 'api gravity']:
+                return "API at 60 F"
+            elif prop_lower in ['sulphur', 'sulfur', 'sulphur content', 'sulfur content']:
+                # Sulfur Content should ONLY show "% Wt", not "ppm"
+                # "ppm" is only for Mercaptan Sulfur
+                # Always return "% Wt" for regular sulfur content
+                return "% Wt"
+            elif prop_lower in ['mercaptan sulfur', 'mercaptan sulphur']:
+                return unit if unit and unit.strip() else "ppm"
+            elif prop_lower in ['pourpoint', 'pour point', 'pour point temperature']:
+                # Check if unit contains temperature indicator
+                if unit and ('c' in unit.lower() or '°c' in unit.lower() or 'celsius' in unit.lower()):
+                    return "Temp. C"
+                elif unit and ('f' in unit.lower() or '°f' in unit.lower() or 'fahrenheit' in unit.lower()):
+                    return "Temp. F"
+                return "Pour Point"
+            elif prop_lower in ['viscosity', 'viscocity', 'kinematic viscosity', 'dynamic viscosity']:
+                # Viscosity units should include temperature info
+                # Examples: "cSt at 10 C", "cSt at 20 C", "SSU at 80 F"
+                unit_str = str(unit).strip() if unit and pd.notna(unit) else ""
+                cut_point = str(row.get('cut_point', '')).strip() if pd.notna(row.get('cut_point')) else ""
+                
+                # Check if unit already contains temperature info
+                if unit_str and ('at' in unit_str.lower() or '°' in unit_str):
+                    return unit_str
+                
+                # Try to construct from unit and cut_point
+                if unit_str and cut_point:
+                    # Format: "cSt at 10 C" or "SSU at 80 F"
+                    if 'cst' in unit_str.lower() or 'centistokes' in unit_str.lower():
+                        return f"cSt at {cut_point} C"
+                    elif 'ssu' in unit_str.lower() or 'saybolt' in unit_str.lower():
+                        return f"SSU at {cut_point} F"
+                    else:
+                        return f"{unit_str} at {cut_point}"
+                elif unit_str:
+                    return unit_str
+                # Default fallback
+                return "Viscosity"
+            elif prop_lower in ['barrels', 'barrels per metric ton']:
+                return unit if unit and unit.strip() else "Barrels"
+            elif prop_lower in ['nickel', 'ni']:
+                return unit if unit and unit.strip() else "Nickel"
+            elif prop_lower in ['total acid number', 'total acidnumber', 'tan', 'acid number']:
+                return unit if unit and unit.strip() else "Total Acid Number"
+            elif prop_lower in ['vanadium', 'v']:
+                return unit if unit and unit.strip() else "Vanadium"
+            elif prop_lower == 'carbon residue':
+                return "% Wt" if not unit or not unit.strip() else unit
+            elif prop_lower in ['carbon residue conradson', 'conradson carbon residue', 'conradson']:
+                return "% Wt" if not unit or not unit.strip() else unit
+            elif prop_lower in ['carbon residue upto waxpoint', 'carbon residue up to waxpoint', 'carbon residue upto wax point']:
+                return unit if unit and unit.strip() else "Carbon Residue Upto Waxpoint"
+            elif prop_lower in ['cloud point', 'cloudpoint']:
+                return "Temp. C" if not unit or not unit.strip() or 'c' in unit.lower() else unit
+            elif prop_lower == 'density':
+                # Handle different density units
+                if unit and unit.strip():
+                    if '15' in unit or '15 c' in unit.lower():
+                        return "kg/m3 at 15 C"
+                    elif '20' in unit or '20 c' in unit.lower():
+                        return "kg/m3 at 20 C"
+                    return unit
+                return "kg/m3 at 15 C"
+            elif prop_lower in ['gas <c4', 'gas c4', 'gas less than c4']:
+                return "% Wt" if not unit or not unit.strip() else unit
+            elif prop_lower in ['micro carbon residue', 'mcr']:
+                return "% Wt" if not unit or not unit.strip() else unit
+            elif prop_lower in ['reid vapor pressure', 'rvp', 'reid vapour pressure']:
+                return "psi at 37.8 C" if not unit or not unit.strip() else unit
+            elif prop_lower in ['salt content', 'salt']:
+                return "% Wt" if not unit or not unit.strip() else unit
+            elif prop_lower in ['vapor pressure', 'vapour pressure']:
+                # Could be kPa or psia
+                if unit and unit.strip():
+                    return unit
+                return "kPa"
+            elif prop_lower in ['wax point', 'waxpoint']:
+                return "Temp. C" if not unit or not unit.strip() or 'c' in unit.lower() else unit
+            elif prop_lower in ['parafin', 'paraffin', 'paraffins', 'paraffin content']:
+                # Paraffins should show "% Wt" as sub-header
+                return "% Wt" if not unit or not unit.strip() else unit
+            else:
+                # Fallback: use property name + unit
+                return f"{prop} {unit}".strip() if unit and unit.strip() else prop
+        
+        df['sub_header'] = df.apply(create_sub_header, axis=1)
+        
+        # Check if we have data to pivot
+        if df.empty:
+            print("⚠️ No data to pivot. Returning empty DataFrame with Country and CrudeOil columns.")
+            return pd.DataFrame(columns=['Country', 'CrudeOil'])
+        
+        # Sort by assay_yr descending to prioritize latest data when there are duplicates
+        if 'assay_yr' in df.columns:
+            df = df.sort_values('assay_yr', ascending=False, na_position='last')
+        
+        # Pivot the data: Country and CrudeOil as index, properties as columns
+        # Group by country_name, Crudeoil, and property to handle multiple values
+        # Use 'first' to take the first value (which will be the latest assay year after sorting)
+        try:
+            pivot_df = df.pivot_table(
+                index=['country_name', 'Crudeoil'],
+                columns=['parent_header', 'sub_header'],
+                values='Value',
+                aggfunc='first'  # Take first value if duplicates (latest assay year after sorting)
+            )
+        except Exception as e:
+            print(f"ERROR during pivot: {e}")
+            print(f"DataFrame shape: {df.shape}")
+            print(f"DataFrame columns: {list(df.columns)}")
+            print(f"Required columns present: country_name={('country_name' in df.columns)}, Crudeoil={('Crudeoil' in df.columns)}, parent_header={('parent_header' in df.columns)}, sub_header={('sub_header' in df.columns)}, Value={('Value' in df.columns)}")
+            return pd.DataFrame(columns=['Country', 'CrudeOil'])
+        
+        # Reset index to make Country and CrudeOil regular columns
+        pivot_df = pivot_df.reset_index()
+        
+        # Debug: print structure before flattening
+        print(f"DEBUG: pivot_df columns before flattening: {list(pivot_df.columns)}")
+        print(f"DEBUG: pivot_df shape: {pivot_df.shape}")
+        print(f"DEBUG: pivot_df is MultiIndex: {isinstance(pivot_df.columns, pd.MultiIndex)}")
+        
+        # Flatten MultiIndex columns if they exist
+        if isinstance(pivot_df.columns, pd.MultiIndex):
+            # Flatten the column MultiIndex
+            # Store the mapping for later use in column_info
+            flattened_cols = []
+            for col_tuple in pivot_df.columns:
+                if isinstance(col_tuple, tuple) and len(col_tuple) == 2:
+                    parent, sub = col_tuple
+                    parent = str(parent).strip() if pd.notna(parent) else ""
+                    sub = str(sub).strip() if pd.notna(sub) else ""
+                    # Use a special separator that's unlikely to appear in property names
+                    # We'll use "|||" as separator to avoid conflicts with underscores in sub-headers
+                    if parent:
+                        flattened_cols.append(f"{parent}|||{sub}")
+                    else:
+                        flattened_cols.append(sub)
+                else:
+                    flattened_cols.append(str(col_tuple))
+            pivot_df.columns = flattened_cols
+            print(f"DEBUG: After flattening: {list(pivot_df.columns)}")
+        
+        # Rename index columns (country_name and Crudeoil should now be regular columns)
+        if 'country_name' in pivot_df.columns:
+            pivot_df = pivot_df.rename(columns={'country_name': 'Country'})
+        if 'Crudeoil' in pivot_df.columns:
+            pivot_df = pivot_df.rename(columns={'Crudeoil': 'CrudeOil'})
+        
+        # Ensure Country and CrudeOil columns exist
+        if 'Country' not in pivot_df.columns:
+            print(f"WARNING: 'Country' column not found after pivot. Available columns: {list(pivot_df.columns)}")
+            # Try to find it with different name
+            for col in pivot_df.columns:
+                if 'country' in str(col).lower():
+                    pivot_df = pivot_df.rename(columns={col: 'Country'})
+                    print(f"Renamed '{col}' to 'Country'")
+                    break
+        if 'CrudeOil' not in pivot_df.columns:
+            print(f"WARNING: 'CrudeOil' column not found after pivot. Available columns: {list(pivot_df.columns)}")
+            # Try to find it with different name
+            for col in pivot_df.columns:
+                if 'crudeoil' in str(col).lower() or 'crude' in str(col).lower():
+                    pivot_df = pivot_df.rename(columns={col: 'CrudeOil'})
+                    print(f"Renamed '{col}' to 'CrudeOil'")
+                    break
+        
+        # If still missing, return empty DataFrame with proper structure
+        if 'Country' not in pivot_df.columns or 'CrudeOil' not in pivot_df.columns:
+            print(f"ERROR: Required columns missing. Returning empty DataFrame.")
+            return pd.DataFrame(columns=['Country', 'CrudeOil'])
+        
+        # Sort by Country and CrudeOil
+        if 'Country' in pivot_df.columns and 'CrudeOil' in pivot_df.columns:
+            pivot_df = pivot_df.sort_values(['Country', 'CrudeOil']).reset_index(drop=True)
+        
+        # Create column_info metadata for grouped headers
+        column_info = []
+        parent_headers = []
+        sub_headers = []
+        
+        # Add Country and CrudeOil columns first
+        column_info.append({"id": "Country", "parent": "", "sub": "Country", "original_idx": 0})
+        parent_headers.append("")
+        sub_headers.append("Country")
+        
+        column_info.append({"id": "CrudeOil", "parent": "", "sub": "CrudeOil", "original_idx": 1})
+        parent_headers.append("")
+        sub_headers.append("CrudeOil")
+        
+        # Process property columns
+        col_idx = 2
+        rename_dict = {}
+        seen_sub_headers = {}  # Track sub-header occurrences for unique IDs
+        
+        for col in pivot_df.columns:
+            if col in ['Country', 'CrudeOil']:
+                continue
+            
+            # Parse column name: could be "parent|||sub" format (from MultiIndex flattening) or just "sub"
+            if '|||' in col:
+                # Split on our special separator
+                parts = col.split('|||', 1)
+                if len(parts) == 2:
+                    parent, sub = parts
+                    parent = str(parent).strip() if parent else ""
+                    sub = str(sub).strip() if sub else ""
+                else:
+                    parent = ""
+                    sub = str(col).strip()
+            else:
+                # No parent header, just sub-header
+                parent = ""
+                sub = str(col).strip()
+            
+            # Create unique ID if duplicate sub-header
+            if sub in seen_sub_headers:
+                seen_sub_headers[sub] += 1
+                unique_id = f"{sub}_{seen_sub_headers[sub]}"
+            else:
+                seen_sub_headers[sub] = 0
+                unique_id = sub
+            
+            # Store column mapping
+            rename_dict[col] = unique_id
+            
+            column_info.append({
+                "id": unique_id,
+                "parent": parent,
+                "sub": sub,
+                "original_idx": col_idx
+            })
+            parent_headers.append(parent)
+            sub_headers.append(sub)
+            col_idx += 1
+        
+        # Rename columns to unique IDs
+        pivot_df = pivot_df.rename(columns=rename_dict)
+        
+        # If no property columns, return early with just Country and CrudeOil
+        if len(column_info) <= 2:
+            print("Warning: No property columns found, returning DataFrame with only Country and CrudeOil")
+            _set_df_metadata(
+                pivot_df,
+                column_info=column_info,
+                parent_headers=parent_headers,
+                sub_headers=sub_headers
+            )
+            return pivot_df
+        
+        # Try to reorder columns, but don't fail if there's an error
+        try:
+            # Define the desired column order based on the images
+            # Order: Country, CrudeOil, then properties in specific order
+            desired_parent_order = [
+                "Gravity",
+                "Sulfur Content", 
+                "Pour Point",
+                "Viscosity",
+                "Barrels",
+                "Mercaptan Sulfur",
+                "Nickel",
+                "Total Acid Number",
+                "Vanadium",
+                "Carbon Residue",
+                "Cloud Point",
+                "Carbon Residue Conradson",
+                "Density",
+                "Gas <C4",
+                "Micro Carbon Residue",
+                "Reid Vapor Pressure",
+                "Salt Content",
+                "Vapor Pressure",
+                "Wax Point",
+                "Paraffin"
+            ]
+            
+            # Define sub-header order within each parent (for properties with multiple sub-headers)
+            # Only include columns that should be displayed (matching expected output)
+            desired_sub_order = {
+                "Viscosity": ["cSt at 10 C", "cSt at 15.6 C", "cSt at 20 C", "cSt at 37.8 C", 
+                            "cSt at 40 C", "cSt at 50 C", "cSt at 60 C", "SSU at 80 F", "SSU at 100 F"],
+                # Note: "SSU at 60 F" is NOT included - it should be filtered out
+                "Mercaptan Sulfur": ["ppm"],  # Only "ppm", not "% Wt"
+                "Density": ["kg/m3 at 15 C", "15 C", "kg/m3 at 20 C"],
+                "Vapor Pressure": ["kPa", "psia"]
+            }
+            
+            # Reorder column_info based on desired order
+            # First, ensure we have Country and CrudeOil
+            ordered_column_info = []
+            if len(column_info) > 0:
+                ordered_column_info.append(column_info[0])  # Country
+            if len(column_info) > 1:
+                ordered_column_info.append(column_info[1])  # CrudeOil
+            
+            # Group remaining columns by parent header
+            columns_by_parent = {}
+            for info in column_info[2:]:  # Skip Country and CrudeOil
+                parent = info.get('parent', '')
+                if parent not in columns_by_parent:
+                    columns_by_parent[parent] = []
+                columns_by_parent[parent].append(info)
+            
+            # Track which parents we've added
+            added_parents = set()
+            
+            # Sort columns within each parent by desired sub-header order
+            for parent in desired_parent_order:
+                if parent in columns_by_parent:
+                    parent_cols = columns_by_parent[parent]
+                    if parent in desired_sub_order:
+                        # Filter out columns not in desired sub-header order
+                        sub_order = desired_sub_order[parent]
+                        # Only keep columns whose sub-header is in the desired order
+                        parent_cols = [col for col in parent_cols if col['sub'] in sub_order]
+                        # Sort by desired sub-header order
+                        try:
+                            parent_cols.sort(key=lambda x: (
+                                sub_order.index(x['sub']) if x['sub'] in sub_order else len(sub_order)
+                            ))
+                        except Exception as e:
+                            print(f"Warning: Error sorting {parent} columns: {e}")
+                    ordered_column_info.extend(parent_cols)
+                    added_parents.add(parent)
+                    if parent == "Paraffin":
+                        print(f"DEBUG: Paraffin columns found: {[col.get('sub') for col in parent_cols]}")
+                else:
+                    if parent == "Paraffin":
+                        print(f"DEBUG: No Paraffin columns found in columns_by_parent. Available parents: {list(columns_by_parent.keys())[:10]}")
+            
+            # Define columns to exclude (not in desired output)
+            excluded_patterns = ['kg/liter', '% wt_3', '%wt_3', 'ssu at 60 f', 'ssu at 60f']
+            
+            # Add any remaining columns not in desired order (in their original order)
+            # But exclude unwanted columns
+            for parent, cols in columns_by_parent.items():
+                if parent not in added_parents:
+                    # Filter out excluded columns
+                    filtered_cols = []
+                    for col in cols:
+                        sub_header = str(col.get('sub', '')).lower()
+                        parent_header = str(col.get('parent', '')).lower()
+                        col_id = str(col.get('id', '')).lower()
+                        
+                        should_exclude = False
+                        for pattern in excluded_patterns:
+                            if pattern in sub_header or pattern in parent_header or pattern in col_id:
+                                should_exclude = True
+                                print(f"DEBUG: Excluding column - parent: '{col.get('parent')}', sub: '{col.get('sub')}', id: '{col.get('id')}'")
+                                break
+                        
+                        if not should_exclude:
+                            filtered_cols.append(col)
+                    ordered_column_info.extend(filtered_cols)
+            
+            # Update column_info with ordered version
+            column_info = ordered_column_info
+            
+            # Reorder DataFrame columns to match ordered column_info
+            # Make sure we preserve all existing columns
+            ordered_cols = []
+            seen_cols = set()
+            
+            # Add columns in the desired order
+            for info in column_info:
+                col_id = info['id']
+                if col_id in pivot_df.columns and col_id not in seen_cols:
+                    ordered_cols.append(col_id)
+                    seen_cols.add(col_id)
+            
+            # Define excluded column patterns
+            excluded_patterns = ['kg/liter', '% wt_3', '%wt_3', 'ssu at 60 f', 'ssu at 60f']
+            
+            # Add any remaining columns that weren't in column_info (safety check)
+            # But exclude unwanted columns
+            for col in pivot_df.columns:
+                if col not in seen_cols:
+                    col_lower = str(col).lower()
+                    should_exclude = False
+                    for pattern in excluded_patterns:
+                        if pattern in col_lower:
+                            should_exclude = True
+                            print(f"DEBUG: Excluding DataFrame column '{col}' (matches pattern '{pattern}')")
+                            break
+                    
+                    if not should_exclude:
+                        ordered_cols.append(col)
+                        print(f"Warning: Column '{col}' not in column_info, adding at end")
+            
+            # Only reorder if we have columns
+            if ordered_cols:
+                pivot_df = pivot_df[ordered_cols]
+            else:
+                print("Warning: No columns to reorder, keeping original order")
+            
+            # Update original_idx to reflect new order
+            for idx, info in enumerate(column_info):
+                info['original_idx'] = idx
+            
+            # Update parent_headers and sub_headers to match ordered column_info
+            parent_headers = [info.get('parent', '') for info in column_info]
+            sub_headers = [info.get('sub', '') for info in column_info]
+        except Exception as e:
+            print(f"Warning: Error during column reordering: {e}")
+            print(f"Using original column order")
+            import traceback
+            traceback.print_exc()
+            # Keep original order if reordering fails
+            # parent_headers and sub_headers are already set from earlier
+        
+        # Attach metadata
+        _set_df_metadata(
+            pivot_df,
+            column_info=column_info,
+            parent_headers=parent_headers,
+            sub_headers=sub_headers
+        )
+        
+        print(f"✅ Loaded {len(pivot_df)} rows for crude quality table from database")
+        print(f"   Columns: {list(pivot_df.columns)[:10]}...")  # Show first 10 columns
+        return pivot_df
+        
+    except Exception as e:
+        error_msg = str(e)
+        print(f"❌ Error loading crude quality table from database:")
+        print(f"   {error_msg}")
+        import traceback
+        traceback.print_exc()
+        print(f"\n⚠️ Returning empty DataFrame. Please check database connection and configuration.")
+        return pd.DataFrame()
 
 
 def create_grouped_columns(df):
@@ -210,6 +747,14 @@ def create_grouped_columns(df):
 def process_quality_table_data(df, country_col_id, crudeoil_col_id):
     """Merge country cells visually (Tableau style)"""
     if df.empty:
+        return []
+    
+    # Validate column IDs
+    if not country_col_id or country_col_id not in df.columns:
+        print(f"ERROR: country_col_id '{country_col_id}' not found in DataFrame columns: {list(df.columns)}")
+        return []
+    if not crudeoil_col_id or crudeoil_col_id not in df.columns:
+        print(f"ERROR: crudeoil_col_id '{crudeoil_col_id}' not found in DataFrame columns: {list(df.columns)}")
         return []
 
     df = df.copy()
@@ -460,24 +1005,37 @@ def create_layout(dash_app=None):
     country_col_id = None
     crudeoil_col_id = None
     if not quality_df.empty:
-        quality_column_info = _get_df_metadata(quality_df, "column_info")
-        if quality_column_info:
-            for info in quality_column_info:
-                if info.get('sub') == 'Country':
-                    country_col_id = info.get('id')
-                elif info.get('sub') == 'CrudeOil':
-                    crudeoil_col_id = info.get('id')
-        # Fallback: check column names directly
+        # First, check if columns exist directly
+        if 'Country' in quality_df.columns:
+            country_col_id = 'Country'
+        if 'CrudeOil' in quality_df.columns:
+            crudeoil_col_id = 'CrudeOil'
+        
+        # If not found, check metadata
+        if not country_col_id or not crudeoil_col_id:
+            quality_column_info = _get_df_metadata(quality_df, "column_info")
+            if quality_column_info:
+                for info in quality_column_info:
+                    if info.get('sub') == 'Country' and not country_col_id:
+                        country_col_id = info.get('id')
+                    elif info.get('sub') == 'CrudeOil' and not crudeoil_col_id:
+                        crudeoil_col_id = info.get('id')
+        
+        # Fallback: check column names directly with pattern matching
         if not country_col_id:
             for col in quality_df.columns:
-                if col == 'Country' or (isinstance(col, str) and col.startswith('Country')):
+                if col == 'Country' or (isinstance(col, str) and ('Country' in col or col.startswith('Country'))):
                     country_col_id = col
                     break
         if not crudeoil_col_id:
             for col in quality_df.columns:
-                if col == 'CrudeOil' or (isinstance(col, str) and col.startswith('CrudeOil')):
+                if col == 'CrudeOil' or (isinstance(col, str) and ('CrudeOil' in col or col.startswith('CrudeOil'))):
                     crudeoil_col_id = col
                     break
+        
+        # Debug: print column info
+        print(f"DEBUG: quality_df columns: {list(quality_df.columns)}")
+        print(f"DEBUG: country_col_id: {country_col_id}, crudeoil_col_id: {crudeoil_col_id}")
     
     try:
         yield_df = load_yield_volume_table()
