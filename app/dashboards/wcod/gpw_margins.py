@@ -746,14 +746,14 @@ def create_layout():
                             'fontSize': '20px',
                             'fontWeight': 'bold',
                             'paddingBottom': '10px',
-                            'borderBottom': '2px solid #fe5000'
+                            'borderBottom': '0px solid #fe5000'
                         }
                     ),
                     
                     html.Div([
                         html.Div([
                             html.H4(
-                                "FCC",
+                                "Catalytic Cracking",
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
@@ -767,7 +767,7 @@ def create_layout():
                         
                         html.Div([
                             html.H4(
-                                "HSK",
+                                "Hydroskimming",
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
@@ -779,7 +779,7 @@ def create_layout():
                             dcc.Graph(id='gpw-hydroskimming-chart')
                         ], className='col-md-6', style={'padding': '15px'})
                     ], className='row')
-                ], className='col-md-9', style={'padding': '15px'}),
+                ], className='col-md-10', style={'padding': '15px'}),
                 
                 # Right Side Filters
                 html.Div([
@@ -932,7 +932,7 @@ def create_layout():
                         value=CRUDES.copy() if CRUDES else [],
                         style={'display': 'none'}
                     ),
-                ], className='col-md-3', style={
+                ], className='col-md-2', style={
                     'padding': '25px 20px',
                     'border': '0px solid #dfe3eb',
                     'borderRadius': '6px',
@@ -960,14 +960,14 @@ def create_layout():
                             'fontSize': '20px',
                             'fontWeight': 'bold',
                             'paddingBottom': '10px',
-                            'borderBottom': '2px solid #fe5000'
+                            'borderBottom': '0px solid #fe5000'
                         }
                     ),
                     
                     html.Div([
                         html.Div([
                             html.H4(
-                                "FCC",
+                                "Catalytic Cracking",
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
@@ -981,7 +981,7 @@ def create_layout():
                         
                         html.Div([
                             html.H4(
-                                "HSK",
+                                "Hydroskimming",
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
@@ -993,11 +993,11 @@ def create_layout():
                             dcc.Graph(id='gpw-incremental-hydroskimming-chart')
                         ], className='col-md-6', style={'padding': '15px'})
                     ], className='row')
-                ], className='col-md-9', style={'padding': '15px'}),
+                ], className='col-md-10', style={'padding': '15px'}),
                 
                 # Empty column to maintain layout (filters already shown above)
                 html.Div([
-                ], className='col-md-3', style={'padding': '15px'}),
+                ], className='col-md-2', style={'padding': '15px'}),
             ], className='row')
         ], style={'padding': '20px', 'marginBottom': '30px'}),
         
