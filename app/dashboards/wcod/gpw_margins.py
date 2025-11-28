@@ -260,7 +260,7 @@ def _empty_figure(message: str, height: int = 400) -> go.Figure:
     return fig
 
 
-def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crudes: list = None) -> go.Figure:
+def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crudes: list = None, region: str = None) -> go.Figure:
     """Build a Gross Product Worth chart for a specific technology type."""
     if df.empty:
         return _empty_figure(f"No data available for {tech_type}")
@@ -283,6 +283,14 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
     if not available_crudes:
         return _empty_figure(f"No crudes selected for {tech_type}")
     
+    # Map tech type to display name
+    tech_display = "FCC" if tech_type == "Catalytic Cracking" else "HSK" if tech_type == "Hydroskimming" else tech_type
+    
+    # Get region (use first available if not specified)
+    if region is None and 'Region' in tech_df.columns and not tech_df.empty:
+        region = tech_df['Region'].iloc[0] if not tech_df['Region'].isna().all() else "NWE"
+    region_display = region if region else "NWE"
+    
     # Color palette for different crudes
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
     
@@ -294,6 +302,19 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
             # Use predefined color if available
             color = CRUDE_COLORS.get(crude, colors[idx % len(colors)])
             
+            # Create custom hover text with all required fields
+            hover_texts = []
+            for _, row in crude_df.iterrows():
+                date_str = _format_date_for_display(row['Date'])
+                hover_text = (
+                    f"Region: {region_display}<br>"
+                    f"Crude: {crude}<br>"
+                    f"Refining Complexity: {tech_display}<br>"
+                    f"Date: {date_str}<br>"
+                    f"Gross Product Worth: {row['Value']:.1f} ($/bbl)"
+                )
+                hover_texts.append(hover_text)
+            
             fig.add_trace(go.Scatter(
                 x=crude_df['Date'],
                 y=crude_df['Value'],
@@ -301,9 +322,8 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
                 name=crude,
                 line=dict(color=color, width=2),
                 marker=dict(size=4),
-                hovertemplate=f"<b>{crude}</b><br>" +
-                              "Date: %{x|%b %Y}<br>" +
-                              "Value: $%{y:.2f}/bbl<extra></extra>"
+                customdata=hover_texts,
+                hovertemplate="%{customdata}<extra></extra>"
             ))
     
     fig.update_layout(
@@ -322,6 +342,16 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
         paper_bgcolor="white",
         plot_bgcolor="white",
         margin=dict(l=60, r=20, t=80, b=50),
+        hoverlabel=dict(
+            bgcolor="white",
+            bordercolor="#999999",
+            font=dict(
+                size=12,
+                family="Arial, sans-serif",
+                color="#000000"
+            ),
+            align="left"
+        ),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -336,7 +366,7 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
     return fig
 
 
-def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crudes: list = None) -> go.Figure:
+def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crudes: list = None, region: str = None) -> go.Figure:
     """Build an Incremental Margins chart for a specific technology type."""
     if df.empty:
         return _empty_figure(f"No data available for {tech_type}")
@@ -359,6 +389,14 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
     if not available_crudes:
         return _empty_figure(f"No crudes selected for {tech_type}")
     
+    # Map tech type to display name
+    tech_display = "FCC" if tech_type == "Catalytic Cracking" else "HSK" if tech_type == "Hydroskimming" else tech_type
+    
+    # Get region (use first available if not specified)
+    if region is None and 'Region' in tech_df.columns and not tech_df.empty:
+        region = tech_df['Region'].iloc[0] if not tech_df['Region'].isna().all() else "NWE"
+    region_display = region if region else "NWE"
+    
     # Color palette for different crudes
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
     
@@ -370,6 +408,19 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
             # Use predefined color if available
             color = CRUDE_COLORS.get(crude, colors[idx % len(colors)])
             
+            # Create custom hover text with all required fields
+            hover_texts = []
+            for _, row in crude_df.iterrows():
+                date_str = _format_date_for_display(row['Date'])
+                hover_text = (
+                    f"Region: {region_display}<br>"
+                    f"Crude: {crude}<br>"
+                    f"Refining Complexity: {tech_display}<br>"
+                    f"Date: {date_str}<br>"
+                    f"Incremental Margins: {row['Value']:.1f} ($/bbl)"
+                )
+                hover_texts.append(hover_text)
+            
             fig.add_trace(go.Scatter(
                 x=crude_df['Date'],
                 y=crude_df['Value'],
@@ -377,9 +428,8 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
                 name=crude,
                 line=dict(color=color, width=2),
                 marker=dict(size=4),
-                hovertemplate=f"<b>{crude}</b><br>" +
-                              "Date: %{x|%b %Y}<br>" +
-                              "Value: $%{y:.2f}/bbl<extra></extra>"
+                customdata=hover_texts,
+                hovertemplate="%{customdata}<extra></extra>"
             ))
     
     fig.update_layout(
@@ -398,6 +448,16 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
         paper_bgcolor="white",
         plot_bgcolor="white",
         margin=dict(l=60, r=20, t=80, b=50),
+        hoverlabel=dict(
+            bgcolor="white",
+            bordercolor="#999999",
+            font=dict(
+                size=12,
+                family="Arial, sans-serif",
+                color="#000000"
+            ),
+            align="left"
+        ),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -424,11 +484,11 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
         selected_tech_types: List of selected tech types (None means all)
     
     Returns:
-        tuple: (columns, data) where columns is list of hierarchical column definitions
-               and data is list of records
+        tuple: (columns, data, tooltip_data) where columns is list of hierarchical column definitions,
+               data is list of records, and tooltip_data is list of tooltip records for hover
     """
     if df.empty:
-        return [], []
+        return [], [], []
     
     # Filter by date range
     filtered_df = df[
@@ -487,15 +547,25 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
                     'format': {'specifier': '.2f'}
                 })
     
-    # Create data records
+    # Create data records and tooltip data
     data = []
+    tooltip_data = []
+    
     for date_str in unique_dates:
         record = {'DateStr': date_str}
+        tooltip_row = {'DateStr': None}  # No tooltip for date column
         
         # Get all values for this date
         date_data = filtered_df[filtered_df['DateStr'] == date_str]
         
-        # Create a lookup dictionary: (DataType, TechType, Crude) -> Value
+        # Get the actual date value for tooltip formatting
+        actual_date = None
+        if not date_data.empty:
+            actual_date = date_data.iloc[0].get('Date')
+            if pd.notna(actual_date):
+                actual_date = _format_date_for_display(actual_date)
+        
+        # Create a lookup dictionary: (DataType, TechType, Crude) -> (Value, Row)
         value_lookup = {}
         for _, row in date_data.iterrows():
             key = (
@@ -505,9 +575,9 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
             )
             val = row.get('Value')
             if pd.notna(val):
-                value_lookup[key] = float(val)
+                value_lookup[key] = (float(val), row)
             else:
-                value_lookup[key] = None
+                value_lookup[key] = (None, row)
         
         # Populate record only with columns that exist (filtered by selection)
         for data_type in DATA_TYPES:
@@ -516,14 +586,37 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
                     col_id = f"{data_type}_{tech_type}_{crude}".replace(' ', '_').replace('/', '_')
                     key = (data_type, tech_type, crude)
                     
+                    # Map tech type to display name
+                    tech_display = "FCC" if tech_type == "Catalytic Cracking" else "HSK" if tech_type == "Hydroskimming" else tech_type
+                    
                     if key in value_lookup:
-                        record[col_id] = value_lookup[key]
+                        record[col_id] = value_lookup[key][0]
+                        # Create tooltip text (each field on its own line, one by one vertically)
+                        # Format must be a dict with 'value' and 'type' keys
+                        # Use markdown type to properly render line breaks
+                        if value_lookup[key][0] is not None and actual_date:
+                            # Format each field on a separate line for vertical display
+                            # Use double space + newline for markdown line breaks
+                            tooltip_text = (
+                                f"Crude: {crude}  \n" +
+                                f"Data Type: {data_type}  \n" +
+                                f"Refining Complexity: {tech_display}  \n" +
+                                f"Date: {actual_date}"
+                            )
+                            tooltip_row[col_id] = {
+                                'value': tooltip_text,
+                                'type': 'markdown'
+                            }
+                        else:
+                            tooltip_row[col_id] = None
                     else:
                         record[col_id] = None
+                        tooltip_row[col_id] = None
         
         data.append(record)
+        tooltip_data.append(tooltip_row)
     
-    return columns, data
+    return columns, data, tooltip_data
 
 
 def create_layout():
@@ -643,6 +736,12 @@ def create_layout():
                     margin-right: 0 !important;
                     width: 100% !important;
                     box-sizing: border-box !important;
+                }
+                
+                /* DataTable Tooltip Font Size */
+                #gpw-data-table .dash-table-tooltip,
+                .dash-table-tooltip {
+                    font-size: 12px !important;
                 }
                 </style>
                 """,
@@ -1069,7 +1168,19 @@ def create_layout():
                             ],
                             merge_duplicate_headers=True,
                             page_action='none',
-                            sort_action='native'
+                            sort_action='native',
+                            tooltip_data=[],  # Will be populated by callback
+                            tooltip_duration=None,
+                            css=[
+                                {
+                                    'selector': '#gpw-data-table .dash-table-tooltip',
+                                    'rule': 'font-size: 12px !important;'
+                                },
+                                {
+                                    'selector': '.dash-table-tooltip',
+                                    'rule': 'font-size: 12px !important;'
+                                }
+                            ]
                         )
                     ])
                 ], className='col-md-10', style={'padding': '15px'}),
@@ -1157,6 +1268,7 @@ def register_callbacks(dash_app, server):
         Output('gpw-incremental-hydroskimming-chart', 'figure'),
         Output('gpw-data-table', 'columns'),
         Output('gpw-data-table', 'data'),
+        Output('gpw-data-table', 'tooltip_data'),
         Input('current-submenu', 'data'),
         Input('gpw-date-range-slider', 'value'),
         Input('gpw-region-filter', 'value'),
@@ -1173,8 +1285,12 @@ def register_callbacks(dash_app, server):
                 _empty_figure(""),
                 _empty_figure(""),
                 [],
+                [],
                 []
             )
+        
+        # Initialize table tooltips
+        table_tooltips = []
         
         # Parse dates from slider
         if date_slider_value and len(date_slider_value) == 2:
@@ -1251,7 +1367,8 @@ def register_callbacks(dash_app, server):
                 gpw_filtered,
                 'Catalytic Cracking',
                 'Catalytic Cracking',
-                selected_crudes
+                selected_crudes,
+                region
             )
         else:
             gpw_catalytic = _empty_figure("FCC not selected")
@@ -1261,7 +1378,8 @@ def register_callbacks(dash_app, server):
                 gpw_filtered,
                 'Hydroskimming',
                 'Hydroskimming',
-                selected_crudes
+                selected_crudes,
+                region
             )
         else:
             gpw_hydro = _empty_figure("HSK not selected")
@@ -1271,7 +1389,8 @@ def register_callbacks(dash_app, server):
                 margins_filtered,
                 'Catalytic Cracking',
                 'Catalytic Cracking',
-                selected_crudes
+                selected_crudes,
+                region
             )
         else:
             margins_catalytic = _empty_figure("FCC not selected")
@@ -1281,13 +1400,15 @@ def register_callbacks(dash_app, server):
                 margins_filtered,
                 'Hydroskimming',
                 'Hydroskimming',
-                selected_crudes
+                selected_crudes,
+                region
             )
         else:
             margins_hydro = _empty_figure("HSK not selected")
         
         # Prepare data table with multi-level headers
         # Use Data Table CSV
+        table_tooltips = []
         if not DATA_TABLE_DF.empty:
             # Filter Data Table by date range
             table_filtered = DATA_TABLE_DF[
@@ -1307,7 +1428,7 @@ def register_callbacks(dash_app, server):
             if 'TechType' in table_filtered.columns:
                 table_filtered = table_filtered[table_filtered['TechType'].isin(selected_tech_types)]
             
-            table_columns, table_data = _prepare_data_table(
+            table_columns, table_data, table_tooltips = _prepare_data_table(
                 table_filtered,
                 start_date,
                 end_date,
@@ -1329,7 +1450,7 @@ def register_callbacks(dash_app, server):
                 combined_df = pd.concat([combined_df, margins_copy], ignore_index=True)
             
             if not combined_df.empty:
-                table_columns, table_data = _prepare_data_table(
+                table_columns, table_data, table_tooltips = _prepare_data_table(
                     combined_df,
                     start_date,
                     end_date,
@@ -1338,7 +1459,7 @@ def register_callbacks(dash_app, server):
                     selected_tech_types
                 )
             else:
-                table_columns, table_data = [], []
+                table_columns, table_data, table_tooltips = [], [], []
         
         return (
             gpw_catalytic,
@@ -1346,7 +1467,8 @@ def register_callbacks(dash_app, server):
             margins_catalytic,
             margins_hydro,
             table_columns,
-            table_data
+            table_data,
+            table_tooltips
         )
     
     # Handle ALL option normalization for crude filter
