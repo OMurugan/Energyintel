@@ -17,14 +17,14 @@ BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data", "Crude_Profile")
 
 CSV_PATHS = {
-    "assay_details": os.path.join(DATA_DIR, "Assay_Details.csv"),
-    "quality_specs": os.path.join(DATA_DIR, "Latest_Quality_Specs.csv"),
-    "mars_assay": os.path.join(DATA_DIR, "Mars_Blend_Assay.csv"),
-    "refined_products": os.path.join(DATA_DIR, "Refined_Product_Breakdown_and_Properties.csv"),
+    "assay_details": os.path.join(DATA_DIR, "Assay_Details_data(1).csv"),
+    "quality_specs": os.path.join(DATA_DIR, "Latest_Quality_Specs_data(1).csv"),
+    "mars_assay": os.path.join(DATA_DIR, "Mars_Blend_Assay(1).csv"),
+    "refined_products": os.path.join(DATA_DIR, "Refined_Products_Breakdown_and_Properties_data(1).csv"),
     "production_exports": os.path.join(DATA_DIR, "Production_and_Exports_Chart_Production_Exports.csv"),
-    "loading_ports": os.path.join(DATA_DIR, "Loading_Ports_Country_Map.csv"),
-    "port_details": os.path.join(DATA_DIR, "Port_Details.csv"),
-    "producers_sellers": os.path.join(DATA_DIR, "Producers_Sellers_table.csv")
+    "loading_ports": os.path.join(DATA_DIR, "Country_Map_data(1).csv"),
+    "port_details": os.path.join(DATA_DIR, "Loading_Port_Details_data(1).csv"),
+    "producers_sellers": os.path.join(DATA_DIR, "Producers_Sellers_table_data(1).csv")
 }
 
 # ------------------------------------------------------------------------------
@@ -36,8 +36,11 @@ def load_csv_data(file_path, fallback_data=None, **read_kwargs):
         print(f"❌ File not found: {file_path}")
         return fallback_data
     
-    if "encoding" in read_kwargs:
-        encodings_to_try = [read_kwargs.pop("encoding")]
+    # Extract encoding if specified, but try multiple encodings
+    specified_encoding = read_kwargs.pop("encoding", None)
+    if specified_encoding:
+        # If encoding is specified, try it first, then fall back to others
+        encodings_to_try = [specified_encoding, "utf-8", "utf-8-sig", "latin-1"]
     else:
         encodings_to_try = ["utf-8", "utf-8-sig", "latin-1", "utf-16"]
     
@@ -56,8 +59,26 @@ def load_csv_data(file_path, fallback_data=None, **read_kwargs):
             last_error = e
             continue
         except Exception as e:
-            print(f"❌ Error loading {file_path} with encoding {enc}: {e}")
-            return fallback_data
+            # For non-encoding errors, try next encoding or return fallback
+            if "header" in str(e).lower() or "lines" in str(e).lower():
+                # Header/line count errors - try with different header values
+                if "header" in base_kwargs:
+                    header_val = base_kwargs["header"]
+                    # Try with header=0, then header=1, then header=None
+                    for alt_header in [0, 1, None]:
+                        if alt_header != header_val:
+                            try:
+                                kwargs = dict(base_kwargs)
+                                kwargs["header"] = alt_header
+                                if enc:
+                                    kwargs["encoding"] = enc
+                                df = pd.read_csv(file_path, **kwargs)
+                                print(f"✅ Loaded {os.path.basename(file_path)} (encoding={enc}, header={alt_header})")
+                                return df
+                            except Exception:
+                                continue
+            last_error = e
+            continue
     
     print(f"❌ Error loading {file_path}: {last_error}")
     return fallback_data
@@ -93,26 +114,43 @@ def load_mars_assay():
     if df is None or df.empty:
         return [
             {"Property": "Barrels", "Unit": "Per Metric Ton", "Value": "7.13"},
-            {"Property": "Gravity", "Unit": "API at 60 F", "Value": "28.51"},
-            {"Property": "Mercaptan Sulfur", "Unit": "ppm", "Value": "28.00"},
-            {"Property": "Micro Carbon Residue", "Unit": "% Wt", "Value": "6.52"},
-            {"Property": "Nickel", "Unit": "ppm", "Value": "22.13"},
-            {"Property": "Pour Point", "Unit": "Temp. C", "Value": "-33.00"},
-            {"Property": "Reid Vapor Pressure", "Unit": "psi at 37.8 C", "Value": "6.66"},
-            {"Property": "Sulfur Content", "Unit": "% Wt", "Value": "2.21"},
-            {"Property": "Total Acid Number", "Unit": "Mg KOH/g", "Value": "0.46"},
-            {"Property": "Vanadium", "Unit": "ppm", "Value": "62.24"},
-            {"Property": "Viscosity", "Unit": "cSt at 20 C", "Value": "28.88"},
         ]
     
+    # Find value column (could be "Value", "Avg. Value", "Column Header", etc.)
+    value_col = None
+    for col in df.columns:
+        if col.lower() in ["value", "avg. value", "avg value"]:
+            value_col = col
+            break
+    
+    if not value_col:
+        # Try "Column Header" as fallback
+        if "Column Header" in df.columns:
+            value_col = "Column Header"
+        else:
+            # Use first column that's not Property, Unit, Source, Copyright
+            for col in df.columns:
+                if col not in ["Property", "Unit", "Source", "Copyright"]:
+                    value_col = col
+                    break
+    
+    # Load all rows without merging duplicates
     assay_data = []
     for _, row in df.iterrows():
-        assay_data.append({
-            "Property": row.get("Property", ""),
-            "Unit": row.get("Unit", ""),
-            "Value": row.get("Value", "")
-        })
-    return assay_data
+        property_val = str(row.get("Property", "")).strip() if "Property" in row and pd.notna(row.get("Property")) else ""
+        unit_val = str(row.get("Unit", "")).strip() if "Unit" in row and pd.notna(row.get("Unit")) else ""
+        value_val = str(row.get(value_col, "")).strip() if value_col and value_col in row and pd.notna(row.get(value_col)) else ""
+        
+        if property_val:  # Only add if we have a property
+            assay_data.append({
+                "Property": property_val,
+                "Unit": unit_val,
+                "Value": value_val
+            })
+    
+    return assay_data if assay_data else [
+        {"Property": "Barrels", "Unit": "Per Metric Ton", "Value": "7.13"}
+    ]
 
 def load_refined_products():
     """Load refined products breakdown data."""
@@ -125,58 +163,110 @@ def load_refined_products():
         ])
     ]
     
-    df = load_csv_data(CSV_PATHS["refined_products"], header=2)
+    # Use header=0 since the CSV has headers in the first row
+    df = load_csv_data(CSV_PATHS["refined_products"], header=0)
     if df is None or df.empty or "Product" not in df.columns:
         return fallback
     
     df = df.dropna(how="all")
+    
+    # Forward fill Product and Cut Points columns to handle empty cells
     df["Product"] = df["Product"].ffill()
     if "Cut Points (ºC)" in df.columns:
         df["Cut Points (ºC)"] = df["Cut Points (ºC)"].ffill()
         cut_col = "Cut Points (ºC)"
+    elif "Cut Points (°C)" in df.columns:
+        df["Cut Points (°C)"] = df["Cut Points (°C)"].ffill()
+        cut_col = "Cut Points (°C)"
     else:
-        df["Cut Points (°C)"] = df.get("Cut Points (°C)", "").ffill()
+        # Create empty column if neither exists
+        df["Cut Points (°C)"] = ""
         cut_col = "Cut Points (°C)"
     
-    df["Value"] = df["Value"].astype(str).str.strip()
+    # Find value column (could be "Value", "Avg. Value", etc.)
+    value_col = None
+    for col in df.columns:
+        if "avg. value" in col.lower() or "avg value" in col.lower():
+            value_col = col
+            break
+    
+    if not value_col:
+        for col in df.columns:
+            if "value" in col.lower():
+                value_col = col
+                break
+    
+    if not value_col:
+        # Use first column that's not Product, Cut Points, Property, Unit, Source, Copyright, Column Header
+        for col in df.columns:
+            if col not in ["Product", "Cut Points (ºC)", "Cut Points (°C)", "Property", "Unit", "Source", "Copyright", "Column Header"]:
+                value_col = col
+                break
+    
+    if value_col and value_col in df.columns:
+        df[value_col] = df[value_col].fillna("").astype(str).str.strip()
+    else:
+        df["Value"] = ""
+        value_col = "Value"
     
     def parse_property_unit(prop_raw, unit_raw):
-        prop = str(prop_raw).strip() if prop_raw is not None else ""
-        unit = str(unit_raw).strip() if unit_raw is not None else ""
-        if prop:
-            return prop, unit
-        if unit:
+        """Parse property and unit from CSV columns."""
+        prop = str(prop_raw).strip() if prop_raw is not None and pd.notna(prop_raw) else ""
+        unit = str(unit_raw).strip() if unit_raw is not None and pd.notna(unit_raw) else ""
+        
+        # If property is empty but unit has value, try to extract property from unit
+        if not prop and unit:
+            # Check if unit contains property name in parentheses, e.g., "Yield Weight (%)"
             match = re.match(r"^(?P<name>.+?)\s*\((?P<unit>.+)\)$", unit)
             if match:
                 return match.group("name").strip(), match.group("unit").strip()
+            # If no parentheses, the whole unit might be the property name
             return unit, ""
+        
+        # If both exist, return as is
+        if prop:
+            return prop, unit
+        
         return "", ""
     
+    # Load all rows without merging duplicates - group by Product only
     products_data = []
     current_product = None
     current_cut_points = None
     current_properties = []
     
-    for _, row in df.iterrows():
-        product = str(row.get("Product", "")).strip()
-        cut_points = str(row.get(cut_col, "")).strip()
+    # Process each row
+    for idx, row in df.iterrows():
+        product = str(row.get("Product", "")).strip() if pd.notna(row.get("Product")) else ""
+        cut_points = str(row.get(cut_col, "")).strip() if cut_col in row and pd.notna(row.get(cut_col)) else ""
         property_name, unit = parse_property_unit(row.get("Property"), row.get("Unit"))
-        value = row.get("Value", "")
+        value = str(row.get(value_col, "")).strip() if value_col and value_col in row and pd.notna(row.get(value_col)) else ""
         
-        if product and product != current_product:
+        # Skip rows without a product
+        if not product:
+            continue
+        
+        # When product changes, save the previous product's data
+        if product != current_product:
             if current_product and current_properties:
                 products_data.append((current_product, current_cut_points, current_properties))
             current_product = product
             current_cut_points = cut_points
             current_properties = []
         
-        if property_name:
-            current_properties.append((property_name, unit, value))
+        # Update cut points if it changes for the same product
+        if cut_points and cut_points != current_cut_points:
+            current_cut_points = cut_points
+        
+        # Add property if we have a property name or unit
+        if property_name or unit:
+            current_properties.append((property_name if property_name else unit, unit if property_name else "", value))
     
+    # Don't forget the last product
     if current_product and current_properties:
         products_data.append((current_product, current_cut_points, current_properties))
     
-    return products_data or fallback
+    return products_data if products_data else fallback
 
 def load_production_exports():
     """Load production and exports data for chart."""
@@ -219,28 +309,41 @@ def load_port_details():
     ]
     fallback_label = "Loop, Clovelly"
     
-    df = load_csv_data(CSV_PATHS["port_details"], header=2)
+    # Use header=0 since the CSV has headers in the first row
+    df = load_csv_data(CSV_PATHS["port_details"], header=0)
     if df is None or df.empty or "Measure" not in df.columns:
         return {"label": fallback_label, "rows": fallback_rows}
     
-    value_columns = [col for col in df.columns if col != "Measure"]
-    if not value_columns:
-        return {"label": fallback_label, "rows": fallback_rows}
-    value_col = value_columns[0]
-    column_label = value_col
+    # Try to find value column (could be "value", "Port Name", or any other column)
+    value_col = None
+    for col in df.columns:
+        if col.lower() in ["value", "port name"] or (col != "Measure" and col not in ["Source", "Copyright"]):
+            value_col = col
+            break
+    
+    if not value_col:
+        # Use first non-Measure column
+        value_columns = [col for col in df.columns if col != "Measure" and col not in ["Source", "Copyright"]]
+        if value_columns:
+            value_col = value_columns[0]
+        else:
+            return {"label": fallback_label, "rows": fallback_rows}
+    
+    column_label = value_col if value_col != "value" else "Loop, Clovelly"
     
     df[value_col] = df[value_col].fillna("").astype(str).str.strip()
     
+    # Load all rows
     port_details = []
     for _, row in df.iterrows():
-        measure = str(row.get("Measure", "")).strip()
-        value = str(row.get(value_col, "")).strip()
+        measure = str(row.get("Measure", "")).strip() if "Measure" in row and pd.notna(row.get("Measure")) else ""
+        value = str(row.get(value_col, "")).strip() if value_col in row and pd.notna(row.get(value_col)) else ""
         if measure:
             port_details.append((measure, value if value else ""))
     
-    has_real_value = any(val for _, val in port_details)
-    rows = port_details if has_real_value else fallback_rows
-    label = column_label if has_real_value else fallback_label
+    # Return all rows even if values are empty
+    rows = port_details if port_details else fallback_rows
+    label = column_label if port_details else fallback_label
     
     return {
         "label": label,
@@ -258,26 +361,44 @@ def load_loading_ports():
     
     df = load_csv_data(
         CSV_PATHS["loading_ports"],
-        encoding="utf-16",
         sep="\t"
     )
     if df is None or df.empty:
         return fallback
     
-    df["Latitude"] = pd.to_numeric(df.get("Latitude"), errors="coerce")
-    df["Longitude"] = pd.to_numeric(df.get("Longitude"), errors="coerce")
-    df["Port Name"] = df.get("Port Name", "").fillna("").astype(str).str.strip()
-    df["Country"] = df.get("Country", "").fillna("").astype(str).str.strip()
+    # Check and process Latitude column
+    if "Latitude" in df.columns:
+        df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
+    else:
+        return fallback
+    
+    # Check and process Longitude column
+    if "Longitude" in df.columns:
+        df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
+    else:
+        return fallback
+    
+    # Check and process Port Name column
+    if "Port Name" in df.columns:
+        df["Port Name"] = df["Port Name"].fillna("").astype(str).str.strip()
+    else:
+        return fallback
+    
+    # Check and process Country column
+    if "Country" in df.columns:
+        df["Country"] = df["Country"].fillna("").astype(str).str.strip()
+    else:
+        df["Country"] = ""
     
     records = []
     for _, row in df.iterrows():
-        lat = row.get("Latitude")
-        lon = row.get("Longitude")
-        name = row.get("Port Name", "")
+        lat = row.get("Latitude") if "Latitude" in row else None
+        lon = row.get("Longitude") if "Longitude" in row else None
+        name = row.get("Port Name", "") if "Port Name" in row else ""
         if pd.notna(lat) and pd.notna(lon) and name:
             records.append({
                 "port": name,
-                "country": row.get("Country", ""),
+                "country": row.get("Country", "") if "Country" in row else "",
                 "latitude": lat,
                 "longitude": lon
             })
@@ -288,18 +409,20 @@ def load_producers_sellers():
     """Load producers and sellers data."""
     fallback = [("BP, ConocoPhillips, Exxon Mobil, Shell", "BP America Inc., ConocoPhillips, Exxon Mobil, Shell")]
     
-    df = load_csv_data(CSV_PATHS["producers_sellers"], header=2)
+    # Use header=0 since the CSV has headers in the first row
+    df = load_csv_data(CSV_PATHS["producers_sellers"], header=0)
     if df is None or df.empty or "Producers" not in df.columns:
         return fallback
     
+    # Load all rows
     records = []
     for _, row in df.iterrows():
-        producers = str(row.get("Producers", "")).strip()
-        sellers = str(row.get("Sellers", "")).strip()
+        producers = str(row.get("Producers", "")).strip() if "Producers" in row and pd.notna(row.get("Producers")) else ""
+        sellers = str(row.get("Sellers", "")).strip() if "Sellers" in row and pd.notna(row.get("Sellers")) else ""
         if producers or sellers:
             records.append((producers, sellers))
     
-    return records or fallback
+    return records if records else fallback
 
 # ------------------------------------------------------------------------------
 # SORTING FUNCTIONS
