@@ -816,6 +816,7 @@ def create_layout():
                             'cursor': 'pointer',
                             'transition': 'background-color 0.2s ease',
                             'userSelect': 'none',
+                            'fontSize': '12px',
                         },
                         inputStyle={
                             'marginRight': '12px',
@@ -863,6 +864,7 @@ def create_layout():
                             'cursor': 'pointer',
                             'transition': 'background-color 0.2s ease',
                             'userSelect': 'none',
+                            'fontSize': '12px',
                         },
                         inputStyle={
                             'marginRight': '12px',
@@ -877,7 +879,7 @@ def create_layout():
                         style={
                             'fontWeight': 'bold',
                             'color': '#2c3e50',
-                            'fontSize': '14px',
+                            'fontSize': '12px',
                             'marginBottom': '8px',
                             'marginTop': '10px'
                         }
@@ -1003,71 +1005,80 @@ def create_layout():
         
         # Data Table Section
         html.Div([
-            html.H3(
-                "NWE - Data Table ($/bbl)",
-                style={
-                    'color': '#fe5000',
-                    'textAlign': 'center',
-                    'marginBottom': '20px',
-                    'fontSize': '20px',
-                    'fontWeight': 'bold'
-                }
-            ),
-            
             html.Div([
-                dash_table.DataTable(
-                    id='gpw-data-table',
-                    columns=[],  # Will be populated by callback
-                    data=[],     # Will be populated by callback
-                    style_table={
-                        'overflowX': 'auto',
-                        'overflowY': 'auto',
-                        'maxHeight': '600px',
-                        'backgroundColor': 'white',
-                        'border': '1px solid #dee2e6'
-                    },
-                    style_cell={
-                        'textAlign': 'center',
-                        'padding': '8px',
-                        'fontSize': '11px',
-                        'fontFamily': 'Arial, sans-serif',
-                        'border': '1px solid #dee2e6',
-                        'minWidth': '70px',
-                        'whiteSpace': 'nowrap'
-                    },
-                    style_header={
-                        'backgroundColor': '#f8f9fa',
-                        'fontWeight': 'bold',
-                        'color': '#1b365d',
-                        'textAlign': 'center',
-                        'border': '1px solid #dee2e6',
-                        'padding': '8px'
-                    },
-                    style_cell_conditional=[
-                        {
-                            'if': {'column_id': 'DateStr'},
-                            'textAlign': 'left',
-                            'fontWeight': 'bold',
-                            'minWidth': '80px',
-                            'backgroundColor': '#f8f9fa'
+                html.Div([
+                    html.H3(
+                        "NWE - Data Table ($/bbl)",
+                        style={
+                            'color': '#fe5000',
+                            'textAlign': 'center',
+                            'marginBottom': '20px',
+                            'fontSize': '20px',
+                            'fontWeight': 'bold'
                         }
-                    ],
-                    style_data_conditional=[
-                        {
-                            'if': {'row_index': 'odd'},
-                            'backgroundColor': '#f9fbfd'
-                        },
-                        {
-                            'if': {'filter_query': '{DateStr} != ""'},
-                            'backgroundColor': 'white'
-                        }
-                    ],
-                    merge_duplicate_headers=True,
-                    page_action='none',
-                    sort_action='native'
-                )
-            ])
-        ], style={'padding': '20px'})
+                    ),
+                    
+                    html.Div([
+                        dash_table.DataTable(
+                            id='gpw-data-table',
+                            columns=[],  # Will be populated by callback
+                            data=[],     # Will be populated by callback
+                            style_table={
+                                'overflowX': 'auto',
+                                'overflowY': 'auto',
+                                'maxHeight': '600px',
+                                'backgroundColor': 'white',
+                                'border': '1px solid #dee2e6'
+                            },
+                            style_cell={
+                                'textAlign': 'center',
+                                'padding': '8px',
+                                'fontSize': '11px',
+                                'fontFamily': 'Arial, sans-serif',
+                                'border': '1px solid #dee2e6',
+                                'minWidth': '70px',
+                                'whiteSpace': 'nowrap'
+                            },
+                            style_header={
+                                'backgroundColor': '#f8f9fa',
+                                'fontWeight': 'bold',
+                                'color': '#1b365d',
+                                'textAlign': 'center',
+                                'border': '1px solid #dee2e6',
+                                'padding': '8px',
+                                'fontSize': '12px',
+                            },
+                            style_cell_conditional=[
+                                {
+                                    'if': {'column_id': 'DateStr'},
+                                    'textAlign': 'left',
+                                    'fontWeight': 'bold',
+                                    'minWidth': '80px',
+                                    'backgroundColor': '#f8f9fa'
+                                }
+                            ],
+                            style_data_conditional=[
+                                {
+                                    'if': {'row_index': 'odd'},
+                                    'backgroundColor': '#f9fbfd'
+                                },
+                                {
+                                    'if': {'filter_query': '{DateStr} != ""'},
+                                    'backgroundColor': 'white'
+                                }
+                            ],
+                            merge_duplicate_headers=True,
+                            page_action='none',
+                            sort_action='native'
+                        )
+                    ])
+                ], className='col-md-10', style={'padding': '15px'}),
+                
+                # Empty column to maintain layout (filters already shown above)
+                html.Div([
+                ], className='col-md-2', style={'padding': '15px'}),
+            ], className='row')
+        ], style={'padding': '20px', 'marginBottom': '30px'})
     ], className='tab-content', style={'backgroundColor': '#f8f9fa', 'minHeight': '100vh'})
 
 
