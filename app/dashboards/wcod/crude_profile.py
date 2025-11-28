@@ -355,6 +355,7 @@ def load_loading_ports():
     fallback = [{
         "port": "Loop, Clovelly",
         "country": "United States",
+        "crude": "Mars Blend",
         "latitude": 29.1175,
         "longitude": -90.0715
     }]
@@ -390,6 +391,12 @@ def load_loading_ports():
     else:
         df["Country"] = ""
     
+    # Check and process Crude column
+    if "Crude" in df.columns:
+        df["Crude"] = df["Crude"].fillna("").astype(str).str.strip()
+    else:
+        df["Crude"] = ""
+    
     records = []
     for _, row in df.iterrows():
         lat = row.get("Latitude") if "Latitude" in row else None
@@ -399,6 +406,7 @@ def load_loading_ports():
             records.append({
                 "port": name,
                 "country": row.get("Country", "") if "Country" in row else "",
+                "crude": row.get("Crude", "") if "Crude" in row else "",
                 "latitude": lat,
                 "longitude": lon
             })
@@ -537,77 +545,127 @@ def create_production_chart():
     return fig
 
 def create_map_chart():
-    """Create loading ports map chart using dynamic data."""
+    """Create loading ports map chart matching Tableau design - North America focus with orange triangular markers."""
     ports_data = load_loading_ports()
     fig = go.Figure()
     
     if not ports_data:
-        # Return empty figure if no data
+        # Return empty figure focused on North America
         fig.update_layout(
-            height=300,
+            height=500,
             margin=dict(l=0, r=0, t=0, b=0),
             geo=dict(
                 projection_type="natural earth",
+                center=dict(lat=40, lon=-95),
+                scope="north america",
                 showland=True,
                 landcolor="rgb(243, 243, 243)",
                 showocean=True,
-                oceancolor="rgb(230, 245, 255)"
+                oceancolor="white",
+                showcountries=True,
+                countrycolor="rgb(200, 200, 200)",
+                lataxis=dict(range=[15, 75]),
+                lonaxis=dict(range=[-180, -50])
             )
         )
         return fig
     
-    # Extract coordinates
+    # Extract coordinates and data for hover
     lats = [port.get('latitude') for port in ports_data if port.get('latitude')]
     lons = [port.get('longitude') for port in ports_data if port.get('longitude')]
     port_names = [port.get('port', '') for port in ports_data]
+    countries = [port.get('country', '') for port in ports_data]
+    crudes = [port.get('crude', '') for port in ports_data]
     
     if lats and lons:
-        # Add scattergeo trace for ports
+        # Add choropleth to highlight US and Alaska in light green
+        # US ISO code is 'USA'
+        fig.add_trace(go.Choropleth(
+            locations=['USA'],
+            z=[1],
+            locationmode='ISO-3',
+            colorscale=[[0, 'rgb(200, 230, 200)'], [1, 'rgb(200, 230, 200)']],  # Light green
+            showscale=False,
+            geo='geo',
+            hoverinfo='skip',  # Skip hover completely
+            marker_line_width=0,
+            marker_line_color='rgba(0,0,0,0)',
+            hovertemplate='<extra></extra>',  # Empty hover template
+            text='',
+            name=''  # No name to avoid showing in hover
+        ))
+        
+        # Add scattergeo trace for ports with orange triangular markers
         fig.add_trace(go.Scattergeo(
             lon=lons,
             lat=lats,
             text=port_names,
+            customdata=list(zip(countries, crudes, port_names)),
             mode='markers',
             marker=dict(
-                size=10,
-                color='#d65a00',
-                symbol='circle',
-                line=dict(width=1, color='white')
+                size=15,
+                color='#d65a00',  # Orange color
+                symbol='triangle-up',  # Triangular marker pointing up
+                line=dict(width=1, color='white'),
+                opacity=0.9
             ),
-            name='Loading Ports'
+            name='Loading Ports',
+            hovertemplate='<b>Country:</b> %{customdata[0]}<br>' +
+                          '<b>Crude:</b> %{customdata[1]}<br>' +
+                          '<b>Loading Port:</b> %{customdata[2]}<extra></extra>'
         ))
         
-        # Calculate map bounds
+        # Focus on North America region
+        # Calculate bounds with padding for North America view
         lat_min, lat_max = min(lats), max(lats)
         lon_min, lon_max = min(lons), max(lons)
-        lat_padding = (lat_max - lat_min) * 0.2 if (lat_max - lat_min) > 0 else 5
-        lon_padding = (lon_max - lon_min) * 0.2 if (lon_max - lon_min) > 0 else 5
+        
+        # Expand bounds to show North America context
+        lat_min = min(lat_min - 10, 15)  # Include Mexico/Caribbean
+        lat_max = max(lat_max + 10, 75)   # Include Canada/Alaska
+        lon_min = min(lon_min - 15, -180)  # Include Pacific
+        lon_max = max(lon_max + 15, -50)   # Include Atlantic
         
         fig.update_geos(
             projection_type="natural earth",
+            center=dict(lat=40, lon=-95),  # Center on US
+            scope="north america",
             showland=True,
-            landcolor="rgb(243, 243, 243)",
+            landcolor="rgb(243, 243, 243)",  # Light gray for non-US countries
             showocean=True,
-            oceancolor="rgb(230, 245, 255)",
-            lataxis=dict(range=[lat_min - lat_padding, lat_max + lat_padding]),
-            lonaxis=dict(range=[lon_min - lon_padding, lon_max + lon_padding]),
+            oceancolor="white",  # White ocean
             showcountries=True,
-            countrycolor="rgb(200, 200, 200)"
+            countrycolor="rgb(200, 200, 200)",  # Gray country borders
+            showlakes=True,
+            lakecolor="white",
+            lataxis=dict(range=[lat_min, lat_max]),
+            lonaxis=dict(range=[lon_min, lon_max]),
+            subunitcolor="rgb(200, 200, 200)",
+            bgcolor="white"
         )
     else:
-        # Default world view if no valid coordinates
+        # Default North America view if no valid coordinates
         fig.update_geos(
             projection_type="natural earth",
+            center=dict(lat=40, lon=-95),
+            scope="north america",
             showland=True,
             landcolor="rgb(243, 243, 243)",
             showocean=True,
-            oceancolor="rgb(230, 245, 255)"
+            oceancolor="white",
+            showcountries=True,
+            countrycolor="rgb(200, 200, 200)",
+            lataxis=dict(range=[15, 75]),
+            lonaxis=dict(range=[-180, -50])
         )
     
     fig.update_layout(
-        height=300,
+        height=500,
         margin=dict(l=0, r=0, t=0, b=0),
-        showlegend=False
+        showlegend=False,
+        geo_bgcolor="white",
+        paper_bgcolor="white",
+        hovermode='closest'  # Only show hover for the closest point (markers)
     )
     
     return fig
@@ -2345,8 +2403,30 @@ def create_layout(server=None):
                     "margin": "10px 0",
                     "backgroundColor": "white"
                 }, children=[
-                    dcc.Graph(figure=map_fig, config={"displayModeBar": False})
+                    dcc.Graph(figure=map_fig, config={"displayModeBar": False}),
+                    html.Div([
+                        html.A("© 2025 Mapbox", href="https://www.mapbox.com/about/maps", target="_blank", style={
+                            "color": "#666",
+                            "textDecoration": "none"
+                        }),
+                        " ",
+                        html.A("© OpenStreetMap", href="https://www.openstreetmap.org/about", target="_blank", style={
+                            "color": "#666",
+                            "textDecoration": "none"
+                        })
+                    ], style={
+                        "fontSize": "10px",
+                        "color": "#666",
+                        "marginTop": "5px",
+                        "textAlign": "left"
+                    })
                 ]),
+                html.Div("Inland points represent terminals for pipeline-delivered crudes.", style={
+                    "fontSize": "11px",
+                    "color": "#0066cc",
+                    "marginTop": "5px",
+                    "textAlign": "left"
+                }),
                 html.Div("Port Details", style={
                     "color": "#d65a00",
                     "fontWeight": "bold",
