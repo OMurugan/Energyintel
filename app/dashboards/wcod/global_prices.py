@@ -36,6 +36,7 @@ def load_crude_prices_data():
     column_mapping = {
         'Year of date': 'Year',
         'Month of date': 'Month',
+        'Day of date': 'Day',
         'Region1': 'Region',
         'crude_country': 'Country',
         'crude_name': 'Blend',
@@ -49,10 +50,20 @@ def load_crude_prices_data():
     # Clean and convert data
     df['Year'] = df['Year'].astype(str).str.strip()
     df['Month'] = df['Month'].astype(str).str.strip()
+    df['Day'] = df['Day'].astype(str).str.strip()
     df['Region'] = df['Region'].astype(str).str.strip()
     df['Country'] = df['Country'].astype(str).str.strip()
     df['Blend'] = df['Blend'].astype(str).str.strip()
     df['Price'] = pd.to_numeric(df['Price'], errors='coerce')
+    
+    # Calculate Quarter from Month
+    month_to_quarter = {
+        'January': 'Q1', 'February': 'Q1', 'March': 'Q1',
+        'April': 'Q2', 'May': 'Q2', 'June': 'Q2',
+        'July': 'Q3', 'August': 'Q3', 'September': 'Q3',
+        'October': 'Q4', 'November': 'Q4', 'December': 'Q4'
+    }
+    df['Quarter'] = df['Month'].map(month_to_quarter)
     
     # Filter out invalid rows
     df = df[
@@ -62,6 +73,9 @@ def load_crude_prices_data():
         (df['Month'].notna()) & 
         (df['Month'] != '') &
         (df['Month'] != 'nan') &
+        (df['Day'].notna()) &
+        (df['Day'] != '') &
+        (df['Day'] != 'nan') &
         (df['Region'].notna()) &
         (df['Region'] != '') &
         (df['Country'].notna()) &
@@ -74,9 +88,9 @@ def load_crude_prices_data():
     df['ColumnID'] = df['Region'] + '_' + df['Country'] + '_' + df['Blend']
     
     # Pivot the data from long to wide format
-    # Group by Year and Month, then pivot
+    # Group by Year, Quarter, Month, and Day, then pivot
     pivot_df = df.pivot_table(
-        index=['Year', 'Month'],
+        index=['Year', 'Quarter', 'Month', 'Day'],
         columns='ColumnID',
         values='Price',
         aggfunc='first'  # Use first value if duplicates exist
@@ -108,27 +122,43 @@ def create_table_data(df, column_metadata):
         'September': 9, 'October': 10, 'November': 11, 'December': 12
     }
     
-    # Add month order for sorting
+    # Define quarter order for sorting
+    quarter_order = {'Q1': 1, 'Q2': 2, 'Q3': 3, 'Q4': 4}
+    
+    # Add sorting columns
     df['MonthOrder'] = df['Month'].map(month_order)
+    df['QuarterOrder'] = df['Quarter'].map(quarter_order)
     df['YearInt'] = pd.to_numeric(df['Year'], errors='coerce')
+    df['DayInt'] = pd.to_numeric(df['Day'], errors='coerce')
     
-    # Sort by Year (descending) then Month (descending)
-    df_sorted = df.sort_values(['YearInt', 'MonthOrder'], ascending=[False, False])
+    # Sort by Year (descending), Quarter (descending), Month (descending), Day (ascending)
+    df_sorted = df.sort_values(['YearInt', 'QuarterOrder', 'MonthOrder', 'DayInt'], 
+                               ascending=[False, False, False, True])
     
-    # Create row data
+    # Create row data - FIXED: Remove empty strings, use None instead
     table_data = []
     current_year = None
+    current_quarter = None
+    current_month = None
+    
     for _, row in df_sorted.iterrows():
         year = row['Year']
+        quarter = row['Quarter']
         month = row['Month']
+        day = row['Day']
         
+        # Use None for repeated values instead of empty strings
         row_dict = {
-            'Year': year if year != current_year else '',  # Only show year once per group
-            'Month': month,
-            'Year_Month': f"{year}_{month}"
+            'Year': year if year != current_year else None,
+            'Quarter': quarter if (year != current_year or quarter != current_quarter) else None,
+            'Month': month if (year != current_year or quarter != current_quarter or month != current_month) else None,
+            'Day': day,
+            'Year_Quarter_Month_Day': f"{year}_{quarter}_{month}_{day}"
         }
         
         current_year = year
+        current_quarter = quarter
+        current_month = month
         
         # Add price values
         for meta in column_metadata:
@@ -148,13 +178,23 @@ def create_table_columns(column_metadata):
     """Create column definitions with hierarchical structure."""
     columns = [
         {
-            'name': ['', '', 'Year'],
+            'name': ['Year', 'Year', 'Year', 'Year'],
             'id': 'Year',
             'type': 'text'
         },
         {
-            'name': ['', '', 'Month'],
+            'name': ['Quarter', 'Quarter', 'Quarter', 'Quarter'],
+            'id': 'Quarter',
+            'type': 'text'
+        },
+        {
+            'name': ['Month', 'Month', 'Month', 'Month'],
             'id': 'Month',
+            'type': 'text'
+        },
+        {
+            'name': ['Day', 'Day', 'Day', 'Day'],
+            'id': 'Day',
             'type': 'text'
         }
     ]
@@ -190,7 +230,7 @@ def create_table_columns(column_metadata):
             country_metas_sorted = sorted(country_metas, key=lambda x: x['blend'])
             for meta in country_metas_sorted:
                 columns.append({
-                    'name': [region, country, meta['blend']],
+                    'name': [region, country, meta['blend'], ''],
                     'id': meta['column_id'],
                     'type': 'numeric',
                     'format': {'specifier': '.2f'}
@@ -215,6 +255,9 @@ def create_layout():
     return html.Div([
         # Store for selected cells
         dcc.Store(id='global-prices-selection-store', data={'selected_cells': []}),
+        
+        # Store for year column collapse state (default: expanded - all columns visible)
+        dcc.Store(id='global-prices-year-collapse-store', data={'is_collapsed': False}),
         
         # Title
         html.H2(
@@ -276,7 +319,12 @@ def create_layout():
                         'backgroundColor': '#f8f9fa'
                     },
                     {
-                        'if': {'filter_query': '{Year} != ""'},
+                        # Remove the font weight conditions for empty cells since we use None now
+                        'if': {'column_id': 'Year', 'filter_query': '{Year} != ""'},
+                        'fontWeight': 'bold'
+                    },
+                    {
+                        'if': {'column_id': 'Quarter', 'filter_query': '{Quarter} != ""'},
                         'fontWeight': 'bold'
                     }
                 ],
@@ -289,14 +337,23 @@ def create_layout():
                         'textAlign': 'left'
                     },
                     {
+                        'if': {'column_id': 'Quarter'},
+                        'fontWeight': 'bold',
+                        'backgroundColor': '#f8f9fa',
+                        'minWidth': '60px',
+                        'textAlign': 'left'
+                    },
+                    {
                         'if': {'column_id': 'Month'},
                         'fontWeight': 'normal',
                         'minWidth': '100px',
                         'textAlign': 'left'
                     },
                     {
-                        'if': {'filter_query': '{Year} = ""'},
-                        'backgroundColor': '#ffffff'
+                        'if': {'column_id': 'Day'},
+                        'fontWeight': 'normal',
+                        'minWidth': '50px',
+                        'textAlign': 'left'
                     }
                 ],
                 page_action='none',
@@ -342,10 +399,79 @@ def register_callbacks(dash_app, server):
     cursor: pointer;
 }
 #global-prices-table .dash-spreadsheet-container td[data-dash-column="Year"],
-#global-prices-table .dash-spreadsheet-container td[data-dash-column="Month"] {
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Day"] {
     cursor: pointer;
 }
-#global-prices-table .dash-spreadsheet-container.selection-active td:not(.cell-selected):not([data-dash-column="Year"]):not([data-dash-column="Month"]) {
+/* Default: Quarter and Day columns hidden */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Day"] {
+    display: none !important;
+}
+/* Show Quarter when year is expanded */
+#global-prices-table .dash-spreadsheet-container.year-expanded th[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container.year-expanded td[data-dash-column="Quarter"] {
+    display: table-cell !important;
+}
+/* Hide Month and Day when quarter is collapsed (only when Quarter is visible) */
+#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed th[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Day"] {
+    display: none !important;
+}
+/* Show Day when month is expanded (only if quarter is not collapsed and Quarter is visible) */
+#global-prices-table .dash-spreadsheet-container.year-expanded.month-expanded:not(.quarter-collapsed) th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container.year-expanded.month-expanded:not(.quarter-collapsed) td[data-dash-column="Day"] {
+    display: table-cell !important;
+}
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Month"] {
+    position: relative;
+    cursor: pointer;
+    white-space: nowrap;
+}
+/* Header toggle buttons - Common plus/minus in column headers */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"] .year-header-toggle,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"] .month-header-toggle,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"] .quarter-header-toggle {
+    display: inline-block;
+    margin-left: 6px;
+    width: 16px;
+    height: 16px;
+    line-height: 14px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: normal;
+    color: #505050;
+    border: 1px solid #d0d0d0;
+    border-radius: 2px;
+    background-color: #ffffff;
+    user-select: none;
+    cursor: pointer;
+    vertical-align: middle;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    transition: all 0.15s ease;
+    font-family: Arial, sans-serif;
+}
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"] .year-header-toggle:hover,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"] .month-header-toggle:hover,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"] .quarter-header-toggle:hover {
+    color: #333333;
+    border-color: #a0a0a0;
+    background-color: #f0f0f0;
+}
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"] {
+    position: relative;
+    white-space: nowrap;
+}
+#global-prices-table .dash-spreadsheet-container.selection-active td:not(.cell-selected):not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"]) {
     opacity: 0.3 !important;
 }
 #global-prices-table .dash-spreadsheet-container td.cell-selected {
@@ -364,7 +490,7 @@ def register_callbacks(dash_app, server):
     color: white !important;
     font-weight: bold;
 }
-#global-prices-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="Year"]):not([data-dash-column="Month"]):not(.column-cell-selected) {
+#global-prices-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"]):not(.column-cell-selected) {
     opacity: 0.3 !important;
 }
 #global-prices-table .dash-spreadsheet-container td.column-cell-selected {
@@ -405,11 +531,15 @@ def register_callbacks(dash_app, server):
                     if (!row) return null;
                     
                     const yearCell = row.querySelector('td[data-dash-column="Year"]');
+                    const quarterCell = row.querySelector('td[data-dash-column="Quarter"]');
                     const monthCell = row.querySelector('td[data-dash-column="Month"]');
+                    const dayCell = row.querySelector('td[data-dash-column="Day"]');
                     
                     return {
                         year: yearCell ? (yearCell.textContent || '').trim() : '',
-                        month: monthCell ? (monthCell.textContent || '').trim() : ''
+                        quarter: quarterCell ? (quarterCell.textContent || '').trim() : '',
+                        month: monthCell ? (monthCell.textContent || '').trim() : '',
+                        day: dayCell ? (dayCell.textContent || '').trim() : ''
                     };
                 }
 
@@ -444,6 +574,262 @@ def register_callbacks(dash_app, server):
                     spreadsheet.dataset.enhanced = 'true';
                     let selectedCells = [];
                     let selectedColumnId = null;
+                    let isYearExpanded = false; // Default: Quarter hidden
+                    let isMonthExpanded = false; // Default: Day hidden
+                    let isQuarterCollapsed = false; // Default: Month and Day visible when Quarter is shown
+                    
+                    // Helper function to get cell text without icons
+                    function getCellTextWithoutIcons(cell, iconClass) {
+                        let text = '';
+                        const childNodes = Array.from(cell.childNodes);
+                        childNodes.forEach(node => {
+                            if (node.classList && node.classList.contains(iconClass)) return;
+                            if (node.nodeType === Node.TEXT_NODE) {
+                                text += node.textContent;
+                            } else if (node.nodeType === Node.ELEMENT_NODE && (!node.classList || !node.classList.contains(iconClass))) {
+                                text += node.textContent;
+                            }
+                        });
+                        return text.trim();
+                    }
+                    
+                    // Helper function to add toggle icon to cell
+                    function addToggleIcon(cell, iconClass, isExpanded, onClickHandler) {
+                        const existingIcon = cell.querySelector('.' + iconClass);
+                        if (existingIcon) {
+                            existingIcon.textContent = isExpanded ? '−' : '+';
+                            existingIcon.setAttribute('aria-label', isExpanded ? 'Collapse' : 'Expand');
+                            return existingIcon;
+                        }
+                        
+                        const icon = document.createElement('span');
+                        icon.className = iconClass;
+                        icon.textContent = isExpanded ? '−' : '+';
+                        icon.setAttribute('aria-label', isExpanded ? 'Collapse' : 'Expand');
+                        
+                        // Insert icon after text content
+                        const childNodes = Array.from(cell.childNodes);
+                        let inserted = false;
+                        for (let i = 0; i < childNodes.length; i++) {
+                            const node = childNodes[i];
+                            if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+                                if (node.nextSibling) {
+                                    cell.insertBefore(icon, node.nextSibling);
+                                } else {
+                                    cell.appendChild(icon);
+                                }
+                                inserted = true;
+                                break;
+                            }
+                        }
+                        if (!inserted) {
+                            cell.appendChild(icon);
+                        }
+                        
+                        icon.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            onClickHandler();
+                        });
+                        
+                        return icon;
+                    }
+                    
+                    // Initialize Year header toggle button
+                    function initializeYearHeaderToggle() {
+                        const yearHeader = spreadsheet.querySelector('th[data-dash-column="Year"]');
+                        if (!yearHeader) return;
+                        
+                        // Remove any existing toggle button
+                        const existingToggle = yearHeader.querySelector('.year-header-toggle');
+                        if (existingToggle) {
+                            existingToggle.remove();
+                        }
+                        
+                        // Create toggle button
+                        const toggleBtn = document.createElement('span');
+                        toggleBtn.className = 'year-header-toggle';
+                        toggleBtn.textContent = isYearExpanded ? '−' : '+';
+                        toggleBtn.setAttribute('aria-label', isYearExpanded ? 'Collapse Quarter' : 'Expand Quarter');
+                        
+                        // Preserve existing content and append button
+                        // Check if header has text nodes or other content
+                        const hasTextContent = yearHeader.textContent.trim() && 
+                                             !yearHeader.querySelector('.year-header-toggle');
+                        if (hasTextContent) {
+                            // Append button after existing content
+                            yearHeader.appendChild(toggleBtn);
+                        } else {
+                            // If no content, add "Year" text first
+                            yearHeader.textContent = 'Year';
+                            yearHeader.appendChild(toggleBtn);
+                        }
+                        
+                        // Add click handler
+                        toggleBtn.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            toggleYearExpand();
+                        });
+                    }
+                    
+                    // Initialize Month header toggle button
+                    function initializeMonthHeaderToggle() {
+                        const monthHeader = spreadsheet.querySelector('th[data-dash-column="Month"]');
+                        if (!monthHeader) return;
+                        
+                        // Remove any existing toggle button
+                        const existingToggle = monthHeader.querySelector('.month-header-toggle');
+                        if (existingToggle) {
+                            existingToggle.remove();
+                        }
+                        
+                        // Create toggle button
+                        const toggleBtn = document.createElement('span');
+                        toggleBtn.className = 'month-header-toggle';
+                        toggleBtn.textContent = isMonthExpanded ? '−' : '+';
+                        toggleBtn.setAttribute('aria-label', isMonthExpanded ? 'Collapse Day' : 'Expand Day');
+                        
+                        // Preserve existing content and append button
+                        // Check if header has text nodes or other content
+                        const hasTextContent = monthHeader.textContent.trim() && 
+                                             !monthHeader.querySelector('.month-header-toggle');
+                        if (hasTextContent) {
+                            // Append button after existing content
+                            monthHeader.appendChild(toggleBtn);
+                        } else {
+                            // If no content, add "Month" text first
+                            monthHeader.textContent = 'Month';
+                            monthHeader.appendChild(toggleBtn);
+                        }
+                        
+                        // Add click handler
+                        toggleBtn.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            toggleMonthExpand();
+                        });
+                    }
+                    
+                    // Initialize Quarter header toggle button (only when Quarter is visible)
+                    function initializeQuarterHeaderToggle() {
+                        const quarterHeader = spreadsheet.querySelector('th[data-dash-column="Quarter"]');
+                        if (!quarterHeader) return;
+                        
+                        // Remove any existing toggle button
+                        const existingToggle = quarterHeader.querySelector('.quarter-header-toggle');
+                        if (existingToggle) {
+                            existingToggle.remove();
+                        }
+                        
+                        // Create toggle button
+                        const toggleBtn = document.createElement('span');
+                        toggleBtn.className = 'quarter-header-toggle';
+                        toggleBtn.textContent = isQuarterCollapsed ? '+' : '−';
+                        toggleBtn.setAttribute('aria-label', isQuarterCollapsed ? 'Show Month & Day' : 'Hide Month & Day');
+                        
+                        // Preserve existing content and append button
+                        const hasTextContent = quarterHeader.textContent.trim() && 
+                                             !quarterHeader.querySelector('.quarter-header-toggle');
+                        if (hasTextContent) {
+                            quarterHeader.appendChild(toggleBtn);
+                        } else {
+                            quarterHeader.textContent = 'Quarter';
+                            quarterHeader.appendChild(toggleBtn);
+                        }
+                        
+                        // Add click handler
+                        toggleBtn.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            toggleQuarterCollapse();
+                        });
+                    }
+                    
+                    // Toggle Year expand (shows/hides Quarter)
+                    function toggleYearExpand() {
+                        isYearExpanded = !isYearExpanded;
+                        
+                        // Update header toggle button
+                        const yearHeaderToggle = spreadsheet.querySelector('th[data-dash-column="Year"] .year-header-toggle');
+                        if (yearHeaderToggle) {
+                            yearHeaderToggle.textContent = isYearExpanded ? '−' : '+';
+                            yearHeaderToggle.setAttribute('aria-label', isYearExpanded ? 'Collapse Quarter' : 'Expand Quarter');
+                        }
+                        
+                        // Toggle Quarter column visibility
+                        if (isYearExpanded) {
+                            spreadsheet.classList.add('year-expanded');
+                            // Initialize Quarter header toggle when Quarter becomes visible
+                            setTimeout(function() {
+                                initializeQuarterHeaderToggle();
+                            }, 100);
+                        } else {
+                            spreadsheet.classList.remove('year-expanded');
+                            // Reset quarter collapse state when Quarter is hidden
+                            isQuarterCollapsed = false;
+                            spreadsheet.classList.remove('quarter-collapsed');
+                        }
+                        
+                        // Clear selections
+                        clearAllColumnSelections(spreadsheet);
+                        selectedColumnId = null;
+                        selectedCells.forEach(c => c.classList.remove('cell-selected'));
+                        selectedCells = [];
+                        updateSelectionState(spreadsheet, selectedCells);
+                    }
+                    
+                    // Toggle Quarter collapse (shows/hides Month and Day)
+                    function toggleQuarterCollapse() {
+                        isQuarterCollapsed = !isQuarterCollapsed;
+                        
+                        // Update header toggle button
+                        const quarterHeaderToggle = spreadsheet.querySelector('th[data-dash-column="Quarter"] .quarter-header-toggle');
+                        if (quarterHeaderToggle) {
+                            quarterHeaderToggle.textContent = isQuarterCollapsed ? '+' : '−';
+                            quarterHeaderToggle.setAttribute('aria-label', isQuarterCollapsed ? 'Show Month & Day' : 'Hide Month & Day');
+                        }
+                        
+                        // Toggle Month and Day column visibility
+                        if (isQuarterCollapsed) {
+                            spreadsheet.classList.add('quarter-collapsed');
+                        } else {
+                            spreadsheet.classList.remove('quarter-collapsed');
+                        }
+                        
+                        // Clear selections
+                        clearAllColumnSelections(spreadsheet);
+                        selectedColumnId = null;
+                        selectedCells.forEach(c => c.classList.remove('cell-selected'));
+                        selectedCells = [];
+                        updateSelectionState(spreadsheet, selectedCells);
+                    }
+                    
+                    // Toggle Month expand (shows/hides Day)
+                    function toggleMonthExpand() {
+                        isMonthExpanded = !isMonthExpanded;
+                        
+                        // Update header toggle button
+                        const monthHeaderToggle = spreadsheet.querySelector('th[data-dash-column="Month"] .month-header-toggle');
+                        if (monthHeaderToggle) {
+                            monthHeaderToggle.textContent = isMonthExpanded ? '−' : '+';
+                            monthHeaderToggle.setAttribute('aria-label', isMonthExpanded ? 'Collapse Day' : 'Expand Day');
+                        }
+                        
+                        // Toggle Day column visibility
+                        if (isMonthExpanded) {
+                            spreadsheet.classList.add('month-expanded');
+                        } else {
+                            spreadsheet.classList.remove('month-expanded');
+                        }
+                        
+                        // Clear selections
+                        clearAllColumnSelections(spreadsheet);
+                        selectedColumnId = null;
+                        selectedCells.forEach(c => c.classList.remove('cell-selected'));
+                        selectedCells = [];
+                        updateSelectionState(spreadsheet, selectedCells);
+                    }
+                    
+                    // Initialize on load
+                    initializeYearHeaderToggle();
+                    initializeMonthHeaderToggle();
                     
                     // Clear selection on outside click
                     document.addEventListener('click', function(event) {
@@ -467,8 +853,38 @@ def register_callbacks(dash_app, server):
                             event.stopPropagation();
                             const columnId = header.getAttribute('data-dash-column');
                             
-                            // Clear selection if clicking Year or Month headers
-                            if (columnId === 'Year' || columnId === 'Month') {
+                            // Handle Year header toggle
+                            if (columnId === 'Year') {
+                                // Check if clicking on toggle button or header
+                                const toggleBtn = event.target.closest('.year-header-toggle');
+                                if (toggleBtn || event.target === header || header.contains(event.target)) {
+                                    toggleYearExpand();
+                                    return;
+                                }
+                            }
+                            
+                            // Handle Month header toggle
+                            if (columnId === 'Month') {
+                                // Check if clicking on toggle button or header
+                                const toggleBtn = event.target.closest('.month-header-toggle');
+                                if (toggleBtn || event.target === header || header.contains(event.target)) {
+                                    toggleMonthExpand();
+                                    return;
+                                }
+                            }
+                            
+                            // Handle Quarter header toggle
+                            if (columnId === 'Quarter') {
+                                // Check if clicking on toggle button or header
+                                const toggleBtn = event.target.closest('.quarter-header-toggle');
+                                if (toggleBtn || event.target === header || header.contains(event.target)) {
+                                    toggleQuarterCollapse();
+                                    return;
+                                }
+                            }
+                            
+                            // Clear selection if clicking Day header
+                            if (columnId === 'Day') {
                                 clearAllColumnSelections(spreadsheet);
                                 selectedColumnId = null;
                                 selectedCells.forEach(c => c.classList.remove('cell-selected'));
@@ -525,22 +941,22 @@ def register_callbacks(dash_app, server):
                         const columnId = cell.getAttribute('data-dash-column');
                         const rowIndex = cell.getAttribute('data-dash-row');
                         
-                        // If clicking Year, clear selection and enable all
-                        if (columnId === 'Year') {
+                        // If clicking Quarter or Day cells, clear selection and enable all
+                        if (columnId === 'Quarter' || columnId === 'Day') {
                             selectedCells.forEach(c => c.classList.remove('cell-selected'));
                             selectedCells = [];
                             updateSelectionState(spreadsheet, selectedCells);
                             return;
                         }
                         
-                        // If clicking Month, toggle entire row selection
+                        // If clicking Month (and not the toggle icon), toggle entire row selection
                         if (columnId === 'Month') {
-                            // Get all cells in this row (excluding Year and Month columns)
+                            // Get all cells in this row (excluding Year, Quarter, Month, and Day columns)
                             const rowCells = spreadsheet.querySelectorAll(`td[data-dash-row="${rowIndex}"]`);
                             const rowPriceCells = [];
                             rowCells.forEach(rowCell => {
                                 const cellColId = rowCell.getAttribute('data-dash-column');
-                                if (cellColId !== 'Year' && cellColId !== 'Month') {
+                                if (cellColId !== 'Year' && cellColId !== 'Quarter' && cellColId !== 'Month' && cellColId !== 'Day') {
                                     const cellVal = getCellValue(rowCell);
                                     if (cellVal && cellVal !== '' && cellVal !== 'NaN' && !isNaN(parseFloat(cellVal))) {
                                         rowPriceCells.push(rowCell);
@@ -596,8 +1012,15 @@ def register_callbacks(dash_app, server):
 
                 // Apply enhancements
                 if (!window.globalPricesMutationObserver) {
-                    window.globalPricesMutationObserver = new MutationObserver(function() {
-                        enhanceTable();
+                    window.globalPricesMutationObserver = new MutationObserver(function(mutations) {
+                        // Only re-enhance if table structure changed
+                        const tableEl = document.getElementById('global-prices-table');
+                        if (tableEl) {
+                            const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                            if (spreadsheet && spreadsheet.dataset.enhanced !== 'true') {
+                                enhanceTable();
+                            }
+                        }
                     });
                     window.globalPricesMutationObserver.observe(document.body, { 
                         childList: true, 
