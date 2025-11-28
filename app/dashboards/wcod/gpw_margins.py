@@ -4,8 +4,8 @@ GPW and margins analysis for crude types with filters and charts
 """
 import os
 from datetime import datetime
-from dash import dcc, html, Input, Output, State, callback, dash_table, callback_context
-import dash
+from dash import dcc, html, Input, Output, State, callback, dash_table, callback_context, dash
+import dash.dependencies as dd
 import plotly.graph_objects as go
 import pandas as pd
 
@@ -142,7 +142,14 @@ FALLBACK_COLORS = ['#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
 
 
 def _crude_filter_options(crude_names):
-    """Create checklist options with colored swatches for crudes."""
+    """Create checklist options for crudes (no color boxes, just checkbox and text)."""
+    options = []
+    for name in crude_names:
+        options.append({"label": name, "value": name})
+    return options
+
+def _crude_legend_options(crude_names):
+    """Create checklist options with colored swatches for crudes (for legend)."""
     options = []
     for idx, name in enumerate(crude_names):
         color = CRUDE_COLORS.get(name)
@@ -405,8 +412,16 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
     return fig
 
 
-def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region) -> tuple:
+def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected_crudes=None, selected_tech_types=None) -> tuple:
     """Prepare data for the complex data table with multi-level headers.
+    
+    Args:
+        df: DataFrame with the data
+        start_date: Start date for filtering
+        end_date: End date for filtering
+        region: Region filter
+        selected_crudes: List of selected crudes (None means all)
+        selected_tech_types: List of selected tech types (None means all)
     
     Returns:
         tuple: (columns, data) where columns is list of hierarchical column definitions
@@ -432,6 +447,12 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region) -> tuple
     CRUDE_ORDER = ['Arab Light', 'Bonny Light', 'Brent Blend', 'Urals']
     DATA_TYPES = ['GPW', 'Refining Margin']
     TECH_TYPES = ['Catalytic Cracking', 'Hydroskimming']
+    
+    # Filter by selected crudes and tech types
+    if selected_crudes:
+        CRUDE_ORDER = [c for c in CRUDE_ORDER if c in selected_crudes]
+    if selected_tech_types:
+        TECH_TYPES = [t for t in TECH_TYPES if t in selected_tech_types]
     
     # Use MonthDateDisplay if available, otherwise format from Date
     if 'MonthDateDisplay' in filtered_df.columns:
@@ -488,7 +509,7 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region) -> tuple
             else:
                 value_lookup[key] = None
         
-        # Populate record with all column values
+        # Populate record only with columns that exist (filtered by selection)
         for data_type in DATA_TYPES:
             for tech_type in TECH_TYPES:
                 for crude in CRUDE_ORDER:
@@ -508,6 +529,10 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region) -> tuple
 def create_layout():
     """Create the GPW Margins layout with filters and charts."""
     return html.Div([
+        # Store to track initial load state
+        dcc.Store(id='gpw-initial-load', data=True),
+        dcc.Store(id='gpw-crude-filter-previous', data=None),
+        dcc.Store(id='gpw-refining-complexity-filter-previous', data=None),
         # CSS styling for rc-slider using dcc.Markdown
         html.Div(
             dcc.Markdown(
@@ -767,60 +792,16 @@ def create_layout():
                             'marginBottom': '8px'
                         }
                     ),
-                    dcc.Dropdown(
-                        id='gpw-crude-filter',
-                        options=[{'label': 'ALL', 'value': 'ALL'}] + [{'label': c, 'value': c} for c in CRUDES],
-                        value=['ALL'] if CRUDES else [],
-                        multi=True,
-                        clearable=False,
-                        placeholder="Select crude(s)",
-                        style={'marginBottom': '20px'}
-                    ),
-                    
-                    html.Label(
-                        "Refining Complexity",
-                        style={
-                            'fontWeight': 'bold',
-                            'color': '#2c3e50',
-                            'fontSize': '14px',
-                            'marginBottom': '8px',
-                            'marginTop': '10px'
-                        }
-                    ),
-                    dcc.Dropdown(
-                        id='gpw-refining-complexity-filter',
-                        options=[{'label': 'ALL', 'value': 'ALL'}] + [
-                            {'label': 'FCC', 'value': 'Catalytic Cracking'} if t == 'Catalytic Cracking' else
-                            {'label': 'HSK', 'value': 'Hydroskimming'} if t == 'Hydroskimming' else
-                            {'label': t, 'value': t}
-                            for t in TECH_TYPES
-                        ],
-                        value=['ALL'] if TECH_TYPES else [],
-                        multi=True,
-                        clearable=False,
-                        placeholder="Select complexity",
-                        style={'marginBottom': '20px'}
-                    ),
-                    
-                    html.Label(
-                        "Crude",
-                        style={
-                            'fontWeight': 'bold',
-                            'color': '#2c3e50',
-                            'fontSize': '14px',
-                            'marginBottom': '8px',
-                            'marginTop': '10px'
-                        }
-                    ),
                     dcc.Checklist(
-                        id='gpw-crude-legend',
-                        options=_crude_filter_options(CRUDES),
-                        value=CRUDES,
+                        id='gpw-crude-filter',
+                        options=[{'label': 'ALL', 'value': 'ALL'}] + _crude_filter_options(CRUDES),
+                        value=['ALL'] + CRUDES.copy() if CRUDES else ['ALL'],
                         style={
                             'display': 'flex',
                             'flexDirection': 'column',
                             'gap': '2px',
                             'marginTop': '2px',
+                            'marginBottom': '20px',
                         },
                         labelStyle={
                             'display': 'flex',
@@ -842,6 +823,114 @@ def create_layout():
                             'height': '18px',
                             'cursor': 'pointer',
                         },
+                    ),
+                    
+                    html.Label(
+                        "Refining Complexity",
+                        style={
+                            'fontWeight': 'bold',
+                            'color': '#2c3e50',
+                            'fontSize': '14px',
+                            'marginBottom': '8px',
+                            'marginTop': '10px'
+                        }
+                    ),
+                    dcc.Checklist(
+                        id='gpw-refining-complexity-filter',
+                        options=[
+                            {'label': 'ALL', 'value': 'ALL'},
+                            {'label': 'FCC', 'value': 'Catalytic Cracking'},
+                            {'label': 'HSK', 'value': 'Hydroskimming'}
+                        ],
+                        value=['ALL'] + TECH_TYPES.copy() if TECH_TYPES else ['ALL'],
+                        style={
+                            'display': 'flex',
+                            'flexDirection': 'column',
+                            'gap': '2px',
+                            'marginTop': '2px',
+                            'marginBottom': '20px',
+                        },
+                        labelStyle={
+                            'display': 'flex',
+                            'alignItems': 'center',
+                            'gap': '2px',
+                            'padding': '2px 2px',
+                            'borderRadius': '4px',
+                            'border': '0px solid #dfe3eb',
+                            'backgroundColor': '#ffffff',
+                            'width': '100%',
+                            'boxShadow': '0 1px 2px rgba(0,0,0,0.05)',
+                            'cursor': 'pointer',
+                            'transition': 'background-color 0.2s ease',
+                            'userSelect': 'none',
+                        },
+                        inputStyle={
+                            'marginRight': '12px',
+                            'width': '18px',
+                            'height': '18px',
+                            'cursor': 'pointer',
+                        },
+                    ),
+                    
+                    html.Label(
+                        "Crude",
+                        style={
+                            'fontWeight': 'bold',
+                            'color': '#2c3e50',
+                            'fontSize': '14px',
+                            'marginBottom': '8px',
+                            'marginTop': '10px'
+                        }
+                    ),
+                    # Crude Legend with row click selection (no checkboxes)
+                    html.Div([
+                        html.Div(
+                            id={'type': 'gpw-crude-legend-item', 'crude': crude},
+                            n_clicks=0,
+                            children=[
+                                html.Div(
+                                    style={
+                                        'width': '14px',
+                                        'height': '14px',
+                                        'backgroundColor': CRUDE_COLORS.get(crude, FALLBACK_COLORS[idx % len(FALLBACK_COLORS)]),
+                                        'borderRadius': '2px',
+                                        'marginRight': '10px',
+                                        'border': '1px solid #cfd8e3',
+                                        'boxShadow': '0 0 2px rgba(0,0,0,0.1)',
+                                        'display': 'inline-block',
+                                        'verticalAlign': 'middle'
+                                    }
+                                ),
+                                html.Span(
+                                    crude,
+                                    style={
+                                        'color': '#1b365d',
+                                        'fontWeight': '600',
+                                        'fontSize': '13px',
+                                        'verticalAlign': 'middle'
+                                    }
+                                )
+                            ],
+                            style={
+                                'display': 'flex',
+                                'alignItems': 'center',
+                                'padding': '6px 8px',
+                                'marginBottom': '2px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'transition': 'background-color 0.2s ease',
+                                'userSelect': 'none',
+                                'backgroundColor': '#ffffff',
+                                'border': '1px solid transparent'
+                            }
+                        ) for idx, crude in enumerate(CRUDES)
+                    ]),
+                    # Hidden checklist to store selected values
+                    dcc.Checklist(
+                        id='gpw-crude-legend',
+                        options=[{'label': c, 'value': c} for c in CRUDES],
+                        value=CRUDES.copy() if CRUDES else [],
+                        style={'display': 'none'}
                     ),
                 ], className='col-md-3', style={
                     'padding': '25px 20px',
@@ -974,7 +1063,7 @@ def create_layout():
                         }
                     ],
                     merge_duplicate_headers=True,
-                    page_size=50,
+                    page_action='none',
                     sort_action='native'
                 )
             ])
@@ -985,8 +1074,25 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register all callbacks for GPW Margins."""
     
+    # Mark initial load as complete after first render and initialize previous values
+    @dash_app.callback(
+        Output('gpw-initial-load', 'data', allow_duplicate=True),
+        Output('gpw-crude-filter-previous', 'data', allow_duplicate=True),
+        Output('gpw-refining-complexity-filter-previous', 'data', allow_duplicate=True),
+        Input('current-submenu', 'data'),
+        prevent_initial_call='initial_duplicate'
+    )
+    def mark_initial_load_complete(submenu):
+        """Mark that initial load is complete after first render and initialize previous values."""
+        if submenu == 'gpw-margins':
+            # Set initial previous values to match initial filter values
+            initial_crude = ['ALL'] + CRUDES.copy() if CRUDES else ['ALL']
+            initial_tech = ['ALL'] + TECH_TYPES.copy() if TECH_TYPES else ['ALL']
+            return False, initial_crude, initial_tech  # Initial load complete
+        return dash.no_update, dash.no_update, dash.no_update
+    
     # Bidirectional sync: Date range input fields <-> slider
-    @callback(
+    @dash_app.callback(
         [
             Output('gpw-date-range-slider', 'value', allow_duplicate=True),
             Output('gpw-date-range-min-input', 'value', allow_duplicate=True),
@@ -1033,7 +1139,7 @@ def register_callbacks(dash_app, server):
         
         return [DEFAULT_START_INDEX, DEFAULT_END_INDEX], _format_date_for_display(DEFAULT_START_DATE), _format_date_for_display(DEFAULT_END_DATE)
     
-    @callback(
+    @dash_app.callback(
         Output('gpw-catalytic-cracking-chart', 'figure'),
         Output('gpw-hydroskimming-chart', 'figure'),
         Output('gpw-incremental-catalytic-chart', 'figure'),
@@ -1067,39 +1173,50 @@ def register_callbacks(dash_app, server):
             start_date = DEFAULT_START_DATE
             end_date = DEFAULT_END_DATE
         
-        # Determine selected crudes (prefer legend over dropdown, but sync them)
-        if crude_legend:
-            selected_crudes = crude_legend
-        elif crude_filter:
+        # Determine selected crudes (use filter if available, otherwise use legend)
+        # Filter takes priority since it's the user's direct input
+        # Check if filter is explicitly set (not None and not empty list if it was intentionally cleared)
+        if crude_filter is not None:
+            # Filter has a value (could be empty list if all unchecked)
             selected_crudes = crude_filter if isinstance(crude_filter, list) else [crude_filter]
+        elif crude_legend:
+            # Fall back to legend if filter is None
+            selected_crudes = crude_legend if isinstance(crude_legend, list) else [crude_legend]
         else:
-            selected_crudes = CRUDES
+            # If both are empty/None, default to all crudes for initial load
+            selected_crudes = CRUDES.copy()
         
-        # Remove ALL from selected_crudes for filtering
-        if 'ALL' in selected_crudes:
+        # Handle ALL option for crudes
+        if selected_crudes and 'ALL' in selected_crudes:
             selected_crudes = CRUDES.copy()
         else:
-            selected_crudes = [c for c in selected_crudes if c != 'ALL']
+            # Remove ALL from list if present
+            selected_crudes = [c for c in selected_crudes if c != 'ALL'] if selected_crudes else []
+            # Don't default to all crudes if empty - respect user's empty selection
+            # Empty selection means no crudes selected (show empty charts)
         
-        # Determine selected tech types
+        # Determine selected tech types from checkbox
         if tech_type_filter:
-            if isinstance(tech_type_filter, list):
-                if 'ALL' in tech_type_filter:
-                    selected_tech_types = TECH_TYPES.copy()
-                else:
-                    selected_tech_types = [t for t in tech_type_filter if t != 'ALL']
-            else:
-                selected_tech_types = [tech_type_filter] if tech_type_filter != 'ALL' else TECH_TYPES.copy()
+            selected_tech_types = tech_type_filter if isinstance(tech_type_filter, list) else [tech_type_filter]
         else:
+            selected_tech_types = []
+        
+        # Handle ALL option for tech types
+        if 'ALL' in selected_tech_types:
             selected_tech_types = TECH_TYPES.copy()
+        else:
+            selected_tech_types = [t for t in selected_tech_types if t != 'ALL']
+            # Allow empty selection - if empty, no tech types selected (charts will be empty)
         
         # Filter GPW data
         gpw_filtered = GPW_DF[
             (GPW_DF['Date'] >= start_date) &
             (GPW_DF['Date'] <= end_date) &
-            (GPW_DF['Crude'].isin(selected_crudes)) &
-            (GPW_DF['TechType'].isin(selected_tech_types))
+            (GPW_DF['Crude'].isin(selected_crudes))
         ].copy()
+        
+        if selected_tech_types:
+            gpw_filtered = gpw_filtered[gpw_filtered['TechType'].isin(selected_tech_types)]
         
         if region:
             gpw_filtered = gpw_filtered[gpw_filtered['Region'] == region]
@@ -1108,15 +1225,17 @@ def register_callbacks(dash_app, server):
         margins_filtered = INCREMENTAL_MARGINS_DF[
             (INCREMENTAL_MARGINS_DF['Date'] >= start_date) &
             (INCREMENTAL_MARGINS_DF['Date'] <= end_date) &
-            (INCREMENTAL_MARGINS_DF['Crude'].isin(selected_crudes)) &
-            (INCREMENTAL_MARGINS_DF['TechType'].isin(selected_tech_types))
+            (INCREMENTAL_MARGINS_DF['Crude'].isin(selected_crudes))
         ].copy()
+        
+        if selected_tech_types:
+            margins_filtered = margins_filtered[margins_filtered['TechType'].isin(selected_tech_types)]
         
         if region:
             margins_filtered = margins_filtered[margins_filtered['Region'] == region]
         
         # Build charts only if tech type is selected
-        if 'Catalytic Cracking' in selected_tech_types:
+        if selected_tech_types and 'Catalytic Cracking' in selected_tech_types:
             gpw_catalytic = _build_gpw_chart(
                 gpw_filtered,
                 'Catalytic Cracking',
@@ -1124,9 +1243,9 @@ def register_callbacks(dash_app, server):
                 selected_crudes
             )
         else:
-            gpw_catalytic = _empty_figure("Catalytic Cracking not selected")
+            gpw_catalytic = _empty_figure("FCC not selected")
         
-        if 'Hydroskimming' in selected_tech_types:
+        if selected_tech_types and 'Hydroskimming' in selected_tech_types:
             gpw_hydro = _build_gpw_chart(
                 gpw_filtered,
                 'Hydroskimming',
@@ -1134,9 +1253,9 @@ def register_callbacks(dash_app, server):
                 selected_crudes
             )
         else:
-            gpw_hydro = _empty_figure("Hydroskimming not selected")
+            gpw_hydro = _empty_figure("HSK not selected")
         
-        if 'Catalytic Cracking' in selected_tech_types:
+        if selected_tech_types and 'Catalytic Cracking' in selected_tech_types:
             margins_catalytic = _build_incremental_margins_chart(
                 margins_filtered,
                 'Catalytic Cracking',
@@ -1144,9 +1263,9 @@ def register_callbacks(dash_app, server):
                 selected_crudes
             )
         else:
-            margins_catalytic = _empty_figure("Catalytic Cracking not selected")
+            margins_catalytic = _empty_figure("FCC not selected")
         
-        if 'Hydroskimming' in selected_tech_types:
+        if selected_tech_types and 'Hydroskimming' in selected_tech_types:
             margins_hydro = _build_incremental_margins_chart(
                 margins_filtered,
                 'Hydroskimming',
@@ -1154,7 +1273,7 @@ def register_callbacks(dash_app, server):
                 selected_crudes
             )
         else:
-            margins_hydro = _empty_figure("Hydroskimming not selected")
+            margins_hydro = _empty_figure("HSK not selected")
         
         # Prepare data table with multi-level headers
         # Use Data Table CSV
@@ -1181,7 +1300,9 @@ def register_callbacks(dash_app, server):
                 table_filtered,
                 start_date,
                 end_date,
-                region
+                region,
+                selected_crudes,
+                selected_tech_types
             )
         else:
             # Fallback: combine GPW and Margins data
@@ -1201,7 +1322,9 @@ def register_callbacks(dash_app, server):
                     combined_df,
                     start_date,
                     end_date,
-                    region
+                    region,
+                    selected_crudes,
+                    selected_tech_types
                 )
             else:
                 table_columns, table_data = [], []
@@ -1215,90 +1338,323 @@ def register_callbacks(dash_app, server):
             table_data
         )
     
-    # Sync crude filter dropdown with crude legend checklist
-    @callback(
+    # Handle ALL option normalization for crude filter
+    @dash_app.callback(
         Output('gpw-crude-filter', 'value', allow_duplicate=True),
-        Input('gpw-crude-legend', 'value'),
-        State('gpw-crude-filter', 'value'),
+        Output('gpw-initial-load', 'data', allow_duplicate=True),
+        Output('gpw-crude-filter-previous', 'data', allow_duplicate=True),
+        Input('gpw-crude-filter', 'value'),
+        State('gpw-initial-load', 'data'),
+        State('gpw-crude-filter-previous', 'data'),
         prevent_initial_call=True
     )
-    def sync_crude_filter_from_legend(crude_legend_values, current_crude_filter):
-        """Sync crude dropdown when legend checklist changes."""
-        if not crude_legend_values:
-            return ['ALL'] if CRUDES else []
+    def normalize_crude_filter(value, is_initial_load, previous_value):
+        """Handle ALL option behavior (like Refining Complexity Filter):
+        - When ALL is checked: select all individual items
+        - When ALL is unchecked: uncheck all individual items
+        - Individual items work independently
+        """
+        ctx = callback_context
+        if not ctx.triggered:
+            return dash.no_update, dash.no_update, dash.no_update
         
-        # If all crudes are selected, return ALL
-        if set(crude_legend_values) == set(CRUDES):
-            return ['ALL']
+        # Only process if triggered by the filter itself (not by sync from legend)
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+        if trigger_id != 'gpw-crude-filter':
+            return dash.no_update, dash.no_update, dash.no_update
         
-        return crude_legend_values
+        # Skip normalization on initial load
+        if is_initial_load:
+            return dash.no_update, False, value
+        
+        if not value:
+            return [], False, []
+        
+        if not isinstance(value, (list, tuple)):
+            return dash.no_update, False, previous_value
+        
+        value_list = list(value) if value else []
+        previous_list = list(previous_value) if previous_value and isinstance(previous_value, (list, tuple)) else []
+        
+        has_all = 'ALL' in value_list
+        had_all = 'ALL' in previous_list
+        non_all_items = [v for v in value_list if v != 'ALL']
+        all_items_set = set(CRUDES)
+        non_all_set = set(non_all_items)
+        previous_non_all_set = set([v for v in previous_list if v != 'ALL'])
+        
+        # If neither previous nor current has ALL, and it's just individual item changes
+        # This allows independent item selection without interference
+        if not had_all and not has_all:
+            # Clean items to ensure only valid crudes
+            cleaned_items = [v for v in non_all_items if v in CRUDES]
+            
+            # Only normalize if all items are now selected (auto-check ALL)
+            if set(cleaned_items) == all_items_set:
+                result = ['ALL'] + CRUDES.copy()
+                return result, False, result
+            
+            # For individual item selection without ALL, pass through exactly as user selected
+            # Only filter out invalid items if any exist
+            if len(cleaned_items) != len(non_all_items):
+                # Some invalid items - return cleaned version
+                return cleaned_items, False, cleaned_items
+            else:
+                # All items are valid - pass through exactly as user selected
+                # Always return the value to allow Dash to update the UI
+                return cleaned_items, False, cleaned_items
+        
+        # Case 1: ALL is being checked (transition: didn't have ALL, now has ALL)
+        if not had_all and has_all:
+            # User just checked ALL checkbox - select all items automatically
+            result = ['ALL'] + CRUDES.copy()
+            return result, False, result
+        
+        # Case 2: ALL is checked - detect if item was unclicked or if ALL was just checked
+        if has_all:
+            if non_all_set == all_items_set:
+                # ALL + all items - keep as is
+                result = ['ALL'] + CRUDES.copy()
+                return result, False, result
+            else:
+                # ALL is checked but not all items are present
+                # This means user unclicked an item while ALL was checked
+                # Remove ALL and keep only the selected items
+                cleaned_items = [v for v in non_all_items if v in CRUDES]
+                return cleaned_items, False, cleaned_items
+        
+        # Case 3: ALL was unchecked (had ALL before, don't have ALL now)
+        if had_all and not has_all:
+            # Check if items decreased (user unclicked an item) or stayed same (ALL unclicked)
+            if previous_non_all_set == all_items_set and len(non_all_set) < len(all_items_set):
+                # User unclicked an item from ALL+all - keep remaining items
+                cleaned_items = [v for v in non_all_items if v in CRUDES]
+                return cleaned_items, False, cleaned_items
+            else:
+                # User unchecked ALL checkbox - uncheck all items
+                return [], False, []
+        
+        # Allow empty selection
+        return [], False, []
     
-    # Sync crude legend checklist with crude filter dropdown
-    @callback(
+    # Handle crude legend item clicks (row click selection, no checkboxes)
+    @dash_app.callback(
         Output('gpw-crude-legend', 'value', allow_duplicate=True),
-        Input('gpw-crude-filter', 'value'),
+        Input({'type': 'gpw-crude-legend-item', 'crude': dd.ALL}, 'n_clicks'),
+        State({'type': 'gpw-crude-legend-item', 'crude': dd.ALL}, 'id'),
         State('gpw-crude-legend', 'value'),
         prevent_initial_call=True
     )
-    def sync_crude_legend_from_filter(crude_filter_values, current_crude_legend):
-        """Sync crude legend when dropdown changes."""
-        if not crude_filter_values:
-            return []
+    def handle_crude_legend_clicks(n_clicks_list, id_list, current_values):
+        """Toggle crude selection when legend item is clicked."""
+        ctx = callback_context
+        if not ctx.triggered:
+            return dash.no_update
         
-        # Handle ALL option
-        if 'ALL' in crude_filter_values:
-            return CRUDES.copy()
+        # Get the clicked item's crude name from triggered ID
+        triggered_id = ctx.triggered[0]['prop_id']
+        if not triggered_id or 'gpw-crude-legend-item' not in triggered_id:
+            return dash.no_update
         
-        return crude_filter_values
+        # Extract crude name from the triggered ID
+        import json
+        try:
+            # Parse the ID structure: {"type":"gpw-crude-legend-item","crude":"Arab Light"}.n_clicks
+            id_part = triggered_id.split('.')[0]
+            id_dict = json.loads(id_part.replace("'", '"'))
+            clicked_crude = id_dict.get('crude')
+        except:
+            return dash.no_update
+        
+        if not clicked_crude or clicked_crude not in CRUDES:
+            return dash.no_update
+        
+        # Toggle the clicked crude in the selection
+        current_values = current_values or []
+        if clicked_crude in current_values:
+            # Remove if already selected
+            new_values = [v for v in current_values if v != clicked_crude]
+        else:
+            # Add if not selected
+            new_values = current_values + [clicked_crude] if current_values else [clicked_crude]
+        
+        return new_values if new_values else []
     
-    # Handle ALL option normalization for crude filter
-    @callback(
+    # Update legend item visual state based on selection
+    @dash_app.callback(
+        Output({'type': 'gpw-crude-legend-item', 'crude': dd.ALL}, 'style'),
+        Input('gpw-crude-legend', 'value'),
+        prevent_initial_call=False
+    )
+    def update_crude_legend_visual_state(selected_crudes):
+        """Update visual state of legend items based on selection."""
+        selected_crudes = selected_crudes or []
+        selected_set = set(selected_crudes) if isinstance(selected_crudes, list) else set([selected_crudes])
+        
+        styles = []
+        for crude in CRUDES:
+            if crude in selected_set:
+                # Selected state
+                style = {
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'padding': '6px 8px',
+                    'marginBottom': '2px',
+                    'borderRadius': '4px',
+                    'cursor': 'pointer',
+                    'transition': 'background-color 0.2s ease',
+                    'userSelect': 'none',
+                    'backgroundColor': '#e6f1ff',
+                    'border': '1px solid #0075A8'
+                }
+            else:
+                # Unselected state
+                style = {
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'padding': '6px 8px',
+                    'marginBottom': '2px',
+                    'borderRadius': '4px',
+                    'cursor': 'pointer',
+                    'transition': 'background-color 0.2s ease',
+                    'userSelect': 'none',
+                    'backgroundColor': '#ffffff',
+                    'border': '1px solid transparent'
+                }
+            styles.append(style)
+        
+        return styles
+    
+    # Sync crude filter checkbox with crude legend checklist (one-way: legend -> filter)
+    # This sync only happens when legend changes, not when filter changes
+    @dash_app.callback(
         Output('gpw-crude-filter', 'value', allow_duplicate=True),
+        Input('gpw-crude-legend', 'value'),
+        prevent_initial_call=True
+    )
+    def sync_crude_filter_from_legend(crude_legend_values):
+        """Sync crude filter checkbox when legend checklist changes.
+        Pass legend values directly to filter - no ALL conversion.
+        Only runs when legend changes, allowing filter to work independently."""
+        if not crude_legend_values:
+            return []
+        # Pass through the legend values directly to filter (no conversion to ALL)
+        return crude_legend_values if isinstance(crude_legend_values, list) else [crude_legend_values]
+    
+    # Sync crude legend from crude filter (only when ALL is set via normalization)
+    @dash_app.callback(
+        Output('gpw-crude-legend', 'value', allow_duplicate=True),
         Input('gpw-crude-filter', 'value'),
         prevent_initial_call=True
     )
-    def normalize_crude_filter(value):
-        """Ensure 'ALL' behaves correctly - replace ALL when single item is selected."""
-        if not value:
+    def sync_crude_legend_from_filter(crude_filter_values):
+        """Sync crude legend when filter changes, but only for ALL option.
+        Don't interfere with individual legend item selection or direct filter clicks."""
+        if not crude_filter_values:
             return dash.no_update
         
-        if isinstance(value, (list, tuple)):
-            # If ALL is present with other items, remove ALL (user is selecting specific items)
-            if 'ALL' in value and len(value) > 1:
-                non_all_items = [v for v in value if v != 'ALL']
-                if non_all_items:
-                    return non_all_items
-            # If just ALL selected, no change needed
-            if len(value) == 1 and value[0] == 'ALL':
-                return dash.no_update
-            # If no ALL, allow normal selection
-            if 'ALL' not in value:
-                return dash.no_update
+        # Only sync if ALL is in the filter and all items are selected
+        # This indicates normalization happened
+        if isinstance(crude_filter_values, list) and 'ALL' in crude_filter_values:
+            filter_set = set(crude_filter_values)
+            all_set_with_all = set(['ALL'] + CRUDES)
+            if filter_set == all_set_with_all:
+                # Normalization set ALL + all items - sync legend
+                return CRUDES.copy()
         
+        # Don't sync for individual selections
         return dash.no_update
     
     # Handle ALL option normalization for refining complexity filter
-    @callback(
+    @dash_app.callback(
         Output('gpw-refining-complexity-filter', 'value', allow_duplicate=True),
+        Output('gpw-refining-complexity-filter-previous', 'data', allow_duplicate=True),
         Input('gpw-refining-complexity-filter', 'value'),
+        State('gpw-initial-load', 'data'),
+        State('gpw-refining-complexity-filter-previous', 'data'),
         prevent_initial_call=True
     )
-    def normalize_tech_type_filter(value):
-        """Ensure 'ALL' behaves correctly - replace ALL when single item is selected."""
-        if not value:
-            return dash.no_update
+    def normalize_tech_type_filter(value, is_initial_load, previous_value):
+        """Handle ALL option behavior (like Crude Legend):
+        - When ALL is checked: select all individual items
+        - When ALL is unchecked: uncheck all individual items
+        - Individual items work independently
+        - Allow empty selection
+        """
+        ctx = callback_context
+        if not ctx.triggered:
+            return dash.no_update, dash.no_update
         
-        if isinstance(value, (list, tuple)):
-            # If ALL is present with other items, remove ALL (user is selecting specific items)
-            if 'ALL' in value and len(value) > 1:
-                non_all_items = [v for v in value if v != 'ALL']
-                if non_all_items:
-                    return non_all_items
-            # If just ALL selected, no change needed
-            if len(value) == 1 and value[0] == 'ALL':
-                return dash.no_update
-            # If no ALL, allow normal selection
-            if 'ALL' not in value:
-                return dash.no_update
+        # Skip normalization on initial load
+        if is_initial_load:
+            return dash.no_update, value
         
-        return dash.no_update
+        if value is None:
+            return [], []
+        
+        if not isinstance(value, (list, tuple)):
+            return dash.no_update, previous_value
+        
+        value_list = list(value) if value else []
+        previous_list = list(previous_value) if previous_value and isinstance(previous_value, (list, tuple)) else []
+        
+        has_all = 'ALL' in value_list
+        had_all = 'ALL' in previous_list
+        non_all_items = [v for v in value_list if v != 'ALL']
+        all_items_set = set(TECH_TYPES)
+        non_all_set = set(non_all_items)
+        previous_non_all_set = set([v for v in previous_list if v != 'ALL'])
+        
+        # If neither previous nor current has ALL, and it's just individual item changes
+        # This allows independent item selection without interference
+        if not had_all and not has_all:
+            # Clean items to ensure only valid tech types
+            cleaned_items = [v for v in non_all_items if v in TECH_TYPES]
+            
+            # Only normalize if all items are now selected (auto-check ALL)
+            if set(cleaned_items) == all_items_set:
+                result = ['ALL'] + TECH_TYPES.copy()
+                return result, result
+            
+            # For individual item selection without ALL, pass through exactly as user selected
+            # Only filter out invalid items if any exist
+            if len(cleaned_items) != len(non_all_items):
+                # Some invalid items - return cleaned version
+                return cleaned_items, cleaned_items
+            else:
+                # All items are valid - pass through exactly as user selected
+                # Maintain order as user selected it
+                return cleaned_items, cleaned_items
+        
+        # Case 1: ALL is being checked (transition: didn't have ALL, now has ALL)
+        if not had_all and has_all:
+            # User just checked ALL checkbox - select all items automatically
+            result = ['ALL'] + TECH_TYPES.copy()
+            return result, result
+        
+        # Case 2: ALL is checked - detect if item was unclicked or if ALL was just checked
+        if has_all:
+            if non_all_set == all_items_set:
+                # ALL + all items - keep as is
+                result = ['ALL'] + TECH_TYPES.copy()
+                return result, result
+            else:
+                # ALL is checked but not all items are present
+                # This means user unclicked an item while ALL was checked
+                # Remove ALL and keep only the selected items
+                cleaned_items = [v for v in non_all_items if v in TECH_TYPES]
+                return cleaned_items, cleaned_items
+        
+        # Case 3: ALL was unchecked (had ALL before, don't have ALL now)
+        if had_all and not has_all:
+            # Check if items decreased (user unclicked an item) or stayed same (ALL unclicked)
+            if previous_non_all_set == all_items_set and len(non_all_set) < len(all_items_set):
+                # User unclicked an item from ALL+all - keep remaining items
+                cleaned_items = [v for v in non_all_items if v in TECH_TYPES]
+                return cleaned_items, cleaned_items
+            else:
+                # User unchecked ALL checkbox - uncheck all items
+                return [], []
+        
+        # Allow empty selection
+        return [], []
