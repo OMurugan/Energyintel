@@ -176,24 +176,26 @@ def create_table_data(df, column_metadata):
 
 def create_table_columns(column_metadata):
     """Create column definitions with hierarchical structure."""
+    # Use 3-level structure to align with data columns (region/country/blend)
+    # Empty strings for upper levels so only the label shows in the bottom row
     columns = [
         {
-            'name': ['Year', 'Year', 'Year', 'Year'],
+            'name': ['', '', 'Year'],
             'id': 'Year',
             'type': 'text'
         },
         {
-            'name': ['Quarter', 'Quarter', 'Quarter', 'Quarter'],
+            'name': ['', '', 'Quarter'],
             'id': 'Quarter',
             'type': 'text'
         },
         {
-            'name': ['Month', 'Month', 'Month', 'Month'],
+            'name': ['', '', 'Month'],
             'id': 'Month',
             'type': 'text'
         },
         {
-            'name': ['Day', 'Day', 'Day', 'Day'],
+            'name': ['', '', 'Day'],
             'id': 'Day',
             'type': 'text'
         }
@@ -223,14 +225,14 @@ def create_table_columns(column_metadata):
                 countries[country] = []
             countries[country].append(meta)
         
-        # Create columns for each country-blend combination
+        # Create columns for each country-blend combination with hierarchical structure
         for country in sorted(countries.keys()):
             country_metas = countries[country]
             # Sort blends within country
             country_metas_sorted = sorted(country_metas, key=lambda x: x['blend'])
             for meta in country_metas_sorted:
                 columns.append({
-                    'name': [region, country, meta['blend'], ''],
+                    'name': [region, country, meta['blend']],
                     'id': meta['column_id'],
                     'type': 'numeric',
                     'format': {'specifier': '.2f'}
@@ -404,6 +406,13 @@ def register_callbacks(dash_app, server):
 #global-prices-table .dash-spreadsheet-container td[data-dash-column="Day"] {
     cursor: pointer;
 }
+/* Hide empty header cells for Year/Quarter/Month/Day (they use 3-level structure with empty upper levels) */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"]:empty,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"]:empty,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"]:empty,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"]:empty {
+    display: none !important;
+}
 /* Default: Quarter and Day columns hidden */
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"],
@@ -423,9 +432,9 @@ def register_callbacks(dash_app, server):
 #global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Day"] {
     display: none !important;
 }
-/* Show Day when month is expanded (only if quarter is not collapsed and Quarter is visible) */
-#global-prices-table .dash-spreadsheet-container.year-expanded.month-expanded:not(.quarter-collapsed) th[data-dash-column="Day"],
-#global-prices-table .dash-spreadsheet-container.year-expanded.month-expanded:not(.quarter-collapsed) td[data-dash-column="Day"] {
+/* Show Day when month is expanded (hide if quarter is collapsed) */
+#global-prices-table .dash-spreadsheet-container.month-expanded:not(.quarter-collapsed) th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container.month-expanded:not(.quarter-collapsed) td[data-dash-column="Day"] {
     display: table-cell !important;
 }
 #global-prices-table .dash-spreadsheet-container td[data-dash-column="Year"],
@@ -434,11 +443,11 @@ def register_callbacks(dash_app, server):
     cursor: pointer;
     white-space: nowrap;
 }
-/* Header toggle buttons - Common plus/minus in column headers */
+/* Header toggle buttons - Show on hover only */
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"] .year-header-toggle,
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"] .month-header-toggle,
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"] .quarter-header-toggle {
-    display: inline-block;
+    display: none;
     margin-left: 6px;
     width: 16px;
     height: 16px;
@@ -457,6 +466,12 @@ def register_callbacks(dash_app, server):
     box-sizing: border-box;
     transition: all 0.15s ease;
     font-family: Arial, sans-serif;
+}
+/* Show toggle buttons on header hover */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"]:hover .year-header-toggle,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"]:hover .month-header-toggle,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"]:hover .quarter-header-toggle {
+    display: inline-block;
 }
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"] .year-header-toggle:hover,
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"] .month-header-toggle:hover,
@@ -636,7 +651,19 @@ def register_callbacks(dash_app, server):
                     
                     // Initialize Year header toggle button
                     function initializeYearHeaderToggle() {
-                        const yearHeader = spreadsheet.querySelector('th[data-dash-column="Year"]');
+                        // Find the header cell that contains "Year" text (the visible one in hierarchical headers)
+                        const allYearHeaders = spreadsheet.querySelectorAll('th[data-dash-column="Year"]');
+                        let yearHeader = null;
+                        for (let header of allYearHeaders) {
+                            if (header.textContent.trim().includes('Year') || header.textContent.trim() === '') {
+                                yearHeader = header;
+                                break;
+                            }
+                        }
+                        // Fallback to first one if none found with text
+                        if (!yearHeader && allYearHeaders.length > 0) {
+                            yearHeader = allYearHeaders[allYearHeaders.length - 1]; // Get the last one (usually the visible row)
+                        }
                         if (!yearHeader) return;
                         
                         // Remove any existing toggle button
@@ -673,7 +700,19 @@ def register_callbacks(dash_app, server):
                     
                     // Initialize Month header toggle button
                     function initializeMonthHeaderToggle() {
-                        const monthHeader = spreadsheet.querySelector('th[data-dash-column="Month"]');
+                        // Find the header cell that contains "Month" text (the visible one in hierarchical headers)
+                        const allMonthHeaders = spreadsheet.querySelectorAll('th[data-dash-column="Month"]');
+                        let monthHeader = null;
+                        for (let header of allMonthHeaders) {
+                            if (header.textContent.trim().includes('Month') || header.textContent.trim() === '') {
+                                monthHeader = header;
+                                break;
+                            }
+                        }
+                        // Fallback to last one if none found with text
+                        if (!monthHeader && allMonthHeaders.length > 0) {
+                            monthHeader = allMonthHeaders[allMonthHeaders.length - 1]; // Get the last one (usually the visible row)
+                        }
                         if (!monthHeader) return;
                         
                         // Remove any existing toggle button
@@ -710,7 +749,19 @@ def register_callbacks(dash_app, server):
                     
                     // Initialize Quarter header toggle button (only when Quarter is visible)
                     function initializeQuarterHeaderToggle() {
-                        const quarterHeader = spreadsheet.querySelector('th[data-dash-column="Quarter"]');
+                        // Find the header cell that contains "Quarter" text (the visible one in hierarchical headers)
+                        const allQuarterHeaders = spreadsheet.querySelectorAll('th[data-dash-column="Quarter"]');
+                        let quarterHeader = null;
+                        for (let header of allQuarterHeaders) {
+                            if (header.textContent.trim().includes('Quarter') || header.textContent.trim() === '') {
+                                quarterHeader = header;
+                                break;
+                            }
+                        }
+                        // Fallback to last one if none found with text
+                        if (!quarterHeader && allQuarterHeaders.length > 0) {
+                            quarterHeader = allQuarterHeaders[allQuarterHeaders.length - 1]; // Get the last one (usually the visible row)
+                        }
                         if (!quarterHeader) return;
                         
                         // Remove any existing toggle button
