@@ -1009,6 +1009,25 @@ def create_layout(server=None):
                 #refined-products-table .dash-cell[data-dash-column="Cut Points (°C)"] {
                     border-right: 1px solid #ddd !important;
                 }
+                
+                /* Refined Products table wrapper height control */
+                #refined-products-table-wrapper {
+                    max-height: 1360px !important;
+                    overflow-y: auto !important;
+                    overflow-x: auto !important;
+                }
+                
+                #refined-products-table-wrapper .dash-table-container {
+                    max-height: 1360px !important;
+                    overflow-y: auto !important;
+                    overflow-x: auto !important;
+                }
+                
+                #refined-products-table-wrapper .dash-spreadsheet-container {
+                    max-height: 1360px !important;
+                    overflow-y: auto !important;
+                    overflow-x: auto !important;
+                }
                 </style>
             """, dangerously_allow_html=True)
         ]),
@@ -1234,7 +1253,17 @@ def create_layout(server=None):
                     "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
-                create_grouped_refined_products_table()
+                html.Div(
+                    id="refined-products-table-wrapper",
+                    style={
+                        "maxHeight": "1360px",
+                        "overflowY": "auto",
+                        "overflowX": "auto"
+                    },
+                    children=[
+                        create_grouped_refined_products_table()
+                    ]
+                )
             ]),
             
             # Column 3: Right-side stack
