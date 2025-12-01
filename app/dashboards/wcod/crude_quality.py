@@ -1470,7 +1470,7 @@ def create_layout(dash_app=None):
     # Default values
     default_x = "Gravity-API at 60 F"
     default_y = "Sulfur Content-% Wt"
-    default_bubble = "Nickel-ppm"
+    default_bubble = "Volume-000 b/d"
 
     return html.Div([
         html.Div([
@@ -2850,14 +2850,22 @@ def register_callbacks(dash_app, server=None):
         y_data = df[df['Property - Unit'] == y_col].copy()
         size_data = df[df['Property - Unit'] == size_col].copy()
         
-        # For each crude, get the latest value (by YearReported) for each property
-        # Group by CrudeOil and take the latest year
+        # For each crude, calculate the average value for each property
+        # Group by CrudeOil and calculate mean, rounded to 2 decimal places
         if not x_data.empty:
-            x_data = x_data.sort_values('YearReported', ascending=False).drop_duplicates(subset=['CrudeOil'], keep='first')
+            x_data = x_data.groupby('CrudeOil').agg({
+                'Value': lambda x: round(x.mean(), 2),
+                'Country': 'first',
+                'OPEC FSU OECD': 'first'
+            }).reset_index()
         if not y_data.empty:
-            y_data = y_data.sort_values('YearReported', ascending=False).drop_duplicates(subset=['CrudeOil'], keep='first')
+            y_data = y_data.groupby('CrudeOil').agg({
+                'Value': lambda x: round(x.mean(), 2)
+            }).reset_index()
         if not size_data.empty:
-            size_data = size_data.sort_values('YearReported', ascending=False).drop_duplicates(subset=['CrudeOil'], keep='first')
+            size_data = size_data.groupby('CrudeOil').agg({
+                'Value': lambda x: round(x.mean(), 2)
+            }).reset_index()
         
         # Merge the three datasets on CrudeOil
         plot_df = pd.DataFrame()
