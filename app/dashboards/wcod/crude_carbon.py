@@ -11,37 +11,13 @@ import os
 
 def create_layout():
     """Create the Crude Carbon Intensity layout"""
-    # Load data to get available years
-    data_df = load_carbon_data()
+    # Don't load data here - load it in callbacks when page is active
+    # Use default values for layout
     countries = ['(All)']
-    
-    if not data_df.empty:
-        unique_countries = sorted(data_df['Country'].dropna().unique().tolist())
-        countries.extend(unique_countries)
-        
-        # Extract years from data
-        if 'Year' in data_df.columns:
-            year_values = data_df['Year'].dropna()
-            if len(year_values) > 0:
-                try:
-                    year_values = pd.to_numeric(year_values, errors='coerce').dropna()
-                    if len(year_values) > 0:
-                        available_years = sorted(year_values.astype(int).unique().tolist(), reverse=True)
-                except:
-                    available_years = list(range(2006, 2025))
-        else:
-            available_years = list(range(2006, 2025))
-    else:
-        available_years = list(range(2006, 2025))
-    
-    # Default to 2022 if available
-    if 2022 in available_years:
-        default_year = 2022
-    else:
-        default_year = available_years[0] if available_years else 2022
-    
-    min_year = min(available_years) if available_years else 2006
-    max_year = max(available_years) if available_years else 2024
+    available_years = list(range(2006, 2025))
+    default_year = 2022
+    min_year = 2006
+    max_year = 2024
     
     return html.Div([
         html.Div([
@@ -733,11 +709,28 @@ def register_callbacks(dash_app, server):
         [Input('carbon-year-display', 'children'),
          Input('carbon-country-select', 'value'),
          Input('carbon-crude-filter', 'value'),
-         Input('carbon-intensity-filter', 'value')],
+         Input('carbon-intensity-filter', 'value'),
+         Input('current-submenu', 'data')],
         prevent_initial_call=False
     )
-    def update_crude_carbon(year_str, country_filter, crude_filter, intensity_filter):
-        """Update crude carbon intensity treemap"""
+    def update_crude_carbon(year_str, country_filter, crude_filter, intensity_filter, current_submenu):
+        """Update crude carbon intensity treemap - only loads data when page is active"""
+        # Check if page is active (for WCoD dashboard usage)
+        # If used as standalone dashboard, current_submenu will be None, so always load
+        if current_submenu is not None and current_submenu != 'crude-carbon':
+            # Return empty figure if page is not active
+            fig = go.Figure()
+            fig.add_annotation(
+                text="",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False
+            )
+            fig.update_layout(height=700, plot_bgcolor='white', paper_bgcolor='white')
+            return fig
+        
         print(f"=== CALLBACK TRIGGERED ===")
         print(f"year={year_str}, country={country_filter}, crude={crude_filter}, intensity={intensity_filter}")
         
@@ -755,7 +748,7 @@ def register_callbacks(dash_app, server):
         if intensity_filter is None or len(intensity_filter) == 0:
             intensity_filter = ['Very High', 'High', 'Medium', 'Low', 'Very Low']
         
-        # Load data
+        # Load data only when page is active
         try:
             df = load_carbon_data()
             print(f"✓ Loaded {len(df)} rows from CSV")
