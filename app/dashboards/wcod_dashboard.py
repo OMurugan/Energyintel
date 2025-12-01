@@ -1278,11 +1278,11 @@ def create_wcod_dashboard(server, url_base_pathname):
     
     # Callback to update sub-menu based on main tab and submenu changes
     @callback(
-        Output('submenu-container', 'children'),
+        Output('submenu-container', 'children', allow_duplicate=True),
         [Input('main-tabs', 'value'),
          Input('url', 'pathname'),
          Input('current-submenu', 'data')],
-        prevent_initial_call=False
+        prevent_initial_call='initial_duplicate'
     )
     def update_submenu(active_tab, pathname, current_submenu):
         """Update sub-menu based on active main tab and current submenu"""

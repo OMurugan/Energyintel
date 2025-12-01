@@ -20,215 +20,232 @@ from app.database import execute_query
 # PORT_DETAIL_CSV = os.path.join(DATA_DIR, 'Port-Detail_data.csv')
 # KEY_FIGURES_CSV = os.path.join(DATA_DIR, 'Key Figures_data.csv')
 
-# Load map data from database
-try:
-    # Query map data from database (schema is set in connection, so don't include it in query)
-    map_query = """
-    SELECT
-        A."country_id",
-        A."country_long_name",
-        CASE
-            WHEN A."country_long_name" = 'Abu Dhabi' THEN 'https://www.energyintel.com/wcod/country-profile/abu-dhabi'
-            WHEN A."country_long_name" = 'Algeria' THEN 'https://www.energyintel.com/wcod/country-profile/algeria'
-            WHEN A."country_long_name" = 'Angola' THEN 'https://www.energyintel.com/wcod/country-profile/angola'
-            WHEN A."country_long_name" = 'Argentina' THEN 'https://www.energyintel.com/wcod/country-profile/argentina'
-            WHEN A."country_long_name" = 'Australia' THEN 'https://www.energyintel.com/wcod/country-profile/australia'
-            WHEN A."country_long_name" = 'Azerbaijan' THEN 'https://www.energyintel.com/wcod/country-profile/azerbaijan'
-            WHEN A."country_long_name" = 'Brazil' THEN 'https://www.energyintel.com/wcod/country-profile/brazil'
-            WHEN A."country_long_name" = 'Brunei' THEN 'https://www.energyintel.com/wcod/country-profile/brunei'
-            WHEN A."country_long_name" = 'Canada' THEN 'https://www.energyintel.com/wcod/country-profile/canada'
-            WHEN A."country_long_name" = 'Chad' THEN 'https://www.energyintel.com/wcod/country-profile/chad'
-            WHEN A."country_long_name" = 'China' THEN 'https://www.energyintel.com/wcod/country-profile/china'
-            WHEN A."country_long_name" = 'Colombia' THEN 'https://www.energyintel.com/wcod/country-profile/colombia'
-            WHEN A."country_long_name" = 'Congo (Brazzaville)' THEN 'https://www.energyintel.com/wcod/country-profile/republic-of-the-congo'
-            WHEN A."country_long_name" = 'Denmark' THEN 'https://www.energyintel.com/wcod/country-profile/denmark'
-            WHEN A."country_long_name" = 'Dubai' THEN 'https://www.energyintel.com/wcod/country-profile/dubai'
-            WHEN A."country_long_name" = 'Ecuador' THEN 'https://www.energyintel.com/wcod/country-profile/ecuador'
-            WHEN A."country_long_name" = 'Egypt' THEN 'https://www.energyintel.com/wcod/country-profile/egypt'
-            WHEN A."country_long_name" = 'Equatorial Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/equatorial-guinea'
-            WHEN A."country_long_name" = 'Gabon' THEN 'https://www.energyintel.com/wcod/country-profile/gabon'
-            WHEN A."country_long_name" = 'Ghana' THEN 'https://www.energyintel.com/wcod/country-profile/ghana'
-            WHEN A."country_long_name" = 'Guyana' THEN 'https://www.energyintel.com/wcod/country-profile/guyana'
-            WHEN A."country_long_name" = 'Indonesia' THEN 'https://www.energyintel.com/wcod/country-profile/indonesia'
-            WHEN A."country_long_name" = 'Iran' THEN 'https://www.energyintel.com/wcod/country-profile/iran'
-            WHEN A."country_long_name" = 'Iraq' THEN 'https://www.energyintel.com/wcod/country-profile/iraq'
-            WHEN A."country_long_name" = 'Kazakhstan' THEN 'https://www.energyintel.com/wcod/country-profile/kazakhstan'
-            WHEN A."country_long_name" = 'Kuwait' THEN 'https://www.energyintel.com/wcod/country-profile/kuwait'
-            WHEN A."country_long_name" = 'Libya' THEN 'https://www.energyintel.com/wcod/country-profile/libya'
-            WHEN A."country_long_name" = 'Malaysia' THEN 'https://www.energyintel.com/wcod/country-profile/malaysia'
-            WHEN A."country_long_name" = 'Mexico' THEN 'https://www.energyintel.com/wcod/country-profile/mexico'
-            WHEN A."country_long_name" = 'Neutral Zone' THEN 'https://www.energyintel.com/wcod/country-profile/neutral-zone'
-            WHEN A."country_long_name" = 'Nigeria' THEN 'https://www.energyintel.com/wcod/country-profile/nigeria'
-            WHEN A."country_long_name" = 'Norway' THEN 'https://www.energyintel.com/wcod/country-profile/norway'
-            WHEN A."country_long_name" = 'Oman' THEN 'https://www.energyintel.com/wcod/country-profile/oman'
-            WHEN A."country_long_name" = 'Papua New Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/papua-new-guinea'
-            WHEN A."country_long_name" = 'Qatar' THEN 'https://www.energyintel.com/wcod/country-profile/qatar'
-            WHEN A."country_long_name" = 'Russia' THEN 'https://www.energyintel.com/wcod/country-profile/russia'
-            WHEN A."country_long_name" = 'Saudi Arabia' THEN 'https://www.energyintel.com/wcod/country-profile/saudi-arabia'
-            WHEN A."country_long_name" = 'South Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/south-sudan'
-            WHEN A."country_long_name" = 'Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/sudan'
-            WHEN A."country_long_name" = 'Syria' THEN 'https://www.energyintel.com/wcod/country-profile/syria'
-            WHEN A."country_long_name" = 'Turkmenistan' THEN 'https://www.energyintel.com/wcod/country-profile/turkmenistan'
-            WHEN A."country_long_name" = 'United Kingdom' THEN 'https://www.energyintel.com/wcod/country-profile/united-kingdom'
-            WHEN A."country_long_name" = 'United States' THEN 'https://www.energyintel.com/wcod/country-profile/united-states'
-            WHEN A."country_long_name" = 'Venezuela' THEN 'https://www.energyintel.com/wcod/country-profile/venezuela'
-            WHEN A."country_long_name" = 'Vietnam' THEN 'https://www.energyintel.com/wcod/country-profile/vietnam'
-            WHEN A."country_long_name" = 'Yemen' THEN 'https://www.energyintel.com/wcod/country-profile/yemen'
-            ELSE NULL
-        END AS profile_url,
-        P."port_name",
-        P."latitude",
-        P."longitude",
-        P."coordinates",
-        P."measure_name",
-        P."value",
-        A."yr",
-        A."output",
-        A."exports",
-        A."reserves"
-    FROM fact_wcod_country A
-    FULL JOIN fact_wcod_port P
-        ON P."country_id" = A."country_id"
-    WHERE A."country_long_name" IS NOT NULL
-      AND A."to_be_deleted" IS NULL
-    """
-    
-    # Execute query and convert to DataFrame
-    map_results = execute_query(map_query)
-    map_df = pd.DataFrame(map_results)
-    
-    if not map_df.empty:
-        # Clean and standardize column names
-        map_df.columns = map_df.columns.str.strip()
-        
-        # Rename port_name to Port Name for compatibility with existing code
-        if 'port_name' in map_df.columns:
-            map_df['Port Name'] = map_df['port_name'].astype(str).str.strip()
-        
-        # Ensure country_long_name is properly formatted
-        if 'country_long_name' in map_df.columns:
-            map_df['country_long_name'] = map_df['country_long_name'].astype(str).str.strip()
-        
-        print(f"Loaded map data with {len(map_df)} records from database")
-    else:
-        map_df = pd.DataFrame()
-        print("Warning: No map data loaded from database")
-        
-except Exception as e:
-    print(f"Error loading map data from database: {e}")
-    import traceback
-    traceback.print_exc()
-    map_df = pd.DataFrame()
-
-# Initialize country list - will be populated from database
+# Initialize empty dataframes - will be loaded lazily when needed
+map_df = pd.DataFrame()
+monthly_prod_df = pd.DataFrame()
 country_list = []
 default_country = None
 
-# Load production data from database
-try:
-    # Query production data from database
-    query = """
-    SELECT 
-        "t_wcod_monthly_stream_production"."added_by" AS added_by,
-        "t_wcod_monthly_stream_production"."commodity" AS commodity,
-        "t_wcod_monthly_stream_production"."commodity_id" AS commodity_id,
-        "t_wcod_monthly_stream_production"."country" AS country,
-        (CASE 
-            WHEN "country" = 'Abu Dhabi' THEN 'https://www.energyintel.com/wcod/country-profile/abu-dhabi'
-            WHEN "country" = 'Algeria' THEN 'https://www.energyintel.com/wcod/country-profile/algeria'
-            WHEN "country" = 'Angola' THEN 'https://www.energyintel.com/wcod/country-profile/angola'
-            WHEN "country" = 'Argentina' THEN 'https://www.energyintel.com/wcod/country-profile/argentina'
-            WHEN "country" = 'Australia' THEN 'https://www.energyintel.com/wcod/country-profile/australia'
-            WHEN "country" = 'Azerbaijan' THEN 'https://www.energyintel.com/wcod/country-profile/azerbaijan'
-            WHEN "country" = 'Brazil' THEN 'https://www.energyintel.com/wcod/country-profile/brazil'
-            WHEN "country" = 'Brunei' THEN 'https://www.energyintel.com/wcod/country-profile/brunei'
-            WHEN "country" = 'Canada' THEN 'https://www.energyintel.com/wcod/country-profile/canada'
-            WHEN "country" = 'Chad' THEN 'https://www.energyintel.com/wcod/country-profile/chad'
-            WHEN "country" = 'China' THEN 'https://www.energyintel.com/wcod/country-profile/china'
-            WHEN "country" = 'Colombia' THEN 'https://www.energyintel.com/wcod/country-profile/colombia'
-            WHEN "country" = 'Congo (Brazzaville)' THEN 'https://www.energyintel.com/wcod/country-profile/republic-of-the-congo'
-            WHEN "country" = 'Denmark' THEN 'https://www.energyintel.com/wcod/country-profile/denmark'
-            WHEN "country" = 'Dubai' THEN 'https://www.energyintel.com/wcod/country-profile/dubai'
-            WHEN "country" = 'Ecuador' THEN 'https://www.energyintel.com/wcod/country-profile/ecuador'
-            WHEN "country" = 'Egypt' THEN 'https://www.energyintel.com/wcod/country-profile/egypt'
-            WHEN "country" = 'Equatorial Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/equatorial-guinea'
-            WHEN "country" = 'Gabon' THEN 'https://www.energyintel.com/wcod/country-profile/gabon'
-            WHEN "country" = 'Ghana' THEN 'https://www.energyintel.com/wcod/country-profile/ghana'
-            WHEN "country" = 'Guyana' THEN 'https://www.energyintel.com/wcod/country-profile/guyana'
-            WHEN "country" = 'Indonesia' THEN 'https://www.energyintel.com/wcod/country-profile/indonesia'
-            WHEN "country" = 'Iran' THEN 'https://www.energyintel.com/wcod/country-profile/iran'
-            WHEN "country" = 'Iraq' THEN 'https://www.energyintel.com/wcod/country-profile/iraq'
-            WHEN "country" = 'Kazakhstan' THEN 'https://www.energyintel.com/wcod/country-profile/kazakhstan'
-            WHEN "country" = 'Kuwait' THEN 'https://www.energyintel.com/wcod/country-profile/kuwait'
-            WHEN "country" = 'Libya' THEN 'https://www.energyintel.com/wcod/country-profile/libya'
-            WHEN "country" = 'Malaysia' THEN 'https://www.energyintel.com/wcod/country-profile/malaysia'
-            WHEN "country" = 'Mexico' THEN 'https://www.energyintel.com/wcod/country-profile/mexico'
-            WHEN "country" = 'Neutral Zone' THEN 'https://www.energyintel.com/wcod/country-profile/neutral-zone'
-            WHEN "country" = 'Nigeria' THEN 'https://www.energyintel.com/wcod/country-profile/nigeria'
-            WHEN "country" = 'Norway' THEN 'https://www.energyintel.com/wcod/country-profile/norway'
-            WHEN "country" = 'Oman' THEN 'https://www.energyintel.com/wcod/country-profile/oman'
-            WHEN "country" = 'Papua New Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/papua-new-guinea'
-            WHEN "country" = 'Qatar' THEN 'https://www.energyintel.com/wcod/country-profile/qatar'
-            WHEN "country" = 'Russia' THEN 'https://www.energyintel.com/wcod/country-profile/russia'
-            WHEN "country" = 'Saudi Arabia' THEN 'https://www.energyintel.com/wcod/country-profile/saudi-arabia'
-            WHEN "country" = 'South Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/south-sudan'
-            WHEN "country" = 'Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/sudan'
-            WHEN "country" = 'Syria' THEN 'https://www.energyintel.com/wcod/country-profile/syria'
-            WHEN "country" = 'Turkmenistan' THEN 'https://www.energyintel.com/wcod/country-profile/turkmenistan'
-            WHEN "country" = 'United Kingdom' THEN 'https://www.energyintel.com/wcod/country-profile/united-kingdom'
-            WHEN "country" = 'United States' THEN 'https://www.energyintel.com/wcod/country-profile/united-states'
-            WHEN "country" = 'Venezuela' THEN 'https://www.energyintel.com/wcod/country-profile/venezuela'
-            WHEN "country" = 'Vietnam' THEN 'https://www.energyintel.com/wcod/country-profile/vietnam'
-            WHEN "country" = 'Yemen' THEN 'https://www.energyintel.com/wcod/country-profile/yemen'
-            ELSE NULL
-        END) AS profile_url,
-        "t_wcod_monthly_stream_production"."country_id" AS country_id,
-        "t_wcod_monthly_stream_production"."date" AS date,
-        "t_wcod_monthly_stream_production"."date_added" AS date_added,
-        "t_wcod_monthly_stream_production"."date_modified" AS date_modified,
-        "t_wcod_monthly_stream_production"."is_forecast" AS is_forecast,
-        "t_wcod_monthly_stream_production"."modified_by" AS modified_by,
-        "t_wcod_monthly_stream_production"."record_id" AS record_id,
-        "t_wcod_monthly_stream_production"."stream_name" AS stream_name,
-        "t_wcod_monthly_stream_production"."unit" AS unit,
-        "t_wcod_monthly_stream_production"."value" AS value
-    FROM "dev"."t_wcod_monthly_stream_production"
-    """
+def load_map_data():
+    """Load map data from database - called only when needed"""
+    global map_df
+    if not map_df.empty:
+        return map_df
     
-    # Execute query and convert to DataFrame
-    results = execute_query(query)
-    monthly_prod_df = pd.DataFrame(results)
+    try:
+        # Query map data from database
+        map_query = """
+        SELECT
+            A."country_id",
+            A."country_long_name",
+            CASE
+                WHEN A."country_long_name" = 'Abu Dhabi' THEN 'https://www.energyintel.com/wcod/country-profile/abu-dhabi'
+                WHEN A."country_long_name" = 'Algeria' THEN 'https://www.energyintel.com/wcod/country-profile/algeria'
+                WHEN A."country_long_name" = 'Angola' THEN 'https://www.energyintel.com/wcod/country-profile/angola'
+                WHEN A."country_long_name" = 'Argentina' THEN 'https://www.energyintel.com/wcod/country-profile/argentina'
+                WHEN A."country_long_name" = 'Australia' THEN 'https://www.energyintel.com/wcod/country-profile/australia'
+                WHEN A."country_long_name" = 'Azerbaijan' THEN 'https://www.energyintel.com/wcod/country-profile/azerbaijan'
+                WHEN A."country_long_name" = 'Brazil' THEN 'https://www.energyintel.com/wcod/country-profile/brazil'
+                WHEN A."country_long_name" = 'Brunei' THEN 'https://www.energyintel.com/wcod/country-profile/brunei'
+                WHEN A."country_long_name" = 'Canada' THEN 'https://www.energyintel.com/wcod/country-profile/canada'
+                WHEN A."country_long_name" = 'Chad' THEN 'https://www.energyintel.com/wcod/country-profile/chad'
+                WHEN A."country_long_name" = 'China' THEN 'https://www.energyintel.com/wcod/country-profile/china'
+                WHEN A."country_long_name" = 'Colombia' THEN 'https://www.energyintel.com/wcod/country-profile/colombia'
+                WHEN A."country_long_name" = 'Congo (Brazzaville)' THEN 'https://www.energyintel.com/wcod/country-profile/republic-of-the-congo'
+                WHEN A."country_long_name" = 'Denmark' THEN 'https://www.energyintel.com/wcod/country-profile/denmark'
+                WHEN A."country_long_name" = 'Dubai' THEN 'https://www.energyintel.com/wcod/country-profile/dubai'
+                WHEN A."country_long_name" = 'Ecuador' THEN 'https://www.energyintel.com/wcod/country-profile/ecuador'
+                WHEN A."country_long_name" = 'Egypt' THEN 'https://www.energyintel.com/wcod/country-profile/egypt'
+                WHEN A."country_long_name" = 'Equatorial Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/equatorial-guinea'
+                WHEN A."country_long_name" = 'Gabon' THEN 'https://www.energyintel.com/wcod/country-profile/gabon'
+                WHEN A."country_long_name" = 'Ghana' THEN 'https://www.energyintel.com/wcod/country-profile/ghana'
+                WHEN A."country_long_name" = 'Guyana' THEN 'https://www.energyintel.com/wcod/country-profile/guyana'
+                WHEN A."country_long_name" = 'Indonesia' THEN 'https://www.energyintel.com/wcod/country-profile/indonesia'
+                WHEN A."country_long_name" = 'Iran' THEN 'https://www.energyintel.com/wcod/country-profile/iran'
+                WHEN A."country_long_name" = 'Iraq' THEN 'https://www.energyintel.com/wcod/country-profile/iraq'
+                WHEN A."country_long_name" = 'Kazakhstan' THEN 'https://www.energyintel.com/wcod/country-profile/kazakhstan'
+                WHEN A."country_long_name" = 'Kuwait' THEN 'https://www.energyintel.com/wcod/country-profile/kuwait'
+                WHEN A."country_long_name" = 'Libya' THEN 'https://www.energyintel.com/wcod/country-profile/libya'
+                WHEN A."country_long_name" = 'Malaysia' THEN 'https://www.energyintel.com/wcod/country-profile/malaysia'
+                WHEN A."country_long_name" = 'Mexico' THEN 'https://www.energyintel.com/wcod/country-profile/mexico'
+                WHEN A."country_long_name" = 'Neutral Zone' THEN 'https://www.energyintel.com/wcod/country-profile/neutral-zone'
+                WHEN A."country_long_name" = 'Nigeria' THEN 'https://www.energyintel.com/wcod/country-profile/nigeria'
+                WHEN A."country_long_name" = 'Norway' THEN 'https://www.energyintel.com/wcod/country-profile/norway'
+                WHEN A."country_long_name" = 'Oman' THEN 'https://www.energyintel.com/wcod/country-profile/oman'
+                WHEN A."country_long_name" = 'Papua New Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/papua-new-guinea'
+                WHEN A."country_long_name" = 'Qatar' THEN 'https://www.energyintel.com/wcod/country-profile/qatar'
+                WHEN A."country_long_name" = 'Russia' THEN 'https://www.energyintel.com/wcod/country-profile/russia'
+                WHEN A."country_long_name" = 'Saudi Arabia' THEN 'https://www.energyintel.com/wcod/country-profile/saudi-arabia'
+                WHEN A."country_long_name" = 'South Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/south-sudan'
+                WHEN A."country_long_name" = 'Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/sudan'
+                WHEN A."country_long_name" = 'Syria' THEN 'https://www.energyintel.com/wcod/country-profile/syria'
+                WHEN A."country_long_name" = 'Turkmenistan' THEN 'https://www.energyintel.com/wcod/country-profile/turkmenistan'
+                WHEN A."country_long_name" = 'United Kingdom' THEN 'https://www.energyintel.com/wcod/country-profile/united-kingdom'
+                WHEN A."country_long_name" = 'United States' THEN 'https://www.energyintel.com/wcod/country-profile/united-states'
+                WHEN A."country_long_name" = 'Venezuela' THEN 'https://www.energyintel.com/wcod/country-profile/venezuela'
+                WHEN A."country_long_name" = 'Vietnam' THEN 'https://www.energyintel.com/wcod/country-profile/vietnam'
+                WHEN A."country_long_name" = 'Yemen' THEN 'https://www.energyintel.com/wcod/country-profile/yemen'
+                ELSE NULL
+            END AS profile_url,
+            P."port_name",
+            P."latitude",
+            P."longitude",
+            P."coordinates",
+            P."measure_name",
+            P."value",
+            A."yr",
+            A."output",
+            A."exports",
+            A."reserves"
+        FROM fact_wcod_country A
+        FULL JOIN fact_wcod_port P
+            ON P."country_id" = A."country_id"
+        WHERE A."country_long_name" IS NOT NULL
+          AND A."to_be_deleted" IS NULL
+        """
+        
+        # Execute query and convert to DataFrame
+        map_results = execute_query(map_query)
+        map_df = pd.DataFrame(map_results)
+        
+        if not map_df.empty:
+            # Clean and standardize column names
+            map_df.columns = map_df.columns.str.strip()
+            
+            # Rename port_name to Port Name for compatibility with existing code
+            if 'port_name' in map_df.columns:
+                map_df['Port Name'] = map_df['port_name'].astype(str).str.strip()
+            
+            # Ensure country_long_name is properly formatted
+            if 'country_long_name' in map_df.columns:
+                map_df['country_long_name'] = map_df['country_long_name'].astype(str).str.strip()
+            
+            print(f"Loaded map data with {len(map_df)} records from database")
+        else:
+            map_df = pd.DataFrame()
+            print("Warning: No map data loaded from database")
+            
+    except Exception as e:
+        # Silently handle missing database tables - app can work with CSV data
+        map_df = pd.DataFrame()
+    
+    return map_df
+
+def load_production_data():
+    """Load production data from database - called only when needed"""
+    global monthly_prod_df, country_list, default_country
     
     if not monthly_prod_df.empty:
-        # Extract year and month from date field
-        monthly_prod_df['date'] = pd.to_datetime(monthly_prod_df['date'], errors='coerce')
-        monthly_prod_df['Year of Date'] = monthly_prod_df['date'].dt.year
-        monthly_prod_df['Month of Date'] = monthly_prod_df['date'].dt.strftime('%B')  # Full month name
+        return monthly_prod_df, country_list, default_country
+    
+    try:
+        # Query production data from database
+        query = """
+        SELECT 
+            "t_wcod_monthly_stream_production"."added_by" AS added_by,
+            "t_wcod_monthly_stream_production"."commodity" AS commodity,
+            "t_wcod_monthly_stream_production"."commodity_id" AS commodity_id,
+            "t_wcod_monthly_stream_production"."country" AS country,
+            (CASE 
+                WHEN "country" = 'Abu Dhabi' THEN 'https://www.energyintel.com/wcod/country-profile/abu-dhabi'
+                WHEN "country" = 'Algeria' THEN 'https://www.energyintel.com/wcod/country-profile/algeria'
+                WHEN "country" = 'Angola' THEN 'https://www.energyintel.com/wcod/country-profile/angola'
+                WHEN "country" = 'Argentina' THEN 'https://www.energyintel.com/wcod/country-profile/argentina'
+                WHEN "country" = 'Australia' THEN 'https://www.energyintel.com/wcod/country-profile/australia'
+                WHEN "country" = 'Azerbaijan' THEN 'https://www.energyintel.com/wcod/country-profile/azerbaijan'
+                WHEN "country" = 'Brazil' THEN 'https://www.energyintel.com/wcod/country-profile/brazil'
+                WHEN "country" = 'Brunei' THEN 'https://www.energyintel.com/wcod/country-profile/brunei'
+                WHEN "country" = 'Canada' THEN 'https://www.energyintel.com/wcod/country-profile/canada'
+                WHEN "country" = 'Chad' THEN 'https://www.energyintel.com/wcod/country-profile/chad'
+                WHEN "country" = 'China' THEN 'https://www.energyintel.com/wcod/country-profile/china'
+                WHEN "country" = 'Colombia' THEN 'https://www.energyintel.com/wcod/country-profile/colombia'
+                WHEN "country" = 'Congo (Brazzaville)' THEN 'https://www.energyintel.com/wcod/country-profile/republic-of-the-congo'
+                WHEN "country" = 'Denmark' THEN 'https://www.energyintel.com/wcod/country-profile/denmark'
+                WHEN "country" = 'Dubai' THEN 'https://www.energyintel.com/wcod/country-profile/dubai'
+                WHEN "country" = 'Ecuador' THEN 'https://www.energyintel.com/wcod/country-profile/ecuador'
+                WHEN "country" = 'Egypt' THEN 'https://www.energyintel.com/wcod/country-profile/egypt'
+                WHEN "country" = 'Equatorial Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/equatorial-guinea'
+                WHEN "country" = 'Gabon' THEN 'https://www.energyintel.com/wcod/country-profile/gabon'
+                WHEN "country" = 'Ghana' THEN 'https://www.energyintel.com/wcod/country-profile/ghana'
+                WHEN "country" = 'Guyana' THEN 'https://www.energyintel.com/wcod/country-profile/guyana'
+                WHEN "country" = 'Indonesia' THEN 'https://www.energyintel.com/wcod/country-profile/indonesia'
+                WHEN "country" = 'Iran' THEN 'https://www.energyintel.com/wcod/country-profile/iran'
+                WHEN "country" = 'Iraq' THEN 'https://www.energyintel.com/wcod/country-profile/iraq'
+                WHEN "country" = 'Kazakhstan' THEN 'https://www.energyintel.com/wcod/country-profile/kazakhstan'
+                WHEN "country" = 'Kuwait' THEN 'https://www.energyintel.com/wcod/country-profile/kuwait'
+                WHEN "country" = 'Libya' THEN 'https://www.energyintel.com/wcod/country-profile/libya'
+                WHEN "country" = 'Malaysia' THEN 'https://www.energyintel.com/wcod/country-profile/malaysia'
+                WHEN "country" = 'Mexico' THEN 'https://www.energyintel.com/wcod/country-profile/mexico'
+                WHEN "country" = 'Neutral Zone' THEN 'https://www.energyintel.com/wcod/country-profile/neutral-zone'
+                WHEN "country" = 'Nigeria' THEN 'https://www.energyintel.com/wcod/country-profile/nigeria'
+                WHEN "country" = 'Norway' THEN 'https://www.energyintel.com/wcod/country-profile/norway'
+                WHEN "country" = 'Oman' THEN 'https://www.energyintel.com/wcod/country-profile/oman'
+                WHEN "country" = 'Papua New Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/papua-new-guinea'
+                WHEN "country" = 'Qatar' THEN 'https://www.energyintel.com/wcod/country-profile/qatar'
+                WHEN "country" = 'Russia' THEN 'https://www.energyintel.com/wcod/country-profile/russia'
+                WHEN "country" = 'Saudi Arabia' THEN 'https://www.energyintel.com/wcod/country-profile/saudi-arabia'
+                WHEN "country" = 'South Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/south-sudan'
+                WHEN "country" = 'Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/sudan'
+                WHEN "country" = 'Syria' THEN 'https://www.energyintel.com/wcod/country-profile/syria'
+                WHEN "country" = 'Turkmenistan' THEN 'https://www.energyintel.com/wcod/country-profile/turkmenistan'
+                WHEN "country" = 'United Kingdom' THEN 'https://www.energyintel.com/wcod/country-profile/united-kingdom'
+                WHEN "country" = 'United States' THEN 'https://www.energyintel.com/wcod/country-profile/united-states'
+                WHEN "country" = 'Venezuela' THEN 'https://www.energyintel.com/wcod/country-profile/venezuela'
+                WHEN "country" = 'Vietnam' THEN 'https://www.energyintel.com/wcod/country-profile/vietnam'
+                WHEN "country" = 'Yemen' THEN 'https://www.energyintel.com/wcod/country-profile/yemen'
+                ELSE NULL
+            END) AS profile_url,
+            "t_wcod_monthly_stream_production"."country_id" AS country_id,
+            "t_wcod_monthly_stream_production"."date" AS date,
+            "t_wcod_monthly_stream_production"."date_added" AS date_added,
+            "t_wcod_monthly_stream_production"."date_modified" AS date_modified,
+            "t_wcod_monthly_stream_production"."is_forecast" AS is_forecast,
+            "t_wcod_monthly_stream_production"."modified_by" AS modified_by,
+            "t_wcod_monthly_stream_production"."record_id" AS record_id,
+            "t_wcod_monthly_stream_production"."stream_name" AS stream_name,
+            "t_wcod_monthly_stream_production"."unit" AS unit,
+            "t_wcod_monthly_stream_production"."value" AS value
+        FROM "dev"."t_wcod_monthly_stream_production"
+        """
         
-        # Map columns to match expected format
-        monthly_prod_df['Crude'] = monthly_prod_df['stream_name']
-        monthly_prod_df['Monthly production dynamic title'] = monthly_prod_df['country'] + ' Production'
-        monthly_prod_df['Avg. Value'] = pd.to_numeric(monthly_prod_df['value'], errors='coerce')
+        # Execute query and convert to DataFrame
+        results = execute_query(query)
+        monthly_prod_df = pd.DataFrame(results)
         
-        # Get unique countries for dropdown from database
-        country_list = sorted(monthly_prod_df['country'].dropna().unique().tolist())
-        country_list = [str(c).strip() for c in country_list if c and str(c).strip() and str(c).strip() != 'nan']
-        default_country = 'United States' if 'United States' in country_list else (country_list[0] if country_list else None)
-        
-        print(f"Loaded {len(monthly_prod_df)} production records from database")
-        print(f"Available countries: {len(country_list)} countries")
-        print(f"Available crudes: {monthly_prod_df['stream_name'].nunique()} types")
-    else:
+        if not monthly_prod_df.empty:
+            # Extract year and month from date field
+            monthly_prod_df['date'] = pd.to_datetime(monthly_prod_df['date'], errors='coerce')
+            monthly_prod_df['Year of Date'] = monthly_prod_df['date'].dt.year
+            monthly_prod_df['Month of Date'] = monthly_prod_df['date'].dt.strftime('%B')  # Full month name
+            
+            # Map columns to match expected format
+            monthly_prod_df['Crude'] = monthly_prod_df['stream_name']
+            monthly_prod_df['Monthly production dynamic title'] = monthly_prod_df['country'] + ' Production'
+            monthly_prod_df['Avg. Value'] = pd.to_numeric(monthly_prod_df['value'], errors='coerce')
+            
+            # Get unique countries for dropdown from database
+            country_list = sorted(monthly_prod_df['country'].dropna().unique().tolist())
+            country_list = [str(c).strip() for c in country_list if c and str(c).strip() and str(c).strip() != 'nan']
+            default_country = 'United States' if 'United States' in country_list else (country_list[0] if country_list else None)
+            
+            print(f"Loaded {len(monthly_prod_df)} production records from database")
+            print(f"Available countries: {len(country_list)} countries")
+            print(f"Available crudes: {monthly_prod_df['stream_name'].nunique()} types")
+        else:
+            monthly_prod_df = pd.DataFrame()
+            print("Warning: No production data loaded from database")
+            
+    except Exception as e:
+        # Silently handle missing database tables - app can work with CSV data
         monthly_prod_df = pd.DataFrame()
-        print("Warning: No production data loaded from database")
-        
-except Exception as e:
-    print(f"Error loading monthly production data from database: {e}")
-    import traceback
-    traceback.print_exc()
-    monthly_prod_df = pd.DataFrame()
-    country_list = []
-    default_country = None
+        country_list = []
+        default_country = None
+    
+    return monthly_prod_df, country_list, default_country
+
+def _ensure_production_data_loaded():
+    """Ensure production data is loaded - wrapper for load_production_data()"""
+    return load_production_data()
 
 # try:
 #     port_df = pd.read_csv(PORT_DETAIL_CSV, quotechar='"', skipinitialspace=True)
@@ -254,17 +271,15 @@ except Exception as e:
 # Create the layout for the Country Profile page
 def create_layout(server):
     """Create the Country Profile layout with filters and world map"""
-    # Create country options from map data
-    country_options = [{'label': country, 'value': country} for country in country_list]
+    # Note: Data will be loaded lazily when page is accessed via callbacks
+    # Create country options from map data (may be empty initially)
+    country_options = [{'label': country, 'value': country} for country in country_list] if country_list else []
     
-    # Initialize map with default country data
-    try:
-        initial_map = create_world_map(default_country)
-    except Exception:
-        initial_map = create_empty_map()
+    # Initialize map with empty map (data will load when page is accessed)
+    initial_map = create_empty_map()
 
     # Initial profile URL
-    initial_profile_url = f"https://www.energyintel.com/wcod/country-profile/{default_country.lower().replace(' ', '-')}" if default_country else "#"
+    initial_profile_url = "#"
     
 
     # Dropdown style (smaller width and padding)
@@ -784,6 +799,7 @@ def create_empty_map():
 
 def get_production_data(country_name, time_period='Yearly'):
     """Get production data for a country from database"""
+    monthly_prod_df, _, _ = _ensure_production_data_loaded()
     if monthly_prod_df.empty:
         print(f"DEBUG: monthly_prod_df is empty for country: {country_name}")
         return pd.DataFrame()
@@ -821,6 +837,7 @@ def get_production_data(country_name, time_period='Yearly'):
 
 def get_port_details(country_name):
     """Return port details for a country from database map data."""
+    map_df = load_map_data()
     if map_df.empty:
         return pd.DataFrame()
     
@@ -1336,6 +1353,7 @@ def create_key_figures_table(country_name, time_period='Monthly'):
     
     if time_period == 'Yearly':
         # Use database data from map_df query
+        load_map_data()
         if map_df.empty:
             return dash_table.DataTable(
                 data=[],
@@ -1639,6 +1657,7 @@ def get_profile_url_for_country(country):
                 return url.iloc[0]
 
     # Fallback to monthly production query (if available)
+    monthly_prod_df, _, _ = _ensure_production_data_loaded()
     if not monthly_prod_df.empty and 'profile_url' in monthly_prod_df.columns:
         subset = monthly_prod_df[
             monthly_prod_df['country'].astype(str).str.strip().str.lower() == str(country).strip().lower()
@@ -1660,11 +1679,20 @@ def register_callbacks(dash_app, server):
          Output('selected-country-profile-store', 'data')],
         [Input('country-select-profile', 'value'),
          Input('world-map-chart', 'clickData'),
-         Input('time-period-select', 'value')],
+         Input('time-period-select', 'value'),
+         Input('current-submenu', 'data')],
         prevent_initial_call=False
     )
-    def update_country_profile(selected_country, click_data, time_period):
+    def update_country_profile(selected_country, click_data, time_period, current_submenu):
         """Update country profile content based on selection"""
+        # Only load data when this page is active
+        if current_submenu != 'country-profile':
+            return html.Div("Please select a country", style={'padding': '20px', 'textAlign': 'center'}), None
+        
+        # Ensure data is loaded
+        load_map_data()
+        _ensure_production_data_loaded()
+        
         # Determine which country is selected
         country_name = selected_country or default_country
         
@@ -1747,11 +1775,19 @@ def register_callbacks(dash_app, server):
     
     @dash_app.callback(
         Output('world-map-chart', 'figure'),
-        Input('country-select-profile', 'value'),
+        [Input('country-select-profile', 'value'),
+         Input('current-submenu', 'data')],
         prevent_initial_call=False
     )
-    def update_world_map(selected_country):
+    def update_world_map(selected_country, current_submenu):
         """Update world map when country selection changes or page loads"""
+        # Only load data when this page is active
+        if current_submenu != 'country-profile':
+            return create_empty_map()
+        
+        # Ensure map data is loaded
+        load_map_data()
+        
         # Use selected country or default
         country = selected_country or default_country
         
@@ -1765,23 +1801,56 @@ def register_callbacks(dash_app, server):
     
     @dash_app.callback(
         Output('time-period-store', 'data'),
-        Input('time-period-select', 'value'),
+        [Input('time-period-select', 'value'),
+         Input('current-submenu', 'data')],
         prevent_initial_call=False
     )
-    def update_time_period_store(time_period):
+    def update_time_period_store(time_period, current_submenu):
         """Update time period store"""
+        if current_submenu != 'country-profile':
+            return 'Monthly'
         return time_period or 'Monthly'
     
     @dash_app.callback(
         Output('profile-link', 'href'),
         [Input('selected-country-profile-store', 'data'),
-         Input('country-select-profile', 'value')],
+         Input('country-select-profile', 'value'),
+         Input('current-submenu', 'data')],
         prevent_initial_call=False
     )
-    def update_profile_link(selected_country_from_store, selected_country_dropdown):
+    def update_profile_link(selected_country_from_store, selected_country_dropdown, current_submenu):
         """Update profile link when country changes"""
+        if current_submenu != 'country-profile':
+            return "#"
+        
+        # Ensure map data is loaded to get profile URLs
+        load_map_data()
+        
         country = selected_country_from_store or selected_country_dropdown or default_country
         return get_profile_url_for_country(country)
+    
+    @dash_app.callback(
+        [Output('country-select-profile', 'options'),
+         Output('country-select-profile', 'value')],
+        Input('current-submenu', 'data'),
+        prevent_initial_call=False
+    )
+    def update_country_dropdown(current_submenu):
+        """Update country dropdown options when page is accessed and data is loaded"""
+        if current_submenu != 'country-profile':
+            return [], None
+        
+        # Ensure data is loaded
+        load_map_data()
+        _ensure_production_data_loaded()
+        
+        # Create country options from loaded data
+        country_options = [{'label': country, 'value': country} for country in country_list] if country_list else []
+        
+        # Set default value if not already set
+        default_val = default_country if default_country else (country_list[0] if country_list else None)
+        
+        return country_options, default_val
     
     # Clientside callback to inject CSS for hover effects and limit zoom
     dash_app.clientside_callback(

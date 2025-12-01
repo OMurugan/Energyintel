@@ -204,8 +204,22 @@ def load_country_overview_data():
     return pivot_df, bar_chart_data, country_url_map, years, data_columns
 
 
-pivot_df, bar_chart_data, country_url_map, YEARS_TO_DISPLAY, DATA_COLUMNS = load_country_overview_data()
-LATEST_YEAR = YEARS_TO_DISPLAY[0] if YEARS_TO_DISPLAY else None
+# Initialize empty - will be loaded lazily when page is accessed
+pivot_df = pd.DataFrame(columns=['Country', 'Profile_URL'])
+bar_chart_data = pd.DataFrame(columns=['Country', 'Profile_URL'])
+country_url_map = {}
+YEARS_TO_DISPLAY = []
+DATA_COLUMNS = []
+LATEST_YEAR = None
+
+def get_country_overview_data():
+    """Lazy load country overview data - only when page is accessed"""
+    global pivot_df, bar_chart_data, country_url_map, YEARS_TO_DISPLAY, DATA_COLUMNS, LATEST_YEAR
+    # Load data if not already loaded (check if pivot_df is empty or YEARS_TO_DISPLAY is empty)
+    if pivot_df.empty or not YEARS_TO_DISPLAY:
+        pivot_df, bar_chart_data, country_url_map, YEARS_TO_DISPLAY, DATA_COLUMNS = load_country_overview_data()
+        LATEST_YEAR = YEARS_TO_DISPLAY[0] if YEARS_TO_DISPLAY else None
+    return pivot_df, bar_chart_data, country_url_map, YEARS_TO_DISPLAY, DATA_COLUMNS, LATEST_YEAR
 
 
 # Time dimension column definitions
@@ -216,10 +230,10 @@ TIME_DIMENSION_COLUMNS = [
     {"name": ["", "Day of Year"], "id": "Day_of_Year", "type": "numeric", "format": {"specifier": ",.0f"}},
 ]
 
-# Data table columns (without time dimensions)
+# Data table columns (without time dimensions) - will be updated when data loads
 DATA_TABLE_COLUMNS = [
     {"name": ["", "Country"], "id": "Country", "type": "text", "presentation": "markdown"},
-] + DATA_COLUMNS
+]
 
 
 def create_layout():
@@ -390,7 +404,7 @@ def create_layout():
                     ], style={'padding': '10px 20px', 'borderBottom': '1px solid #dee2e6', 'background': '#f8f9fa', 'display': 'flex', 'justifyContent': 'flex-start', 'alignItems': 'center'}),
                     dcc.Graph(
                         id='exports-ranking-chart',
-                        figure=create_ranking_chart(),
+                        figure=go.Figure(),  # Empty figure initially, will be updated by callback when data loads
                         clickData=None,
                         style={'height': '600px'}
                     )
@@ -692,6 +706,10 @@ def register_callbacks(dash_app, server):
         """Update ranking chart with highlighting"""
         if submenu != 'country-overview':
             return go.Figure()
+        
+        # Load data when page is active
+        get_country_overview_data()
+        
         return create_ranking_chart(selected_country=selected_country, time_visibility=time_visibility)
 
     @callback(
@@ -705,8 +723,16 @@ def register_callbacks(dash_app, server):
         if submenu != 'country-overview':
             return [], []
 
+        # Load data when page is active
+        get_country_overview_data()
+        
+        # Update DATA_TABLE_COLUMNS with loaded data columns
+        table_columns = [
+            {"name": ["", "Country"], "id": "Country", "type": "text", "presentation": "markdown"},
+        ] + DATA_COLUMNS
+
         if pivot_df.empty:
-            return [], DATA_TABLE_COLUMNS
+            return [], table_columns
 
         table_data = []
         if 'Country' in pivot_df.columns:
@@ -730,7 +756,12 @@ def register_callbacks(dash_app, server):
 
             table_data.append(row_data)
 
-        return table_data, DATA_TABLE_COLUMNS
+        # Update DATA_TABLE_COLUMNS with loaded data columns
+        table_columns = [
+            {"name": ["", "Country"], "id": "Country", "type": "text", "presentation": "markdown"},
+        ] + DATA_COLUMNS
+        
+        return table_data, table_columns
 
     @callback(
         [Output('selected-country-store', 'data'),
