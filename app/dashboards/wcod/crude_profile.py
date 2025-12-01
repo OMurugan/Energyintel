@@ -196,12 +196,12 @@ def load_mars_assay():
     ]
 
 def load_refined_products():
-    """Load refined products breakdown data with grouped format."""
+    """Load refined products breakdown data with merged cells for Product and Cut Points."""
     # Use header=0 since the CSV has headers in the first row
     df = load_csv_data(CSV_PATHS["refined_products"], header=0)
     
-    if df is None or df.empty or "Product" not in df.columns:
-        # Return fallback data in the grouped format
+    if df is None or df.empty:
+        # Return fallback data with merged format
         return [
             {
                 "Product": "Heavy Gasoil",
@@ -264,7 +264,6 @@ def load_refined_products():
             unit_val = str(row["Unit"]).strip()
         elif property_val and "Unit" not in df.columns:
             # If there's no Unit column, check if property contains unit info
-            # Some rows might have format like "Yield Volume (%)" in Property column
             if "(" in property_val and ")" in property_val:
                 # Extract property name and unit
                 match = re.match(r"^(.*?)\s*\((.*?)\)$", property_val)
@@ -488,7 +487,7 @@ def load_producers_sellers():
 # CREATING GROUPED TABLES
 # ------------------------------------------------------------------------------
 def create_grouped_refined_products_table():
-    """Create a grouped Refined Products table with merged Product cells."""
+    """Create a grouped Refined Products table with merged Product and Cut Points cells."""
     grouped_data = load_refined_products()
     
     # Convert grouped data to flat rows for DataTable
@@ -548,64 +547,46 @@ def create_grouped_refined_products_table():
             "height": "auto"
         },
         style_data_conditional=[
-            {
-                "if": {"column_id": "Product", "row_index": "odd"},
-                "backgroundColor": "#f9f9f9",
-                "fontWeight": "bold"
-            },
-            {
-                "if": {"column_id": "Product", "row_index": "even"},
-                "backgroundColor": "#FFFFFF",
-                "fontWeight": "bold"
-            },
-            {
-                "if": {"column_id": "Cut Points (°C)", "row_index": "odd"},
-                "backgroundColor": "#f9f9f9"
-            },
-            {
-                "if": {"column_id": "Cut Points (°C)", "row_index": "even"},
-                "backgroundColor": "#FFFFFF"
-            },
-            {
-                "if": {"column_id": "Property", "row_index": "odd"},
-                "backgroundColor": "#f9f9f9"
-            },
-            {
-                "if": {"column_id": "Property", "row_index": "even"},
-                "backgroundColor": "#FFFFFF"
-            },
-            {
-                "if": {"column_id": "Unit", "row_index": "odd"},
-                "backgroundColor": "#f9f9f9"
-            },
-            {
-                "if": {"column_id": "Unit", "row_index": "even"},
-                "backgroundColor": "#FFFFFF"
-            },
-            {
-                "if": {"column_id": "Value", "row_index": "odd"},
-                "backgroundColor": "#f9f9f9"
-            },
-            {
-                "if": {"column_id": "Value", "row_index": "even"},
-                "backgroundColor": "#FFFFFF"
-            },
-            # Bold font for Product column (first row of each group)
+            # Alternate row colors for better readability
+            {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"},
+            {"if": {"row_index": "even"}, "backgroundColor": "#FFFFFF"},
+            
+            # Product column styling
             {
                 "if": {"column_id": "Product", "filter_query": '{Product} != ""'},
                 "fontWeight": "bold",
-                "color": "#1f3263"
+                "color": "#1f3263",
+                "borderRight": "2px solid #ccc"
+            },
+            {
+                "if": {"column_id": "Product", "filter_query": '{Product} = ""'},
+                "borderTop": "none",
+                "borderBottom": "none",
+                "backgroundColor": "inherit",
+            },
+            
+            # Cut Points column styling
+            {
+                "if": {"column_id": "Cut Points (°C)", "filter_query": '{Cut Points (°C)} != ""'},
+                "fontWeight": "bold",
+                "color": "#1f3263",
+                "borderRight": "1px solid #ddd"
+            },
+            {
+                "if": {"column_id": "Cut Points (°C)", "filter_query": '{Cut Points (°C)} = ""'},
+                "borderTop": "none",
+                "borderBottom": "none",
+                "backgroundColor": "inherit",
+            },
+            
+            # Property column styling
+            {
+                "if": {"column_id": "Property", "filter_query": '{Property} != ""'},
+                "fontWeight": "600",
+                "color": "#1f3263",
             },
         ],
         css=[
-            {
-                'selector': '.dash-cell[data-dash-column="Product"]',
-                'rule': 'border-right: 2px solid #ccc !important;'
-            },
-            {
-                'selector': '.dash-cell[data-dash-column="Cut Points (°C)"]',
-                'rule': 'border-right: 1px solid #ddd !important;'
-            },
             # Hide empty Product cells to create merged appearance
             {
                 'selector': '.dash-cell[data-dash-column="Product"]:empty',
@@ -613,7 +594,16 @@ def create_grouped_refined_products_table():
                     border-top: none !important;
                     border-bottom: none !important;
                     background-image: none !important;
+                    height: 0 !important;
+                    min-height: 0 !important;
+                    padding-top: 0 !important;
+                    padding-bottom: 0 !important;
                 '''
+            },
+            # Ensure the cell above has proper bottom border
+            {
+                'selector': '.dash-cell[data-dash-column="Product"]:not(:empty) + .dash-cell[data-dash-column="Product"]:empty',
+                'rule': 'border-top: none !important;'
             },
             # Hide empty Cut Points cells to create merged appearance
             {
@@ -622,7 +612,26 @@ def create_grouped_refined_products_table():
                     border-top: none !important;
                     border-bottom: none !important;
                     background-image: none !important;
+                    height: 0 !important;
+                    min-height: 0 !important;
+                    padding-top: 0 !important;
+                    padding-bottom: 0 !important;
                 '''
+            },
+            # Ensure the cell above has proper bottom border
+            {
+                'selector': '.dash-cell[data-dash-column="Cut Points (°C)"]:not(:empty) + .dash-cell[data-dash-column="Cut Points (°C)"]:empty',
+                'rule': 'border-top: none !important;'
+            },
+            # Stronger border for Product column
+            {
+                'selector': '.dash-cell[data-dash-column="Product"]',
+                'rule': 'border-right: 2px solid #ccc !important;'
+            },
+            # Medium border for Cut Points column
+            {
+                'selector': '.dash-cell[data-dash-column="Cut Points (°C)"]',
+                'rule': 'border-right: 1px solid #ddd !important;'
             },
         ],
         markdown_options={"html": True},
@@ -978,24 +987,19 @@ def create_layout(server=None):
                     border-top: none !important;
                     border-bottom: none !important;
                     background-image: none !important;
+                    height: 0 !important;
+                    min-height: 0 !important;
+                    padding-top: 0 !important;
+                    padding-bottom: 0 !important;
                 }
                 
-                /* Ensure visible cells have proper borders */
-                #refined-products-table .dash-cell[data-dash-column="Product"]:not(:empty),
-                #refined-products-table .dash-cell[data-dash-column="Cut Points (°C)"]:not(:empty) {
-                    border-top: 1px solid #ddd !important;
-                    border-bottom: 1px solid #ddd !important;
+                /* Ensure the cell above has proper bottom border */
+                #refined-products-table .dash-cell[data-dash-column="Product"]:not(:empty) + .dash-cell[data-dash-column="Product"]:empty,
+                #refined-products-table .dash-cell[data-dash-column="Cut Points (°C)"]:not(:empty) + .dash-cell[data-dash-column="Cut Points (°C)"]:empty {
+                    border-top: none !important;
                 }
                 
-                /* Property, Unit, Value columns always show borders */
-                #refined-products-table .dash-cell[data-dash-column="Property"],
-                #refined-products-table .dash-cell[data-dash-column="Unit"],
-                #refined-products-table .dash-cell[data-dash-column="Value"] {
-                    border-top: 1px solid #ddd !important;
-                    border-bottom: 1px solid #ddd !important;
-                }
-                
-                /* Stronger border for Property column */
+                /* Stronger border for Property and Product columns */
                 #assay-table .dash-cell[data-dash-column="Property"],
                 #refined-products-table .dash-cell[data-dash-column="Product"] {
                     border-right: 2px solid #ccc !important;
