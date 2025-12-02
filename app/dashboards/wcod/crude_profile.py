@@ -438,13 +438,13 @@ def load_loading_ports():
     
     # Check and process Country column
     if "Country" in df.columns:
-        df["Country"] = df["Country"].fillna("").astype(str).str.strip()
+        df["Country"] = df["Country"].fillna("").astize(str).str.strip()
     else:
         df["Country"] = ""
     
     # Check and process Crude column
     if "Crude" in df.columns:
-        df["Crude"] = df["Crude"].fillna("").astype(str).str.strip()
+        df["Crude"] = df["Crude"].fillna("").astize(str).str.strip()
     else:
         df["Crude"] = ""
     
@@ -1009,161 +1009,6 @@ def create_layout(server=None):
                 #refined-products-table .dash-cell[data-dash-column="Cut Points (°C)"] {
                     border-right: 1px solid #ddd !important;
                 }
-                
-                /* Hide default Dash DataTable sort indicators - ALWAYS HIDDEN */
-                #assay-table .column-header--sort,
-                #assay-table .dash-header-cell--sort,
-                #assay-table .dash-header-cell--sort-asc,
-                #assay-table .dash-header-cell--sort-desc,
-                #assay-table .dash-header-cell__sort-icon,
-                #assay-table .dash-header .sort-icon,
-                #assay-table .dash-header svg[data-icon="sort"],
-                #assay-table .dash-header .fa-sort,
-                #assay-table .dash-header .svg-inline--fa,
-                #assay-table .dash-header svg:not(.sort-indicator svg),
-                #assay-table .dash-header-cell svg,
-                #refined-products-table .column-header--sort,
-                #refined-products-table .dash-header-cell--sort,
-                #refined-products-table .dash-header-cell--sort-asc,
-                #refined-products-table .dash-header-cell--sort-desc,
-                #refined-products-table .dash-header-cell__sort-icon,
-                #refined-products-table .dash-header .sort-icon,
-                #refined-products-table .dash-header svg[data-icon="sort"],
-                #refined-products-table .dash-header .fa-sort,
-                #refined-products-table .dash-header .svg-inline--fa,
-                #refined-products-table .dash-header svg:not(.sort-indicator svg),
-                #refined-products-table .dash-header-cell svg,
-                #port-details-table .column-header--sort,
-                #port-details-table .dash-header-cell--sort,
-                #port-details-table .dash-header-cell--sort-asc,
-                #port-details-table .dash-header-cell--sort-desc,
-                #port-details-table .dash-header-cell__sort-icon,
-                #port-details-table .dash-header .sort-icon,
-                #port-details-table .dash-header svg[data-icon="sort"],
-                #port-details-table .dash-header .fa-sort,
-                #port-details-table .dash-header .svg-inline--fa,
-                #port-details-table .dash-header svg:not(.sort-indicator svg),
-                #port-details-table .dash-header-cell svg {
-                    display: none !important;
-                    visibility: hidden !important;
-                    opacity: 0 !important;
-                    pointer-events: none !important;
-                }
-                
-                /* Popup menu styles */
-                .popup-menu-item:hover {
-                    background-color: #f5f5f5 !important;
-                }
-                
-                /* Sort indicator icon styles - HIDDEN BY DEFAULT, ONLY SHOW ON HOVER */
-                .sort-indicator {
-                    position: absolute;
-                    right: 8px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    width: 15px;
-                    height: 15px;
-                    cursor: pointer;
-                    opacity: 0 !important;
-                    visibility: hidden !important;
-                    pointer-events: none !important;
-                    transition: opacity 0.2s ease, visibility 0.2s ease;
-                }
-                .dash-header:hover .sort-indicator {
-                    opacity: 1 !important;
-                    visibility: visible !important;
-                    pointer-events: auto !important;
-                }
-                .sort-indicator:hover {
-                    background-color: #e6f3ff;
-                    border-radius: 2px;
-                }
-                .sort-indicator svg {
-                    width: 100%;
-                    height: 100%;
-                    fill: #666;
-                }
-                .sort-indicator:hover svg {
-                    fill: #1f3263;
-                }
-                
-                /* A/Z container - vertical stack - HIDDEN BY DEFAULT, ONLY SHOW ON HOVER */
-                .sort-order-container {
-                    position: absolute;
-                    right: 30px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    font-size: 10px;
-                    color: #666;
-                    cursor: pointer;
-                    padding: 2px;
-                    border: 1px solid transparent;
-                    border-radius: 2px;
-                    line-height: 1;
-                    text-align: center;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                    height: 30px;
-                    opacity: 0 !important;
-                    visibility: hidden !important;
-                    pointer-events: none !important;
-                    transition: opacity 0.2s ease, visibility 0.2s ease;
-                }
-                .dash-header:hover .sort-order-container {
-                    opacity: 1 !important;
-                    visibility: visible !important;
-                    pointer-events: auto !important;
-                }
-                .dash-header .sort-order-container:hover {
-                    background-color: #e6f3ff;
-                    border-color: #1f3263;
-                }
-                .sort-asc, .sort-desc {
-                    display: block;
-                    line-height: 1;
-                    cursor: pointer;
-                    padding: 1px 2px;
-                    border-radius: 1px;
-                }
-                .sort-asc:hover, .sort-desc:hover {
-                    background-color: #d4e7ff;
-                    font-weight: bold;
-                }
-                
-                /* Add padding to target headers to make space for indicators */
-                #assay-table .dash-header[data-dash-column="Property"],
-                #assay-table .dash-header[data-dash-column="Unit"],
-                #refined-products-table .dash-header[data-dash-column="Product"],
-                #refined-products-table .dash-header[data-dash-column="Cut Points (°C)"],
-                #refined-products-table .dash-header[data-dash-column="Property"],
-                #refined-products-table .dash-header[data-dash-column="Unit"],
-                #port-details-table .dash-header[data-dash-column="Measure"] {
-                    padding-right: 60px !important;
-                    position: relative;
-                }
-                
-                /* AVG text box */
-                #crude-profile-avg-text-box {
-                    position: fixed;
-                    background-color: white;
-                    border: 1px solid #ccc;
-                    padding: 8px 12px;
-                    border-radius: 4px;
-                    font-size: 12px;
-                    font-family: Arial;
-                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-                    z-index: 1002;
-                    white-space: nowrap;
-                    color: #333;
-                    cursor: pointer;
-                    display: none;
-                }
-                #crude-profile-avg-text-box:hover {
-                    background-color: #f5f5f5 !important;
-                    border-color: #999 !important;
-                }
                 </style>
             """, dangerously_allow_html=True)
         ]),
@@ -1173,67 +1018,83 @@ def create_layout(server=None):
             "AVG(Value)",
             id="crude-profile-avg-text-box",
             n_clicks=0,
-            style={"display": "none"}
+            style={
+                "position": "fixed",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "none",
+                "whiteSpace": "nowrap",
+                "color": "#333",
+                "cursor": "pointer",
+            }
         ),
         
         # Popup Menu (initially hidden)
         html.Div([
-            html.Div("Data Source Order", id="crude-profile-popup-source-btn", 
-                    style={
-                        "padding": "6px 10px", 
-                        "fontSize": "12px",
-                        "cursor": "pointer",
-                        "fontFamily": "Arial",
-                        "color": "#333",
-                    }, className="popup-menu-item"),
-            html.Div("Alphabetic", id="crude-profile-popup-alphabetic-btn",
-                    style={
-                        "padding": "6px 10px", 
-                        "fontSize": "12px",
-                        "cursor": "pointer",
-                        "fontFamily": "Arial",
-                        "color": "#333",
-                    }, className="popup-menu-item"),
             html.Div([
-                html.Span("Field", style={"flex": "1"}),
-                html.Span("▶", id="crude-profile-field-arrow-btn", style={
-                    "cursor": "pointer",
-                    "fontSize": "10px",
-                    "color": "#666",
-                    "marginLeft": "8px",
-                }),
-            ], id="crude-profile-popup-field-btn",
-               style={
-                   "padding": "6px 10px", 
-                   "fontSize": "12px",
-                   "cursor": "pointer",
-                   "fontFamily": "Arial",
-                   "color": "#333",
-                   "display": "flex",
-                   "alignItems": "center",
-                   "justifyContent": "space-between",
-                   "position": "relative",
-               }, className="popup-menu-item"),
-            html.Div([
-                html.Span("Nested", style={"flex": "1"}),
-                html.Span("▶", id="crude-profile-nested-arrow-btn", style={
-                    "cursor": "pointer",
-                    "fontSize": "10px",
-                    "color": "#666",
-                    "marginLeft": "8px",
-                }),
-            ], id="crude-profile-popup-nested-btn",
-               style={
-                   "padding": "6px 10px", 
-                   "fontSize": "12px",
-                   "cursor": "pointer",
-                   "fontFamily": "Arial",
-                   "color": "#333",
-                   "display": "flex",
-                   "alignItems": "center",
-                   "justifyContent": "space-between",
-                   "position": "relative",
-               }, className="popup-menu-item"),
+                html.Div("Data Source Order", id="crude-profile-popup-source-btn", 
+                        style={
+                            "padding": "6px 10px", 
+                            "fontSize": "12px",
+                            "cursor": "pointer",
+                            "fontFamily": "Arial",
+                            "color": "#333",
+                        }, className="popup-menu-item"),
+                html.Div("Alphabetic", id="crude-profile-popup-alphabetic-btn",
+                        style={
+                            "padding": "6px 10px", 
+                            "fontSize": "12px",
+                            "cursor": "pointer",
+                            "fontFamily": "Arial",
+                            "color": "#333",
+                        }, className="popup-menu-item"),
+                html.Div([
+                    html.Span("Field", style={"flex": "1"}),
+                    html.Span("▶", id="crude-profile-field-arrow-btn", style={
+                        "cursor": "pointer",
+                        "fontSize": "10px",
+                        "color": "#666",
+                        "marginLeft": "8px",
+                    }),
+                ], id="crude-profile-popup-field-btn",
+                   style={
+                       "padding": "6px 10px", 
+                       "fontSize": "12px",
+                       "cursor": "pointer",
+                       "fontFamily": "Arial",
+                       "color": "#333",
+                       "display": "flex",
+                       "alignItems": "center",
+                       "justifyContent": "space-between",
+                       "position": "relative",
+                   }, className="popup-menu-item"),
+                html.Div([
+                    html.Span("Nested", style={"flex": "1"}),
+                    html.Span("▶", id="crude-profile-nested-arrow-btn", style={
+                        "cursor": "pointer",
+                        "fontSize": "10px",
+                        "color": "#666",
+                        "marginLeft": "8px",
+                    }),
+                ], id="crude-profile-popup-nested-btn",
+                   style={
+                       "padding": "6px 10px", 
+                       "fontSize": "12px",
+                       "cursor": "pointer",
+                       "fontFamily": "Arial",
+                       "color": "#333",
+                       "display": "flex",
+                       "alignItems": "center",
+                       "justifyContent": "space-between",
+                       "position": "relative",
+                   }, className="popup-menu-item"),
+            ]),
         ], id="crude-profile-sorting-controls", style={
             "position": "fixed", 
             "backgroundColor": "white", 
@@ -1253,8 +1114,6 @@ def create_layout(server=None):
         
         # Dummy output for clientside callback
         html.Div(id="crude-profile-dummy-output", style={"display": "none"}),
-        
-        # Header Section
         
         # Header Section
         html.Div(style={
@@ -1646,8 +1505,6 @@ def create_layout(server=None):
 # ------------------------------------------------------------------------------
 def register_callbacks(app):
     """Register callbacks for the dashboard with grouped tables."""
-    # Since we're using static grouped tables with no interactive sorting,
-    # we don't need complex callbacks. But we'll add a simple one for the dropdown.
     
     @app.callback(
         Output('assay-table', 'data'),
@@ -1790,226 +1647,11 @@ def register_callbacks(app):
             "minWidth": "160px",
         }, {"display": "none"}
     
-    # Clientside callback to inject A/Z and down arrow indicators
+    # Clientside callback to inject A/Z and down arrow indicators - SIMILAR TO CRUDE_COMPARISON.PY
     app.clientside_callback(
         """
         function(assay_cols, refined_cols, port_cols) {
-            function hideDefaultSortIndicators() {
-                // Hide all default Dash sort indicators - more aggressive
-                const selectors = [
-                    '.column-header--sort',
-                    '.dash-header-cell--sort',
-                    '.dash-header-cell--sort-asc',
-                    '.dash-header-cell--sort-desc',
-                    '.dash-header-cell__sort-icon',
-                    '.dash-header .sort-icon',
-                    'svg[data-icon="sort"]',
-                    '.fa-sort',
-                    '.svg-inline--fa'
-                ];
-                
-                selectors.forEach(selector => {
-                    document.querySelectorAll(selector).forEach(el => {
-                        el.style.display = 'none';
-                        el.style.visibility = 'hidden';
-                        el.style.opacity = '0';
-                        el.style.pointerEvents = 'none';
-                    });
-                });
-                
-                // Hide all SVG elements in headers (except our custom sort-indicator)
-                document.querySelectorAll('#assay-table .dash-header svg, #refined-products-table .dash-header svg, #port-details-table .dash-header svg').forEach(svg => {
-                    // Only hide if it's not part of our custom sort-indicator
-                    if (!svg.closest('.sort-indicator')) {
-                        svg.style.display = 'none';
-                        svg.style.visibility = 'hidden';
-                        svg.style.opacity = '0';
-                        svg.style.pointerEvents = 'none';
-                    }
-                });
-                
-                // Also hide any sort icons in header cells
-                document.querySelectorAll('#assay-table .dash-header-cell svg, #refined-products-table .dash-header-cell svg, #port-details-table .dash-header-cell svg').forEach(svg => {
-                    if (!svg.closest('.sort-indicator')) {
-                        svg.style.display = 'none';
-                        svg.style.visibility = 'hidden';
-                        svg.style.opacity = '0';
-                        svg.style.pointerEvents = 'none';
-                    }
-                });
-            }
-            
-            function addSortIndicators(header, tableId) {
-                // Skip if already added
-                if (header.querySelector('.sort-order-container')) {
-                    return;
-                }
-                
-                // Create A/Z container
-                const sortContainer = document.createElement('div');
-                sortContainer.className = 'sort-order-container';
-                // Explicitly set hidden by default
-                sortContainer.style.opacity = '0';
-                sortContainer.style.visibility = 'hidden';
-                sortContainer.style.pointerEvents = 'none';
-                
-                const aElement = document.createElement('div');
-                aElement.className = 'sort-asc';
-                aElement.textContent = 'A';
-                aElement.title = 'Click for ascending alphabetical order';
-                aElement.onclick = function(e) {
-                    e.stopPropagation();
-                    // Close popup if open
-                    const popup = document.getElementById('crude-profile-sorting-controls');
-                    if (popup && popup.style.display === 'block') {
-                        const btn = document.getElementById('crude-profile-popup-menu-btn');
-                        if (btn) btn.click();
-                    }
-                    // Trigger native Dash sorting for ascending
-                    const headerCell = header.closest('.dash-header-cell') || header;
-                    if (headerCell) {
-                        // Click header to trigger native sorting
-                        headerCell.click();
-                        // If it sorted descending, click again for ascending
-                        setTimeout(() => {
-                            if (headerCell.classList.contains('dash-header-cell--sort-desc')) {
-                                headerCell.click();
-                            }
-                        }, 100);
-                    }
-                };
-                
-                const zElement = document.createElement('div');
-                zElement.className = 'sort-desc';
-                zElement.textContent = 'Z';
-                zElement.title = 'Click for descending alphabetical order';
-                zElement.onclick = function(e) {
-                    e.stopPropagation();
-                    // Close popup if open
-                    const popup = document.getElementById('crude-profile-sorting-controls');
-                    if (popup && popup.style.display === 'block') {
-                        const btn = document.getElementById('crude-profile-popup-menu-btn');
-                        if (btn) btn.click();
-                    }
-                    // Trigger native Dash sorting for descending
-                    const headerCell = header.closest('.dash-header-cell') || header;
-                    if (headerCell) {
-                        // Click header to trigger native sorting
-                        headerCell.click();
-                        // If it sorted ascending, click again for descending
-                        setTimeout(() => {
-                            if (headerCell.classList.contains('dash-header-cell--sort-asc')) {
-                                headerCell.click();
-                            }
-                        }, 100);
-                    }
-                };
-                
-                sortContainer.appendChild(aElement);
-                sortContainer.appendChild(zElement);
-                
-                // Create down arrow indicator
-                const sortIndicator = document.createElement('div');
-                sortIndicator.className = 'sort-indicator';
-                sortIndicator.title = 'Click to show sort options';
-                // Explicitly set hidden by default
-                sortIndicator.style.opacity = '0';
-                sortIndicator.style.visibility = 'hidden';
-                sortIndicator.style.pointerEvents = 'none';
-                sortIndicator.innerHTML = `
-                    <svg fill="#000000" viewBox="0 0 301.219 301.219" xmlns="http://www.w3.org/2000/svg">
-                        <g>
-                            <path d="M159.365,23.736v-10c0-5.523-4.477-10-10-10H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h139.365
-                                C154.888,33.736,159.365,29.259,159.365,23.736z"/>
-                            <path d="M130.586,66.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h120.586c5.523,0,10-4.477,10-10v-10
-                                C140.586,71.213,136.109,66.736,130.586,66.736z"/>
-                            <path d="M111.805,129.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h101.805c5.523,0,10-4.477,10-10v-10
-                                C121.805,134.213,117.328,129.736,111.805,129.736z"/>
-                            <path d="M93.025,199.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h83.025c5.522,0,10-4.477,10-10v-10
-                                C103.025,204.213,98.548,199.736,93.025,199.736z"/>
-                            <path d="M74.244,262.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h64.244c5.522,0,10-4.477,10-10v-10
-                                C84.244,267.213,79.767,262.736,74.244,262.736z"/>
-                            <path d="M298.29,216.877l-7.071-7.071c-1.875-1.875-4.419-2.929-7.071-2.929c-2.652,0-5.196,1.054-7.072,2.929l-34.393,34.393
-                                V18.736c0-5.523-4.477-10-10-10h-10c-5.523,0-10,4.477-10,10v225.462l-34.393-34.393c-1.876-1.875-4.419-2.929-7.071-2.929
-                                c-2.652,0-5.196,1.054-7.071,2.929l-7.072,7.071c-3.904,3.905-3.904,10.237,0,14.142l63.536,63.536
-                                c1.953,1.953,4.512,2.929,7.071,2.929c2.559,0,5.119-0.976,7.071-2.929l63.536-63.536
-                                C302.195,227.113,302.195,220.781,298.29,216.877z"/>
-                        </g>
-                    </svg>
-                `;
-                
-                sortIndicator.onclick = function(e) {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    const btn = document.getElementById('crude-profile-popup-menu-btn');
-                    if (btn) {
-                        // Position popup menu near the clicked indicator
-                        const rect = sortIndicator.getBoundingClientRect();
-                        const popup = document.getElementById('crude-profile-sorting-controls');
-                        if (popup) {
-                            popup.style.position = 'fixed';
-                            popup.style.top = (rect.bottom + 5) + 'px';
-                            popup.style.left = (rect.left - 150) + 'px';
-                            popup.style.zIndex = '1000';
-                        }
-                        // Use setTimeout to ensure positioning is set before showing
-                        setTimeout(function() {
-                            btn.click();
-                        }, 10);
-                    }
-                };
-                
-                header.appendChild(sortContainer);
-                header.appendChild(sortIndicator);
-                
-                // Add hover event listeners to show/hide on header hover
-                function showIndicators() {
-                    sortContainer.style.opacity = '1';
-                    sortContainer.style.visibility = 'visible';
-                    sortContainer.style.pointerEvents = 'auto';
-                    sortIndicator.style.opacity = '1';
-                    sortIndicator.style.visibility = 'visible';
-                    sortIndicator.style.pointerEvents = 'auto';
-                }
-                
-                function hideIndicators() {
-                    sortContainer.style.opacity = '0';
-                    sortContainer.style.visibility = 'hidden';
-                    sortContainer.style.pointerEvents = 'none';
-                    sortIndicator.style.opacity = '0';
-                    sortIndicator.style.visibility = 'hidden';
-                    sortIndicator.style.pointerEvents = 'none';
-                }
-                
-                // Show on header hover
-                header.addEventListener('mouseenter', showIndicators);
-                header.addEventListener('mouseleave', function(e) {
-                    // Only hide if not hovering over the indicators themselves
-                    if (!sortContainer.contains(e.relatedTarget) && !sortIndicator.contains(e.relatedTarget)) {
-                        hideIndicators();
-                    }
-                });
-                
-                // Keep visible when hovering over indicators
-                sortContainer.addEventListener('mouseenter', showIndicators);
-                sortContainer.addEventListener('mouseleave', hideIndicators);
-                sortIndicator.addEventListener('mouseenter', showIndicators);
-                sortIndicator.addEventListener('mouseleave', hideIndicators);
-            }
-            
-            function hideAllCustomIndicators() {
-                // Hide all custom indicators
-                document.querySelectorAll('.sort-order-container, .sort-indicator').forEach(el => {
-                    el.style.opacity = '0';
-                    el.style.visibility = 'hidden';
-                    el.style.pointerEvents = 'none';
-                });
-            }
-            
-            function findAndAddIndicators() {
-                hideDefaultSortIndicators();
-                hideAllCustomIndicators();
-                
+            function addSortIndicatorsToHeaders() {
                 // Target headers for each table
                 const targetHeaders = {
                     'assay-table': ['Property', 'Unit'],
@@ -2021,58 +1663,140 @@ def register_callbacks(app):
                     const headers = targetHeaders[tableId];
                     headers.forEach(columnId => {
                         const header = document.querySelector(`#${tableId} .dash-header[data-dash-column="${columnId}"]`);
-                        if (header) {
-                            addSortIndicators(header, tableId);
+                        if (header && !header.querySelector('.sort-order-container')) {
+                            // Create A/Z container
+                            const sortContainer = document.createElement('div');
+                            sortContainer.className = 'sort-order-container';
+                            
+                            const aElement = document.createElement('div');
+                            aElement.className = 'sort-asc';
+                            aElement.textContent = 'A';
+                            aElement.title = 'Click for ascending alphabetical order';
+                            aElement.onclick = function(e) {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                // Close popup if open
+                                const popup = document.getElementById('crude-profile-sorting-controls');
+                                if (popup && popup.style.display === 'block') {
+                                    const btn = document.getElementById('crude-profile-popup-menu-btn');
+                                    if (btn) btn.click();
+                                }
+                                // Trigger sorting for ascending
+                                const headerCell = header.closest('.dash-header-cell') || header;
+                                if (headerCell) {
+                                    // Click header to trigger native sorting
+                                    headerCell.click();
+                                    // If it sorted descending, click again for ascending
+                                    setTimeout(() => {
+                                        if (headerCell.classList.contains('dash-header-cell--sort-desc')) {
+                                            headerCell.click();
+                                        }
+                                    }, 100);
+                                }
+                            };
+                            
+                            const zElement = document.createElement('div');
+                            zElement.className = 'sort-desc';
+                            zElement.textContent = 'Z';
+                            zElement.title = 'Click for descending alphabetical order';
+                            zElement.onclick = function(e) {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                // Close popup if open
+                                const popup = document.getElementById('crude-profile-sorting-controls');
+                                if (popup && popup.style.display === 'block') {
+                                    const btn = document.getElementById('crude-profile-popup-menu-btn');
+                                    if (btn) btn.click();
+                                }
+                                // Trigger sorting for descending
+                                const headerCell = header.closest('.dash-header-cell') || header;
+                                if (headerCell) {
+                                    // Click header to trigger native sorting
+                                    headerCell.click();
+                                    // If it sorted ascending, click again for descending
+                                    setTimeout(() => {
+                                        if (headerCell.classList.contains('dash-header-cell--sort-asc')) {
+                                            headerCell.click();
+                                        }
+                                    }, 100);
+                                }
+                            };
+                            
+                            sortContainer.appendChild(aElement);
+                            sortContainer.appendChild(zElement);
+                            
+                            // Create down arrow indicator (same SVG as crude_comparison.py)
+                            const sortIndicator = document.createElement('div');
+                            sortIndicator.className = 'sort-indicator';
+                            sortIndicator.title = 'Click to show sort options';
+                            sortIndicator.innerHTML = `
+                                <svg fill="#000000" viewBox="0 0 301.219 301.219" xmlns="http://www.w3.org/2000/svg">
+                                    <g>
+                                        <path d="M159.365,23.736v-10c0-5.523-4.477-10-10-10H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h139.365
+                                            C154.888,33.736,159.365,29.259,159.365,23.736z"/>
+                                        <path d="M130.586,66.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h120.586c5.523,0,10-4.477,10-10v-10
+                                            C140.586,71.213,136.109,66.736,130.586,66.736z"/>
+                                        <path d="M111.805,129.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h101.805c5.523,0,10-4.477,10-10v-10
+                                            C121.805,134.213,117.328,129.736,111.805,129.736z"/>
+                                        <path d="M93.025,199.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h83.025c5.522,0,10-4.477,10-10v-10
+                                            C103.025,204.213,98.548,199.736,93.025,199.736z"/>
+                                        <path d="M74.244,262.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h64.244c5.522,0,10-4.477,10-10v-10
+                                            C84.244,267.213,79.767,262.736,74.244,262.736z"/>
+                                        <path d="M298.29,216.877l-7.071-7.071c-1.875-1.875-4.419-2.929-7.071-2.929c-2.652,0-5.196,1.054-7.072,2.929l-34.393,34.393
+                                            V18.736c0-5.523-4.477-10-10-10h-10c-5.523,0-10,4.477-10,10v225.462l-34.393-34.393c-1.876-1.875-4.419-2.929-7.071-2.929
+                                            c-2.652,0-5.196,1.054-7.071,2.929l-7.072,7.071c-3.904,3.905-3.904,10.237,0,14.142l63.536,63.536
+                                            c1.953,1.953,4.512,2.929,7.071,2.929c2.559,0,5.119-0.976,7.071-2.929l63.536-63.536
+                                            C302.195,227.113,302.195,220.781,298.29,216.877z"/>
+                                    </g>
+                                </svg>
+                            `;
+                            
+                            sortIndicator.onclick = function(e) {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                const btn = document.getElementById('crude-profile-popup-menu-btn');
+                                if (btn) {
+                                    // Position popup menu near the clicked indicator
+                                    const rect = sortIndicator.getBoundingClientRect();
+                                    const popup = document.getElementById('crude-profile-sorting-controls');
+                                    if (popup) {
+                                        popup.style.position = 'fixed';
+                                        popup.style.top = (rect.bottom + 5) + 'px';
+                                        popup.style.left = (rect.left - 150) + 'px';
+                                        popup.style.zIndex = '1000';
+                                    }
+                                    // Use setTimeout to ensure positioning is set before showing
+                                    setTimeout(function() {
+                                        btn.click();
+                                    }, 10);
+                                }
+                            };
+                            
+                            header.appendChild(sortContainer);
+                            header.appendChild(sortIndicator);
+                            
+                            // Add hover effect for the header
+                            header.style.position = 'relative';
+                            header.style.paddingRight = '60px';
+                            
+                            // Show indicators on header hover
+                            header.addEventListener('mouseenter', function() {
+                                sortContainer.style.opacity = '1';
+                                sortContainer.style.visibility = 'visible';
+                                sortIndicator.style.opacity = '1';
+                                sortIndicator.style.visibility = 'visible';
+                            });
+                            
+                            header.addEventListener('mouseleave', function() {
+                                sortContainer.style.opacity = '0';
+                                sortContainer.style.visibility = 'hidden';
+                                sortIndicator.style.opacity = '0';
+                                sortIndicator.style.visibility = 'hidden';
+                            });
                         }
                     });
                 });
-                
-                // Ensure they're hidden after adding
-                setTimeout(hideAllCustomIndicators, 50);
             }
-            
-            // Use MutationObserver to re-apply when table updates
-            const observer = new MutationObserver(function(mutations) {
-                hideDefaultSortIndicators();
-                setTimeout(findAndAddIndicators, 100);
-            });
-            
-            // Observe table containers
-            ['assay-table', 'refined-products-table', 'port-details-table'].forEach(tableId => {
-                const table = document.getElementById(tableId);
-                if (table) {
-                    observer.observe(table, { childList: true, subtree: true, attributes: true });
-                }
-            });
-            
-            // Initial setup - run immediately and repeatedly
-            hideDefaultSortIndicators();
-            hideAllCustomIndicators();
-            findAndAddIndicators();
-            
-            // Also run periodically to catch any dynamically added indicators
-            setInterval(function() {
-                hideDefaultSortIndicators();
-                hideAllCustomIndicators();
-            }, 500);
-            
-            // Run again after delays to ensure everything is hidden
-            setTimeout(function() {
-                hideDefaultSortIndicators();
-                hideAllCustomIndicators();
-                findAndAddIndicators();
-            }, 100);
-            
-            setTimeout(function() {
-                hideDefaultSortIndicators();
-                hideAllCustomIndicators();
-                findAndAddIndicators();
-            }, 500);
-            
-            setTimeout(function() {
-                hideDefaultSortIndicators();
-                hideAllCustomIndicators();
-            }, 1000);
             
             // Setup Field and Nested arrow handlers
             function setupFieldNestedHandlers() {
@@ -2114,28 +1838,145 @@ def register_callbacks(app):
                 }
             }
             
-            setTimeout(setupFieldNestedHandlers, 200);
+            // Initial setup
+            addSortIndicatorsToHeaders();
+            setupFieldNestedHandlers();
             
             // Setup click outside to close popup
-            function setupClickOutsideHandler() {
-                document.addEventListener('click', function(e) {
-                    const popup = document.getElementById('crude-profile-sorting-controls');
-                    const sortIndicator = e.target.closest('.sort-indicator');
-                    const popupItem = e.target.closest('.popup-menu-item');
-                    
-                    if (popup && popup.style.display === 'block') {
-                        if (!popup.contains(e.target) && !sortIndicator && !popupItem) {
-                            // Click outside, close popup
-                            const btn = document.getElementById('crude-profile-popup-menu-btn');
-                            if (btn) {
-                                btn.click();
-                            }
+            document.addEventListener('click', function(e) {
+                const popup = document.getElementById('crude-profile-sorting-controls');
+                const sortIndicator = e.target.closest('.sort-indicator');
+                const popupItem = e.target.closest('.popup-menu-item');
+                
+                if (popup && popup.style.display === 'block') {
+                    if (!popup.contains(e.target) && !sortIndicator && !popupItem) {
+                        // Click outside, close popup
+                        const btn = document.getElementById('crude-profile-popup-menu-btn');
+                        if (btn) {
+                            btn.click();
                         }
                     }
-                });
-            }
+                }
+            });
             
-            setTimeout(setupClickOutsideHandler, 200);
+            // Add CSS styles for the sort indicators
+            const style = document.createElement('style');
+            style.textContent = `
+                /* A/Z container - vertical stack - HIDDEN BY DEFAULT, SHOW ON HOVER */
+                .sort-order-container {
+                    position: absolute;
+                    right: 30px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    font-size: 10px;
+                    color: #666;
+                    cursor: pointer;
+                    padding: 2px;
+                    border: 1px solid transparent;
+                    border-radius: 2px;
+                    line-height: 1;
+                    text-align: center;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 30px;
+                    opacity: 0;
+                    visibility: hidden;
+                    transition: opacity 0.2s ease, visibility 0.2s ease;
+                    z-index: 1001;
+                }
+                .dash-header:hover .sort-order-container {
+                    opacity: 1;
+                    visibility: visible;
+                }
+                .dash-header .sort-order-container:hover {
+                    background-color: #e6f3ff;
+                    border-color: #1f3263;
+                }
+                .sort-asc, .sort-desc {
+                    display: block;
+                    line-height: 1;
+                    cursor: pointer;
+                    padding: 1px 2px;
+                    border-radius: 1px;
+                }
+                .sort-asc:hover, .sort-desc:hover {
+                    background-color: #d4e7ff;
+                    font-weight: bold;
+                }
+                
+                /* Sort indicator icon styles - HIDDEN BY DEFAULT, SHOW ON HOVER */
+                .sort-indicator {
+                    position: absolute;
+                    right: 8px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    width: 15px;
+                    height: 15px;
+                    cursor: pointer;
+                    opacity: 0;
+                    visibility: hidden;
+                    transition: opacity 0.2s ease, visibility 0.2s ease;
+                    z-index: 1001;
+                }
+                .dash-header:hover .sort-indicator {
+                    opacity: 1;
+                    visibility: visible;
+                }
+                .sort-indicator:hover {
+                    background-color: #e6f3ff;
+                    border-radius: 2px;
+                }
+                .sort-indicator svg {
+                    width: 100%;
+                    height: 100%;
+                    fill: #666;
+                }
+                .sort-indicator:hover svg {
+                    fill: #1f3263;
+                }
+                
+                /* Add padding to headers to make space for indicators */
+                #assay-table .dash-header[data-dash-column="Property"],
+                #assay-table .dash-header[data-dash-column="Unit"],
+                #refined-products-table .dash-header[data-dash-column="Product"],
+                #refined-products-table .dash-header[data-dash-column="Cut Points (°C)"],
+                #refined-products-table .dash-header[data-dash-column="Property"],
+                #refined-products-table .dash-header[data-dash-column="Unit"],
+                #port-details-table .dash-header[data-dash-column="Measure"] {
+                    padding-right: 60px !important;
+                    position: relative;
+                }
+                
+                /* Popup menu item hover */
+                .popup-menu-item:hover {
+                    background-color: #f5f5f5 !important;
+                }
+                
+                /* Hide default Dash sort indicators */
+                #assay-table .dash-header-cell--sort svg,
+                #assay-table .dash-header-cell--sort-asc svg,
+                #assay-table .dash-header-cell--sort-desc svg,
+                #refined-products-table .dash-header-cell--sort svg,
+                #refined-products-table .dash-header-cell--sort-asc svg,
+                #refined-products-table .dash-header-cell--sort-desc svg,
+                #port-details-table .dash-header-cell--sort svg,
+                #port-details-table .dash-header-cell--sort-asc svg,
+                #port-details-table .dash-header-cell--sort-desc svg {
+                    display: none !important;
+                }
+                
+                /* AVG text box styling */
+                #crude-profile-avg-text-box {
+                    cursor: pointer !important;
+                }
+                #crude-profile-avg-text-box:hover {
+                    background-color: #f5f5f5 !important;
+                    border-color: #999 !important;
+                }
+            `;
+            document.head.appendChild(style);
             
             return '';
         }
