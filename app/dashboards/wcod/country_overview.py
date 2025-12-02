@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 
-from app.database import execute_query
+from core.data_helpers import execute_query
 
 COUNTRY_OVERVIEW_QUERY = """
 SELECT
