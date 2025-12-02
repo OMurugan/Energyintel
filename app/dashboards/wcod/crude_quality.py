@@ -445,15 +445,10 @@ def process_yield_table_data(df):
     return records
 
 def create_layout(dash_app=None):
-
-    df = load_crossplot_data()
-    
-    # Load table data
-    try:
-        quality_df = load_crude_quality_table()
-    except Exception as e:
-        quality_df = pd.DataFrame()
-    print('quality_df',quality_df)
+    # Don't load data here - load it in callbacks when page is active
+    # Initialize to empty DataFrames
+    df = pd.DataFrame()
+    quality_df = pd.DataFrame()
     
     # Find column IDs for Country and CrudeOil for sticky positioning
     # Handle both exact match and pattern match (in case of unique IDs)
@@ -479,12 +474,11 @@ def create_layout(dash_app=None):
                     crudeoil_col_id = col
                     break
     
-    try:
-        yield_df = load_yield_volume_table()
-    except Exception as e:
-        yield_df = pd.DataFrame()
+    # Initialize yield_df as empty - will be loaded by callback when page is active
+    yield_df = pd.DataFrame()
     
     # Find column IDs for Country and CrudeOil for Yield table (for sticky positioning and styling)
+    # These will be determined in the callback when data loads
     yield_country_col_id = None
     yield_crudeoil_col_id = None
     if not yield_df.empty:
@@ -768,8 +762,8 @@ def create_layout(dash_app=None):
 
                     dash_table.DataTable(
                         id='crude-quality-table',
-                        columns=create_grouped_columns(quality_df),
-                        data=process_quality_table_data(quality_df, country_col_id, crudeoil_col_id),
+                        columns=[],  # Will be updated by callback when data loads
+                        data=[],  # Will be updated by callback when data loads
                         style_table={
                             'overflowX': 'auto',
                             'overflowY': 'auto',
@@ -937,8 +931,8 @@ def create_layout(dash_app=None):
                        style={'color': '#FF6600', 'fontWeight': 'bold', 'marginBottom': '10px', 'fontSize': '20px'}),
                 dash_table.DataTable(
                     id='yield-volume-table',
-                    columns=create_grouped_columns(yield_df) if not yield_df.empty else [],
-                    data=process_yield_table_data(yield_df) if not yield_df.empty else [],
+                    columns=[],  # Will be updated by callback when data loads
+                    data=[],  # Will be updated by callback when data loads
                     style_table={
                         'overflowX': 'auto',
                         'overflowY': 'auto',
@@ -1547,6 +1541,90 @@ def create_crude_quality_dashboard(server, url_base_pathname="/dash/crude-qualit
 # CALLBACKS
 # ===================================
 def register_callbacks(dash_app, server=None):
+
+    @dash_app.callback(
+        [
+            Output('crude-quality-table', 'columns'),
+            Output('crude-quality-table', 'data')
+        ],
+        Input('current-submenu', 'data'),
+        prevent_initial_call=False
+    )
+    def update_quality_table(current_submenu):
+        """Load and update the Crudes Compared by Quality table when page is active"""
+        if current_submenu != 'crude-quality':
+            return [], []
+        
+        try:
+            # Load quality table data
+            quality_df = load_crude_quality_table()
+            
+            if quality_df.empty:
+                return [], []
+            
+            # Find column IDs for Country and CrudeOil for sticky positioning
+            country_col_id = None
+            crudeoil_col_id = None
+            quality_column_info = _get_df_metadata(quality_df, "column_info")
+            if quality_column_info:
+                for info in quality_column_info:
+                    if info.get('sub') == 'Country':
+                        country_col_id = info.get('id')
+                    elif info.get('sub') == 'CrudeOil':
+                        crudeoil_col_id = info.get('id')
+            # Fallback: check column names directly
+            if not country_col_id:
+                for col in quality_df.columns:
+                    if col == 'Country' or (isinstance(col, str) and col.startswith('Country')):
+                        country_col_id = col
+                        break
+            if not crudeoil_col_id:
+                for col in quality_df.columns:
+                    if col == 'CrudeOil' or (isinstance(col, str) and col.startswith('CrudeOil')):
+                        crudeoil_col_id = col
+                        break
+            
+            # Create columns and data
+            columns = create_grouped_columns(quality_df)
+            data = process_quality_table_data(quality_df, country_col_id, crudeoil_col_id)
+            
+            return columns, data
+        except Exception as e:
+            print(f"Error loading quality table data: {e}")
+            import traceback
+            traceback.print_exc()
+            return [], []
+    
+    @dash_app.callback(
+        [
+            Output('yield-volume-table', 'columns'),
+            Output('yield-volume-table', 'data')
+        ],
+        Input('current-submenu', 'data'),
+        prevent_initial_call=False
+    )
+    def update_yield_table(current_submenu):
+        """Load and update the Crudes Compared by Product Yield table when page is active"""
+        if current_submenu != 'crude-quality':
+            return [], []
+        
+        try:
+            # Load yield table data
+            yield_df = load_yield_volume_table()
+            
+            if yield_df.empty:
+                return [], []
+            
+            # Create columns and data
+            columns = create_grouped_columns(yield_df)
+            data = process_yield_table_data(yield_df)
+            
+            return columns, data
+        except Exception as e:
+            print(f"Error loading yield table data: {e}")
+            import traceback
+            traceback.print_exc()
+            return [], []
 
     @dash_app.callback(
         [

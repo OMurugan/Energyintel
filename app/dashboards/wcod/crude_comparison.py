@@ -5,7 +5,7 @@ import dash
 import re
 
 from app import create_dash_app
-from app.database import execute_query
+from core.data_helpers import execute_query
 
 
 # ------------------------------------------------------------------------------
@@ -555,9 +555,10 @@ def sort_by_maximum_value(data, direction='desc'):
     return df_sorted.to_dict('records')
 
 # ------------------------------------------------------------------------------
-# INITIAL LOAD
+# INITIAL LOAD - Lazy loading, only when page is accessed
 # ------------------------------------------------------------------------------
-production_data, production_columns = load_crude_data("production")
+production_data = []
+production_columns = []
 
 # ------------------------------------------------------------------------------
 # LAYOUT

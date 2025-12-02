@@ -43,8 +43,8 @@ Create a `.env` file in the project root:
 ```bash
 DATABASE_URL=postgresql://energyuser:energypass@localhost/energyintel
 SECRET_KEY=your-secret-key-change-this-in-production
-FLASK_ENV=development
-FLASK_DEBUG=True
+DASH_ENV=development
+DASH_DEBUG=True
 HOST=0.0.0.0
 PORT=5000
 ```
@@ -132,7 +132,7 @@ Edit `init_db.py` to add more countries or extend the date range for sample data
 
 ## Production Deployment
 
-1. Set `FLASK_ENV=production` in `.env`
+1. Set `DASH_ENV=production` in `.env`
 2. Configure Redis for caching (optional but recommended)
 3. Use Gunicorn with multiple workers:
    ```bash

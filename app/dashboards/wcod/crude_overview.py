@@ -530,17 +530,69 @@ def load_table():
     
     return yearly_df, monthly_df, year_to_month_cols
 
-# Load data once at module import
-BAR_DF_YEARLY, BAR_LONG_YEARLY, YEAR_PRODUCTION_DATA_VALUE = load_yearly_bar()
-BAR_DF_MONTHLY, BAR_LONG_MONTHLY = load_monthly_bar()
-MAP_YEARLY_LONG, MAP_MONTHLY_LONG = load_map_data()
-TABLE_DF_YEARLY, TABLE_DF_MONTHLY, YEAR_TO_MONTH_COLS = load_table()
-YEARLY_GRADES_DF, MONTHLY_GRADES_DF = load_grades_data()
+# Global variables for lazy loading - initialized to empty DataFrames
+BAR_DF_YEARLY = pd.DataFrame()
+BAR_LONG_YEARLY = pd.DataFrame()
+YEAR_PRODUCTION_DATA_VALUE = {}
+BAR_DF_MONTHLY = pd.DataFrame()
+BAR_LONG_MONTHLY = pd.DataFrame()
+MAP_YEARLY_LONG = pd.DataFrame()
+MAP_MONTHLY_LONG = pd.DataFrame()
+TABLE_DF_YEARLY = pd.DataFrame()
+TABLE_DF_MONTHLY = pd.DataFrame()
+YEAR_TO_MONTH_COLS = {}
+YEARLY_GRADES_DF = pd.DataFrame()
+MONTHLY_GRADES_DF = pd.DataFrame()
+
+def _ensure_data_loaded():
+    """Lazy load all data - only called when page is active"""
+    global BAR_DF_YEARLY, BAR_LONG_YEARLY, YEAR_PRODUCTION_DATA_VALUE
+    global BAR_DF_MONTHLY, BAR_LONG_MONTHLY
+    global MAP_YEARLY_LONG, MAP_MONTHLY_LONG
+    global TABLE_DF_YEARLY, TABLE_DF_MONTHLY, YEAR_TO_MONTH_COLS
+    global YEARLY_GRADES_DF, MONTHLY_GRADES_DF
+    global COUNTRIES, STREAMS, YEARS_YEARLY, YEARS_MONTHLY, YEARS
+    global CI_OPTIONS, API_OPTIONS, SULFUR_OPTIONS
+    global PRODUCTION_YEARS, PRODUCTION_YEAR_DEFAULT
+    global YEARLY_STREAM_COLOR_ORDER, MONTHLY_STREAM_COLOR_ORDER
+    global STREAM_COLOR_ORDERS, STREAM_COLOR_MAPS, STREAM_ORDERS
+    
+    # Check if data is already loaded (not empty)
+    if BAR_DF_YEARLY.empty:
+        BAR_DF_YEARLY, BAR_LONG_YEARLY, YEAR_PRODUCTION_DATA_VALUE = load_yearly_bar()
+        BAR_DF_MONTHLY, BAR_LONG_MONTHLY = load_monthly_bar()
+        MAP_YEARLY_LONG, MAP_MONTHLY_LONG = load_map_data()
+        TABLE_DF_YEARLY, TABLE_DF_MONTHLY, YEAR_TO_MONTH_COLS = load_table()
+        YEARLY_GRADES_DF, MONTHLY_GRADES_DF = load_grades_data()
+        
+        # Initialize derived variables
+        COUNTRIES = sorted(BAR_DF_MONTHLY["Country"].dropna().unique().tolist()) if not BAR_DF_MONTHLY.empty and "Country" in BAR_DF_MONTHLY.columns else []
+        STREAMS = sorted(BAR_DF_MONTHLY["Stream"].dropna().unique().tolist()) if not BAR_DF_MONTHLY.empty and "Stream" in BAR_DF_MONTHLY.columns else []
+        YEARS_YEARLY = sorted(BAR_LONG_YEARLY["year"].dropna().unique().tolist()) if not BAR_LONG_YEARLY.empty and "year" in BAR_LONG_YEARLY.columns else []
+        YEARS_MONTHLY = sorted(BAR_LONG_MONTHLY["year"].dropna().unique().tolist()) if not BAR_LONG_MONTHLY.empty and "year" in BAR_LONG_MONTHLY.columns else []
+        YEARS = sorted(list(set(YEARS_YEARLY + YEARS_MONTHLY))) if YEARS_YEARLY or YEARS_MONTHLY else []
+        
+        CI_OPTIONS = _collect_filter_values("CI Rank")
+        API_OPTIONS = _collect_filter_values("API")
+        SULFUR_OPTIONS = _collect_filter_values("Sulfur")
+        
+        PRODUCTION_YEARS = sorted([int(y) for y in YEAR_TO_MONTH_COLS.keys() if y.isdigit()], reverse=True) if YEAR_TO_MONTH_COLS else []
+        PRODUCTION_YEAR_DEFAULT = [y for y in PRODUCTION_YEARS if y in (2025, 2024)]
+        if not PRODUCTION_YEAR_DEFAULT:
+            PRODUCTION_YEAR_DEFAULT = PRODUCTION_YEARS[:2] if PRODUCTION_YEARS else []
+        
+        YEARLY_STREAM_COLOR_ORDER, MONTHLY_STREAM_COLOR_ORDER = load_stream_color_order()
+        STREAM_COLOR_ORDERS = {
+            "yearly": YEARLY_STREAM_COLOR_ORDER,
+            "monthly": MONTHLY_STREAM_COLOR_ORDER
+        }
+        STREAM_COLOR_MAPS = {mode: {name: color for name, color in order} for mode, order in STREAM_COLOR_ORDERS.items()}
+        STREAM_ORDERS = {mode: [name for name, _ in order] for mode, order in STREAM_COLOR_ORDERS.items()}
 
 def _collect_filter_values(column_name):
     values = set()
     for df in [TABLE_DF_YEARLY, TABLE_DF_MONTHLY]:
-        if column_name in df.columns:
+        if not df.empty and column_name in df.columns:
             series = (
                 df[column_name]
                 .dropna()
@@ -550,9 +602,10 @@ def _collect_filter_values(column_name):
             values.update(v for v in series if v and v.lower() != "nan")
     return sorted(values)
 
-CI_OPTIONS = _collect_filter_values("CI Rank")
-API_OPTIONS = _collect_filter_values("API")
-SULFUR_OPTIONS = _collect_filter_values("Sulfur")
+# Initialize to empty - will be populated when data loads
+CI_OPTIONS = []
+API_OPTIONS = []
+SULFUR_OPTIONS = []
 API_FILTER_CHOICES = ["-", "Heavy", "Light", "Medium"]
 SULFUR_FILTER_CHOICES = ["-", "Sour", "Sweet"]
 
@@ -584,14 +637,14 @@ def classify_sulfur_value(value):
         return "-"
     return "Sour" if sulfur_value >= 0.5 else "Sweet"
 
-# Get options for dropdowns
-COUNTRIES = sorted(BAR_DF_MONTHLY["Country"].dropna().unique().tolist()) if not BAR_DF_MONTHLY.empty and "Country" in BAR_DF_MONTHLY.columns else []
-STREAMS = sorted(BAR_DF_MONTHLY["Stream"].dropna().unique().tolist()) if not BAR_DF_MONTHLY.empty and "Stream" in BAR_DF_MONTHLY.columns else []
-YEARS_YEARLY = sorted(BAR_LONG_YEARLY["year"].dropna().unique().tolist()) if not BAR_LONG_YEARLY.empty and "year" in BAR_LONG_YEARLY.columns else []
-YEARS_MONTHLY = sorted(BAR_LONG_MONTHLY["year"].dropna().unique().tolist()) if not BAR_LONG_MONTHLY.empty and "year" in BAR_LONG_MONTHLY.columns else []
-YEARS = sorted(list(set(YEARS_YEARLY + YEARS_MONTHLY))) if YEARS_YEARLY or YEARS_MONTHLY else []
+# Initialize to empty - will be populated when data loads
+COUNTRIES = []
+STREAMS = []
+YEARS_YEARLY = []
+YEARS_MONTHLY = []
+YEARS = []
 
-# Generate year-month options
+# Generate year-month options (static, doesn't depend on data)
 YEAR_MONTHS = []
 for year in range(2000, 2026):
     for month in range(1, 13):
@@ -599,20 +652,15 @@ for year in range(2000, 2026):
         YEAR_MONTHS.append({"label": f"{year}-{month_str}", "value": f"{year}-{month_str}"})
 YEAR_MONTHS.reverse()
 
-PRODUCTION_YEARS = sorted([int(y) for y in YEAR_TO_MONTH_COLS.keys() if y.isdigit()], reverse=True)
-PRODUCTION_YEAR_DEFAULT = [y for y in PRODUCTION_YEARS if y in (2025, 2024)]
-if not PRODUCTION_YEAR_DEFAULT:
-    PRODUCTION_YEAR_DEFAULT = PRODUCTION_YEARS[:2] if PRODUCTION_YEARS else []
+PRODUCTION_YEARS = []
+PRODUCTION_YEAR_DEFAULT = []
 
-# Stream color/ordering requirements - loaded from CSV files
-YEARLY_STREAM_COLOR_ORDER, MONTHLY_STREAM_COLOR_ORDER = load_stream_color_order()
-
-STREAM_COLOR_ORDERS = {
-    "yearly": YEARLY_STREAM_COLOR_ORDER,
-    "monthly": MONTHLY_STREAM_COLOR_ORDER
-}
-STREAM_COLOR_MAPS = {mode: {name: color for name, color in order} for mode, order in STREAM_COLOR_ORDERS.items()}
-STREAM_ORDERS = {mode: [name for name, _ in order] for mode, order in STREAM_COLOR_ORDERS.items()}
+# Stream color/ordering - initialized to empty, loaded when data loads
+YEARLY_STREAM_COLOR_ORDER = []
+MONTHLY_STREAM_COLOR_ORDER = []
+STREAM_COLOR_ORDERS = {}
+STREAM_COLOR_MAPS = {}
+STREAM_ORDERS = {}
 FALLBACK_COLORS = [
     '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
     '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
@@ -935,11 +983,18 @@ def register_callbacks(dash_app, server):
         [Input("crude-country-dropdown", "value"),
          Input("crude-main-tabs", "value"),
          Input("crude-year-dropdown", "value"),
-         Input("crude-year-month-dropdown", "value")],
+         Input("crude-year-month-dropdown", "value"),
+         Input("current-submenu", "data")],
         prevent_initial_call=False
     )
-    def update_profiled_streams_options(country, tab, year, year_month):
+    def update_profiled_streams_options(country, tab, year, year_month, current_submenu):
         """Update profiled streams options based on selected country and tab using grades CSV files"""
+        # Only load data if page is active
+        if current_submenu != 'crude-overview':
+            return [], None
+        
+        # Ensure data is loaded
+        _ensure_data_loaded()
         
         try:
             # Handle country - ensure it's a list
@@ -1275,11 +1330,20 @@ def register_callbacks(dash_app, server):
         [Input("crude-year-dropdown", "value"),
          Input("crude-year-month-dropdown", "value"),
          Input("crude-country-dropdown", "value"),
-         Input("crude-main-tabs", "value")],
+         Input("crude-main-tabs", "value"),
+         Input("current-submenu", "data")],
         prevent_initial_call=False
     )
-    def update_map(selected_year, selected_year_month, selected_countries, tab):
-        """Update world map based on filters"""
+    def update_map(selected_year, selected_year_month, selected_countries, tab, current_submenu):
+        """Update world map based on filters - only loads data when page is active"""
+        # Only load data if page is active
+        if current_submenu != 'crude-overview':
+            fig = go.Figure()
+            fig.update_layout(height=600, plot_bgcolor='white', paper_bgcolor='white')
+            return fig
+        
+        # Ensure data is loaded
+        _ensure_data_loaded()
         
         # Set defaults if None
         if selected_year is None:
@@ -1437,11 +1501,20 @@ def register_callbacks(dash_app, server):
          Input("production-year-dropdown", "value"),  # Year of Date filter for monthly chart
          Input("profiled-streams", "value"),
          Input("crude-main-tabs", "value"),
-         Input("crude-map", "clickData")],
+         Input("crude-map", "clickData"),
+         Input("current-submenu", "data")],
         prevent_initial_call=False
     )
-    def update_breakdown(country, year, year_month, production_years, profiled, tab, map_click):
-        """Update production breakdown chart"""
+    def update_breakdown(country, year, year_month, production_years, profiled, tab, map_click, current_submenu):
+        """Update production breakdown chart - only loads data when page is active"""
+        # Only load data if page is active
+        if current_submenu != 'crude-overview':
+            fig = go.Figure()
+            fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
+            return fig, ""
+        
+        # Ensure data is loaded
+        _ensure_data_loaded()
         
         try:
             month_names = ["January", "February", "March", "April", "May", "June",
@@ -2376,11 +2449,18 @@ def register_callbacks(dash_app, server):
          Input("crude-year-dropdown", "value"),
          Input("crude-year-month-dropdown", "value"),
          Input("crude-country-dropdown", "value"),
-         Input("crude-main-tabs", "value")],
+         Input("crude-main-tabs", "value"),
+         Input("current-submenu", "data")],
         prevent_initial_call=False
     )
-    def filter_table(stream, ci, api, sulfur, year, year_month, country, tab):
-        """Filter and update data table"""
+    def filter_table(stream, ci, api, sulfur, year, year_month, country, tab, current_submenu):
+        """Filter and update data table - only loads data when page is active"""
+        # Only load data if page is active
+        if current_submenu != 'crude-overview':
+            return [], []
+        
+        # Ensure data is loaded
+        _ensure_data_loaded()
         
         # Set defaults if None
         if tab is None:
