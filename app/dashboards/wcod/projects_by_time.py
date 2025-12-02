@@ -3,6 +3,7 @@ Projects by Time View
 Upstream projects over time - Tableau-style design
 """
 import os
+import re
 from pathlib import Path
 from dash import dcc, html, Input, Output, State, callback, dash_table
 import plotly.graph_objects as go
@@ -251,7 +252,8 @@ def create_layout():
                         style={'fontSize': '12px', 'fontFamily': 'Lato, sans-serif'},
                         inputStyle={'marginRight': '5px', 'marginLeft': '5px'},
                         labelStyle={'color': 'rgb(27, 54, 93)', 'fontFamily': 'Lato, sans-serif'}
-                    )
+                    ),
+                    dcc.Store(id='likely-filter-previous', data=['Y'])
                 ])
             ], style={
                 'width': '25%',
@@ -278,11 +280,13 @@ def create_layout():
         
         # Table
         html.Div([
-            html.H4("Project Details", style={'marginBottom': '15px', 'fontSize': '16px', 'fontWeight': 'bold', 'fontFamily': 'Lato, sans-serif'}),
+            html.H4("Project Details", style={'marginBottom': '15px', 'fontSize': '16px', 'fontWeight': 'bold', 'fontFamily': 'Lato, sans-serif', 'color': '#fe5000', 'textAlign': 'left'}),
             dash_table.DataTable(
                 id='projects-time-table',
                 style_table={
                     'overflowX': 'auto',
+                    'overflowY': 'auto',
+                    'maxHeight': '600px',
                     'border': '1px solid #ddd'
                 },
                 style_cell={
@@ -290,6 +294,7 @@ def create_layout():
                     'padding': '8px',
                     'fontSize': '12px',
                     'fontFamily': 'Lato, sans-serif',
+                    'color': 'rgb(27, 54, 93)',
                     'whiteSpace': 'normal',
                     'height': 'auto',
                     'overflow': 'hidden',
@@ -308,12 +313,16 @@ def create_layout():
                 style_header={
                     'backgroundColor': '#f8f9fa',
                     'fontWeight': 'bold',
+                    'fontFamily': 'Lato, sans-serif',
+                    'color': 'rgb(27, 54, 93)',
                     'border': '1px solid #ddd',
                     'textAlign': 'center'
                 },
                 style_data={
                     'border': '1px solid #ddd',
-                    'whiteSpace': 'normal'
+                    'whiteSpace': 'normal',
+                    'fontFamily': 'Lato, sans-serif',
+                    'color': 'rgb(27, 54, 93)'
                 },
                 style_data_conditional=[
                     {
@@ -321,14 +330,18 @@ def create_layout():
                         'backgroundColor': '#f9f9f9'
                     }
                 ],
-                page_size=20,
-                page_action='native',
                 sort_action='native',
                 filter_action='native',
                 tooltip_duration=None,
                 css=[{
                     'selector': '.dash-table-tooltip',
-                    'rule': 'font-size: 10px !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
+                    'rule': 'font-size: 10px !important; font-family: Lato, sans-serif !important; color: rgb(27, 54, 93) !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
+                }, {
+                    'selector': '.dash-table-container .row:last-child',
+                    'rule': 'display: none !important;'
+                }, {
+                    'selector': '.previous-page, .next-page, .first-page, .last-page, .page-number, .page-number--current',
+                    'rule': 'display: none !important;'
                 }]
             )
         ], style={'marginTop': '20px'})
@@ -339,16 +352,308 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for Projects by Time"""
     
     @callback(
-        Output('projects-time-chart', 'figure'),
-        [Input('current-submenu', 'data')]
+        [Output('likely-filter', 'value'),
+         Output('likely-filter-previous', 'data')],
+        Input('likely-filter', 'value'),
+        State('likely-filter-previous', 'data'),
+        prevent_initial_call=False
     )
-    def update_chart(submenu):
+    def manage_all_checkbox(selected_values, previous_values):
+        """Manage (All) checkbox behavior: selecting All selects all, unchecking All unchecks all"""
+        if selected_values is None:
+            return [], []
+        
+        # Ensure it's a list
+        if not isinstance(selected_values, list):
+            selected_values = [selected_values] if selected_values else []
+        
+        all_options = ['All', 'N', 'Uncertain', 'Y']
+        individual_options = ['N', 'Uncertain', 'Y']
+        
+        # Get previous state for comparison
+        if previous_values is None:
+            previous_values = []
+        if not isinstance(previous_values, list):
+            previous_values = [previous_values] if previous_values else []
+        
+        # Determine what changed
+        was_all_selected = 'All' in previous_values
+        is_all_selected = 'All' in selected_values
+        
+        # Get individual options in previous and current state
+        prev_individual = [opt for opt in previous_values if opt in individual_options]
+        curr_individual = [opt for opt in selected_values if opt in individual_options]
+        
+        # If "All" was just selected (wasn't before, is now)
+        if not was_all_selected and is_all_selected:
+            # Select all options
+            return all_options, all_options
+        
+        # If "All" was just deselected (was before, isn't now)
+        if was_all_selected and not is_all_selected:
+            # Deselect all options
+            return [], []
+        
+        # If "All" was selected before and still is, but individual options changed
+        # (user clicked an individual option while "All" was selected)
+        if was_all_selected and is_all_selected and prev_individual != curr_individual:
+            # If an individual option was deselected, deselect "All" and keep remaining individual options
+            if len(curr_individual) < len(prev_individual):
+                return curr_individual, curr_individual
+            # If an individual option was selected and now all are selected, keep all
+            elif len(curr_individual) == len(individual_options):
+                return all_options, all_options
+        
+        # If "All" is currently selected and no change detected, keep all selected
+        if is_all_selected:
+            return all_options, all_options
+        
+        # Otherwise, check individual options
+        selected_individual = [opt for opt in selected_values if opt in individual_options]
+        
+        # If all individual options are selected, also select "All"
+        if len(selected_individual) == len(individual_options):
+            return all_options, all_options
+        
+        # Return only the selected individual options
+        return selected_individual, selected_individual
+    
+    @callback(
+        Output('projects-time-chart', 'figure'),
+        [Input('current-submenu', 'data'),
+         Input('likely-filter', 'value')]
+    )
+    def update_chart(submenu, likely_filter):
         """Update projects by time chart"""
         if submenu != 'projects-time':
             return go.Figure()
         
-        # Load chart data
-        df = load_chart_data()
+        # Load table data to filter by "Likely To Go Ahead"
+        table_df = load_table_data()
+        
+        # Filter table data by "Likely To Go Ahead" if filter is provided
+        if not table_df.empty:
+            # Try to find the column with case-insensitive matching
+            likely_col = None
+            for col in table_df.columns:
+                col_lower = col.lower()
+                if 'likely' in col_lower and ('go' in col_lower or 'ahead' in col_lower):
+                    likely_col = col
+                    break
+            
+            if likely_col:
+                # Handle None or empty list
+                if not likely_filter:
+                    likely_filter = []
+                if not isinstance(likely_filter, list):
+                    likely_filter = [likely_filter] if likely_filter else []
+                
+                # If "All" is selected, don't filter (show all data)
+                if 'All' in likely_filter:
+                    # Show all data - no filtering needed
+                    pass
+                elif len(likely_filter) > 0:
+                    # Map filter values to CSV values
+                    value_mapping = {
+                        'Y': ['Yes', 'Y'],
+                        'N': ['No', 'N'],
+                        'Uncertain': ['Uncertain']
+                    }
+                    
+                    # Build list of values to match
+                    filter_values = []
+                    for v in likely_filter:
+                        if v in value_mapping:
+                            filter_values.extend(value_mapping[v])
+                        else:
+                            filter_values.append(str(v))
+                    
+                    # Filter by selected values
+                    table_df[likely_col] = table_df[likely_col].astype(str).str.strip()
+                    table_df = table_df[table_df[likely_col].isin(filter_values)].copy()
+                else:
+                    # No checkboxes selected - show no data
+                    table_df = pd.DataFrame()
+        
+        # If no checkboxes are selected, return empty chart
+        # Check if likely_filter is empty (no selections)
+        if not likely_filter or (isinstance(likely_filter, list) and len(likely_filter) == 0):
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data selected. Please select at least one option from 'Likely To Go Ahead' filter.",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font={'size': 14, 'family': 'Lato', 'color': 'rgb(27, 54, 93)'}
+            )
+            fig.update_layout(
+                height=500,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                title={
+                    'text': "Projected Oil Capacity additions by Quarter ('000 b/d)",
+                    'x': 0,
+                    'xanchor': 'left',
+                    'font': {'size': 16, 'family': 'Lato', 'color': '#fe5000'}
+                }
+            )
+            return fig
+        
+        # If table_df is empty (no columns), return empty chart
+        if table_df.empty or len(table_df.columns) == 0:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data available for selected filters.",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font={'size': 14, 'family': 'Lato', 'color': 'rgb(27, 54, 93)'}
+            )
+            fig.update_layout(
+                height=500,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                title={
+                    'text': "Projected Oil Capacity additions by Quarter ('000 b/d)",
+                    'x': 0,
+                    'xanchor': 'left',
+                    'font': {'size': 16, 'family': 'Lato', 'color': '#fe5000'}
+                }
+            )
+            return fig
+        
+        # Check if table has quarter columns (Q1 2025, Q2 2025, etc.)
+        # First, check all columns for quarter patterns
+        quarter_cols = []
+        seen_cols = set()
+        for col_name in table_df.columns:
+            col_str = str(col_name).strip()
+            # Try to match quarter patterns: Q1 2025, Q1\n2025, 2025 Q1, etc.
+            matched = False
+            for year in range(2025, 2030):
+                for q in ['Q1', 'Q2', 'Q3', 'Q4']:
+                    # Check various patterns
+                    patterns = [
+                        rf'^{q}\s+{year}$',
+                        rf'^{q}\s*\n\s*{year}$',
+                        rf'^{year}\s+{q}$',
+                        rf'^{q}\s*{year}$',
+                        rf'^{year}\s*{q}$',
+                        rf'^{q}\.{year}$',
+                        rf'^{year}\.{q}$'
+                    ]
+                    for pattern in patterns:
+                        if re.match(pattern, col_str, re.IGNORECASE):
+                            if col_name not in seen_cols:
+                                quarter_cols.append((col_name, year, q))
+                                seen_cols.add(col_name)
+                                matched = True
+                            break
+                    if matched:
+                        break
+                if matched:
+                    break
+        
+        # If table has quarter columns, aggregate from table data
+        if quarter_cols and not table_df.empty and 'Region' in table_df.columns:
+            # Aggregate capacity by region and quarter
+            chart_data = []
+            for region in REGIONS:
+                region_data = table_df[table_df['Region'] == region] if 'Region' in table_df.columns else pd.DataFrame()
+                if not region_data.empty:
+                    for year in range(2025, 2030):
+                        for q_num, q in enumerate(['Q1', 'Q2', 'Q3', 'Q4'], 1):
+                            # Find matching quarter column
+                            quarter_val = 0
+                            for col_name, col_year, col_q in quarter_cols:
+                                if col_year == year and col_q == q and col_name in region_data.columns:
+                                    # Sum capacity for this quarter
+                                    quarter_val = pd.to_numeric(region_data[col_name], errors='coerce').fillna(0).sum()
+                                    break
+                            
+                            chart_data.append({
+                                'Region': region,
+                                'Quarter': f'{q}\n{year}',
+                                'Year': year,
+                                'QuarterNum': q_num,
+                                'Value': quarter_val
+                            })
+                else:
+                    # No data for this region, add zeros
+                    for year in range(2025, 2030):
+                        for q_num, q in enumerate(['Q1', 'Q2', 'Q3', 'Q4'], 1):
+                            chart_data.append({
+                                'Region': region,
+                                'Quarter': f'{q}\n{year}',
+                                'Year': year,
+                                'QuarterNum': q_num,
+                                'Value': 0
+                            })
+            
+            df = pd.DataFrame(chart_data)
+        elif not table_df.empty and 'Region' in table_df.columns:
+            # Fallback: Check for capacity column and "First Oil Year"
+            # Look for capacity-related columns
+            capacity_col = None
+            capacity_cols_to_check = [
+                'Capacity', 'Oil Capacity', 'Production Capacity', 
+                'Capacity (000 b/d)', 'Oil Capacity (000 b/d)',
+                'Peak Capacity', 'Max Capacity'
+            ]
+            for col in table_df.columns:
+                col_lower = str(col).lower()
+                if any(check.lower() in col_lower for check in capacity_cols_to_check):
+                    capacity_col = col
+                    break
+                # Also check if column name contains numbers that might be capacity
+                if 'capacity' in col_lower or ('000' in col_lower and 'b/d' in col_lower):
+                    capacity_col = col
+                    break
+            
+            if capacity_col and 'First Oil Year' in table_df.columns:
+                # Aggregate capacity by region and quarter using "First Oil Year"
+                chart_data = []
+                for region in REGIONS:
+                    region_data = table_df[table_df['Region'] == region].copy()
+                    if not region_data.empty:
+                        for year in range(2025, 2030):
+                            for q_num, q in enumerate(['Q1', 'Q2', 'Q3', 'Q4'], 1):
+                                # Filter projects that start in this quarter
+                                # Assume capacity is added in Q1 of "First Oil Year"
+                                if q_num == 1:  # Q1 only
+                                    year_data = region_data[
+                                        pd.to_numeric(region_data['First Oil Year'], errors='coerce') == year
+                                    ]
+                                    quarter_val = pd.to_numeric(year_data[capacity_col], errors='coerce').fillna(0).sum()
+                                else:
+                                    quarter_val = 0
+                                
+                                chart_data.append({
+                                    'Region': region,
+                                    'Quarter': f'{q}\n{year}',
+                                    'Year': year,
+                                    'QuarterNum': q_num,
+                                    'Value': quarter_val
+                                })
+                    else:
+                        # No data for this region, add zeros
+                        for year in range(2025, 2030):
+                            for q_num, q in enumerate(['Q1', 'Q2', 'Q3', 'Q4'], 1):
+                                chart_data.append({
+                                    'Region': region,
+                                    'Quarter': f'{q}\n{year}',
+                                    'Year': year,
+                                    'QuarterNum': q_num,
+                                    'Value': 0
+                                })
+                
+                df = pd.DataFrame(chart_data)
+            else:
+                # No quarter columns or capacity column found, use pre-aggregated chart data
+                # Note: This won't be filtered by "Likely To Go Ahead"
+                print("Warning: Table does not have quarter columns or capacity column. Using pre-aggregated chart data (not filtered by Likely To Go Ahead).")
+                df = load_chart_data()
+        else:
+            # Use pre-aggregated chart data
+            df = load_chart_data()
         
         if df.empty:
             fig = go.Figure()
@@ -363,9 +668,9 @@ def register_callbacks(dash_app, server):
                 paper_bgcolor='white',
                 title={
                     'text': "Projected Oil Capacity additions by Quarter ('000 b/d)",
-                    'x': 0.5,
-                    'xanchor': 'center',
-                    'font': {'size': 16, 'family': 'Lato'}
+                    'x': 0,
+                    'xanchor': 'left',
+                    'font': {'size': 16, 'family': 'Lato', 'color': '#fe5000'}
                 }
             )
             return fig
@@ -473,9 +778,9 @@ def register_callbacks(dash_app, server):
         fig.update_layout(
                 title={
                     'text': "Projected Oil Capacity additions by Quarter ('000 b/d)",
-                    'x': 0.5,
+                    'x': 0,
                     'xanchor': 'left',
-                    'font': {'size': 16, 'color': '#333', 'family': 'Lato'},
+                    'font': {'size': 16, 'color': '#fe5000', 'family': 'Lato'},
                     'y': 0.98
                 },
             xaxis={
@@ -574,13 +879,18 @@ def register_callbacks(dash_app, server):
                     print(f"Found likely column: '{col}'")
                     break
             
-            if likely_col and likely_filter:
+            if likely_col:
                 # Handle None or empty list
+                if not likely_filter:
+                    likely_filter = []
                 if not isinstance(likely_filter, list):
                     likely_filter = [likely_filter] if likely_filter else []
                 
-                # If "All" is selected, don't filter
-                if 'All' not in likely_filter and len(likely_filter) > 0:
+                # If "All" is selected, don't filter (show all data)
+                if 'All' in likely_filter:
+                    # Show all data - no filtering needed
+                    pass
+                elif len(likely_filter) > 0:
                     # Map filter values to CSV values
                     # CSV uses "Yes", "No", "Uncertain" but filter uses "Y", "N", "Uncertain"
                     value_mapping = {
@@ -604,6 +914,9 @@ def register_callbacks(dash_app, server):
                     df = df[df[likely_col].isin(filter_values)].copy()
                     after_count = len(df)
                     print(f"Filtered by {likely_filter} (mapped to {filter_values}): {before_count} -> {after_count} rows")
+                else:
+                    # No checkboxes selected - show no data
+                    df = pd.DataFrame()
             
             # Select only the columns to display (in the order shown in the image)
             display_cols = [
