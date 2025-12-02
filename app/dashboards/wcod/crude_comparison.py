@@ -5,7 +5,7 @@ import dash
 import re
 
 from app import create_dash_app
-from app.database import execute_query
+from core.data_helpers import execute_query
 
 
 # ------------------------------------------------------------------------------

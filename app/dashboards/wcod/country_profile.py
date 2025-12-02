@@ -11,7 +11,7 @@ import pandas as pd
 import os
 from datetime import datetime
 from app import create_dash_app
-from app.database import execute_query
+from core.data_helpers import execute_query
 
 # # CSV paths
 # DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Country_Profile')
