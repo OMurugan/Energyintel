@@ -1065,7 +1065,7 @@ def create_wcod_dashboard(server, url_base_pathname):
     )
     
     # Callback to hide header and footer when WCoD dashboards are embedded in iframes
-    @callback(
+    @dash_app.callback(
         [Output('header-container', 'style'),
          Output('footer-container', 'style')],
         [Input('url', 'pathname'),
@@ -1118,7 +1118,7 @@ def create_wcod_dashboard(server, url_base_pathname):
         return {'display': 'block'}, {'display': 'block'}
     
     # Callback to handle URL routing - runs on initial load to set correct tab/submenu from URL
-    @callback(
+    @dash_app.callback(
         [Output('main-tabs', 'value'),
          Output('current-submenu', 'data', allow_duplicate=True)],
         [Input('url', 'pathname'),
@@ -1206,7 +1206,7 @@ def create_wcod_dashboard(server, url_base_pathname):
         return tab, submenu
     
     # Callback to highlight active tab - runs on initial load and when tab changes
-    @callback(
+    @dash_app.callback(
         [Output('tab-link-country', 'style'),
          Output('tab-link-crude', 'style'),
          Output('tab-link-trade', 'style'),
@@ -1273,7 +1273,7 @@ def create_wcod_dashboard(server, url_base_pathname):
         ]
     
     # Callback to update sub-menu based on main tab and submenu changes
-    @callback(
+    @dash_app.callback(
         Output('submenu-container', 'children'),
         [Input('main-tabs', 'value'),
          Input('url', 'pathname'),
@@ -1450,7 +1450,7 @@ def create_wcod_dashboard(server, url_base_pathname):
         return submenu_html
     
     # Callback to update content based on sub-menu selection
-    @callback(
+    @dash_app.callback(
         Output('tab-content', 'children'),
         [Input('current-submenu', 'data'),
          Input('main-tabs', 'value'),
@@ -1549,7 +1549,7 @@ def create_wcod_dashboard(server, url_base_pathname):
         return html.Div("Content not found")
     
     # Sub-menu click handler - using pattern matching
-    @callback(
+    @dash_app.callback(
         [Output('current-submenu', 'data', allow_duplicate=True),
          Output('submenu-container', 'children', allow_duplicate=True)],
         Input({'type': 'submenu-button', 'index': dash.dependencies.ALL}, 'n_clicks'),
