@@ -90,7 +90,7 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
         return fig
     
     filtered_df = df.copy()
-    
+    print(f"DEBUG: region filter: {region_filter}")
     # Apply region filter (now handles list of regions)
     if region_filter:
         if isinstance(region_filter, list):
@@ -509,15 +509,16 @@ def register_callbacks(dash_app, server):
     # Callback to update region filter options when page loads
     @dash_app.callback(
         [Output('projects-status-region-filter', 'options'),
-         Output('projects-status-region-filter', 'value'),
+         Output('projects-status-region-filter', 'value', allow_duplicate=True),
          Output('region-legend-items-store', 'children')],
         Input('current-submenu', 'data'),
-        prevent_initial_call=False
+        State('projects-status-region-filter', 'value'),
+        prevent_initial_call='initial_duplicate'
     )
-    def update_region_filter_options(current_submenu):
+    def update_region_filter_options(current_submenu, current_filter_value):
         """Update region filter options when page is accessed"""
         if current_submenu != 'projects-status':
-            return [], [], []
+            return [], dash.no_update, []
         
         # Load data to get available regions
         treemap_df = load_treemap_data()
@@ -533,20 +534,39 @@ def register_callbacks(dash_app, server):
             regions = ordered_regions
         
         options = [{'label': r, 'value': r} for r in regions]
-        # Ensure all regions are selected by default, including Africa
-        # Explicitly include all regions from REGION_ORDER that exist in the data
-        default_value = []
-        for region in REGION_ORDER:
-            if region in regions:
-                default_value.append(region)
-        # Add any remaining regions not in REGION_ORDER
-        for region in regions:
-            if region not in default_value:
-                default_value.append(region)
         
-        # Debug: Verify Africa is included
-        if 'Africa' in regions and 'Africa' not in default_value:
-            default_value.insert(0, 'Africa')  # Insert at beginning to ensure it's first
+        # CRITICAL: Only set default_value on initial load (when current_filter_value is None or empty)
+        # On subsequent updates, preserve the existing filter value to avoid removing Africa
+        if current_filter_value is None or (isinstance(current_filter_value, list) and len(current_filter_value) == 0):
+            # Initial load: Set all regions as default, including Africa
+            default_value = []
+            for region in REGION_ORDER:
+                if region in regions:
+                    default_value.append(region)
+            # Add any remaining regions not in REGION_ORDER
+            for region in regions:
+                if region not in default_value:
+                    default_value.append(region)
+            
+            # Debug: Verify Africa is included
+            if 'Africa' in regions and 'Africa' not in default_value:
+                default_value.insert(0, 'Africa')  # Insert at beginning to ensure it's first
+        else:
+            # Subsequent update: Preserve existing filter value, but ensure Africa is included if it exists in regions
+            # This ensures Africa and other selected regions are not removed
+            if isinstance(current_filter_value, list):
+                # Ensure Africa is in the preserved value if it exists in regions
+                if 'Africa' in regions and 'Africa' not in current_filter_value:
+                    # Add Africa if it's missing
+                    preserved_value = current_filter_value.copy()
+                    preserved_value.insert(0, 'Africa')
+                    default_value = preserved_value
+                else:
+                    # Preserve as-is if Africa is already there or doesn't exist in regions
+                    default_value = dash.no_update
+            else:
+                # Single value or other type - preserve as-is
+                default_value = dash.no_update
         
         return options, default_value, regions
     
@@ -712,6 +732,7 @@ def register_callbacks(dash_app, server):
     )
     def update_treemap(region_filter, likely_filter, current_submenu):
         """Update treemap based on filters - only loads data when page is active"""
+        print(f"DEBUG: region filter001: {region_filter}")
         # Only load data if this page is currently active
         if current_submenu != 'projects-status':
             # Return empty figure if page is not active
