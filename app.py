@@ -4,7 +4,6 @@ Migrated from Flask-based Dash implementation
 """
 import os
 from dotenv import load_dotenv
-from dash_embedded import Embeddable
 from core.raw_data import load_all_data
 from app.dashboards.wcod_dashboard import create_wcod_dashboard
 
@@ -17,10 +16,8 @@ load_all_data()
 # ======================= Dash App =======================
 # Create the WCoD dashboard (which creates the Dash app)
 # Pass None for server to create standalone app
+# Embedding support is already added in create_wcod_dashboard
 app = create_wcod_dashboard(server=None, url_base_pathname='/')
-
-# Add Dash Enterprise embedding support
-app.plugins = [Embeddable(origins="*")]
 
 # Expose server for gunicorn
 server = app.server
