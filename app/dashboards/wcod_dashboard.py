@@ -1,23 +1,17 @@
 """
 World Crude Oil Data (WCoD) Dashboard
 Comprehensive dashboard with all tabs and sub-menus matching Energy Intelligence website
+Migrated to standalone Dash Enterprise application
 """
 import dash
 from dash import dcc, html, Input, Output, State, callback, dash_table
+from dash_embedded import Embeddable
 from urllib.parse import parse_qs
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
-from flask import current_app
-from app import create_dash_app
-from app.models import (
-    Country, Production, Exports, Reserves, Imports,
-    Crude, CrudePrice, UpstreamProject, Company
-)
-from app import db
-from sqlalchemy import func, extract, and_, or_
-from datetime import datetime, timedelta
+from pathlib import Path
 
 # Import individual submenu modules
 from app.dashboards.wcod import (
@@ -45,29 +39,51 @@ from app.dashboards.wcod import (
 )
 
 
-def create_wcod_dashboard(server, url_base_pathname):
-    """Create comprehensive WCoD dashboard with tab navigation"""
+def create_wcod_dashboard(server=None, url_base_pathname='/'):
+    """
+    Create comprehensive WCoD dashboard with tab navigation
+    Now works standalone without Flask server dependency
+    """
+    # Create Dash app standalone
+    # Get the root directory (where app.py is located) for assets
+    import os
     from pathlib import Path
+    root_dir = Path(__file__).parent.parent.parent  # Go up from app/dashboards/wcod_dashboard.py to root
+    assets_dir = root_dir / 'assets'
+    
+    dash_app = dash.Dash(
+        __name__,
+        url_base_pathname=url_base_pathname,
+        plugins=[Embeddable(origins="*")],  # Add embedding support with CORS
+        external_stylesheets=[
+            'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
+            'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+        ],
+        suppress_callback_exceptions=True,
+        assets_folder=str(assets_dir)  # Explicitly set assets folder to root level
+    )
+    
+    # If server is provided, attach to it (for backward compatibility)
+    if server:
+        dash_app.server = server
+    
+    # Add route to serve static assets from assets folder
+    # Dash should handle this automatically, but we'll add explicit route as fallback
     from flask import send_from_directory
+    import os
     
-    dash_app = create_dash_app(server, url_base_pathname)
-    
-    # Configure assets folder and add route to serve assets
-    current_dir = Path(__file__).parent
-    assets_dir = current_dir / "assets"
-    
-    # Add route to serve assets from /wcod/assets/ path
-    @server.route('/wcod/assets/<path:filename>')
-    def serve_wcod_assets(filename):
-        """Serve static assets for WCoD dashboard"""
-        return send_from_directory(str(assets_dir), filename)
-    
-    # Add route to serve assets from app/assets/ directory
-    app_assets_dir = Path(__file__).parent.parent / "assets"
-    @server.route('/assets/<path:filename>')
-    def serve_app_assets(filename):
-        """Serve static assets from app/assets/ directory"""
-        return send_from_directory(str(app_assets_dir), filename)
+    @dash_app.server.route('/assets/<path:path>')
+    def serve_assets(path):
+        """Serve static assets from assets folder"""
+        # Handle nested paths like images/globe_inactive.svg
+        file_path = os.path.join(str(assets_dir), path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            directory = os.path.dirname(file_path)
+            filename = os.path.basename(file_path)
+            return send_from_directory(directory, filename)
+        else:
+            # Try to serve from assets_dir directly
+            return send_from_directory(str(assets_dir), path)
     
     # Custom CSS for Tableau-like styling
     dash_app.index_string = '''
@@ -602,215 +618,8 @@ def create_wcod_dashboard(server, url_base_pathname):
         # Store to track whether dashboard is rendered inside an iframe
         dcc.Store(id='iframe-flag', data=False),
         
-        # Header Navigation (hidden for country profile iframe)
-        html.Div(id='header-container', children=[
-            # Top Header - Energy Intelligence
-            html.Nav([
-                html.Div([
-                    # Logo with SVG icon
-                    html.Div([
-                        html.Img(
-                            src="/assets/images/logo.svg",
-                            alt="Energy Intelligence",
-                            style={
-                                'height': '40px',
-                                'width': 'auto',
-                                'marginRight': '12px',
-                                'display': 'block'
-                            }
-                        )
-                    ], style={'display': 'flex', 'alignItems': 'center'}),
-                    # Right side navigation
-                    html.Div([
-                        html.A([
-                            "Energy Debate",
-                            html.Span(" ▼", style={'fontSize': '10px', 'marginLeft': '4px'})
-                        ], href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 1rem', 'fontSize': '14px', 'display': 'inline-flex', 'alignItems': 'center'}),
-                        html.A([
-                            "Products",
-                            html.Span(" ▼", style={'fontSize': '10px', 'marginLeft': '4px'})
-                        ], href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px', 'display': 'inline-flex', 'alignItems': 'center'}),
-                        html.A([
-                            "What We Do",
-                            html.Span(" ▼", style={'fontSize': '10px', 'marginLeft': '4px'})
-                        ], href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px', 'display': 'inline-flex', 'alignItems': 'center'}),
-                        html.A([
-                            "Who We Are",
-                            html.Span(" ▼", style={'fontSize': '10px', 'marginLeft': '4px'})
-                        ], href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px', 'display': 'inline-flex', 'alignItems': 'center'}),
-                        html.A("In the Media", href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 1rem', 'fontSize': '14px'}),
-                        html.A("Contact Us", href="/contact", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px'}),
-                        html.A("Logout", href="#", style={'color': '#2c3e50', 'textDecoration': 'none', 'margin': '0 0.5rem', 'fontSize': '14px'}),
-                        html.Button(
-                            "MY EI",
-                            style={
-                                'background': '#FF6B35',
-                                'color': '#ffffff',
-                                'border': 'none',
-                                'padding': '4px 16px',
-                                'borderRadius': '4px',
-                                'fontSize': '14px',
-                                'fontWeight': '600',
-                                'cursor': 'pointer'
-                            }
-                        ),
-                        html.Div([
-                            html.Img(
-                                src="/assets/images/user_icon.jpeg",
-                                style={
-                                    'width': '36px',
-                                    'height': '42px',
-                                    'borderRadius': '50%',
-                                    'objectFit': 'cover',
-                                    'cursor': 'pointer'
-                                }
-                            )
-                        ], style={'marginLeft': '1rem', 'cursor': 'pointer', 'display': 'flex', 'alignItems': 'center'})
-                    ], className="header-menu", style={'display': 'flex', 'alignItems': 'center', 'marginLeft': 'auto'})
-                ], style={'display': 'flex', 'alignItems': 'center', 'width': '100%', 'maxWidth': '1400px', 'margin': '0 auto', 'padding': '1rem 22px'})
-            ], className="top-header", style={'background': '#ffffff', 'borderBottom': '1px solid #e0e0e0', 'padding': '4px'}),
-            
-            # Secondary Navigation Bar - Dark Blue
-            html.Nav([
-                html.Div([
-                    html.Div([
-                        html.A("Low-Carbon Energy", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
-                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
-                        html.A("Oil Markets", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
-                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
-                        html.A("Gas and LNG", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
-                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
-                        html.A("Risk", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
-                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
-                        html.A("Competitive Intelligence", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
-                        html.Span("|", style={'color': '#ffffff', 'margin': '0 8px'}),
-                        html.A("Energy Intelligence Premium", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'padding': '0 8px'}),
-                    ], style={'display': 'flex', 'alignItems': 'center'}),
-                    # Search bar
-                    html.Div([
-                        dcc.Input(
-                            type="text",
-                            placeholder="Search...",
-                            id='header-search-input',
-                            style={
-                                'padding': '3px 12px',
-                                'border': '1px solid #ccc',
-                                'borderRadius': '4px',
-                                'fontSize': '14px',
-                                'width': '200px',
-                                'marginRight': '8px'
-                            }
-                        ),
-                        html.Span("🔍", style={'fontSize': '18px', 'cursor': 'pointer'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'marginLeft': 'auto'})
-                ], style={'display': 'flex', 'alignItems': 'center', 'width': '100%', 'maxWidth': '1400px', 'margin': '0 auto', 'padding': '5px 10px'})
-            ], style={'background': '#1b365d', 'padding': '0'}),
-            
-            # WCoD Header Section - Gradient Background with Banner
-            html.Div([
-                html.Div([
-                    html.H1(
-                        "WORLD CRUDE OIL DATA",
-                        style={
-                            'fontSize': '2.5rem',
-                            'fontWeight': '700',
-                            'color': '#ffffff',
-                            'textTransform': 'uppercase',
-                            'letterSpacing': '2px',
-                            'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-                        }
-                    ),
-                    html.P(
-                        "Analysis on the top 200 global crudes, including data on production, trade, quality and pricing",
-                        style={
-                            'fontSize': '1.1rem',
-                            'color': '#ffffff',
-                            'marginBottom': '0',
-                            'fontWeight': '400',
-                            'lineHeight': '1.6',
-                            'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-                        }
-                    )
-                ], style={
-                    'background': 'rgba(27, 54, 93, .8)',
-                    'padding': '25px 20px',
-                    'margin': '40px 0',
-                    'maxWidth': '880px',
-                    'position': 'relative',
-                    'zIndex': '1'
-                }),
-                # Bottom Navigation Bar
-                html.Div([
-                    html.Div([
-                        html.Div([
-                            html.A("Country", href="/wcod/", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
-                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
-                            html.A("Crude", href="/crude-overview", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
-                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
-                            html.A("Trade", href="/trade/imports-country-detail", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
-                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
-                            html.A("Prices", href="/prices/global-crude-prices", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
-                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
-                            html.A("Upstream Projects", href="/upstream-projects/projects-by-country", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
-                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
-                            html.A("Methodology", href="/upstream-oil-projects-tracker-methodology", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
-                            html.Span(" | ", style={'color': '#ffffff', 'margin': '0 4px'}),
-                            html.A("API Access", href="#", style={'color': '#ffffff', 'textDecoration': 'none', 'fontSize': '14px', 'fontWeight': '400', 'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", 'transition': 'opacity 0.3s'}),
-                        ], style={'display': 'flex', 'alignItems': 'center'}),
-                        html.A(
-                            "Learn more about World Crude Oil Data >",
-                            href="#",
-                            style={
-                                'color': '#ffffff',
-                                'textDecoration': 'none',
-                                'fontSize': '14px',
-                                'fontWeight': '400',
-                                'fontFamily': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-                                'transition': 'opacity 0.3s',
-                                'marginLeft': 'auto'
-                            }
-                        )
-                    ], style={
-                        'display': 'flex',
-                        'alignItems': 'center',
-                        'justifyContent': 'space-between',
-                        'maxWidth': '1320px',
-                    })
-                ], style={
-                    'background': '#2c3e50',
-                    'padding': '15px 10px',
-                    'position': 'relative',
-                    'zIndex': '1',
-                    'top': '31px'
-                })
-            ], style={
-                'position': 'relative',
-                'background': 'linear-gradient(to top, #1a4a5c 0%, #2c5f7a 50%, #4a9bb8 100%)',
-                'padding': '0',
-                'overflow': 'hidden',
-                'minHeight': '300px',
-                'marginBottom': '0'
-            })
-        ]),  # Close header-container
-        
-        # Filter & Search Section Header
-        html.Div([
-            html.Div([
-                html.H2(
-                    "Filter & Search",
-                    style={
-                        'fontSize': '2.0rem',
-                        'fontFamily': "Helvetica, sans-serif",
-                        'fontWeight': '500',
-                        'color': '#1b365d',
-                        'letterSpacing': '0.5px',
-                        'margin': '0',
-                        'padding': '16px 30px 12px 30px',
-                        'lineHeight': '1.2'
-                    }
-                )
-            ], style={'background': '#e5e5e5', 'borderBottom': 'none', 'margin': '0', 'padding': '0'})
-        ], className="container-fluid", style={'padding': '0', 'background': '#e5e5e5', 'width': '100%', 'margin': '0'}),
+        # Header Navigation - REMOVED
+        # Filter & Search Section Header - REMOVED
         
         # Tab Navigation - matching Image 1 design (white tabs with rounded corners on light gray background)
         html.Div([
@@ -1023,34 +832,8 @@ def create_wcod_dashboard(server, url_base_pathname):
         # Store for current sub-menu selection
         dcc.Store(id='current-submenu', data='country-overview'),
         
-        # Footer (hidden for country profile iframe)
-        html.Div(id='footer-container', children=[
-            html.Footer([
-                html.Div([
-                    html.Div([
-                        html.H5("Energy Intelligence", style={'color': '#fff', 'marginBottom': '15px'}),
-                        html.P("Comprehensive energy data and analysis platform.", style={'color': '#b0b0b0', 'fontSize': '14px'})
-                    ], className='col-md-4'),
-                    html.Div([
-                        html.H5("Quick Links", style={'color': '#fff', 'marginBottom': '15px'}),
-                        html.Ul([
-                            html.Li(html.A("Data", href="/data", style={'color': '#b0b0b0', 'textDecoration': 'none'})),
-                            html.Li(html.A("WCoD", href="/wcod/", style={'color': '#b0b0b0', 'textDecoration': 'none'})),
-                            html.Li(html.A("Research", href="/research", style={'color': '#b0b0b0', 'textDecoration': 'none'})),
-                        ], style={'listStyle': 'none', 'padding': '0'})
-                    ], className='col-md-4'),
-                    html.Div([
-                        html.H5("Contact", style={'color': '#fff', 'marginBottom': '15px'}),
-                        html.P("info@energyintel.com", style={'color': '#b0b0b0', 'fontSize': '14px'})
-                    ], className='col-md-4'),
-                ], className='row', style={'maxWidth': '1200px', 'margin': '0 auto', 'padding': '0 20px'}),
-                html.Hr(style={'background': '#333', 'margin': '2rem 0 1rem', 'border': 'none', 'height': '1px'}),
-                html.Div([
-                    html.P("© 2024 Energy Intelligence. All rights reserved.", 
-                           style={'color': '#b0b0b0', 'textAlign': 'center', 'fontSize': '14px', 'margin': '0'})
-                ])
-            ], style={'background': '#1a1a1a', 'color': '#b0b0b0', 'padding': '3rem 0 1rem', 'marginTop': '4rem'})
-        ])
+        # Footer - REMOVED
+        # html.Div(id='footer-container', children=[...])
     ], style={'background': '#f5f5f5', 'minHeight': '100vh'})
     
     # Detect iframe rendering client-side to avoid showing duplicate headers inside embeds
@@ -1069,7 +852,7 @@ def create_wcod_dashboard(server, url_base_pathname):
     )
     
     # Callback to hide header and footer when WCoD dashboards are embedded in iframes
-    @callback(
+    @dash_app.callback(
         [Output('header-container', 'style'),
          Output('footer-container', 'style')],
         [Input('url', 'pathname'),
@@ -1122,7 +905,7 @@ def create_wcod_dashboard(server, url_base_pathname):
         return {'display': 'block'}, {'display': 'block'}
     
     # Callback to handle URL routing - runs on initial load to set correct tab/submenu from URL
-    @callback(
+    @dash_app.callback(
         [Output('main-tabs', 'value'),
          Output('current-submenu', 'data', allow_duplicate=True)],
         [Input('url', 'pathname'),
@@ -1210,7 +993,7 @@ def create_wcod_dashboard(server, url_base_pathname):
         return tab, submenu
     
     # Callback to highlight active tab - runs on initial load and when tab changes
-    @callback(
+    @dash_app.callback(
         [Output('tab-link-country', 'style'),
          Output('tab-link-crude', 'style'),
          Output('tab-link-trade', 'style'),
@@ -1277,12 +1060,12 @@ def create_wcod_dashboard(server, url_base_pathname):
         ]
     
     # Callback to update sub-menu based on main tab and submenu changes
-    @callback(
-        Output('submenu-container', 'children'),
+    @dash_app.callback(
+        Output('submenu-container', 'children', allow_duplicate=True),
         [Input('main-tabs', 'value'),
          Input('url', 'pathname'),
          Input('current-submenu', 'data')],
-        prevent_initial_call=False
+        prevent_initial_call='initial_duplicate'
     )
     def update_submenu(active_tab, pathname, current_submenu):
         """Update sub-menu based on active main tab and current submenu"""
@@ -1454,7 +1237,7 @@ def create_wcod_dashboard(server, url_base_pathname):
         return submenu_html
     
     # Callback to update content based on sub-menu selection
-    @callback(
+    @dash_app.callback(
         Output('tab-content', 'children'),
         [Input('current-submenu', 'data'),
          Input('main-tabs', 'value'),
@@ -1553,7 +1336,7 @@ def create_wcod_dashboard(server, url_base_pathname):
         return html.Div("Content not found")
     
     # Sub-menu click handler - using pattern matching
-    @callback(
+    @dash_app.callback(
         [Output('current-submenu', 'data', allow_duplicate=True),
          Output('submenu-container', 'children', allow_duplicate=True)],
         Input({'type': 'submenu-button', 'index': dash.dependencies.ALL}, 'n_clicks'),
@@ -1700,7 +1483,7 @@ def create_wcod_dashboard(server, url_base_pathname):
     
     def render_country_profile():
         """Country Profile view"""
-        return country_profile.create_layout(server)
+        return country_profile.create_layout(server=None)
     
     def render_crude_overview():
         """Crude Overview view"""
@@ -1708,11 +1491,11 @@ def create_wcod_dashboard(server, url_base_pathname):
     
     def render_crude_profile():
         """Crude Profile view"""
-        return crude_profile.create_layout(server)
+        return crude_profile.create_layout(server=None)
     
     def render_crude_comparison():
         """Crude Comparison view"""
-        return crude_comparison.create_layout(server)
+        return crude_comparison.create_layout(server=None)
     
     def render_crude_quality():
         """Crude Quality Comparison view"""
@@ -1805,27 +1588,29 @@ def create_wcod_dashboard(server, url_base_pathname):
         ], className='tab-content')
     
     # Register callbacks from individual modules
-    country_overview.register_callbacks(dash_app, server)
-    country_profile.register_callbacks(dash_app, server)
-    crude_overview.register_callbacks(dash_app, server)
+    # Pass dash_app.server if server is None (for standalone mode)
+    callback_server = server if server else dash_app.server
+    country_overview.register_callbacks(dash_app, callback_server)
+    country_profile.register_callbacks(dash_app, callback_server)
+    crude_overview.register_callbacks(dash_app, callback_server)
     crude_profile.register_callbacks(dash_app)
     crude_comparison.register_callbacks(dash_app)
-    crude_quality.register_callbacks(dash_app, server)
-    crude_carbon.register_callbacks(dash_app, server)
-    imports_detail.register_callbacks(dash_app, server)
-    imports_comparison.register_callbacks(dash_app, server)
-    global_exports.register_callbacks(dash_app, server)
-    russian_exports.register_callbacks(dash_app, server)
-    global_prices.register_callbacks(dash_app, server)
-    price_scorecard.register_callbacks(dash_app, server)
-    gpw_margins.register_callbacks(dash_app, server)
-    projects_by_country.register_callbacks(dash_app, server)
-    projects_by_company.register_callbacks(dash_app, server)
-    projects_by_time.register_callbacks(dash_app, server)
-    projects_by_status.register_callbacks(dash_app, server)
-    projects_latest.register_callbacks(dash_app, server)
-    projects_tracker.register_callbacks(dash_app, server)
-    projects_carbon.register_callbacks(dash_app, server)
+    crude_quality.register_callbacks(dash_app, callback_server)
+    crude_carbon.register_callbacks(dash_app, callback_server)
+    imports_detail.register_callbacks(dash_app, callback_server)
+    imports_comparison.register_callbacks(dash_app, callback_server)
+    global_exports.register_callbacks(dash_app, callback_server)
+    russian_exports.register_callbacks(dash_app, callback_server)
+    global_prices.register_callbacks(dash_app, callback_server)
+    price_scorecard.register_callbacks(dash_app, callback_server)
+    gpw_margins.register_callbacks(dash_app, callback_server)
+    projects_by_country.register_callbacks(dash_app, callback_server)
+    projects_by_company.register_callbacks(dash_app, callback_server)
+    projects_by_time.register_callbacks(dash_app, callback_server)
+    projects_by_status.register_callbacks(dash_app, callback_server)
+    projects_latest.register_callbacks(dash_app, callback_server)
+    projects_tracker.register_callbacks(dash_app, callback_server)
+    projects_carbon.register_callbacks(dash_app, callback_server)
     
     # All callbacks are now registered from individual modules above
     

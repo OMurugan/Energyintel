@@ -65,7 +65,7 @@ Copy `.env.example` to `.env` and update with your database credentials:
 ```bash
 DATABASE_URL=postgresql://energyuser:energypass@localhost/energyintel
 SECRET_KEY=your-secret-key-here
-FLASK_ENV=development
+DASH_ENV=development
 ```
 
 ### 4. Initialize Database
@@ -142,11 +142,11 @@ The application will be available at `http://localhost:5000`
 
 ### Development
 
-Set `FLASK_ENV=development` in your `.env` file or environment variables.
+Set `DASH_ENV=development` in your `.env` file or environment variables.
 
 ### Production
 
-1. Set `FLASK_ENV=production`
+1. Set `DASH_ENV=production`
 2. Configure Redis for caching (optional but recommended)
 3. Use Gunicorn to run the application:
 
