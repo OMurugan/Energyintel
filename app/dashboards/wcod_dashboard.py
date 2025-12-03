@@ -5,6 +5,7 @@ Migrated to standalone Dash Enterprise application
 """
 import dash
 from dash import dcc, html, Input, Output, State, callback, dash_table
+from dash_embedded import Embeddable
 from urllib.parse import parse_qs
 import plotly.express as px
 import plotly.graph_objects as go
@@ -53,6 +54,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
     dash_app = dash.Dash(
         __name__,
         url_base_pathname=url_base_pathname,
+        plugins=[Embeddable(origins="*")],  # Add embedding support with CORS
         external_stylesheets=[
             'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
             'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
