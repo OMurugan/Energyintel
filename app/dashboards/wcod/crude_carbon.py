@@ -8,12 +8,61 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 import os
+from core.data_helpers import execute_query
+
 
 def create_layout():
     """Create the Crude Carbon Intensity layout"""
     # Don't load data here - load it in callbacks when page is active
     # Use default values for layout
-    countries = ['(All)']
+    # Dynamically load countries from the main carbon intensity query
+    try:
+        query = '''
+        SELECT 
+            B.ci_rank AS "Carbon Intensity",
+            B.country,
+            STRING_AGG(B.crudeoil, ', ') AS "crude list",
+            EXTRACT(YEAR FROM B.YearReported) AS "Year of YearReported",
+            SUM(B.ProductionDataValue) AS ProductionDataValue
+        FROM
+        (
+            SELECT
+                country_name AS country,
+                crude_name AS CrudeOil,
+                yr AS YearReported,
+                production_kbpd AS ProductionDataValue,
+                ci_rank
+            FROM dev.fact_wcod_crude A
+            LEFT JOIN dev.dim_country GRP 
+                ON A.country_id = GRP.dim_country_id
+        ) B
+        WHERE B.ci_rank IS NOT NULL 
+        GROUP BY 
+            B.country,
+            B.ci_rank,
+            B.YearReported
+        ORDER BY 
+            B.country,
+            B.YearReported;
+        '''
+        df = execute_query(query)
+        # Convert to DataFrame if needed
+        if not isinstance(df, pd.DataFrame):
+            df = pd.DataFrame(df)
+        # Clean column names
+        df.columns = [col.strip() for col in df.columns]
+        # Find the country column
+        country_col = None
+        for col in df.columns:
+            if col.lower() == 'country':
+                country_col = col
+                break
+        if country_col:
+            countries = ['(All)'] + sorted([str(c) for c in df[country_col].dropna().unique()])
+        else:
+            countries = ['(All)']
+    except Exception:
+        countries = ['(All)']
     available_years = list(range(2006, 2025))
     default_year = 2022
     min_year = 2006
@@ -278,7 +327,11 @@ def create_layout():
                                 'fontSize': '12px',
                                 'fontFamily': 'Arial, sans-serif'
                             },
-                            placeholder="Select countries..."
+                            placeholder="Select countries...",
+                            optionHeight=36,
+                            searchable=True,
+                            clearable=True,
+                            className='country-dropdown-with-checkbox'
                         )
                     ])
                 ], style={'marginBottom': '20px'}),
@@ -508,22 +561,47 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
     return fig
 
 def load_carbon_data():
-    """Load and clean carbon intensity data"""
-    csv_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'Carbon Intensity_data.csv')
-    
-    print(f"DEBUG: Loading CSV from: {csv_path}")
-    print(f"DEBUG: File exists: {os.path.exists(csv_path)}")
-    
-    if not os.path.exists(csv_path):
-        print(f"ERROR: CSV file not found at {csv_path}")
-        return pd.DataFrame()
-    
+
     try:
-        # Read CSV with proper encoding
-        df = pd.read_csv(csv_path, encoding='utf-8')
-        print(f"DEBUG: Loaded CSV with shape: {df.shape}")
-        print(f"DEBUG: Columns: {list(df.columns)}")
-        print(f"DEBUG: First few rows:\n{df.head()}")
+    
+        query = """
+        SELECT 
+            B.ci_rank AS "Carbon Intensity",
+            B.country,
+            STRING_AGG(B.crudeoil, ', ') AS "crude list",
+            EXTRACT(YEAR FROM B.YearReported) AS "Year of YearReported",
+            SUM(B.ProductionDataValue) AS ProductionDataValue
+        FROM
+        (
+            SELECT
+                country_name AS country,
+                crude_name AS CrudeOil,
+                yr AS YearReported,
+                production_kbpd AS ProductionDataValue,
+                ci_rank
+            FROM dev.fact_wcod_crude A
+            LEFT JOIN dev.dim_country GRP 
+                ON A.country_id = GRP.dim_country_id
+        ) B
+        WHERE B.ci_rank IS NOT NULL 
+        GROUP BY 
+            B.country,
+            B.ci_rank,
+            B.YearReported
+        ORDER BY 
+            B.country,
+            B.YearReported;
+        """
+        
+        print(f"DEBUG: Executing database query...")
+        results = execute_query(query)
+        
+        if not results:
+            print("ERROR: Query returned no results")
+            return pd.DataFrame()
+        
+        # Convert query results to DataFrame (matches CSV structure)
+        df = pd.DataFrame(results)
         
         # Clean column names
         df.columns = [col.strip() for col in df.columns]
@@ -531,6 +609,7 @@ def load_carbon_data():
         # Map to standard column names
         column_mapping = {}
         for col in df.columns:
+            print(f"DEBUG: Column: {col}")
             if 'carbon' in col.lower() and 'intensity' in col.lower():
                 column_mapping[col] = 'Carbon Intensity'
             elif 'country' in col.lower():
@@ -576,7 +655,7 @@ def load_carbon_data():
         traceback.print_exc()
         return pd.DataFrame()
 
-def register_callbacks(dash_app, server):
+def register_callbacks(dash_app, server):    
     """Register all callbacks for Crude Carbon Intensity"""
     
     # Callback to handle Carbon Intensity legend clicks
@@ -703,6 +782,34 @@ def register_callbacks(dash_app, server):
         
         return new_year, new_year, str(new_year)
     
+    # Callback for proper (All) multi-select logic on the country dropdown
+    @dash_app.callback(
+        Output('carbon-country-select', 'value', allow_duplicate=True),
+        Input('carbon-country-select', 'value'),
+        State('carbon-country-select', 'options'),
+        prevent_initial_call=True
+    )
+    def sync_all_checkbox(selected, all_options):
+        if not all_options:
+            return selected
+        all_countries = [o['value'] for o in all_options if o['value'] != '(All)']
+        selected = selected or []
+        selected_set = set(selected)
+        has_all = '(All)' in selected_set
+        # Only (All) selected: select everything
+        if has_all and len(selected_set) == 1:
+            return ['(All)'] + all_countries
+        # (All) just deselected: deselect everything
+        if not has_all and set(all_countries).issubset(selected_set):
+            return []
+        # All individual selected but not (All): add (All)
+        if set(all_countries) == selected_set:
+            return ['(All)'] + all_countries
+        # Deselecting a country while (All) is present should drop (All)
+        if has_all and not set(all_countries).issubset(selected_set):
+            return [v for v in selected if v != '(All)']
+        return selected
+
     # Main callback to update the chart
     @dash_app.callback(
         Output('crude-carbon-chart', 'figure'),
