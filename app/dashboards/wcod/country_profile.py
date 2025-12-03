@@ -10,7 +10,6 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import os
 from datetime import datetime
-from app import create_dash_app
 from core.data_helpers import execute_query
 
 # # CSV paths

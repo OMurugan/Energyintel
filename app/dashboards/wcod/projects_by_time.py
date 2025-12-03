@@ -8,8 +8,8 @@ from pathlib import Path
 from dash import dcc, html, Input, Output, State, callback, dash_table
 import plotly.graph_objects as go
 import pandas as pd
-from app import db
-from app.models import UpstreamProject
+from core.data_helpers import execute_query
+# from app.models import UpstreamProject
 
 
 # Data file paths

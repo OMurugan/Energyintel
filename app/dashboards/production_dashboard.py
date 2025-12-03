@@ -7,18 +7,23 @@ from dash import dcc, html, Input, Output, callback
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
-from flask import current_app
-from app import create_dash_app
-from app.models import Country, Production
-from app import db
-from sqlalchemy import func, extract
+from core.data_helpers import execute_query
 from datetime import datetime, timedelta
 
 
 def create_production_dashboard(server, url_base_pathname):
     """Create production-focused dashboard"""
-    dash_app = create_dash_app(server, url_base_pathname)
-    
+    dash_app = dash.Dash(
+        __name__,
+        server=server,
+        url_base_pathname=url_base_pathname,
+        external_stylesheets=[
+            'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
+            'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+        ],
+        suppress_callback_exceptions=True
+    )
+
     dash_app.layout = html.Div([
         html.Div([
             html.H1("Production Dashboard", className="mb-4"),
@@ -38,25 +43,18 @@ def create_production_dashboard(server, url_base_pathname):
     )
     def update_heatmap(_):
         """Update production heatmap"""
-        latest_date = db.session.query(func.max(Production.date)).scalar()
-        if not latest_date:
-            return go.Figure()
-        
-        results = db.session.query(
-            Country.name,
-            Country.region,
-            func.sum(Production.production_bbl).label('production')
-        ).join(Production).filter(
-            Production.date == latest_date
-        ).group_by(Country.id, Country.name, Country.region).all()
-        
-        df = pd.DataFrame([
-            {'Country': r.name, 'Region': r.region or 'Unknown', 'Production': r.production}
-            for r in results
-        ])
+        df = load_production_heatmap_data()
         
         if df.empty:
             return go.Figure()
+        
+        # Ensure 'Country', 'Region', 'Production' columns exist
+        required_cols = ['name', 'region', 'production']
+        for col in required_cols:
+            if col not in df.columns:
+                print(f"Error: Expected column '{col}' not found in DataFrame.")
+                return go.Figure()
+        df = df.rename(columns={'name': 'Country', 'region': 'Region', 'production': 'Production'})
         
         fig = px.treemap(
             df,
@@ -76,26 +74,18 @@ def create_production_dashboard(server, url_base_pathname):
     )
     def update_regional_breakdown(_):
         """Update regional breakdown"""
-        latest_date = db.session.query(func.max(Production.date)).scalar()
-        if not latest_date:
-            return go.Figure()
-        
-        results = db.session.query(
-            Country.region,
-            func.sum(Production.production_bbl).label('production')
-        ).join(Production).filter(
-            Production.date == latest_date
-        ).group_by(Country.region).order_by(
-            func.sum(Production.production_bbl).desc()
-        ).all()
-        
-        df = pd.DataFrame([
-            {'Region': r.region or 'Unknown', 'Production': r.production}
-            for r in results
-        ])
+        df = load_production_regional_breakdown_data()
         
         if df.empty:
             return go.Figure()
+        
+        # Ensure 'Region' and 'Production' columns exist
+        required_cols = ['region', 'production']
+        for col in required_cols:
+            if col not in df.columns:
+                print(f"Error: Expected column '{col}' not found in DataFrame.")
+                return go.Figure()
+        df = df.rename(columns={'region': 'Region', 'production': 'Production'})
         
         fig = px.pie(
             df,

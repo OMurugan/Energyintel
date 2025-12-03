@@ -8,9 +8,9 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 import os
-from app import db
-from app.models import Country, Imports
-from sqlalchemy import func
+# from app import db
+# from app.models import Country, Imports
+# from sqlalchemy import func
 
 # Define data path
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Trade')

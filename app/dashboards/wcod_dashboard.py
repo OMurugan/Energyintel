@@ -62,17 +62,18 @@ def get_absolute_url(path):
 def get_link_href(path):
     """
     Get href for dcc.Link components
-    For embedded Dash apps, use absolute URLs to avoid file:// protocol issues
-    when the page is loaded from file:// protocol
+    For internal navigation in embedded Dash apps, use relative paths.
+    The Dash embedded component handles internal routing.
     
     Args:
         path: Relative path (e.g., '/wcod/', '/country-overview')
     
     Returns:
-        str: Absolute URL (e.g., 'http://127.0.0.1:5000/wcod/')
+        str: Relative path (e.g., '/wcod/')
     """
-    # Use absolute URLs for embedded contexts to avoid file:// protocol issues
-    return get_absolute_url(path)
+    if not path.startswith('/'):
+        path = '/' + path
+    return path
 
 # Import individual submenu modules
 from app.dashboards.wcod import (
@@ -1697,5 +1698,36 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
     projects_carbon.register_callbacks(dash_app, callback_server)
     
     # All callbacks are now registered from individual modules above
+    
+    # Clientside callback to handle dcc.Link clicks in embedded context
+    # This prevents SecurityErrors when embedding from file:// by not using history.pushState directly
+    dash_app.clientside_callback(
+        """
+        function(n_clicks, href) {
+            if (!n_clicks || n_clicks === 0) {
+                return window.dash_clientside.no_update;
+            }
+            
+            // Check if the app is embedded (e.g., in an iframe from file:// origin)
+            let isEmbedded = false;
+            try {
+                isEmbedded = window.self !== window.top;
+            } catch (e) {
+                isEmbedded = true;
+            }
+
+            if (isEmbedded && href) {
+                // Prevent default navigation (history.pushState) for dcc.Link
+                // Instead, just update the internal pathname which will trigger the main URL callback
+                return href;
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('url', 'pathname', allow_duplicate=True),
+        Input('tab-navigation', 'n_clicks'),
+        State('url', 'href'),
+        prevent_initial_call='initial_duplicate'
+    )
     
     return dash_app
