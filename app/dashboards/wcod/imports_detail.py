@@ -853,8 +853,7 @@ def register_callbacks(dash_app, server):
         return go.Figure()
     
     @callback(
-        [Output('imports-by-country-chart', 'figure'),
-         Output('selected-year-store', 'data')],
+        [Output('imports-by-country-chart', 'figure')],
         [Input('importing-country-select', 'value'),
          Input('current-submenu', 'data'),
          State('selected-year-store', 'data')]
@@ -862,13 +861,13 @@ def register_callbacks(dash_app, server):
     def update_imports_by_country(selected_country, submenu, current_year):
         """Update imports by country chart based on country selection"""
         if submenu != 'imports-detail':
-            return go.Figure(), current_year
+            return go.Figure()
         
         # Use current year (default 2023) - chart 1 clicks no longer affect chart 2
         selected_year = current_year if current_year else 2023
         
         fig = create_imports_by_country_chart(selected_year, selected_country)
-        return fig, selected_year
+        return fig
     
     @callback(
         [Output('imports-detail-table', 'data'),

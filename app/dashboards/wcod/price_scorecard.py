@@ -1,763 +1,634 @@
 """
 Price Scorecard for Key World Oil Grades View
-Price scorecard table for key crude grades with three tabs:
-- Costs to Refiners
-- Port of Loading
-- Price Formula
+Price scorecard table for key crude grades with multi-level headers
 """
-import os
-from dash import dcc, html, Input, Output, State, callback, dash_table
-from dash.exceptions import PreventUpdate
+from dash import dcc, html, Input, Output, callback, dash_table
+import dash
 import pandas as pd
-
-
-def load_csv_data(csv_filename):
-    """
-    Load and parse CSV file with multi-level headers.
-    
-    CSV structure:
-    - Row 1-2: Source/Copyright (skip)
-    - Row 3: Destination/Region level (e.g., "Delivered to Rotterdam")
-    - Row 4: Country level
-    - Row 5: Crude type level
-    - Row 6: Pricing basis level (e.g., "(f.o.b.)", "(Sidi Kerir)")
-    - Row 7+: Data rows with Year and Month
-    """
-    csv_path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)),
-        'data',
-        'price',
-        csv_filename
-    )
-    
-    if not os.path.exists(csv_path):
-        return None, None, None
-    
-    # Read CSV with tab separator and no header initially
-    raw = pd.read_csv(
-        csv_path,
-        encoding="utf-16",
-        sep="\t",
-        header=None,
-        engine="python"
-    )
-    
-    # Drop completely empty rows
-    raw = raw.dropna(how="all")
-    
-    # Skip first two "Source / COPYRIGHT" rows
-    raw = raw.iloc[2:].reset_index(drop=True)
-    
-    if len(raw) < 5:
-        return None, None, None
-    
-    # Extract header levels
-    # Row 0: Destination/Region
-    # Row 1: Country
-    # Row 2: Crude type
-    # Row 3: Pricing basis
-    # Row 4: Additional level (for Price Formula - 5th header)
-    destination_row = raw.iloc[0].fillna("").astype(str).str.strip().tolist()
-    country_row = raw.iloc[1].fillna("").astype(str).str.strip().tolist()
-    crude_row = raw.iloc[2].fillna("").astype(str).str.strip().tolist()
-    pricing_row = raw.iloc[3].fillna("").astype(str).str.strip().tolist()
-    
-    # Check if there's a 5th header row (for Price Formula)
-    has_fifth_level = False
-    additional_row = []
-    # Price Formula CSV has 5 header levels
-    if 'Price_Formula' in csv_filename or 'Price Formula' in csv_filename:
-        if len(raw) > 4:
-            # Row 4 is the 5th header level for Price Formula
-            has_fifth_level = True
-            additional_row = raw.iloc[4].fillna("").astype(str).str.strip().tolist()
-            # Data starts from row index 5
-            df = raw.iloc[5:].reset_index(drop=True)
-        else:
-            # Data starts from row index 4
-            df = raw.iloc[4:].reset_index(drop=True)
-    else:
-        # Other CSVs have 4 header levels
-        # Data starts from row index 4
-        df = raw.iloc[4:].reset_index(drop=True)
-    
-    # First two columns are Year and Month (no headers in header rows)
-    if len(df.columns) < 2:
-        return None, None, None
-    
-    # Build column structure for multi-level headers
-    columns = []
-    column_info = []
-    
-    # Year and Month columns (first two) - these don't have headers in the CSV
-    columns.append({
-        "name": ["", "Year"],
-        "id": "Year",
-        "type": "text"
-    })
-    columns.append({
-        "name": ["", "Month"],
-        "id": "Month",
-        "type": "text"
-    })
-    
-    # Process data columns (starting from index 2 in the raw data)
-    # Note: header rows also start from index 2 (first two are empty for Year/Month)
-    max_cols = min(len(df.columns), len(destination_row), len(country_row), len(crude_row), len(pricing_row))
-    
-    for idx in range(2, max_cols):
-        # Get header values from the header rows (they start from index 2)
-        dest = destination_row[idx].strip() if idx < len(destination_row) else ""
-        country = country_row[idx].strip() if idx < len(country_row) else ""
-        crude = crude_row[idx].strip() if idx < len(crude_row) else ""
-        pricing = pricing_row[idx].strip() if idx < len(pricing_row) else ""
-        
-        # Skip empty columns (no country and no crude)
-        if not country and not crude and not dest:
-            continue
-        
-        # Create column ID
-        col_id = f"col_{idx}"
-        
-        # Build multi-level header structure
-        # dash_table supports 2-level headers: [level1, level2]
-        # We need to organize: Destination -> Country / Crude / Pricing
-        
-        # Top level: Destination (if present and meaningful)
-        level1 = ""
-        if dest:
-            dest_lower = dest.lower().strip()
-            # Check if it's a meaningful destination/region
-            if (dest_lower and 
-                dest_lower not in ["", "source: energy intelligence", "copyright"] and
-                ("delivered" in dest_lower or 
-                 "port" in dest_lower or 
-                 "africa" in dest_lower or 
-                 "asia" in dest_lower or 
-                 "europe" in dest_lower or 
-                 "latin america" in dest_lower or 
-                 "middle east" in dest_lower or 
-                 "north america" in dest_lower or 
-                 "fsu" in dest_lower or
-                 "costs to refiners" in dest_lower or
-                 "port of loading" in dest_lower or
-                 "price formula" in dest_lower)):
-                level1 = dest.strip()
-        
-        # Second level: Combine Country / Crude / Pricing
-        level2_parts = []
-        if country and country.strip():
-            level2_parts.append(country.strip())
-        if crude and crude.strip():
-            level2_parts.append(crude.strip())
-        if pricing and pricing.strip():
-            level2_parts.append(pricing.strip())
-        
-        level2 = " / ".join(level2_parts) if level2_parts else ""
-        
-        # If no level1, use level2 as single level header
-        if not level1:
-            col_name = level2 if level2 else f"Column {idx}"
-        else:
-            col_name = [level1, level2] if level2 else [level1, ""]
-        
-        columns.append({
-            "name": col_name,
-            "id": col_id,
-            "type": "numeric",
-            "format": {"specifier": ".2f"}
-        })
-        
-        # Add right-align styling for numeric columns in style_cell_conditional
-        # This will be handled in the layout
-        
-        # Get additional level if exists
-        additional = ""
-        if has_fifth_level and idx < len(additional_row):
-            additional = additional_row[idx].strip() if additional_row[idx] else ""
-        
-        column_info.append({
-            "id": col_id,
-            "destination": dest,
-            "country": country,
-            "crude": crude,
-            "pricing": pricing,
-            "additional": additional
-        })
-    
-    # Rename data columns to match column IDs
-    # First two are Year and Month, rest are col_2, col_3, etc.
-    new_cols = ['Year', 'Month'] + [f'col_{i}' for i in range(2, len(df.columns))]
-    df.columns = new_cols[:len(df.columns)]
-    
-    # Clean data: convert numeric columns
-    for col in df.columns:
-        if col not in ['Year', 'Month']:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    
-    # Remove rows where Year is empty or invalid
-    df = df[df['Year'].astype(str).str.strip() != '']
-    df = df[df['Year'].notna()]
-    
-    return df, columns, column_info
-
-
-def build_html_table(df, column_info):
-    """Build HTML table with 4-level headers"""
-    if df is None or df.empty or not column_info:
-        return html.Div("No data available")
-    
-    # Extract header information from column_info in order
-    headers_data = []
-    has_additional_level = False
-    for info in column_info:
-        additional = info.get('additional', '').strip()
-        if additional:
-            has_additional_level = True
-        headers_data.append({
-            'id': info['id'],
-            'destination': info.get('destination', '').strip(),
-            'country': info.get('country', '').strip(),
-            'crude': info.get('crude', '').strip(),
-            'pricing': info.get('pricing', '').strip(),
-            'additional': additional
-        })
-    
-    # Determine number of header rows (4 or 5)
-    num_header_rows = 5 if has_additional_level else 4
-    
-    # Build header rows by calculating colspans
-    # Row 1: Destination/Region
-    row1_cells = [
-        html.Th("", rowSpan=num_header_rows, style={
-            'position': 'sticky',
-            'left': 0,
-            'zIndex': 5,
-            'backgroundColor': 'white',
-            'border': '1px solid #333',
-            'borderRight': 'none',
-            'padding': '8px',
-            'textAlign': 'center',
-            'verticalAlign': 'middle',
-            'fontWeight': 'bold',
-            'fontSize': '15px',
-            'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
-        }),
-        html.Th("", rowSpan=num_header_rows, style={
-            'position': 'sticky',
-            'zIndex': 5,
-            'backgroundColor': 'white',
-            'border': '1px solid #333',
-            'borderLeft': 'none',
-            'padding': '8px',
-            'textAlign': 'center',
-            'verticalAlign': 'middle',
-            'fontWeight': 'bold',
-            'fontSize': '13px',
-            'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
-        })
-    ]
-    
-    # Calculate colspans for destination
-    i = 0
-    while i < len(headers_data):
-        dest = headers_data[i]['destination']
-        if dest:
-            # Count consecutive columns with same destination
-            count = 0
-            j = i
-            while j < len(headers_data) and headers_data[j]['destination'] == dest:
-                count += 1
-                j += 1
-            row1_cells.append(html.Th(
-                dest,
-                colSpan=count,
-                style={
-                    'backgroundColor': 'white',
-                    'border': '1px solid #333',
-                    'padding': '8px',
-                    'textAlign': 'center',
-                    'verticalAlign': 'middle',
-                    'fontWeight': 'bold',
-                    'fontSize': '15px',
-                    'color': '#fe5000',
-                    'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
-                }
-            ))
-            i = j
-        else:
-            i += 1
-    
-    # Row 2: Country
-    row2_cells = []
-    i = 0
-    while i < len(headers_data):
-        country = headers_data[i]['country']
-        if country:
-            count = 0
-            j = i
-            while j < len(headers_data) and headers_data[j]['country'] == country:
-                count += 1
-                j += 1
-            row2_cells.append(html.Th(
-                country,
-                colSpan=count,
-                style={
-                    'backgroundColor': 'white',
-                    'border': '1px solid #333',
-                    'padding': '8px',
-                    'textAlign': 'center',
-                    'verticalAlign': 'middle',
-                    'fontWeight': 'bold',
-                    'fontSize': '13px',
-                    'color': '#1b365d',
-                    'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
-                }
-            ))
-            i = j
-        else:
-            i += 1
-    
-    # Row 3: Crude type
-    row3_cells = []
-    i = 0
-    while i < len(headers_data):
-        crude = headers_data[i]['crude']
-        if crude:
-            count = 0
-            j = i
-            while j < len(headers_data) and headers_data[j]['crude'] == crude:
-                count += 1
-                j += 1
-            row3_cells.append(html.Th(
-                crude,
-                colSpan=count,
-                style={
-                    'backgroundColor': 'white',
-                    'border': '1px solid #333',
-                    'padding': '8px',
-                    'textAlign': 'center',
-                    'verticalAlign': 'middle',
-                    'fontWeight': 'bold',
-                    'fontSize': '13px',
-                    'color': '#1b365d',
-                    'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
-                }
-            ))
-            i = j
-        else:
-            i += 1
-    
-    # Row 4: Pricing basis
-    row4_cells = []
-    for h in headers_data:
-        row4_cells.append(html.Th(
-            h['pricing'] if h['pricing'] else '',
-            style={
-                'backgroundColor': 'white',
-                'border': '1px solid #333',
-                'padding': '8px',
-                'textAlign': 'center',
-                'verticalAlign': 'middle',
-                'fontWeight': 'bold',
-                'fontSize': '13px',
-                'color': '#1b365d',
-                'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
-            }
-        ))
-    
-    # Row 5: Additional level (only for Price Formula with 5 headers)
-    row5_cells = []
-    if has_additional_level:
-        for h in headers_data:
-            row5_cells.append(html.Th(
-                h['additional'] if h['additional'] else '',
-                style={
-                    'backgroundColor': 'white',
-                    'border': '1px solid #333',
-                    'padding': '8px',
-                    'textAlign': 'center',
-                    'verticalAlign': 'middle',
-                    'fontWeight': 'bold',
-                    'fontSize': '13px',
-                    'color': '#1b365d',
-                    'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
-                }
-            ))
-    
-    header_rows = [
-        html.Tr(row1_cells),
-        html.Tr(row2_cells),
-        html.Tr(row3_cells),
-        html.Tr(row4_cells)
-    ]
-    
-    # Add row 5 if it exists
-    if has_additional_level:
-        header_rows.append(html.Tr(row5_cells))
-    
-    # Build data rows
-    data_rows = []
-    prev_year = None
-    year_end_indices = []  # Track last row of each year group
-    
-    # First pass: identify year boundaries
-    for idx, row in df.iterrows():
-        current_year = str(row['Year']).strip() if pd.notna(row['Year']) else ''
-        if current_year and current_year != prev_year and prev_year is not None:
-            # Previous row was the last of previous year
-            year_end_indices.append(idx - 1)
-        prev_year = current_year if current_year else prev_year
-    
-    # Mark the last row as end of last year group
-    if len(df) > 0:
-        year_end_indices.append(len(df) - 1)
-    
-    prev_year = None
-    
-    for idx, row in df.iterrows():
-        row_cells = []
-        is_year_end = idx in year_end_indices
-        
-        # Year column
-        year_val = str(row['Year']).strip() if pd.notna(row['Year']) else ''
-        # Remove decimal part if present (e.g., "2025.0" -> "2025")
-        if year_val:
-            try:
-                year_val = str(int(float(year_val)))
-            except (ValueError, TypeError):
-                pass  # Keep original value if conversion fails
-        if year_val == prev_year:
-            year_val = ''
-        else:
-            prev_year = year_val
-        
-        year_style = {
-            'position': 'sticky',
-            'left': 0,
-            'zIndex': 3,
-            'backgroundColor': '#ffffff' if idx % 2 == 0 else '#f8f9fa',
-            'padding': '8px',
-            'textAlign': 'left',
-            'fontWeight': 'bold',
-            'fontSize': '12px',
-            'color': '#1b365d',
-            'borderLeft': '1px solid #ddd',
-            'borderRight': '1px solid #ddd',
-            'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
-        }
-        # Only show top border for first row of year, bottom border for last row of year
-        if year_val != '':
-            year_style['borderTop'] = '1px solid #ddd'
-        else:
-            year_style['borderTop'] = 'none'
-        
-        if is_year_end:
-            year_style['borderBottom'] = '2px solid #ddd'
-        else:
-            year_style['borderBottom'] = 'none'
-        
-        row_cells.append(html.Td(year_val, style=year_style))
-        
-        # Month column
-        month_val = str(row['Month']).strip() if pd.notna(row['Month']) else ''
-        month_style = {
-            'position': 'sticky',
-            'zIndex': 3,
-            'backgroundColor': '#ffffff' if idx % 2 == 0 else '#f8f9fa',
-            'padding': '8px',
-            'textAlign': 'left',
-            'fontWeight': 'bold',
-            'fontSize': '12px',
-            'color': '#1b365d',
-            'borderRight': '1px solid #ddd',
-            'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
-        }
-        if year_val != '':
-            month_style['borderTop'] = '1px solid #ddd'
-        else:
-            month_style['borderTop'] = 'none'
-        
-        if is_year_end:
-            month_style['borderBottom'] = '2px solid #ddd'
-        else:
-            month_style['borderBottom'] = 'none'
-        
-        row_cells.append(html.Td(month_val, style=month_style))
-        
-        # Data columns
-        for h in headers_data:
-            col_id = h['id']
-            if col_id in df.columns:
-                value = row[col_id]
-                if pd.isna(value) or value == '':
-                    display_value = ''
-                elif isinstance(value, (int, float)):
-                    display_value = f"{float(value):.2f}"
-                else:
-                    display_value = str(value)
-            else:
-                display_value = ''
-            
-            data_style = {
-                'padding': '8px',
-                'textAlign': 'right',
-                'fontSize': '12px',
-                'fontWeight': 'bold',
-                'color': '#1b365d',
-                'backgroundColor': '#ffffff' if idx % 2 == 0 else '#f8f9fa',
-                'borderRight': '1px solid #ddd',
-                'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif'
-            }
-            if year_val != '':
-                data_style['borderTop'] = '1px solid #ddd'
-            else:
-                data_style['borderTop'] = 'none'
-            
-            if is_year_end:
-                data_style['borderBottom'] = '2px solid #ddd'
-            else:
-                data_style['borderBottom'] = 'none'
-            
-            row_cells.append(html.Td(display_value, style=data_style))
-        
-        data_rows.append(html.Tr(row_cells))
-    
-    # Build complete table
-    table = html.Table([
-        html.Thead(header_rows),
-        html.Tbody(data_rows)
-    ], style={
-        'width': '100%',
-        'borderCollapse': 'collapse',
-        'border': '1px solid #ddd',
-        'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif',
-        'tableLayout': 'auto'
-    })
-    
-    return html.Div([
-        html.Div(table, style={
-            'overflowX': 'auto',
-            'overflowY': 'auto',
-            'maxHeight': '600px',
-            'width': '100%'
-        })
-    ], style={'width': '100%'})
+import os
+from pathlib import Path
 
 
 def create_layout():
-    """Create the Price Scorecard layout with three tabs"""
+    """Create the Price Scorecard layout"""
     return html.Div([
-        # Tabs
-        dcc.Tabs(
-            id="price-scorecard-tabs",
-            value="costs-to-refiners",  # Default to Costs to Refiners
-            persistence=False,  # Don't persist tab selection
-            children=[
-                dcc.Tab(
-                    label="Costs to Refiners",
-                    value="costs-to-refiners",
-                    style={
-                        "backgroundColor": "white",
-                        "border": "3px solid rgb(254, 80, 0)",
-                        "padding": "10px 20px",
-                        "fontWeight": "bold",
-                        "fontSize": "19px",
-                        "color": "rgb(78, 121, 167)",
-                        "borderRadius": "5px 5px 0 0",
-                        "marginRight": "10px"
-                    },
-                    selected_style={
-                        "backgroundColor": "#f8f9fa",
-                        "color": "rgb(78, 121, 167)",
-                        "fontSize": "19px",
-                        "border": "3px solid rgb(254, 80, 0)",
-                        "padding": "10px 20px",
-                        "fontWeight": "bold",
-                        "borderRadius": "5px 5px 0 0",
-                        "marginRight": "10px"
-                    }
-                ),
-                dcc.Tab(
-                    label="Port of Loading",
-                    value="port-of-loading",
-                    style={
-                        "backgroundColor": "white",
-                        "border": "3px solid rgb(254, 80, 0)",
-                        "padding": "10px 20px",
-                        "fontWeight": "bold",
-                        "color": "rgb(78, 121, 167)",
-                        "fontSize": "19px",
-                        "borderRadius": "5px 5px 0 0",
-                        "marginRight": "10px"
-                    },
-                    selected_style={
-                        "backgroundColor": "#f8f9fa",
-                        "color": "rgb(78, 121, 167)",
-                        "fontSize": "19px",
-                        "border": "3px solid rgb(254, 80, 0)",
-                        "padding": "10px 20px",
-                        "fontWeight": "bold",
-                        "borderRadius": "5px 5px 0 0",
-                        "marginRight": "10px"
-                    }
-                ),
-                dcc.Tab(
-                    label="Price Formula",
-                    value="price-formula",
-                    style={
-                        "backgroundColor": "white",
-                        "border": "3px solid rgb(254, 80, 0)",
-                        "padding": "10px 20px",
-                        "fontWeight": "bold",
-                        "color": "rgb(78, 121, 167)",
-                        "fontSize": "19px",
-                        "borderRadius": "5px 5px 0 0"
-                    },
-                    selected_style={
-                        "backgroundColor": "#f8f9fa",
-                        "color": "rgb(78, 121, 167)",
-                        "fontSize": "19px",
-                        "border": "3px solid rgb(254, 80, 0)",
-                        "padding": "10px 20px",
-                        "fontWeight": "bold",
-                        "borderRadius": "5px 5px 0 0"
-                    }
-                ),
-            ],
-            style={"marginBottom": "10px", "display": "flex", "justifyContent": "center", "backgroundColor": "white"}
-        ),
+        # Top grey line
+        html.Hr(style={
+            'border': 'none',
+            'borderTop': '1px solid #cccccc',
+            'margin': '0',
+            'marginBottom': '20px'
+        }),
         
-        # Dynamic title (will be updated by callback) - below tabs, left aligned
-        html.H3(
-            id="price-scorecard-title",
-            children="PIW SCORECARD -- COSTS TO REFINERS OF KEY FORMULA PRICED CRUDE OILS IN PRIMARY WORLD MARKETS ($/bbl)",
-            style={
-                'color': 'rgb(254, 80, 0)',
-                'textAlign': 'left',
-                'fontSize': '18px',
-                'fontWeight': 'bold',
-                'textTransform': 'uppercase',
-                'marginBottom': '15px',
-                'marginTop': '10px',
-                'paddingLeft': '10px'
-            }
-        ),
+        # Title - left-aligned, orange-brown, serif font
+        html.H3("PIW SCORECARD -- COSTS TO REFINERS OF KEY FORMULA PRICED CRUDE OILS IN PRIMARY WORLD MARKETS ($/bbl)", 
+                style={
+                    'marginBottom': '20px', 
+                    'fontSize': '16px', 
+                    'fontWeight': 'normal',
+                    'textAlign': 'left',
+                    'color': '#cc6600',  # Orange-brown color
+                    'fontFamily': 'Times New Roman, serif',
+                    'padding': '0',
+                    'margin': '0 0 20px 0'
+                }),
         
-        # Store to track previous tab for detecting tab changes
-        dcc.Store(id='price-scorecard-previous-tab', data=None),
+        # Clickable boxes container
+        html.Div([
+            # Costs to Refiners box
+            html.Button(
+                "Costs to Refiners",
+                id='costs-to-refiners-btn',
+                n_clicks=0,
+                style={
+                    'display': 'inline-block',
+                    'marginRight': '30px',
+                    'padding': '12px 25px',
+                    'border': '2px solid #ff6600',  # Orange border
+                    'color': '#0066cc',  # Blue text
+                    'fontSize': '15px',
+                    'fontWeight': 'normal',
+                    'fontFamily': 'Arial, sans-serif',
+                    'width': '380px',
+                    'textAlign': 'center',
+                    'cursor': 'pointer',
+                    'borderRadius': '4px',
+                    'height': '45px',
+                    'lineHeight': '21px'
+                }
+            ),
+            
+            # Port of Loading box
+            html.Button(
+                "Port of Loading",
+                id='port-of-loading-btn',
+                n_clicks=0,
+                style={
+                    'display': 'inline-block',
+                    'marginRight': '30px',
+                    'padding': '12px 25px',
+                    'border': '2px solid #ff6600',  # Orange border
+                    'color': '#0066cc',  # Blue text
+                    'fontSize': '15px',
+                    'fontWeight': 'normal',
+                    'fontFamily': 'Arial, sans-serif',
+                    'width': '380px',
+                    'textAlign': 'center',
+                    'cursor': 'pointer',
+                    'borderRadius': '4px',
+                    'height': '45px',
+                    'lineHeight': '21px'
+                }
+            ),
+            
+            # Price Formula box
+            html.Button(
+                "Price Formula",
+                id='price-formula-btn',
+                n_clicks=0,
+                style={
+                    'display': 'inline-block',
+                    'padding': '12px 25px',
+                    'border': '2px solid #ff6600',  # Orange border
+                    'color': '#0066cc',  # Blue text
+                    'fontSize': '15px',
+                    'fontWeight': 'normal',
+                    'fontFamily': 'Arial, sans-serif',
+                    'width': '380px',
+                    'textAlign': 'center',
+                    'cursor': 'pointer',
+                    'borderRadius': '4px',
+                    'height': '45px',
+                    'lineHeight': '21px'
+                }
+            )
+        ], style={
+            'marginBottom': '30px',
+            'textAlign': 'left'
+        }),
         
-        # Table container (initially hidden) with loading spinner
-        dcc.Loading(
-            id="price-scorecard-loading",
-            type="circle",  # Loading spinner type
-            color="rgb(254, 80, 0)",  # Match the orange-red theme
-            children=[
-                html.Div(
-                    id="price-scorecard-table-container",
-                    children=html.Div(id='price-scorecard-table'),
-                    style={'display': 'none'}  # Hidden until tab is selected
-                )
-            ]
+        # Store selected CSV type
+        dcc.Store(id='selected-csv-type', data='Cost_to_Refiners'),
+        
+        # Table container
+        html.Div(id='price-scorecard-table-container')
+    ], className='tab-content', style={'padding': '20px', 'backgroundColor': '#ffffff'})
+
+
+def load_csv_data(csv_type='Cost_to_Refiners'):
+    """Load and parse CSV data with multi-level headers"""
+    # Get the base directory
+    base_dir = Path(__file__).parent.parent / 'data' / 'price'
+    csv_file = base_dir / f'{csv_type}.csv'
+    
+    if not csv_file.exists():
+        print(f"CSV file not found: {csv_file}")
+        return None, None, None, None, None
+    
+    try:
+        # Read CSV with tab separator, skip first 2 rows (copyright info)
+        # Try UTF-16 first (common for Excel exports), fallback to UTF-8
+        try:
+            df = pd.read_csv(csv_file, sep='\t', header=None, skiprows=2, encoding='utf-16')
+        except UnicodeDecodeError:
+            df = pd.read_csv(csv_file, sep='\t', header=None, skiprows=2, encoding='utf-8')
+    except Exception as e:
+        print(f"Error reading CSV file: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None, None, None, None
+    
+    # Extract header rows
+    # Row 0 (index 0): Delivery locations
+    # Row 1 (index 1): Countries
+    # Row 2 (index 2): Crude types
+    # Row 3 (index 3): Pricing terms
+    
+    # Extract header rows and convert NaN to None for easier handling
+    delivery_locations = [None if pd.isna(v) else v for v in df.iloc[0].values[2:]]  # Skip first 2 empty columns
+    countries = [None if pd.isna(v) else v for v in df.iloc[1].values[2:]]
+    crude_types = [None if pd.isna(v) else v for v in df.iloc[2].values[2:]]
+    pricing_terms = [None if pd.isna(v) else v for v in df.iloc[3].values[2:]]
+    
+    # Extract data rows (starting from row 4, index 4)
+    data_df = df.iloc[4:].copy()
+    
+    # Set first two columns as Year and Month
+    if len(data_df.columns) >= 2:
+        data_df.columns = ['Year', 'Month'] + [f'col_{i}' for i in range(len(data_df.columns) - 2)]
+    
+    # Clean data - remove rows with all NaN
+    data_df = data_df.dropna(how='all')
+    
+    # Convert year and month columns
+    data_df['Year'] = data_df['Year'].astype(str).str.strip()
+    data_df['Month'] = data_df['Month'].astype(str).str.strip()
+    
+    # Convert value columns to numeric
+    value_cols = [col for col in data_df.columns if col.startswith('col_')]
+    for col in value_cols:
+        data_df[col] = pd.to_numeric(data_df[col], errors='coerce')
+    
+    return delivery_locations, countries, crude_types, pricing_terms, data_df
+
+
+def build_column_structure(delivery_locations, countries, crude_types, pricing_terms):
+    """Build column structure with proper hierarchy"""
+    columns = []
+    
+    # First two columns: Year and Month
+    columns.append({'name': ['', '', '', 'Year'], 'id': 'Year'})
+    columns.append({'name': ['', '', '', 'Month'], 'id': 'Month'})
+    
+    # Forward-fill all header levels to handle empty cells in CSV
+    # This ensures headers span across all their related columns
+    max_len = max(len(delivery_locations), len(countries), len(crude_types), len(pricing_terms))
+    
+    filled_delivery = []
+    filled_countries = []
+    filled_crude = []
+    
+    last_delivery = None
+    last_country = None
+    last_crude = None
+    
+    # Helper function to check if value is non-empty
+    def is_non_empty(val):
+        if val is None:
+            return False
+        try:
+            if pd.isna(val):
+                return False
+        except (TypeError, ValueError):
+            pass
+        # Handle float NaN
+        try:
+            if isinstance(val, float) and (val != val):  # NaN check: NaN != NaN
+                return False
+        except:
+            pass
+        val_str = str(val).strip()
+        return val_str != '' and val_str.lower() not in ['nan', 'none', 'null']
+    
+    # First pass: forward-fill empty cells
+    for i in range(max_len):
+        # Get raw values, handling all edge cases
+        delivery_raw = delivery_locations[i] if i < len(delivery_locations) else None
+        country_raw = countries[i] if i < len(countries) else None
+        crude_raw = crude_types[i] if i < len(crude_types) else None
+        
+        # Forward-fill delivery location
+        if is_non_empty(delivery_raw):
+            delivery_str = str(delivery_raw).strip()
+            # If delivery changed, reset country and crude
+            if delivery_str != last_delivery:
+                last_country = None
+                last_crude = None
+            last_delivery = delivery_str
+        # Keep last_delivery for forward-fill (even if None, we'll handle it later)
+        filled_delivery.append(last_delivery)
+        
+        # Forward-fill country
+        if is_non_empty(country_raw):
+            country_str = str(country_raw).strip()
+            # If country changed, reset crude
+            if country_str != last_country:
+                last_crude = None
+            last_country = country_str
+        # Keep last_country for forward-fill
+        filled_countries.append(last_country)
+        
+        # Forward-fill crude type
+        if is_non_empty(crude_raw):
+            last_crude = str(crude_raw).strip()
+        # Keep last_crude for forward-fill
+        filled_crude.append(last_crude)
+    
+    # Track current values for grouping
+    current_delivery = None
+    current_country = None
+    current_crude = None
+    col_idx = 0
+    
+    # Second pass: build column structure with forward-filled values
+    for i in range(max_len):
+        # Use forward-filled values directly - same value = automatic merging by Dash
+        delivery = filled_delivery[i] if filled_delivery[i] is not None else ''
+        country = filled_countries[i] if filled_countries[i] is not None else ''
+        crude = filled_crude[i] if filled_crude[i] is not None else ''
+        pricing = str(pricing_terms[i]).strip() if i < len(pricing_terms) and pricing_terms[i] is not None and is_non_empty(pricing_terms[i]) else ''
+        
+        # Build column name array for multi-level header
+        # Use the forward-filled values directly - Dash will merge cells with the same value
+        col_name = ['', '', '', '']
+        
+        # Level 1: Delivery location - use forward-filled value (same value = merged)
+        col_name[0] = delivery if delivery else ''
+        
+        # Level 2: Country - use forward-filled value (same value = merged)
+        col_name[1] = country if country else ''
+        
+        # Level 3: Crude type - use forward-filled value (same value = merged)
+        col_name[2] = crude if crude else ''
+        
+        # Level 4: Pricing terms - always show value for every column (no merging)
+        # Add invisible character to prevent Dash from merging identical consecutive values
+        if pricing:
+            # Use zero-width non-joiner (U+200C) with column index to make each value unique
+            # This prevents merging while keeping the display visually identical
+            # Different invisible chars for different columns: U+200B (zero-width space), 
+            # U+200C (zero-width non-joiner), U+200D (zero-width joiner), U+FEFF (zero-width no-break space)
+            invisible_chars = ['\u200B', '\u200C', '\u200D', '\uFEFF']
+            invisible_char = invisible_chars[i % len(invisible_chars)]
+            col_name[3] = pricing + invisible_char
+        else:
+            col_name[3] = ''
+        
+        # Create column ID
+        col_id = f'col_{col_idx}'
+        col_idx += 1
+        
+        columns.append({
+            'name': col_name,
+            'id': col_id
+        })
+    
+    return columns
+
+
+def format_data_for_table(data_df, num_value_cols):
+    """Format data for dash_table with proper sorting"""
+    # Create records
+    records = []
+    
+    # Month order for descending sort
+    months_order = ['December', 'November', 'October', 'September', 'August', 'July', 'June', 'May', 'April', 'March', 'February', 'January']
+    
+    # Track row indices for year boundaries
+    year_boundary_rows = []
+    current_row_index = 0
+    
+    # Group by year and sort
+    for year in sorted(data_df['Year'].unique(), reverse=True):
+        year_data = data_df[data_df['Year'] == year].copy()
+        
+        # Sort months in descending order
+        year_data['Month'] = pd.Categorical(
+            year_data['Month'], 
+            categories=months_order, 
+            ordered=True
         )
-    ], className='tab-content')
+        year_data = year_data.sort_values('Month', ascending=False)
+        
+        # Show year only in the first row of each year group, empty for others
+        for idx, (_, row) in enumerate(year_data.iterrows()):
+            # Format year to remove decimal (e.g., 2025.0 -> 2025)
+            year_value = ''
+            if idx == 0:
+                try:
+                    # Convert to float first to handle string "2025.0", then to int to remove decimal
+                    year_value = str(int(float(row['Year'])))
+                except (ValueError, TypeError):
+                    # If conversion fails, use original value as string and remove .0 if present
+                    year_str = str(row['Year'])
+                    year_value = year_str.replace('.0', '') if year_str.endswith('.0') else year_str
+            
+            record = {
+                'Year': year_value,  # Show year only in first row of group, formatted without decimal
+                'Month': row['Month']
+            }
+            
+            # Add value columns
+            for i in range(num_value_cols):
+                col_id = f'col_{i}'
+                if col_id in row:
+                    value = row[col_id]
+                    if pd.notna(value) and value != '':
+                        try:
+                            record[col_id] = f'{float(value):.2f}'
+                        except (ValueError, TypeError):
+                            record[col_id] = ''
+                    else:
+                        record[col_id] = ''
+                else:
+                    record[col_id] = ''
+            
+            records.append(record)
+            
+            # Track the last row of each year group for border styling
+            if idx == len(year_data) - 1:
+                year_boundary_rows.append(current_row_index)
+            
+            current_row_index += 1
+    
+    return records, year_boundary_rows
 
 
 def register_callbacks(dash_app, server):
     """Register all callbacks for Price Scorecard"""
     
+    # Callback to update selected CSV type when buttons are clicked
     @callback(
-        Output('price-scorecard-previous-tab', 'data'),
-        Input('price-scorecard-tabs', 'value'),
-        State('price-scorecard-previous-tab', 'data'),
+        Output('selected-csv-type', 'data'),
+        [Input('costs-to-refiners-btn', 'n_clicks'),
+         Input('port-of-loading-btn', 'n_clicks'),
+         Input('price-formula-btn', 'n_clicks')],
         prevent_initial_call=False
     )
-    def track_previous_tab(selected_tab, previous_tab):
-        """Track previous tab value"""
-        return selected_tab
-    
-    # Callback to immediately clear table data and hide title when tab changes
-    @callback(
-        [Output('price-scorecard-title', 'children', allow_duplicate=True),
-         Output('price-scorecard-table-container', 'style', allow_duplicate=True),
-         Output('price-scorecard-table', 'children', allow_duplicate=True)],
-        Input('price-scorecard-tabs', 'value'),
-        State('price-scorecard-previous-tab', 'data'),
-        prevent_initial_call=True
-    )
-    def clear_table_on_tab_change(selected_tab, previous_tab):
-        """Clear table data and hide title immediately when tab changes"""
-        # Only clear if tab actually changed
-        if previous_tab is not None and previous_tab != selected_tab:
-            # Return empty data and hide container to immediately hide old table and title
-            return "", {'display': 'none'}, html.Div()
-        raise PreventUpdate
-    
-    # Main callback to load data
-    @callback(
-        [Output('price-scorecard-title', 'children'),
-         Output('price-scorecard-table-container', 'style'),
-         Output('price-scorecard-table', 'children')],
-        Input('price-scorecard-tabs', 'value'),
-        prevent_initial_call=False
-    )
-    def update_price_scorecard(selected_tab):
-        """Update price scorecard table based on selected tab"""
-        if not selected_tab or selected_tab == "":
-            return "PIW SCORECARD", {'display': 'none'}, html.Div()
+    def update_selected_csv(costs_clicks, port_clicks, formula_clicks):
+        """Update selected CSV type based on button clicks"""
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            # Initial load - default to Cost_to_Refiners
+            return 'Cost_to_Refiners'
         
-        # Map tab values to CSV filenames and titles
-        tab_info = {
-            'costs-to-refiners': {
-                'csv': 'Cost_to_Refiners.csv',
-                'title': 'PIW SCORECARD -- COSTS TO REFINERS OF KEY FORMULA PRICED CRUDE OILS IN PRIMARY WORLD MARKETS ($/bbl)'
-            },
-            'port-of-loading': {
-                'csv': 'Port_of_Loading.csv',
-                'title': 'PIW SCORECARD -- CRUDE VALUES AT PORT OF LOADING ($/bbl)'
-            },
-            'price-formula': {
-                'csv': 'Price_Formula.csv',
-                'title': 'PIW SCORECARD - PRICE FORMULA ADJUSTMENT FACTORS ($/bbl)'
-            }
+        triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        
+        if triggered_id == 'costs-to-refiners-btn':
+            return 'Cost_to_Refiners'
+        elif triggered_id == 'port-of-loading-btn':
+            return 'Port_of_Loading'
+        elif triggered_id == 'price-formula-btn':
+            return 'Price_Formula'
+        
+        return 'Cost_to_Refiners'  # Default
+    
+    # Callback to update button styles based on selection
+    @callback(
+        [Output('costs-to-refiners-btn', 'style'),
+         Output('port-of-loading-btn', 'style'),
+         Output('price-formula-btn', 'style')],
+        Input('selected-csv-type', 'data')
+    )
+    def update_button_styles(selected_csv):
+        """Update button styles to show which one is active"""
+        base_style = {
+            'display': 'inline-block',
+            'marginRight': '30px',
+            'padding': '12px 25px',
+            'border': '2px solid #ff6600',
+            'color': '#0066cc',
+            'fontSize': '15px',
+            'fontWeight': 'normal',
+            'fontFamily': 'Arial, sans-serif',
+            'width': '380px',
+            'textAlign': 'center',
+            'cursor': 'pointer',
+            'borderRadius': '4px',
+            'height': '45px',
+            'lineHeight': '21px'
         }
         
-        tab_data = tab_info.get(selected_tab)
-        if not tab_data:
-            return "PIW SCORECARD", {'display': 'none'}, html.Div()
+        # Active button has background color
+        active_style = base_style.copy()
+        active_style['backgroundColor'] = '#e0e0e0'  # Light grey when active
         
-        csv_filename = tab_data['csv']
-        title = tab_data['title']
+        # Inactive buttons have no background (transparent)
+        inactive_style = base_style.copy()
+        inactive_style['backgroundColor'] = 'transparent'
         
-        # Load CSV data
-        df, columns, column_info = load_csv_data(csv_filename)
+        # Last button (Price Formula) should not have right margin
+        last_button_base = base_style.copy()
+        last_button_base['marginRight'] = '0px'
         
-        if df is None or df.empty or not column_info:
-            # Show container but with empty data
-            return title, {'display': 'block'}, html.Div("No data available")
+        last_button_active = last_button_base.copy()
+        last_button_active['backgroundColor'] = '#e0e0e0'
         
-        # Process Year column to show only once per year group
-        if 'Year' in df.columns:
-            prev_year = None
-            for idx in df.index:
-                current_year = df.loc[idx, 'Year']
-                if pd.isna(current_year) or current_year is None:
-                    current_year = ''
-                else:
-                    # Remove decimal part if present (e.g., "2025.0" -> "2025")
-                    try:
-                        current_year = str(int(float(current_year)))
-                    except (ValueError, TypeError):
-                        current_year = str(current_year).strip()
-                
-                # If current year matches previous, clear it (except for first occurrence)
-                if current_year == prev_year and prev_year != '':
-                    df.loc[idx, 'Year'] = ''
-                else:
-                    prev_year = current_year
+        last_button_inactive = last_button_base.copy()
+        last_button_inactive['backgroundColor'] = 'transparent'
         
-        # Build HTML table
-        table_html = build_html_table(df, column_info)
+        # Default to Cost_to_Refiners if selected_csv is None
+        if not selected_csv:
+            selected_csv = 'Cost_to_Refiners'
         
-        # Return with new table - container stays visible
-        return title, {'display': 'block'}, table_html
+        if selected_csv == 'Cost_to_Refiners':
+            return active_style, inactive_style, last_button_inactive
+        elif selected_csv == 'Port_of_Loading':
+            return inactive_style, active_style, last_button_inactive
+        elif selected_csv == 'Price_Formula':
+            return inactive_style, inactive_style, last_button_active
+        
+        # Default to Cost_to_Refiners
+        return active_style, inactive_style, last_button_inactive
+    
+    # Callback to update table based on selected CSV
+    @callback(
+        Output('price-scorecard-table-container', 'children'),
+        [Input('selected-csv-type', 'data'),
+         Input('current-submenu', 'data')]
+    )
+    def update_price_scorecard(selected_csv, submenu):
+        """Update price scorecard table"""
+        if submenu != 'price-scorecard':
+            return html.Div()
+        
+        # Use the selected CSV type
+        csv_type = selected_csv if selected_csv else 'Cost_to_Refiners'
+        
+        # Load the CSV data
+        delivery_locations, countries, crude_types, pricing_terms, data_df = load_csv_data(csv_type)
+        
+        if data_df is None or data_df.empty:
+            error_msg = f"Error loading data from {csv_type}.csv"
+            if delivery_locations is None:
+                error_msg += " - File not found or could not be read"
+            return html.Div(error_msg, style={'padding': '20px', 'color': 'red'})
+        
+        if len(data_df) == 0:
+            return html.Div("No data rows found in CSV", style={'padding': '20px', 'color': 'red'})
+        
+        # Build columns with multi-level structure
+        columns = build_column_structure(delivery_locations, countries, crude_types, pricing_terms)
+        
+        # Count value columns (excluding Year and Month)
+        num_value_cols = len([c for c in columns if c['id'].startswith('col_')])
+        
+        # Get actual data columns from the dataframe
+        data_cols = [col for col in data_df.columns if col.startswith('col_')]
+        actual_num_cols = len(data_cols)
+        
+        # Use the minimum to ensure we don't go out of bounds
+        num_cols_to_use = min(num_value_cols, actual_num_cols)
+        
+        # If we have more columns defined than data columns, trim the columns
+        if num_value_cols > actual_num_cols:
+            # Keep Year, Month, and only the columns we have data for
+            value_columns = [c for c in columns if c['id'].startswith('col_')]
+            columns_to_keep = value_columns[:actual_num_cols]
+            columns = [c for c in columns if c['id'] in ['Year', 'Month']] + columns_to_keep
+        
+        # Format data
+        data, year_boundary_rows = format_data_for_table(data_df, num_cols_to_use)
+        
+        if not data:
+            return html.Div("No data rows to display", style={'padding': '20px', 'color': 'red'})
+        
+        if not columns:
+            return html.Div("No columns defined", style={'padding': '20px', 'color': 'red'})
+        
+        # Build conditional styles for borders at year boundaries
+        year_boundary_styles = []
+        for row_idx in year_boundary_rows:
+            year_boundary_styles.append({
+                'if': {'row_index': row_idx},
+                'borderBottom': '1px solid #ddd'
+            })
+        
+        # Create table with multi-level headers
+        table = dash_table.DataTable(
+            id='price-scorecard-table',
+            columns=columns,
+            data=data,
+            merge_duplicate_headers=True,
+            style_table={
+                'overflowX': 'auto',
+                'fontSize': '11px',
+                'border': 'none',  # Remove outer border
+                'maxHeight': '600px',
+                'width': '100%',
+                'borderCollapse': 'collapse'
+            },
+            style_cell={
+                'textAlign': 'left',
+                'padding': '6px 8px',
+                'minWidth': '80px',
+                'whiteSpace': 'normal',
+                'height': 'auto',
+                'fontSize': '11px',
+                'border': 'none',  # Remove borders by default (will be overridden for headers)
+                'backgroundColor': 'white',
+                'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif',
+                'color': '#1b365d'  # Apply color to all table fonts
+            },
+            style_header={
+                'backgroundColor': 'white',
+                'fontWeight': 'normal',  # Default normal, will be overridden by conditional styles
+                'textAlign': 'center',
+                'border': '1px solid #ddd',  # Keep header borders
+                'verticalAlign': 'middle',
+                'padding': '8px',
+                'fontSize': '11px',
+                'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif',
+                'whiteSpace': 'normal',
+                'height': 'auto',
+                'color': '#1b365d'  # Apply color to all header fonts
+            },
+            style_data={
+                'border': 'none',  # Remove data cell borders only
+                'padding': '6px 8px',
+                'fontSize': '11px',
+                'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif',
+                'color': '#1b365d'  # Apply color to all data cell fonts
+            },
+            style_data_conditional=([
+                {
+                    'if': {'row_index': 'odd'},
+                    'backgroundColor': '#f9f9f9'
+                },
+                {
+                    'if': {'row_index': 'even'},
+                    'backgroundColor': 'white'
+                },
+                {
+                    'if': {'column_id': 'Year'},
+                    'textAlign': 'left',
+                    'fontWeight': 'normal',
+                    'color': '#1b365d'  # Apply color to Year column
+                },
+                {
+                    'if': {'column_id': 'Month'},
+                    'textAlign': 'left',
+                    'fontWeight': 'normal',
+                    'color': '#1b365d'  # Apply color to Month column
+                }
+            ] + [
+                {
+                    'if': {'column_id': f'col_{i}'},
+                    'textAlign': 'center',
+                    'fontWeight': 'normal',
+                    'color': '#1b365d'  # Apply color to data columns
+                } for i in range(num_cols_to_use)
+            ] + year_boundary_styles),  # Add borders only at year boundaries
+            style_header_conditional=[
+                {
+                    'if': {'header_index': 0},
+                    'backgroundColor': 'white',
+                    'fontWeight': 'bold',
+                    'textAlign': 'center',
+                    'color': '#ff6600'  # Orange color for Level 1 header
+                },
+                {
+                    'if': {'header_index': 1},
+                    'backgroundColor': 'white',
+                    'fontWeight': 'bold',
+                    'textAlign': 'center',
+                    'color': '#1b365d'  # Apply color to Level 2 header
+                },
+                {
+                    'if': {'header_index': 2},
+                    'backgroundColor': 'white',
+                    'fontWeight': 'bold',
+                    'textAlign': 'center',
+                    'color': '#1b365d'  # Apply color to Level 3 header
+                },
+                {
+                    'if': {'header_index': 3},
+                    'backgroundColor': 'white',
+                    'fontWeight': 'normal',  # Regular weight for Level 4 header
+                    'textAlign': 'center',
+                    'color': '#1b365d'  # Apply color to Level 4 header
+                }
+            ],
+            fixed_rows={'headers': True},
+            page_size=50,
+            sort_action='native',
+            filter_action='none',
+            css=[
+                {
+                    'selector': '.dash-table-tooltip',
+                    'rule': 'display: none'
+                }
+            ]
+        )
+        
+        return table
