@@ -851,10 +851,61 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
         Input('url', 'href')
     )
     
-    # Callback to hide header and footer - REMOVED (header and footer no longer exist)
+    # Callback to hide header and footer when WCoD dashboards are embedded in iframes
+    @dash_app.callback(
+        [Output('header-container', 'style'),
+         Output('footer-container', 'style')],
+        [Input('url', 'pathname'),
+         Input('url', 'search'),
+         Input('iframe-flag', 'data')],
+        prevent_initial_call=False
+    )
+    def toggle_header_footer(pathname, search, is_iframe):
+        """Hide header/footer for specific WCoD iframe routes when rendered inside iframe or via query flag"""
+        pathname_str = str(pathname) if pathname else ''
+        query_params = parse_qs(search.lstrip('?')) if search else {}
+        embed_flag = False
+        for key in ('iframe', 'embed', 'hide_header', 'hideHeader'):
+            if key in query_params:
+                value = query_params[key][0].lower()
+                if value in ('1', 'true', 't', 'yes', 'y'):
+                    embed_flag = True
+                    break
+        
+        iframe_pages = [
+            '/country-overview',
+            '/crude-overview',
+            '/crude-profile',
+            '/crude-comparison',
+            '/crude-quality-comparison',
+            '/crude-carbon-intensity',
+            '/trade/',
+            '/prices/',
+            '/upstream-projects/',
+            # Keep old paths for backward compatibility
+            '/wcod-country-overview',
+            '/wcod/crude-overview',
+            '/wcod-crude-profile',
+            '/wcod-crude-comparison',
+            '/wcod/wcod-crude-quality-comparison',
+            '/wcod-crude-quality-comparison',
+            '/wcod-crude-carbon-intensity',
+            '/wcod/trade/',
+            '/wcod/prices/',
+            '/wcod/upstream-projects/'
+        ]
+        is_wcod_path = (pathname_str.startswith('/wcod') or pathname_str.startswith('/wcod-') or
+                        pathname_str.startswith('/crude') or pathname_str.startswith('/trade') or
+                        pathname_str.startswith('/prices') or pathname_str.startswith('/upstream') or
+                        pathname_str.startswith('/country-overview') or pathname_str.startswith('/carbon-intensity') or
+                        pathname_str.startswith('/upstream-oil'))
+        should_hide = (bool(is_iframe) or embed_flag) and (is_wcod_path or any(page in pathname_str for page in iframe_pages))
+        if should_hide:
+            return {'display': 'none'}, {'display': 'none'}
+        return {'display': 'block'}, {'display': 'block'}
     
     # Callback to handle URL routing - runs on initial load to set correct tab/submenu from URL
-    @callback(
+    @dash_app.callback(
         [Output('main-tabs', 'value'),
          Output('current-submenu', 'data', allow_duplicate=True)],
         [Input('url', 'pathname'),
@@ -942,7 +993,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
         return tab, submenu
     
     # Callback to highlight active tab - runs on initial load and when tab changes
-    @callback(
+    @dash_app.callback(
         [Output('tab-link-country', 'style'),
          Output('tab-link-crude', 'style'),
          Output('tab-link-trade', 'style'),
@@ -1009,7 +1060,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
         ]
     
     # Callback to update sub-menu based on main tab and submenu changes
-    @callback(
+    @dash_app.callback(
         Output('submenu-container', 'children', allow_duplicate=True),
         [Input('main-tabs', 'value'),
          Input('url', 'pathname'),
@@ -1186,7 +1237,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
         return submenu_html
     
     # Callback to update content based on sub-menu selection
-    @callback(
+    @dash_app.callback(
         Output('tab-content', 'children'),
         [Input('current-submenu', 'data'),
          Input('main-tabs', 'value'),
@@ -1285,7 +1336,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
         return html.Div("Content not found")
     
     # Sub-menu click handler - using pattern matching
-    @callback(
+    @dash_app.callback(
         [Output('current-submenu', 'data', allow_duplicate=True),
          Output('submenu-container', 'children', allow_duplicate=True)],
         Input({'type': 'submenu-button', 'index': dash.dependencies.ALL}, 'n_clicks'),

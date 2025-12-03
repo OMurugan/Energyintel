@@ -438,13 +438,13 @@ def load_loading_ports():
     
     # Check and process Country column
     if "Country" in df.columns:
-        df["Country"] = df["Country"].fillna("").astype(str).str.strip()
+        df["Country"] = df["Country"].fillna("").astize(str).str.strip()
     else:
         df["Country"] = ""
     
     # Check and process Crude column
     if "Crude" in df.columns:
-        df["Crude"] = df["Crude"].fillna("").astype(str).str.strip()
+        df["Crude"] = df["Crude"].fillna("").astize(str).str.strip()
     else:
         df["Crude"] = ""
     
@@ -520,7 +520,13 @@ def create_grouped_refined_products_table():
         style_table={
             "width": "100%",
             "marginBottom": "15px",
-            "fontFamily": "Arial, sans-serif"
+            "fontFamily": "Arial, sans-serif",
+            "position": "relative",
+            "height": "1360px",  # Reduced height
+            "overflowY": "auto",  # Add vertical scroll
+            "overflowX": "auto",  # Keep horizontal scroll if needed
+            "border": "1px solid #ddd",  # Add border for better visibility
+            
         },
         style_cell={
             "border": "1px solid #ddd",
@@ -533,6 +539,7 @@ def create_grouped_refined_products_table():
             "height": "auto",
             "minHeight": "35px",
             "verticalAlign": "middle",
+             "maxWidth": "150px",
         },
         style_header={
             "backgroundColor": "#f5f5f5",
@@ -540,7 +547,10 @@ def create_grouped_refined_products_table():
             "fontSize": "12px",
             "border": "1px solid #ddd",
             "padding": "10px",
-            "textAlign": "left"
+            "textAlign": "left",
+            "position": "sticky",  # Make header sticky
+            "top": "0",
+            "zIndex": "10",
         },
         style_data={
             "whiteSpace": "normal",
@@ -636,7 +646,7 @@ def create_grouped_refined_products_table():
         ],
         markdown_options={"html": True},
         editable=False,
-        sort_action="none",
+        sort_action="native",
         filter_action="none",
         page_action="none",
     )
@@ -748,7 +758,7 @@ def create_grouped_assay_table():
         ],
         fixed_rows={"headers": True},
         page_action="none",
-        sort_action="none",
+        sort_action="native",
         filter_action="none",
         markdown_options={"html": True},
     )
@@ -1012,6 +1022,108 @@ def create_layout(server=None):
                 </style>
             """, dangerously_allow_html=True)
         ]),
+        
+        # AVG Text Box (initially hidden)
+        html.Div(
+            "AVG(Value)",
+            id="crude-profile-avg-text-box",
+            n_clicks=0,
+            style={
+                "position": "fixed",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "none",
+                "whiteSpace": "nowrap",
+                "color": "#333",
+                "cursor": "pointer",
+            }
+        ),
+        
+        # Popup Menu (initially hidden)
+        html.Div([
+            html.Div([
+                html.Div("Data Source Order", id="crude-profile-popup-source-btn", 
+                        style={
+                            "padding": "6px 10px", 
+                            "fontSize": "12px",
+                            "cursor": "pointer",
+                            "fontFamily": "Arial",
+                            "color": "#333",
+                        }, className="popup-menu-item"),
+                html.Div("Alphabetic", id="crude-profile-popup-alphabetic-btn",
+                        style={
+                            "padding": "6px 10px", 
+                            "fontSize": "12px",
+                            "cursor": "pointer",
+                            "fontFamily": "Arial",
+                            "color": "#333",
+                        }, className="popup-menu-item"),
+                html.Div([
+                    html.Span("Field", style={"flex": "1"}),
+                    html.Span("▶", id="crude-profile-field-arrow-btn", style={
+                        "cursor": "pointer",
+                        "fontSize": "10px",
+                        "color": "#666",
+                        "marginLeft": "8px",
+                    }),
+                ], id="crude-profile-popup-field-btn",
+                   style={
+                       "padding": "6px 10px", 
+                       "fontSize": "12px",
+                       "cursor": "pointer",
+                       "fontFamily": "Arial",
+                       "color": "#333",
+                       "display": "flex",
+                       "alignItems": "center",
+                       "justifyContent": "space-between",
+                       "position": "relative",
+                   }, className="popup-menu-item"),
+                html.Div([
+                    html.Span("Nested", style={"flex": "1"}),
+                    html.Span("▶", id="crude-profile-nested-arrow-btn", style={
+                        "cursor": "pointer",
+                        "fontSize": "10px",
+                        "color": "#666",
+                        "marginLeft": "8px",
+                    }),
+                ], id="crude-profile-popup-nested-btn",
+                   style={
+                       "padding": "6px 10px", 
+                       "fontSize": "12px",
+                       "cursor": "pointer",
+                       "fontFamily": "Arial",
+                       "color": "#333",
+                       "display": "flex",
+                       "alignItems": "center",
+                       "justifyContent": "space-between",
+                       "position": "relative",
+                   }, className="popup-menu-item"),
+            ]),
+        ], id="crude-profile-sorting-controls", style={
+            "position": "fixed", 
+            "backgroundColor": "white", 
+            "padding": "15px",
+            "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
+            "zIndex": "1000",
+            "display": "none",
+            "minWidth": "160px",
+        }),
+        
+        # Hidden buttons for interactions
+        html.Button("Sort Ascending Click", id="crude-profile-sort-asc-btn-hidden", n_clicks=0, style={"display": "none"}),
+        html.Button("Sort Descending Click", id="crude-profile-sort-desc-btn-hidden", n_clicks=0, style={"display": "none"}),
+        html.Button("Popup Menu Click", id="crude-profile-popup-menu-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Field Sort Click", id="crude-profile-field-sort-btn", n_clicks=0, style={"display": "none"}),
+        html.Button("Nested Sort Click", id="crude-profile-nested-sort-btn", n_clicks=0, style={"display": "none"}),
+        
+        # Dummy output for clientside callback
+        html.Div(id="crude-profile-dummy-output", style={"display": "none"}),
         
         # Header Section
         html.Div(style={
@@ -1332,7 +1444,7 @@ def create_layout(server=None):
                         "border": "1px solid #ddd"
                     },
                     editable=False,
-                    sort_action="none",
+                    sort_action="native",
                     filter_action="none",
                     page_action="none",
                 )
@@ -1403,8 +1515,6 @@ def create_layout(server=None):
 # ------------------------------------------------------------------------------
 def register_callbacks(app):
     """Register callbacks for the dashboard with grouped tables."""
-    # Since we're using static grouped tables with no interactive sorting,
-    # we don't need complex callbacks. But we'll add a simple one for the dropdown.
     
     @app.callback(
         Output('assay-table', 'data'),
@@ -1439,6 +1549,454 @@ def register_callbacks(app):
         
         # Return empty data for other crudes (if added later)
         return [], []
+    
+    # Handle popup menu interactions
+    @app.callback(
+        [Output('crude-profile-sorting-controls', 'style'),
+         Output('crude-profile-avg-text-box', 'style')],
+        [Input('crude-profile-popup-menu-btn', 'n_clicks'),
+         Input('crude-profile-popup-source-btn', 'n_clicks'),
+         Input('crude-profile-popup-alphabetic-btn', 'n_clicks'),
+         Input('crude-profile-popup-field-btn', 'n_clicks'),
+         Input('crude-profile-popup-nested-btn', 'n_clicks'),
+         Input('crude-profile-field-arrow-btn', 'n_clicks'),
+         Input('crude-profile-nested-arrow-btn', 'n_clicks'),
+         Input('crude-profile-field-sort-btn', 'n_clicks'),
+         Input('crude-profile-nested-sort-btn', 'n_clicks'),
+         Input('crude-profile-avg-text-box', 'n_clicks')],
+        [State('crude-profile-sorting-controls', 'style')],
+        prevent_initial_call=True
+    )
+    def handle_popup_interactions(popup_clicks, source_clicks, alpha_clicks, field_clicks, nested_clicks,
+                                  field_arrow_clicks, nested_arrow_clicks, field_sort_clicks, nested_sort_clicks, avg_clicks,
+                                  popup_style):
+        """Handle popup menu visibility and AVG text box display."""
+        trigger = ctx.triggered_id
+        
+        if trigger == 'crude-profile-popup-menu-btn':
+            # Toggle popup menu - preserve position if set
+            base_style = {
+                "position": "fixed", 
+                "backgroundColor": "white", 
+                "padding": "15px",
+                "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
+                "zIndex": "1000",
+                "minWidth": "160px",
+            }
+            if popup_style and popup_style.get('display') == 'block':
+                base_style["display"] = "none"
+            else:
+                base_style["display"] = "block"
+                if popup_style and 'top' in popup_style:
+                    base_style["top"] = popup_style["top"]
+                if popup_style and 'left' in popup_style:
+                    base_style["left"] = popup_style["left"]
+            return base_style, {"display": "none"}
+        elif trigger in ['crude-profile-popup-source-btn', 'crude-profile-popup-alphabetic-btn']:
+            # Close popup menu
+            return {
+                "position": "fixed", 
+                "backgroundColor": "white", 
+                "padding": "15px",
+                "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
+                "zIndex": "1000",
+                "display": "none",
+                "minWidth": "160px",
+            }, {"display": "none"}
+        elif trigger in ['crude-profile-popup-field-btn', 'crude-profile-field-arrow-btn', 'crude-profile-field-sort-btn']:
+            # Show AVG text box
+            return dash.no_update, {
+                "position": "fixed",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "block",
+                "color": "#333",
+                "cursor": "pointer",
+            }
+        elif trigger in ['crude-profile-popup-nested-btn', 'crude-profile-nested-arrow-btn', 'crude-profile-nested-sort-btn']:
+            # Show AVG text box
+            return dash.no_update, {
+                "position": "fixed",
+                "backgroundColor": "white",
+                "border": "1px solid #ccc",
+                "padding": "8px 12px",
+                "borderRadius": "4px",
+                "fontSize": "12px",
+                "fontFamily": "Arial",
+                "boxShadow": "0 2px 5px rgba(0,0,0,0.1)",
+                "zIndex": "1002",
+                "display": "block",
+                "color": "#333",
+                "cursor": "pointer",
+            }
+        elif trigger == 'crude-profile-avg-text-box':
+            # Close AVG text box and popup
+            return {
+                "position": "fixed", 
+                "backgroundColor": "white", 
+                "padding": "15px",
+                "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
+                "zIndex": "1000",
+                "display": "none",
+                "minWidth": "160px",
+            }, {"display": "none"}
+        
+        return {
+            "position": "fixed", 
+            "backgroundColor": "white", 
+            "padding": "15px",
+            "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
+            "zIndex": "1000",
+            "display": "none",
+            "minWidth": "160px",
+        }, {"display": "none"}
+    
+    # Clientside callback to inject A/Z and down arrow indicators - SIMILAR TO CRUDE_COMPARISON.PY
+    app.clientside_callback(
+        """
+        function(assay_cols, refined_cols, port_cols) {
+            function addSortIndicatorsToHeaders() {
+                // Target headers for each table
+                const targetHeaders = {
+                    'assay-table': ['Property', 'Unit'],
+                    'refined-products-table': ['Product', 'Cut Points (°C)', 'Property', 'Unit'],
+                    'port-details-table': ['Measure']
+                };
+                
+                Object.keys(targetHeaders).forEach(tableId => {
+                    const headers = targetHeaders[tableId];
+                    headers.forEach(columnId => {
+                        const header = document.querySelector(`#${tableId} .dash-header[data-dash-column="${columnId}"]`);
+                        if (header && !header.querySelector('.sort-order-container')) {
+                            // Create A/Z container
+                            const sortContainer = document.createElement('div');
+                            sortContainer.className = 'sort-order-container';
+                            
+                            const aElement = document.createElement('div');
+                            aElement.className = 'sort-asc';
+                            aElement.textContent = 'A';
+                            aElement.title = 'Click for ascending alphabetical order';
+                            aElement.onclick = function(e) {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                // Close popup if open
+                                const popup = document.getElementById('crude-profile-sorting-controls');
+                                if (popup && popup.style.display === 'block') {
+                                    const btn = document.getElementById('crude-profile-popup-menu-btn');
+                                    if (btn) btn.click();
+                                }
+                                // Trigger sorting for ascending
+                                const headerCell = header.closest('.dash-header-cell') || header;
+                                if (headerCell) {
+                                    // Click header to trigger native sorting
+                                    headerCell.click();
+                                    // If it sorted descending, click again for ascending
+                                    setTimeout(() => {
+                                        if (headerCell.classList.contains('dash-header-cell--sort-desc')) {
+                                            headerCell.click();
+                                        }
+                                    }, 100);
+                                }
+                            };
+                            
+                            const zElement = document.createElement('div');
+                            zElement.className = 'sort-desc';
+                            zElement.textContent = 'Z';
+                            zElement.title = 'Click for descending alphabetical order';
+                            zElement.onclick = function(e) {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                // Close popup if open
+                                const popup = document.getElementById('crude-profile-sorting-controls');
+                                if (popup && popup.style.display === 'block') {
+                                    const btn = document.getElementById('crude-profile-popup-menu-btn');
+                                    if (btn) btn.click();
+                                }
+                                // Trigger sorting for descending
+                                const headerCell = header.closest('.dash-header-cell') || header;
+                                if (headerCell) {
+                                    // Click header to trigger native sorting
+                                    headerCell.click();
+                                    // If it sorted ascending, click again for descending
+                                    setTimeout(() => {
+                                        if (headerCell.classList.contains('dash-header-cell--sort-asc')) {
+                                            headerCell.click();
+                                        }
+                                    }, 100);
+                                }
+                            };
+                            
+                            sortContainer.appendChild(aElement);
+                            sortContainer.appendChild(zElement);
+                            
+                            // Create down arrow indicator (same SVG as crude_comparison.py)
+                            const sortIndicator = document.createElement('div');
+                            sortIndicator.className = 'sort-indicator';
+                            sortIndicator.title = 'Click to show sort options';
+                            sortIndicator.innerHTML = `
+                                <svg fill="#000000" viewBox="0 0 301.219 301.219" xmlns="http://www.w3.org/2000/svg">
+                                    <g>
+                                        <path d="M159.365,23.736v-10c0-5.523-4.477-10-10-10H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h139.365
+                                            C154.888,33.736,159.365,29.259,159.365,23.736z"/>
+                                        <path d="M130.586,66.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h120.586c5.523,0,10-4.477,10-10v-10
+                                            C140.586,71.213,136.109,66.736,130.586,66.736z"/>
+                                        <path d="M111.805,129.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h101.805c5.523,0,10-4.477,10-10v-10
+                                            C121.805,134.213,117.328,129.736,111.805,129.736z"/>
+                                        <path d="M93.025,199.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h83.025c5.522,0,10-4.477,10-10v-10
+                                            C103.025,204.213,98.548,199.736,93.025,199.736z"/>
+                                        <path d="M74.244,262.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h64.244c5.522,0,10-4.477,10-10v-10
+                                            C84.244,267.213,79.767,262.736,74.244,262.736z"/>
+                                        <path d="M298.29,216.877l-7.071-7.071c-1.875-1.875-4.419-2.929-7.071-2.929c-2.652,0-5.196,1.054-7.072,2.929l-34.393,34.393
+                                            V18.736c0-5.523-4.477-10-10-10h-10c-5.523,0-10,4.477-10,10v225.462l-34.393-34.393c-1.876-1.875-4.419-2.929-7.071-2.929
+                                            c-2.652,0-5.196,1.054-7.071,2.929l-7.072,7.071c-3.904,3.905-3.904,10.237,0,14.142l63.536,63.536
+                                            c1.953,1.953,4.512,2.929,7.071,2.929c2.559,0,5.119-0.976,7.071-2.929l63.536-63.536
+                                            C302.195,227.113,302.195,220.781,298.29,216.877z"/>
+                                    </g>
+                                </svg>
+                            `;
+                            
+                            sortIndicator.onclick = function(e) {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                const btn = document.getElementById('crude-profile-popup-menu-btn');
+                                if (btn) {
+                                    // Position popup menu near the clicked indicator
+                                    const rect = sortIndicator.getBoundingClientRect();
+                                    const popup = document.getElementById('crude-profile-sorting-controls');
+                                    if (popup) {
+                                        popup.style.position = 'fixed';
+                                        popup.style.top = (rect.bottom + 5) + 'px';
+                                        popup.style.left = (rect.left - 150) + 'px';
+                                        popup.style.zIndex = '1000';
+                                    }
+                                    // Use setTimeout to ensure positioning is set before showing
+                                    setTimeout(function() {
+                                        btn.click();
+                                    }, 10);
+                                }
+                            };
+                            
+                            header.appendChild(sortContainer);
+                            header.appendChild(sortIndicator);
+                            
+                            // Add hover effect for the header
+                            header.style.position = 'relative';
+                            header.style.paddingRight = '60px';
+                            
+                            // Show indicators on header hover
+                            header.addEventListener('mouseenter', function() {
+                                sortContainer.style.opacity = '1';
+                                sortContainer.style.visibility = 'visible';
+                                sortIndicator.style.opacity = '1';
+                                sortIndicator.style.visibility = 'visible';
+                            });
+                            
+                            header.addEventListener('mouseleave', function() {
+                                sortContainer.style.opacity = '0';
+                                sortContainer.style.visibility = 'hidden';
+                                sortIndicator.style.opacity = '0';
+                                sortIndicator.style.visibility = 'hidden';
+                            });
+                        }
+                    });
+                });
+            }
+            
+            // Setup Field and Nested arrow handlers
+            function setupFieldNestedHandlers() {
+                const fieldArrow = document.getElementById('crude-profile-field-arrow-btn');
+                const nestedArrow = document.getElementById('crude-profile-nested-arrow-btn');
+                
+                if (fieldArrow && !fieldArrow.getAttribute('data-handler-attached')) {
+                    fieldArrow.setAttribute('data-handler-attached', 'true');
+                    fieldArrow.onclick = function(e) {
+                        e.stopPropagation();
+                        const btn = document.getElementById('crude-profile-field-sort-btn');
+                        if (btn) {
+                            const rect = fieldArrow.getBoundingClientRect();
+                            const avgBox = document.getElementById('crude-profile-avg-text-box');
+                            if (avgBox) {
+                                avgBox.style.top = (rect.top) + 'px';
+                                avgBox.style.left = (rect.right + 10) + 'px';
+                            }
+                            btn.click();
+                        }
+                    };
+                }
+                
+                if (nestedArrow && !nestedArrow.getAttribute('data-handler-attached')) {
+                    nestedArrow.setAttribute('data-handler-attached', 'true');
+                    nestedArrow.onclick = function(e) {
+                        e.stopPropagation();
+                        const btn = document.getElementById('crude-profile-nested-sort-btn');
+                        if (btn) {
+                            const rect = nestedArrow.getBoundingClientRect();
+                            const avgBox = document.getElementById('crude-profile-avg-text-box');
+                            if (avgBox) {
+                                avgBox.style.top = (rect.top) + 'px';
+                                avgBox.style.left = (rect.right + 10) + 'px';
+                            }
+                            btn.click();
+                        }
+                    };
+                }
+            }
+            
+            // Initial setup
+            addSortIndicatorsToHeaders();
+            setupFieldNestedHandlers();
+            
+            // Setup click outside to close popup
+            document.addEventListener('click', function(e) {
+                const popup = document.getElementById('crude-profile-sorting-controls');
+                const sortIndicator = e.target.closest('.sort-indicator');
+                const popupItem = e.target.closest('.popup-menu-item');
+                
+                if (popup && popup.style.display === 'block') {
+                    if (!popup.contains(e.target) && !sortIndicator && !popupItem) {
+                        // Click outside, close popup
+                        const btn = document.getElementById('crude-profile-popup-menu-btn');
+                        if (btn) {
+                            btn.click();
+                        }
+                    }
+                }
+            });
+            
+            // Add CSS styles for the sort indicators
+            const style = document.createElement('style');
+            style.textContent = `
+                /* A/Z container - vertical stack - HIDDEN BY DEFAULT, SHOW ON HOVER */
+                .sort-order-container {
+                    position: absolute;
+                    right: 30px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    font-size: 10px;
+                    color: #666;
+                    cursor: pointer;
+                    padding: 2px;
+                    border: 1px solid transparent;
+                    border-radius: 2px;
+                    line-height: 1;
+                    text-align: center;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 30px;
+                    opacity: 0;
+                    visibility: hidden;
+                    transition: opacity 0.2s ease, visibility 0.2s ease;
+                    z-index: 1001;
+                }
+                .dash-header:hover .sort-order-container {
+                    opacity: 1;
+                    visibility: visible;
+                }
+                .dash-header .sort-order-container:hover {
+                    background-color: #e6f3ff;
+                    border-color: #1f3263;
+                }
+                .sort-asc, .sort-desc {
+                    display: block;
+                    line-height: 1;
+                    cursor: pointer;
+                    padding: 1px 2px;
+                    border-radius: 1px;
+                }
+                .sort-asc:hover, .sort-desc:hover {
+                    background-color: #d4e7ff;
+                    font-weight: bold;
+                }
+                
+                /* Sort indicator icon styles - HIDDEN BY DEFAULT, SHOW ON HOVER */
+                .sort-indicator {
+                    position: absolute;
+                    right: 8px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    width: 15px;
+                    height: 15px;
+                    cursor: pointer;
+                    opacity: 0;
+                    visibility: hidden;
+                    transition: opacity 0.2s ease, visibility 0.2s ease;
+                    z-index: 1001;
+                }
+                .dash-header:hover .sort-indicator {
+                    opacity: 1;
+                    visibility: visible;
+                }
+                .sort-indicator:hover {
+                    background-color: #e6f3ff;
+                    border-radius: 2px;
+                }
+                .sort-indicator svg {
+                    width: 100%;
+                    height: 100%;
+                    fill: #666;
+                }
+                .sort-indicator:hover svg {
+                    fill: #1f3263;
+                }
+                
+                /* Add padding to headers to make space for indicators */
+                #assay-table .dash-header[data-dash-column="Property"],
+                #assay-table .dash-header[data-dash-column="Unit"],
+                #refined-products-table .dash-header[data-dash-column="Product"],
+                #refined-products-table .dash-header[data-dash-column="Cut Points (°C)"],
+                #refined-products-table .dash-header[data-dash-column="Property"],
+                #refined-products-table .dash-header[data-dash-column="Unit"],
+                #port-details-table .dash-header[data-dash-column="Measure"] {
+                    padding-right: 60px !important;
+                    position: relative;
+                }
+                
+                /* Popup menu item hover */
+                .popup-menu-item:hover {
+                    background-color: #f5f5f5 !important;
+                }
+                
+                /* Hide default Dash sort indicators */
+                #assay-table .dash-header-cell--sort svg,
+                #assay-table .dash-header-cell--sort-asc svg,
+                #assay-table .dash-header-cell--sort-desc svg,
+                #refined-products-table .dash-header-cell--sort svg,
+                #refined-products-table .dash-header-cell--sort-asc svg,
+                #refined-products-table .dash-header-cell--sort-desc svg,
+                #port-details-table .dash-header-cell--sort svg,
+                #port-details-table .dash-header-cell--sort-asc svg,
+                #port-details-table .dash-header-cell--sort-desc svg {
+                    display: none !important;
+                }
+                
+                /* AVG text box styling */
+                #crude-profile-avg-text-box {
+                    cursor: pointer !important;
+                }
+                #crude-profile-avg-text-box:hover {
+                    background-color: #f5f5f5 !important;
+                    border-color: #999 !important;
+                }
+            `;
+            document.head.appendChild(style);
+            
+            return '';
+        }
+        """,
+        Output('crude-profile-dummy-output', 'children'),
+        [Input('assay-table', 'columns'),
+         Input('refined-products-table', 'columns'),
+         Input('port-details-table', 'columns')],
+        prevent_initial_call=False
+    )
 
 # ------------------------------------------------------------------------------
 # DASH APP CREATION - MAIN FUNCTION
