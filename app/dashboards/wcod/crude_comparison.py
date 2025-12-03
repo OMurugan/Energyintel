@@ -1,208 +1,497 @@
 from dash import dcc, html, Input, Output, dash_table, callback_context, State, ctx
 import pandas as pd
 import os
-import chardet
 import dash
 import re
 
 from app import create_dash_app
+from core.data_helpers import execute_query
+
 
 # ------------------------------------------------------------------------------
-# PATH CONSTANTS
-# ------------------------------------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-PRODUCTION_FILE = os.path.join(DATA_DIR, "production-crude-comparison.csv")
-EXPORTS_FILE = os.path.join(DATA_DIR, "exports-crude-comparison.csv")
-
-# ------------------------------------------------------------------------------
-# DETECT ENCODING
-# ------------------------------------------------------------------------------
-def detect_encoding(file_path):
-    with open(file_path, "rb") as f:
-        raw = f.read()
-        enc = chardet.detect(raw)
-        return enc["encoding"]
-
-# ------------------------------------------------------------------------------
-# REMOVE FOOTER ROWS
-# ------------------------------------------------------------------------------
-def remove_footer_rows(df):
-    not_fully_empty = ~df.apply(lambda row: all(str(x).strip() == "" for x in row), axis=1)
-
-    footer_keywords = [
-        "copyright",
-        "energy intelligence",
-        "source",
-    ]
-
-    def is_footer(row):
-        return any(
-            any(keyword in str(cell).lower() for keyword in footer_keywords)
-            for cell in row
-        )
-
-    not_footer = ~df.apply(is_footer, axis=1)
-    return df[not_fully_empty & not_footer]
-
-# ------------------------------------------------------------------------------
-# SAMPLE DATA IF CSV IS MISSING
-# ------------------------------------------------------------------------------
-def get_sample():
-    sample = [{"CrudeOil": "Sample Oil", "2024": 10, "2023": 8, "2022": 6}]
-    cols = [{"name": c, "id": c, "presentation": "markdown"} if c=="CrudeOil" else {"name": c, "id": c} for c in sample[0].keys()]
-    return sample, cols
-
-# ------------------------------------------------------------------------------
-# LOAD CSV (SAFE, AUTO-DELIMITER, SKIP BAD LINES)
+# LOAD DATA FROM DATABASE
 # ------------------------------------------------------------------------------
 def load_crude_data(mode):
-    csv_path = PRODUCTION_FILE if mode == "production" else EXPORTS_FILE
-
-    if not os.path.exists(csv_path):
-        print(f"❌ File missing: {csv_path}. Using sample.")
-        return get_sample()
-
-    encoding = detect_encoding(csv_path)
-
+    """
+    Load crude oil data from database
+    mode: 'production' or 'exports'
+    Returns: (data_dict_list, columns_list)
+    """
+    
+    # Build the query - using exact query provided by user
+    query = f"""
+    SELECT 
+        A.country_name AS "Country",
+        GRP.opec_grp AS "group",
+        A.crude_name AS "CrudeOil",
+        B.bsp_link AS "profile_url",
+        A.yr AS "YearReported",
+        A.production_kbpd AS "ProductionDataValue",
+        A.exports_kbpd AS "ExportDataValue",
+        A.api,
+        A.sulfur_pct,
+        A."tan_mg_koh/g",
+        A.ports_terminals,
+        A.classification,
+        A.crude_alias,
+        A.producers,
+        A.sellers,
+        A.ci_rank,
+        A.external_comments,
+        A.insert_by,
+        A.insert_date,
+        A.last_update_date,
+        A.last_update_by,
+        A.to_be_deleted
+    FROM fact_wcod_crude A
+    LEFT JOIN dim_country GRP 
+           ON A.country_id = GRP.dim_country_id
+    LEFT JOIN fact_wcod_crude_bsp_links B 
+           ON A.crude_id = B.crude_id
+    WHERE A.to_be_deleted IS NULL
+      AND A.crude_name IS NOT NULL
+    """
+    
     try:
-        df = pd.read_csv(
-            csv_path,
-            encoding=encoding,
-            sep=None,
-            engine="python",
-            on_bad_lines="skip",
-            header=None
+        # Execute query
+        results = execute_query(query)
+        
+        if not results:
+            print(f"⚠️ No data found for {mode}. Returning empty data.")
+            return [], []
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(results)
+        
+        # Filter based on mode and get the appropriate value column
+        if mode == "production":
+            value_col = "ProductionDataValue"
+        else:  # exports
+            value_col = "ExportDataValue"
+        
+        # Filter out rows where the value is null or zero for the selected mode
+        df = df[df[value_col].notna() & (df[value_col] != 0)]
+        
+        if df.empty:
+            print(f"⚠️ No {mode} data found. Returning empty data.")
+            return [], []
+        
+        # Extract year from YearReported (handle both date and year formats)
+        if 'YearReported' in df.columns:
+            # Convert YearReported to year integer
+            if pd.api.types.is_datetime64_any_dtype(df['YearReported']):
+                df['Year'] = df['YearReported'].dt.year.astype(int)
+            elif pd.api.types.is_object_dtype(df['YearReported']):
+                # Try to extract year from date string or use as-is if already a year
+                def extract_year(val):
+                    if pd.isna(val):
+                        return None
+                    val_str = str(val)
+                    # If it's a date string like "2010-01-01", extract year
+                    if '-' in val_str and len(val_str) > 4:
+                        try:
+                            return int(val_str.split('-')[0])
+                        except:
+                            return None
+                    # If it's already a year, convert to int
+                    try:
+                        return int(float(val_str))
+                    except:
+                        return None
+                df['Year'] = df['YearReported'].apply(extract_year)
+            else:
+                # Already numeric, convert to int (handle float years like 2010.0)
+                df['Year'] = df['YearReported'].fillna(0).astype(float).astype(int)
+                # Replace 0 with NaN for invalid years
+                df.loc[df['Year'] == 0, 'Year'] = None
+        else:
+            print(f"⚠️ YearReported column not found in results. Returning empty data.")
+            return [], []
+        
+        # Remove rows where Year extraction failed
+        df = df[df['Year'].notna() & (df['Year'] > 1900) & (df['Year'] < 2100)]
+        
+        if df.empty:
+            print(f"⚠️ No valid year data found. Returning empty data.")
+            return [], []
+        
+        # Get the full year range from the data
+        min_year = int(df['Year'].min())
+        max_year = int(df['Year'].max())
+        all_years = list(range(min_year, max_year + 1))
+        
+        # Pivot the data: CrudeOil as rows, Year as columns
+        # Use fill_value=None to keep NaN for missing values (we'll convert to empty strings later)
+        pivot_df = df.pivot_table(
+            index='CrudeOil',
+            columns='Year',
+            values=value_col,
+            aggfunc='sum',  # In case there are duplicates
+            fill_value=None  # Keep NaN for missing years
         )
-        print(f"Loaded {mode} CSV using encoding: {encoding}")
+        
+        # Reset index to make CrudeOil a column
+        pivot_df = pivot_df.reset_index()
+        
+        # Ensure all years in the range are present as columns
+        # Add missing year columns with NaN values
+        existing_year_cols = []
+        for col in pivot_df.columns:
+            if col != 'CrudeOil':
+                # Handle MultiIndex columns (if any)
+                if isinstance(col, tuple):
+                    col_name = col[-1]  # Get the last element
+                else:
+                    col_name = col
+                
+                # Try to convert to int to verify it's a year
+                try:
+                    year_val = int(float(str(col_name)))
+                    if 1900 <= year_val <= 2100:  # Valid year range
+                        existing_year_cols.append(year_val)
+                except (ValueError, TypeError):
+                    # Not a year column, skip it
+                    continue
+        
+        # Add missing year columns (years that exist in range but not in data)
+        for year in all_years:
+            if year not in existing_year_cols:
+                pivot_df[year] = None  # Add as NaN/None
+        
+        # Get all year columns (now including all years in range)
+        year_cols = []
+        for col in pivot_df.columns:
+            if col != 'CrudeOil':
+                # Handle MultiIndex columns (if any)
+                if isinstance(col, tuple):
+                    col_name = col[-1]  # Get the last element
+                else:
+                    col_name = col
+                
+                # Try to convert to int to verify it's a year
+                try:
+                    year_val = int(float(str(col_name)))
+                    if 1900 <= year_val <= 2100:  # Valid year range
+                        year_cols.append((col, year_val))
+                except (ValueError, TypeError):
+                    # Not a year column, skip it
+                    continue
+        
+        if not year_cols:
+            print(f"⚠️ No valid year columns found after pivot. Columns: {list(pivot_df.columns)}. Returning empty data.")
+            return [], []
+        
+        # Sort years in descending order (newest first)
+        year_cols.sort(key=lambda x: x[1], reverse=True)
+        
+        # Extract column names (original column names from pivot)
+        year_col_names = [col[0] for col in year_cols]
+        
+        # Reorder columns: CrudeOil first, then years in descending order
+        pivot_df = pivot_df[['CrudeOil'] + year_col_names]
+        
+        # Rename year columns to strings for consistency
+        rename_dict = {col[0]: str(col[1]) for col in year_cols}
+        pivot_df = pivot_df.rename(columns=rename_dict)
+        
+        # Get the final sorted year column names as strings
+        year_cols_sorted = [str(col[1]) for col in year_cols]
+        
+        # Format numeric values (remove decimals, add commas)
+        # Show empty string for NaN, None, zero, or negative values
+        for col in year_cols_sorted:
+            if col in pivot_df.columns:
+                pivot_df[col] = pivot_df[col].apply(
+                    lambda x: f"{float(x):,.0f}" if pd.notna(x) and float(x) > 0 else ""
+                )
+        
+        # Convert CrudeOil to clickable URLs
+        # Use profile_url (bsp_link) if available, otherwise construct from crude name
+        def create_crude_link(crude_name, profile_url):
+            if profile_url and pd.notna(profile_url) and str(profile_url).strip():
+                # Use the actual profile_url from database
+                return f"[{crude_name}]({profile_url})"
+            else:
+                # Construct URL from crude name
+                crude_slug = str(crude_name).replace(' ', '-')
+                return f"[{crude_name}](https://www.energyintel.com/wcod/crude-profile/{crude_slug})"
+        
+        # Get profile URLs mapping (use first available profile_url for each crude)
+        profile_map = df.groupby('CrudeOil')['profile_url'].first().to_dict()
+        
+        pivot_df['CrudeOil'] = pivot_df['CrudeOil'].apply(
+            lambda x: create_crude_link(x, profile_map.get(x, None))
+        )
+        
+        # Convert to dict records
+        data_records = pivot_df.to_dict('records')
+        
+        # Create columns definition
+        columns = [
+            {"name": c, "id": c, "presentation": "markdown"} if c == "CrudeOil" 
+            else {"name": str(c), "id": str(c)} 
+            for c in pivot_df.columns
+        ]
+        
+        print(f"✅ Loaded {len(data_records)} records for {mode} from database")
+        print(f"   Columns: {[c['name'] for c in columns]}")
+        if data_records:
+            print(f"   Sample record keys: {list(data_records[0].keys())[:5]}...")
+        return data_records, columns
+        
     except Exception as e:
-        print("Retrying CSV read with latin-1:", e)
-        df = pd.read_csv(
-            csv_path,
-            encoding="latin-1", 
-            sep=None,
-            engine="python",
-            on_bad_lines="skip",
-            header=None
-        )
+        error_msg = str(e)
+        print(f"❌ Error loading {mode} data from database:")
+        print(f"   {error_msg}")
+        import traceback
+        traceback.print_exc()
+        print(f"\n⚠️ Returning empty data for {mode}. Please check database connection and configuration.")
+        return [], []
 
-    # 1️⃣ Remove blank rows
-    df = df.dropna(how="all")
-
-    # 2️⃣ Detect header row
-    header_row_index = df[df.apply(lambda row: "crude" in " ".join(row.astype(str)).lower(), axis=1)].index
-    header_row = header_row_index[0] if len(header_row_index) else 0
-    df.columns = df.iloc[header_row].astype(str).str.strip()
-    df = df[df.index > header_row]
-
-    # 3️⃣ Remove footer
-    df = remove_footer_rows(df)
-
-    # 4️⃣ Remove unwanted columns
-    df = df.loc[:, ~df.columns.str.contains("Unnamed")]
-    df = df.loc[:, ~df.columns.str.contains("Source", case=False)]
-    df = df.loc[:, df.columns.notnull()]
-
-    # Remove profile_url column if exists
-    if "profile_url" in df.columns:
-        df = df.drop(columns=["profile_url"])
-
-    # Remove columns that are completely empty
-    df = df.dropna(axis=1, how='all')
-
-    # 5️⃣ Clean up
-    df = df.dropna(how="all").fillna("")
-    df.columns = [c.strip() for c in df.columns]
-
-    # -----------------------------
-    # Convert CrudeOil to clickable URLs (EXTERNAL)
-    # -----------------------------
-    if "CrudeOil" in df.columns:
-        df["CrudeOil"] = df["CrudeOil"].apply(
-            lambda x: f"[{x}](https://www.energyintel.com/wcod/crude-profile/{x.replace(' ', '-')})"
-        )
-
-    return df.to_dict("records"), [
-        {"name": c, "id": c, "presentation": "markdown"} if c=="CrudeOil" else {"name": c, "id": c} 
-        for c in df.columns
-    ]
+# ------------------------------------------------------------------------------
+# SAMPLE DATA IF DATABASE QUERY FAILS
+# ------------------------------------------------------------------------------
+# def get_sample():
+#     sample = [{"CrudeOil": "Sample Oil", "2024": 10, "2023": 8, "2022": 6}]
+#     cols = [{"name": c, "id": c, "presentation": "markdown"} if c=="CrudeOil" else {"name": c, "id": c} for c in sample[0].keys()]
+#     return sample, cols
 
 # ------------------------------------------------------------------------------
 # CALCULATE COMBINED SUM DATA (Production + Exports) - SORTED BY MAXIMUM VALUE DESC
 # ------------------------------------------------------------------------------
 def calculate_combined_sums():
     """Calculate combined sums of Production and Exports for each crude oil and year, sorted by maximum value descending"""
-    
-    # Load both datasets
-    production_data, production_cols = load_crude_data("production")
-    exports_data, exports_cols = load_crude_data("exports")
-    
-    # Convert to DataFrames
-    prod_df = pd.DataFrame(production_data)
-    exp_df = pd.DataFrame(exports_data)
-    
-    # Get numeric columns (years)
-    numeric_cols = [col for col in prod_df.columns if col != 'CrudeOil']
-    
-    # Create combined data with maximum values
-    combined_data = []
-    
-    # Get all unique crude oils from both datasets
-    all_crudes = set(prod_df['CrudeOil'].tolist() + exp_df['CrudeOil'].tolist())
-    
-    for crude in all_crudes:
-        combined_row = {'CrudeOil': crude}
-        max_value = 0  # Track maximum value for sorting
         
-        # Find this crude in production data
-        prod_row = prod_df[prod_df['CrudeOil'] == crude]
-        # Find this crude in exports data  
-        exp_row = exp_df[exp_df['CrudeOil'] == crude]
+    # Query to get both production and exports data - using exact query format
+    query = f"""
+    SELECT 
+        A.country_name AS "Country",
+        GRP.opec_grp AS "group",
+        A.crude_name AS "CrudeOil",
+        B.bsp_link AS "profile_url",
+        A.yr AS "YearReported",
+        A.production_kbpd AS "ProductionDataValue",
+        A.exports_kbpd AS "ExportDataValue",
+        A.api,
+        A.sulfur_pct,
+        A."tan_mg_koh/g",
+        A.ports_terminals,
+        A.classification,
+        A.crude_alias,
+        A.producers,
+        A.sellers,
+        A.ci_rank,
+        A.external_comments,
+        A.insert_by,
+        A.insert_date,
+        A.last_update_date,
+        A.last_update_by,
+        A.to_be_deleted
+    FROM fact_wcod_crude A
+    LEFT JOIN dim_country GRP 
+           ON A.country_id = GRP.dim_country_id
+    LEFT JOIN fact_wcod_crude_bsp_links B 
+           ON A.crude_id = B.crude_id
+    WHERE A.to_be_deleted IS NULL
+      AND A.crude_name IS NOT NULL
+      AND (A.production_kbpd IS NOT NULL OR A.exports_kbpd IS NOT NULL)
+    """
+    
+    try:
+        # Execute query
+        results = execute_query(query)
         
-        for col in numeric_cols:
-            prod_val = 0
-            exp_val = 0
-            
-            # Get production value
-            if not prod_row.empty and col in prod_row.columns:
-                prod_cell = prod_row[col].iloc[0]
-                if prod_cell and str(prod_cell).strip() and str(prod_cell).strip() != '':
+        if not results:
+            return []
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(results)
+        
+        # Extract year from YearReported (handle both date and year formats)
+        if 'YearReported' in df.columns:
+            # Convert YearReported to year integer
+            if pd.api.types.is_datetime64_any_dtype(df['YearReported']):
+                df['Year'] = df['YearReported'].dt.year.astype(int)
+            elif pd.api.types.is_object_dtype(df['YearReported']):
+                # Try to extract year from date string or use as-is if already a year
+                def extract_year(val):
+                    if pd.isna(val):
+                        return None
+                    val_str = str(val)
+                    # If it's a date string like "2010-01-01", extract year
+                    if '-' in val_str and len(val_str) > 4:
+                        try:
+                            return int(val_str.split('-')[0])
+                        except:
+                            return None
+                    # If it's already a year, convert to int
                     try:
-                        clean_val = str(prod_cell).replace(',', '')
-                        prod_val = float(clean_val)
-                    except (ValueError, TypeError):
-                        prod_val = 0
-            
-            # Get exports value
-            if not exp_row.empty and col in exp_row.columns:
-                exp_cell = exp_row[col].iloc[0]
-                if exp_cell and str(exp_cell).strip() and str(exp_cell).strip() != '':
-                    try:
-                        clean_val = str(exp_cell).replace(',', '')
-                        exp_val = float(clean_val)
-                    except (ValueError, TypeError):
-                        exp_val = 0
-            
-            # Calculate combined sum
-            combined_val = prod_val + exp_val
-            combined_row[col] = f"{combined_val:,.0f}" if combined_val > 0 else ""
-            
-            # Update maximum value if this year's value is higher
-            if combined_val > max_value:
-                max_value = combined_val
+                        return int(float(val_str))
+                    except:
+                        return None
+                df['Year'] = df['YearReported'].apply(extract_year)
+            else:
+                # Already numeric, convert to int (handle float years like 2010.0)
+                df['Year'] = df['YearReported'].fillna(0).astype(float).astype(int)
+                # Replace 0 with NaN for invalid years
+                df.loc[df['Year'] == 0, 'Year'] = None
+        else:
+            print(f"⚠️ YearReported column not found in results")
+            return []
         
-        # Add maximum value for sorting
-        combined_row['_max_value'] = max_value
-        combined_data.append(combined_row)
-    
-    # Sort by maximum value in descending order (highest first)
-    combined_data_sorted = sorted(combined_data, key=lambda x: x['_max_value'], reverse=True)
-    
-    # Remove the temporary _max_value field
-    for row in combined_data_sorted:
-        row.pop('_max_value', None)
-    
-    return combined_data_sorted
+        # Remove rows where Year extraction failed
+        df = df[df['Year'].notna() & (df['Year'] > 1900) & (df['Year'] < 2100)]
+        
+        # Calculate combined value (Production + Exports) for each row
+        df['CombinedValue'] = df['ProductionDataValue'].fillna(0) + df['ExportDataValue'].fillna(0)
+        
+        # Filter out rows where combined value is zero
+        df = df[df['CombinedValue'] > 0]
+        
+        if df.empty:
+            return []
+        
+        # Get the full year range from the data
+        min_year = int(df['Year'].min())
+        max_year = int(df['Year'].max())
+        all_years = list(range(min_year, max_year + 1))
+        
+        # Pivot the data: CrudeOil as rows, Year as columns, CombinedValue as values
+        # Use fill_value=None to keep NaN for missing values (we'll convert to empty strings later)
+        pivot_df = df.pivot_table(
+            index='CrudeOil',
+            columns='Year',
+            values='CombinedValue',
+            aggfunc='sum',  # Sum if there are duplicates
+            fill_value=None  # Keep NaN for missing years
+        )
+        
+        # Reset index to make CrudeOil a column
+        pivot_df = pivot_df.reset_index()
+        
+        # Ensure all years in the range are present as columns
+        # Add missing year columns with NaN values
+        existing_year_cols = []
+        for col in pivot_df.columns:
+            if col != 'CrudeOil':
+                # Handle MultiIndex columns (if any)
+                if isinstance(col, tuple):
+                    col_name = col[-1]  # Get the last element
+                else:
+                    col_name = col
+                
+                # Try to convert to int to verify it's a year
+                try:
+                    year_val = int(float(str(col_name)))
+                    if 1900 <= year_val <= 2100:  # Valid year range
+                        existing_year_cols.append(year_val)
+                except (ValueError, TypeError):
+                    # Not a year column, skip it
+                    continue
+        
+        # Add missing year columns (years that exist in range but not in data)
+        for year in all_years:
+            if year not in existing_year_cols:
+                pivot_df[year] = None  # Add as NaN/None
+        
+        # Get all year columns (now including all years in range)
+        year_cols = []
+        for col in pivot_df.columns:
+            if col != 'CrudeOil':
+                # Handle MultiIndex columns (if any)
+                if isinstance(col, tuple):
+                    col_name = col[-1]  # Get the last element
+                else:
+                    col_name = col
+                
+                # Try to convert to int to verify it's a year
+                try:
+                    year_val = int(float(str(col_name)))
+                    if 1900 <= year_val <= 2100:  # Valid year range
+                        year_cols.append((col, year_val))
+                except (ValueError, TypeError):
+                    # Not a year column, skip it
+                    continue
+        
+        if not year_cols:
+            print(f"⚠️ No valid year columns found after pivot. Columns: {list(pivot_df.columns)}")
+            return []
+        
+        # Sort years in descending order (newest first)
+        year_cols.sort(key=lambda x: x[1], reverse=True)
+        
+        # Extract column names (original column names from pivot)
+        year_col_names = [col[0] for col in year_cols]
+        
+        # Reorder columns: CrudeOil first, then years in descending order
+        pivot_df = pivot_df[['CrudeOil'] + year_col_names]
+        
+        # Rename year columns to strings for consistency
+        rename_dict = {col[0]: str(col[1]) for col in year_cols}
+        pivot_df = pivot_df.rename(columns=rename_dict)
+        
+        # Get the final sorted year column names as strings
+        year_cols_sorted = [str(col[1]) for col in year_cols]
+        
+        # Calculate maximum value for each row (for sorting)
+        max_values = []
+        for idx, row in pivot_df.iterrows():
+            max_val = 0
+            for col in year_cols_sorted:
+                if col in pivot_df.columns:
+                    val = row[col]
+                    if pd.notna(val) and val > 0:
+                        try:
+                            val_float = float(val)
+                            if val_float > max_val:
+                                max_val = val_float
+                        except (ValueError, TypeError):
+                            pass
+            max_values.append(max_val)
+        
+        pivot_df['_max_value'] = max_values
+        
+        # Sort by maximum value in descending order
+        pivot_df = pivot_df.sort_values('_max_value', ascending=False)
+        
+        # Remove the temporary _max_value column
+        pivot_df = pivot_df.drop('_max_value', axis=1)
+        
+        # Format numeric values (remove decimals, add commas)
+        # Show empty string for NaN, None, zero, or negative values
+        for col in year_cols_sorted:
+            if col in pivot_df.columns:
+                pivot_df[col] = pivot_df[col].apply(
+                    lambda x: f"{float(x):,.0f}" if pd.notna(x) and float(x) > 0 else ""
+                )
+        
+        # Convert CrudeOil to clickable URLs
+        profile_map = df.groupby('CrudeOil')['profile_url'].first().to_dict()
+        
+        def create_crude_link(crude_name, profile_url):
+            if profile_url and pd.notna(profile_url) and str(profile_url).strip():
+                # Use the actual profile_url from database
+                return f"[{crude_name}]({profile_url})"
+            else:
+                # Construct URL from crude name
+                crude_slug = str(crude_name).replace(' ', '-')
+                return f"[{crude_name}](https://www.energyintel.com/wcod/crude-profile/{crude_slug})"
+        
+        pivot_df['CrudeOil'] = pivot_df['CrudeOil'].apply(
+            lambda x: create_crude_link(x, profile_map.get(x, None))
+        )
+        
+        # Convert to dict records
+        combined_data = pivot_df.to_dict('records')
+        
+        print(f"✅ Calculated combined sums for {len(combined_data)} crude oils")
+        return combined_data
+        
+    except Exception as e:
+        print(f"❌ Error calculating combined sums: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 # ------------------------------------------------------------------------------
 # CALCULATE SUM ROW FOR REGULAR DATA
@@ -266,11 +555,10 @@ def sort_by_maximum_value(data, direction='desc'):
     return df_sorted.to_dict('records')
 
 # ------------------------------------------------------------------------------
-# INITIAL LOAD
+# INITIAL LOAD - Lazy loading, only when page is accessed
 # ------------------------------------------------------------------------------
-production_data, production_columns = load_crude_data("production")
-production_sum_row = calculate_sum_row(production_data)
-table_data_with_sum = production_data + [production_sum_row] if production_sum_row else production_data
+production_data = []
+production_columns = []
 
 # ------------------------------------------------------------------------------
 # LAYOUT
@@ -521,7 +809,7 @@ def create_layout(server):
 
             dash_table.DataTable(
                 id="crude-comparison-table",
-                data=table_data_with_sum,
+                data=production_data,
                 columns=production_columns,
                 style_table={
                     "overflowX": "auto",
@@ -564,6 +852,7 @@ def create_layout(server):
                         "paddingLeft": "12px",
                         "paddingRight": "12px",
                         "color": "#1f3263",
+                        "cursor": "pointer",
                     },
                     {
                         "if": {"column_id": "CrudeOil", "header": True},
@@ -600,23 +889,14 @@ def create_layout(server):
                         "color": "#333333",
                         "textAlign": "center",
                     },
-                    # Style for SUM row - DARK BLUE BACKGROUND
-                    {
-                        "if": {"filter_query": '{CrudeOil} = "SUM"'},
-                        "backgroundColor": "#1f3263",
-                        "color": "white",
-                        "fontWeight": "bold",
-                        "borderTop": "2px solid #d65a00",
-                    },
-                    {
-                        "if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"},
-                        "textAlign": "left",
-                        "backgroundColor": "#1f3263",
-                        "color": "white",
-                        "fontWeight": "bold",
-                    }
                 ],
                 css=[
+                    {
+                        'selector': '.dash-cell[data-dash-column="CrudeOil"]',
+                        'rule': '''
+                            cursor: pointer !important;
+                        '''
+                    },
                     {
                         'selector': '.dash-cell[data-dash-column="CrudeOil"] a',
                         'rule': '''
@@ -790,7 +1070,7 @@ def create_layout(server):
                 page_action="none",
                 sort_action="none",
                 filter_action="none",
-                markdown_options={"html": True},
+                        markdown_options={"html": True, "link_target": "_blank"},
             ),
 
             # Store components
@@ -799,7 +1079,6 @@ def create_layout(server):
             dcc.Store(id='original-data-store', data=production_data),
             dcc.Store(id='current-sort-order', data={'type': 'source', 'direction': 'asc'}),
             dcc.Store(id='show-sorting-controls', data=False),
-            dcc.Store(id='sum-row-store', data=production_sum_row),
             dcc.Store(id='is-combined-mode', data=False),  # Track if we're in combined mode
             html.Div(id='dummy-output', style={'display': 'none'}),
             html.Div(id='dummy-output-2', style={'display': 'none'}),
@@ -870,7 +1149,6 @@ def register_callbacks(app):
     @app.callback(
         [Output("crude-comparison-table", "data"),
          Output("original-data-store", "data"),
-         Output("sum-row-store", "data"),
          Output("is-combined-mode", "data")],
         [Input("export-production-dropdown", "value"),
          Input("sum-text-box", "n_clicks"),
@@ -882,15 +1160,13 @@ def register_callbacks(app):
         
         # SUM text box OR Year icon click switches to combined mode
         if trigger in ['sum-text-box', 'year-column-btn']:
-            # Use combined data WITHOUT sum row
+            # Use combined data
             combined_data = calculate_combined_sums()
-            return combined_data, combined_data, None, True
+            return combined_data, combined_data, True
         else:
-            # Use individual dataset (Production or Exports) WITH sum row
+            # Use individual dataset (Production or Exports) - NO sum row
             crude_data, columns = load_crude_data(mode)
-            sum_row = calculate_sum_row(crude_data)
-            table_data_with_sum = crude_data + [sum_row] if sum_row else crude_data
-            return table_data_with_sum, crude_data, sum_row, False
+            return crude_data, crude_data, False
 
     @app.callback(
         Output("crude-comparison-table", "columns"),
@@ -1128,11 +1404,10 @@ def register_callbacks(app):
         [Input('current-sort-order', 'data')],
         [State('original-data-store', 'data'),
          State('export-production-dropdown', 'value'),
-         State('sum-row-store', 'data'),
          State('is-combined-mode', 'data')],
         prevent_initial_call=True
     )
-    def apply_sort_order(current_sort, original_data, mode, sum_row, is_combined):
+    def apply_sort_order(current_sort, original_data, mode, is_combined):
         if not original_data or not current_sort:
             return dash.no_update, dash.no_update
             
@@ -1156,10 +1431,8 @@ def register_callbacks(app):
         else:
             df_sorted = df
         
-        # Convert back to dict and add SUM row only if sum_row exists (not in combined mode)
+        # Convert back to dict (no SUM row)
         sorted_data = df_sorted.to_dict('records')
-        if sum_row:
-            sorted_data.append(sum_row)
         
         return sorted_data, dash.no_update
 
@@ -1174,13 +1447,12 @@ def register_callbacks(app):
         [State('original-data-store', 'data'),
          State('current-sort-order', 'data'),
          State('export-production-dropdown', 'value'),
-         State('sum-row-store', 'data'),
          State('is-combined-mode', 'data')],
         prevent_initial_call=True
     )
     def handle_popup_sorting(popup_source_clicks, popup_alpha_clicks,
                            popup_field_clicks, popup_nested_clicks,
-                           original_data, current_sort, mode, sum_row, is_combined):
+                           original_data, current_sort, mode, is_combined):
         if not original_data:
             return dash.no_update, dash.no_update
             
@@ -1216,8 +1488,6 @@ def register_callbacks(app):
             df_sorted = df
         
         sorted_data = df_sorted.to_dict('records')
-        if sum_row:
-            sorted_data.append(sum_row)
         
         return sorted_data, {'type': sort_type, 'direction': direction}
 
@@ -1230,25 +1500,35 @@ def register_callbacks(app):
         prevent_initial_call=True
     )
     def handle_cell_click(active_cell, data, previous_selected):
-        if active_cell:
+        if active_cell and data:
             row = active_cell['row']
             column = active_cell['column_id']
             
-            if (column != "CrudeOil" and data and row is not None and 
-                row < len(data) and data[row].get('CrudeOil') != 'SUM'):
-                cell_value = data[row].get(column)
+            if row is not None and row < len(data):
                 crude_markdown = data[row].get('CrudeOil', '')
+                url_match = re.search(r'\[.*?\]\((.*?)\)', crude_markdown)
                 
-                if cell_value and str(cell_value).strip():
-                    url_match = re.search(r'\[.*?\]\((.*?)\)', crude_markdown)
-                    if url_match:
-                        external_url = url_match.group(1)
+                if url_match:
+                    external_url = url_match.group(1)
+                    
+                    if column == "CrudeOil":
+                        # Click on CrudeOil column - highlight entire row
                         selected_cell = {
                             'row': row,
-                            'column': column,
-                            'value': cell_value
+                            'column': 'row',  # Special marker for row highlighting
+                            'value': None
                         }
                         return external_url, selected_cell
+                    else:
+                        # Click on value column - highlight specific cell
+                        cell_value = data[row].get(column)
+                        if cell_value and str(cell_value).strip():
+                            selected_cell = {
+                                'row': row,
+                                'column': column,
+                                'value': cell_value
+                            }
+                            return external_url, selected_cell
         
         raise dash.exceptions.PreventUpdate
 
@@ -1264,36 +1544,54 @@ def register_callbacks(app):
             {"if": {"column_id": "CrudeOil"}, "color": "#1f3263"},
             {"if": {"column_id": [str(year) for year in range(2007, 2025)]}, "cursor": "pointer"},
         ]
-        
-        # Only add SUM row styling if NOT in combined mode
-        if not is_combined:
-            default_styles.extend([
-                {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
-                {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
-            ])
     
-        if selected_cell:
+        if selected_cell and current_data:
             numeric_columns = [col for col in (current_data[0].keys() if current_data else []) if col != "CrudeOil"]
+            selected_row = selected_cell['row']
+            selected_col = selected_cell['column']
             
-            style_conditions = [
-                {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"},
-                {"if": {"column_id": "CrudeOil"}, "color": "#1f3263", "backgroundColor": "white", "cursor": "pointer"},
-                {"if": {"column_id": numeric_columns}, "color": "#f0f0f0", "backgroundColor": "white", "cursor": "pointer"},
-                {"if": {"row_index": selected_cell['row'], "column_id": selected_cell['column']}, "color": "#1f3263", "backgroundColor": "#e6f3ff", "fontWeight": "bold", "border": "2px solid #1f3263", "cursor": "pointer"},
-            ]
-            
-            # Only add SUM row styling if NOT in combined mode
-            if not is_combined:
-                style_conditions.extend([
-                    {"if": {"filter_query": '{CrudeOil} = "SUM"'}, "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold", "borderTop": "2px solid #d65a00"},
-                    {"if": {"filter_query": '{CrudeOil} = "SUM"', "column_id": "CrudeOil"}, "textAlign": "left", "backgroundColor": "#1f3263", "color": "white", "fontWeight": "bold"}
-                ])
+            # Check if it's a row highlight (CrudeOil click) or cell highlight (value click)
+            if selected_col == 'row':
+                # Highlight entire row - like fig1 (light blue background)
+                style_conditions = [
+                    # Dim all other rows
+                    {"if": {"row_index": "odd"}, "backgroundColor": "#f5f5f5", "opacity": "0.5"},
+                    {"if": {"row_index": "even"}, "backgroundColor": "#ffffff", "opacity": "0.5"},
+                    # Highlight the selected row
+                    {"if": {"row_index": selected_row}, "backgroundColor": "#e6f3ff", "opacity": "1", "fontWeight": "600"},
+                    # CrudeOil column styling
+                    {"if": {"column_id": "CrudeOil"}, "color": "#1f3263", "cursor": "pointer"},
+                    {"if": {"column_id": "CrudeOil", "row_index": selected_row}, "color": "#1f3263", "backgroundColor": "#e6f3ff", "fontWeight": "600"},
+                    # Year columns styling
+                    {"if": {"column_id": numeric_columns}, "cursor": "pointer"},
+                    {"if": {"column_id": numeric_columns, "row_index": selected_row}, "color": "#1f3263", "backgroundColor": "#e6f3ff", "fontWeight": "600"},
+                ]
+            else:
+                # Highlight specific cell and dim others
+                style_conditions = [
+                    # Dim all cells
+                    {"if": {"row_index": "odd"}, "backgroundColor": "#f5f5f5", "opacity": "0.4"},
+                    {"if": {"row_index": "even"}, "backgroundColor": "#ffffff", "opacity": "0.4"},
+                    # Highlight the selected cell
+                    {"if": {"row_index": selected_row, "column_id": selected_col}, 
+                     "color": "#1f3263", 
+                     "backgroundColor": "#e6f3ff", 
+                     "fontWeight": "bold", 
+                     "border": "2px solid #1f3263", 
+                     "opacity": "1",
+                     "cursor": "pointer"},
+                    # Keep CrudeOil column visible but dimmed
+                    {"if": {"column_id": "CrudeOil"}, "color": "#1f3263", "cursor": "pointer", "opacity": "0.6"},
+                    {"if": {"column_id": "CrudeOil", "row_index": selected_row}, "color": "#1f3263", "opacity": "0.8"},
+                    # Dim other year columns
+                    {"if": {"column_id": numeric_columns}, "cursor": "pointer", "opacity": "0.4"},
+                ]
                 
             return style_conditions
         
         return default_styles
 
-    # Client-side callback to open the external URL
+    # Client-side callback to open the external URL in a new tab
     app.clientside_callback(
         """
         function(url) {
@@ -1306,6 +1604,7 @@ def register_callbacks(app):
         Output('dummy-output', 'children'),
         Input('external-url-store', 'data')
     )
+    
 
     # Add custom CSS for the header elements and tooltips
     app.clientside_callback(
@@ -1447,6 +1746,41 @@ def register_callbacks(app):
                         if (btn) btn.click();
                     };
                 }
+                
+                // Handle CrudeOil cell clicks - prevent link navigation, open in new tab, and highlight row
+                const crudeCells = document.querySelectorAll('.dash-cell[data-dash-column="CrudeOil"]');
+                crudeCells.forEach(function(cell) {
+                    // Make the entire cell clickable
+                    cell.style.cursor = 'pointer';
+                    
+                    // Handle clicks on links inside the cell
+                    const links = cell.querySelectorAll('a');
+                    links.forEach(function(link) {
+                        // Remove target attribute (we'll handle it ourselves)
+                        link.removeAttribute('target');
+                        
+                        link.addEventListener('click', function(e) {
+                            // Prevent default link navigation (same tab)
+                            e.preventDefault();
+                            
+                            // Get URL and open in new tab
+                            const url = link.getAttribute('href');
+                            if (url) {
+                                window.open(url, '_blank');
+                            }
+                            
+                            // Don't stop propagation - let the event bubble to the cell
+                            // This allows DataTable's active_cell to fire
+                            // The cell click handler will then highlight the row
+                        }, false); // Use bubble phase so cell click can also fire
+                    });
+                    
+                    // Also handle clicks directly on the cell (not just the link)
+                    cell.addEventListener('click', function(e) {
+                        // If clicking on the cell (not the link), the active_cell will fire naturally
+                        // The Python callback will handle highlighting
+                    }, false);
+                });
                 
             }, 100);
             return '';

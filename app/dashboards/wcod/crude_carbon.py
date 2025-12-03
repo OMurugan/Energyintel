@@ -8,40 +8,18 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 import os
+from core.data_helpers import execute_query
+
 
 def create_layout():
     """Create the Crude Carbon Intensity layout"""
-    # Load data to get available years
-    data_df = load_carbon_data()
+    # Don't load data here - load it in callbacks when page is active
+    # Use default values for layout
     countries = ['(All)']
-    
-    if not data_df.empty:
-        unique_countries = sorted(data_df['Country'].dropna().unique().tolist())
-        countries.extend(unique_countries)
-        
-        # Extract years from data
-        if 'Year' in data_df.columns:
-            year_values = data_df['Year'].dropna()
-            if len(year_values) > 0:
-                try:
-                    year_values = pd.to_numeric(year_values, errors='coerce').dropna()
-                    if len(year_values) > 0:
-                        available_years = sorted(year_values.astype(int).unique().tolist(), reverse=True)
-                except:
-                    available_years = list(range(2006, 2025))
-        else:
-            available_years = list(range(2006, 2025))
-    else:
-        available_years = list(range(2006, 2025))
-    
-    # Default to 2022 if available
-    if 2022 in available_years:
-        default_year = 2022
-    else:
-        default_year = available_years[0] if available_years else 2022
-    
-    min_year = min(available_years) if available_years else 2006
-    max_year = max(available_years) if available_years else 2024
+    available_years = list(range(2006, 2025))
+    default_year = 2022
+    min_year = 2006
+    max_year = 2024
     
     return html.Div([
         html.Div([
@@ -532,22 +510,47 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
     return fig
 
 def load_carbon_data():
-    """Load and clean carbon intensity data"""
-    csv_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'Carbon Intensity_data.csv')
-    
-    print(f"DEBUG: Loading CSV from: {csv_path}")
-    print(f"DEBUG: File exists: {os.path.exists(csv_path)}")
-    
-    if not os.path.exists(csv_path):
-        print(f"ERROR: CSV file not found at {csv_path}")
-        return pd.DataFrame()
-    
+
     try:
-        # Read CSV with proper encoding
-        df = pd.read_csv(csv_path, encoding='utf-8')
-        print(f"DEBUG: Loaded CSV with shape: {df.shape}")
-        print(f"DEBUG: Columns: {list(df.columns)}")
-        print(f"DEBUG: First few rows:\n{df.head()}")
+    
+        query = """
+        SELECT 
+            B.ci_rank AS "Carbon Intensity",
+            B.country,
+            STRING_AGG(B.crudeoil, ', ') AS "crude list",
+            EXTRACT(YEAR FROM B.YearReported) AS "Year of YearReported",
+            SUM(B.ProductionDataValue) AS ProductionDataValue
+        FROM
+        (
+            SELECT
+                country_name AS country,
+                crude_name AS CrudeOil,
+                yr AS YearReported,
+                production_kbpd AS ProductionDataValue,
+                ci_rank
+            FROM dev.fact_wcod_crude A
+            LEFT JOIN dev.dim_country GRP 
+                ON A.country_id = GRP.dim_country_id
+        ) B
+        WHERE B.ci_rank IS NOT NULL 
+        GROUP BY 
+            B.country,
+            B.ci_rank,
+            B.YearReported
+        ORDER BY 
+            B.country,
+            B.YearReported;
+        """
+        
+        print(f"DEBUG: Executing database query...")
+        results = execute_query(query)
+        
+        if not results:
+            print("ERROR: Query returned no results")
+            return pd.DataFrame()
+        
+        # Convert query results to DataFrame (matches CSV structure)
+        df = pd.DataFrame(results)
         
         # Clean column names
         df.columns = [col.strip() for col in df.columns]
@@ -555,6 +558,7 @@ def load_carbon_data():
         # Map to standard column names
         column_mapping = {}
         for col in df.columns:
+            print(f"DEBUG: Column: {col}")
             if 'carbon' in col.lower() and 'intensity' in col.lower():
                 column_mapping[col] = 'Carbon Intensity'
             elif 'country' in col.lower():
@@ -600,7 +604,7 @@ def load_carbon_data():
         traceback.print_exc()
         return pd.DataFrame()
 
-def register_callbacks(dash_app, server):
+def register_callbacks(dash_app, server):    
     """Register all callbacks for Crude Carbon Intensity"""
     
     # Callback to handle Carbon Intensity legend clicks
@@ -733,11 +737,28 @@ def register_callbacks(dash_app, server):
         [Input('carbon-year-display', 'children'),
          Input('carbon-country-select', 'value'),
          Input('carbon-crude-filter', 'value'),
-         Input('carbon-intensity-filter', 'value')],
+         Input('carbon-intensity-filter', 'value'),
+         Input('current-submenu', 'data')],
         prevent_initial_call=False
     )
-    def update_crude_carbon(year_str, country_filter, crude_filter, intensity_filter):
-        """Update crude carbon intensity treemap"""
+    def update_crude_carbon(year_str, country_filter, crude_filter, intensity_filter, current_submenu):
+        """Update crude carbon intensity treemap - only loads data when page is active"""
+        # Check if page is active (for WCoD dashboard usage)
+        # If used as standalone dashboard, current_submenu will be None, so always load
+        if current_submenu is not None and current_submenu != 'crude-carbon':
+            # Return empty figure if page is not active
+            fig = go.Figure()
+            fig.add_annotation(
+                text="",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False
+            )
+            fig.update_layout(height=700, plot_bgcolor='white', paper_bgcolor='white')
+            return fig
+        
         print(f"=== CALLBACK TRIGGERED ===")
         print(f"year={year_str}, country={country_filter}, crude={crude_filter}, intensity={intensity_filter}")
         
@@ -755,7 +776,7 @@ def register_callbacks(dash_app, server):
         if intensity_filter is None or len(intensity_filter) == 0:
             intensity_filter = ['Very High', 'High', 'Medium', 'Low', 'Very Low']
         
-        # Load data
+        # Load data only when page is active
         try:
             df = load_carbon_data()
             print(f"✓ Loaded {len(df)} rows from CSV")

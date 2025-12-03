@@ -1,22 +1,30 @@
 """
-Main application entry point
+Main Dash Enterprise application entry point
+Migrated from Flask-based Dash implementation
 """
 import os
 from dotenv import load_dotenv
-from app import create_app
+from core.raw_data import load_all_data
+from app.dashboards.wcod_dashboard import create_wcod_dashboard
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Get configuration from environment
-config_name = os.environ.get('FLASK_ENV', 'default')
+# Load data at startup
+load_all_data()
 
-app = create_app(config_name)
+# ======================= Dash App =======================
+# Create the WCoD dashboard (which creates the Dash app)
+# Pass None for server to create standalone app
+# Embedding support is already added in create_wcod_dashboard
+app = create_wcod_dashboard(server=None, url_base_pathname='/')
 
-if __name__ == '__main__':
+# Expose server for gunicorn
+server = app.server
+
+if __name__ == "__main__":
     app.run(
-        host=app.config['HOST'],
-        port=app.config['PORT'],
-        debug=app.config['DEBUG']
+        debug=os.getenv("DASH_DEBUG"),
+        port=os.getenv("PORT"),
+        host=os.getenv("HOST"),
     )
-

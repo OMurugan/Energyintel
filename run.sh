@@ -8,7 +8,7 @@ fi
 
 # Set environment variables
 export FLASK_APP=app.py
-export FLASK_ENV=development
+export DASH_ENV=development
 
 # Run the application
 python app.py
