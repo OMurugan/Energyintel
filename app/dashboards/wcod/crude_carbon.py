@@ -8,6 +8,8 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 import os
+from core.data_helpers import execute_query
+
 
 def create_layout():
     """Create the Crude Carbon Intensity layout"""
@@ -508,22 +510,47 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
     return fig
 
 def load_carbon_data():
-    """Load and clean carbon intensity data"""
-    csv_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'Carbon Intensity_data.csv')
-    
-    print(f"DEBUG: Loading CSV from: {csv_path}")
-    print(f"DEBUG: File exists: {os.path.exists(csv_path)}")
-    
-    if not os.path.exists(csv_path):
-        print(f"ERROR: CSV file not found at {csv_path}")
-        return pd.DataFrame()
-    
+
     try:
-        # Read CSV with proper encoding
-        df = pd.read_csv(csv_path, encoding='utf-8')
-        print(f"DEBUG: Loaded CSV with shape: {df.shape}")
-        print(f"DEBUG: Columns: {list(df.columns)}")
-        print(f"DEBUG: First few rows:\n{df.head()}")
+    
+        query = """
+        SELECT 
+            B.ci_rank AS "Carbon Intensity",
+            B.country,
+            STRING_AGG(B.crudeoil, ', ') AS "crude list",
+            EXTRACT(YEAR FROM B.YearReported) AS "Year of YearReported",
+            SUM(B.ProductionDataValue) AS ProductionDataValue
+        FROM
+        (
+            SELECT
+                country_name AS country,
+                crude_name AS CrudeOil,
+                yr AS YearReported,
+                production_kbpd AS ProductionDataValue,
+                ci_rank
+            FROM dev.fact_wcod_crude A
+            LEFT JOIN dev.dim_country GRP 
+                ON A.country_id = GRP.dim_country_id
+        ) B
+        WHERE B.ci_rank IS NOT NULL 
+        GROUP BY 
+            B.country,
+            B.ci_rank,
+            B.YearReported
+        ORDER BY 
+            B.country,
+            B.YearReported;
+        """
+        
+        print(f"DEBUG: Executing database query...")
+        results = execute_query(query)
+        
+        if not results:
+            print("ERROR: Query returned no results")
+            return pd.DataFrame()
+        
+        # Convert query results to DataFrame (matches CSV structure)
+        df = pd.DataFrame(results)
         
         # Clean column names
         df.columns = [col.strip() for col in df.columns]
@@ -531,6 +558,7 @@ def load_carbon_data():
         # Map to standard column names
         column_mapping = {}
         for col in df.columns:
+            print(f"DEBUG: Column: {col}")
             if 'carbon' in col.lower() and 'intensity' in col.lower():
                 column_mapping[col] = 'Carbon Intensity'
             elif 'country' in col.lower():
@@ -576,7 +604,7 @@ def load_carbon_data():
         traceback.print_exc()
         return pd.DataFrame()
 
-def register_callbacks(dash_app, server):
+def register_callbacks(dash_app, server):    
     """Register all callbacks for Crude Carbon Intensity"""
     
     # Callback to handle Carbon Intensity legend clicks
