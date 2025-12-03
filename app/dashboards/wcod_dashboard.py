@@ -12,6 +12,67 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 from pathlib import Path
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# ======================= URL Helper Functions =======================
+def get_base_url():
+    """
+    Get the base URL for the application
+    Constructs: http(s)://HOST or http(s)://HOST:PORT (if PORT is set)
+    
+    Returns:
+        str: Base URL (e.g., 'http://127.0.0.1:5000' or 'http://127.0.0.1')
+    """
+    protocol = os.getenv('PROTOCOL', 'http')  # http or https
+    host = os.getenv('HOST', '127.0.0.1')
+    port = os.getenv('PORT', '').strip()  # Get PORT, strip whitespace
+    
+    # Remove protocol from host if it's already included
+    if host.startswith('http://') or host.startswith('https://'):
+        return host
+    
+    # Construct full URL - only include port if it's set
+    if port:
+        return f"{protocol}://{host}:{port}"
+    else:
+        return f"{protocol}://{host}"
+
+
+def get_absolute_url(path):
+    """
+    Convert a relative path to an absolute URL
+    
+    Args:
+        path: Relative path (e.g., '/wcod/', '/assets/images/globe_inactive.svg')
+    
+    Returns:
+        str: Absolute URL (e.g., 'http://127.0.0.1:5000/wcod/')
+    """
+    base_url = get_base_url()
+    # Ensure path starts with /
+    if not path.startswith('/'):
+        path = '/' + path
+    return f"{base_url}{path}"
+
+
+def get_link_href(path):
+    """
+    Get href for dcc.Link components
+    For embedded Dash apps, use absolute URLs to avoid file:// protocol issues
+    when the page is loaded from file:// protocol
+    
+    Args:
+        path: Relative path (e.g., '/wcod/', '/country-overview')
+    
+    Returns:
+        str: Absolute URL (e.g., 'http://127.0.0.1:5000/wcod/')
+    """
+    # Use absolute URLs for embedded contexts to avoid file:// protocol issues
+    return get_absolute_url(path)
 
 # Import individual submenu modules
 from app.dashboards.wcod import (
@@ -44,9 +105,11 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
     Create comprehensive WCoD dashboard with tab navigation
     Now works standalone without Flask server dependency
     """
+    # Get base URL for absolute URLs
+    base_url = get_base_url()
+    
     # Create Dash app standalone
     # Get the root directory (where app.py is located) for assets
-    import os
     from pathlib import Path
     root_dir = Path(__file__).parent.parent.parent  # Go up from app/dashboards/wcod_dashboard.py to root
     assets_dir = root_dir / 'assets'
@@ -627,7 +690,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
                 dcc.Link(
                     html.Div([
                         html.Img(
-                            src="/assets/images/globe_inactive.svg",
+                            src=get_absolute_url("/assets/images/globe_inactive.svg"),
                             id="tab-icon-country",
                             style={
                                 'height': '35px',
@@ -650,14 +713,14 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
                         'cursor': 'pointer',
                         'height': '100%'
                     }),
-                    href='/wcod/',
+                    href=get_link_href('/wcod/'),
                     id='tab-link-country',
                     style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
                         html.Img(
-                            src="/assets/images/oil_inactive.svg",
+                            src=get_absolute_url("/assets/images/oil_inactive.svg"),
                             id='tab-icon-crude',
                             style={
                                 'height': '40px',
@@ -680,14 +743,14 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
                         'cursor': 'pointer',
                         'height': '100%'
                     }),
-                    href='/crude-overview',
+                    href=get_link_href('/crude-overview'),
                     id='tab-link-crude',
                     style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
                         html.Img(
-                            src="/assets/images/trade_inactive.svg",
+                            src=get_absolute_url("/assets/images/trade_inactive.svg"),
                             id='tab-icon-trade',
                             style={
                                 'height': '40px',
@@ -710,14 +773,14 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
                         'cursor': 'pointer',
                         'height': '100%'
                     }),
-                    href='/trade/imports-country-detail',
+                    href=get_link_href('/trade/imports-country-detail'),
                     id='tab-link-trade',
                     style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
                 dcc.Link(
                     html.Div([
                         html.Img(
-                            src="/assets/images/prices_inactive.svg",
+                            src=get_absolute_url("/assets/images/prices_inactive.svg"),
                             id='tab-icon-prices',
                             style={
                                 'height': '40px',
@@ -740,7 +803,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
                         'cursor': 'pointer',
                         'height': '100%'
                     }),
-                    href='/prices/global-crude-prices',
+                    href=get_link_href('/prices/global-crude-prices'),
                     id='tab-link-prices',
                     style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
@@ -760,7 +823,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
                         'cursor': 'pointer',
                         'height': '100%'
                     }),
-                    href='/upstream-projects/projects-by-country',
+                    href=get_link_href('/upstream-projects/projects-by-country'),
                     id='tab-link-projects',
                     style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
@@ -780,7 +843,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
                         'cursor': 'pointer',
                         'height': '100%'
                     }),
-                    href='/upstream-oil-projects-tracker-methodology',
+                    href=get_link_href('/upstream-oil-projects-tracker-methodology'),
                     id='tab-link-methodology',
                     style={'textDecoration': 'none', 'transition': 'all 0.2s ease'}
                 ),
@@ -859,7 +922,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
          Output('current-submenu', 'data', allow_duplicate=True)],
         [Input('url', 'pathname'),
          Input('url', 'search')],
-        prevent_initial_call='initial_duplicate'  # Required when using allow_duplicate=True
+        prevent_initial_call='initial_duplicate'  # Required when using allow_duplicate=True, but allows initial call
     )
     def update_from_url(pathname, search):
         """Update tabs and submenu based on URL"""
@@ -990,10 +1053,10 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
         }
         
         # Icon sources - switch between active and inactive SVGs (using local assets)
-        country_icon = '/assets/images/globe_active.svg' if active_tab == 'country-tab' else '/assets/images/globe_inactive.svg'
-        crude_icon = '/assets/images/oil_active.svg' if active_tab == 'crude-tab' else '/assets/images/oil_inactive.svg'
-        trade_icon = '/assets/images/trade_active.svg' if active_tab == 'trade-tab' else '/assets/images/trade_inactive.svg'
-        prices_icon = '/assets/images/prices_active.svg' if active_tab == 'prices-tab' else '/assets/images/prices_inactive.svg'
+        country_icon = get_absolute_url('/assets/images/globe_active.svg') if active_tab == 'country-tab' else get_absolute_url('/assets/images/globe_inactive.svg')
+        crude_icon = get_absolute_url('/assets/images/oil_active.svg') if active_tab == 'crude-tab' else get_absolute_url('/assets/images/oil_inactive.svg')
+        trade_icon = get_absolute_url('/assets/images/trade_active.svg') if active_tab == 'trade-tab' else get_absolute_url('/assets/images/trade_inactive.svg')
+        prices_icon = get_absolute_url('/assets/images/prices_active.svg') if active_tab == 'prices-tab' else get_absolute_url('/assets/images/prices_inactive.svg')
         
         return [
             active_style if active_tab == 'country-tab' else base_style,
@@ -1106,29 +1169,29 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
             default_value = menu_items[0]['value'] if menu_items else 'country-overview'
         
         # Get current submenu from store to highlight active button
-        # Create URL paths for each submenu item - matching exact user-provided URLs
+        # Create URL paths for each submenu item - use relative paths for dcc.Link
         url_paths = {
-            'country-overview': '/wcod/',
-            'country-profile': '/country-overview',
-            'crude-overview': '/crude-overview',
-            'crude-profile': '/crude-profile',
-            'crude-comparison': '/crude-comparison',
-            'crude-quality': '/crude-quality-comparison',
-            'crude-carbon': '/crude-carbon-intensity',
-            'imports-detail': '/trade/imports-country-detail',
-            'imports-comparison': '/trade/imports-country-comparison',
-            'global-exports': '/trade/global-exports',
-            'russian-exports': '/trade/russian-exports-by-terminal-and-exporting-company',
-            'global-prices': '/prices/global-crude-prices',
-            'price-scorecard': '/prices/price-scorecard-for-key-world-oil-grades',
-            'gpw-margins': '/prices/gross-product-worth-and-margins',
-            'projects-country': '/upstream-projects/projects-by-country',
-            'projects-company': '/upstream-projects/projects-by-company',
-            'projects-time': '/upstream-projects/projects-by-time',
-            'projects-status': '/upstream-projects/projects-by-status',
-            'projects-latest': '/upstream-projects-related-articles',
-            'projects-tracker': '/upstream-oil-projects-tracker-methodology',
-            'projects-carbon': '/carbon-intensity-methodology',
+            'country-overview': get_link_href('/wcod/'),
+            'country-profile': get_link_href('/country-overview'),
+            'crude-overview': get_link_href('/crude-overview'),
+            'crude-profile': get_link_href('/crude-profile'),
+            'crude-comparison': get_link_href('/crude-comparison'),
+            'crude-quality': get_link_href('/crude-quality-comparison'),
+            'crude-carbon': get_link_href('/crude-carbon-intensity'),
+            'imports-detail': get_link_href('/trade/imports-country-detail'),
+            'imports-comparison': get_link_href('/trade/imports-country-comparison'),
+            'global-exports': get_link_href('/trade/global-exports'),
+            'russian-exports': get_link_href('/trade/russian-exports-by-terminal-and-exporting-company'),
+            'global-prices': get_link_href('/prices/global-crude-prices'),
+            'price-scorecard': get_link_href('/prices/price-scorecard-for-key-world-oil-grades'),
+            'gpw-margins': get_link_href('/prices/gross-product-worth-and-margins'),
+            'projects-country': get_link_href('/upstream-projects/projects-by-country'),
+            'projects-company': get_link_href('/upstream-projects/projects-by-company'),
+            'projects-time': get_link_href('/upstream-projects/projects-by-time'),
+            'projects-status': get_link_href('/upstream-projects/projects-by-status'),
+            'projects-latest': get_link_href('/upstream-projects-related-articles'),
+            'projects-tracker': get_link_href('/upstream-oil-projects-tracker-methodology'),
+            'projects-carbon': get_link_href('/carbon-intensity-methodology'),
         }
         
         # Icons for submenu items - matching Energy Intelligence design
@@ -1161,7 +1224,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
             submenu_html = html.Div([
                 dcc.Link(
                     html.Span(item['label'], style={'fontSize': '14px'}),
-                    href=url_paths.get(item['value'], '/wcod/'),
+                    href=url_paths.get(item['value'], get_link_href('/wcod/')),
                     id={'type': 'submenu-button', 'index': item['value']},
                     style={
                         'textDecoration': 'none',
@@ -1264,7 +1327,28 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
             elif submenu == 'gpw-margins':
                 return render_gpw_margins()
         elif main_tab == 'projects-tab':
-            if submenu == 'projects-country':
+            # Handle None submenu on refresh - use query parameter or pathname to determine which view to show
+            if submenu is None:
+                # On refresh, submenu might be None, so check query parameter or pathname
+                if page_from_query:
+                    effective_page = page_from_query
+                else:
+                    effective_page = pathname_str
+                
+                # Check pathname to determine which projects view to render
+                if '/upstream-projects/projects-by-status' in effective_page or '/wcod-upstream-projects/projects-by-status' in effective_page:
+                    return render_projects_by_status()
+                elif '/upstream-projects/projects-by-country' in effective_page or '/wcod/upstream-projects/projects-by-country' in effective_page:
+                    return render_projects_by_country()
+                elif '/upstream-projects/projects-by-company' in effective_page or '/wcod/upstream-projects/projects-by-company' in effective_page:
+                    return render_projects_by_company()
+                elif '/upstream-projects/projects-by-time' in effective_page or '/wcod/upstream-projects/projects-by-time' in effective_page:
+                    return render_projects_by_time()
+                elif '/upstream-projects-related-articles' in effective_page or '/wcod-upstream-projects-related-articles' in effective_page:
+                    return render_projects_latest()
+                # Default to projects-by-country if we can't determine
+                return render_projects_by_country()
+            elif submenu == 'projects-country':
                 return render_projects_by_country()
             elif submenu == 'projects-company':
                 return render_projects_by_company()
@@ -1351,27 +1435,27 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
         
         menu_items = submenus.get(active_tab, [])
         url_paths = {
-            'country-overview': '/wcod/',
-            'country-profile': '/country-overview',
-            'crude-overview': '/crude-overview',
-            'crude-profile': '/crude-profile',
-            'crude-comparison': '/crude-comparison',
-            'crude-quality': '/crude-quality-comparison',
-            'crude-carbon': '/crude-carbon-intensity',
-            'imports-detail': '/trade/imports-country-detail',
-            'imports-comparison': '/trade/imports-country-comparison',
-            'global-exports': '/trade/global-exports',
-            'russian-exports': '/trade/russian-exports-by-terminal-and-exporting-company',
-            'global-prices': '/prices/global-crude-prices',
-            'price-scorecard': '/prices/price-scorecard-for-key-world-oil-grades',
-            'gpw-margins': '/prices/gross-product-worth-and-margins',
-            'projects-country': '/upstream-projects/projects-by-country',
-            'projects-company': '/upstream-projects/projects-by-company',
-            'projects-time': '/upstream-projects/projects-by-time',
-            'projects-status': '/upstream-projects/projects-by-status',
-            'projects-latest': '/upstream-projects-related-articles',
-            'projects-tracker': '/upstream-oil-projects-tracker-methodology',
-            'projects-carbon': '/carbon-intensity-methodology',
+            'country-overview': get_link_href('/wcod/'),
+            'country-profile': get_link_href('/country-overview'),
+            'crude-overview': get_link_href('/crude-overview'),
+            'crude-profile': get_link_href('/crude-profile'),
+            'crude-comparison': get_link_href('/crude-comparison'),
+            'crude-quality': get_link_href('/crude-quality-comparison'),
+            'crude-carbon': get_link_href('/crude-carbon-intensity'),
+            'imports-detail': get_link_href('/trade/imports-country-detail'),
+            'imports-comparison': get_link_href('/trade/imports-country-comparison'),
+            'global-exports': get_link_href('/trade/global-exports'),
+            'russian-exports': get_link_href('/trade/russian-exports-by-terminal-and-exporting-company'),
+            'global-prices': get_link_href('/prices/global-crude-prices'),
+            'price-scorecard': get_link_href('/prices/price-scorecard-for-key-world-oil-grades'),
+            'gpw-margins': get_link_href('/prices/gross-product-worth-and-margins'),
+            'projects-country': get_link_href('/upstream-projects/projects-by-country'),
+            'projects-company': get_link_href('/upstream-projects/projects-by-company'),
+            'projects-time': get_link_href('/upstream-projects/projects-by-time'),
+            'projects-status': get_link_href('/upstream-projects/projects-by-status'),
+            'projects-latest': get_link_href('/upstream-projects-related-articles'),
+            'projects-tracker': get_link_href('/upstream-oil-projects-tracker-methodology'),
+            'projects-carbon': get_link_href('/carbon-intensity-methodology'),
         }
         
         # Icons for submenu items
@@ -1403,7 +1487,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
         submenu_html = html.Div([
             dcc.Link(
                 html.Span(item['label'], style={'fontSize': '14px'}),
-                href=url_paths.get(item['value'], '/wcod/'),
+                href=url_paths.get(item['value'], get_link_href('/wcod/')),
                 id={'type': 'submenu-button', 'index': item['value']},
                 style={
                     'textDecoration': 'none',
