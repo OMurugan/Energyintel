@@ -520,7 +520,13 @@ def create_grouped_refined_products_table():
         style_table={
             "width": "100%",
             "marginBottom": "15px",
-            "fontFamily": "Arial, sans-serif"
+            "fontFamily": "Arial, sans-serif",
+            "position": "relative",
+            "height": "1360px",  # Reduced height
+            "overflowY": "auto",  # Add vertical scroll
+            "overflowX": "auto",  # Keep horizontal scroll if needed
+            "border": "1px solid #ddd",  # Add border for better visibility
+            
         },
         style_cell={
             "border": "1px solid #ddd",
@@ -533,6 +539,7 @@ def create_grouped_refined_products_table():
             "height": "auto",
             "minHeight": "35px",
             "verticalAlign": "middle",
+             "maxWidth": "150px",
         },
         style_header={
             "backgroundColor": "#f5f5f5",
@@ -540,7 +547,10 @@ def create_grouped_refined_products_table():
             "fontSize": "12px",
             "border": "1px solid #ddd",
             "padding": "10px",
-            "textAlign": "left"
+            "textAlign": "left",
+            "position": "sticky",  # Make header sticky
+            "top": "0",
+            "zIndex": "10",
         },
         style_data={
             "whiteSpace": "normal",
