@@ -14,8 +14,7 @@ Crude Overview View
 Replicates Energy Intelligence WCoD Crude Overview functionality
 Monthly World Crude Production Dashboard - Based on Tableau source
 """
-from dash import dcc, html, Input, Output, State, dash_table, dash, no_update
-import dash.dependencies as dd
+from dash import Dash, dcc, html, Input, Output, State, callback, clientside_callback, dash_table, ALL
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -25,7 +24,7 @@ import re
 import itertools
 import math
 import html as html_lib
-from app import create_dash_app
+from core.data_helpers import execute_query
 
 # Define data paths
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'crude_overview')
@@ -1292,8 +1291,8 @@ def register_callbacks(dash_app, server):
     
     @dash_app.callback(
         Output("profiled-streams", "value", allow_duplicate=True),
-        [Input({"type": "stream-checkbox", "stream": dd.ALL}, "value")],
-        [State({"type": "stream-checkbox", "stream": dd.ALL}, "id")],
+        [Input({"type": "stream-checkbox", "stream": ALL}, "value")],
+        [State({"type": "stream-checkbox", "stream": ALL}, "id")],
         prevent_initial_call=True
     )
     def update_profiled_streams_from_checkboxes(checkbox_values, checkbox_ids):
@@ -2695,7 +2694,16 @@ def register_callbacks(dash_app, server):
 # ------------------------------------------------------------------------------
 def create_crude_overview_dashboard(server, url_base_pathname="/dash/crude-overview/"):
     """Create the Crude Overview dashboard"""
-    dash_app = create_dash_app(server, url_base_pathname)
+    dash_app = dash.Dash(
+        __name__,
+        server=server,
+        url_base_pathname=url_base_pathname,
+        external_stylesheets=[
+            'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
+            'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+        ],
+        suppress_callback_exceptions=True
+    )
     dash_app.layout = create_layout(server)
     register_callbacks(dash_app, server)
     return dash_app

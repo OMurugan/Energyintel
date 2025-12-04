@@ -2,103 +2,182 @@
 Global Crude Prices View
 Monthly Crude Spot Prices ($/bbl) - Matching Energy Intelligence design
 """
-from dash import dcc, html, Input, Output, callback, dash_table
+from dash import dcc, html, Input, Output, callback, dash_table, State, clientside_callback, ClientsideFunction
 import pandas as pd
 import os
 
 # Define data path
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Prices')
-CRUDE_PRICES_CSV = os.path.join(DATA_DIR, 'Crude Prices.csv')
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Global crude price')
+CRUDE_PRICES_CSV = os.path.join(DATA_DIR, 'Crude Prices_data.csv')
 
-def _read_prices_csv(skiprows, nrows=None):
-    """Read the Crude Prices CSV trying encodings until one succeeds."""
-    encodings = ['utf-16', 'utf-16le', 'utf-8']
+                                    
+def load_crude_prices_data():
+    """Load and parse crude prices data from CSV (long format)."""
+    # Read the CSV file
+    encodings = ['utf-8', 'utf-16', 'utf-16le', 'latin-1']
+    df = None
     last_error = None
+    
     for enc in encodings:
         try:
-            return pd.read_csv(
-                CRUDE_PRICES_CSV,
-                sep='\t',
-                skiprows=skiprows,
-                nrows=nrows,
-                encoding=enc,
-                header=None,
-                engine='python'
-            )
-        except UnicodeDecodeError as exc:
+            df = pd.read_csv(CRUDE_PRICES_CSV, encoding=enc)
+            break
+        except (UnicodeDecodeError, pd.errors.EmptyDataError) as exc:
             last_error = exc
             continue
-    raise last_error  # Re-raise the last decoding error if all encodings fail
+    
+    if df is None:
+        raise last_error if last_error else Exception("Failed to read CSV file")
+    
+    # Clean column names
+    df.columns = df.columns.str.strip()
+    
+    # Rename columns to standard names
+    column_mapping = {
+        'Year of date': 'Year',
+        'Month of date': 'Month',
+        'Day of date': 'Day',
+        'Region1': 'Region',
+        'crude_country': 'Country',
+        'crude_name': 'Blend',
+        'Avg. price': 'Price'
+    }
+    
+    for old_col, new_col in column_mapping.items():
+        if old_col in df.columns:
+            df = df.rename(columns={old_col: new_col})
+    
+    # Clean and convert data
+    df['Year'] = df['Year'].astype(str).str.strip()
+    df['Month'] = df['Month'].astype(str).str.strip()
+    df['Day'] = df['Day'].astype(str).str.strip()
+    df['Region'] = df['Region'].astype(str).str.strip()
+    df['Country'] = df['Country'].astype(str).str.strip()
+    df['Blend'] = df['Blend'].astype(str).str.strip()
+    df['Price'] = pd.to_numeric(df['Price'], errors='coerce')
+    
+    # Calculate Quarter from Month
+    month_to_quarter = {
+        'January': 'Q1', 'February': 'Q1', 'March': 'Q1',
+        'April': 'Q2', 'May': 'Q2', 'June': 'Q2',
+        'July': 'Q3', 'August': 'Q3', 'September': 'Q3',
+        'October': 'Q4', 'November': 'Q4', 'December': 'Q4'
+    }
+    df['Quarter'] = df['Month'].map(month_to_quarter)
+    
+    # Filter out invalid rows
+    df = df[
+        (df['Year'].notna()) & 
+        (df['Year'] != '') & 
+        (df['Year'] != 'nan') &
+        (df['Month'].notna()) & 
+        (df['Month'] != '') &
+        (df['Month'] != 'nan') &
+        (df['Day'].notna()) &
+        (df['Day'] != '') &
+        (df['Day'] != 'nan') &
+        (df['Region'].notna()) &
+        (df['Region'] != '') &
+        (df['Country'].notna()) &
+        (df['Country'] != '') &
+        (df['Blend'].notna()) &
+        (df['Blend'] != '')
+    ].copy()
+    
+    # Create column ID for each Region-Country-Blend combination
+    df['ColumnID'] = df['Region'] + '_' + df['Country'] + '_' + df['Blend']
+    
+    # Pivot the data from long to wide format
+    # Group by Year, Quarter, Month, and Day, then pivot
+    pivot_df = df.pivot_table(
+        index=['Year', 'Quarter', 'Month', 'Day'],
+        columns='ColumnID',
+        values='Price',
+        aggfunc='first'  # Use first value if duplicates exist
+    ).reset_index()
+    
+    # Get unique combinations for column metadata
+    unique_combos = df[['Region', 'Country', 'Blend', 'ColumnID']].drop_duplicates()
+    
+    # Create metadata for columns
+    column_metadata = []
+    for _, row in unique_combos.iterrows():
+        column_metadata.append({
+            'region': str(row['Region']).strip(),
+            'country': str(row['Country']).strip(),
+            'blend': str(row['Blend']).strip(),
+            'column_id': str(row['ColumnID']).strip(),
+            'index': len(column_metadata)
+        })
+    
+    return pivot_df, column_metadata
 
-def load_crude_prices_data():
-    """Load crude prices data from CSV file"""
-    try:
-        # Read header rows (rows 3, 4, 5: Region, Country, Crude Blend)
-        # Skip first 2 rows (copyright headers), read next 3 rows for headers
-        header_df = _read_prices_csv(skiprows=2, nrows=3)
+
+def create_table_data(df, column_metadata):
+    """Create table data structure for Dash DataTable with hierarchical columns."""
+    # Define month order for sorting
+    month_order = {
+        'January': 1, 'February': 2, 'March': 3, 'April': 4,
+        'May': 5, 'June': 6, 'July': 7, 'August': 8,
+        'September': 9, 'October': 10, 'November': 11, 'December': 12
+    }
+    
+    # Define quarter order for sorting
+    quarter_order = {'Q1': 1, 'Q2': 2, 'Q3': 3, 'Q4': 4}
+    
+    # Add sorting columns
+    df['MonthOrder'] = df['Month'].map(month_order)
+    df['QuarterOrder'] = df['Quarter'].map(quarter_order)
+    df['YearInt'] = pd.to_numeric(df['Year'], errors='coerce')
+    df['DayInt'] = pd.to_numeric(df['Day'], errors='coerce')
+    
+    # Sort by Year (descending), Quarter (descending), Month (descending), Day (ascending)
+    df_sorted = df.sort_values(['YearInt', 'QuarterOrder', 'MonthOrder', 'DayInt'], 
+                               ascending=[False, False, False, True])
+    
+    # Create row data - FIXED: Remove empty strings, use None instead
+    table_data = []
+    current_year = None
+    current_quarter = None
+    current_month = None
+    
+    for _, row in df_sorted.iterrows():
+        year = row['Year']
+        quarter = row['Quarter']
+        month = row['Month']
+        day = row['Day']
         
-        # Get data rows (starting from row 6, which is index 5 after skipping 2)
-        data_df = _read_prices_csv(skiprows=5)
-        
-        # Extract header information
-        region_row = header_df.iloc[0].values.tolist()  # Row 3: Regions
-        country_row = header_df.iloc[1].values.tolist()  # Row 4: Countries
-        crude_row = header_df.iloc[2].values.tolist()  # Row 5: Crude Blends
-        
-        # First two columns are empty (for Year and Month), so skip them
-        region_row = region_row[2:] if len(region_row) > 2 else []
-        country_row = country_row[2:] if len(country_row) > 2 else []
-        crude_row = crude_row[2:] if len(crude_row) > 2 else []
-        
-        # Set column names for data
-        num_price_cols = len(crude_row)
-        data_df.columns = ['Year', 'Month'] + [f'Price_{i}' for i in range(num_price_cols)]
-        
-        # Clean data - remove rows where Year is missing
-        data_df = data_df[data_df['Year'].notna()].copy()
-        data_df = data_df[data_df['Year'] != ''].copy()
-        
-        # Convert Year to int
-        data_df['Year'] = pd.to_numeric(data_df['Year'], errors='coerce')
-        data_df = data_df[data_df['Year'].notna()].copy()
-        data_df['Year'] = data_df['Year'].astype(int)
-        
-        # Convert price columns to numeric
-        for i in range(num_price_cols):
-            col = f'Price_{i}'
-            if col in data_df.columns:
-                data_df[col] = pd.to_numeric(data_df[col], errors='coerce')
-        
-        # Sort by Year (descending) and Month (descending - most recent first)
-        # Use the exact month order from the image: September at top, then August, July, etc.
-        month_order = ['September', 'August', 'July', 'June', 'May', 'April', 
-                      'March', 'February', 'January', 'December', 'November', 'October']
-        data_df['Month_Order'] = data_df['Month'].map({m: i for i, m in enumerate(month_order)})
-        data_df = data_df.sort_values(['Year', 'Month_Order'], ascending=[False, True])
-        data_df = data_df.drop('Month_Order', axis=1)
-        
-        return {
-            'data': data_df,
-            'regions': region_row,
-            'countries': country_row,
-            'crudes': crude_row
+        # Use None for repeated values instead of empty strings
+        row_dict = {
+            'Year': year if year != current_year else None,
+            'Quarter': quarter if (year != current_year or quarter != current_quarter) else None,
+            'Month': month if (year != current_year or quarter != current_quarter or month != current_month) else None,
+            'Day': day,
+            'Year_Quarter_Month_Day': f"{year}_{quarter}_{month}_{day}"
         }
-    except Exception as e:
-        print(f"Error loading crude prices data: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
-            'data': pd.DataFrame(),
-            'regions': [],
-            'countries': [],
-            'crudes': []
-        }
+        
+        current_year = year
+        current_quarter = quarter
+        current_month = month
+        
+        # Add price values
+        for meta in column_metadata:
+            col_id = meta['column_id']
+            value = row.get(col_id, None)
+            if pd.notna(value) and value != '':
+                row_dict[col_id] = float(value)
+            else:
+                row_dict[col_id] = None
+        
+        table_data.append(row_dict)
+    
+    return table_data
 
-# Load data on module import
-CRUDE_PRICES_DATA = load_crude_prices_data()
 
-def create_hierarchical_columns(regions, countries, crudes):
-    """Create hierarchical column structure for DataTable with three levels: Region > Country > Crude"""
+def create_table_columns(column_metadata):
+    """Create column definitions with hierarchical structure."""
+    # Use 3-level structure to align with data columns (region/country/blend)
+    # Empty strings for upper levels so only the label shows in the bottom row
     columns = [
         {
             'name': ['', '', 'Year'],
@@ -106,793 +185,908 @@ def create_hierarchical_columns(regions, countries, crudes):
             'type': 'text'
         },
         {
+            'name': ['', '', 'Quarter'],
+            'id': 'Quarter',
+            'type': 'text'
+        },
+        {
             'name': ['', '', 'Month'],
             'id': 'Month',
+            'type': 'text'
+        },
+        {
+            'name': ['', '', 'Day'],
+            'id': 'Day',
             'type': 'text'
         }
     ]
     
-    for i in range(len(crudes)):
-        region = str(regions[i]).strip() if i < len(regions) and pd.notna(regions[i]) else ''
-        country = str(countries[i]).strip() if i < len(countries) and pd.notna(countries[i]) else ''
-        crude = str(crudes[i]).strip() if i < len(crudes) and pd.notna(crudes[i]) else ''
+    # Group columns by region
+    regions = {}
+    for meta in column_metadata:
+        region = meta['region']
+        if region not in regions:
+            regions[region] = []
+        regions[region].append(meta)
+    
+    # Sort regions to match Tableau order (Africa, Asia first)
+    region_order = ['Africa', 'Asia', 'Europe', 'FSU', 'Latin America', 'Middle East', 'North America', 'Oceania', 'Other']
+    sorted_regions = sorted(regions.keys(), key=lambda x: (region_order.index(x) if x in region_order else 999, x))
+    
+    # Create hierarchical columns
+    for region in sorted_regions:
+        metas = regions[region]
         
-        columns.append({
-            'name': [region, country, crude],
-            'id': f'Price_{i}',
-            'type': 'numeric',
-            'format': {'specifier': '.2f'}
-        })
+        # Group by country within region
+        countries = {}
+        for meta in metas:
+            country = meta['country']
+            if country not in countries:
+                countries[country] = []
+            countries[country].append(meta)
+        
+        # Create columns for each country-blend combination with hierarchical structure
+        for country in sorted(countries.keys()):
+            country_metas = countries[country]
+            # Sort blends within country
+            country_metas_sorted = sorted(country_metas, key=lambda x: x['blend'])
+            for meta in country_metas_sorted:
+                columns.append({
+                    'name': [region, country, meta['blend']],
+                    'id': meta['column_id'],
+                    'type': 'numeric',
+                    'format': {'specifier': '.2f'}
+                })
     
     return columns
 
+
 def create_layout():
-    """Create the Global Crude Prices layout matching Energy Intelligence design"""
+    """Create the layout for Global Crude Prices dashboard."""
+    # Load data
+    try:
+        df, column_metadata = load_crude_prices_data()
+        table_data = create_table_data(df, column_metadata)
+        table_columns = create_table_columns(column_metadata)
+    except Exception as e:
+        return html.Div([
+            html.H3("Error loading data"),
+            html.P(str(e))
+        ])
+    
     return html.Div([
-        html.Div(id='global-prices-table-enhancer-anchor', style={'display': 'none'}),
-        html.Div([
-            html.H2(
-                "Monthly Crude Spot Prices ($/bbl)",
-                style={
-                    'color': '#fe5000',
-                    'textAlign': 'center',
-                    'marginBottom': '15px',
-                    'marginTop': '5px',
-                    'fontSize': '20px',
-                    'fontWeight': 'bold',
-                    'fontFamily': 'Arial, sans-serif'
-                }
-            )
-        ]),
-        html.Div(
-            id='global-prices-table-container',
-            children=[],
+        # Store for selected cells
+        dcc.Store(id='global-prices-selection-store', data={'selected_cells': []}),
+        
+        # Store for year column collapse state (default: expanded - all columns visible)
+        dcc.Store(id='global-prices-year-collapse-store', data={'is_collapsed': False}),
+        
+        # Title
+        html.H2(
+            "Monthly Crude Spot Prices ($/bbl)",
             style={
-                'border': '1px solid #dee2e6',
-                'borderRadius': '0',
-                'overflow': 'hidden',
-                'boxShadow': '0 1px 3px rgba(0,0,0,0.1)',
-                'backgroundColor': 'white'
+                'textAlign': 'center',
+                'marginBottom': '20px',
+                'fontSize': '20px',
+                'fontWeight': 'bold',
+                'color': '#fe5000',
+                'fontFamily': 'Arial, sans-serif'
             }
+        ),
+        
+        # Table
+        html.Div([
+            dash_table.DataTable(
+                id='global-prices-table',
+                data=table_data,
+                columns=table_columns,
+                merge_duplicate_headers=True,
+                style_table={
+                    'overflowX': 'auto',
+                    'overflowY': 'auto',
+                    'border': '1px solid #dee2e6',
+                    'fontFamily': 'Arial, sans-serif',
+                    'fontSize': '12px',
+                    'height': '800px',
+                    'maxHeight': '800px'
+                },
+                style_cell={
+                    'textAlign': 'left',
+                    'padding': '6px 10px',
+                    'border': '1px solid #e6e6e6',
+                    'backgroundColor': 'white',
+                    'color': '#1b365d',
+                    'fontFamily': 'Arial, sans-serif',
+                    'fontSize': '12px',
+                    'minWidth': '80px',
+                    'whiteSpace': 'normal',
+                    'height': 'auto'
+                },
+                style_header={
+                    'backgroundColor': '#f8f9fa',
+                    'fontWeight': 'bold',
+                    'textAlign': 'center',
+                    'border': '1px solid #dee2e6',
+                    'padding': '8px 10px',
+                    'fontFamily': 'Arial, sans-serif',
+                    'fontSize': '12px',
+                    'color': '#1b365d'
+                },
+                style_data={
+                    'border': '1px solid #e6e6e6'
+                },
+                style_data_conditional=[
+                    {
+                        'if': {'row_index': 'odd'},
+                        'backgroundColor': '#f8f9fa'
+                    },
+                    {
+                        # Remove the font weight conditions for empty cells since we use None now
+                        'if': {'column_id': 'Year', 'filter_query': '{Year} != ""'},
+                        'fontWeight': 'bold'
+                    },
+                    {
+                        'if': {'column_id': 'Quarter', 'filter_query': '{Quarter} != ""'},
+                        'fontWeight': 'bold'
+                    }
+                ],
+                style_cell_conditional=[
+                    {
+                        'if': {'column_id': 'Year'},
+                        'fontWeight': 'bold',
+                        'backgroundColor': '#f8f9fa',
+                        'minWidth': '80px',
+                        'textAlign': 'left'
+                    },
+                    {
+                        'if': {'column_id': 'Quarter'},
+                        'fontWeight': 'bold',
+                        'backgroundColor': '#f8f9fa',
+                        'minWidth': '60px',
+                        'textAlign': 'left'
+                    },
+                    {
+                        'if': {'column_id': 'Month'},
+                        'fontWeight': 'normal',
+                        'minWidth': '100px',
+                        'textAlign': 'left'
+                    },
+                    {
+                        'if': {'column_id': 'Day'},
+                        'fontWeight': 'normal',
+                        'minWidth': '50px',
+                        'textAlign': 'left'
+                    }
+                ],
+                page_action='none',
+                filter_action='none',
+                sort_action='none',
+                editable=False,
+                row_selectable=False,
+                cell_selectable=True,
+                selected_cells=[]
+            )
+        ], style={'margin': '0 auto', 'maxWidth': '100%'}),
+        
+        # Hidden div for clientside callback anchor
+        html.Div(id='global-prices-enhancer-anchor', style={'display': 'none'}),
+        
+        # Clientside script for table enhancements
+        html.Script(
+            id='global-prices-clientside-script',
+            children=''
         )
-    ], className='tab-content', style={'padding': '15px', 'backgroundColor': 'white'})
+    ], style={'padding': '20px', 'backgroundColor': '#ffffff'})
+
 
 def register_callbacks(dash_app, server):
-    """Register all callbacks for Global Crude Prices"""
+    """Register all callbacks for Global Crude Prices dashboard."""
     
-    @callback(
-        Output('global-prices-table-container', 'children'),
-        Input('current-submenu', 'data')
-    )
-    def update_global_prices(submenu):
-        """Update global prices table"""
-        if submenu != 'global-prices':
-            return html.Div()
-        
-        if CRUDE_PRICES_DATA['data'].empty:
-            return html.Div(
-                "No data available",
-                style={'padding': '20px', 'textAlign': 'center', 'color': '#666'}
-            )
-        
-        df = CRUDE_PRICES_DATA['data'].copy()
-        regions = CRUDE_PRICES_DATA['regions']
-        countries = CRUDE_PRICES_DATA['countries']
-        crudes = CRUDE_PRICES_DATA['crudes']
-        
-        # Create hierarchical columns
-        columns = create_hierarchical_columns(regions, countries, crudes)
-        
-        # Prepare table data - exactly like the image
-        table_data = []
-        prev_year = None
-        
-        for _, row in df.iterrows():
-            record = {
-                'Year': '',
-                'Month': row['Month'] if pd.notna(row['Month']) else ''
-            }
-            
-            # Show year only once per year group (like in the image)
-            current_year = int(row['Year']) if pd.notna(row['Year']) else None
-            if current_year != prev_year:
-                record['Year'] = str(current_year) if current_year else ''
-                prev_year = current_year
-            else:
-                record['Year'] = ''
-            
-            # Add price columns
-            for i in range(len(crudes)):
-                col_id = f'Price_{i}'
-                value = row[col_id] if col_id in row else None
-                if pd.isna(value) or value is None or value == '':
-                    record[col_id] = ''
-                else:
-                    record[col_id] = float(value)
-            
-            table_data.append(record)
-        
-        # Create DataTable with exact styling from image
-        table = dash_table.DataTable(
-            id='global-prices-table',
-            columns=columns,
-            data=table_data,
-            style_table={
-                'overflowX': 'auto',
-                'overflowY': 'auto',
-                'border': 'none',
-                'borderRadius': '0',
-                'backgroundColor': 'white',
-                'width': '100%',
-                'minWidth': '100%',
-                'fontFamily': 'Arial, sans-serif',
-                'margin': '0 auto'
-            },
-            style_cell={
-                'textAlign': 'center',
-                'padding': '4px 8px',
-                'fontSize': '12px',
-                'fontFamily': 'Arial, sans-serif',
-                'border': '1px solid #dee2e6',
-                'whiteSpace': 'nowrap',
-                'height': '30px',
-                'minWidth': '70px',
-                'maxWidth': '90px',
-                'color': '#333333',
-                'backgroundColor': 'white'
-            },
-            style_header={
-                'backgroundColor': '#f8f9fa',
-                'fontWeight': 'bold',
-                'fontSize': '11px',
-                'fontFamily': 'Arial, sans-serif',
-                'border': '1px solid #dee2e6',
-                'color': '#333333',
-                'textAlign': 'center',
-                'padding': '6px 8px'
-            },
-            style_cell_conditional=[
-                {
-                    'if': {'column_id': 'Year'},
-                    'textAlign': 'left',
-                    'fontWeight': 'bold',
-                    'backgroundColor': '#f8f9fa',
-                    'minWidth': '60px',
-                    'maxWidth': '60px'
-                },
-                {
-                    'if': {'column_id': 'Month'},
-                    'textAlign': 'left',
-                    'fontWeight': 'bold',
-                    'minWidth': '100px',
-                    'maxWidth': '100px'
-                }
-            ],
-            style_data={
-                'border': '1px solid #dee2e6',
-                'backgroundColor': 'white'
-            },
-            style_data_conditional=[
-                {
-                    'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f8f9fa'
-                },
-                {
-                    'if': {'filter_query': '{Year} != ""'},
-                    'backgroundColor': '#e9ecef'
-                },
-                {
-                    'if': {'filter_query': '{Year} != ""'},
-                    'column_id': 'Year',
-                    'backgroundColor': '#e9ecef'
-                },
-                {
-                    'if': {'filter_query': '{Year} != ""'},
-                    'column_id': 'Month',
-                    'backgroundColor': '#e9ecef'
-                }
-            ],
-            fixed_rows={'headers': True},
-            page_action='none',
-            sort_action='none',
-            filter_action='none',
-            merge_duplicate_headers=True,
-            css=[
-                {
-                    'selector': '.dash-spreadsheet-container',
-                    'rule': 'font-family: Arial, sans-serif;'
-                },
-                {
-                    'selector': '.dash-header',
-                    'rule': 'background-color: #f8f9fa; border: 1px solid #dee2e6;'
-                },
-                {
-                    'selector': '.dash-cell',
-                    'rule': 'border: 1px solid #dee2e6;'
-                }
-            ]
-        )
-        
-        return table
-
-    # Clientside callback for interactive features
+    # Clientside callback for table click handling and tooltip
     dash_app.clientside_callback(
         """
         function(_id) {
             try {
-                const TABLE_ID = 'global-prices-table';
-                const STYLE_ID = 'global-prices-table-selection-css';
-                const LABEL_COLUMNS = ['Year', 'Month'];
-
-                function ensureStyle() {
-                    if (document.getElementById(STYLE_ID)) {
-                        return;
-                    }
+                const styleId = 'global-prices-table-css';
+                if (!document.getElementById(styleId)) {
                     const style = document.createElement('style');
-                    style.id = STYLE_ID;
+                    style.id = styleId;
                     style.type = 'text/css';
                     style.innerHTML = `
 #global-prices-table .dash-spreadsheet-container {
     cursor: pointer;
+}
+#global-prices-table .dash-spreadsheet-container td {
+    transition: opacity 0.2s ease, background-color 0.2s ease;
+    cursor: pointer;
+}
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Day"] {
+    cursor: pointer;
+}
+/* Hide empty header cells for Year/Quarter/Month/Day (they use 3-level structure with empty upper levels) */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"]:empty,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"]:empty,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"]:empty,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"]:empty {
+    display: none !important;
+}
+/* Default: Quarter and Day columns hidden */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Day"] {
+    display: none !important;
+}
+/* Show Quarter when year is expanded */
+#global-prices-table .dash-spreadsheet-container.year-expanded th[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container.year-expanded td[data-dash-column="Quarter"] {
+    display: table-cell !important;
+}
+/* Hide Month and Day when quarter is collapsed (only when Quarter is visible) */
+#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed th[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Day"] {
+    display: none !important;
+}
+/* Show Day when month is expanded (hide if quarter is collapsed) */
+#global-prices-table .dash-spreadsheet-container.month-expanded:not(.quarter-collapsed) th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container.month-expanded:not(.quarter-collapsed) td[data-dash-column="Day"] {
+    display: table-cell !important;
+}
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Month"] {
+    position: relative;
+    cursor: pointer;
+    white-space: nowrap;
+}
+/* Header toggle buttons - Show on hover only */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"] .year-header-toggle,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"] .month-header-toggle,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"] .quarter-header-toggle {
+    display: none;
+    margin-left: 6px;
+    width: 16px;
+    height: 16px;
+    line-height: 14px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: normal;
+    color: #505050;
+    border: 1px solid #d0d0d0;
+    border-radius: 2px;
+    background-color: #ffffff;
     user-select: none;
+    cursor: pointer;
+    vertical-align: middle;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    transition: all 0.15s ease;
+    font-family: Arial, sans-serif;
+}
+/* Show toggle buttons on header hover */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"]:hover .year-header-toggle,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"]:hover .month-header-toggle,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"]:hover .quarter-header-toggle {
+    display: inline-block;
+}
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"] .year-header-toggle:hover,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"] .month-header-toggle:hover,
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"] .quarter-header-toggle:hover {
+    color: #333333;
+    border-color: #a0a0a0;
+    background-color: #f0f0f0;
+}
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"] {
+    position: relative;
+    white-space: nowrap;
+}
+#global-prices-table .dash-spreadsheet-container.selection-active td:not(.cell-selected):not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"]) {
+    opacity: 0.3 !important;
+}
+#global-prices-table .dash-spreadsheet-container td.cell-selected {
+    background-color: #b3d9ff !important;
+    border: 2px solid #0075A8 !important;
+    font-weight: 600;
+    color: #1f2d3d !important;
+    opacity: 1 !important;
 }
 #global-prices-table .dash-spreadsheet-container th {
     cursor: pointer;
-    transition: background-color 0.15s ease;
+    transition: background-color 0.2s ease;
 }
-#global-prices-table .dash-spreadsheet-container th:hover {
-    background-color: #f0f0f0 !important;
+#global-prices-table .dash-spreadsheet-container th.column-selected {
+    background-color: #0075A8 !important;
+    color: white !important;
+    font-weight: bold;
 }
-#global-prices-table .dash-spreadsheet-container td {
-    cursor: pointer;
-    transition: opacity 0.2s ease-in-out, background-color 0.15s ease;
+#global-prices-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"]):not(.column-cell-selected) {
+    opacity: 0.3 !important;
 }
-#global-prices-table .dash-spreadsheet-container.global-prices-selection-active td:not([data-dash-column="Year"]):not([data-dash-column="Month"]):not(.global-prices-row-selected):not(.global-prices-column-selected):not(.global-prices-cell-selected) {
-    opacity: 0.15;
-    background-color: #ffffff !important;
-}
-#global-prices-table .dash-spreadsheet-container.global-prices-selection-active th:not(.global-prices-column-header-selected) {
-    opacity: 0.2;
-    background-color: #ffffff !important;
-}
-#global-prices-table .dash-spreadsheet-container.global-prices-selection-active th.global-prices-column-header-selected {
+#global-prices-table .dash-spreadsheet-container td.column-cell-selected {
+    background-color: #b3d9ff !important;
+    border: 2px solid #0075A8 !important;
+    font-weight: 600;
+    color: #1f2d3d !important;
     opacity: 1 !important;
-}
-#global-prices-table .dash-spreadsheet-container.global-prices-selection-active td.global-prices-cell-selected,
-#global-prices-table .dash-spreadsheet-container.global-prices-selection-active td.global-prices-row-selected,
-#global-prices-table .dash-spreadsheet-container.global-prices-selection-active td.global-prices-column-selected {
-    opacity: 1 !important;
-}
-#global-prices-table .dash-spreadsheet-container td.global-prices-cell-selected {
-    background-color: #e3f2fd !important;
-    box-shadow: inset 0 0 0 2px #1976d2 !important;
-    font-weight: 600;
-    color: #0d47a1 !important;
-    z-index: 1;
-    position: relative;
-}
-#global-prices-table .dash-spreadsheet-container td.global-prices-row-selected {
-    background-color: #e8f5e9 !important;
-}
-#global-prices-table .dash-spreadsheet-container td.global-prices-column-selected {
-    background-color: #e8f5e9 !important;
-}
-#global-prices-table .dash-spreadsheet-container th.global-prices-column-header-selected {
-    background-color: #c8e6c9 !important;
-    font-weight: 600;
-    color: #1b5e20 !important;
-}
-#global-prices-table .dash-spreadsheet-container td.global-prices-row-label-selected {
-    font-weight: 600;
-    color: #1b5e20 !important;
-    background-color: #c8e6c9 !important;
-}
-#global-prices-table .dash-spreadsheet-container td[data-dash-column="Year"]:hover,
-#global-prices-table .dash-spreadsheet-container td[data-dash-column="Month"]:hover {
-    background-color: #f5f5f5 !important;
 }
                     `;
                     document.head.appendChild(style);
                 }
 
-                function resetSelection(spreadsheet) {
-                    if (!spreadsheet) {
-                        return;
-                    }
-                    spreadsheet.querySelectorAll('.global-prices-cell-selected').forEach(function(cell) {
-                        cell.classList.remove('global-prices-cell-selected');
-                    });
-                    spreadsheet.querySelectorAll('.global-prices-row-selected').forEach(function(cell) {
-                        cell.classList.remove('global-prices-row-selected');
-                    });
-                    spreadsheet.querySelectorAll('.global-prices-column-selected').forEach(function(cell) {
-                        cell.classList.remove('global-prices-column-selected');
-                    });
-                    spreadsheet.querySelectorAll('.global-prices-column-header-selected').forEach(function(header) {
-                        header.classList.remove('global-prices-column-header-selected');
-                    });
-                    spreadsheet.querySelectorAll('.global-prices-row-label-selected').forEach(function(cell) {
-                        cell.classList.remove('global-prices-row-label-selected');
-                    });
+                function getCellValue(cell) {
+                    const text = cell.textContent || cell.innerText || '';
+                    return text.trim();
                 }
 
-                function clearSelection(spreadsheet) {
-                    if (!spreadsheet) {
-                        return;
-                    }
-                    resetSelection(spreadsheet);
-                    spreadsheet.classList.remove('global-prices-selection-active');
-                    spreadsheet.dataset.selectedKey = '';
+                function getColumnInfo(cell) {
+                    const columnId = cell.getAttribute('data-dash-column');
+                    const header = document.querySelector(`th[data-dash-column="${columnId}"]`);
+                    if (!header) return null;
+                    
+                    const headerText = header.textContent || '';
+                    const parts = headerText.split('\\n').filter(p => p.trim());
+                    
+                    return {
+                        columnId: columnId,
+                        region: parts[0] || '',
+                        country: parts[1] || '',
+                        blend: parts[2] || parts[1] || parts[0] || ''
+                    };
                 }
 
-                function highlightRow(spreadsheet, rowIndex) {
-                    const cells = spreadsheet.querySelectorAll('td[data-dash-row=\"' + rowIndex + '\"]');
-                    cells.forEach(function(cell) {
-                        const colId = cell.getAttribute('data-dash-column');
-                        if (LABEL_COLUMNS.indexOf(colId) === -1) {
-                            cell.classList.add('global-prices-row-selected');
-                        } else {
-                            cell.classList.add('global-prices-row-label-selected');
-                        }
-                    });
+                function getRowInfo(cell) {
+                    const rowIndex = cell.getAttribute('data-dash-row');
+                    const row = document.querySelector(`tr[data-dash-row="${rowIndex}"]`);
+                    if (!row) return null;
+                    
+                    const yearCell = row.querySelector('td[data-dash-column="Year"]');
+                    const quarterCell = row.querySelector('td[data-dash-column="Quarter"]');
+                    const monthCell = row.querySelector('td[data-dash-column="Month"]');
+                    const dayCell = row.querySelector('td[data-dash-column="Day"]');
+                    
+                    return {
+                        year: yearCell ? (yearCell.textContent || '').trim() : '',
+                        quarter: quarterCell ? (quarterCell.textContent || '').trim() : '',
+                        month: monthCell ? (monthCell.textContent || '').trim() : '',
+                        day: dayCell ? (dayCell.textContent || '').trim() : ''
+                    };
                 }
 
-                function highlightColumn(spreadsheet, columnId) {
-                    if (LABEL_COLUMNS.indexOf(columnId) !== -1) {
-                        return; // Don't highlight Year/Month columns
-                    }
-                    
-                    // Find the bottom header cell with this column ID
-                    const bottomHeader = spreadsheet.querySelector('th[data-dash-column=\"' + columnId + '\"]');
-                    if (bottomHeader) {
-                        // Get column index from bottom header
-                        const headerRows = spreadsheet.querySelectorAll('thead tr');
-                        if (headerRows.length > 0) {
-                            const lastRow = headerRows[headerRows.length - 1];
-                            const bottomCells = Array.from(lastRow.querySelectorAll('th'));
-                            const colIndex = bottomCells.indexOf(bottomHeader);
-                            
-                            // Highlight all header cells in this column (for hierarchical headers: Region, Country, Crude)
-                            if (colIndex >= 0) {
-                                headerRows.forEach(function(row) {
-                                    const cells = Array.from(row.querySelectorAll('th'));
-                                    if (colIndex < cells.length) {
-                                        cells[colIndex].classList.add('global-prices-column-header-selected');
-                                    }
-                                });
-                            }
-                        } else {
-                            // Fallback: just highlight the bottom header
-                            bottomHeader.classList.add('global-prices-column-header-selected');
-                        }
-                    }
-                    
-                    // Highlight all data cells in this column
-                    const cells = spreadsheet.querySelectorAll('td[data-dash-column=\"' + columnId + '\"]');
-                    cells.forEach(function(cell) {
-                        cell.classList.add('global-prices-column-selected');
-                    });
-                }
-
-                function highlightMultipleColumns(spreadsheet, columnIds) {
-                    // Highlight multiple columns (for Region/Country selection)
-                    columnIds.forEach(function(columnId) {
-                        highlightColumn(spreadsheet, columnId);
-                    });
-                    
-                    // Also highlight parent Region header if this is a Country selection
-                    highlightParentRegionHeader(spreadsheet, columnIds);
-                }
-
-                function highlightParentRegionHeader(spreadsheet, columnIds) {
-                    // When highlighting multiple columns (Country selection), also highlight parent Region header
-                    if (columnIds.length === 0) {
-                        return;
-                    }
-                    
-                    const headerRows = spreadsheet.querySelectorAll('thead tr');
-                    if (headerRows.length < 3) {
-                        return; // Need at least 3 rows (Region, Country, Crude)
-                    }
-                    
-                    // Get the Region row (first row, index 0)
-                    const regionRow = headerRows[0];
-                    const regionCells = Array.from(regionRow.querySelectorAll('th'));
-                    
-                    // Get column indices for all selected columns (from bottom row)
-                    const lastRow = headerRows[headerRows.length - 1];
-                    const bottomCells = Array.from(lastRow.querySelectorAll('th'));
-                    const selectedIndices = [];
-                    
-                    columnIds.forEach(function(columnId) {
-                        const bottomHeader = spreadsheet.querySelector('th[data-dash-column=\"' + columnId + '\"]');
-                        if (bottomHeader) {
-                            const colIndex = bottomCells.indexOf(bottomHeader);
-                            if (colIndex >= 0) {
-                                selectedIndices.push(colIndex);
-                            }
-                        }
-                    });
-                    
-                    if (selectedIndices.length === 0) {
-                        return;
-                    }
-                    
-                    // Find the Region header that spans these columns
-                    // Account for Year and Month columns (first 2 columns in region row)
-                    let currentCol = 0;
-                    for (let i = 0; i < regionCells.length; i++) {
-                        const cell = regionCells[i];
-                        const colspan = parseInt(cell.getAttribute('colspan') || '1', 10);
-                        const cellStart = currentCol;
-                        const cellEnd = currentCol + colspan - 1;
-                        
-                        // Skip Year and Month columns (first 2 columns)
-                        if (cellEnd < 2) {
-                            currentCol += colspan;
-                            continue;
-                        }
-                        
-                        // Adjust for Year/Month columns - Region cells start from index 2
-                        const regionCellStart = Math.max(2, cellStart);
-                        const regionCellEnd = cellEnd;
-                        
-                        // Check if any selected column falls within this region cell
-                        const hasSelectedColumn = selectedIndices.some(function(idx) {
-                            return idx >= regionCellStart && idx <= regionCellEnd;
-                        });
-                        
-                        if (hasSelectedColumn) {
-                            // Check if ALL selected columns are within this region cell
-                            const allInRegion = selectedIndices.every(function(idx) {
-                                return idx >= regionCellStart && idx <= regionCellEnd;
-                            });
-                            
-                            if (allInRegion) {
-                                // All selected columns are under this Region, highlight it
-                                cell.classList.add('global-prices-column-header-selected');
-                                break;
-                            }
-                        }
-                        
-                        currentCol += colspan;
+                function updateSelectionState(spreadsheet, selectedCells) {
+                    if (selectedCells.length > 0) {
+                        spreadsheet.classList.add('selection-active');
+                    } else {
+                        spreadsheet.classList.remove('selection-active');
                     }
                 }
-
-                function getHeaderRowIndex(headerCell) {
-                    const headerRow = headerCell.closest('tr');
-                    if (!headerRow) {
-                        return -1;
-                    }
-                    const headerRows = Array.from(headerRow.parentElement.querySelectorAll('tr'));
-                    return headerRows.indexOf(headerRow);
-                }
-
-                function getColumnRangeForHeader(headerCell, spreadsheet) {
-                    const headerRow = headerCell.closest('tr');
-                    if (!headerRow) {
-                        return [];
-                    }
+                
+                function clearAllColumnSelections(spreadsheet) {
+                    // Clear all column headers
+                    const allHeaders = spreadsheet.querySelectorAll('th.column-selected');
+                    allHeaders.forEach(header => header.classList.remove('column-selected'));
                     
-                    const allCells = Array.from(headerRow.querySelectorAll('th'));
-                    const clickedIndex = allCells.indexOf(headerCell);
+                    // Clear all column cells
+                    const allColumnCells = spreadsheet.querySelectorAll('td.column-cell-selected');
+                    allColumnCells.forEach(cell => cell.classList.remove('column-cell-selected'));
                     
-                    if (clickedIndex < 0) {
-                        return [];  
-                    }
-                    
-                    // Skip Year and Month columns (first 2 columns)
-                    if (clickedIndex < 2) {
-                        return [];
-                    }
-                    
-                    // Get all header rows
-                    const headerRows = spreadsheet.querySelectorAll('thead tr');
-                    if (headerRows.length === 0) {
-                        return [];
-                    }
-                    
-                    const lastRow = headerRows[headerRows.length - 1];
-                    const bottomCells = Array.from(lastRow.querySelectorAll('th'));
-                    const columnIds = [];
-                    
-                    // Calculate the starting position of the clicked cell in the bottom row
-                    let currentBottomCol = 0;
-                    for (let i = 0; i < clickedIndex; i++) {
-                        const cell = allCells[i];
-                        const cellColspan = parseInt(cell.getAttribute('colspan') || '1', 10);
-                        currentBottomCol += cellColspan;
-                    }
-                    
-                    // Get the colspan of the clicked cell
-                    let clickedColspan = parseInt(headerCell.getAttribute('colspan') || '1', 10);
-                    
-                    // If colspan is 1, we need to find where this header ends by looking at the next header
-                    if (clickedColspan === 1) {
-                        // Look ahead to find the next non-empty header cell
-                        for (let k = clickedIndex + 1; k < allCells.length; k++) {
-                            const nextCell = allCells[k];
-                            const nextCellText = (nextCell.textContent || '').trim();
-                            
-                            // If we find a cell with text (next header), calculate where it starts
-                            if (nextCellText !== '') {
-                                let nextStartCol = 0;
-                                for (let m = 0; m < k; m++) {
-                                    const prevCell = allCells[m];
-                                    const prevColspan = parseInt(prevCell.getAttribute('colspan') || '1', 10);
-                                    nextStartCol += prevColspan;
-                                }
-                                clickedColspan = nextStartCol - currentBottomCol;
-                                break;
-                            }
-                        }
-                        
-                        // If we still don't have a valid colspan, use all remaining columns
-                        if (clickedColspan === 1) {
-                            clickedColspan = bottomCells.length - currentBottomCol;
-                        }
-                    }
-                    
-                    // Get all column IDs that fall under this header cell
-                    for (let j = 0; j < clickedColspan; j++) {
-                        const bottomColIndex = currentBottomCol + j;
-                        
-                        // Make sure we don't go beyond bottom row length
-                        if (bottomColIndex >= bottomCells.length) {
-                            break;
-                        }
-                        
-                        // Skip Year and Month columns (first 2 columns)
-                        if (bottomColIndex >= 2) {
-                            const columnId = bottomCells[bottomColIndex].getAttribute('data-dash-column');
-                            if (columnId && LABEL_COLUMNS.indexOf(columnId) === -1) {
-                                // Avoid duplicates
-                                if (columnIds.indexOf(columnId) === -1) {
-                                    columnIds.push(columnId);
-                                }
-                            }
-                        }
-                    }
-                    
-                    return columnIds;
-                }
-
-                function getColumnIdFromHeaderCell(headerCell, spreadsheet) {
-                    // First try to get direct column ID
-                    let columnId = headerCell.getAttribute('data-dash-column');
-                    if (columnId) {
-                        return columnId;
-                    }
-                    
-                    // For hierarchical headers, find column index and get ID from bottom row
-                    const headerRow = headerCell.closest('tr');
-                    if (!headerRow) {
-                        return null;
-                    }
-                    
-                    const allCells = Array.from(headerRow.querySelectorAll('th'));
-                    const colIndex = allCells.indexOf(headerCell);
-                    
-                    if (colIndex < 0) {
-                        return null;
-                    }
-                    
-                    // Get the bottom header row (has actual column IDs)
-                    const headerRows = spreadsheet.querySelectorAll('thead tr');
-                    if (headerRows.length > 0) {
-                        const lastRow = headerRows[headerRows.length - 1];
-                        const bottomCells = Array.from(lastRow.querySelectorAll('th'));
-                        if (colIndex >= 0 && colIndex < bottomCells.length) {
-                            columnId = bottomCells[colIndex].getAttribute('data-dash-column');
-                            return columnId;
-                        }
-                    }
-                    
-                    return null;
+                    // Remove column selection active class
+                    spreadsheet.classList.remove('column-selection-active');
                 }
 
                 function enhanceTable() {
-                    const table = document.getElementById(TABLE_ID);
-                    if (!table) {
-                        return;
-                    }
-                    let spreadsheet = table.querySelector('.dash-spreadsheet-container');
-                    if (!spreadsheet) {
-                        return;
+                    const tableEl = document.getElementById('global-prices-table');
+                    if (!tableEl) return;
+                    
+                    const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet || spreadsheet.dataset.enhanced === 'true') return;
+                    
+                    spreadsheet.dataset.enhanced = 'true';
+                    let selectedCells = [];
+                    let selectedColumnId = null;
+                    let isYearExpanded = false; // Default: Quarter hidden
+                    let isMonthExpanded = false; // Default: Day hidden
+                    let isQuarterCollapsed = false; // Default: Month and Day visible when Quarter is shown
+                    
+                    // Helper function to get cell text without icons
+                    function getCellTextWithoutIcons(cell, iconClass) {
+                        let text = '';
+                        const childNodes = Array.from(cell.childNodes);
+                        childNodes.forEach(node => {
+                            if (node.classList && node.classList.contains(iconClass)) return;
+                            if (node.nodeType === Node.TEXT_NODE) {
+                                text += node.textContent;
+                            } else if (node.nodeType === Node.ELEMENT_NODE && (!node.classList || !node.classList.contains(iconClass))) {
+                                text += node.textContent;
+                            }
+                        });
+                        return text.trim();
                     }
                     
-                    // If already enhanced, skip (will be reset by MutationObserver if table re-renders)
-                    if (spreadsheet.dataset.globalPricesEnhanced === 'true') {
-                        return;
+                    // Helper function to add toggle icon to cell
+                    function addToggleIcon(cell, iconClass, isExpanded, onClickHandler) {
+                        const existingIcon = cell.querySelector('.' + iconClass);
+                        if (existingIcon) {
+                            existingIcon.textContent = isExpanded ? '−' : '+';
+                            existingIcon.setAttribute('aria-label', isExpanded ? 'Collapse' : 'Expand');
+                            return existingIcon;
+                        }
+                        
+                        const icon = document.createElement('span');
+                        icon.className = iconClass;
+                        icon.textContent = isExpanded ? '−' : '+';
+                        icon.setAttribute('aria-label', isExpanded ? 'Collapse' : 'Expand');
+                        
+                        // Insert icon after text content
+                        const childNodes = Array.from(cell.childNodes);
+                        let inserted = false;
+                        for (let i = 0; i < childNodes.length; i++) {
+                            const node = childNodes[i];
+                            if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+                                if (node.nextSibling) {
+                                    cell.insertBefore(icon, node.nextSibling);
+                                } else {
+                                    cell.appendChild(icon);
+                                }
+                                inserted = true;
+                                break;
+                            }
+                        }
+                        if (!inserted) {
+                            cell.appendChild(icon);
+                        }
+                        
+                        icon.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            onClickHandler();
+                        });
+                        
+                        return icon;
                     }
                     
-                    spreadsheet.dataset.globalPricesEnhanced = 'true';
-                    spreadsheet.dataset.selectedKey = '';
-
+                    // Initialize Year header toggle button
+                    function initializeYearHeaderToggle() {
+                        // Find the header cell that contains "Year" text (the visible one in hierarchical headers)
+                        const allYearHeaders = spreadsheet.querySelectorAll('th[data-dash-column="Year"]');
+                        let yearHeader = null;
+                        for (let header of allYearHeaders) {
+                            if (header.textContent.trim().includes('Year') || header.textContent.trim() === '') {
+                                yearHeader = header;
+                                break;
+                            }
+                        }
+                        // Fallback to first one if none found with text
+                        if (!yearHeader && allYearHeaders.length > 0) {
+                            yearHeader = allYearHeaders[allYearHeaders.length - 1]; // Get the last one (usually the visible row)
+                        }
+                        if (!yearHeader) return;
+                        
+                        // Remove any existing toggle button
+                        const existingToggle = yearHeader.querySelector('.year-header-toggle');
+                        if (existingToggle) {
+                            existingToggle.remove();
+                        }
+                        
+                        // Create toggle button
+                        const toggleBtn = document.createElement('span');
+                        toggleBtn.className = 'year-header-toggle';
+                        toggleBtn.textContent = isYearExpanded ? '−' : '+';
+                        toggleBtn.setAttribute('aria-label', isYearExpanded ? 'Collapse Quarter' : 'Expand Quarter');
+                        
+                        // Preserve existing content and append button
+                        // Check if header has text nodes or other content
+                        const hasTextContent = yearHeader.textContent.trim() && 
+                                             !yearHeader.querySelector('.year-header-toggle');
+                        if (hasTextContent) {
+                            // Append button after existing content
+                            yearHeader.appendChild(toggleBtn);
+                        } else {
+                            // If no content, add "Year" text first
+                            yearHeader.textContent = 'Year';
+                            yearHeader.appendChild(toggleBtn);
+                        }
+                        
+                        // Add click handler
+                        toggleBtn.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            toggleYearExpand();
+                        });
+                    }
+                    
+                    // Initialize Month header toggle button
+                    function initializeMonthHeaderToggle() {
+                        // Find the header cell that contains "Month" text (the visible one in hierarchical headers)
+                        const allMonthHeaders = spreadsheet.querySelectorAll('th[data-dash-column="Month"]');
+                        let monthHeader = null;
+                        for (let header of allMonthHeaders) {
+                            if (header.textContent.trim().includes('Month') || header.textContent.trim() === '') {
+                                monthHeader = header;
+                                break;
+                            }
+                        }
+                        // Fallback to last one if none found with text
+                        if (!monthHeader && allMonthHeaders.length > 0) {
+                            monthHeader = allMonthHeaders[allMonthHeaders.length - 1]; // Get the last one (usually the visible row)
+                        }
+                        if (!monthHeader) return;
+                        
+                        // Remove any existing toggle button
+                        const existingToggle = monthHeader.querySelector('.month-header-toggle');
+                        if (existingToggle) {
+                            existingToggle.remove();
+                        }
+                        
+                        // Create toggle button
+                        const toggleBtn = document.createElement('span');
+                        toggleBtn.className = 'month-header-toggle';
+                        toggleBtn.textContent = isMonthExpanded ? '−' : '+';
+                        toggleBtn.setAttribute('aria-label', isMonthExpanded ? 'Collapse Day' : 'Expand Day');
+                        
+                        // Preserve existing content and append button
+                        // Check if header has text nodes or other content
+                        const hasTextContent = monthHeader.textContent.trim() && 
+                                             !monthHeader.querySelector('.month-header-toggle');
+                        if (hasTextContent) {
+                            // Append button after existing content
+                            monthHeader.appendChild(toggleBtn);
+                        } else {
+                            // If no content, add "Month" text first
+                            monthHeader.textContent = 'Month';
+                            monthHeader.appendChild(toggleBtn);
+                        }
+                        
+                        // Add click handler
+                        toggleBtn.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            toggleMonthExpand();
+                        });
+                    }
+                    
+                    // Initialize Quarter header toggle button (only when Quarter is visible)
+                    function initializeQuarterHeaderToggle() {
+                        // Find the header cell that contains "Quarter" text (the visible one in hierarchical headers)
+                        const allQuarterHeaders = spreadsheet.querySelectorAll('th[data-dash-column="Quarter"]');
+                        let quarterHeader = null;
+                        for (let header of allQuarterHeaders) {
+                            if (header.textContent.trim().includes('Quarter') || header.textContent.trim() === '') {
+                                quarterHeader = header;
+                                break;
+                            }
+                        }
+                        // Fallback to last one if none found with text
+                        if (!quarterHeader && allQuarterHeaders.length > 0) {
+                            quarterHeader = allQuarterHeaders[allQuarterHeaders.length - 1]; // Get the last one (usually the visible row)
+                        }
+                        if (!quarterHeader) return;
+                        
+                        // Remove any existing toggle button
+                        const existingToggle = quarterHeader.querySelector('.quarter-header-toggle');
+                        if (existingToggle) {
+                            existingToggle.remove();
+                        }
+                        
+                        // Create toggle button
+                        const toggleBtn = document.createElement('span');
+                        toggleBtn.className = 'quarter-header-toggle';
+                        toggleBtn.textContent = isQuarterCollapsed ? '+' : '−';
+                        toggleBtn.setAttribute('aria-label', isQuarterCollapsed ? 'Show Month & Day' : 'Hide Month & Day');
+                        
+                        // Preserve existing content and append button
+                        const hasTextContent = quarterHeader.textContent.trim() && 
+                                             !quarterHeader.querySelector('.quarter-header-toggle');
+                        if (hasTextContent) {
+                            quarterHeader.appendChild(toggleBtn);
+                        } else {
+                            quarterHeader.textContent = 'Quarter';
+                            quarterHeader.appendChild(toggleBtn);
+                        }
+                        
+                        // Add click handler
+                        toggleBtn.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            toggleQuarterCollapse();
+                        });
+                    }
+                    
+                    // Toggle Year expand (shows/hides Quarter)
+                    function toggleYearExpand() {
+                        isYearExpanded = !isYearExpanded;
+                        
+                        // Update header toggle button
+                        const yearHeaderToggle = spreadsheet.querySelector('th[data-dash-column="Year"] .year-header-toggle');
+                        if (yearHeaderToggle) {
+                            yearHeaderToggle.textContent = isYearExpanded ? '−' : '+';
+                            yearHeaderToggle.setAttribute('aria-label', isYearExpanded ? 'Collapse Quarter' : 'Expand Quarter');
+                        }
+                        
+                        // Toggle Quarter column visibility
+                        if (isYearExpanded) {
+                            spreadsheet.classList.add('year-expanded');
+                            // Initialize Quarter header toggle when Quarter becomes visible
+                            setTimeout(function() {
+                                initializeQuarterHeaderToggle();
+                            }, 100);
+                        } else {
+                            spreadsheet.classList.remove('year-expanded');
+                            // Reset quarter collapse state when Quarter is hidden
+                            isQuarterCollapsed = false;
+                            spreadsheet.classList.remove('quarter-collapsed');
+                        }
+                        
+                        // Clear selections
+                        clearAllColumnSelections(spreadsheet);
+                        selectedColumnId = null;
+                        selectedCells.forEach(c => c.classList.remove('cell-selected'));
+                        selectedCells = [];
+                        updateSelectionState(spreadsheet, selectedCells);
+                    }
+                    
+                    // Toggle Quarter collapse (shows/hides Month and Day)
+                    function toggleQuarterCollapse() {
+                        isQuarterCollapsed = !isQuarterCollapsed;
+                        
+                        // Update header toggle button
+                        const quarterHeaderToggle = spreadsheet.querySelector('th[data-dash-column="Quarter"] .quarter-header-toggle');
+                        if (quarterHeaderToggle) {
+                            quarterHeaderToggle.textContent = isQuarterCollapsed ? '+' : '−';
+                            quarterHeaderToggle.setAttribute('aria-label', isQuarterCollapsed ? 'Show Month & Day' : 'Hide Month & Day');
+                        }
+                        
+                        // Toggle Month and Day column visibility
+                        if (isQuarterCollapsed) {
+                            spreadsheet.classList.add('quarter-collapsed');
+                        } else {
+                            spreadsheet.classList.remove('quarter-collapsed');
+                        }
+                        
+                        // Clear selections
+                        clearAllColumnSelections(spreadsheet);
+                        selectedColumnId = null;
+                        selectedCells.forEach(c => c.classList.remove('cell-selected'));
+                        selectedCells = [];
+                        updateSelectionState(spreadsheet, selectedCells);
+                    }
+                    
+                    // Toggle Month expand (shows/hides Day)
+                    function toggleMonthExpand() {
+                        isMonthExpanded = !isMonthExpanded;
+                        
+                        // Update header toggle button
+                        const monthHeaderToggle = spreadsheet.querySelector('th[data-dash-column="Month"] .month-header-toggle');
+                        if (monthHeaderToggle) {
+                            monthHeaderToggle.textContent = isMonthExpanded ? '−' : '+';
+                            monthHeaderToggle.setAttribute('aria-label', isMonthExpanded ? 'Collapse Day' : 'Expand Day');
+                        }
+                        
+                        // Toggle Day column visibility
+                        if (isMonthExpanded) {
+                            spreadsheet.classList.add('month-expanded');
+                        } else {
+                            spreadsheet.classList.remove('month-expanded');
+                        }
+                        
+                        // Clear selections
+                        clearAllColumnSelections(spreadsheet);
+                        selectedColumnId = null;
+                        selectedCells.forEach(c => c.classList.remove('cell-selected'));
+                        selectedCells = [];
+                        updateSelectionState(spreadsheet, selectedCells);
+                    }
+                    
+                    // Initialize on load
+                    initializeYearHeaderToggle();
+                    initializeMonthHeaderToggle();
+                    
+                    // Clear selection on outside click
+                    document.addEventListener('click', function(event) {
+                        if (!spreadsheet.contains(event.target)) {
+                            selectedCells.forEach(cell => {
+                                cell.classList.remove('cell-selected');
+                            });
+                            selectedCells = [];
+                            updateSelectionState(spreadsheet, selectedCells);
+                            
+                            // Clear column selection
+                            clearAllColumnSelections(spreadsheet);
+                            selectedColumnId = null;
+                        }
+                    });
+                    
+                    // Handle column header clicks
                     spreadsheet.addEventListener('click', function(event) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        
-                        // Check if clicking on column header (handle hierarchical headers: Region, Country, Crude)
-                        const headerCell = event.target.closest('th');
-                        
-                        if (headerCell) {
-                            const headerRowIndex = getHeaderRowIndex(headerCell);
-                            const headerRows = spreadsheet.querySelectorAll('thead tr');
-                            const totalHeaderRows = headerRows.length;
+                        const header = event.target.closest('th[data-dash-column]');
+                        if (header) {
+                            event.stopPropagation();
+                            const columnId = header.getAttribute('data-dash-column');
                             
-                            // Get column index (accounting for Year/Month in first 2 columns)
-                            const headerRow = headerCell.closest('tr');
-                            const allCells = Array.from(headerRow.querySelectorAll('th'));
-                            const clickedIndex = allCells.indexOf(headerCell);
-                            
-                            // Skip Year and Month columns
-                            if (clickedIndex < 2) {
-                                return;
-                            }
-                            
-                            // Determine if this is a Region, Country, or Crude header
-                            // Row 0 = Region, Row 1 = Country, Row 2 (last) = Crude
-                            let selectionKey = '';
-                            let columnIds = [];
-                            
-                            // Check which header row this is
-                            // In Dash DataTable with hierarchical headers:
-                            // - First row (index 0) is usually Region
-                            // - Second row (index 1) is usually Country  
-                            // - Last row (index totalHeaderRows-1) is Crude
-                            const isLastRow = (headerRowIndex === totalHeaderRows - 1);
-                            
-                            if (!isLastRow && totalHeaderRows >= 3) {
-                                // Clicked on Region or Country header (not the bottom row)
-                                columnIds = getColumnRangeForHeader(headerCell, spreadsheet);
-                                if (columnIds.length > 0) {
-                                    const headerText = (headerCell.textContent || '').trim();
-                                    if (headerRowIndex === 0) {
-                                        selectionKey = 'region-' + headerText + '-' + clickedIndex;
-                                    } else {
-                                        selectionKey = 'country-' + headerText + '-' + clickedIndex;
-                                    }
-                                }
-                            } else {
-                                // Clicked on Crude header (bottom row) or single column
-                                const columnId = getColumnIdFromHeaderCell(headerCell, spreadsheet);
-                                if (columnId && LABEL_COLUMNS.indexOf(columnId) === -1) {
-                                    columnIds = [columnId];
-                                    selectionKey = 'column-' + columnId;
-                                }
-                            }
-                            
-                            if (columnIds.length > 0) {
-                                if (spreadsheet.dataset.selectedKey === selectionKey) {
-                                    clearSelection(spreadsheet);
+                            // Handle Year header toggle
+                            if (columnId === 'Year') {
+                                // Check if clicking on toggle button or header
+                                const toggleBtn = event.target.closest('.year-header-toggle');
+                                if (toggleBtn || event.target === header || header.contains(event.target)) {
+                                    toggleYearExpand();
                                     return;
                                 }
-                                spreadsheet.dataset.selectedKey = selectionKey;
-                                spreadsheet.classList.add('global-prices-selection-active');
-                                resetSelection(spreadsheet);
-                                
-                                if (columnIds.length === 1) {
-                                    highlightColumn(spreadsheet, columnIds[0]);
-                                } else {
-                                    highlightMultipleColumns(spreadsheet, columnIds);
+                            }
+                            
+                            // Handle Month header toggle
+                            if (columnId === 'Month') {
+                                // Check if clicking on toggle button or header
+                                const toggleBtn = event.target.closest('.month-header-toggle');
+                                if (toggleBtn || event.target === header || header.contains(event.target)) {
+                                    toggleMonthExpand();
+                                    return;
                                 }
+                            }
+                            
+                            // Handle Quarter header toggle
+                            if (columnId === 'Quarter') {
+                                // Check if clicking on toggle button or header
+                                const toggleBtn = event.target.closest('.quarter-header-toggle');
+                                if (toggleBtn || event.target === header || header.contains(event.target)) {
+                                    toggleQuarterCollapse();
+                                    return;
+                                }
+                            }
+                            
+                            // Clear selection if clicking Day header
+                            if (columnId === 'Day') {
+                                clearAllColumnSelections(spreadsheet);
+                                selectedColumnId = null;
+                                selectedCells.forEach(c => c.classList.remove('cell-selected'));
+                                selectedCells = [];
+                                updateSelectionState(spreadsheet, selectedCells);
                                 return;
                             }
-                        }
-
-                        // Handle data cell clicks
-                        const cell = event.target.closest('td[data-dash-row]');
-                        if (!cell) {
+                            
+                            // Check if this column is already selected
+                            if (selectedColumnId === columnId) {
+                                // Deselect column
+                                clearAllColumnSelections(spreadsheet);
+                                selectedColumnId = null;
+                                
+                                // Clear cell selection too
+                                selectedCells.forEach(c => c.classList.remove('cell-selected'));
+                                selectedCells = [];
+                                updateSelectionState(spreadsheet, selectedCells);
+                            } else {
+                                // Select new column - clear ALL previous selections first
+                                clearAllColumnSelections(spreadsheet);
+                                
+                                // Clear cell selection
+                                selectedCells.forEach(c => c.classList.remove('cell-selected'));
+                                selectedCells = [];
+                                updateSelectionState(spreadsheet, selectedCells);
+                                
+                                // Now select new column
+                                selectedColumnId = columnId;
+                                header.classList.add('column-selected');
+                                const columnCells = spreadsheet.querySelectorAll(`td[data-dash-column="${columnId}"]`);
+                                columnCells.forEach(cell => {
+                                    const cellValue = getCellValue(cell);
+                                    if (cellValue && cellValue !== '' && cellValue !== 'NaN' && !isNaN(parseFloat(cellValue))) {
+                                        cell.classList.add('column-cell-selected');
+                                    }
+                                });
+                                spreadsheet.classList.add('column-selection-active');
+                            }
                             return;
                         }
+                    });
+                    
+                    // Handle cell clicks
+                    spreadsheet.addEventListener('click', function(event) {
+                        event.stopPropagation();
+                        const cell = event.target.closest('td[data-dash-row][data-dash-column]');
+                        if (!cell) return;
+                        
+                        // Clear column selection if clicking on a cell
+                        clearAllColumnSelections(spreadsheet);
+                        selectedColumnId = null;
                         
                         const columnId = cell.getAttribute('data-dash-column');
                         const rowIndex = cell.getAttribute('data-dash-row');
-                        if (!columnId || rowIndex === null) {
+                        
+                        // If clicking Quarter or Day cells, clear selection and enable all
+                        if (columnId === 'Quarter' || columnId === 'Day') {
+                            selectedCells.forEach(c => c.classList.remove('cell-selected'));
+                            selectedCells = [];
+                            updateSelectionState(spreadsheet, selectedCells);
                             return;
                         }
-
-                        const rowKey = 'row-' + rowIndex;
-                        const cellKey = rowIndex + '-' + columnId;
-
-                        // If clicking on Year or Month column, select entire row
-                        if (LABEL_COLUMNS.indexOf(columnId) !== -1) {
-                            if (spreadsheet.dataset.selectedKey === rowKey) {
-                                clearSelection(spreadsheet);
-                                return;
-                            }
-                            spreadsheet.dataset.selectedKey = rowKey;
-                            spreadsheet.classList.add('global-prices-selection-active');
-                            resetSelection(spreadsheet);
-                            highlightRow(spreadsheet, rowIndex);
-                            return;
-                        }
-
-                        // If clicking on a data cell, select just that cell
-                        if (spreadsheet.dataset.selectedKey === cellKey) {
-                            clearSelection(spreadsheet);
-                            return;
-                        }
-
-                        spreadsheet.dataset.selectedKey = cellKey;
-                        spreadsheet.classList.add('global-prices-selection-active');
-                        resetSelection(spreadsheet);
-                        cell.classList.add('global-prices-cell-selected');
-                    });
-                }
-
-                function applyEnhancements() {
-                    ensureStyle();
-                    enhanceTable();
-                }
-
-                // Use MutationObserver to re-apply enhancements when table is re-rendered
-                if (!window.globalPricesTableObserver) {
-                    window.globalPricesTableObserver = new MutationObserver(function(mutations) {
-                        let shouldReapply = false;
-                        mutations.forEach(function(mutation) {
-                            if (mutation.addedNodes.length > 0) {
-                                const table = document.getElementById(TABLE_ID);
-                                if (table) {
-                                    const spreadsheet = table.querySelector('.dash-spreadsheet-container');
-                                    if (spreadsheet) {
-                                        // Check if table was re-rendered (enhanced flag is missing or false)
-                                        if (!spreadsheet.dataset.globalPricesEnhanced || 
-                                            spreadsheet.dataset.globalPricesEnhanced === 'false') {
-                                            shouldReapply = true;
-                                        }
+                        
+                        // If clicking Month (and not the toggle icon), toggle entire row selection
+                        if (columnId === 'Month') {
+                            // Get all cells in this row (excluding Year, Quarter, Month, and Day columns)
+                            const rowCells = spreadsheet.querySelectorAll(`td[data-dash-row="${rowIndex}"]`);
+                            const rowPriceCells = [];
+                            rowCells.forEach(rowCell => {
+                                const cellColId = rowCell.getAttribute('data-dash-column');
+                                if (cellColId !== 'Year' && cellColId !== 'Quarter' && cellColId !== 'Month' && cellColId !== 'Day') {
+                                    const cellVal = getCellValue(rowCell);
+                                    if (cellVal && cellVal !== '' && cellVal !== 'NaN' && !isNaN(parseFloat(cellVal))) {
+                                        rowPriceCells.push(rowCell);
                                     }
                                 }
+                            });
+                            
+                            // Check if this row is already selected (all price cells in row are selected)
+                            const isRowSelected = rowPriceCells.length > 0 && rowPriceCells.every(cell => cell.classList.contains('cell-selected'));
+                            
+                            if (isRowSelected) {
+                                // Row is already selected - deselect it
+                                rowPriceCells.forEach(cell => {
+                                    cell.classList.remove('cell-selected');
+                                });
+                                selectedCells = selectedCells.filter(cell => !rowPriceCells.includes(cell));
+                            } else {
+                                // Row is not selected - select entire row
+                                selectedCells.forEach(c => c.classList.remove('cell-selected'));
+                                selectedCells = [];
+                                rowPriceCells.forEach(cell => {
+                                    cell.classList.add('cell-selected');
+                                    selectedCells.push(cell);
+                                });
                             }
-                        });
-                        if (shouldReapply) {
-                            // Reset enhanced flag to allow re-application
-                            const table = document.getElementById(TABLE_ID);
-                            if (table) {
-                                const spreadsheet = table.querySelector('.dash-spreadsheet-container');
-                                if (spreadsheet) {
-                                    spreadsheet.dataset.globalPricesEnhanced = 'false';
-                                }
-                            }
-                            applyEnhancements();
-                        }
-                    });
-                    window.globalPricesTableObserver.observe(document.body, { 
-                        childList: true, 
-                        subtree: true,
-                        attributes: false
-                    });
-                }
-
-                // Clear selection when clicking outside the table
-                if (!window.globalPricesOutsideClickHandler) {
-                    window.globalPricesOutsideClickHandler = function(event) {
-                        const table = document.getElementById(TABLE_ID);
-                        if (!table || table.contains(event.target)) {
+                            
+                            // Update selection state (dim other cells)
+                            updateSelectionState(spreadsheet, selectedCells);
                             return;
                         }
-                        const spreadsheet = table.querySelector('.dash-spreadsheet-container');
-                        if (spreadsheet && spreadsheet.classList.contains('global-prices-selection-active')) {
-                            clearSelection(spreadsheet);
+                        
+                        const cellValue = getCellValue(cell);
+                        if (!cellValue || cellValue === '' || cellValue === 'NaN' || isNaN(parseFloat(cellValue))) return;
+                        
+                        // Check if this cell is already selected
+                        const index = selectedCells.indexOf(cell);
+                        if (index > -1) {
+                            // Clicking same cell again - deselect and enable all
+                            cell.classList.remove('cell-selected');
+                            selectedCells.splice(index, 1);
+                        } else {
+                            // Select new cell - clear previous selection
+                            selectedCells.forEach(c => c.classList.remove('cell-selected'));
+                            selectedCells = [];
+                            cell.classList.add('cell-selected');
+                            selectedCells.push(cell);
                         }
-                    };
-                    document.addEventListener('click', window.globalPricesOutsideClickHandler, true);
+                        
+                        // Update selection state (dim other cells)
+                        updateSelectionState(spreadsheet, selectedCells);
+                    });
                 }
 
-                // Apply enhancements immediately
-                applyEnhancements();
+                // Apply enhancements
+                if (!window.globalPricesMutationObserver) {
+                    window.globalPricesMutationObserver = new MutationObserver(function(mutations) {
+                        // Only re-enhance if table structure changed
+                        const tableEl = document.getElementById('global-prices-table');
+                        if (tableEl) {
+                            const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                            if (spreadsheet && spreadsheet.dataset.enhanced !== 'true') {
+                                enhanceTable();
+                            }
+                        }
+                    });
+                    window.globalPricesMutationObserver.observe(document.body, { 
+                        childList: true, 
+                        subtree: true 
+                    });
+                }
                 
-                // Also apply after a short delay to catch any delayed rendering
-                setTimeout(applyEnhancements, 100);
-                setTimeout(applyEnhancements, 500);
+                enhanceTable();
             } catch (error) {
                 console.error('Global prices table enhancer error:', error);
             }
             return window.dash_clientside.no_update;
         }
         """,
-        Output('global-prices-table-enhancer-anchor', 'children'),
-        Input('global-prices-table-enhancer-anchor', 'id'),
+        Output('global-prices-enhancer-anchor', 'children'),
+        Input('global-prices-table', 'id'),
         prevent_initial_call=False
     )

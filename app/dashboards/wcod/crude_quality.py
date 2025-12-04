@@ -1,12 +1,11 @@
 from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
-from dash import html, dcc, Input, Output, callback_context
-from dash import dash_table
-from app import create_dash_app
-from app.database import execute_query
+from dash import html, dcc, Input, Output, callback_context, dash_table
+from core.data_helpers import execute_query
 import os
 import numpy as np
+import dash
 
 
 def _set_df_metadata(df, **metadata):
@@ -2071,9 +2070,17 @@ def create_crude_quality_dashboard(server, url_base_pathname="/dash/crude-qualit
     assets_dir = current_dir / "assets"
     assets_dir.mkdir(exist_ok=True)
 
-    dash_app = create_dash_app(server, url_base_pathname)
-
-    dash_app.assets_folder = str(assets_dir)
+    dash_app = dash.Dash(
+        __name__,
+        server=server,
+        url_base_pathname=url_base_pathname,
+        external_stylesheets=[
+            'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
+            'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+        ],
+        suppress_callback_exceptions=True,
+        assets_folder=str(assets_dir)
+    )
 
     # --------------------------------------------------------
     # INLINE CSS INJECTION — SLIDER + TOOLTIP + HANDLE

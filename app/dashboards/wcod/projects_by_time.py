@@ -8,14 +8,15 @@ from pathlib import Path
 from dash import dcc, html, Input, Output, State, callback, dash_table
 import plotly.graph_objects as go
 import pandas as pd
-from app import db
-from app.models import UpstreamProject
+from core.data_helpers import execute_query
+# from app.models import UpstreamProject
 
 
 # Data file paths
 BASE_DIR = Path(__file__).parent.parent / 'data' / 'upstream_projects'
 CHART_CSV = BASE_DIR / 'Projects by Time_Chart.csv'
 TABLE_CSV = BASE_DIR / 'Projects by Time_Table.csv'
+TABLE_CSV_FALLBACK = BASE_DIR / '_Projects by Time_Table.csv'
 
 # Region colors - exact RGB values from image
 REGION_COLORS = {
@@ -100,94 +101,181 @@ def load_chart_data():
 
 
 def load_table_data():
-    """Load table data from CSV"""
+    """Load table data from database query"""
     try:
-        # Check if file exists
-        if not TABLE_CSV.exists():
-            print(f"Error: Table CSV file not found at {TABLE_CSV}")
+        from core.data_helpers import execute_query
+        
+        query = """
+        SELECT
+            a.project_name AS "Project Name",
+            a.likely_goahead,
+            c.country_long_name AS Country,
+            c.region AS Region,
+            CASE
+                WHEN c.opec_grp = 'opec' OR c.opec_grp = 'opec_plus' THEN 'Opec-Plus'
+                ELSE 'Non-Opec-Plus'
+            END AS Opec_group,
+            a.field_type,
+            a.field,
+            a.play_type,
+            a.hydrocarbon AS Hydrocarbon,
+            cr.crude_name AS "Associated Crude",
+            a.depth AS Depth,
+            op.company_name AS Operator,
+            p1.company_name AS Partner1,
+            p2.company_name AS Partner2,
+            p3.company_name AS Partner3,
+            p4.company_name AS Partner4,
+            p5.company_name AS Partner5,
+            yr.year AS "First Oil Year",
+            a.sanctioned AS Sanctioned,
+            a.external_comments AS Comments,
+            a.project_status AS "Project Status",
+            a.reserves_gas_mmboe AS "Gas Reserves (mmboe)",
+            a.reserves_liquids_mmbbl AS "Liquids Reserves (mmbbl)",
+            (
+                COALESCE(
+                    NULLIF(SPLIT_PART(a.reserves_gas_mmboe, '-', 1), '')::numeric,
+                    0
+                )
+                +
+                COALESCE(
+                    NULLIF(SPLIT_PART(a.reserves_liquids_mmbbl, '-', 1), '')::numeric,
+                    0
+                )
+            ) AS "Total Reserves (mmboe)",
+            a.api_cat AS API,
+            a.sulfur_cat AS Sulfur,
+            a.operator_pc AS "Operator Share %",
+            a.partner1_pc AS "Partner1 Share %",
+            a.partner2_pc AS "Partner2 Share %",
+            a.partner3_pc AS "Partner3 Share %",
+            a.partner4_pc AS "Partner4 Share %",
+            a.partner5_pc AS "Partner5 Share %",
+            est."2024_Q1",
+            est."2024_Q2",
+            est."2024_Q3",
+            est."2024_Q4",
+            est."2025_Q1",
+            est."2025_Q2",
+            est."2025_Q3",
+            est."2025_Q4",
+            est."2026_Q1",
+            est."2026_Q2",
+            est."2026_Q3",
+            est."2026_Q4",
+            est."2027_Q1",
+            est."2027_Q2",
+            est."2027_Q3",
+            est."2027_Q4",
+            est."2028_Q1",
+            est."2028_Q2",
+            est."2028_Q3",
+            est."2028_Q4",
+            est."2029_Q1",
+            est."2029_Q2",
+            est."2029_Q3",
+            est."2029_Q4"
+        FROM dev.fact_upstream_project_tracker a
+        LEFT JOIN dev.fact_upstream_tracker_prod_estimates est 
+            ON a.project_id = est.project_id
+        LEFT JOIN dev.dim_country c 
+            ON a.country_id = c.dim_country_id
+        LEFT JOIN dev.dim_company op 
+            ON a.operator_id = op.company_id
+        LEFT JOIN dev.dim_company p1 
+            ON a.partner1_id = p1.company_id
+        LEFT JOIN dev.dim_company p2 
+            ON a.partner2_id = p2.company_id
+        LEFT JOIN dev.dim_company p3 
+            ON a.partner3_id = p3.company_id
+        LEFT JOIN dev.dim_company p4 
+            ON a.partner4_id = p4.company_id
+        LEFT JOIN dev.dim_company p5 
+            ON a.partner5_id = p5.company_id
+        LEFT JOIN (
+            SELECT 
+                project_id,
+                MIN(EXTRACT(YEAR FROM period)) AS year
+            FROM dev.fact_upstream_tracker_prod_estimates_incremental
+            WHERE value IS NOT NULL
+            GROUP BY project_id
+        ) yr ON yr.project_id = a.project_id
+        LEFT JOIN dev.dim_crude cr 
+            ON cr.dim_crude_id = a.crude_id
+        WHERE a.include = TRUE
+        ORDER BY a.project_name;
+        """
+        
+        print(f"DEBUG: Executing projects table database query...")
+        results = execute_query(query)
+        
+        if not results:
+            print("ERROR: Query returned no results")
             return pd.DataFrame()
         
-        # Try different encodings
-        encodings = ['utf-16', 'utf-8', 'latin-1', 'utf-8-sig']
-        df = None
-        last_error = None
+        print(f"DEBUG: Query returned {len(results)} results")
         
-        for encoding in encodings:
-            try:
-                # Read CSV, skip first 3 rows (copyright info), use row 4 as header
-                df = pd.read_csv(TABLE_CSV, sep='\t', skiprows=3, header=0, encoding=encoding)
-                print(f"Successfully loaded table data with encoding: {encoding}")
-                break
-            except (UnicodeDecodeError, UnicodeError) as e:
-                last_error = e
-                continue
-            except Exception as e:
-                print(f"Error reading CSV with encoding {encoding}: {e}")
-                last_error = e
-                continue
+        # Convert query results to DataFrame
+        df = pd.DataFrame(results)
         
-        if df is None:
-            print(f"Failed to load table data. Last error: {last_error}")
-            return pd.DataFrame()
+        print(f"DEBUG: Raw columns from query: {list(df.columns)}")
         
-        if df.empty:
-            print("Warning: Loaded table data is empty")
-            return pd.DataFrame()
+        # Normalize column names - convert to proper case for matching
+        column_mapping = {
+            'Country': 'Country',
+            'country': 'Country',
+            'Region': 'Region',
+            'region': 'Region',
+            'Opec_group': 'Opec_group',
+            'opec_group': 'Opec_group',
+            'field_type': 'field_type',
+            'Field Type': 'field_type',
+            'field': 'field',
+            'Field': 'field',
+            'play_type': 'play_type',
+            'Play Type': 'play_type',
+            'hydrocarbon': 'Hydrocarbon',
+            'Hydrocarbon': 'Hydrocarbon',
+            'depth': 'Depth',
+            'Depth': 'Depth',
+            'operator': 'Operator',
+            'Operator': 'Operator',
+            'partner1': 'Partner1',
+            'Partner1': 'Partner1',
+            'partner2': 'Partner2',
+            'Partner2': 'Partner2',
+            'partner3': 'Partner3',
+            'Partner3': 'Partner3',
+            'partner4': 'Partner4',
+            'Partner4': 'Partner4',
+            'partner5': 'Partner5',
+            'Partner5': 'Partner5',
+            'sanctioned': 'Sanctioned',
+            'Sanctioned': 'Sanctioned',
+            'comments': 'Comments',
+            'Comments': 'Comments',
+            'api': 'API',
+            'API': 'API',
+            'sulfur': 'Sulfur',
+            'Sulfur': 'Sulfur',
+            'likely_goahead': 'likely_goahead'
+        }
         
-        # Strip whitespace from column names for matching
-        df.columns = df.columns.str.strip()
+        # Rename columns based on mapping
+        df = df.rename(columns=column_mapping)
         
-        print(f"Table columns found: {list(df.columns)[:20]}")
-        print(f"Total rows loaded: {len(df)}")
+        print(f"DEBUG: Normalized columns: {list(df.columns)}")
+        print(f"DEBUG: Total rows loaded: {len(df)}")
         
-        # Select all columns we need for the table (matching the image structure)
-        required_cols = [
-            'Project Name',
-            'Likely Go-ahead',
-            'Country',
-            'Region',
-            'Group',
-            'Field Type',
-            'Field/Block',
-            'Play Type',
-            'Hydrocarbon',
-            'Associated Crude',
-            'Depth',
-            'Operator',
-            'Partner1',
-            'Partner2',
-            'Partner3',
-            'Partner4',
-            'Partner5',
-            'First Oil Year',
-            'Sanctioned',
-            'Comments',
-            'Project Status',
-            'Gas Reserves (mmboe)',
-            'Liquids Reserves (mmbbl)',
-            'Total Reserves (mmboe)',
-            'API',
-            'Sulfur'
-        ]
-        
-        # Filter to only include columns that exist
-        available_cols = [col for col in required_cols if col in df.columns]
-        
-        if not available_cols:
-            print(f"Warning: None of the required columns found. Available columns: {list(df.columns)[:20]}")
-            # Return all columns if none match
-            return df
-        
-        df = df[available_cols].copy()
-        
-        # Clean data - replace NaN with empty strings
+        # Clean data
         df = df.fillna('')
         
         print(f"Table data loaded successfully. Rows: {len(df)}, Columns: {len(df.columns)}")
         
         return df
     except Exception as e:
-        print(f"Error loading table data: {e}")
+        print(f"ERROR loading table data: {e}")
         import traceback
         traceback.print_exc()
         return pd.DataFrame()
@@ -921,13 +1009,13 @@ def register_callbacks(dash_app, server):
             # Select only the columns to display (in the order shown in the image)
             display_cols = [
                 'Project Name',
-                'Likely Go-ahead',
+                'likely_goahead',
                 'Country',
                 'Region',
-                'Group',
-                'Field Type',
-                'Field/Block',
-                'Play Type',
+                'Opec_group',
+                'field_type',
+                'field',
+                'play_type',
                 'Hydrocarbon',
                 'Associated Crude',
                 'Depth',
@@ -945,7 +1033,20 @@ def register_callbacks(dash_app, server):
                 'Liquids Reserves (mmbbl)',
                 'Total Reserves (mmboe)',
                 'API',
-                'Sulfur'
+                'Sulfur',
+                'Operator Share %',
+                'Partner1 Share %',
+                'Partner2 Share %',
+                'Partner3 Share %',
+                'Partner4 Share %',
+                'Partner5 Share %',
+                # Quarter columns - 2024 to 2029
+                '2024_Q1', '2024_Q2', '2024_Q3', '2024_Q4',
+                '2025_Q1', '2025_Q2', '2025_Q3', '2025_Q4',
+                '2026_Q1', '2026_Q2', '2026_Q3', '2026_Q4',
+                '2027_Q1', '2027_Q2', '2027_Q3', '2027_Q4',
+                '2028_Q1', '2028_Q2', '2028_Q3', '2028_Q4',
+                '2029_Q1', '2029_Q2', '2029_Q3', '2029_Q4'
             ]
             
             # Filter to only include columns that exist and are not filter columns
@@ -964,6 +1065,23 @@ def register_callbacks(dash_app, server):
                     df[col] = pd.to_numeric(df[col], errors='coerce')
                     df[col] = df[col].apply(lambda x: f'{x:,.3f}' if pd.notna(x) and x != 0 else '')
             
+            # Map display values for boolean and yes/no columns
+            # Convert Y/N to Yes/No, true/false to Yes/No
+            bool_display_map = {
+                'Y': 'Yes',
+                'N': 'No',
+                'true': 'Yes',
+                'false': 'No',
+                'True': 'Yes',
+                'False': 'No'
+            }
+            
+            # Apply mapping to columns that need it
+            bool_columns = ['likely_goahead', 'Sanctioned']
+            for col in bool_columns:
+                if col in df.columns:
+                    df[col] = df[col].astype(str).str.strip().map(bool_display_map).fillna(df[col])
+            
             # Truncate Comments column to 10 characters with "..."
             if 'Comments' in df.columns:
                 # Store original comments for tooltip
@@ -978,13 +1096,13 @@ def register_callbacks(dash_app, server):
             # Create columns definition with width settings
             column_widths = {
                 'Project Name': '180px',
-                'Likely Go-ahead': '100px',
+                'likely_goahead': '100px',
                 'Country': '120px',
                 'Region': '120px',
-                'Group': '140px',
-                'Field Type': '100px',
-                'Field/Block': '150px',
-                'Play Type': '120px',
+                'Opec_group': '140px',
+                'field_type': '100px',
+                'field': '150px',
+                'play_type': '120px',
                 'Hydrocarbon': '120px',
                 'Associated Crude': '140px',
                 'Depth': '80px',
@@ -1005,9 +1123,19 @@ def register_callbacks(dash_app, server):
                 'Sulfur': '80px'
             }
             
+            # Map display names for certain columns
+            display_name_map = {
+                'Opec_group': 'Group',
+                'field_type': 'Field Type',
+                'field': 'Field/Block',
+                'play_type': 'Play Type',
+                'likely_goahead': 'Likely To Go Ahead',
+            }
+            
             columns = []
             for col in available_cols:
-                col_def = {'name': col, 'id': col}
+                display_name = display_name_map.get(col, col)
+                col_def = {'name': display_name, 'id': col}
                 if col in column_widths:
                     col_def['minWidth'] = column_widths[col]
                     col_def['maxWidth'] = column_widths[col]

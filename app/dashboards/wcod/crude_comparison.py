@@ -4,7 +4,6 @@ import os
 import dash
 import re
 
-from app import create_dash_app
 from core.data_helpers import execute_query
 
 
@@ -1793,7 +1792,16 @@ def register_callbacks(app):
     
 def create_crude_comparison_dashboard(server, url_base_pathname="/dash/crude-comparison"):
     """Create the Crude Overview dashboard"""
-    dash_app = create_dash_app(server, url_base_pathname)
+    dash_app = dash.Dash(
+        __name__,
+        server=server,
+        url_base_pathname=url_base_pathname,
+        external_stylesheets=[
+            'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
+            'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+        ],
+        suppress_callback_exceptions=True
+    )
     dash_app.layout = create_layout(server)
     register_callbacks(dash_app)
     return dash_app

@@ -6,9 +6,9 @@ from dash import dcc, html, Input, Output, callback, dash_table
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
-from app import db
-from app.models import Company, UpstreamProject
-from sqlalchemy import func
+from core.data_helpers import execute_query
+# from app.models import Company, UpstreamProject
+# from sqlalchemy import func
 
 
 def create_layout():
@@ -43,28 +43,26 @@ def register_callbacks(dash_app, server):
         if submenu != 'projects-company':
             return go.Figure(), [], []
         
-        with server.app_context():
-            results = db.session.query(
-                Company.name,
-                func.count(UpstreamProject.id).label('project_count')
-            ).join(UpstreamProject).group_by(
-                Company.id, Company.name
-            ).order_by(func.count(UpstreamProject.id).desc()).limit(20).all()
-            
-            df = pd.DataFrame([
-                {'Company': r.name, 'Projects': r.project_count}
-                for r in results
-            ])
+        # Use pre-loaded data or load new data
+        df = load_projects_by_company_data()
         
         if df.empty:
             fig = go.Figure()
             fig.add_annotation(
-                text="No project data available. Please seed UpstreamProject and Company data.",
+                text="No project data available.",
                 xref="paper", yref="paper",
                 x=0.5, y=0.5, showarrow=False
             )
             fig.update_layout(height=400, plot_bgcolor='white', paper_bgcolor='white')
             return fig, [], []
+        
+        # Ensure 'name' and 'project_count' columns exist and are correctly named
+        if 'name' not in df.columns or 'project_count' not in df.columns:
+            print("Error: Expected columns 'name' and 'project_count' not found in DataFrame.")
+            return go.Figure(), [], []
+        
+        # Rename columns for display
+        df = df.rename(columns={'name': 'Company', 'project_count': 'Projects'})
         
         fig = px.bar(df, x='Company', y='Projects', title='Projects by Company')
         fig.update_layout(height=400, plot_bgcolor='white', paper_bgcolor='white', xaxis_tickangle=-45)
@@ -73,4 +71,19 @@ def register_callbacks(dash_app, server):
         data = df.to_dict('records')
         
         return fig, data, columns
+
+
+def load_projects_by_company_data():
+    query = """
+    SELECT
+        dc.company_name AS name,
+        COUNT(fup.project_id) AS project_count
+    FROM dev.dim_company dc
+    JOIN dev.fact_upstream_project_tracker fup ON dc.company_id = fup.operator_id
+    GROUP BY dc.company_id, dc.company_name
+    ORDER BY COUNT(fup.project_id) DESC
+    LIMIT 20;
+    """
+    results = execute_query(query)
+    return pd.DataFrame(results)
 

@@ -7,27 +7,27 @@ from dash import dcc, html, Input, Output, callback
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
-from flask import current_app
-from app import create_dash_app
-from app.models import Country, Production, Exports, Reserves, Imports
-from app import db
-from sqlalchemy import func, extract
+from core.data_helpers import execute_query
 from datetime import datetime, timedelta
 
 
 def create_country_profile_dashboard(server, url_base_pathname):
     """Create country profile dashboard"""
-    dash_app = create_dash_app(server, url_base_pathname)
+    dash_app = dash.Dash(
+        __name__,
+        server=server,
+        url_base_pathname=url_base_pathname,
+        external_stylesheets=[
+            'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
+            'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+        ],
+        suppress_callback_exceptions=True
+    )
     
-    # Get list of countries for dropdown (within app context)
-    try:
-        with server.app_context():
-            countries = Country.query.order_by(Country.name).all()
-            country_options = [{'label': c.name, 'value': c.id} for c in countries]
-            default_country = country_options[0]['value'] if country_options else None
-    except Exception:
-        country_options = []
-        default_country = None
+    # Get list of countries for dropdown
+    country_df = load_country_options()
+    country_options = [{'label': row['name'], 'value': row['id']} for _, row in country_df.iterrows()] if not country_df.empty else []
+    default_country = country_options[0]['value'] if country_options else None
     
     dash_app.layout = html.Div([
         html.Div([
@@ -95,58 +95,22 @@ def create_country_profile_dashboard(server, url_base_pathname):
         if not country_id:
             return [html.Div()] * 4
         
-        country = Country.query.get(country_id)
-        if not country:
-            return [html.Div()] * 4
-        
-        latest_date = db.session.query(func.max(Production.date)).scalar()
-        
-        # Production
-        latest_prod = db.session.query(
-            func.sum(Production.production_bbl)
-        ).filter(
-            Production.country_id == country_id,
-            Production.date == latest_date
-        ).scalar() or 0
+        latest_prod, latest_exports, latest_imports, latest_reserves = load_country_kpis_data(country_id)
         
         kpi_prod = html.Div([
             html.Div(f"{latest_prod:,.0f}", className='kpi-value'),
             html.Div("Latest Production (bbl)", className='kpi-label'),
         ])
         
-        # Exports
-        latest_exports = db.session.query(
-            func.sum(Exports.exports_bbl)
-        ).filter(
-            Exports.country_id == country_id,
-            Exports.date == latest_date
-        ).scalar() or 0
-        
         kpi_exports = html.Div([
             html.Div(f"{latest_exports:,.0f}", className='kpi-value'),
             html.Div("Latest Exports (bbl)", className='kpi-label'),
         ])
         
-        # Imports
-        latest_imports = db.session.query(
-            func.sum(Imports.imports_bbl)
-        ).filter(
-            Imports.country_id == country_id,
-            Imports.date == latest_date
-        ).scalar() or 0
-        
         kpi_imports = html.Div([
             html.Div(f"{latest_imports:,.0f}", className='kpi-value'),
             html.Div("Latest Imports (bbl)", className='kpi-label'),
         ])
-        
-        # Reserves
-        latest_reserves = db.session.query(
-            func.sum(Reserves.reserves_bbl)
-        ).filter(
-            Reserves.country_id == country_id,
-            Reserves.date == latest_date
-        ).scalar() or 0
         
         kpi_reserves = html.Div([
             html.Div(f"{latest_reserves:,.0f}", className='kpi-value'),
@@ -164,30 +128,17 @@ def create_country_profile_dashboard(server, url_base_pathname):
         if not country_id:
             return go.Figure()
         
-        start_date = datetime.now().date() - timedelta(days=365*5)
-        
-        results = db.session.query(
-            Production.date,
-            func.sum(Production.production_bbl).label('production')
-        ).filter(
-            Production.country_id == country_id,
-            Production.date >= start_date
-        ).group_by(Production.date).order_by(Production.date).all()
-        
-        df = pd.DataFrame([
-            {'Date': r.date, 'Production (bbl)': r.production}
-            for r in results
-        ])
+        df = load_country_production_trend_data(country_id)
         
         if df.empty:
             return go.Figure()
         
-        country = Country.query.get(country_id)
+        country_name = get_country_name_from_id(country_id)
         fig = px.line(
             df,
-            x='Date',
-            y='Production (bbl)',
-            title=f'{country.name} - Production Trend',
+            x='date',
+            y='production',
+            title=f'{country_name} - Production Trend',
             markers=True
         )
         
@@ -209,30 +160,17 @@ def create_country_profile_dashboard(server, url_base_pathname):
         if not country_id:
             return go.Figure()
         
-        start_date = datetime.now().date() - timedelta(days=365*5)
-        
-        results = db.session.query(
-            Exports.date,
-            func.sum(Exports.exports_bbl).label('exports')
-        ).filter(
-            Exports.country_id == country_id,
-            Exports.date >= start_date
-        ).group_by(Exports.date).order_by(Exports.date).all()
-        
-        df = pd.DataFrame([
-            {'Date': r.date, 'Exports (bbl)': r.exports}
-            for r in results
-        ])
+        df = load_country_exports_trend_data(country_id)
         
         if df.empty:
             return go.Figure()
         
-        country = Country.query.get(country_id)
+        country_name = get_country_name_from_id(country_id)
         fig = px.line(
             df,
-            x='Date',
-            y='Exports (bbl)',
-            title=f'{country.name} - Exports Trend',
+            x='date',
+            y='exports',
+            title=f'{country_name} - Exports Trend',
             markers=True
         )
         
@@ -254,46 +192,29 @@ def create_country_profile_dashboard(server, url_base_pathname):
         if not country_id:
             return go.Figure()
         
-        start_date = datetime.now().date() - timedelta(days=365*2)
-        
-        exports_data = db.session.query(
-            Exports.date,
-            func.sum(Exports.exports_bbl).label('exports')
-        ).filter(
-            Exports.country_id == country_id,
-            Exports.date >= start_date
-        ).group_by(Exports.date).order_by(Exports.date).all()
-        
-        imports_data = db.session.query(
-            Imports.date,
-            func.sum(Imports.imports_bbl).label('imports')
-        ).filter(
-            Imports.country_id == country_id,
-            Imports.date >= start_date
-        ).group_by(Imports.date).order_by(Imports.date).all()
-        
-        country = Country.query.get(country_id)
+        exports_df, imports_df = load_country_trade_balance_data(country_id)
+        country_name = get_country_name_from_id(country_id)
         
         fig = go.Figure()
         
-        if exports_data:
+        if not exports_df.empty:
             fig.add_trace(go.Scatter(
-                x=[r.date for r in exports_data],
-                y=[r.exports for r in exports_data],
+                x=exports_df['date'],
+                y=exports_df['exports'],
                 name='Exports',
                 line=dict(color='#27ae60', width=2)
             ))
         
-        if imports_data:
+        if not imports_df.empty:
             fig.add_trace(go.Scatter(
-                x=[r.date for r in imports_data],
-                y=[r.imports for r in imports_data],
+                x=imports_df['date'],
+                y=imports_df['imports'],
                 name='Imports',
                 line=dict(color='#e74c3c', width=2)
             ))
         
         fig.update_layout(
-            title=f'{country.name} - Trade Balance (Exports vs Imports)',
+            title=f'{country_name} - Trade Balance (Exports vs Imports)',
             xaxis_title='Date',
             yaxis_title='Volume (bbl)',
             plot_bgcolor='white',

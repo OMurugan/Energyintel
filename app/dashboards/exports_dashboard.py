@@ -7,18 +7,23 @@ from dash import dcc, html, Input, Output, callback
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
-from flask import current_app
-from app import create_dash_app
-from app.models import Country, Exports
-from app import db
-from sqlalchemy import func
+from core.data_helpers import execute_query
 from datetime import datetime, timedelta
 
 
 def create_exports_dashboard(server, url_base_pathname):
     """Create exports-focused dashboard"""
-    dash_app = create_dash_app(server, url_base_pathname)
-    
+    dash_app = dash.Dash(
+        __name__,
+        server=server,
+        url_base_pathname=url_base_pathname,
+        external_stylesheets=[
+            'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
+            'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+        ],
+        suppress_callback_exceptions=True
+    )
+
     dash_app.layout = html.Div([
         html.Div([
             html.H1("Exports Dashboard", className="mb-4"),
@@ -38,27 +43,25 @@ def create_exports_dashboard(server, url_base_pathname):
     )
     def update_exports_by_country(_):
         """Update exports by country chart"""
-        latest_date = db.session.query(func.max(Exports.date)).scalar()
-        if not latest_date:
-            return go.Figure()
-        
-        results = db.session.query(
-            Country.name,
-            Country.region,
-            func.sum(Exports.exports_bbl).label('exports')
-        ).join(Exports).filter(
-            Exports.date == latest_date
-        ).group_by(Country.id, Country.name, Country.region).order_by(
-            func.sum(Exports.exports_bbl).desc()
-        ).limit(20).all()
-        
-        df = pd.DataFrame([
-            {'Country': r.name, 'Region': r.region or 'Unknown', 'Exports': r.exports}
-            for r in results
-        ])
+        df = load_exports_by_country_data()
         
         if df.empty:
-            return go.Figure()
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data available. Please seed Exports and Country data.",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
+            return fig
+        
+        # Ensure 'Country', 'Region', 'Exports' columns exist
+        required_cols = ['name', 'region', 'exports']
+        for col in required_cols:
+            if col not in df.columns:
+                print(f"Error: Expected column '{col}' not found in DataFrame.")
+                return go.Figure()
+        df = df.rename(columns={'name': 'Country', 'region': 'Region', 'exports': 'Exports'})
         
         fig = px.bar(
             df,
@@ -77,23 +80,19 @@ def create_exports_dashboard(server, url_base_pathname):
         Input('exports-trend-global', 'id')
     )
     def update_exports_trend(_):
-        """Update global exports trend"""
-        start_date = datetime.now().date() - timedelta(days=365*5)
-        
-        results = db.session.query(
-            Exports.date,
-            func.sum(Exports.exports_bbl).label('total_exports')
-        ).filter(
-            Exports.date >= start_date
-        ).group_by(Exports.date).order_by(Exports.date).all()
-        
-        df = pd.DataFrame([
-            {'Date': r.date, 'Exports': r.total_exports}
-            for r in results
-        ])
+        """
+        Update global exports trend
+        """
+        df = load_exports_trend_data()
         
         if df.empty:
             return go.Figure()
+        
+        # Ensure 'date' and 'total_exports' columns exist
+        if 'date' not in df.columns or 'total_exports' not in df.columns:
+            print("Error: Expected columns 'date' and 'total_exports' not found in DataFrame.")
+            return go.Figure()
+        df = df.rename(columns={'date': 'Date', 'total_exports': 'Exports'})
         
         fig = px.line(
             df,

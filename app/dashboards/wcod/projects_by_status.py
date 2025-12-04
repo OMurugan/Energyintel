@@ -90,7 +90,7 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
         return fig
     
     filtered_df = df.copy()
-    print(f"DEBUG: region filter: {region_filter}")
+    print(f"DEBUG: region filter0001: {region_filter}")
     # Apply region filter (now handles list of regions)
     if region_filter:
         if isinstance(region_filter, list):
@@ -435,6 +435,9 @@ def create_layout():
                 # Store region legend item IDs for callback
                 html.Div(id='region-legend-items-store', style={'display': 'none'}, children=[]),
                 
+                # Store to track if region filter has been initialized (prevents overwriting on subsequent updates)
+                dcc.Store(id='region-filter-initialized', data=False),
+                
                 # KPI Table Section
                 html.Div([
                     html.H4(
@@ -510,15 +513,17 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         [Output('projects-status-region-filter', 'options'),
          Output('projects-status-region-filter', 'value', allow_duplicate=True),
-         Output('region-legend-items-store', 'children')],
+         Output('region-legend-items-store', 'children'),
+         Output('region-filter-initialized', 'data')],
         Input('current-submenu', 'data'),
         State('projects-status-region-filter', 'value'),
+        State('region-filter-initialized', 'data'),
         prevent_initial_call='initial_duplicate'
     )
-    def update_region_filter_options(current_submenu, current_filter_value):
+    def update_region_filter_options(current_submenu, current_filter_value, is_initialized):
         """Update region filter options when page is accessed"""
         if current_submenu != 'projects-status':
-            return [], dash.no_update, []
+            return [], dash.no_update, [], dash.no_update
         
         # Load data to get available regions
         treemap_df = load_treemap_data()
@@ -535,10 +540,12 @@ def register_callbacks(dash_app, server):
         
         options = [{'label': r, 'value': r} for r in regions]
         
-        # CRITICAL: Only set default_value on initial load (when current_filter_value is None or empty)
-        # On subsequent updates, preserve the existing filter value to avoid removing Africa
-        if current_filter_value is None or (isinstance(current_filter_value, list) and len(current_filter_value) == 0):
-            # Initial load: Set all regions as default, including Africa
+        # CRITICAL: Only set default_value on the very first initialization
+        # Use is_initialized flag to prevent overwriting the filter value on subsequent updates
+        # This ensures Africa is never removed from the filter
+        if not is_initialized:
+            # First initialization: Set all regions as default, including Africa
+            # Build default_value in REGION_ORDER to ensure consistent ordering
             default_value = []
             for region in REGION_ORDER:
                 if region in regions:
@@ -548,27 +555,63 @@ def register_callbacks(dash_app, server):
                 if region not in default_value:
                     default_value.append(region)
             
-            # Debug: Verify Africa is included
-            if 'Africa' in regions and 'Africa' not in default_value:
-                default_value.insert(0, 'Africa')  # Insert at beginning to ensure it's first
-        else:
-            # Subsequent update: Preserve existing filter value, but ensure Africa is included if it exists in regions
-            # This ensures Africa and other selected regions are not removed
-            if isinstance(current_filter_value, list):
-                # Ensure Africa is in the preserved value if it exists in regions
-                if 'Africa' in regions and 'Africa' not in current_filter_value:
-                    # Add Africa if it's missing
+            # CRITICAL: Verify Africa is included - this is essential
+            # Double-check: if Africa exists in regions, it MUST be in default_value
+            if 'Africa' in regions:
+                if 'Africa' not in default_value:
+                    # Force insert Africa at the beginning
+                    default_value.insert(0, 'Africa')
+                elif default_value[0] != 'Africa':
+                    # Africa exists but not first - move it to first position
+                    default_value.remove('Africa')
+                    default_value.insert(0, 'Africa')
+            
+            # CRITICAL: Also check if current_filter_value already has all regions
+            # If so, preserve it (might have been set by another callback)
+            if current_filter_value and isinstance(current_filter_value, list) and len(current_filter_value) > 0:
+                # Check if current_filter_value already includes all regions (including Africa)
+                if 'Africa' in current_filter_value and len(current_filter_value) == len(regions):
+                    # Current value already has all regions - preserve it but ensure Africa is first
                     preserved_value = current_filter_value.copy()
-                    preserved_value.insert(0, 'Africa')
-                    default_value = preserved_value
-                else:
-                    # Preserve as-is if Africa is already there or doesn't exist in regions
-                    default_value = dash.no_update
-            else:
-                # Single value or other type - preserve as-is
-                default_value = dash.no_update
-        
-        return options, default_value, regions
+                    if preserved_value[0] != 'Africa':
+                        preserved_value.remove('Africa')
+                        preserved_value.insert(0, 'Africa')
+                    print(f"DEBUG: update_region_filter_options - Preserving existing filter value with Africa: {preserved_value}")
+                    return options, preserved_value, regions, True
+            
+            print(f"DEBUG: update_region_filter_options - Initial load - default_value: {default_value}")
+            print(f"DEBUG: update_region_filter_options - Africa in default_value: {'Africa' in default_value}")
+            
+            # Mark as initialized to prevent future overwrites
+            return options, default_value, regions, True
+        else:
+            # Already initialized: Only restore Africa if filter value is None/empty (unexpected state)
+            # DO NOT add Africa back if user explicitly removed it by clicking
+            if current_filter_value is None or (isinstance(current_filter_value, list) and len(current_filter_value) == 0):
+                # CRITICAL: If filter value is None or empty after initialization, 
+                # it means something reset it - restore all regions including Africa
+                print(f"DEBUG: update_region_filter_options - Filter value was None/empty after init! Restoring all regions.")
+                restored_value = []
+                for region in REGION_ORDER:
+                    if region in regions:
+                        restored_value.append(region)
+                for region in regions:
+                    if region not in restored_value:
+                        restored_value.append(region)
+                # Ensure Africa is first
+                if 'Africa' in regions and 'Africa' not in restored_value:
+                    restored_value.insert(0, 'Africa')
+                elif 'Africa' in restored_value and restored_value[0] != 'Africa':
+                    restored_value.remove('Africa')
+                    restored_value.insert(0, 'Africa')
+                print(f"DEBUG: update_region_filter_options - Restored value: {restored_value}")
+                return options, restored_value, regions, dash.no_update
+            
+            # Already initialized: NEVER overwrite the filter value
+            # This allows users to explicitly remove Africa by clicking, and we won't add it back
+            # This ensures user interactions are respected
+            print(f"DEBUG: update_region_filter_options - Already initialized, preserving current_filter_value: {current_filter_value}")
+            return options, dash.no_update, regions, dash.no_update
     
     # Callback to create region legend items dynamically
     @dash_app.callback(
@@ -624,13 +667,14 @@ def register_callbacks(dash_app, server):
     )
     def toggle_region_filter(n_clicks_list, current_values, all_regions):
         """Toggle Region filter when legend items are clicked"""
+        print(f"DEBUG: all_regions001: {all_regions}")
         if current_values is None:
             current_values = all_regions if all_regions else []
         
         ctx = dash.callback_context
         if not ctx.triggered:
             return current_values
-        
+        print(f"DEBUG: current_values: {current_values}")
         trigger_id = ctx.triggered[0]['prop_id']
         # Extract region name from the pattern component ID
         if 'index' in trigger_id:
@@ -732,7 +776,12 @@ def register_callbacks(dash_app, server):
     )
     def update_treemap(region_filter, likely_filter, current_submenu):
         """Update treemap based on filters - only loads data when page is active"""
-        print(f"DEBUG: region filter001: {region_filter}")
+        print(f"DEBUG: update_treemap - region_filter: {region_filter}")
+        print(f"DEBUG: update_treemap - region_filter type: {type(region_filter)}")
+        if isinstance(region_filter, list):
+            print(f"DEBUG: update_treemap - region_filter length: {len(region_filter)}")
+            print(f"DEBUG: update_treemap - Africa in region_filter: {'Africa' in region_filter}")
+        
         # Only load data if this page is currently active
         if current_submenu != 'projects-status':
             # Return empty figure if page is not active
@@ -748,6 +797,22 @@ def register_callbacks(dash_app, server):
             fig.update_layout(height=700, plot_bgcolor="white", paper_bgcolor="white", margin=dict(l=0, r=0, t=0, b=0))
             return fig
         
+        # CRITICAL: Only handle None/empty filter on initial load
+        # DO NOT add Africa back if user explicitly removed it - respect user's filter selection
+        if region_filter is None or (isinstance(region_filter, list) and len(region_filter) == 0):
+            # Load data to get all available regions (only for initial load when filter is None/empty)
+            df_temp = load_treemap_data()
+            if not df_temp.empty and "Region" in df_temp.columns:
+                all_regions = df_temp['Region'].dropna().unique().tolist()
+                # Order according to REGION_ORDER
+                ordered_all = [r for r in REGION_ORDER if r in all_regions]
+                remaining_all = [r for r in all_regions if r not in REGION_ORDER]
+                ordered_all.extend(sorted(remaining_all))
+                region_filter = ordered_all
+                print(f"DEBUG: update_treemap - region_filter was None/empty, set to all regions: {region_filter}")
+        # If region_filter is a non-empty list, use it as-is (respect user's selection)
+        # DO NOT automatically add Africa back - let users control the filter
+        
         df = load_treemap_data()
         table_df = load_table_data()
         # Get unique projects (remove duplicate rows for same project)
@@ -758,7 +823,7 @@ def register_callbacks(dash_app, server):
             table_df_unique = table_df
         fig = create_treemap_figure(df=df, region_filter=region_filter, likely_filter=likely_filter, table_df=table_df_unique)
         return fig
-    
+
     @dash_app.callback(
         [Output('projects-status-kpi-table-container', 'children'),
          Output('projects-status-table-container', 'children')],
@@ -870,6 +935,7 @@ def register_callbacks(dash_app, server):
             # Get unique projects (keep first occurrence)
             filtered_table = filtered_table.drop_duplicates(subset=["Project Name"], keep='first')
         
+        print(f"DEBUG: region_filter: {region_filter}")
         # Apply region filter to table
         if region_filter:
             if isinstance(region_filter, list):
