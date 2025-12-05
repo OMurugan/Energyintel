@@ -1118,7 +1118,7 @@ def create_layout(server):
 # ------------------------------------------------------------------------------
 # CALLBACKS
 # ------------------------------------------------------------------------------
-def register_callbacks(app):
+def register_callbacks(app, server):
 
     @app.callback(
         Output("crude-heading", "children"),
@@ -1790,18 +1790,7 @@ def register_callbacks(app):
         prevent_initial_call=False
     )
     
-def create_crude_comparison_dashboard(server, url_base_pathname="/dash/crude-comparison"):
+def create_crude_comparison_dashboard(dash_app, server, url_base_pathname="/dash/crude-comparison"):
     """Create the Crude Overview dashboard"""
-    dash_app = dash.Dash(
-        __name__,
-        server=server,
-        url_base_pathname=url_base_pathname,
-        external_stylesheets=[
-            'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
-            'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
-        ],
-        suppress_callback_exceptions=True
-    )
     dash_app.layout = create_layout(server)
-    register_callbacks(dash_app)
-    return dash_app
+    register_callbacks(dash_app, server)

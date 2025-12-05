@@ -117,7 +117,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
     
     dash_app = dash.Dash(
         __name__,
-        url_base_pathname=url_base_pathname,
+        # url_base_pathname=url_base_pathname,
         plugins=[Embeddable(origins="*")],  # Add embedding support with CORS
         external_stylesheets=[
             'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
@@ -133,21 +133,21 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
     
     # Add route to serve static assets from assets folder
     # Dash should handle this automatically, but we'll add explicit route as fallback
-    from flask import send_from_directory
-    import os
+    # from flask import send_from_directory
+    # import os
     
-    @dash_app.server.route('/assets/<path:path>')
-    def serve_assets(path):
-        """Serve static assets from assets folder"""
-        # Handle nested paths like images/globe_inactive.svg
-        file_path = os.path.join(str(assets_dir), path)
-        if os.path.exists(file_path) and os.path.isfile(file_path):
-            directory = os.path.dirname(file_path)
-            filename = os.path.basename(file_path)
-            return send_from_directory(directory, filename)
-        else:
-            # Try to serve from assets_dir directly
-            return send_from_directory(str(assets_dir), path)
+    # @dash_app.server.route('/assets/<path:path>')
+    # def serve_assets(path):
+    #     """Serve static assets from assets folder"""
+    #     # Handle nested paths like images/globe_inactive.svg
+    #     file_path = os.path.join(str(assets_dir), path)
+    #     if os.path.exists(file_path) and os.path.isfile(file_path):
+    #         directory = os.path.dirname(file_path)
+    #         filename = os.path.basename(file_path)
+    #         return send_from_directory(directory, filename)
+    #     else:
+    #         # Try to serve from assets_dir directly
+    #         return send_from_directory(str(assets_dir), path)
     
     # Custom CSS for Tableau-like styling
     dash_app.index_string = '''
@@ -1568,7 +1568,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
     
     def render_country_profile():
         """Country Profile view"""
-        return country_profile.create_layout(server=None)
+        return country_profile.create_layout()
     
     def render_crude_overview():
         """Crude Overview view"""
@@ -1576,11 +1576,11 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
     
     def render_crude_profile():
         """Crude Profile view"""
-        return crude_profile.create_layout(server=None)
+        return crude_profile.create_layout()
     
     def render_crude_comparison():
         """Crude Comparison view"""
-        return crude_comparison.create_layout(server=None)
+        return crude_comparison.create_layout()
     
     def render_crude_quality():
         """Crude Quality Comparison view"""
@@ -1679,8 +1679,7 @@ def create_wcod_dashboard(server=None, url_base_pathname='/'):
     country_profile.register_callbacks(dash_app, callback_server)
     crude_overview.register_callbacks(dash_app, callback_server)
     crude_profile.register_callbacks(dash_app)
-    crude_comparison.register_callbacks(dash_app)
-    crude_quality.register_callbacks(dash_app, callback_server)
+    crude_comparison.register_callbacks(dash_app, callback_server)
     crude_carbon.register_callbacks(dash_app, callback_server)
     imports_detail.register_callbacks(dash_app, callback_server)
     imports_comparison.register_callbacks(dash_app, callback_server)

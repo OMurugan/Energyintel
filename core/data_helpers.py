@@ -140,26 +140,25 @@ def execute_query(query, params=None):
             else:
                 result = connection.execute(text(query))
             
-            # If it's a SELECT query, return rows
-            if query.strip().upper().startswith('SELECT'):
+            # If it's a SELECT query (or a CTE starting with WITH), return rows
+            if result.returns_rows:
                 columns = result.keys()
                 rows = result.fetchall()
                 return [dict(zip(columns, row)) for row in rows]
             else:
-                connection.commit()
                 return result.rowcount
                 
     except Exception as e:
         error_msg = (
             f"Database connection error:\n"
-            f"  Host: {db_host}\n"
-            f"  Port: {db_port}\n"
-            f"  Database: {db_name}\n"
-            f"  User: {db_user}\n"
+            # f"  Host: {db_host}\n"
+            # f"  Port: {db_port}\n"
+            # f"  Database: {db_name}\n"
+            # f"  User: {db_user}\n"
             f"  Error: {str(e)}\n\n"
             f"Please check:\n"
             f"  1. Database server is running and accessible\n"
-            f"  2. Network connectivity to {db_host}:{db_port}\n"
+            f"  2. Network connectivity to Host:Port:\n"
             f"  3. Database credentials in .env file or Dash Enterprise data sources\n"
             f"  4. Firewall/security group settings allow connections from this host"
         )
