@@ -170,6 +170,7 @@ def create_layout():
             'boxShadow': 'none',
             'borderRadius': '0',
             'padding': '12px 14px 18px 14px',
+            'position': 'relative',
         }, children=[
             # "Click here to search for key Articles" link
             html.A(
@@ -264,6 +265,86 @@ def create_layout():
                 ])
             ]),
             
+            # Sorting controls popup (initially hidden)
+            html.Div([
+                html.Div([
+                    html.Div("Data source order", id="popup-source-btn", 
+                            style={
+                                "padding": "6px 10px", 
+                                "fontSize": "12px",
+                                "cursor": "pointer",
+                                "fontFamily": "Arial",
+                                "color": "#333",
+                            }),
+                    html.Div("Alphabetic", id="popup-alphabetic-btn",
+                            style={
+                                "padding": "6px 10px", 
+                                "fontSize": "12px",
+                                "cursor": "pointer",
+                                "fontFamily": "Arial",
+                                "color": "#333",
+                            }),
+                    html.Div([
+                        html.Span("Field", style={"flex": "1"}),
+                        html.Span("▶", id="field-arrow-btn", style={
+                            "cursor": "pointer",
+                            "fontSize": "10px",
+                            "color": "#666",
+                            "marginLeft": "8px",
+                        }),
+                    ], id="popup-field-btn",
+                       style={
+                           "padding": "6px 10px", 
+                           "fontSize": "12px",
+                           "cursor": "pointer",
+                           "fontFamily": "Arial",
+                           "color": "#333",
+                           "display": "flex",
+                           "alignItems": "center",
+                           "justifyContent": "space-between",
+                           "position": "relative",
+                       }),
+                    html.Div([
+                        html.Span("Nested", style={"flex": "1"}),
+                        html.Span("▶", id="nested-arrow-btn", style={
+                            "cursor": "pointer",
+                            "fontSize": "10px",
+                            "color": "#666",
+                            "marginLeft": "8px",
+                        }),
+                    ], id="popup-nested-btn",
+                       style={
+                           "padding": "6px 10px", 
+                           "fontSize": "12px",
+                           "cursor": "pointer",
+                           "fontFamily": "Arial",
+                           "color": "333",
+                           "display": "flex",
+                           "alignItems": "center",
+                           "justifyContent": "space-between",
+                           "position": "relative",
+                       }),
+                ]),
+            ], id="sorting-controls", style={
+                "position": "absolute", 
+                "backgroundColor": "white", 
+                "padding": "15px",
+                "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
+                "zIndex": "1000",
+                "display": "none",
+                "minWidth": "160px",
+                "border": "1px solid #ccc",
+                "borderRadius": "2px",
+            }),
+
+            # Hidden buttons for header interactions
+            html.Button("Sort Ascending Click", id="sort-asc-btn-hidden", n_clicks=0, style={"display": "none"}),
+            html.Button("Sort Descending Click", id="sort-desc-btn-hidden", n_clicks=0, style={"display": "none"}),
+            html.Button("Popup Menu Click", id="popup-menu-btn", n_clicks=0, style={"display": "none"}),
+            html.Button("Field Sort Click", id="field-sort-btn", n_clicks=0, style={"display": "none"}),
+            html.Button("Nested Sort Click", id="nested-sort-btn", n_clicks=0, style={"display": "none"}),
+            html.Div(id='dummy-output-clientside', style={'display': 'none'}),
+            
             # Container for Updated Projects table that can be hidden
             html.Div(id='updated-projects-container', children=[
                 # FIRST TABLE: List of Updated Projects
@@ -318,6 +399,7 @@ def create_layout():
                         'textAlign': 'left',
                         'whiteSpace': 'normal',
                         'height': 'auto',
+                        'position': 'relative',
                     },
                     style_data_conditional=[
                         {
@@ -427,6 +509,7 @@ def create_layout():
                         'textAlign': 'left',
                         'whiteSpace': 'normal',
                         'height': 'auto',
+                        'position': 'relative',
                     },
                     style_data_conditional=[
                         {
@@ -598,3 +681,216 @@ def register_callbacks(dash_app, server):
                     return []
         
         return selected_values
+
+    # SIMPLE CLIENTSIDE CALLBACK - This will definitely work
+    dash_app.clientside_callback(
+        """
+        function(columns) {
+            setTimeout(function() {
+                // Apply A/Z and down-arrow to specific columns
+                
+                // Function to add A/Z and down-arrow to a header
+                function addSortUI(header) {
+                    // Check if already has the UI
+                    if (header.querySelector('.sort-order-container')) {
+                        return;
+                    }
+                    
+                    // Create A/Z container
+                    const sortContainer = document.createElement('div');
+                    sortContainer.style.position = 'absolute';
+                    sortContainer.style.right = '30px';
+                    sortContainer.style.top = '50%';
+                    sortContainer.style.transform = 'translateY(-50%)';
+                    sortContainer.style.fontSize = '10px';
+                    sortContainer.style.color = '#666';
+                    sortContainer.style.cursor = 'pointer';
+                    sortContainer.style.padding = '2px';
+                    sortContainer.style.border = '1px solid transparent';
+                    sortContainer.style.borderRadius = '2px';
+                    sortContainer.style.lineHeight = '1';
+                    sortContainer.style.textAlign = 'center';
+                    sortContainer.style.display = 'flex';
+                    sortContainer.style.flexDirection = 'column';
+                    sortContainer.style.alignItems = 'center';
+                    sortContainer.style.justifyContent = 'center';
+                    sortContainer.style.height = '30px';
+                    sortContainer.style.opacity = '0';
+                    sortContainer.style.transition = 'opacity 0.2s ease';
+                    sortContainer.style.zIndex = '2';
+                    sortContainer.className = 'sort-order-container';
+                    
+                    // Create A button
+                    const aElement = document.createElement('div');
+                    aElement.textContent = 'A';
+                    aElement.title = 'Click for ascending alphabetical order';
+                    aElement.style.display = 'block';
+                    aElement.style.lineHeight = '1';
+                    aElement.style.cursor = 'pointer';
+                    aElement.style.padding = '1px 2px';
+                    aElement.style.borderRadius = '1px';
+                    aElement.style.fontFamily = 'Arial, sans-serif';
+                    aElement.style.fontSize = '10px';
+                    aElement.onmouseover = function() {
+                        aElement.style.backgroundColor = '#d4e7ff';
+                        aElement.style.fontWeight = 'bold';
+                    };
+                    aElement.onmouseout = function() {
+                        aElement.style.backgroundColor = '';
+                        aElement.style.fontWeight = '';
+                    };
+                    aElement.onclick = function(e) {
+                        e.stopPropagation();
+                        // Click header 3 times to get ascending order
+                        for (let i = 0; i < 3; i++) {
+                            header.click();
+                        }
+                    };
+                    
+                    // Create Z button
+                    const zElement = document.createElement('div');
+                    zElement.textContent = 'Z';
+                    zElement.title = 'Click for descending alphabetical order';
+                    zElement.style.display = 'block';
+                    zElement.style.lineHeight = '1';
+                    zElement.style.cursor = 'pointer';
+                    zElement.style.padding = '1px 2px';
+                    zElement.style.borderRadius = '1px';
+                    zElement.style.fontFamily = 'Arial, sans-serif';
+                    zElement.style.fontSize = '10px';
+                    zElement.onmouseover = function() {
+                        zElement.style.backgroundColor = '#d4e7ff';
+                        zElement.style.fontWeight = 'bold';
+                    };
+                    zElement.onmouseout = function() {
+                        zElement.style.backgroundColor = '';
+                        zElement.style.fontWeight = '';
+                    };
+                    zElement.onclick = function(e) {
+                        e.stopPropagation();
+                        // Click header 2 times to get descending order
+                        for (let i = 0; i < 2; i++) {
+                            header.click();
+                        }
+                    };
+                    
+                    sortContainer.appendChild(aElement);
+                    sortContainer.appendChild(zElement);
+                    header.appendChild(sortContainer);
+                    
+                    // Create down-arrow icon
+                    const sortIndicator = document.createElement('div');
+                    sortIndicator.style.position = 'absolute';
+                    sortIndicator.style.right = '8px';
+                    sortIndicator.style.top = '50%';
+                    sortIndicator.style.transform = 'translateY(-50%)';
+                    sortIndicator.style.width = '15px';
+                    sortIndicator.style.height = '15px';
+                    sortIndicator.style.cursor = 'pointer';
+                    sortIndicator.style.opacity = '0';
+                    sortIndicator.style.transition = 'opacity 0.2s ease';
+                    sortIndicator.style.zIndex = '1';
+                    sortIndicator.title = 'Click to show sort options';
+                    sortIndicator.className = 'sort-indicator';
+                    
+                    // Add SVG icon
+                    sortIndicator.innerHTML = `
+                        <svg fill="#000000" viewBox="0 0 301.219 301.219" xmlns="http://www.w3.org/2000/svg">
+                            <g>
+                                <path d="M159.365,23.736v-10c0-5.523-4.477-10-10-10H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h139.365
+                                    C154.888,33.736,159.365,29.259,159.365,23.736z"/>
+                                <path d="M130.586,66.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h120.586c5.523,0,10-4.477,10-10v-10
+                                    C140.586,71.213,136.109,66.736,130.586,66.736z"/>
+                                <path d="M111.805,129.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h101.805c5.523,0,10-4.477,10-10v-10
+                                    C121.805,134.213,117.328,129.736,111.805,129.736z"/>
+                                <path d="M93.025,199.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h83.025c5.522,0,10-4.477,10-10v-10
+                                    C103.025,204.213,98.548,199.736,93.025,199.736z"/>
+                                <path d="M74.244,262.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h64.244c5.522,0,10-4.477,10-10v-10
+                                    C84.244,267.213,79.767,262.736,74.244,262.736z"/>
+                                <path d="M298.29,216.877l-7.071-7.071c-1.875-1.875-4.419-2.929-7.071-2.929c-2.652,0-5.196,1.054-7.072,2.929l-34.393,34.393
+                                    V18.736c0-5.523-4.477-10-10-10h-10c-5.523,0-10,4.477-10,10v225.462l-34.393-34.393c-1.876-1.875-4.419-2.929-7.071-2.929
+                                    c-2.652,0-5.196,1.054-7.071,2.929l-7.072,7.071c-3.904,3.905-3.904,10.237,0,14.142l63.536,63.536
+                                    c1.953,1.953,4.512,2.929,7.071,2.929c2.559,0,5.119-0.976,7.071-2.929l63.536-63.536
+                                    C302.195,227.113,302.195,220.781,298.29,216.877z"/>
+                            </g>
+                        </svg>
+                    `;
+                    
+                    sortIndicator.onmouseover = function() {
+                        sortIndicator.style.opacity = '1';
+                        sortIndicator.style.backgroundColor = '#e6f3ff';
+                        sortIndicator.style.borderRadius = '2px';
+                        sortIndicator.querySelector('svg').style.fill = '#1f3263';
+                    };
+                    
+                    sortIndicator.onmouseout = function() {
+                        sortIndicator.style.opacity = '0';
+                        sortIndicator.style.backgroundColor = '';
+                        sortIndicator.querySelector('svg').style.fill = '#666';
+                    };
+                    
+                    sortIndicator.onclick = function(e) {
+                        e.stopPropagation();
+                        const menu = document.getElementById('sorting-controls');
+                        const rect = header.getBoundingClientRect();
+                        
+                        menu.style.position = 'fixed';
+                        menu.style.left = (rect.right - 140) + 'px';
+                        menu.style.top = (rect.bottom + 4) + 'px';
+                        menu.style.display = 'block';
+                        
+                        // Trigger popup menu button
+                        const btn = document.getElementById('popup-menu-btn');
+                        if (btn) btn.click();
+                    };
+                    
+                    header.appendChild(sortIndicator);
+                    
+                    // Show A/Z on header hover
+                    header.onmouseover = function() {
+                        sortContainer.style.opacity = '1';
+                        sortIndicator.style.opacity = '1';
+                    };
+                    
+                    header.onmouseout = function() {
+                        sortContainer.style.opacity = '0';
+                        sortIndicator.style.opacity = '0';
+                    };
+                }
+                
+                // Add to Updated Projects table headers
+                const updatedColumns = ['Project Name', 'Likely Go-ahead', 'Country', 'Project Status'];
+                const updatedHeaders = document.querySelectorAll('#latest-updates-table .dash-header');
+                updatedHeaders.forEach(header => {
+                    const colName = header.getAttribute('data-dash-column');
+                    if (updatedColumns.includes(colName)) {
+                        addSortUI(header);
+                    }
+                });
+                
+                // Add to All Projects table headers
+                const allColumns = ['Project Name', 'Likely Go-ahead', 'Country'];
+                const allHeaders = document.querySelectorAll('#projects-table .dash-header');
+                allHeaders.forEach(header => {
+                    const colName = header.getAttribute('data-dash-column');
+                    if (allColumns.includes(colName)) {
+                        addSortUI(header);
+                    }
+                });
+                
+                // Add click outside to close menu
+                document.addEventListener('click', function(e) {
+                    const menu = document.getElementById('sorting-controls');
+                    if (menu && menu.style.display === 'block' && !menu.contains(e.target)) {
+                        menu.style.display = 'none';
+                    }
+                });
+                
+            }, 500); // Increased timeout to ensure tables are loaded
+            return '';
+        }
+        """,
+        Output('dummy-output-clientside', 'children'),
+        Input('latest-updates-table', 'columns'),
+        prevent_initial_call=False
+    )
