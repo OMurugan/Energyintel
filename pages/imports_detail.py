@@ -5,8 +5,8 @@ from app.dashboards.wcod import imports_detail
 
 dash.register_page(
     __name__,
-    path="/imports-detail",
-    name="Imports Detail",
+    path="/trade/imports-country-detail",
+    name="Imports - Country Detail",
 )
 
 
@@ -15,6 +15,7 @@ def layout():
 
 
 def init_callbacks(app, server):
-    imports_detail.register_callbacks(app, server)
+    # Callbacks are registered via callbacks/imports_detail_callbacks.py
+    return None
 
 

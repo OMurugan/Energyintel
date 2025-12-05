@@ -5,8 +5,8 @@ from app.dashboards.wcod import crude_quality
 
 dash.register_page(
     __name__,
-    path="/crude-quality",
-    name="Crude Quality",
+    path="/crude-quality-comparison",
+    name="Crude Quality Comparison",
 )
 
 
@@ -15,8 +15,7 @@ def layout():
 
 
 def init_callbacks(app, server):
-    # crude_quality module does not expose register_callbacks
-    crude_quality.register_callbacks(app, server)
-    # return None
+    # crude_quality module does not expose register_callbacks; nothing to initialize
+    return None
 
 

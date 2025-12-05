@@ -15,7 +15,7 @@ def layout():
 
 
 def init_callbacks(app, server):
-    # Signature accepts only the Dash app
-    crude_profile.register_callbacks(app)
+    # Callbacks are registered via callbacks/crude_profile_callbacks.py
+    return None
 
 

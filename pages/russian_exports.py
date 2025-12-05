@@ -5,7 +5,7 @@ from app.dashboards.wcod import russian_exports
 
 dash.register_page(
     __name__,
-    path="/russian-exports",
+    path="/trade/russian-exports",
     name="Russian Exports",
 )
 
@@ -15,6 +15,7 @@ def layout():
 
 
 def init_callbacks(app, server):
-    russian_exports.register_callbacks(app, server)
+    # Callbacks are registered via callbacks/russian_exports_callbacks.py
+    return None
 
 

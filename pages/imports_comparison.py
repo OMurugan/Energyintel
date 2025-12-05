@@ -5,8 +5,8 @@ from app.dashboards.wcod import imports_comparison
 
 dash.register_page(
     __name__,
-    path="/imports-comparison",
-    name="Imports Comparison",
+    path="/trade/imports-country-comparison",
+    name="Imports - Country Comparison",
 )
 
 
@@ -15,6 +15,7 @@ def layout():
 
 
 def init_callbacks(app, server):
-    imports_comparison.register_callbacks(app, server)
+    # Callbacks are registered via callbacks/imports_comparison_callbacks.py
+    return None
 
 

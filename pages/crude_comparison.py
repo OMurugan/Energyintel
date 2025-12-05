@@ -15,6 +15,7 @@ def layout():
 
 
 def init_callbacks(app, server):
-    crude_comparison.register_callbacks(app, server)
+    # Callbacks are registered via callbacks/crude_comparison_callbacks.py
+    return None
 
 

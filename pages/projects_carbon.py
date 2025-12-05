@@ -15,6 +15,7 @@ def layout():
 
 
 def init_callbacks(app, server):
-    projects_carbon.register_callbacks(app, server)
+    # Callbacks are registered via callbacks/projects_carbon_callbacks.py
+    return None
 
 

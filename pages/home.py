@@ -12,7 +12,7 @@ dash.register_page(
 SECTIONS = [
     {
         "title": "Country",
-        "path": "/country-overview#country",
+        "path": "/country-overview",
         "links": [
             ("Country Overview", "/country-overview"),
             ("Country Profile", "/country-profile"),
@@ -20,48 +20,48 @@ SECTIONS = [
     },
     {
         "title": "Crude",
-        "path": "/crude-overview#crude",
+        "path": "/crude-overview",
         "links": [
             ("Crude Overview", "/crude-overview"),
             ("Crude Profile", "/crude-profile"),
             ("Crude Comparison", "/crude-comparison"),
-            ("Crude Quality Comparison", "/crude-quality"),
+            ("Crude Quality Comparison", "/crude-quality-comparison"),
             ("Crude Carbon Intensity", "/crude-carbon"),
         ],
     },
     {
         "title": "Trade",
-        "path": "/imports-detail#trade",
+        "path": "/trade/imports-country-detail",
         "links": [
-            ("Imports - Country Detail", "/imports-detail"),
-            ("Imports - Country Comparison", "/imports-comparison"),
-            ("Global Exports", "/global-exports"),
-            ("Russian Exports by Terminal and Exporting Company", "/russian-exports"),
+            ("Imports - Country Detail", "/trade/imports-country-detail"),
+            ("Imports - Country Comparison", "/trade/imports-country-comparison"),
+            ("Global Exports", "/trade/global-exports"),
+            ("Russian Exports by Terminal and Exporting Company", "/trade/russian-exports"),
         ],
     },
     {
         "title": "Prices",
-        "path": "/global-prices#prices",
+        "path": "/prices/global-crude-prices",
         "links": [
-            ("Global Crude Prices", "/global-prices"),
-            ("Price Scorecard for Key World Oil Grades", "/price-scorecard"),
-            ("Gross Product Worth and Margins", "/gpw-margins"),
+            ("Global Crude Prices", "/prices/global-crude-prices"),
+            ("Price Scorecard for Key World Oil Grades", "/prices/price-scorecard"),
+            ("Gross Product Worth and Margins", "/prices/gross-product-worth-and-margins"),
         ],
     },
     {
         "title": "Upstream Projects",
-        "path": "/projects-by-country#upstream-projects",
+        "path": "/projects-by-country",
         "links": [
             ("Projects by Country", "/projects-by-country"),
             ("Projects by Company", "/projects-by-company"),
             ("Projects by Time", "/projects-by-time"),
             ("Projects by Status", "/projects-by-status"),
-            ("Latest Updates", "/projects-latest"),
+            ("Latest Updates", "/projects-latest"),           
         ],
     },
     {
         "title": "Methodology",
-        "path": "/projects-tracker#methodology",
+        "path": "/projects-tracker",
         "links": [
             ("Upstream Oil Projects Tracker", "/projects-tracker"),
             ("Carbon Intensity", "/projects-carbon"),

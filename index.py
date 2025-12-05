@@ -29,29 +29,51 @@ from pages import (
     projects_carbon,
 )
 
-PAGE_MODULES = [
-    home,
-    country_overview,
-    country_profile,
-    crude_overview,
-    crude_profile,
-    crude_comparison,
-    crude_quality,
-    crude_carbon,
-    imports_detail,
-    imports_comparison,
-    global_exports,
-    russian_exports,
-    global_prices,
-    price_scorecard,
-    gpw_margins,
-    projects_by_country,
-    projects_by_company,
-    projects_by_time,
-    projects_by_status,
-    projects_latest,
-    projects_tracker,
-    projects_carbon,
+# Import callback registrars (one per dashboard)
+from callbacks import (
+    country_overview_callbacks,
+    country_profile_callbacks,
+    crude_overview_callbacks,
+    crude_profile_callbacks,
+    crude_comparison_callbacks,
+    crude_carbon_callbacks,
+    imports_detail_callbacks,
+    imports_comparison_callbacks,
+    global_exports_callbacks,
+    russian_exports_callbacks,
+    global_prices_callbacks,
+    price_scorecard_callbacks,
+    gpw_margins_callbacks,
+    projects_by_country_callbacks,
+    projects_by_company_callbacks,
+    projects_by_time_callbacks,
+    projects_by_status_callbacks,
+    projects_latest_callbacks,
+    projects_tracker_callbacks,
+    projects_carbon_callbacks,
+)
+
+CALLBACK_REGISTRARS = [
+    country_overview_callbacks.register_callbacks,
+    country_profile_callbacks.register_callbacks,
+    crude_overview_callbacks.register_callbacks,
+    crude_profile_callbacks.register_callbacks,
+    crude_comparison_callbacks.register_callbacks,
+    crude_carbon_callbacks.register_callbacks,
+    imports_detail_callbacks.register_callbacks,
+    imports_comparison_callbacks.register_callbacks,
+    global_exports_callbacks.register_callbacks,
+    russian_exports_callbacks.register_callbacks,
+    global_prices_callbacks.register_callbacks,
+    price_scorecard_callbacks.register_callbacks,
+    gpw_margins_callbacks.register_callbacks,
+    projects_by_country_callbacks.register_callbacks,
+    projects_by_company_callbacks.register_callbacks,
+    projects_by_time_callbacks.register_callbacks,
+    projects_by_status_callbacks.register_callbacks,
+    projects_latest_callbacks.register_callbacks,
+    projects_tracker_callbacks.register_callbacks,
+    projects_carbon_callbacks.register_callbacks,
 ]
 
 _callbacks_initialized = False
@@ -63,10 +85,8 @@ def _init_callbacks():
     if _callbacks_initialized:
         return
 
-    for module in PAGE_MODULES:
-        init_fn = getattr(module, "init_callbacks", None)
-        if callable(init_fn):
-            init_fn(app_mod.app, app_mod.server)
+    for registrar in CALLBACK_REGISTRARS:
+        registrar(app_mod.app, app_mod.server)
 
     _callbacks_initialized = True
 

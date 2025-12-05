@@ -5,8 +5,8 @@ from app.dashboards.wcod import global_prices
 
 dash.register_page(
     __name__,
-    path="/global-prices",
-    name="Global Prices",
+    path="/prices/global-crude-prices",
+    name="Global Crude Prices",
 )
 
 
@@ -15,6 +15,7 @@ def layout():
 
 
 def init_callbacks(app, server):
-    global_prices.register_callbacks(app, server)
+    # Callbacks are registered via callbacks/global_prices_callbacks.py
+    return None
 
 

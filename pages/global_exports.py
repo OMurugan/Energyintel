@@ -5,7 +5,7 @@ from app.dashboards.wcod import global_exports
 
 dash.register_page(
     __name__,
-    path="/global-exports",
+    path="/trade/global-exports",
     name="Global Exports",
 )
 
@@ -15,6 +15,7 @@ def layout():
 
 
 def init_callbacks(app, server):
-    global_exports.register_callbacks(app, server)
+    # Callbacks are registered via callbacks/global_exports_callbacks.py
+    return None
 
 

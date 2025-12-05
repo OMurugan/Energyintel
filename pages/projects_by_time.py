@@ -15,6 +15,7 @@ def layout():
 
 
 def init_callbacks(app, server):
-    projects_by_time.register_callbacks(app, server)
+    # Callbacks are registered via callbacks/projects_by_time_callbacks.py
+    return None
 
 

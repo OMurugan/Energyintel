@@ -15,6 +15,7 @@ def layout():
 
 
 def init_callbacks(app, server):
-    country_overview.register_callbacks(app, server)
+    # Callbacks are registered via callbacks/country_overview_callbacks.py
+    return None
 
 

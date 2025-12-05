@@ -5,8 +5,8 @@ from app.dashboards.wcod import gpw_margins
 
 dash.register_page(
     __name__,
-    path="/gpw-margins",
-    name="GPW Margins",
+    path="/prices/gross-product-worth-and-margins",
+    name="Gross Product Worth and Margins",
 )
 
 
@@ -15,6 +15,7 @@ def layout():
 
 
 def init_callbacks(app, server):
-    gpw_margins.register_callbacks(app, server)
+    # Callbacks are registered via callbacks/gpw_margins_callbacks.py
+    return None
 
 
