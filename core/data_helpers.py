@@ -141,7 +141,7 @@ def execute_query(query, params=None):
                 result = connection.execute(text(query))
             
             # If it's a SELECT query, return rows
-            if query.strip().upper().startswith('SELECT'):
+            if query.strip().upper().startswith(('SELECT', 'WITH')):
                 columns = result.keys()
                 rows = result.fetchall()
                 return [dict(zip(columns, row)) for row in rows]
