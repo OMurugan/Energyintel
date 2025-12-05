@@ -1,6 +1,7 @@
 --extra-index-url https://data.energyintel.com/packages
 dash-design-kit==2.1.1
 dash==3.0.4
+dash-bootstrap-components==1.6.0
 gunicorn==23.0.0
 pandas>=1.1.5,<2.2.0
 psycopg2-binary==2.9.9
@@ -10,3 +11,4 @@ dash_enterprise_libraries==1.7.2
 python-dotenv==1.0.0
 plotly==5.18.0
 numpy==1.26.4
+setuptools<81
