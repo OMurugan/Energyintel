@@ -69,8 +69,8 @@ def load_projects_latest_data():
         fup.project_status AS status,
         fup.project_start_date AS start_date,
         fup.last_update_date AS update_date
-    FROM dev.fact_upstream_project_tracker fup
-    JOIN dev.dim_country dc ON fup.country_id = dc.dim_country_id
+    FROM fact_upstream_project_tracker fup
+    JOIN dim_country dc ON fup.country_id = dc.dim_country_id
     ORDER BY fup.last_update_date DESC
     LIMIT 50;
     """

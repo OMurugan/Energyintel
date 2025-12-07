@@ -32,8 +32,8 @@ def create_layout():
                 yr AS YearReported,
                 production_kbpd AS ProductionDataValue,
                 ci_rank
-            FROM dev.fact_wcod_crude A
-            LEFT JOIN dev.dim_country GRP 
+            FROM fact_wcod_crude A
+            LEFT JOIN dim_country GRP 
                 ON A.country_id = GRP.dim_country_id
         ) B
         WHERE B.ci_rank IS NOT NULL 
@@ -579,8 +579,8 @@ def load_carbon_data():
                 yr AS YearReported,
                 production_kbpd AS ProductionDataValue,
                 ci_rank
-            FROM dev.fact_wcod_crude A
-            LEFT JOIN dev.dim_country GRP 
+            FROM fact_wcod_crude A
+            LEFT JOIN dim_country GRP 
                 ON A.country_id = GRP.dim_country_id
         ) B
         WHERE B.ci_rank IS NOT NULL 

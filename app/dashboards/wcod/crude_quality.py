@@ -50,7 +50,7 @@ def load_crossplot_data():
             a.value AS "Value",
             a.unit,
             a.assay_yr AS "YearReported"
-        FROM dev.fact_wcod_assays a
+        FROM fact_wcod_assays a
         WHERE a.to_be_deleted IS NULL
           AND a.property IS NOT NULL
           AND a.value IS NOT NULL
@@ -69,7 +69,7 @@ def load_crossplot_data():
         FROM 
             (
                 SELECT *
-                FROM dev.fact_wcod_crude cr_dta
+                FROM fact_wcod_crude cr_dta
                 WHERE to_be_deleted IS NULL 
             ) prod_data
         LEFT JOIN 
@@ -77,7 +77,7 @@ def load_crossplot_data():
                 SELECT 
                     crude_name,
                     MAX(yr) AS max_yr
-                FROM dev.fact_wcod_crude
+                FROM fact_wcod_crude
                 WHERE to_be_deleted IS NULL 
                 GROUP BY crude_name
             ) max_yr_crude
@@ -85,7 +85,7 @@ def load_crossplot_data():
         WHERE prod_data.yr = max_yr_crude.max_yr
           AND prod_data.production_kbpd IS NOT NULL
     ) AS core_data
-    LEFT JOIN dev.dim_country ctry
+    LEFT JOIN dim_country ctry
         ON ctry.dim_country_id = core_data.country_id
     """
     

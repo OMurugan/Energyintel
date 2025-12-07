@@ -748,60 +748,51 @@ def create_world_map(selected_country=None):
                 marker_line_color='rgba(0,0,0,0)'
             ))
         
-            # Create lists for port data
-            port_lats = []
-            port_lons = []
-            port_names = []
-            port_values = []
-            # port_symbols = []  # List to store symbols for each port
-            custom_data_list = []
-            
+            # Bucket ports by symbol to ensure reliable rendering per symbol type
+            ports_by_symbol = {}
             for _, port_row in port_data.iterrows():
-                port_lats.append(port_row['latitude'])
-                port_lons.append(port_row['longitude'])
-                port_names.append(port_row['Port Name'])  # Fixed column name
-                port_values.append(port_row['port_value'])
-                
-                # Determine symbol based on port_value
                 port_value = port_row['port_value']
-                print(f"DEBUG: port_name: {port_row['Port Name']}, port_value: {port_value}")
+                # Map symbol and a modest size so markers don't overwhelm the map
                 if port_value == 171:
-                    symbol = 'circle'
+                    symbol, marker_size = 'circle', 16
                 elif port_value == 513:
-                    symbol = 'cross'
+                    # Use reliable built-in 'hospital' icon for cross-like marker
+                    symbol, marker_size = 'hospital', 16
                 elif port_value == 342:
-                    print(f"DEBUG: port_value: {port_value}, symbol: square")
-                    symbol = 'square'
+                    symbol, marker_size = 'square', 16
                 else:
-                    symbol = 'circle'
-                # port_symbols.append(symbol)
-                
-                # Create profile URL for customdata
-                profile_url = f"/wcod/country-profile?country={port_row['country_long_name']}"
-                custom_data_list.append([profile_url])
+                    symbol, marker_size = 'circle', 16
 
-            if port_lats: # Only add trace if there are ports to display
-                # Add Scattermapbox (ports) last to ensure visibility
-                fig.add_trace(go.Scattermapbox(
-                    lat=port_lats,          # ✅ PORT LATITUDE
-                    lon=port_lons,         # ✅ PORT LONGITUDE
-                    mode='markers',              # ✅ THIS DRAWS SYMBOLS
-                    marker=dict(
-                        size=18,  # Use port_value for size
-                        color='#fe5000', # Revert to original orange-red color
-                        opacity=0.9, # Set opacity to 0.9
-                        symbol=symbol # Use list of symbols for each port
-                    ),
-                    text=port_names,
-                    customdata=custom_data_list, # Use collected profile URLs
-                    hovertemplate="""
-                        <b>Port Name:</b> %{text}
-                        <extra></extra>
-                    """, # Updated hovertemplate from ChatGPT
-                    showlegend=False
-                ))
-            else:
-                pass # No print needed for no ports
+                bucket = ports_by_symbol.setdefault(symbol, {"lat": [], "lon": [], "name": [], "size": [], "custom": []})
+                bucket["lat"].append(port_row['latitude'])
+                bucket["lon"].append(port_row['longitude'])
+                bucket["name"].append(port_row['Port Name'])
+                bucket["size"].append(marker_size)
+                profile_url = f"/wcod/country-profile?country={port_row['country_long_name']}"
+                bucket["custom"].append([profile_url])
+
+            if ports_by_symbol:
+                # Add one trace per symbol to avoid per-point symbol issues
+                for symbol_key, data_bucket in ports_by_symbol.items():
+                    fig.add_trace(go.Scattermapbox(
+                        lat=data_bucket["lat"],
+                        lon=data_bucket["lon"],
+                        mode='markers',
+                        marker=dict(
+                            size=data_bucket["size"],
+                            color='#fe5000',
+                            opacity=0.9,
+                            symbol=symbol_key
+                        ),
+                        text=data_bucket["name"],
+                        customdata=data_bucket["custom"],
+                        hovertemplate="""
+                            <b>Port Name:</b> %{text}
+                            <extra></extra>
+                        """,
+                        showlegend=False
+                    ))
+            # If no ports, do nothing
         
         # Add country name label for the selected country (if selected_country is not None)
         # Ensure this trace is only added when selected_country is present
