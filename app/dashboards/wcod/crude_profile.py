@@ -579,8 +579,8 @@ def load_production_exports(crude_value: str | None = None):
             a.ci_rank,
             a.sellers,
 	        a.producers
-        FROM dev.fact_wcod_crude a
-        LEFT JOIN dev.dim_country grp 
+        FROM fact_wcod_crude a
+        LEFT JOIN dim_country grp 
                ON a.country_id = grp.dim_country_id
         WHERE a.ci_rank IS NOT NULL 
           AND a.crude_name = :crude_name
@@ -629,8 +629,8 @@ def load_port_details(crude_value: str | None = None):
             a.port_name AS "PortName",
             a.measure_name,
             a.value
-        FROM dev.fact_wcod_port a
-        LEFT JOIN dev.dim_crude b 
+        FROM fact_wcod_port a
+        LEFT JOIN dim_crude b 
                ON a.crude_id = b.dim_crude_id
         WHERE b.crude_name = :crude_name
     """
@@ -683,10 +683,10 @@ def load_loading_ports(crude_value: str | None = None):
             b.crude_name AS "Crude",
             a.latitude,
             a.longitude
-        FROM dev.fact_wcod_port a
-        LEFT JOIN dev.dim_crude b 
+        FROM fact_wcod_port a
+        LEFT JOIN dim_crude b 
                ON a.crude_id = b.dim_crude_id
-        LEFT JOIN dev.dim_country c 
+        LEFT JOIN dim_country c 
                ON a.country_id = c.dim_country_id
         WHERE b.crude_name = :crude_name
     """
@@ -723,7 +723,7 @@ def load_producers_sellers(crude_value: str | None = None):
         SELECT
             a.sellers,
             a.producers
-        FROM dev.fact_wcod_crude a
+        FROM fact_wcod_crude a
         WHERE a.ci_rank IS NOT NULL 
           AND a.crude_name = :crude_name
         ORDER BY a.yr
