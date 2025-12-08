@@ -91,6 +91,19 @@ def _init_callbacks():
     _callbacks_initialized = True
 
 
+def _page_href(page: dict) -> str:
+    """Return a link href that respects the configured routes prefix."""
+    relative = page.get("relative_path")
+    if relative:
+        return relative
+
+    prefix = getattr(app_mod, "ROUTES_PREFIX", "") or ""
+    path = page["path"]
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return f"{prefix}{path.lstrip('/')}" if prefix else path
+
+
 def _build_nav_links():
     """Generate navigation links from Dash page registry."""
     links = []
@@ -98,7 +111,7 @@ def _build_nav_links():
         links.append(
             dcc.Link(
                 page["name"],
-                href=page["path"],
+                href=_page_href(page),
                 className="nav-link",
                 refresh=True,  # force full navigation to avoid history.pushState issues in embeds
                 style={"padding": "8px 12px", "textDecoration": "none"},
