@@ -2692,18 +2692,7 @@ def register_callbacks(dash_app, server):
 # ------------------------------------------------------------------------------
 # DASH APP CREATION
 # ------------------------------------------------------------------------------
-def create_crude_overview_dashboard(server, url_base_pathname="/dash/crude-overview/"):
+def create_crude_overview_dashboard(dash_app, server, url_base_pathname="/dash/crude-overview/"):
     """Create the Crude Overview dashboard"""
-    dash_app = dash.Dash(
-        __name__,
-        server=server,
-        url_base_pathname=url_base_pathname,
-        external_stylesheets=[
-            'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
-            'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
-        ],
-        suppress_callback_exceptions=True
-    )
-    dash_app.layout = create_layout(server)
+    dash_app.layout = create_layout()
     register_callbacks(dash_app, server)
-    return dash_app

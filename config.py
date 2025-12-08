@@ -41,7 +41,7 @@ class Config:
     CACHE_DEFAULT_TIMEOUT = 300
     
     # Dash configuration
-    DASH_ROUTES_PATHNAME_PREFIX = '/dash/'
+    DASH_ROUTES_PATHNAME_PREFIX = os.environ.get('DASH_ROUTES_PATHNAME_PREFIX', '')
     
     # Application settings
     DEBUG = os.environ.get('DASH_DEBUG', 'False').lower() == 'true'

@@ -78,8 +78,8 @@ def load_projects_by_company_data():
     SELECT
         dc.company_name AS name,
         COUNT(fup.project_id) AS project_count
-    FROM dev.dim_company dc
-    JOIN dev.fact_upstream_project_tracker fup ON dc.company_id = fup.operator_id
+    FROM dim_company dc
+    JOIN fact_upstream_project_tracker fup ON dc.company_id = fup.operator_id
     GROUP BY dc.company_id, dc.company_name
     ORDER BY COUNT(fup.project_id) DESC
     LIMIT 20;
