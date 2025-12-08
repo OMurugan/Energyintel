@@ -9,6 +9,8 @@ import pandas as pd
 import os
 import re
 import json
+from core.data_helpers import execute_query
+import traceback
 
 
 def load_treemap_data():
@@ -33,22 +35,160 @@ def load_treemap_data():
 
 
 def load_table_data():
-    """Load project details table data from CSV"""
-    csv_path = os.path.join(
-        os.path.dirname(__file__), '..', 'data', 'project_by_status',
-        'Projects by Status_Table_data.csv'
-    )
-    
-    if not os.path.exists(csv_path):
-        print(f"ERROR: CSV file not found at {csv_path}")
-        return pd.DataFrame()
-    
+    """Load project details table data from database query (fallback to empty DataFrame)."""
     try:
-        df = pd.read_csv(csv_path, encoding='utf-8')
-        df.columns = df.columns.str.strip()
+        query = """
+        SELECT
+            a.project_name AS "Project Name",
+            a.likely_goahead,
+            c.country_long_name AS Country,
+            c.region AS Region,
+            CASE
+                WHEN c.opec_grp = 'opec' OR c.opec_grp = 'opec_plus' THEN 'Opec-Plus'
+                ELSE 'Non-Opec-Plus'
+            END AS Opec_group,
+            a.field_type,
+            a.field,
+            a.play_type,
+            a.hydrocarbon AS Hydrocarbon,
+            cr.crude_name AS "Associated Crude",
+            a.depth AS Depth,
+            op.company_name AS Operator,
+            p1.company_name AS Partner1,
+            p2.company_name AS Partner2,
+            p3.company_name AS Partner3,
+            p4.company_name AS Partner4,
+            p5.company_name AS Partner5,
+            yr.year AS "First Oil Year",
+            a.sanctioned AS Sanctioned,
+            a.external_comments AS Comments,
+            a.project_status AS "Project Status",
+            a.reserves_gas_mmboe AS "Gas Reserves (mmboe)",
+            a.reserves_liquids_mmbbl AS "Liquids Reserves (mmbbl)",
+            (
+                COALESCE(
+                    NULLIF(SPLIT_PART(a.reserves_gas_mmboe, '-', 1), '')::numeric,
+                    0
+                )
+                +
+                COALESCE(
+                    NULLIF(SPLIT_PART(a.reserves_liquids_mmbbl, '-', 1), '')::numeric,
+                    0
+                )
+            ) AS "Total Reserves (mmboe)",
+            a.api_cat AS API,
+            a.sulfur_cat AS Sulfur,
+            a.operator_pc AS "Operator Share %",
+            a.partner1_pc AS "Partner1 Share %",
+            a.partner2_pc AS "Partner2 Share %",
+            a.partner3_pc AS "Partner3 Share %",
+            a.partner4_pc AS "Partner4 Share %",
+            a.partner5_pc AS "Partner5 Share %",
+            est."2024_Q1",
+            est."2024_Q2",
+            est."2024_Q3",
+            est."2024_Q4",
+            est."2025_Q1",
+            est."2025_Q2",
+            est."2025_Q3",
+            est."2025_Q4",
+            est."2026_Q1",
+            est."2026_Q2",
+            est."2026_Q3",
+            est."2026_Q4",
+            est."2027_Q1",
+            est."2027_Q2",
+            est."2027_Q3",
+            est."2027_Q4",
+            est."2028_Q1",
+            est."2028_Q2",
+            est."2028_Q3",
+            est."2028_Q4",
+            est."2029_Q1",
+            est."2029_Q2",
+            est."2029_Q3",
+            est."2029_Q4"
+        FROM dev.fact_upstream_project_tracker a
+        LEFT JOIN dev.fact_upstream_tracker_prod_estimates est 
+            ON a.project_id = est.project_id
+        LEFT JOIN dev.dim_country c 
+            ON a.country_id = c.dim_country_id
+        LEFT JOIN dev.dim_company op 
+            ON a.operator_id = op.company_id
+        LEFT JOIN dev.dim_company p1 
+            ON a.partner1_id = p1.company_id
+        LEFT JOIN dev.dim_company p2 
+            ON a.partner2_id = p2.company_id
+        LEFT JOIN dev.dim_company p3 
+            ON a.partner3_id = p3.company_id
+        LEFT JOIN dev.dim_company p4 
+            ON a.partner4_id = p4.company_id
+        LEFT JOIN dev.dim_company p5 
+            ON a.partner5_id = p5.company_id
+        LEFT JOIN (
+            SELECT 
+                project_id,
+                MIN(EXTRACT(YEAR FROM period)) AS year
+            FROM dev.fact_upstream_tracker_prod_estimates_incremental
+            WHERE value IS NOT NULL 
+            GROUP BY project_id
+        ) yr ON yr.project_id = a.project_id
+        LEFT JOIN dev.dim_crude cr 
+            ON cr.dim_crude_id = a.crude_id
+        WHERE a.include = TRUE
+        ORDER BY a.project_name;
+        """
+
+        results = execute_query(query)
+        if not results:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(results)
+        column_mapping = {
+            'Country': 'Country',
+            'country': 'Country',
+            'Region': 'Region',
+            'region': 'Region',
+            'Opec_group': 'Opec_group',
+            'opec_group': 'Opec_group',
+            'field_type': 'field_type',
+            'Field Type': 'field_type',
+            'field': 'field',
+            'Field': 'field',
+            'play_type': 'play_type',
+            'Play Type': 'play_type',
+            'hydrocarbon': 'Hydrocarbon',
+            'Hydrocarbon': 'Hydrocarbon',
+            'depth': 'Depth',
+            'Depth': 'Depth',
+            'operator': 'Operator',
+            'Operator': 'Operator',
+            'partner1': 'Partner1',
+            'Partner1': 'Partner1',
+            'partner2': 'Partner2',
+            'Partner2': 'Partner2',
+            'partner3': 'Partner3',
+            'Partner3': 'Partner3',
+            'partner4': 'Partner4',
+            'Partner4': 'Partner4',
+            'partner5': 'Partner5',
+            'Partner5': 'Partner5',
+            'sanctioned': 'Sanctioned',
+            'Sanctioned': 'Sanctioned',
+            'comments': 'Comments',
+            'Comments': 'Comments',
+            'api': 'API',
+            'API': 'API',
+            'sulfur': 'Sulfur',
+            'Sulfur': 'Sulfur',
+            'likely_goahead': 'likely_goahead'
+        }
+
+        df = df.rename(columns=column_mapping)
+        df = df.fillna('')
         return df
     except Exception as e:
-        print(f"ERROR loading table data: {e}")
+        traceback.print_exc()
         return pd.DataFrame()
 
 
@@ -103,47 +243,64 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
     
     # Apply likely filter by joining with table data if available
     if likely_filter and table_df is not None:
-        # Handle checklist - filter out 'ALL' if present with other values
+        # Normalize checklist selection (handle 'All' sentinel)
         if isinstance(likely_filter, list):
-            # Remove 'ALL' if other values are selected
-            if 'ALL' in likely_filter and len(likely_filter) > 1:
-                likely_filter = [v for v in likely_filter if v != 'ALL']
-            # If only 'ALL' is selected or empty list, show all (no filtering)
-            if not likely_filter or (len(likely_filter) == 1 and likely_filter[0] == 'ALL'):
+            if 'All' in likely_filter and len(likely_filter) > 1:
+                likely_filter = [v for v in likely_filter if v != 'All']
+            if not likely_filter or (len(likely_filter) == 1 and likely_filter[0] == 'All'):
                 likely_filter = None
-        
-        if likely_filter and "Likely Go-ahead" in table_df.columns:
-            # Get projects matching any of the selected filter values
-            # Handle empty string for blank values
-            mask = table_df["Likely Go-ahead"].isin(likely_filter)
-            if '' in likely_filter:
-                mask = mask | table_df["Likely Go-ahead"].isna() | (table_df["Likely Go-ahead"].astype(str).str.strip() == '')
-            matching_projects = table_df[mask]
-            
-            # If we can match by project name or other fields, filter the treemap data
-            # For now, the treemap data doesn't have project names, so we'll filter based on
-            # Region, Play Type, and Project Status combination
-            if not matching_projects.empty:
-                # Create a set of unique combinations from matching projects
-                matching_combos = set()
-                for _, row in matching_projects.iterrows():
-                    combo = (
-                        row.get("Region", ""),
-                        row.get("Play Type", ""),
-                        row.get("Project Status", "")
-                    )
-                    matching_combos.add(combo)
-                
-                # Filter treemap data to only include matching combinations
-                def matches_combo(row):
-                    combo = (
-                        str(row.get("Region", "")),
-                        str(row.get("Play Type", "")),
-                        str(row.get("Project Status", ""))
-                    )
-                    return combo in matching_combos
-                
-                filtered_df = filtered_df[filtered_df.apply(matches_combo, axis=1)]
+
+        if likely_filter is not None:
+            # Find likely column name in table (flexible matching)
+            likely_col = None
+            for col in table_df.columns:
+                col_lower = col.lower()
+                if 'likely' in col_lower and ('go' in col_lower or 'ahead' in col_lower):
+                    likely_col = col
+                    break
+
+            if likely_col is not None:
+                col_upper = table_df[likely_col].astype(str).str.upper()
+                # Build mask from selected filter values (support 'Yes'/'Y', 'No'/'N', 'Uncertain', blank)
+                selected_values = likely_filter if isinstance(likely_filter, list) else [likely_filter]
+                mask = pd.Series(False, index=col_upper.index)
+                for v in selected_values:
+                    v_str = str(v).strip()
+                    v_up = v_str.upper()
+                    if v_up == 'ALL' or v == 'All':
+                        mask |= pd.Series(True, index=col_upper.index)
+                    elif v_up == '' or v_str.lower() == 'blank':
+                        mask |= (col_upper == '')
+                    elif v_up.startswith('Y') or v_up == 'YES':
+                        mask |= col_upper.str.startswith('Y')
+                    elif v_up.startswith('N'):
+                        mask |= col_upper.str.startswith('N')
+                    elif v_up.startswith('UNCERT') or v_up.startswith('U'):
+                        mask |= col_upper.str.startswith('U')
+
+                matching_projects = table_df[mask]
+
+                if not matching_projects.empty:
+                    # Create a set of unique combinations from matching projects
+                    matching_combos = set()
+                    for _, row in matching_projects.iterrows():
+                        combo = (
+                            row.get("Region", ""),
+                            row.get("Play Type", ""),
+                            row.get("Project Status", "")
+                        )
+                        matching_combos.add(combo)
+
+                    # Filter treemap data to only include matching combinations
+                    def matches_combo(row):
+                        combo = (
+                            str(row.get("Region", "")),
+                            str(row.get("Play Type", "")),
+                            str(row.get("Project Status", ""))
+                        )
+                        return combo in matching_combos
+
+                    filtered_df = filtered_df[filtered_df.apply(matches_combo, axis=1)]
     
     if filtered_df.empty:
         fig = go.Figure()
@@ -466,13 +623,13 @@ def create_layout():
                     dcc.Checklist(
                         id='projects-status-likely-filter',
                         options=[
-                            {'label': 'ALL', 'value': 'ALL'},
-                            {'label': 'blank', 'value': ''},
+                            {'label': '(All)', 'value': 'All'},
+                            {'label': ' ', 'value': ''},
                             {'label': 'N', 'value': 'N'},
                             {'label': 'Uncertain', 'value': 'Uncertain'},
-                            {'label': 'Yes', 'value': 'Yes'}
+                            {'label': 'Y', 'value': 'Y'}
                         ],
-                        value=['Yes'],  # Default to 'Yes' only
+                        value=['Y'],  # Default to 'Y' only
                         style={
                             'fontSize': '12px',
                             'fontFamily': 'Arial, sans-serif'
@@ -480,6 +637,8 @@ def create_layout():
                         inputStyle={'marginRight': '8px', 'marginLeft': '0px'},
                         labelStyle={'display': 'block', 'marginBottom': '6px', 'cursor': 'pointer'}
                     )
+                    ,
+                    dcc.Store(id='projects-status-likely-filter-previous', data=['Y'])
                 ], style={'marginBottom': '25px', 'padding': '15px', 'border': '1px solid #e0e0e0', 'borderRadius': '5px', 'backgroundColor': '#fafafa'})
             ], style={'width': '25%', 'float': 'right', 'paddingLeft': '20px'}),
             
@@ -509,6 +668,56 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register all callbacks for Projects by Status"""
     
+    @dash_app.callback(
+        [Output('projects-status-likely-filter', 'value'),
+         Output('projects-status-likely-filter-previous', 'data')],
+        Input('projects-status-likely-filter', 'value'),
+        State('projects-status-likely-filter-previous', 'data'),
+        prevent_initial_call=False
+    )
+    def manage_all_checkbox(selected_values, previous_values):
+        """Handle (All) checkbox behavior for the Likely-to-Go-Ahead filter"""
+        if selected_values is None:
+            return [], []
+        
+        if not isinstance(selected_values, list):
+            selected_values = [selected_values] if selected_values else []
+        
+        all_options = ['All', 'N', 'Uncertain', 'Y', '']
+        individual_options = ['N', 'Uncertain', 'Y', '']
+        if previous_values is None:
+            previous_values = []
+        if not isinstance(previous_values, list):
+            previous_values = [previous_values] if previous_values else []
+        
+        was_all_selected = 'All' in previous_values
+        is_all_selected = 'All' in selected_values
+        prev_individual = [opt for opt in previous_values if opt in individual_options]
+        curr_individual = [opt for opt in selected_values if opt in individual_options]
+        
+        if not was_all_selected and is_all_selected:
+            return all_options, all_options
+        
+        if was_all_selected and not is_all_selected:
+            return [], []
+        
+        if was_all_selected and is_all_selected and prev_individual != curr_individual:
+            if len(curr_individual) < len(prev_individual):
+                return curr_individual, curr_individual
+            elif len(curr_individual) == len(individual_options):
+                return all_options, all_options
+        
+        if is_all_selected:
+            return all_options, all_options
+        
+        selected_individual = [opt for opt in selected_values if opt in individual_options]
+        
+        if len(selected_individual) == len(individual_options):
+            return all_options, all_options
+        
+        final_return_values = selected_individual if len(selected_individual) > 0 else (all_options if is_all_selected else [])
+        return final_return_values, final_return_values
+
     # Callback to update region filter options when page loads
     @dash_app.callback(
         [Output('projects-status-region-filter', 'options'),
@@ -576,12 +785,7 @@ def register_callbacks(dash_app, server):
                     if preserved_value[0] != 'Africa':
                         preserved_value.remove('Africa')
                         preserved_value.insert(0, 'Africa')
-                    print(f"DEBUG: update_region_filter_options - Preserving existing filter value with Africa: {preserved_value}")
                     return options, preserved_value, regions, True
-            
-            print(f"DEBUG: update_region_filter_options - Initial load - default_value: {default_value}")
-            print(f"DEBUG: update_region_filter_options - Africa in default_value: {'Africa' in default_value}")
-            
             # Mark as initialized to prevent future overwrites
             return options, default_value, regions, True
         else:
@@ -590,7 +794,6 @@ def register_callbacks(dash_app, server):
             if current_filter_value is None or (isinstance(current_filter_value, list) and len(current_filter_value) == 0):
                 # CRITICAL: If filter value is None or empty after initialization, 
                 # it means something reset it - restore all regions including Africa
-                print(f"DEBUG: update_region_filter_options - Filter value was None/empty after init! Restoring all regions.")
                 restored_value = []
                 for region in REGION_ORDER:
                     if region in regions:
@@ -604,7 +807,6 @@ def register_callbacks(dash_app, server):
                 elif 'Africa' in restored_value and restored_value[0] != 'Africa':
                     restored_value.remove('Africa')
                     restored_value.insert(0, 'Africa')
-                print(f"DEBUG: update_region_filter_options - Restored value: {restored_value}")
                 return options, restored_value, regions, dash.no_update
             
             # Already initialized: NEVER overwrite the filter value
@@ -667,14 +869,12 @@ def register_callbacks(dash_app, server):
     )
     def toggle_region_filter(n_clicks_list, current_values, all_regions):
         """Toggle Region filter when legend items are clicked"""
-        print(f"DEBUG: all_regions001: {all_regions}")
         if current_values is None:
             current_values = all_regions if all_regions else []
         
         ctx = dash.callback_context
         if not ctx.triggered:
             return current_values
-        print(f"DEBUG: current_values: {current_values}")
         trigger_id = ctx.triggered[0]['prop_id']
         # Extract region name from the pattern component ID
         if 'index' in trigger_id:
@@ -774,15 +974,7 @@ def register_callbacks(dash_app, server):
          Input('current-submenu', 'data')],
         prevent_initial_call=False
     )
-    def update_treemap(region_filter, likely_filter, current_submenu):
-        """Update treemap based on filters - only loads data when page is active"""
-        print(f"DEBUG: update_treemap - region_filter: {region_filter}")
-        print(f"DEBUG: update_treemap - region_filter type: {type(region_filter)}")
-        if isinstance(region_filter, list):
-            print(f"DEBUG: update_treemap - region_filter length: {len(region_filter)}")
-            print(f"DEBUG: update_treemap - Africa in region_filter: {'Africa' in region_filter}")
-        
-        # Only load data if this page is currently active
+    def update_treemap(region_filter, likely_filter, current_submenu):        
         if current_submenu != 'projects-status':
             # Return empty figure if page is not active
             fig = go.Figure()
@@ -809,15 +1001,10 @@ def register_callbacks(dash_app, server):
                 remaining_all = [r for r in all_regions if r not in REGION_ORDER]
                 ordered_all.extend(sorted(remaining_all))
                 region_filter = ordered_all
-                print(f"DEBUG: update_treemap - region_filter was None/empty, set to all regions: {region_filter}")
-        # If region_filter is a non-empty list, use it as-is (respect user's selection)
-        # DO NOT automatically add Africa back - let users control the filter
-        
+
         df = load_treemap_data()
         table_df = load_table_data()
-        # Get unique projects (remove duplicate rows for same project)
         if not table_df.empty and "Project Name" in table_df.columns:
-            # Keep only first occurrence of each project
             table_df_unique = table_df.drop_duplicates(subset=["Project Name"], keep='first')
         else:
             table_df_unique = table_df
@@ -846,6 +1033,13 @@ def register_callbacks(dash_app, server):
         kpi_df = load_kpi_data()
         treemap_df = load_treemap_data()
         table_df = load_table_data()
+            
+        # If the user has explicitly unchecked all Likely-to-Go-Ahead options
+        # (i.e., the checklist value is an empty list), hide both KPI and details table.
+        if isinstance(likely_filter, list) and len(likely_filter) == 0:
+            empty_kpi = html.Div("", style={'display': 'none'})
+            empty_table = html.Div("", style={'display': 'none'})
+            return empty_kpi, empty_table
         
         # Calculate KPI data based on region filter and likely filter
         filtered_treemap = treemap_df.copy()
@@ -860,45 +1054,62 @@ def register_callbacks(dash_app, server):
         
         # Apply likely filter to treemap for KPI calculation
         if likely_filter:
-            # Handle checklist - filter out 'ALL' if present with other values
+        # Normalize selection and handle 'All' sentinel
             filter_values = likely_filter
             if isinstance(likely_filter, list):
-                # Remove 'ALL' if other values are selected
-                if 'ALL' in likely_filter and len(likely_filter) > 1:
-                    filter_values = [v for v in likely_filter if v != 'ALL']
-                # If only 'ALL' is selected or empty list, show all (no filtering)
-                elif not likely_filter or (len(likely_filter) == 1 and likely_filter[0] == 'ALL'):
+                if 'All' in likely_filter and len(likely_filter) > 1:
+                    filter_values = [v for v in likely_filter if v != 'All']
+                if not likely_filter or (len(likely_filter) == 1 and likely_filter[0] == 'All'):
                     filter_values = None
-            
-            if filter_values and "Likely Go-ahead" in table_df.columns:
-                # Get projects matching any of the selected filter values
-                # Handle empty string for blank values
-                mask = table_df["Likely Go-ahead"].isin(filter_values)
-                if '' in filter_values:
-                    mask = mask | table_df["Likely Go-ahead"].isna() | (table_df["Likely Go-ahead"].astype(str).str.strip() == '')
-                matching_projects = table_df[mask]
-                
-                if not matching_projects.empty:
-                    # Create matching combinations
-                    matching_combos = set()
-                    for _, row in matching_projects.iterrows():
-                        combo = (
-                            row.get("Region", ""),
-                            row.get("Play Type", ""),
-                            row.get("Project Status", "")
-                        )
-                        matching_combos.add(combo)
-                    
-                    # Filter treemap data
-                    def matches_combo(row):
-                        combo = (
-                            str(row.get("Region", "")),
-                            str(row.get("Play Type", "")),
-                            str(row.get("Project Status", ""))
-                        )
-                        return combo in matching_combos
-                    
-                    filtered_treemap = filtered_treemap[filtered_treemap.apply(matches_combo, axis=1)]
+
+            if filter_values is not None:
+                # Find likely column name in table (flexible matching)
+                likely_col = None
+                for col in table_df.columns:
+                    col_lower = col.lower()
+                    if 'likely' in col_lower and ('go' in col_lower or 'ahead' in col_lower):
+                        likely_col = col
+                        break
+
+                if likely_col is not None:
+                    col_upper = table_df[likely_col].astype(str).str.upper()
+                    selected_values = filter_values if isinstance(filter_values, list) else [filter_values]
+                    mask = pd.Series(False, index=col_upper.index)
+                    for v in selected_values:
+                        v_str = str(v).strip()
+                        v_up = v_str.upper()
+                        if v_up == 'ALL' or v == 'All':
+                            mask |= pd.Series(True, index=col_upper.index)
+                        elif v_up == '' or v_str.lower() == 'blank':
+                            mask |= (col_upper == '')
+                        elif v_up.startswith('Y') or v_up == 'YES':
+                            mask |= col_upper.str.startswith('Y')
+                        elif v_up.startswith('N'):
+                            mask |= col_upper.str.startswith('N')
+                        elif v_up.startswith('UNCERT') or v_up.startswith('U'):
+                            mask |= col_upper.str.startswith('U')
+
+                    matching_projects = table_df[mask]
+
+                    if not matching_projects.empty:
+                        matching_combos = set()
+                        for _, row in matching_projects.iterrows():
+                            combo = (
+                                row.get("Region", ""),
+                                row.get("Play Type", ""),
+                                row.get("Project Status", "")
+                            )
+                            matching_combos.add(combo)
+
+                        def matches_combo(row):
+                            combo = (
+                                str(row.get("Region", "")),
+                                str(row.get("Play Type", "")),
+                                str(row.get("Project Status", ""))
+                            )
+                            return combo in matching_combos
+
+                        filtered_treemap = filtered_treemap[filtered_treemap.apply(matches_combo, axis=1)]
         
         # Calculate KPIs from filtered treemap
         if not filtered_treemap.empty:
@@ -945,25 +1156,43 @@ def register_callbacks(dash_app, server):
                 if "Region" in filtered_table.columns:
                     filtered_table = filtered_table[filtered_table["Region"] == region_filter]
         
-        # Apply likely filter to table
+        # Apply likely filter to table (inclusive: selections are ORed)
         if likely_filter:
-            # Handle checklist - filter out 'ALL' if present with other values
             filter_values = likely_filter
             if isinstance(likely_filter, list):
-                # Remove 'ALL' if other values are selected
-                if 'ALL' in likely_filter and len(likely_filter) > 1:
-                    filter_values = [v for v in likely_filter if v != 'ALL']
-                # If only 'ALL' is selected or empty list, show all (no filtering)
-                elif not likely_filter or (len(likely_filter) == 1 and likely_filter[0] == 'ALL'):
+                if 'All' in likely_filter and len(likely_filter) > 1:
+                    filter_values = [v for v in likely_filter if v != 'All']
+                if not likely_filter or (len(likely_filter) == 1 and likely_filter[0] == 'All'):
                     filter_values = None
-            
-            if filter_values and "Likely Go-ahead" in filtered_table.columns:
-                # Filter by any of the selected values, handling empty strings for blank
-                mask = filtered_table["Likely Go-ahead"].isin(filter_values)
-                # Also include rows where Likely Go-ahead is NaN or empty string if '' is in filter
-                if '' in filter_values:
-                    mask = mask | filtered_table["Likely Go-ahead"].isna() | (filtered_table["Likely Go-ahead"].astype(str).str.strip() == '')
-                filtered_table = filtered_table[mask]
+
+            if filter_values is not None:
+                # Find likely column name in table (flexible matching)
+                likely_col = None
+                for col in filtered_table.columns:
+                    col_lower = col.lower()
+                    if 'likely' in col_lower and ('go' in col_lower or 'ahead' in col_lower):
+                        likely_col = col
+                        break
+
+                if likely_col is not None:
+                    col_upper = filtered_table[likely_col].astype(str).str.upper()
+                    selected_values = filter_values if isinstance(filter_values, list) else [filter_values]
+                    mask = pd.Series(False, index=col_upper.index)
+                    for v in selected_values:
+                        v_str = str(v).strip()
+                        v_up = v_str.upper()
+                        if v_up == 'ALL' or v == 'All':
+                            mask |= pd.Series(True, index=col_upper.index)
+                        elif v_up == '' or v_str.lower() == 'blank':
+                            mask |= (col_upper == '')
+                        elif v_up.startswith('Y') or v_up == 'YES':
+                            mask |= col_upper.str.startswith('Y')
+                        elif v_up.startswith('N'):
+                            mask |= col_upper.str.startswith('N')
+                        elif v_up.startswith('UNCERT') or v_up.startswith('U'):
+                            mask |= col_upper.str.startswith('U')
+
+                    filtered_table = filtered_table[mask]
         
         # Check if a Project Status block was clicked
         clicked_project_status = None
@@ -1044,6 +1273,21 @@ def register_callbacks(dash_app, server):
             # This is the default table shown when no Project Status block is clicked
             kpi_table = create_kpi_table(filtered_kpi)
         
+        # Normalize Likely Go-ahead and Sanctioned columns for display (Y->Yes, N->No)
+        def _map_bool_display(series):
+            return series.astype(str).str.strip().apply(
+                lambda x: 'Yes' if str(x).strip().upper().startswith('Y') or str(x).strip().lower() == 'true'
+                else ('No' if str(x).strip().upper().startswith('N') or str(x).strip().lower() == 'false' else x)
+            )
+
+        if filtered_table is not None and not filtered_table.empty:
+            for col in filtered_table.columns:
+                col_lower = col.lower()
+                if 'likely' in col_lower and ('go' in col_lower or 'ahead' in col_lower):
+                    filtered_table[col] = _map_bool_display(filtered_table[col])
+                if col_lower == 'sanctioned':
+                    filtered_table[col] = _map_bool_display(filtered_table[col])
+
         # Create project details table
         details_table = create_project_details_table(filtered_table)
         
@@ -1247,59 +1491,144 @@ def create_project_details_table(df):
         if col not in df.columns:
             df[col] = None
     
-    # Prepare table data with ALL rows (no limit)
+    # Preserve full comments for tooltips, but shorten comments in the displayed table
+    if 'Comments' in df.columns:
+        original_comments = df['Comments'].copy()
+        df['Comments'] = df['Comments'].astype(str).apply(lambda x: (x[:10] + '...') if len(str(x)) > 10 else x)
+    else:
+        original_comments = pd.Series([''] * len(df))
+
+    # Prepare table data with ALL rows (no limit) from the modified (truncated) dataframe
     table_data = df[all_columns].to_dict('records')
-    
-    # Create columns configuration
-    columns = [{"name": col, "id": col} for col in all_columns]
-    
+
+    # Build display name mapping and column widths to match projects_by_time.py
+    column_widths = {
+        'Project Name': '180px',
+        'likely_goahead': '100px',
+        'Country': '120px',
+        'Region': '120px',
+        'Opec_group': '140px',
+        'field_type': '100px',
+        'field': '150px',
+        'play_type': '120px',
+        'Hydrocarbon': '120px',
+        'Associated Crude': '140px',
+        'Depth': '80px',
+        'Operator': '120px',
+        'Partner1': '100px',
+        'Partner2': '100px',
+        'Partner3': '100px',
+        'Partner4': '100px',
+        'Partner5': '100px',
+        'First Oil Year': '100px',
+        'Sanctioned': '80px',
+        'Comments': '120px',
+        'Project Status': '120px',
+        'Gas Reserves (mmboe)': '140px',
+        'Liquids Reserves (mmbbl)': '150px',
+        'Total Reserves (mmboe)': '150px',
+        'API': '80px',
+        'Sulfur': '80px'
+    }
+
+    display_name_map = {
+        'Opec_group': 'Group',
+        'field_type': 'Field Type',
+        'field': 'Field/Block',
+        'play_type': 'Play Type',
+        'likely_goahead': 'Likely To Go Ahead',
+    }
+
+    # Create columns configuration with display names and width constraints
+    columns = []
+    for col in all_columns:
+        display_name = display_name_map.get(col, col)
+        col_def = {'name': display_name, 'id': col}
+        if col in column_widths:
+            col_def['minWidth'] = column_widths[col]
+            col_def['maxWidth'] = column_widths[col]
+        columns.append(col_def)
+
+    # Prepare tooltip data for Comments column (show full comment on hover)
+    tooltip_data = []
+    for i, row in enumerate(table_data):
+        tooltip_row = {}
+        if 'Comments' in row:
+            orig = str(original_comments.iloc[i]) if i < len(original_comments) else ''
+            if orig and orig != 'nan' and orig.strip():
+                tooltip_row['Comments'] = {
+                    'value': orig,
+                    'type': 'text'
+                }
+        tooltip_data.append(tooltip_row)
+
     table = dash_table.DataTable(
         id='projects-status-details-table',
         columns=columns,
         data=table_data,
+        tooltip_data=tooltip_data,
+        tooltip_duration=None,
         style_table={
             'overflowX': 'auto',
             'overflowY': 'auto',
             'maxHeight': '600px',
-            'border': '1px solid #dee2e6',
+            'border': '1px solid #ddd',
             'backgroundColor': 'white',
             'width': '100%'
         },
         style_cell={
             'textAlign': 'left',
             'padding': '8px',
-            'fontSize': '11px',
-            'fontFamily': 'Arial, sans-serif',
-            'border': '1px solid #dee2e6',
-            'color': '#2c3e50',
+            'fontSize': '12px',
+            'fontFamily': 'Lato, sans-serif',
+            'color': 'rgb(27, 54, 93)',
             'whiteSpace': 'normal',
             'height': 'auto',
-            'minWidth': '100px',
-            'maxWidth': '300px'
+            'overflow': 'hidden',
+            'textOverflow': 'ellipsis'
         },
+        style_cell_conditional=[
+            {
+                'if': {'column_id': 'Comments'},
+                'whiteSpace': 'nowrap',
+                'overflow': 'hidden',
+                'textOverflow': 'ellipsis',
+                'height': 'auto',
+                'textAlign': 'left'
+            }
+        ],
         style_header={
             'backgroundColor': '#f8f9fa',
             'fontWeight': 'bold',
-            'border': '1px solid #dee2e6',
-            'textAlign': 'center',
-            'fontSize': '11px',
-            'fontFamily': 'Arial, sans-serif',
-            'color': '#2c3e50',
-            'whiteSpace': 'normal'
+            'fontFamily': 'Lato, sans-serif',
+            'color': 'rgb(27, 54, 93)',
+            'border': '1px solid #ddd',
+            'textAlign': 'center'
         },
         style_data={
-            'border': '1px solid #dee2e6',
-            'backgroundColor': 'white'
+            'border': '1px solid #ddd',
+            'whiteSpace': 'normal',
+            'fontFamily': 'Lato, sans-serif',
+            'color': 'rgb(27, 54, 93)'
         },
         style_data_conditional=[
             {
                 'if': {'row_index': 'odd'},
-                'backgroundColor': '#f8f9fa'
+                'backgroundColor': '#f9f9f9'
             }
         ],
-        page_action='none',  # No pagination - show all rows
         sort_action='native',
-        filter_action='native'
+        filter_action='native',
+        css=[{
+            'selector': '.dash-table-tooltip',
+            'rule': 'font-size: 10px !important; font-family: Lato, sans-serif !important; color: rgb(27, 54, 93) !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
+        }, {
+            'selector': '.dash-table-container .row:last-child',
+            'rule': 'display: none !important;'
+        }, {
+            'selector': '.previous-page, .next-page, .first-page, .last-page, .page-number, .page-number--current',
+            'rule': 'display: none !important;'
+        }]
     )
     
     return table
