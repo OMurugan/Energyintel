@@ -91,6 +91,9 @@ def create_db_engine(
         "keepalives_idle": int(os.getenv("DB_KEEPALIVES_IDLE", "30")),
         "keepalives_interval": int(os.getenv("DB_KEEPALIVES_INTERVAL", "10")),
         "keepalives_count": int(os.getenv("DB_KEEPALIVES_COUNT", "5")),
+        # Optional per-connection statement timeout (ms)
+        "options": f"-c statement_timeout={int(os.getenv('DB_STATEMENT_TIMEOUT_MS', '30000'))}"
+        + f" -c application_name=energyintel_dash",
     }
 
     pool_size = int(os.getenv("DB_POOL_SIZE", "5"))

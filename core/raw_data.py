@@ -74,7 +74,9 @@ def load_all_data():
         )
         
         # Get country-level data
+        t_q1_start = time.monotonic()
         raw_country = pd.read_sql(QUERY_COUNTRY, ENGINE)
+        t_q1_end = time.monotonic()
         raw_country = raw_country.rename(
             columns={
                 "output": "production",  # keep naming consistent in the UI
@@ -88,7 +90,9 @@ def load_all_data():
         ).drop_duplicates(subset=["country_id", "year"], keep="last")
         
         # Get annual crude data
+        t_q2_start = time.monotonic()
         raw_crude_annual = pd.read_sql(QUERY_ANNUAL_CRUDE, ENGINE)
+        t_q2_end = time.monotonic()
         
         # Calculate options
         from core.data_helpers import year_options, country_options
@@ -101,10 +105,11 @@ def load_all_data():
 
         t_done = time.monotonic()
         print(
-            f"[raw_data] engine: {t_engine - t0:.2f}s | "
-            f"country query: {len(raw_country)} rows | "
-            f"crude query: {len(raw_crude_annual)} rows | "
-            f"total: {t_done - t0:.2f}s"
+            "[raw_data]"
+            f" engine: {t_engine - t0:.2f}s"
+            f" country: {t_q1_end - t_q1_start:.2f}s ({len(raw_country)} rows)"
+            f" crude: {t_q2_end - t_q2_start:.2f}s ({len(raw_crude_annual)} rows)"
+            f" total: {t_done - t0:.2f}s"
         )
         
     except Exception as e:
