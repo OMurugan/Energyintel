@@ -11,6 +11,7 @@ import pandas as pd
 import os
 from datetime import datetime
 from core.data_helpers import execute_query
+from config import Config
 
 # # CSV paths
 # DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Country_Profile')
@@ -26,6 +27,12 @@ port_df = pd.DataFrame() # Initialize port_df
 key_figures_df = pd.DataFrame() # Initialize key_figures_df
 country_list = []
 default_country = None
+
+# Mapbox access token (falls back to config default token if env not set)
+MAPBOX_ACCESS_TOKEN = Config.MAPBOX_ACCESS_TOKEN
+# Set Plotly-wide token for px maps
+if MAPBOX_ACCESS_TOKEN:
+    px.set_mapbox_access_token(MAPBOX_ACCESS_TOKEN)
 
 def load_map_data():
     """Load map data from database - called only when needed"""
@@ -851,17 +858,21 @@ def create_world_map(selected_country=None):
             hoverinfo='skip',
             showlegend=False
         ))
+        
+    mapbox_layout = dict(
+        style="carto-positron",  # Prefer custom sprite style, fallback inside helper
+        center=map_center, # Dynamic center
+        zoom=map_zoom, # Dynamic zoom for world view
+        # Enable interactive controls
+        bearing=0,
+        pitch=0
+    )
+    if MAPBOX_ACCESS_TOKEN:
+        mapbox_layout["accesstoken"] = MAPBOX_ACCESS_TOKEN
 
     fig.update_layout(
         title=None,
-        mapbox=dict(
-            style="carto-positron",  # Use carto-positron for all map views
-            center=map_center, # Dynamic center
-            zoom=map_zoom, # Dynamic zoom for world view
-            # Enable interactive controls
-            bearing=0,
-            pitch=0
-        ),
+        mapbox=mapbox_layout,
         height=None,  # Auto height to fill container
         width=None,   # Auto width to fill container
         autosize=True,  # Auto-size to fill container width and height
