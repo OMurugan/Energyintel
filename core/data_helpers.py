@@ -67,7 +67,16 @@ POSTGRES_DB_API, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT 
 
 
 def create_db_engine(
-    user: str, password: str, host: str, port: str, database: str, echo=False
+    user: str,
+    password: str,
+    host: str,
+    port: str,
+    database: str,
+    echo=False,
+    pool_size: int = 5,
+    max_overflow: int = 2,
+    pool_recycle: int = 1800,
+    pool_pre_ping: bool = True,
 ):
     """
     Function to create a database engine
@@ -93,21 +102,38 @@ def create_db_engine(
             f"{database}"
         ),
         echo=echo,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_recycle=pool_recycle,
+        pool_pre_ping=pool_pre_ping,
     )
     return engine
 
 
 def get_db_engine():
     """
-    Get database engine using Dash Enterprise credentials or .env fallback
+    Get database engine using Dash Enterprise credentials or .env fallback.
+    Engine is created once and pooled to avoid excessive connections.
     """
-    return create_db_engine(
-        POSTGRES_USER,
-        POSTGRES_PASSWORD,
-        POSTGRES_HOST,
-        POSTGRES_PORT,
-        POSTGRES_DB_API,
-    )
+    global _ENGINE
+    try:
+        if _ENGINE is None:
+            _ENGINE = create_db_engine(
+                POSTGRES_USER,
+                POSTGRES_PASSWORD,
+                POSTGRES_HOST,
+                POSTGRES_PORT,
+                POSTGRES_DB_API,
+            )
+    except NameError:
+        _ENGINE = create_db_engine(
+            POSTGRES_USER,
+            POSTGRES_PASSWORD,
+            POSTGRES_HOST,
+            POSTGRES_PORT,
+            POSTGRES_DB_API,
+        )
+    return _ENGINE
 
 
 def execute_query(query, params=None):
