@@ -1016,52 +1016,20 @@ def register_callbacks(dash_app, server):
         
         return legend_items
     
+    # Mirror the visible checklist into the legend-driven store so the store is the single source of truth
     @dash_app.callback(
         Output('projects-status-region-selection', 'data'),
-        [Input('current-submenu', 'data')],
-        State('projects-status-treemap-store', 'data'),
-        State('region-filter-initialized', 'data'),
-        prevent_initial_call='initial_duplicate'
+        Input('projects-status-region-filter', 'value'),
+        prevent_initial_call=False
     )
-    def populate_region_selection(current_submenu, treemap_store, is_initialized):
-        """Populate the region-selection store on first page activation."""
-        if current_submenu != 'projects-status':
-            return dash.no_update
-
-        # Build regions same as update_region_filter_options
-        if treemap_store:
-            treemap_df = pd.DataFrame(treemap_store)
-        else:
-            treemap_df = load_treemap_data()
-
-        regions = []
-        if not treemap_df.empty and "Region" in treemap_df.columns:
-            unique_regions = treemap_df['Region'].dropna().unique().tolist()
-            ordered_regions = [r for r in REGION_ORDER if r in unique_regions]
-            remaining_regions = [r for r in unique_regions if r not in REGION_ORDER]
-            ordered_regions.extend(sorted(remaining_regions))
-            regions = ordered_regions
-
-        if 'Africa' not in regions:
-            regions.insert(0, 'Africa')
-
-        # Compute default selection
-        default_value = []
-        for region in REGION_ORDER:
-            if region in regions:
-                default_value.append(region)
-        for region in regions:
-            if region not in default_value:
-                default_value.append(region)
-
-        if not is_initialized:
-            return default_value
-        return dash.no_update
+    def mirror_region_to_store(checklist_value):
+        if checklist_value is None:
+            return []
+        return checklist_value
     
     # Callback to handle Region legend clicks (similar to Carbon Intensity filter)
     @dash_app.callback(
-        [Output('projects-status-region-filter', 'value', allow_duplicate=True),
-         Output('projects-status-region-selection', 'data')],
+        Output('projects-status-region-filter', 'value', allow_duplicate=True),
         [Input({'type': 'region-legend-item', 'index': ALL}, 'n_clicks')],
         State('projects-status-region-filter', 'value'),
         State('region-legend-items-store', 'children'),
@@ -1074,29 +1042,31 @@ def register_callbacks(dash_app, server):
 
         ctx = dash.callback_context
         if not ctx.triggered:
-            return current_values, current_values
-        trigger_id = ctx.triggered[0]['prop_id']
-        # Extract region name from the pattern component ID
-        if 'index' in trigger_id:
-            # Parse the region name from the component ID
-            import json
-            try:
-                # The ID is in format like: {"index":"Africa","type":"region-legend-item"}.n_clicks
-                id_part = trigger_id.split('.')[0]
-                id_dict = json.loads(id_part.replace("'", '"'))
-                toggled_region = id_dict.get('index')
-                if toggled_region:
-                    if toggled_region in current_values:
-                        # Remove if already selected
-                        new_values = [v for v in current_values if v != toggled_region]
-                    else:
-                        # Add if not selected
-                        new_values = current_values + [toggled_region] if current_values else [toggled_region]
-                    return new_values, new_values
-            except Exception:
-                pass
+            return current_values
 
-        return current_values, current_values
+        trigger_id = ctx.triggered[0].get('prop_id', '')
+        if not trigger_id:
+            return current_values
+
+        # Extract pattern id JSON (left of ".n_clicks")
+        id_part = trigger_id.split('.')[0]
+        try:
+            import json
+            id_dict = json.loads(id_part.replace("'", '"'))
+            toggled_region = id_dict.get('index')
+        except Exception:
+            toggled_region = None
+
+        if toggled_region:
+            if toggled_region in current_values:
+                # Remove if already selected
+                new_values = [v for v in current_values if v != toggled_region]
+            else:
+                # Add if not selected
+                new_values = current_values + [toggled_region] if current_values else [toggled_region]
+            return new_values
+
+        return current_values
     
     # Callback to update region legend item visual states
     @dash_app.callback(
