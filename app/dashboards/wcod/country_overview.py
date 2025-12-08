@@ -696,11 +696,11 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for Country Overview"""
 
     @callback(
-        Output('exports-ranking-chart', 'figure'),
+        Output('exports-ranking-chart', 'figure', allow_duplicate=True),
         [Input('current-submenu', 'data'),
          Input('selected-country-store', 'data'),
          Input('time-dimension-visibility', 'data')],
-        prevent_initial_call=False
+        prevent_initial_call='initial_duplicate'
     )
     def update_ranking_chart(submenu, selected_country, time_visibility):
         """Update ranking chart with highlighting"""
@@ -826,7 +826,7 @@ def register_callbacks(dash_app, server):
         Output('exports-ranking-chart', 'figure', allow_duplicate=True),
         Input('selected-country-store', 'data'),
         State('current-submenu', 'data'),
-        prevent_initial_call=True
+        prevent_initial_call='initial_duplicate'
     )
     def update_chart_highlight(selected_country, submenu):
         """Update chart highlighting based on selected country"""
