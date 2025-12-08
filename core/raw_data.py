@@ -2,6 +2,8 @@
 Load and cache raw data from database
 This module loads data once at startup for performance
 """
+import time
+
 from core.data_helpers import get_db_engine, execute_query
 from sqlalchemy import text
 import pandas as pd
@@ -26,7 +28,9 @@ def load_all_data():
         return
     
     try:
+        t0 = time.monotonic()
         ENGINE = get_db_engine()
+        t_engine = time.monotonic()
         
         # Query country-level data
         QUERY_COUNTRY = text(
@@ -94,6 +98,14 @@ def load_all_data():
         # Store globally
         RAW_COUNTRY = raw_country
         RAW_CRUDE_ANNUAL = raw_crude_annual
+
+        t_done = time.monotonic()
+        print(
+            f"[raw_data] engine: {t_engine - t0:.2f}s | "
+            f"country query: {len(raw_country)} rows | "
+            f"crude query: {len(raw_crude_annual)} rows | "
+            f"total: {t_done - t0:.2f}s"
+        )
         
     except Exception as e:
         print(f"Error loading data: {e}")

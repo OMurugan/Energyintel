@@ -70,22 +70,24 @@ def create_db_engine(
     user: str, password: str, host: str, port: str, database: str, echo=False
 ):
     """
-    Function to create a database engine
-    Args:
-        user (str) : postgres username
-        password (str) : postgres password
-        host(str) : postgres host url
-        port (str) : postgres port number
-        database (str) : postgres database name
-        echo=False if True, the Engine will log all statements as well as
-        a repr() of their parameter lists to the default log handler
-
-    Returns:
-        Engine (sqlalchemy.engine.Engine)
+    Create a tuned SQLAlchemy engine with pooling and keepalives.
     """
-    # Handle port as string or int
     port_str = str(port) if port else "5432"
-    
+
+    connect_args = {
+        # Fail fast on bad/slow VPN links
+        "connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "10")),
+        # Keep TCP alive to avoid idle disconnects across VPN
+        "keepalives": 1,
+        "keepalives_idle": int(os.getenv("DB_KEEPALIVES_IDLE", "30")),
+        "keepalives_interval": int(os.getenv("DB_KEEPALIVES_INTERVAL", "10")),
+        "keepalives_count": int(os.getenv("DB_KEEPALIVES_COUNT", "5")),
+    }
+
+    pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+    max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "5"))
+    pool_recycle = int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800"))
+
     engine = create_engine(
         (
             f"postgresql+psycopg2://{user}:"  # noqa
@@ -93,6 +95,11 @@ def create_db_engine(
             f"{database}"
         ),
         echo=echo,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_recycle=pool_recycle,
+        pool_pre_ping=True,
+        connect_args=connect_args,
     )
     return engine
 

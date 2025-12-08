@@ -122,31 +122,17 @@ def _build_nav_links():
 
 _init_callbacks()
 
-# Debug aid: print registered page paths once at startup
-# try:
-#     print(
-#         "Registered Dash pages:",
-#         [p["path"] for p in sorted(page_registry.values(), key=lambda p: p["path"])],
-#     )
-# except Exception:
-#     pass
-
-
-# app_mod.app.layout = html.Div(
-#     [
-#         dcc.Location(id="url"),
-#         html.Nav(
-#             _build_nav_links(),
-#             style={
-#                 "display": "flex",
-#                 "gap": "8px",
-#                 "padding": "12px 16px",
-#                 "backgroundColor": "#f8f9fa",
-#                 "borderBottom": "1px solid #e0e0e0",
-#             },
-#         ),
-#         page_container,
-#     ]
-# )
+# Global layout with a fullscreen loader around page content
+app_mod.app.layout = html.Div(
+    [
+        dcc.Location(id="url"),
+        dcc.Loading(
+            id="global-loading",
+            type="circle",
+            fullscreen=True,
+            children=page_container,
+        ),
+    ]
+)
 
 
