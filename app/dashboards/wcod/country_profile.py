@@ -760,15 +760,15 @@ def create_world_map(selected_country=None):
             for _, port_row in port_data.iterrows():
                 port_value = port_row['port_value']
                 # Map symbol and a modest size so markers don't overwhelm the map
+                # Use built-in Plotly symbols (no sprite) for reliability
                 if port_value == 171:
-                    symbol, marker_size = 'circle', 16
+                    symbol, marker_size = 'circle', 14
                 elif port_value == 513:
-                    # Use reliable built-in 'hospital' icon for cross-like marker
-                    symbol, marker_size = 'hospital', 16
+                    symbol, marker_size = '+', 14   # plus symbol
                 elif port_value == 342:
-                    symbol, marker_size = 'square', 16
+                    symbol, marker_size = 'square', 14
                 else:
-                    symbol, marker_size = 'circle', 16
+                    symbol, marker_size = 'circle', 14
 
                 bucket = ports_by_symbol.setdefault(symbol, {"lat": [], "lon": [], "name": [], "size": [], "custom": []})
                 bucket["lat"].append(port_row['latitude'])
@@ -789,7 +789,7 @@ def create_world_map(selected_country=None):
                             size=data_bucket["size"],
                             color='#fe5000',
                             opacity=0.9,
-                            symbol=symbol_key
+                            symbol='circle'
                         ),
                         text=data_bucket["name"],
                         customdata=data_bucket["custom"],
