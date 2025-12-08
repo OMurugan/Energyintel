@@ -1,12 +1,16 @@
 """
-Load and cache raw data from database
-This module loads data once at startup for performance
+Load and cache raw data from database.
+This module loads data once at startup for performance.
 """
+import logging
 import time
 
 from core.data_helpers import get_db_engine, execute_query
 from sqlalchemy import text
 import pandas as pd
+
+
+logger = logging.getLogger(__name__)
 
 # Global data storage - will be populated on first access
 RAW_COUNTRY = pd.DataFrame()
@@ -104,7 +108,7 @@ def load_all_data():
         RAW_CRUDE_ANNUAL = raw_crude_annual
 
         t_done = time.monotonic()
-        print(
+        logger.info(
             "[raw_data]"
             f" engine: {t_engine - t0:.2f}s"
             f" country: {t_q1_end - t_q1_start:.2f}s ({len(raw_country)} rows)"
@@ -113,7 +117,7 @@ def load_all_data():
         )
         
     except Exception as e:
-        print(f"Error loading data: {e}")
+        logger.exception("Error loading data")
         # Keep empty DataFrames on error
         pass
 
