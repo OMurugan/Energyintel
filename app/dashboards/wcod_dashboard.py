@@ -10,12 +10,11 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 from flask import current_app
-from app import create_dash_app
 from app.models import (
     Country, Production, Exports, Reserves, Imports,
     Crude, CrudePrice, UpstreamProject, Company
 )
-from app import db
+from .. import db
 from sqlalchemy import func, extract, and_, or_
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -108,29 +107,44 @@ from app.dashboards.wcod import (
 )
 
 
-def create_wcod_dashboard(server, url_base_pathname):
+def create_wcod_dashboard(dash_app=None, server=None, url_base_pathname='/'):
     """Create comprehensive WCoD dashboard with tab navigation"""
+    import dash # Explicitly import dash here
     from pathlib import Path
-    from flask import send_from_directory
+    from flask import Flask, send_from_directory
     
-    dash_app = create_dash_app(server, url_base_pathname)
+    # Allow standalone creation if dash_app/server not provided
+    if server is None:
+        server = Flask(__name__)
+    if dash_app is None:
+        dash_app = dash.Dash(
+            __name__,
+            server=server,
+            url_base_pathname=url_base_pathname,
+            suppress_callback_exceptions=True,
+            prevent_initial_callbacks='initial_duplicate',
+        )
+    
+    # The dash_app is now passed in from the register_dashboards function
     
     # Configure assets folder and add route to serve assets
     current_dir = Path(__file__).parent
     assets_dir = current_dir / "assets"
     
     # Add route to serve assets from /wcod/assets/ path
-    @server.route('/wcod/assets/<path:filename>')
-    def serve_wcod_assets(filename):
-        """Serve static assets for WCoD dashboard"""
-        return send_from_directory(str(assets_dir), filename)
+    if server and 'serve_wcod_assets' not in server.view_functions:
+        @server.route('/wcod/assets/<path:filename>')
+        def serve_wcod_assets(filename):
+            """Serve static assets for WCoD dashboard"""
+            return send_from_directory(str(assets_dir), filename)
     
     # Add route to serve assets from app/assets/ directory
     app_assets_dir = Path(__file__).parent.parent / "assets"
-    @server.route('/assets/<path:filename>')
-    def serve_app_assets(filename):
-        """Serve static assets from app/assets/ directory"""
-        return send_from_directory(str(app_assets_dir), filename)
+    if server and 'serve_app_assets' not in server.view_functions:
+        @server.route('/assets/<path:filename>')
+        def serve_app_assets(filename):
+            """Serve static assets from app/assets/ directory"""
+            return send_from_directory(str(app_assets_dir), filename)
     
     # Custom CSS for Tableau-like styling
     dash_app.index_string = '''
@@ -1341,7 +1355,7 @@ def create_wcod_dashboard(server, url_base_pathname):
         [Input('main-tabs', 'value'),
          Input('url', 'pathname'),
          Input('current-submenu', 'data')],
-        prevent_initial_call=False
+        prevent_initial_call='initial_duplicate'
     )
     def update_submenu(active_tab, pathname, current_submenu):
         """Update sub-menu based on active main tab and current submenu"""
@@ -1501,7 +1515,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                         'borderRadius': '20px',
                         'cursor': 'pointer',
                         'transition': 'all 0.3s',
-                        'fontWeight': '500' if item['value'] == default_value else 'normal',
+                        'fontWeight': f"{'500' if item['value'] == default_value else 'normal'}",
                         'whiteSpace': 'nowrap'
                     }
                 )
@@ -1639,7 +1653,7 @@ def create_wcod_dashboard(server, url_base_pathname):
         Input({'type': 'submenu-button', 'index': dash.dependencies.ALL}, 'n_clicks'),
         [State({'type': 'submenu-button', 'index': dash.dependencies.ALL}, 'id'),
          State('main-tabs', 'value')],
-        prevent_initial_call=True
+        prevent_initial_call='initial_duplicate'
     )
     def update_submenu_selection(n_clicks_list, button_ids, active_tab):
         """Handle sub-menu item clicks and update button styles"""
@@ -1764,7 +1778,7 @@ def create_wcod_dashboard(server, url_base_pathname):
                     'borderRadius': '20px',
                     'cursor': 'pointer',
                     'transition': 'all 0.3s',
-                    'fontWeight': '500' if item['value'] == selected_value else 'normal',
+                    'fontWeight': f"{'500' if item['value'] == selected_value else 'normal'}",
                     'whiteSpace': 'nowrap'
                 }
             )
