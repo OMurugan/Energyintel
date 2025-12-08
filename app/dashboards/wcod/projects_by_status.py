@@ -14,23 +14,136 @@ import traceback
 
 
 def load_treemap_data():
-    """Load treemap data from CSV"""
-    csv_path = os.path.join(
-        os.path.dirname(__file__), '..', 'data', 'project_by_status', 
-        'Projects by Status_Treemap_data.csv'
-    )
-    
-    if not os.path.exists(csv_path):
-        print(f"ERROR: CSV file not found at {csv_path}")
-        return pd.DataFrame()
-    
+    """Load treemap data from the database using a pivot/unpivot query.
+    Returns a DataFrame with columns: Play Type, Project Status, Region, Production Additions, max Q, min Q
+    """
     try:
-        df = pd.read_csv(csv_path, encoding='utf-8')
-        # Clean column names (remove leading/trailing spaces)
+        print("DEBUG: load_treemap_data() called")
+        query = """
+            WITH unpvt AS (
+                SELECT 
+                    a.play_type,
+                    a.project_status,
+                    c.region,
+                    SPLIT_PART(qcol, '_', 1)::INT AS year_num,
+
+                    RIGHT(qcol, 1)::INT AS quarter_num,
+
+                    val AS production_additions
+                FROM fact_upstream_project_tracker a
+                LEFT JOIN fact_upstream_tracker_prod_estimates est
+                    ON a.project_id = est.project_id
+                LEFT JOIN dim_country c
+                    ON a.country_id = c.dim_country_id
+
+                CROSS JOIN LATERAL (
+                    VALUES
+                        ('2025_Q1', est."2025_Q1"), ('2025_Q2', est."2025_Q2"),
+                        ('2025_Q3', est."2025_Q3"), ('2025_Q4', est."2025_Q4"),
+
+                        ('2026_Q1', est."2026_Q1"), ('2026_Q2', est."2026_Q2"),
+                        ('2026_Q3', est."2026_Q3"), ('2026_Q4', est."2026_Q4"),
+
+                        ('2027_Q1', est."2027_Q1"), ('2027_Q2', est."2027_Q2"),
+                        ('2027_Q3', est."2027_Q3"), ('2027_Q4', est."2027_Q4"),
+
+                        ('2028_Q1', est."2028_Q1"), ('2028_Q2', est."2028_Q2"),
+                        ('2028_Q3', est."2028_Q3"), ('2028_Q4', est."2028_Q4"),
+
+                        ('2029_Q1', est."2029_Q1"), ('2029_Q2', est."2029_Q2"),
+                        ('2029_Q3', est."2029_Q3"), ('2029_Q4', est."2029_Q4")
+                ) AS t(qcol, val)
+
+                WHERE a.include = TRUE
+            ),
+
+            ranked AS (
+                SELECT *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY play_type, project_status, region
+                        ORDER BY year_num DESC, quarter_num DESC
+                    ) AS rn_max,
+
+                    ROW_NUMBER() OVER (
+                        PARTITION BY play_type, project_status, region
+                        ORDER BY year_num ASC, quarter_num ASC
+                    ) AS rn_min
+                FROM unpvt
+                WHERE production_additions IS NOT NULL
+            )
+
+            SELECT
+                play_type AS "Play Type",
+                project_status AS "Project Status",
+                region AS "Region",
+
+                -- Max Q
+                CONCAT(
+                    MAX(CASE WHEN rn_max = 1 THEN year_num END),
+                    '-',
+                    MAX(CASE WHEN rn_max = 1 THEN CONCAT('Q', quarter_num) END)
+                ) AS "max Q",
+
+                -- Min Q
+                CONCAT(
+                    MAX(CASE WHEN rn_min = 1 THEN year_num END),
+                    '-',
+                    MAX(CASE WHEN rn_min = 1 THEN CONCAT('Q', quarter_num) END)
+                ) AS "min Q",
+
+                SUM(production_additions) AS "Production Additions"
+
+            FROM ranked
+            GROUP BY play_type, project_status, region
+            ORDER BY region, play_type, project_status;
+
+        """
+
+        # Execute query and log result count for debugging
+        try:
+            results = execute_query(query)
+            row_count = len(results) if results else 0
+            print(f"DEBUG: load_treemap_data() - execute_query returned {row_count} rows")
+        except Exception as _e:
+            print(f"ERROR: load_treemap_data() - execute_query raised: {_e}")
+            raise
+
+        df = pd.DataFrame(results) if results else pd.DataFrame()
+
+        # Clean column names
         df.columns = df.columns.str.strip()
+        # Map common lowercase column names to the exact display names expected by treemap code
+        column_mapping = {}
+        for col in df.columns:
+            lower = col.lower().strip()
+            if lower in ('play_type', 'play type'):
+                column_mapping[col] = 'Play Type'
+            elif lower in ('project_status', 'project status'):
+                column_mapping[col] = 'Project Status'
+            elif lower in ('region',):
+                column_mapping[col] = 'Region'
+            elif lower in ('production_additions', 'production additions', 'value'):
+                column_mapping[col] = 'Production Additions'
+            elif lower in ('max q', 'max_q'):
+                column_mapping[col] = 'max Q'
+            elif lower in ('min q', 'min_q'):
+                column_mapping[col] = 'min Q'
+
+        if column_mapping:
+            df = df.rename(columns=column_mapping)
+
+        # Ensure Production Additions is numeric
+        if 'Production Additions' in df.columns:
+            df['Production Additions'] = pd.to_numeric(df['Production Additions'], errors='coerce').fillna(0)
+
+        # Normalize string columns to avoid mismatches due to whitespace/case
+        for col in ['Play Type', 'Project Status', 'Region']:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.strip()
+
         return df
     except Exception as e:
-        print(f"ERROR loading treemap data: {e}")
+        traceback.print_exc()
         return pd.DataFrame()
 
 
@@ -108,32 +221,32 @@ def load_table_data():
             est."2029_Q2",
             est."2029_Q3",
             est."2029_Q4"
-        FROM dev.fact_upstream_project_tracker a
-        LEFT JOIN dev.fact_upstream_tracker_prod_estimates est 
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN fact_upstream_tracker_prod_estimates est 
             ON a.project_id = est.project_id
-        LEFT JOIN dev.dim_country c 
+        LEFT JOIN dim_country c 
             ON a.country_id = c.dim_country_id
-        LEFT JOIN dev.dim_company op 
+        LEFT JOIN dim_company op 
             ON a.operator_id = op.company_id
-        LEFT JOIN dev.dim_company p1 
+        LEFT JOIN dim_company p1 
             ON a.partner1_id = p1.company_id
-        LEFT JOIN dev.dim_company p2 
+        LEFT JOIN dim_company p2 
             ON a.partner2_id = p2.company_id
-        LEFT JOIN dev.dim_company p3 
+        LEFT JOIN dim_company p3 
             ON a.partner3_id = p3.company_id
-        LEFT JOIN dev.dim_company p4 
+        LEFT JOIN dim_company p4 
             ON a.partner4_id = p4.company_id
-        LEFT JOIN dev.dim_company p5 
+        LEFT JOIN dim_company p5 
             ON a.partner5_id = p5.company_id
         LEFT JOIN (
             SELECT 
                 project_id,
                 MIN(EXTRACT(YEAR FROM period)) AS year
-            FROM dev.fact_upstream_tracker_prod_estimates_incremental
+            FROM fact_upstream_tracker_prod_estimates_incremental
             WHERE value IS NOT NULL 
             GROUP BY project_id
         ) yr ON yr.project_id = a.project_id
-        LEFT JOIN dev.dim_crude cr 
+        LEFT JOIN dim_crude cr 
             ON cr.dim_crude_id = a.crude_id
         WHERE a.include = TRUE
         ORDER BY a.project_name;
@@ -155,8 +268,11 @@ def load_table_data():
             'Field Type': 'field_type',
             'field': 'field',
             'Field': 'field',
-            'play_type': 'play_type',
-            'Play Type': 'play_type',
+            # Normalize to display names expected by treemap code
+            'play_type': 'Play Type',
+            'Play Type': 'Play Type',
+            'project_status': 'Project Status',
+            'Project Status': 'Project Status',
             'hydrocarbon': 'Hydrocarbon',
             'Hydrocarbon': 'Hydrocarbon',
             'depth': 'Depth',
@@ -279,6 +395,12 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
                         mask |= col_upper.str.startswith('U')
 
                 matching_projects = table_df[mask]
+                # Debug: log matching counts to help diagnose empty treemap issues
+                try:
+                    print(f"DEBUG: likely_filter selected_values={selected_values}")
+                    print(f"DEBUG: matching_projects count={len(matching_projects)}")
+                except Exception:
+                    pass
 
                 if not matching_projects.empty:
                     # Create a set of unique combinations from matching projects
@@ -291,6 +413,11 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
                         )
                         matching_combos.add(combo)
 
+                    try:
+                        print(f"DEBUG: matching_combos count={len(matching_combos)}")
+                    except Exception:
+                        pass
+
                     # Filter treemap data to only include matching combinations
                     def matches_combo(row):
                         combo = (
@@ -300,7 +427,13 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
                         )
                         return combo in matching_combos
 
+                    before_count = len(filtered_df)
                     filtered_df = filtered_df[filtered_df.apply(matches_combo, axis=1)]
+                    after_count = len(filtered_df)
+                    try:
+                        print(f"DEBUG: filtered_df reduced from {before_count} to {after_count} by likely filter")
+                    except Exception:
+                        pass
     
     if filtered_df.empty:
         fig = go.Figure()
@@ -595,6 +728,11 @@ def create_layout():
                 # Store to track if region filter has been initialized (prevents overwriting on subsequent updates)
                 dcc.Store(id='region-filter-initialized', data=False),
                 
+                # Store to cache treemap dataframe (avoids repeated DB queries)
+                dcc.Store(id='projects-status-treemap-store', data=[]),
+                # Store to hold region selection controlled by legend
+                dcc.Store(id='projects-status-region-selection', data=[]),
+                
                 # KPI Table Section
                 html.Div([
                     html.H4(
@@ -718,6 +856,21 @@ def register_callbacks(dash_app, server):
         final_return_values = selected_individual if len(selected_individual) > 0 else (all_options if is_all_selected else [])
         return final_return_values, final_return_values
 
+    @dash_app.callback(
+        Output('projects-status-treemap-store', 'data'),
+        Input('current-submenu', 'data'),
+        prevent_initial_call=False
+    )
+    def populate_treemap_store(current_submenu):
+        """Populate treemap store when page becomes active to avoid repeated DB calls"""
+        if current_submenu != 'projects-status':
+            return dash.no_update
+        df = load_treemap_data()
+        if df is None or df.empty:
+            return []
+        # Convert to list-of-dicts for storage
+        return df.to_dict('records')
+
     # Callback to update region filter options when page loads
     @dash_app.callback(
         [Output('projects-status-region-filter', 'options'),
@@ -727,15 +880,19 @@ def register_callbacks(dash_app, server):
         Input('current-submenu', 'data'),
         State('projects-status-region-filter', 'value'),
         State('region-filter-initialized', 'data'),
+        State('projects-status-treemap-store', 'data'),
         prevent_initial_call='initial_duplicate'
     )
-    def update_region_filter_options(current_submenu, current_filter_value, is_initialized):
+    def update_region_filter_options(current_submenu, current_filter_value, is_initialized, treemap_store):
         """Update region filter options when page is accessed"""
         if current_submenu != 'projects-status':
             return [], dash.no_update, [], dash.no_update
         
-        # Load data to get available regions
-        treemap_df = load_treemap_data()
+        # Prefer cached treemap store if available to avoid extra DB call
+        if treemap_store:
+            treemap_df = pd.DataFrame(treemap_store)
+        else:
+            treemap_df = load_treemap_data()
         regions = []
         
         if not treemap_df.empty and "Region" in treemap_df.columns:
@@ -859,9 +1016,52 @@ def register_callbacks(dash_app, server):
         
         return legend_items
     
+    @dash_app.callback(
+        Output('projects-status-region-selection', 'data'),
+        [Input('current-submenu', 'data')],
+        State('projects-status-treemap-store', 'data'),
+        State('region-filter-initialized', 'data'),
+        prevent_initial_call='initial_duplicate'
+    )
+    def populate_region_selection(current_submenu, treemap_store, is_initialized):
+        """Populate the region-selection store on first page activation."""
+        if current_submenu != 'projects-status':
+            return dash.no_update
+
+        # Build regions same as update_region_filter_options
+        if treemap_store:
+            treemap_df = pd.DataFrame(treemap_store)
+        else:
+            treemap_df = load_treemap_data()
+
+        regions = []
+        if not treemap_df.empty and "Region" in treemap_df.columns:
+            unique_regions = treemap_df['Region'].dropna().unique().tolist()
+            ordered_regions = [r for r in REGION_ORDER if r in unique_regions]
+            remaining_regions = [r for r in unique_regions if r not in REGION_ORDER]
+            ordered_regions.extend(sorted(remaining_regions))
+            regions = ordered_regions
+
+        if 'Africa' not in regions:
+            regions.insert(0, 'Africa')
+
+        # Compute default selection
+        default_value = []
+        for region in REGION_ORDER:
+            if region in regions:
+                default_value.append(region)
+        for region in regions:
+            if region not in default_value:
+                default_value.append(region)
+
+        if not is_initialized:
+            return default_value
+        return dash.no_update
+    
     # Callback to handle Region legend clicks (similar to Carbon Intensity filter)
     @dash_app.callback(
-        Output('projects-status-region-filter', 'value', allow_duplicate=True),
+        [Output('projects-status-region-filter', 'value', allow_duplicate=True),
+         Output('projects-status-region-selection', 'data')],
         [Input({'type': 'region-legend-item', 'index': ALL}, 'n_clicks')],
         State('projects-status-region-filter', 'value'),
         State('region-legend-items-store', 'children'),
@@ -871,10 +1071,10 @@ def register_callbacks(dash_app, server):
         """Toggle Region filter when legend items are clicked"""
         if current_values is None:
             current_values = all_regions if all_regions else []
-        
+
         ctx = dash.callback_context
         if not ctx.triggered:
-            return current_values
+            return current_values, current_values
         trigger_id = ctx.triggered[0]['prop_id']
         # Extract region name from the pattern component ID
         if 'index' in trigger_id:
@@ -885,7 +1085,6 @@ def register_callbacks(dash_app, server):
                 id_part = trigger_id.split('.')[0]
                 id_dict = json.loads(id_part.replace("'", '"'))
                 toggled_region = id_dict.get('index')
-                
                 if toggled_region:
                     if toggled_region in current_values:
                         # Remove if already selected
@@ -893,11 +1092,11 @@ def register_callbacks(dash_app, server):
                     else:
                         # Add if not selected
                         new_values = current_values + [toggled_region] if current_values else [toggled_region]
-                    return new_values
-            except:
+                    return new_values, new_values
+            except Exception:
                 pass
-        
-        return current_values
+
+        return current_values, current_values
     
     # Callback to update region legend item visual states
     @dash_app.callback(
@@ -906,9 +1105,10 @@ def register_callbacks(dash_app, server):
          Input('current-submenu', 'data'),
          Input('region-legend-items-store', 'children')],
         State({'type': 'region-legend-item', 'index': MATCH}, 'id'),
+        State('projects-status-region-selection', 'data'),
         prevent_initial_call=False
     )
-    def update_region_legend_styles(selected_regions, current_submenu, all_regions, item_id):
+    def update_region_legend_styles(selected_regions, current_submenu, all_regions, item_id, region_selection):
         """Update legend item styles to show which are selected - only when page is active"""
         # Only update styles if this page is currently active
         if current_submenu != 'projects-status':
@@ -934,13 +1134,13 @@ def register_callbacks(dash_app, server):
             'border': '1px solid transparent'
         }
         
-        # Handle None/empty cases - default to all regions if filter value is not set
+        # Prefer region selection from the region-selection store (legend-driven)
+        if region_selection and isinstance(region_selection, list) and len(region_selection) > 0:
+            selected_regions = region_selection
+
         if selected_regions is None or (isinstance(selected_regions, list) and len(selected_regions) == 0):
-            # If filter value is empty, use all_regions from store as default
-            if all_regions and isinstance(all_regions, list) and len(all_regions) > 0:
-                selected_regions = all_regions.copy()
-            else:
-                selected_regions = []
+            return {**base_style, 'opacity': '1.0'}
+
         
         if all_regions is None:
             all_regions = []
@@ -972,9 +1172,12 @@ def register_callbacks(dash_app, server):
         [Input('projects-status-region-filter', 'value'),
          Input('projects-status-likely-filter', 'value'),
          Input('current-submenu', 'data')],
+        [State('projects-status-treemap-store', 'data'),
+         State('projects-status-region-selection', 'data')],
         prevent_initial_call=False
     )
-    def update_treemap(region_filter, likely_filter, current_submenu):        
+    def update_treemap(region_filter, likely_filter, current_submenu, treemap_store, region_selection):        
+        print(f"DEBUG: update_treemap triggered - current_submenu={current_submenu}, region_filter={region_filter}, likely_filter={likely_filter}, region_selection={region_selection}")
         if current_submenu != 'projects-status':
             # Return empty figure if page is not active
             fig = go.Figure()
@@ -989,11 +1192,18 @@ def register_callbacks(dash_app, server):
             fig.update_layout(height=700, plot_bgcolor="white", paper_bgcolor="white", margin=dict(l=0, r=0, t=0, b=0))
             return fig
         
+        # If legend-driven region selection store is present, prefer it
+        if region_selection and isinstance(region_selection, list) and len(region_selection) > 0:
+            region_filter = region_selection
+
         # CRITICAL: Only handle None/empty filter on initial load
         # DO NOT add Africa back if user explicitly removed it - respect user's filter selection
         if region_filter is None or (isinstance(region_filter, list) and len(region_filter) == 0):
             # Load data to get all available regions (only for initial load when filter is None/empty)
-            df_temp = load_treemap_data()
+            if treemap_store:
+                df_temp = pd.DataFrame(treemap_store)
+            else:
+                df_temp = load_treemap_data()
             if not df_temp.empty and "Region" in df_temp.columns:
                 all_regions = df_temp['Region'].dropna().unique().tolist()
                 # Order according to REGION_ORDER
@@ -1001,8 +1211,10 @@ def register_callbacks(dash_app, server):
                 remaining_all = [r for r in all_regions if r not in REGION_ORDER]
                 ordered_all.extend(sorted(remaining_all))
                 region_filter = ordered_all
-
-        df = load_treemap_data()
+        if treemap_store:
+            df = pd.DataFrame(treemap_store)
+        else:
+            df = load_treemap_data()
         table_df = load_table_data()
         if not table_df.empty and "Project Name" in table_df.columns:
             table_df_unique = table_df.drop_duplicates(subset=["Project Name"], keep='first')
@@ -1018,9 +1230,11 @@ def register_callbacks(dash_app, server):
          Input('projects-status-likely-filter', 'value'),
          Input('projects-status-treemap', 'clickData'),
          Input('current-submenu', 'data')],
+        [State('projects-status-treemap-store', 'data'),
+         State('projects-status-region-selection', 'data')],
         prevent_initial_call=False
     )
-    def update_tables(region_filter, likely_filter, click_data, current_submenu):
+    def update_tables(region_filter, likely_filter, click_data, current_submenu, treemap_store, region_selection):
         """Update KPI table and project details table - only loads data when page is active"""
         # Only load data if this page is currently active
         if current_submenu != 'projects-status':
@@ -1031,7 +1245,10 @@ def register_callbacks(dash_app, server):
         
         # Load data
         kpi_df = load_kpi_data()
-        treemap_df = load_treemap_data()
+        if treemap_store:
+            treemap_df = pd.DataFrame(treemap_store)
+        else:
+            treemap_df = load_treemap_data()
         table_df = load_table_data()
             
         # If the user has explicitly unchecked all Likely-to-Go-Ahead options
@@ -1041,6 +1258,10 @@ def register_callbacks(dash_app, server):
             empty_table = html.Div("", style={'display': 'none'})
             return empty_kpi, empty_table
         
+        # If legend-driven selection exists, prefer it
+        if region_selection and isinstance(region_selection, list) and len(region_selection) > 0:
+            region_filter = region_selection
+
         # Calculate KPI data based on region filter and likely filter
         filtered_treemap = treemap_df.copy()
         
@@ -1090,26 +1311,43 @@ def register_callbacks(dash_app, server):
                             mask |= col_upper.str.startswith('U')
 
                     matching_projects = table_df[mask]
+                # Debug: log matching counts to help diagnose empty KPI/treemap issues
+                try:
+                    print(f"DEBUG: KPI likely selected_values={selected_values}")
+                    print(f"DEBUG: KPI matching_projects count={len(matching_projects)}")
+                except Exception:
+                    pass
 
-                    if not matching_projects.empty:
-                        matching_combos = set()
-                        for _, row in matching_projects.iterrows():
-                            combo = (
-                                row.get("Region", ""),
-                                row.get("Play Type", ""),
-                                row.get("Project Status", "")
-                            )
-                            matching_combos.add(combo)
+                if not matching_projects.empty:
+                    matching_combos = set()
+                    for _, row in matching_projects.iterrows():
+                        combo = (
+                            row.get("Region", ""),
+                            row.get("Play Type", ""),
+                            row.get("Project Status", "")
+                        )
+                        matching_combos.add(combo)
 
-                        def matches_combo(row):
-                            combo = (
-                                str(row.get("Region", "")),
-                                str(row.get("Play Type", "")),
-                                str(row.get("Project Status", ""))
-                            )
-                            return combo in matching_combos
+                    try:
+                        print(f"DEBUG: KPI matching_combos count={len(matching_combos)}")
+                    except Exception:
+                        pass
 
-                        filtered_treemap = filtered_treemap[filtered_treemap.apply(matches_combo, axis=1)]
+                    def matches_combo(row):
+                        combo = (
+                            str(row.get("Region", "")),
+                            str(row.get("Play Type", "")),
+                            str(row.get("Project Status", ""))
+                        )
+                        return combo in matching_combos
+
+                    before_kpi = len(filtered_treemap)
+                    filtered_treemap = filtered_treemap[filtered_treemap.apply(matches_combo, axis=1)]
+                    after_kpi = len(filtered_treemap)
+                    try:
+                        print(f"DEBUG: filtered_treemap reduced from {before_kpi} to {after_kpi} by KPI likely filter")
+                    except Exception:
+                        pass
         
         # Calculate KPIs from filtered treemap
         if not filtered_treemap.empty:
