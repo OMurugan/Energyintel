@@ -7,86 +7,10 @@ import dash
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
-import os
 import re
 import numpy as np
 from datetime import datetime, date, timedelta
 from core.data_helpers import execute_query
-
-# ------------------------------------------------------------------------------
-# FILE PATHS
-# ------------------------------------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data", "Crude_Profile")
-
-CSV_PATHS = {
-    "assay_details": os.path.join(DATA_DIR, "Assay_Details_data(1).csv"),
-    "quality_specs": os.path.join(DATA_DIR, "Latest_Quality_Specs_data(1).csv"),
-    # Mars assay and refined products are now loaded dynamically from the database.
-    # These CSV paths are kept only as potential future fallbacks.
-    "mars_assay": os.path.join(DATA_DIR, "Mars_Blend_Assay(1).csv"),
-    "refined_products": os.path.join(DATA_DIR, "Refined_Products_Breakdown_and_Properties_data(1).csv"),
-    "production_exports": os.path.join(DATA_DIR, "Production_and_Exports_Chart_Production_Exports.csv"),
-    "loading_ports": os.path.join(DATA_DIR, "Country_Map_data(1).csv"),
-    "port_details": os.path.join(DATA_DIR, "Loading_Port_Details_data(1).csv"),
-    "producers_sellers": os.path.join(DATA_DIR, "Producers_Sellers_table_data(1).csv")
-}
-
-# ------------------------------------------------------------------------------
-# DATA LOADING FUNCTIONS - UPDATED FOR GROUPED REFINED PRODUCTS
-# ------------------------------------------------------------------------------
-def load_csv_data(file_path, fallback_data=None, **read_kwargs):
-    """Load CSV data with fallback to sample data if file not found."""
-    if not os.path.exists(file_path):
-        print(f"❌ File not found: {file_path}")
-        return fallback_data
-    
-    # Extract encoding if specified, but try multiple encodings
-    specified_encoding = read_kwargs.pop("encoding", None)
-    if specified_encoding:
-        # If encoding is specified, try it first, then fall back to others
-        encodings_to_try = [specified_encoding, "utf-8", "utf-8-sig", "latin-1"]
-    else:
-        encodings_to_try = ["utf-8", "utf-8-sig", "latin-1", "utf-16"]
-    
-    last_error = None
-    base_kwargs = read_kwargs or {}
-    
-    for enc in encodings_to_try:
-        try:
-            kwargs = dict(base_kwargs)
-            if enc:
-                kwargs["encoding"] = enc
-            df = pd.read_csv(file_path, **kwargs)
-            print(f"✅ Loaded {os.path.basename(file_path)} (encoding={enc})")
-            return df
-        except UnicodeDecodeError as e:
-            last_error = e
-            continue
-        except Exception as e:
-            # For non-encoding errors, try next encoding or return fallback
-            if "header" in str(e).lower() or "lines" in str(e).lower():
-                # Header/line count errors - try with different header values
-                if "header" in base_kwargs:
-                    header_val = base_kwargs["header"]
-                    # Try with header=0, then header=1, then header=None
-                    for alt_header in [0, 1, None]:
-                        if alt_header != header_val:
-                            try:
-                                kwargs = dict(base_kwargs)
-                                kwargs["header"] = alt_header
-                                if enc:
-                                    kwargs["encoding"] = enc
-                                df = pd.read_csv(file_path, **kwargs)
-                                print(f"✅ Loaded {os.path.basename(file_path)} (encoding={enc}, header={alt_header})")
-                                return df
-                            except Exception:
-                                continue
-            last_error = e
-            continue
-    
-    print(f"❌ Error loading {file_path}: {last_error}")
-    return fallback_data
 
 def load_assay_details(crude_value: str | None = None):
     """Load assay details data from DB for the selected crude (first row)."""
