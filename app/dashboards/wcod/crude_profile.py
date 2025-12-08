@@ -22,6 +22,8 @@ DATA_DIR = os.path.join(BASE_DIR, "data", "Crude_Profile")
 CSV_PATHS = {
     "assay_details": os.path.join(DATA_DIR, "Assay_Details_data(1).csv"),
     "quality_specs": os.path.join(DATA_DIR, "Latest_Quality_Specs_data(1).csv"),
+    # Mars assay and refined products are now loaded dynamically from the database.
+    # These CSV paths are kept only as potential future fallbacks.
     "mars_assay": os.path.join(DATA_DIR, "Mars_Blend_Assay(1).csv"),
     "refined_products": os.path.join(DATA_DIR, "Refined_Products_Breakdown_and_Properties_data(1).csv"),
     "production_exports": os.path.join(DATA_DIR, "Production_and_Exports_Chart_Production_Exports.csv"),
@@ -86,84 +88,341 @@ def load_csv_data(file_path, fallback_data=None, **read_kwargs):
     print(f"❌ Error loading {file_path}: {last_error}")
     return fallback_data
 
-def load_assay_details():
-    """Load assay details data."""
-    df = load_csv_data(CSV_PATHS["assay_details"])
+def load_assay_details(crude_value: str | None = None):
+    """Load assay details data from DB for the selected crude (first row)."""
+    df = _load_crude_assay_df(crude_value)
     if df is None or df.empty:
-        return {"alternate_names": "", "country": "United States", "assay_date": "2025"}
-    
-    # Assuming CSV has columns: Alternate_Names, Country, Assay_Date
+        return {
+            "alternate_names": "",
+            "country": "United States",
+            "assay_date": "2025",
+            "profile_url": "https://www.energyintel.com/wcod/crude-profile/Mars-Blend",
+        }
+
+    # Take first row
+    row = df.iloc[0]
     return {
-        "alternate_names": df.iloc[0]["Alternate_Names"] if "Alternate_Names" in df.columns else "",
-        "country": df.iloc[0]["Country"] if "Country" in df.columns else "United States",
-        "assay_date": df.iloc[0]["Assay_Date"] if "Assay_Date" in df.columns else "2025"
+        "alternate_names": row.get("crude_alias", ""),
+        "country": row.get("country_name", "United States"),
+        "assay_date": row.get("assay_yr", "2025"),
+        "profile_url": row.get("profile_url", "https://www.energyintel.com/wcod/crude-profile/Mars-Blend"),
     }
 
-def load_quality_specs():
-    """Load latest quality specs data."""
-    df = load_csv_data(CSV_PATHS["quality_specs"])
+def load_quality_specs(crude_value: str | None = None):
+    """
+    Load latest quality specs from the same assays query.
+    Pulls Gravity, Sulfur Content, and TAN for the selected crude.
+    """
+    df = _load_crude_assay_df(crude_value)
     if df is None or df.empty:
-        return [("Gravity (API at 60F)", "28.40"), ("Sulfur Content (% Wt)", "2.17"), ("TAN (mg KOH/g)", "0.48")]
-    
+        return [("Gravity (API at 60F)", "11.40"), ("Sulfur Content (% Wt)", "2.17"), ("TAN (mg KOH/g)", "0.48")]
+
+    df_local = df.copy()
+    # Normalize property names
+    df_local["Property_norm"] = df_local["property"].fillna("").astype(str).str.strip().str.lower()
+
+    def match_prop(pnorm: str):
+        if any(k in pnorm for k in ["gravity", "api"]):
+            return "Gravity (API at 60F)"
+        if any(k in pnorm for k in ["sulfur", "sulphur"]):
+            return "Sulfur Content (% Wt)"
+        if any(k in pnorm for k in ["tan", "acid"]):
+            return "TAN (mg KOH/g)"
+        return None
+
+    value_map = {
+        "Gravity (API at 60F)": None,
+        "Sulfur Content (% Wt)": None,
+        "TAN (mg KOH/g)": None,
+    }
+
+    for _, row in df_local.iterrows():
+        key = match_prop(row["Property_norm"])
+        if key:
+            val = row.get("Value", "")
+            try:
+                valf = float(val)
+                val = f"{valf:.2f}"
+            except Exception:
+                val = str(val)
+            if val:
+                value_map[key] = val
+
     specs = []
-    for _, row in df.iterrows():
-        if "Property" in df.columns and "Value" in df.columns:
-            specs.append((row["Property"], row["Value"]))
+    for k, fallback in [
+        ("Gravity (API at 60F)", "28.40"),
+        ("Sulfur Content (% Wt)", "2.17"),
+        ("TAN (mg KOH/g)", "0.48"),
+    ]:
+        specs.append((k, value_map[k] if value_map[k] is not None else fallback))
     return specs
 
-def load_mars_assay():
-    """Load Mars Blend Assay data with merged Property column for Viscosity."""
-    df = load_csv_data(CSV_PATHS["mars_assay"])
+
+def load_carbon_intensity(crude_value: str | None = None):
+    """Load carbon intensity rank (ci_rank) for the selected crude."""
+    df = _load_crude_assay_df(crude_value)
     if df is None or df.empty:
+        return "Low"
+    ci_series = df.get("ci_rank")
+    if ci_series is None:
+        return "Low"
+    ci_series = ci_series.dropna().astype(str).str.strip()
+    ci_series = ci_series[ci_series != ""]
+    if ci_series.empty:
+        return "Low"
+    return ci_series.iloc[0]
+
+def load_crude_options():
+    """
+    Load distinct crude list for the dropdown from the assays table.
+    Uses Crudeoil (a.crude_name) both as label and value.
+    """
+    query = """
+        SELECT DISTINCT 
+            a.crude_name AS "Crudeoil"
+        FROM fact_wcod_assays a
+        WHERE a.to_be_deleted IS NULL
+        ORDER BY a.crude_name
+    """
+    try:
+        results = execute_query(query)
+    except Exception as e:
+        print(f"❌ Error loading crude options from DB: {e}")
+        # Fallback to single Mars Blend option
+        return [{"label": "Mars Blend", "value": "Mars Blend"}], "Mars Blend"
+
+    if not results:
+        return [{"label": "Mars Blend", "value": "Mars Blend"}], "Mars Blend"
+
+    df = pd.DataFrame(results)
+    if "Crudeoil" not in df.columns:
+        return [{"label": "Mars Blend", "value": "Mars Blend"}], "Mars Blend"
+
+    df["Crudeoil"] = df["Crudeoil"].fillna("").astype(str).str.strip()
+    df = df[df["Crudeoil"] != ""]
+
+    if df.empty:
+        return [{"label": "Mars Blend", "value": "Mars Blend"}], "Mars Blend"
+
+    options = [{"label": c, "value": c} for c in df["Crudeoil"].unique()]
+
+    # Default to Mars Blend if present, otherwise first option
+    default_value = "Mars Blend"
+    if default_value not in df["Crudeoil"].values:
+        default_value = df["Crudeoil"].iloc[0]
+
+    return options, default_value
+
+
+def _get_crude_name_from_value(crude_value: str | None) -> str:
+    """
+    Map dropdown value to database crude_name.
+    For this dashboard we simply use the crude name itself as the value,
+    with a safe default of 'Mars Blend' when nothing is selected.
+    """
+    if not crude_value:
+        return "Mars Blend"
+    return crude_value
+
+
+def _load_crude_assay_df(crude_value: str | None = None) -> pd.DataFrame:
+    """
+    Load crude assay data from the database for a given crude selection.
+
+    Returns a DataFrame with at least:
+        crude_id, Crudeoil, profile_url, country_name, product, property,
+        Value, unit, cut_point, cut_point_sort, assay_yr, crude_alias
+    """
+    crude_name = _get_crude_name_from_value(crude_value)
+
+    query = """
+        SELECT 
+            a.crude_id AS crude_id,
+            a.crude_name AS "Crudeoil",
+            b.bsp_link AS profile_url,
+            a.country_name,
+            a.product,
+            a.property,
+            a.value AS "Value",
+            a.unit,
+            a.cut_point,
+            a.cut_point_sort,
+            a.assay_yr,
+            c.crude_alias
+        FROM fact_wcod_assays a
+        LEFT JOIN fact_wcod_crude_bsp_links b 
+               ON a.crude_id = b.crude_id
+        LEFT JOIN fact_wcod_crude c 
+               ON a.crude_id = c.crude_id
+        WHERE a.to_be_deleted IS NULL
+          AND a.crude_name = :crude_name AND a.product = 'Crude Oil'
+    """
+
+    try:
+        print(f"🔍 Querying DB for crude_name: '{crude_name}'")
+        results = execute_query(query, {"crude_name": crude_name})
+        print(f"✅ Query returned {len(results) if results else 0} rows")
+    except Exception as e:
+        print(f"❌ Error loading crude assay data from DB: {e}")
+        return pd.DataFrame()
+
+    if not results:
+        print(f"⚠️ No assay data returned from DB for crude_name '{crude_name}', falling back to CSV (if available).")
+        return pd.DataFrame()
+
+    return pd.DataFrame(results)
+
+
+def _load_refined_products_df(crude_value: str | None = None) -> pd.DataFrame:
+    """
+    Load refined products data from the database for a given crude selection.
+    This excludes 'Crude Oil' products (only refined products).
+
+    Returns a DataFrame with at least:
+        crude_id, Crudeoil, profile_url, country_name, product, property,
+        Value, unit, cut_point, cut_point_sort, assay_yr, crude_alias
+    """
+    crude_name = _get_crude_name_from_value(crude_value)
+
+    query = """
+        SELECT 
+            a.crude_id AS crude_id,
+            a.crude_name AS "Crudeoil",
+            b.bsp_link AS profile_url,
+            a.country_name,
+            a.product,
+            a.property,
+            a.value AS "Value",
+            a.unit,
+            a.cut_point,
+            a.cut_point_sort,
+            a.assay_yr,
+            c.crude_alias,
+            c.ci_rank
+        FROM fact_wcod_assays a
+        LEFT JOIN fact_wcod_crude_bsp_links b 
+               ON a.crude_id = b.crude_id
+        LEFT JOIN fact_wcod_crude c 
+               ON a.crude_id = c.crude_id
+        WHERE a.to_be_deleted IS NULL
+          AND a.crude_name = :crude_name AND a.product != 'Crude Oil'
+    """
+
+    try:
+        print(f"🔍 Querying DB for refined products (crude_name: '{crude_name}')")
+        results = execute_query(query, {"crude_name": crude_name})
+        print(f"✅ Refined products query returned {len(results) if results else 0} rows")
+    except Exception as e:
+        print(f"❌ Error loading refined products data from DB: {e}")
+        return pd.DataFrame()
+
+    if not results:
+        print(f"⚠️ No refined products data returned from DB for crude_name '{crude_name}', falling back to CSV (if available).")
+        return pd.DataFrame()
+
+    return pd.DataFrame(results)
+
+
+def load_mars_assay(crude_value: str | None = None):
+    """Load Mars Blend Assay data from the database with merged Property column for Viscosity."""
+    df = _load_crude_assay_df(crude_value)
+
+    if df is None or df.empty:
+        # Fallback to static sample if nothing from DB
         return [
             {"Property": "Barrels", "Unit": "Per Metric Ton", "Value": "7.13"},
         ]
+
+    # Normalize and select relevant columns
+    df_assay = df.copy()
+    # Standardise column names used for the Mars Assay table
+    df_assay.rename(
+        columns={
+            "property": "Property",
+            "unit": "Unit",
+        },
+        inplace=True,
+    )
+
+    # If DB already uses title‑case columns, keep them
+    for col in ["Property", "Unit", "Value"]:
+        if col not in df_assay.columns and col.lower() in df_assay.columns:
+            df_assay[col] = df_assay[col.lower()]
+
+    # Drop rows without a property label
+    df_assay["Property"] = df_assay["Property"].fillna("").astype(str).str.strip()
+    df_assay["Unit"] = df_assay.get("Unit", "").fillna("").astype(str).str.strip()
+    df_assay["Value"] = df_assay.get("Value", "").astype(str).str.strip()
+
+    # Normalise property names so viscosity rows can be grouped under one heading
+    def normalise_property(p: str) -> str:
+        p_lower = p.lower().strip()
+        if "viscos" in p_lower:
+            return "Viscosity"
+        return p.strip()
+
+    df_assay["Property_norm"] = df_assay["Property"].apply(normalise_property)
+
+    # Deduplicate: Remove exact duplicates (same Property+Unit+Value)
+    # For Viscosity, we want to keep multiple entries with different units (temperatures)
+    # For other properties, we also want to keep only unique Property+Unit combinations
+    # First, remove exact duplicates on Property+Unit+Value
+    df_assay_dedup = df_assay.drop_duplicates(
+        subset=["Property_norm", "Unit", "Value"],
+        keep="first"
+    )
     
-    # Find value column (could be "Value", "Avg. Value", "Column Header", etc.)
-    value_col = None
-    for col in df.columns:
-        if col.lower() in ["value", "avg. value", "avg value"]:
-            value_col = col
-            break
+    # For non-Viscosity properties, if there are still duplicates with same Property+Unit but different values,
+    # keep only the first one (or you could use assay_yr to get the latest)
+    is_viscosity = df_assay_dedup["Property_norm"].str.lower().str.contains("viscos", na=False)
     
-    if not value_col:
-        # Try "Column Header" as fallback
-        if "Column Header" in df.columns:
-            value_col = "Column Header"
-        else:
-            # Use first column that's not Property, Unit, Source, Copyright
-            for col in df.columns:
-                if col not in ["Property", "Unit", "Source", "Copyright"]:
-                    value_col = col
-                    break
+    # For non-viscosity properties, deduplicate on Property+Unit (keep first occurrence)
+    df_non_viscosity = df_assay_dedup[~is_viscosity].drop_duplicates(
+        subset=["Property_norm", "Unit"],
+        keep="first"
+    )
     
-    # Load all rows - keep all rows separate, we'll merge Property column visually
+    # For viscosity, keep all unique Property+Unit combinations (already deduplicated above)
+    df_viscosity = df_assay_dedup[is_viscosity]
+    
+    # Combine back
+    df_assay_dedup = pd.concat([df_viscosity, df_non_viscosity], ignore_index=True)
+
     assay_data = []
-    for _, row in df.iterrows():
-        property_val = str(row.get("Property", "")).strip() if "Property" in row and pd.notna(row.get("Property")) else ""
-        unit_val = str(row.get("Unit", "")).strip() if "Unit" in row and pd.notna(row.get("Unit")) else ""
-        value_val = str(row.get(value_col, "")).strip() if value_col and value_col in row and pd.notna(row.get(value_col)) else ""
+    for _, row in df_assay_dedup.iterrows():
+        prop = row.get("Property_norm", "")
+        if not prop:
+            continue
         
-        if property_val:  # Only add if we have a property
-            assay_data.append({
-                "Property": property_val,
-                "Unit": unit_val,
-                "Value": value_val
-            })
-    
-    # Process Viscosity entries to merge them under one Property
+        # Format Value to 2 decimal places
+        value_str = str(row.get("Value", "")).strip()
+        try:
+            # Try to convert to float and format to 2 decimal places
+            value_float = float(value_str)
+            value_formatted = f"{value_float:.2f}"
+        except (ValueError, TypeError):
+            # If conversion fails, keep original value
+            value_formatted = value_str
+        
+        assay_data.append(
+            {
+                "Property": prop,
+                "Unit": row.get("Unit", ""),
+                "Value": value_formatted,
+            }
+        )
+
+    # Process Viscosity entries to merge them under one Property (visual merge)
     if assay_data:
-        # Separate viscosity rows from other rows
         viscosity_rows = []
         other_rows = []
-        
+
         for row in assay_data:
             if row["Property"] == "Viscosity":
                 viscosity_rows.append(row)
             else:
                 other_rows.append(row)
-        
-        # Sort viscosity rows by temperature (20 C, 40 C, 50 C)
+
         def get_temp_order(unit_val):
             unit_str = str(unit_val).lower()
             if "20" in unit_str:
@@ -173,38 +432,42 @@ def load_mars_assay():
             elif "50" in unit_str:
                 return 2
             return 999
-        
+
         viscosity_rows.sort(key=lambda x: get_temp_order(x["Unit"]))
-        
-        # Reconstruct assay_data with merged Viscosity
-        # First viscosity row keeps "Viscosity" in Property column
-        # Subsequent rows have empty Property column for merged appearance
+
         processed_assay_data = other_rows.copy()
-        
+
         if viscosity_rows:
-            # Add first viscosity row with Property name
             first_viscosity = viscosity_rows[0]
             first_viscosity["Property"] = "Viscosity"
             processed_assay_data.append(first_viscosity)
-            
-            # Add remaining viscosity rows with empty Property column
+
             for viscosity_row in viscosity_rows[1:]:
                 viscosity_row["Property"] = ""  # Empty for merged appearance
                 processed_assay_data.append(viscosity_row)
-        
+
         assay_data = processed_assay_data
-    
+
     return assay_data if assay_data else [
         {"Property": "Barrels", "Unit": "Per Metric Ton", "Value": "7.13"}
     ]
 
-def load_refined_products():
-    """Load refined products breakdown data with merged cells for Product and Cut Points."""
-    # Use header=0 since the CSV has headers in the first row
-    df = load_csv_data(CSV_PATHS["refined_products"], header=0)
-    
+def load_refined_products(crude_value: str | None = None):
+    """
+    Load refined products breakdown data from the database with merged cells
+    for Product and Cut Points.
+
+    Mapping from query:
+        a.product  → Product
+        a.cut_point → Cut Points (°C)
+        a.property → Property
+        a.unit → Unit
+        a.value → Value
+    """
+    df = _load_refined_products_df(crude_value)
+
     if df is None or df.empty:
-        # Return fallback data with merged format
+        # Fallback data with merged format (same as previous CSV-based fallback)
         return [
             {
                 "Product": "Heavy Gasoil",
@@ -214,98 +477,149 @@ def load_refined_products():
                     {"Property": "", "Unit": "Yield Weight (%)", "Value": "7.74"},
                     {"Property": "Pour Point", "Unit": "Temp. C", "Value": "-6.83"},
                     {"Property": "Sulfur Content", "Unit": "% Wt", "Value": "1.57"},
-                ]
+                ],
             }
         ]
+
+    df_ref = df.copy()
+
+    # Ensure we have the expected columns
+    # DB columns might be lowercase; keep both variants
+    # Check what columns we actually have
+    print(f"🔍 Available columns in refined products df: {list(df_ref.columns)}")
     
-    df = df.dropna(how="all")
+    for src, dst in [
+        ("product", "Product"),
+        ("cut_point", "Cut Points (°C)"),
+        ("property", "Property"),
+        ("unit", "Unit"),
+        ("Value", "Value"),
+    ]:
+        if dst not in df_ref.columns:
+            if src in df_ref.columns:
+                df_ref[dst] = df_ref[src]
+                print(f"✅ Mapped '{src}' → '{dst}'")
+            else:
+                print(f"⚠️ Column '{src}' not found in dataframe")
     
-    # Forward fill Product and Cut Points columns to handle empty cells
-    df["Product"] = df["Product"].ffill()
+    # Also check for case variations
+    if "Cut Points (°C)" not in df_ref.columns:
+        # Try to find cut_point column with any case
+        for col in df_ref.columns:
+            if "cut" in col.lower() and "point" in col.lower():
+                df_ref["Cut Points (°C)"] = df_ref[col]
+                print(f"✅ Found and mapped cut_point column: '{col}' → 'Cut Points (°C)'")
+                break
+
+    # Drop rows without product or property – those won't show in refined products table
+    df_ref["Product"] = df_ref["Product"].fillna("").astype(str).str.strip()
     
-    # Handle Cut Points column variations
-    cut_col = None
-    for col in df.columns:
-        if "cut points" in col.lower() or "cut points" in col.lower():
-            cut_col = col
-            break
-    
-    if cut_col:
-        df[cut_col] = df[cut_col].ffill()
+    # Handle Cut Points column - ensure it exists
+    if "Cut Points (°C)" not in df_ref.columns:
+        df_ref["Cut Points (°C)"] = ""
     else:
-        df["Cut Points (°C)"] = ""
-        cut_col = "Cut Points (°C)"
+        df_ref["Cut Points (°C)"] = (
+            df_ref["Cut Points (°C)"].fillna("").astype(str).str.strip()
+        )
     
-    # Find value column
-    value_col = None
-    for col in df.columns:
-        if "value" in col.lower():
-            value_col = col
-            break
+    # Debug: Check cut_point values
+    if "Cut Points (°C)" in df_ref.columns:
+        unique_cut_points = df_ref["Cut Points (°C)"].unique()
+        print(f"🔍 Unique Cut Points values: {unique_cut_points[:10]}")  # Show first 10
     
-    if not value_col:
-        value_col = df.columns[-1]  # Use last column as fallback
+    # Handle Property column - allow null/empty values (for Yield Volume/Weight entries)
+    df_ref["Property"] = df_ref["Property"].fillna("").astype(str).str.strip()
+    df_ref["Unit"] = df_ref.get("Unit", "").fillna("").astype(str).str.strip()
+    df_ref["Value"] = df_ref.get("Value", "").astype(str).str.strip()
+
+    # Filter: Keep rows that have Product AND (Property OR Unit OR Value)
+    # This includes rows where Property is null but Unit/Value exist (Yield Volume/Weight)
+    df_ref = df_ref[
+        (df_ref["Product"] != "") & 
+        ((df_ref["Property"] != "") | (df_ref["Unit"] != "") | (df_ref["Value"] != ""))
+    ]
+
+    # Deduplicate: Remove exact duplicates (same Product + Cut Points + Property + Unit + Value)
+    # Keep only the first occurrence of each unique combination
+    df_ref = df_ref.drop_duplicates(
+        subset=["Product", "Cut Points (°C)", "Property", "Unit", "Value"],
+        keep="first"
+    )
+
+    if df_ref.empty:
+        return [
+            {
+                "Product": "Heavy Gasoil",
+                "Cut Points (°C)": "300-350",
+                "properties": [
+                    {"Property": "", "Unit": "Yield Volume (%)", "Value": "7.80"},
+                    {"Property": "", "Unit": "Yield Weight (%)", "Value": "7.74"},
+                    {"Property": "Pour Point", "Unit": "Temp. C", "Value": "-6.83"},
+                    {"Property": "Sulfur Content", "Unit": "% Wt", "Value": "1.57"},
+                ],
+            }
+        ]
+
+    # If cut_point_sort is available use it to order within each product / cut point
+    sort_cols = []
+    if "cut_point_sort" in df_ref.columns:
+        sort_cols.append("cut_point_sort")
+    sort_cols.extend(["Product", "Cut Points (°C)", "Property"])
+    df_ref = df_ref.sort_values(sort_cols)
+
+    # Forward fill Cut Points within each Product group
+    # This handles cases where cut_point might be empty for some rows but present for others in the same product
+    # Use backward fill first to get cut_points from rows where property is null (Yield Volume/Weight rows)
+    if "Cut Points (°C)" in df_ref.columns:
+        df_ref["Cut Points (°C)"] = df_ref.groupby("Product")["Cut Points (°C)"].transform(
+            lambda x: x.bfill().ffill().fillna("")
+        )
     
-    # Process data into grouped structure
+    # Build grouped structure - GROUP BY PRODUCT ONLY (not Product + Cut Points)
+    # This ensures all properties for the same product are grouped together
     grouped_products = []
-    current_product = None
-    current_cut_points = None
-    current_properties = []
-    
-    for _, row in df.iterrows():
-        product = str(row["Product"]).strip() if pd.notna(row["Product"]) else ""
-        cut_points = str(row[cut_col]).strip() if cut_col in row and pd.notna(row[cut_col]) else ""
+
+    for product, group in df_ref.groupby("Product", sort=False):
+        # Get the cut_points value for this product - use the first non-empty value
+        cut_points_series = group["Cut Points (°C)"].dropna()
+        cut_points_series = cut_points_series[cut_points_series.astype(str).str.strip() != ""]
         
-        # Get Property and Unit values
-        property_val = ""
-        unit_val = ""
+        if len(cut_points_series) > 0:
+            cut_points_value = str(cut_points_series.iloc[0]).strip()
+        else:
+            cut_points_value = ""
         
-        if "Property" in df.columns and pd.notna(row["Property"]):
-            property_val = str(row["Property"]).strip()
+        print(f"🔍 Grouping: Product='{product}', Cut Points='{cut_points_value}', Total Rows={len(group)}")
         
-        if "Unit" in df.columns and pd.notna(row["Unit"]):
-            unit_val = str(row["Unit"]).strip()
-        elif property_val and "Unit" not in df.columns:
-            # If there's no Unit column, check if property contains unit info
-            if "(" in property_val and ")" in property_val:
-                # Extract property name and unit
-                match = re.match(r"^(.*?)\s*\((.*?)\)$", property_val)
-                if match:
-                    property_val = match.group(1).strip()
-                    unit_val = match.group(2).strip()
-        
-        # Get value
-        value = str(row[value_col]).strip() if value_col in row and pd.notna(row[value_col]) else ""
-        
-        # When product changes, save the previous product's data
-        if product and product != current_product:
-            if current_product and current_properties:
-                grouped_products.append({
-                    "Product": current_product,
-                    "Cut Points (°C)": current_cut_points or "",
-                    "properties": current_properties.copy()
-                })
-            current_product = product
-            current_cut_points = cut_points
-            current_properties = []
-        
-        # Only add properties with values
-        if property_val or unit_val or value:
-            current_properties.append({
-                "Property": property_val,
-                "Unit": unit_val,
-                "Value": value
-            })
-    
-    # Don't forget the last product
-    if current_product and current_properties:
-        grouped_products.append({
-            "Product": current_product,
-            "Cut Points (°C)": current_cut_points or "",
-            "properties": current_properties.copy()
-        })
-    
-    # If no grouped data was created, return fallback
+        # Collect all properties for this product
+        properties = []
+        for _, row in group.iterrows():
+            # Format Value to 2 decimal places
+            value_str = str(row.get("Value", "")).strip()
+            try:
+                # Try to convert to float and format to 2 decimal places
+                value_float = float(value_str)
+                value_formatted = f"{value_float:.2f}"
+            except (ValueError, TypeError):
+                # If conversion fails, keep original value
+                value_formatted = value_str
+            
+            properties.append(
+                {
+                    "Property": row.get("Property", ""),
+                    "Unit": row.get("Unit", ""),
+                    "Value": value_formatted,
+                }
+            )
+
+        grouped_products.append(
+            {
+                "Product": product,
+                "Cut Points (°C)": cut_points_value,
+                "properties": properties,
+            }
+        )
+
     if not grouped_products:
         grouped_products = [
             {
@@ -316,42 +630,65 @@ def load_refined_products():
                     {"Property": "", "Unit": "Yield Weight (%)", "Value": "7.74"},
                     {"Property": "Pour Point", "Unit": "Temp. C", "Value": "-6.83"},
                     {"Property": "Sulfur Content", "Unit": "% Wt", "Value": "1.57"},
-                ]
+                ],
             }
         ]
-    
+
     return grouped_products
 
-def load_production_exports():
-    """Load production and exports data for chart."""
+def load_production_exports(crude_value: str | None = None):
+    """Load production and exports data for chart from DB."""
     fallback = {
         'years': ['2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013', '2014',
                   '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024'],
         'production': [235, 290, 220, 225, 200, 190, 150, 145, 170, 100, 200, 205, 225, 280, 270, 250, 235, 220, 215],
         'exports': [5, 5, 5, 5, 5, 5, 5, 5, 75, 65, 50, 75, 115, 170, 110, 150, 160, 160, 115]
     }
-    df = load_csv_data(CSV_PATHS["production_exports"])
-    if df is None or df.empty:
+    crude_name = _get_crude_name_from_value(crude_value)
+    query = """
+        SELECT
+            a.country_name AS "Country",
+            a.crude_name AS "CrudeOil",
+            EXTRACT(YEAR FROM a.yr) AS "YearReported",
+            a.production_kbpd AS "CrudeProduction",
+            a.exports_kbpd AS "CrudeExport",
+            a.ci_rank,
+            a.sellers,
+	        a.producers
+        FROM dev.fact_wcod_crude a
+        LEFT JOIN dev.dim_country grp 
+               ON a.country_id = grp.dim_country_id
+        WHERE a.ci_rank IS NOT NULL 
+          AND a.crude_name = :crude_name
+        ORDER BY "YearReported"
+    """
+    try:
+        results = execute_query(query, {"crude_name": crude_name})
+    except Exception as e:
+        print(f"❌ Error loading production/exports from DB: {e}")
         return fallback
-    
+
+    if not results:
+        return fallback
+
+    df = pd.DataFrame(results)
     chart_data = {'years': [], 'production': [], 'exports': []}
-    
     for _, row in df.iterrows():
-        if 'Year' in df.columns:
-            chart_data['years'].append(str(row['Year']))
-        if 'Production' in df.columns:
-            chart_data['production'].append(row['Production'])
-        if 'Exports' in df.columns:
-            chart_data['exports'].append(row['Exports'])
-    
-    # Ensure we have usable values; otherwise return fallback static data
+        year = row.get("YearReported")
+        prod = row.get("CrudeProduction")
+        exp = row.get("CrudeExport")
+        if pd.notna(year):
+            chart_data['years'].append(str(int(year)))
+            chart_data['production'].append(prod if pd.notna(prod) else None)
+            chart_data['exports'].append(exp if pd.notna(exp) else None)
+
     if not chart_data['years'] or not chart_data['production'] or not chart_data['exports']:
         return fallback
-    
+
     return chart_data
 
-def load_port_details():
-    """Load port details data."""
+def load_port_details(crude_value: str | None = None):
+    """Load port details data from DB for the selected crude."""
     fallback_rows = [
         ("Berths", "4"),
         ("Max Draft (meters)", "23.5"),
@@ -361,153 +698,194 @@ def load_port_details():
         ("Mooring Type", "Single Point"),
         ("Storage Capacity (million bbl)", "12.5")
     ]
-    fallback_label = "Loop, Clovelly"
-    
-    # Use header=0 since the CSV has headers in the first row
-    df = load_csv_data(CSV_PATHS["port_details"], header=0)
-    if df is None or df.empty or "Measure" not in df.columns:
+    fallback_label = "Port Details"
+    crude_name = _get_crude_name_from_value(crude_value)
+    query = """
+        SELECT 
+            a.port_name AS "PortName",
+            a.measure_name,
+            a.value
+        FROM dev.fact_wcod_port a
+        LEFT JOIN dev.dim_crude b 
+               ON a.crude_id = b.dim_crude_id
+        WHERE b.crude_name = :crude_name
+    """
+    try:
+        results = execute_query(query, {"crude_name": crude_name})
+    except Exception as e:
+        print(f"❌ Error loading port details from DB: {e}")
         return {"label": fallback_label, "rows": fallback_rows}
-    
-    # Try to find value column (could be "value", "Port Name", or any other column)
-    value_col = None
-    for col in df.columns:
-        if col.lower() in ["value", "port name"] or (col != "Measure" and col not in ["Source", "Copyright"]):
-            value_col = col
-            break
-    
-    if not value_col:
-        # Use first non-Measure column
-        value_columns = [col for col in df.columns if col != "Measure" and col not in ["Source", "Copyright"]]
-        if value_columns:
-            value_col = value_columns[0]
-        else:
-            return {"label": fallback_label, "rows": fallback_rows}
-    
-    column_label = value_col if value_col != "value" else "Loop, Clovelly"
-    
-    df[value_col] = df[value_col].fillna("").astype(str).str.strip()
-    
-    # Load all rows
-    port_details = []
-    for _, row in df.iterrows():
-        measure = str(row.get("Measure", "")).strip() if "Measure" in row and pd.notna(row.get("Measure")) else ""
-        value = str(row.get(value_col, "")).strip() if value_col in row and pd.notna(row.get(value_col)) else ""
-        if measure:
-            port_details.append((measure, value if value else ""))
-    
-    # Return all rows even if values are empty
-    rows = port_details if port_details else fallback_rows
-    label = column_label if port_details else fallback_label
-    
-    return {
-        "label": label,
-        "rows": rows
-    }
 
-def load_loading_ports():
-    """Load loading ports data for the map."""
+    if not results:
+        return {"label": fallback_label, "rows": fallback_rows}
+
+    df = pd.DataFrame(results)
+    df["measure_name"] = df.get("measure_name", "").fillna("").astype(str).str.strip()
+    df["value"] = df.get("value", "").fillna("").astype(str).str.strip()
+    df["PortName"] = df.get("PortName", "").fillna("").astype(str).str.strip()
+
+    port_label = fallback_label
+    port_names = df["PortName"][df["PortName"] != ""]
+    if not port_names.empty:
+        port_label = port_names.iloc[0]
+
+    rows = []
+    for _, row in df.iterrows():
+        measure = row.get("measure_name", "")
+        val = row.get("value", "")
+        if measure:
+            rows.append((measure, val))
+
+    if not rows:
+        rows = fallback_rows
+        port_label = fallback_label
+
+    return {"label": port_label, "rows": rows}
+
+def load_loading_ports(crude_value: str | None = None):
+    """Load loading ports data for the map from DB."""
     fallback = [{
-        "port": "Loop, Clovelly",
+        "port": "test, Clovelly",
         "country": "United States",
         "crude": "Mars Blend",
         "latitude": 29.1175,
         "longitude": -90.0715
     }]
-    
-    df = load_csv_data(
-        CSV_PATHS["loading_ports"],
-        sep="\t"
-    )
-    if df is None or df.empty:
+    crude_name = _get_crude_name_from_value(crude_value)
+    query = """
+        SELECT 
+            a.port_name AS "PortName",
+            c.country_long_name AS "Country",
+            b.crude_name AS "Crude",
+            a.latitude,
+            a.longitude
+        FROM dev.fact_wcod_port a
+        LEFT JOIN dev.dim_crude b 
+               ON a.crude_id = b.dim_crude_id
+        LEFT JOIN dev.dim_country c 
+               ON a.country_id = c.dim_country_id
+        WHERE b.crude_name = :crude_name
+    """
+    try:
+        results = execute_query(query, {"crude_name": crude_name})
+    except Exception as e:
+        print(f"❌ Error loading loading ports from DB: {e}")
         return fallback
-    
-    # Check and process Latitude column
-    if "Latitude" in df.columns:
-        df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
-    else:
+
+    if not results:
         return fallback
-    
-    # Check and process Longitude column
-    if "Longitude" in df.columns:
-        df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
-    else:
-        return fallback
-    
-    # Check and process Port Name column
-    if "Port Name" in df.columns:
-        df["Port Name"] = df["Port Name"].fillna("").astype(str).str.strip()
-    else:
-        return fallback
-    
-    # Check and process Country column
-    if "Country" in df.columns:
-        df["Country"] = df["Country"].fillna("").astize(str).str.strip()
-    else:
-        df["Country"] = ""
-    
-    # Check and process Crude column
-    if "Crude" in df.columns:
-        df["Crude"] = df["Crude"].fillna("").astize(str).str.strip()
-    else:
-        df["Crude"] = ""
-    
+
+    df = pd.DataFrame(results)
     records = []
     for _, row in df.iterrows():
-        lat = row.get("Latitude") if "Latitude" in row else None
-        lon = row.get("Longitude") if "Longitude" in row else None
-        name = row.get("Port Name", "") if "Port Name" in row else ""
+        lat = pd.to_numeric(row.get("latitude"), errors="coerce")
+        lon = pd.to_numeric(row.get("longitude"), errors="coerce")
+        name = str(row.get("PortName", "")).strip()
         if pd.notna(lat) and pd.notna(lon) and name:
             records.append({
                 "port": name,
-                "country": row.get("Country", "") if "Country" in row else "",
-                "crude": row.get("Crude", "") if "Crude" in row else "",
+                "country": str(row.get("Country", "")).strip(),
+                "crude": str(row.get("Crude", "")).strip(),
                 "latitude": lat,
                 "longitude": lon
             })
-    
     return records or fallback
 
-def load_producers_sellers():
-    """Load producers and sellers data."""
+def load_producers_sellers(crude_value: str | None = None):
+    """Load producers and sellers data for the selected crude."""
     fallback = [("BP, ConocoPhillips, Exxon Mobil, Shell", "BP America Inc., ConocoPhillips, Exxon Mobil, Shell")]
-    
-    # Use header=0 since the CSV has headers in the first row
-    df = load_csv_data(CSV_PATHS["producers_sellers"], header=0)
-    if df is None or df.empty or "Producers" not in df.columns:
+    crude_name = _get_crude_name_from_value(crude_value)
+    query = """
+        SELECT
+            a.sellers,
+            a.producers
+        FROM dev.fact_wcod_crude a
+        WHERE a.ci_rank IS NOT NULL 
+          AND a.crude_name = :crude_name
+        ORDER BY a.yr
+    """
+    try:
+        results = execute_query(query, {"crude_name": crude_name})
+    except Exception as e:
+        print(f"❌ Error loading producers/sellers from DB: {e}")
         return fallback
-    
-    # Load all rows
-    records = []
+
+    if not results:
+        return fallback
+
+    df = pd.DataFrame(results)
+    df["sellers"] = df.get("sellers", "").fillna("").astype(str).str.strip()
+    df["producers"] = df.get("producers", "").fillna("").astype(str).str.strip()
+
+    # Take first non-empty row
     for _, row in df.iterrows():
-        producers = str(row.get("Producers", "")).strip() if "Producers" in row and pd.notna(row.get("Producers")) else ""
-        sellers = str(row.get("Sellers", "")).strip() if "Sellers" in row and pd.notna(row.get("Sellers")) else ""
-        if producers or sellers:
-            records.append((producers, sellers))
-    
-    return records if records else fallback
+        prod = row.get("producers", "")
+        sell = row.get("sellers", "")
+        if prod or sell:
+            return [(prod, sell)]
+
+    return fallback
 
 # ------------------------------------------------------------------------------
 # CREATING GROUPED TABLES
 # ------------------------------------------------------------------------------
-def create_grouped_refined_products_table():
+def create_grouped_refined_products_table(crude_value: str | None = None):
     """Create a grouped Refined Products table with merged Product and Cut Points cells."""
-    grouped_data = load_refined_products()
+    grouped_data = load_refined_products(crude_value)
+    
+    # Sort grouped_data by Product to ensure all rows for same product are together
+    grouped_data = sorted(grouped_data, key=lambda x: (x["Product"], x.get("Cut Points (°C)", "")))
     
     # Convert grouped data to flat rows for DataTable
+    # Track current product and cut_points to only show them once
     table_data = []
+    current_product = None
+    current_cut_points = None
+    product_row_start_index = None
+    
     for product_group in grouped_data:
         product = product_group["Product"]
         cut_points = product_group["Cut Points (°C)"]
         properties = product_group["properties"]
         
+        # Check if this is a new product
+        is_new_product = (product != current_product)
+        if is_new_product:
+            current_product = product
+            product_row_start_index = len(table_data)
+        
+        # Check if this is a new cut_point for the same product
+        is_new_cut_point = (cut_points != current_cut_points)
+        if is_new_cut_point:
+            current_cut_points = cut_points
+        
         for i, prop in enumerate(properties):
+            # Show Product only on the very first row of each product
+            show_product = (is_new_product and i == 0)
+            # Show Cut Points on first row of each cut_point group
+            show_cut_points = (is_new_cut_point and i == 0)
+            
+            # Ensure empty strings are truly empty (not None or whitespace)
+            product_value = product if show_product else ""
+            cut_points_value = cut_points if show_cut_points else ""
+            
             table_data.append({
-                "Product": product if i == 0 else "",  # Only show product on first row
-                "Cut Points (°C)": cut_points if i == 0 else "",  # Only show cut points on first row
-                "Property": prop["Property"],
-                "Unit": prop["Unit"],
-                "Value": prop["Value"]
+                "Product": product_value,
+                "Cut Points (°C)": cut_points_value,
+                "Property": prop.get("Property", ""),
+                "Unit": prop.get("Unit", ""),
+                "Value": prop.get("Value", "")
             })
+        
+        # Reset flags after processing all properties in this group
+        is_new_product = False
+        is_new_cut_point = False
+    
+    # Debug: Print first few rows to verify structure
+    if table_data:
+        print(f"🔍 First 5 rows of table_data:")
+        for idx, row in enumerate(table_data[:5]):
+            print(f"  Row {idx}: Product='{row['Product']}', Cut Points='{row['Cut Points (°C)']}', Property='{row['Property']}'")
     
     # Create DataTable with custom CSS for merged cells
     return dash_table.DataTable(
@@ -602,7 +980,7 @@ def create_grouped_refined_products_table():
         css=[
             # Hide empty Product cells to create merged appearance
             {
-                'selector': '.dash-cell[data-dash-column="Product"]:empty',
+                'selector': '#refined-products-table .dash-cell[data-dash-column="Product"]:empty',
                 'rule': '''
                     border-top: none !important;
                     border-bottom: none !important;
@@ -613,14 +991,21 @@ def create_grouped_refined_products_table():
                     padding-bottom: 0 !important;
                 '''
             },
+            # Hide Product cells that contain only whitespace (Dash might render empty strings as whitespace)
+            {
+                'selector': '#refined-products-table .dash-cell[data-dash-column="Product"]',
+                'rule': '''
+                    /* Additional rule for empty content */
+                '''
+            },
             # Ensure the cell above has proper bottom border
             {
-                'selector': '.dash-cell[data-dash-column="Product"]:not(:empty) + .dash-cell[data-dash-column="Product"]:empty',
+                'selector': '#refined-products-table .dash-cell[data-dash-column="Product"]:not(:empty) + .dash-cell[data-dash-column="Product"]:empty',
                 'rule': 'border-top: none !important;'
             },
             # Hide empty Cut Points cells to create merged appearance
             {
-                'selector': '.dash-cell[data-dash-column="Cut Points (°C)"]:empty',
+                'selector': '#refined-products-table .dash-cell[data-dash-column="Cut Points (°C)"]:empty',
                 'rule': '''
                     border-top: none !important;
                     border-bottom: none !important;
@@ -633,7 +1018,7 @@ def create_grouped_refined_products_table():
             },
             # Ensure the cell above has proper bottom border
             {
-                'selector': '.dash-cell[data-dash-column="Cut Points (°C)"]:not(:empty) + .dash-cell[data-dash-column="Cut Points (°C)"]:empty',
+                'selector': '#refined-products-table .dash-cell[data-dash-column="Cut Points (°C)"]:not(:empty) + .dash-cell[data-dash-column="Cut Points (°C)"]:empty',
                 'rule': 'border-top: none !important;'
             },
             # Stronger border for Product column
@@ -654,9 +1039,9 @@ def create_grouped_refined_products_table():
         page_action="none",
     )
 
-def create_grouped_assay_table():
+def create_grouped_assay_table(crude_value: str | None = None):
     """Create Mars Blend Assay table with merged Property cells for Viscosity."""
-    assay_data = load_mars_assay()
+    assay_data = load_mars_assay(crude_value)
     
     return dash_table.DataTable(
         id="assay-table",
@@ -766,15 +1151,16 @@ def create_grouped_assay_table():
         markdown_options={"html": True},
     )
 
-def create_production_chart():
+def create_production_chart(crude_value: str | None = None):
     """Create production and exports chart using dynamic data."""
-    chart_data = load_production_exports()
+    chart_data = load_production_exports(crude_value)
     fig = go.Figure()
     
     # Ensure data lists are aligned
     years = chart_data.get('years', [])
-    production = chart_data.get('production', [])
-    exports = chart_data.get('exports', [])
+    # Cast to floats to avoid Decimal issues
+    production = [float(x) if x is not None else None for x in chart_data.get('production', [])]
+    exports = [float(x) if x is not None else None for x in chart_data.get('exports', [])]
     
     # Determine y-axis max safely
     combined_values = [val for val in (production + exports) if pd.notna(val)]
@@ -822,9 +1208,9 @@ def create_production_chart():
     
     return fig
 
-def create_map_chart():
+def create_map_chart(crude_value: str | None = None):
     """Create loading ports map chart matching Tableau design - North America focus with orange triangular markers."""
-    ports_data = load_loading_ports()
+    ports_data = load_loading_ports(crude_value)
     fig = go.Figure()
     
     if not ports_data:
@@ -953,18 +1339,19 @@ def create_layout(server=None):
     """Layout with grouped tables for both Mars Blend Assay and Refined Products."""
     
     # Load dynamic data
-    assay_details = load_assay_details()
-    quality_specs = load_quality_specs()
-    port_details_data = load_port_details()
+    crude_options, default_crude = load_crude_options()
+    assay_details = load_assay_details(default_crude)
+    quality_specs = load_quality_specs(default_crude)
+    port_details_data = load_port_details(default_crude)
     port_details_rows = port_details_data.get("rows", [])
     port_details_label = port_details_data.get("label", "Port Details")
     
     # Convert port details to DataTable format
     port_details_table_data = [{"Measure": row[0], port_details_label: row[1]} for row in port_details_rows]
-    producers_sellers = load_producers_sellers()
+    producers_sellers = load_producers_sellers(default_crude)
     
     production_fig = create_production_chart()
-    map_fig = create_map_chart()
+    map_fig = create_map_chart(default_crude)
     
     return html.Div(style={
         "fontFamily": "Arial, sans-serif",
@@ -1147,8 +1534,8 @@ def create_layout(server=None):
                 }),
                 dcc.Dropdown(
                     id="crude-select",
-                    options=[{"label": "Mars Blend", "value": "mars"}],
-                    value="mars",
+                    options=crude_options,
+                    value=default_crude,
                     clearable=False,
                     style={
                         "width": "650px",
@@ -1159,8 +1546,9 @@ def create_layout(server=None):
             ]),
             html.A(
                 "Click here to see the Crude's Profile",
-                href="https://www.energyintel.com/wcod/crude-profile/Mars-Blend",
+                href=assay_details.get("profile_url", "https://www.energyintel.com/wcod/crude-profile/Mars-Blend"),
                 target="_blank",
+                id="crude-profile-link",
                 style={
                     "color": "#d65a00",
                     "textDecoration": "underline",
@@ -1215,17 +1603,17 @@ def create_layout(server=None):
                     "display": "flex",
                     "gap": "15px"
                 }, children=[
-                    html.Div(assay_details["alternate_names"], style={
+                    html.Div(assay_details["alternate_names"], id="assay-alt-names", style={
                         "color": "#666",
                         "fontSize": "13px",
                         "flex": "1"
                     }),
-                    html.Div(assay_details["country"], style={
+                    html.Div(assay_details["country"], id="assay-country", style={
                         "color": "#666",
                         "fontSize": "13px",
                         "flex": "1"
                     }),
-                    html.Div(assay_details["assay_date"], style={
+                    html.Div(assay_details["assay_date"], id="assay-date", style={
                         "color": "#666",
                         "fontSize": "13px",
                         "flex": "1"
@@ -1249,7 +1637,7 @@ def create_layout(server=None):
                     "fontSize": "14px",
                     "marginBottom": "8px"
                 }),
-                html.Div("Low", style={
+                html.Div("Low", id="carbon-intensity-value", style={
                     "color": "#1f3263",
                     "fontWeight": "bold",
                     "fontSize": "16px"
@@ -1299,17 +1687,17 @@ def create_layout(server=None):
                     "display": "flex",
                     "gap": "15px"
                 }, children=[
-                    html.Div(quality_specs[0][1] if len(quality_specs) > 0 else "28.40", style={
+                    html.Div(quality_specs[0][1] if len(quality_specs) > 0 else "28.40", id="quality-spec-gravity", style={
                         "color": "#666",
                         "fontSize": "13px",
                         "flex": "1"
                     }),
-                    html.Div(quality_specs[1][1] if len(quality_specs) > 1 else "2.17", style={
+                    html.Div(quality_specs[1][1] if len(quality_specs) > 1 else "2.17", id="quality-spec-sulfur", style={
                         "color": "#666",
                         "fontSize": "13px",
                         "flex": "1"
                     }),
-                    html.Div(quality_specs[2][1] if len(quality_specs) > 2 else "0.48", style={
+                    html.Div(quality_specs[2][1] if len(quality_specs) > 2 else "0.48", id="quality-spec-tan", style={
                         "color": "#666",
                         "fontSize": "13px",
                         "flex": "1"
@@ -1336,7 +1724,7 @@ def create_layout(server=None):
                     "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
-                create_grouped_assay_table()
+                create_grouped_assay_table(default_crude)
             ]),
             
             # Column 2: Refined Products Breakdown & Properties
@@ -1349,7 +1737,7 @@ def create_layout(server=None):
                     "borderBottom": "2px solid #d65a00",
                     "paddingBottom": "5px"
                 }),
-                create_grouped_refined_products_table()
+                create_grouped_refined_products_table(default_crude)
             ]),
             
             # Column 3: Right-side stack
@@ -1369,7 +1757,7 @@ def create_layout(server=None):
                     "margin": "10px 0",
                     "backgroundColor": "white"
                 }, children=[
-                    dcc.Graph(figure=production_fig, config={"displayModeBar": False})
+                    dcc.Graph(id="production-exports-graph", figure=production_fig, config={"displayModeBar": False})
                 ]),
                 html.Div("Loading Ports", style={
                     "color": "#d65a00",
@@ -1386,7 +1774,7 @@ def create_layout(server=None):
                     "margin": "10px 0",
                     "backgroundColor": "white"
                 }, children=[
-                    dcc.Graph(figure=map_fig, config={"displayModeBar": False}),
+                    dcc.Graph(id="loading-ports-map", figure=map_fig, config={"displayModeBar": False}),
                     html.Div([
                         html.A("© 2025 Mapbox", href="https://www.mapbox.com/about/maps", target="_blank", style={
                             "color": "#666",
@@ -1488,12 +1876,12 @@ def create_layout(server=None):
                         })
                     ])),
                     html.Tbody(html.Tr([
-                        html.Td(producers_sellers[0][0] if producers_sellers else "", style={
+                        html.Td(producers_sellers[0][0] if producers_sellers else "", id="producers-cell", style={
                             "border": "1px solid #ddd",
                             "padding": "10px",
                             "fontSize": "12px"
                         }),
-                        html.Td(producers_sellers[0][1] if producers_sellers else "", style={
+                        html.Td(producers_sellers[0][1] if producers_sellers else "", id="sellers-cell", style={
                             "border": "1px solid #ddd",
                             "padding": "10px",
                             "fontSize": "12px"
@@ -1522,23 +1910,43 @@ def register_callbacks(app):
     @app.callback(
         Output('assay-table', 'data'),
         Output('refined-products-table', 'data'),
+        Output('quality-spec-gravity', 'children'),
+        Output('quality-spec-sulfur', 'children'),
+        Output('quality-spec-tan', 'children'),
+        Output('carbon-intensity-value', 'children'),
+        Output('loading-ports-map', 'figure'),
+        Output('port-details-table', 'data'),
+        Output('port-details-table', 'columns'),
+        Output('production-exports-graph', 'figure'),
+        Output('producers-cell', 'children'),
+        Output('sellers-cell', 'children'),
+        Output('assay-alt-names', 'children'),
+        Output('assay-country', 'children'),
+        Output('assay-date', 'children'),
+        Output('crude-profile-link', 'href'),
         Input('crude-select', 'value')
     )
     def update_crude_profile(selected_crude):
-        """Update tables when crude selection changes."""
-        # Currently only Mars Blend is supported
-        if selected_crude == 'mars':
-            # Reload data
-            assay_data = load_mars_assay()
-            grouped_data = load_refined_products()
-            
+        """Update tables and quality specs when crude selection changes."""
+        if selected_crude:
+            # Reload data from the database for the selected crude name
+            assay_data = load_mars_assay(selected_crude)
+            grouped_data = load_refined_products(selected_crude)
+            quality_specs = load_quality_specs(selected_crude)
+            carbon_intensity = load_carbon_intensity(selected_crude)
+            port_details_data = load_port_details(selected_crude)
+            map_fig = create_map_chart(selected_crude)
+            production_fig = create_production_chart(selected_crude)
+            producers_sellers = load_producers_sellers(selected_crude)
+            assay_details = load_assay_details(selected_crude)
+
             # Convert grouped data to flat rows for DataTable
             table_data = []
             for product_group in grouped_data:
                 product = product_group["Product"]
                 cut_points = product_group["Cut Points (°C)"]
                 properties = product_group["properties"]
-                
+
                 for i, prop in enumerate(properties):
                     table_data.append({
                         "Product": product if i == 0 else "",
@@ -1547,11 +1955,64 @@ def register_callbacks(app):
                         "Unit": prop["Unit"],
                         "Value": prop["Value"]
                     })
-            
-            return assay_data, table_data
+
+            gravity_val = quality_specs[0][1] if len(quality_specs) > 0 else "28.40"
+            sulfur_val = quality_specs[1][1] if len(quality_specs) > 1 else "2.17"
+            tan_val = quality_specs[2][1] if len(quality_specs) > 2 else "0.48"
+
+            port_label = port_details_data.get("label", "Port Details")
+            port_rows = [{"Measure": r[0], port_label: r[1]} for r in port_details_data.get("rows", [])]
+            port_columns = [
+                {"name": "Measure", "id": "Measure"},
+                {"name": port_label, "id": port_label}
+            ]
+
+            prod_text = producers_sellers[0][0] if producers_sellers else ""
+            sell_text = producers_sellers[0][1] if producers_sellers else ""
+
+            return (
+                assay_data,
+                table_data,
+                gravity_val,
+                sulfur_val,
+                tan_val,
+                carbon_intensity,
+                map_fig,
+                port_rows,
+                port_columns,
+                production_fig,
+                prod_text,
+                sell_text,
+                assay_details.get("alternate_names", ""),
+                assay_details.get("country", ""),
+                assay_details.get("assay_date", ""),
+                assay_details.get("profile_url", "https://www.energyintel.com/wcod/crude-profile/Mars-Blend"),
+            )
         
         # Return empty data for other crudes (if added later)
-        return [], []
+        empty_port_rows = []
+        empty_port_cols = [
+            {"name": "Measure", "id": "Measure"},
+            {"name": "Port Details", "id": "Port Details"}
+        ]
+        return (
+            [],
+            [],
+            "28.40",
+            "2.17",
+            "0.48",
+            "Low",
+            go.Figure(),
+            empty_port_rows,
+            empty_port_cols,
+            go.Figure(),
+            "",
+            "",
+            "",
+            "United States",
+            "2025",
+            "https://www.energyintel.com/wcod/crude-profile/Mars-Blend",
+        )
     
     # Handle popup menu interactions
     @app.callback(
@@ -1851,30 +2312,42 @@ def register_callbacks(app):
                 }
             }
             
-            // Initial setup
-            addSortIndicatorsToHeaders();
-            setupFieldNestedHandlers();
+            // Initial setup - only if not already done
+            if (!window._crudeProfileIndicatorsAdded) {
+                addSortIndicatorsToHeaders();
+                setupFieldNestedHandlers();
+                window._crudeProfileIndicatorsAdded = true;
+            } else {
+                // Re-run if tables were updated
+                addSortIndicatorsToHeaders();
+                setupFieldNestedHandlers();
+            }
             
-            // Setup click outside to close popup
-            document.addEventListener('click', function(e) {
-                const popup = document.getElementById('crude-profile-sorting-controls');
-                const sortIndicator = e.target.closest('.sort-indicator');
-                const popupItem = e.target.closest('.popup-menu-item');
-                
-                if (popup && popup.style.display === 'block') {
-                    if (!popup.contains(e.target) && !sortIndicator && !popupItem) {
-                        // Click outside, close popup
-                        const btn = document.getElementById('crude-profile-popup-menu-btn');
-                        if (btn) {
-                            btn.click();
+            // Setup click outside to close popup - only once
+            if (!window._crudeProfileClickHandlerAdded) {
+                document.addEventListener('click', function(e) {
+                    const popup = document.getElementById('crude-profile-sorting-controls');
+                    const sortIndicator = e.target.closest('.sort-indicator');
+                    const popupItem = e.target.closest('.popup-menu-item');
+                    
+                    if (popup && popup.style.display === 'block') {
+                        if (!popup.contains(e.target) && !sortIndicator && !popupItem) {
+                            // Click outside, close popup
+                            const btn = document.getElementById('crude-profile-popup-menu-btn');
+                            if (btn) {
+                                btn.click();
+                            }
                         }
                     }
-                }
-            });
+                });
+                window._crudeProfileClickHandlerAdded = true;
+            }
             
-            // Add CSS styles for the sort indicators
-            const style = document.createElement('style');
-            style.textContent = `
+            // Add CSS styles for the sort indicators - only once
+            if (!document.getElementById('crude-profile-sort-styles')) {
+                const style = document.createElement('style');
+                style.id = 'crude-profile-sort-styles';
+                style.textContent = `
                 /* A/Z container - vertical stack - HIDDEN BY DEFAULT, SHOW ON HOVER */
                 .sort-order-container {
                     position: absolute;
@@ -1989,7 +2462,8 @@ def register_callbacks(app):
                     border-color: #999 !important;
                 }
             `;
-            document.head.appendChild(style);
+                document.head.appendChild(style);
+            }
             
             return '';
         }
@@ -2004,26 +2478,18 @@ def register_callbacks(app):
 # ------------------------------------------------------------------------------
 # DASH APP CREATION - MAIN FUNCTION
 # ------------------------------------------------------------------------------
-def create_crude_profile_dashboard(server, url_base_pathname="/dash/crude-profile/"):
+def create_crude_profile_dashboard(dash_app, server, url_base_pathname="/dash/crude-profile/"):
     """Create and configure the crude profile dashboard with grouped tables."""
-    dash_app = dash.Dash(
-        __name__,
-        server=server,
-        url_base_pathname=url_base_pathname,
-        external_stylesheets=[
-            'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
-            'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
-        ],
-        suppress_callback_exceptions=True
-    )
+    # dash_app = dash.Dash(
+    #     __name__,
+    #     server=server,
+    #     url_base_pathname=url_base_pathname,
+    #     external_stylesheets=[
+    #         'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
+    #         'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+    #     ],
+    #     suppress_callback_exceptions=True
+    # )
     
     dash_app.layout = create_layout()
-    register_callbacks(dash_app)
-    return dash_app
-
-# For standalone testing
-if __name__ == "__main__":
-    app = Dash(__name__)
-    app.layout = create_layout()
-    register_callbacks(app)
-    app.run_server(debug=True, port=8050)
+    register_callbacks(dash_app, server)

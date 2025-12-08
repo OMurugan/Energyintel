@@ -63,8 +63,8 @@ def load_projects_carbon_data():
     SELECT
         dc.country_long_name AS name,
         AVG(CAST(fup.carbon_intensity AS NUMERIC)) AS avg_carbon
-    FROM dev.dim_country dc
-    JOIN dev.fact_upstream_project_tracker fup ON dc.dim_country_id = fup.country_id
+    FROM dim_country dc
+    JOIN fact_upstream_project_tracker fup ON dc.dim_country_id = fup.country_id
     WHERE fup.carbon_intensity IS NOT NULL AND fup.carbon_intensity != ''
     GROUP BY dc.dim_country_id, dc.country_long_name;
     """

@@ -97,8 +97,8 @@ def load_projects_tracker_chart_data():
     SELECT
         dc.country_long_name AS name,
         COUNT(fup.project_id) AS project_count
-    FROM dev.dim_country dc
-    JOIN dev.fact_upstream_project_tracker fup ON dc.dim_country_id = fup.country_id
+    FROM dim_country dc
+    JOIN fact_upstream_project_tracker fup ON dc.dim_country_id = fup.country_id
     GROUP BY dc.dim_country_id, dc.country_long_name
     ORDER BY COUNT(fup.project_id) DESC
     LIMIT 15;
@@ -114,8 +114,8 @@ def load_projects_tracker_table_data():
         fup.project_status AS status,
         fup.capacity_bbl_per_day AS capacity_bbl_per_day,
         fup.project_start_date AS start_date
-    FROM dev.fact_upstream_project_tracker fup
-    JOIN dev.dim_country dc ON fup.country_id = dc.dim_country_id
+    FROM fact_upstream_project_tracker fup
+    JOIN dim_country dc ON fup.country_id = dc.dim_country_id
     LIMIT 100;
     """
     results = execute_query(query)

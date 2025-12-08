@@ -67,25 +67,36 @@ POSTGRES_DB_API, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT 
 
 
 def create_db_engine(
-    user: str, password: str, host: str, port: str, database: str, echo=False
+    user: str,
+    password: str,
+    host: str,
+    port: str,
+    database: str,
+    echo=False,
+    pool_size: int = 5,
+    max_overflow: int = 2,
+    pool_recycle: int = 1800,
+    pool_pre_ping: bool = True,
 ):
     """
-    Function to create a database engine
-    Args:
-        user (str) : postgres username
-        password (str) : postgres password
-        host(str) : postgres host url
-        port (str) : postgres port number
-        database (str) : postgres database name
-        echo=False if True, the Engine will log all statements as well as
-        a repr() of their parameter lists to the default log handler
-
-    Returns:
-        Engine (sqlalchemy.engine.Engine)
+    Create a tuned SQLAlchemy engine with pooling and keepalives.
     """
-    # Handle port as string or int
     port_str = str(port) if port else "5432"
-    
+
+    connect_args = {
+        # Fail fast on bad/slow VPN links
+        "connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "10")),
+        # Keep TCP alive to avoid idle disconnects across VPN
+        "keepalives": 1,
+        "keepalives_idle": int(os.getenv("DB_KEEPALIVES_IDLE", "30")),
+        "keepalives_interval": int(os.getenv("DB_KEEPALIVES_INTERVAL", "10")),
+        "keepalives_count": int(os.getenv("DB_KEEPALIVES_COUNT", "5")),
+    }
+
+    pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+    max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "5"))
+    pool_recycle = int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800"))
+
     engine = create_engine(
         (
             f"postgresql+psycopg2://{user}:"  # noqa
@@ -93,21 +104,39 @@ def create_db_engine(
             f"{database}"
         ),
         echo=echo,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_recycle=pool_recycle,
+        pool_pre_ping=True,
+        connect_args=connect_args,
     )
     return engine
 
 
 def get_db_engine():
     """
-    Get database engine using Dash Enterprise credentials or .env fallback
+    Get database engine using Dash Enterprise credentials or .env fallback.
+    Engine is created once and pooled to avoid excessive connections.
     """
-    return create_db_engine(
-        POSTGRES_USER,
-        POSTGRES_PASSWORD,
-        POSTGRES_HOST,
-        POSTGRES_PORT,
-        POSTGRES_DB_API,
-    )
+    global _ENGINE
+    try:
+        if _ENGINE is None:
+            _ENGINE = create_db_engine(
+                POSTGRES_USER,
+                POSTGRES_PASSWORD,
+                POSTGRES_HOST,
+                POSTGRES_PORT,
+                POSTGRES_DB_API,
+            )
+    except NameError:
+        _ENGINE = create_db_engine(
+            POSTGRES_USER,
+            POSTGRES_PASSWORD,
+            POSTGRES_HOST,
+            POSTGRES_PORT,
+            POSTGRES_DB_API,
+        )
+    return _ENGINE
 
 
 def execute_query(query, params=None):
@@ -140,26 +169,25 @@ def execute_query(query, params=None):
             else:
                 result = connection.execute(text(query))
             
-            # If it's a SELECT query, return rows
-            if query.strip().upper().startswith('SELECT'):
+            # If it's a SELECT query (or a CTE starting with WITH), return rows
+            if result.returns_rows:
                 columns = result.keys()
                 rows = result.fetchall()
                 return [dict(zip(columns, row)) for row in rows]
             else:
-                connection.commit()
                 return result.rowcount
                 
     except Exception as e:
         error_msg = (
             f"Database connection error:\n"
-            f"  Host: {db_host}\n"
-            f"  Port: {db_port}\n"
-            f"  Database: {db_name}\n"
-            f"  User: {db_user}\n"
+            # f"  Host: {db_host}\n"
+            # f"  Port: {db_port}\n"
+            # f"  Database: {db_name}\n"
+            # f"  User: {db_user}\n"
             f"  Error: {str(e)}\n\n"
             f"Please check:\n"
             f"  1. Database server is running and accessible\n"
-            f"  2. Network connectivity to {db_host}:{db_port}\n"
+            f"  2. Network connectivity to Host:Port:\n"
             f"  3. Database credentials in .env file or Dash Enterprise data sources\n"
             f"  4. Firewall/security group settings allow connections from this host"
         )

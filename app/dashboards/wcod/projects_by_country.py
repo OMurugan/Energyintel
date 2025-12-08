@@ -62,8 +62,8 @@ def load_projects_by_country_data():
     SELECT
         dc.country_long_name AS name,
         COUNT(fup.project_id) AS project_count
-    FROM dev.dim_country dc
-    JOIN dev.fact_upstream_project_tracker fup ON dc.dim_country_id = fup.country_id
+    FROM dim_country dc
+    JOIN fact_upstream_project_tracker fup ON dc.dim_country_id = fup.country_id
     GROUP BY dc.dim_country_id, dc.country_long_name
     ORDER BY COUNT(fup.project_id) DESC
     LIMIT 20;
