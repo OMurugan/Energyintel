@@ -1573,56 +1573,62 @@ def create_layout(server=None):
             "marginBottom": "25px",
             "marginTop": "20px"
         }, children=[
-            # Left: Headers row and Values row
+            # Left: Assay Details table
             html.Div(style={
                 "flex": "1",
-                "minWidth": "250px"
+                "minWidth": "250px",
+                "background": "#f8fafc",
+                "padding": "12px",
+                "borderRadius": "5px",
+                "border": "1px solid #e6e6e6"
             }, children=[
-                # Headers row
-                html.Div(style={
-                    "display": "flex",
-                    "gap": "15px",
-                    "marginBottom": "8px"
+                
+                html.Table(style={
+                    "width": "100%",
+                    "borderCollapse": "collapse",
+                    "fontSize": "13px",
+                    "color": "#333"
                 }, children=[
-                    html.Div("Alternate Crude Names", style={
-                        "color": "#1f3263",
-                        "fontWeight": "bold",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    }),
-                    html.Div("Country", style={
-                        "color": "#1f3263",
-                        "fontWeight": "bold",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    }),
-                    html.Div("Assay Date", style={
-                        "color": "#1f3263",
-                        "fontWeight": "bold",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    })
-                ]),
-                # Values row
-                html.Div(style={
-                    "display": "flex",
-                    "gap": "15px"
-                }, children=[
-                    html.Div(assay_details["alternate_names"], id="assay-alt-names", style={
-                        "color": "#666",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    }),
-                    html.Div(assay_details["country"], id="assay-country", style={
-                        "color": "#666",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    }),
-                    html.Div(assay_details["assay_date"], id="assay-date", style={
-                        "color": "#666",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    })
+                    html.Thead(html.Tr([
+                        html.Th("Alternate Crude Names", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "8px",
+                            "backgroundColor": "#eef3f8",
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "textAlign": "left"
+                        }),
+                        html.Th("Country", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "8px",
+                            "backgroundColor": "#eef3f8",
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "textAlign": "left"
+                        }),
+                        html.Th("Assay Date", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "8px",
+                            "backgroundColor": "#eef3f8",
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "textAlign": "left"
+                        })
+                    ])),
+                    html.Tbody(html.Tr([
+                        html.Td(assay_details["alternate_names"], id="assay-alt-names", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "8px"
+                        }),
+                        html.Td(assay_details["country"], id="assay-country", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "8px"
+                        }),
+                        html.Td(assay_details["assay_date"], id="assay-date", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "8px"
+                        })
+                    ]))
                 ])
             ]),
             
@@ -1649,10 +1655,14 @@ def create_layout(server=None):
                 })
             ]),
             
-            # Right: Latest Quality Specs
+            # Right: Latest Quality Specs table
             html.Div(style={
                 "flex": "1",
-                "minWidth": "350px"
+                "minWidth": "350px",
+                "background": "#f8fafc",
+                "padding": "12px",
+                "borderRadius": "5px",
+                "border": "1px solid #e6e6e6"
             }, children=[
                 html.Div("Latest Quality Specs", style={
                     "color": "#d65a00",
@@ -1660,53 +1670,59 @@ def create_layout(server=None):
                     "fontSize": "15px",
                     "marginBottom": "12px",
                     "borderBottom": "2px solid #d65a00",
-                    "paddingBottom": "5px"
+                    "paddingBottom": "6px"
                 }),
-                # Headers row
-                html.Div(style={
-                    "display": "flex",
-                    "gap": "15px",
-                    "marginBottom": "8px"
+                html.Table(style={
+                    "width": "100%",
+                    "borderCollapse": "collapse",
+                    "fontSize": "13px",
+                    "color": "#333"
                 }, children=[
-                    html.Div(quality_specs[0][0] if len(quality_specs) > 0 else "Gravity (API at 60F)", style={
-                        "color": "#1f3263",
-                        "fontWeight": "bold",
-                        "fontSize": "12px",
-                        "flex": "1"
-                    }),
-                    html.Div(quality_specs[1][0] if len(quality_specs) > 1 else "Sulfur Content (% Wt)", style={
-                        "color": "#1f3263",
-                        "fontWeight": "bold",
-                        "fontSize": "12px",
-                        "flex": "1"
-                    }),
-                    html.Div(quality_specs[2][0] if len(quality_specs) > 2 else "TAN (mg KOH/g)", style={
-                        "color": "#1f3263",
-                        "fontWeight": "bold",
-                        "fontSize": "12px",
-                        "flex": "1"
-                    })
-                ]),
-                # Values row
-                html.Div(style={
-                    "display": "flex",
-                    "gap": "15px"
-                }, children=[
-                    html.Div(quality_specs[0][1] if len(quality_specs) > 0 else "28.40", id="quality-spec-gravity", style={
-                        "color": "#666",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    }),
-                    html.Div(quality_specs[1][1] if len(quality_specs) > 1 else "2.17", id="quality-spec-sulfur", style={
-                        "color": "#666",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    }),
-                    html.Div(quality_specs[2][1] if len(quality_specs) > 2 else "0.48", id="quality-spec-tan", style={
-                        "color": "#666",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    })
+                    html.Thead(html.Tr([
+                        html.Th("Gravity (API at 60F)", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "10px",
+                            "backgroundColor": "#eef3f8",
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "textAlign": "center"
+                        }),
+                        html.Th("Sulfur Content (% Wt)", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "10px",
+                            "backgroundColor": "#eef3f8",
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "textAlign": "center"
+                        }),
+                        html.Th("TAN (mg KOH/g)", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "10px",
+                            "backgroundColor": "#eef3f8",
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "textAlign": "center"
+                        })
+                    ])),
+                    html.Tbody([
+                        html.Tr([
+                            html.Td(quality_specs[0][1] if len(quality_specs) > 0 else "28.40", id="quality-spec-gravity", style={
+                                "border": "1px solid #e6e6e6",
+                                "padding": "10px",
+                                "textAlign": "center"
+                            }),
+                            html.Td(quality_specs[1][1] if len(quality_specs) > 1 else "2.17", id="quality-spec-sulfur", style={
+                                "border": "1px solid #e6e6e6",
+                                "padding": "10px",
+                                "textAlign": "center"
+                            }),
+                            html.Td(quality_specs[2][1] if len(quality_specs) > 2 else "0.48", id="quality-spec-tan", style={
+                                "border": "1px solid #e6e6e6",
+                                "padding": "10px",
+                                "textAlign": "center"
+                            })
+                        ])
+                    ])
                 ])
             ])
         ]),
