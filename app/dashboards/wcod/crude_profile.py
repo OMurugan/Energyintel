@@ -255,7 +255,7 @@ def _load_crude_assay_df(crude_value: str | None = None) -> pd.DataFrame:
         LEFT JOIN fact_wcod_crude c 
                ON a.crude_id = c.crude_id
         WHERE a.to_be_deleted IS NULL
-          AND a.crude_name = :crude_name AND a.product = 'Crude Oil'
+          AND a.crude_name = :crude_name
     """
 
     try:
@@ -903,7 +903,7 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
             "marginBottom": "15px",
             "fontFamily": "Arial, sans-serif",
             "position": "relative",
-            "height": "1360px",  # Reduced height
+            "maxHeight": "1360px",  # Reduced height
             "overflowY": "auto",  # Add vertical scroll
             "overflowX": "auto",  # Keep horizontal scroll if needed
             "border": "1px solid #ddd",  # Add border for better visibility
@@ -929,7 +929,7 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
             "border": "1px solid #ddd",
             "padding": "10px",
             "textAlign": "left",
-            "position": "sticky",  # Make header sticky
+            "position": "static", # Make header sticky
             "top": "0",
             "zIndex": "10",
         },
@@ -1240,23 +1240,25 @@ def create_map_chart(crude_value: str | None = None):
     port_names = [port.get('port', '') for port in ports_data]
     countries = [port.get('country', '') for port in ports_data]
     crudes = [port.get('crude', '') for port in ports_data]
+    unique_countries = [c for c in dict.fromkeys(countries) if c]
     
     if lats and lons:
-        # Add choropleth to highlight US and Alaska in light green
-        fig.add_trace(go.Choropleth(
-            locations=['USA'],
-            z=[1],
-            locationmode='ISO-3',
-            colorscale=[[0, 'rgb(200, 230, 200)'], [1, 'rgb(200, 230, 200)']],
-            showscale=False,
-            geo='geo',
-            hoverinfo='skip',
-            marker_line_width=0,
-            marker_line_color='rgba(0,0,0,0)',
-            hovertemplate='<extra></extra>',
-            text='',
-            name=''
-        ))
+        # Shade all countries returned from the query
+        if unique_countries:
+            fig.add_trace(go.Choropleth(
+                locations=unique_countries,
+                z=[1] * len(unique_countries),
+                locationmode='country names',
+                colorscale=[[0, 'rgb(200, 230, 200)'], [1, 'rgb(200, 230, 200)']],
+                showscale=False,
+                geo='geo',
+                hoverinfo='skip',
+                marker_line_width=0,
+                marker_line_color='rgba(0,0,0,0)',
+                hovertemplate='<extra></extra>',
+                text='',
+                name=''
+            ))
         
         # Add scattergeo trace for ports with orange triangular markers
         fig.add_trace(go.Scattergeo(
@@ -1278,20 +1280,23 @@ def create_map_chart(crude_value: str | None = None):
                           '<b>Loading Port:</b> %{customdata[2]}<extra></extra>'
         ))
         
-        # Focus on North America region
+        # Compute bounds based on data
         lat_min, lat_max = min(lats), max(lats)
         lon_min, lon_max = min(lons), max(lons)
         
-        # Expand bounds to show North America context
-        lat_min = min(lat_min - 10, 15)
-        lat_max = max(lat_max + 10, 75)
-        lon_min = min(lon_min - 15, -180)
-        lon_max = max(lon_max + 15, -50)
+        # Expand bounds slightly for context
+        lat_pad = max(5, (lat_max - lat_min) * 0.2)
+        lon_pad = max(5, (lon_max - lon_min) * 0.2)
+        lat_min -= lat_pad
+        lat_max += lat_pad
+        lon_min -= lon_pad
+        lon_max += lon_pad
+        center_lat = (lat_min + lat_max) / 2
+        center_lon = (lon_min + lon_max) / 2
         
         fig.update_geos(
             projection_type="natural earth",
-            center=dict(lat=40, lon=-95),
-            scope="north america",
+            center=dict(lat=center_lat, lon=center_lon),
             showland=True,
             landcolor="rgb(243, 243, 243)",
             showocean=True,
