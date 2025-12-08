@@ -236,22 +236,22 @@ def load_table_data():
             est."2029_Q2",
             est."2029_Q3",
             est."2029_Q4"
-        FROM dev.fact_upstream_project_tracker a
-        LEFT JOIN dev.fact_upstream_tracker_prod_estimates est 
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN fact_upstream_tracker_prod_estimates est 
             ON a.project_id = est.project_id
-        LEFT JOIN dev.dim_country c 
+        LEFT JOIN dim_country c 
             ON a.country_id = c.dim_country_id
-        LEFT JOIN dev.dim_company op 
+        LEFT JOIN dim_company op 
             ON a.operator_id = op.company_id
-        LEFT JOIN dev.dim_company p1 
+        LEFT JOIN dim_company p1 
             ON a.partner1_id = p1.company_id
-        LEFT JOIN dev.dim_company p2 
+        LEFT JOIN dim_company p2 
             ON a.partner2_id = p2.company_id
-        LEFT JOIN dev.dim_company p3 
+        LEFT JOIN dim_company p3 
             ON a.partner3_id = p3.company_id
-        LEFT JOIN dev.dim_company p4 
+        LEFT JOIN dim_company p4 
             ON a.partner4_id = p4.company_id
-        LEFT JOIN dev.dim_company p5 
+        LEFT JOIN dim_company p5 
             ON a.partner5_id = p5.company_id
         LEFT JOIN (
             SELECT 
@@ -261,7 +261,7 @@ def load_table_data():
             WHERE value IS NOT NULL 
             GROUP BY project_id
         ) yr ON yr.project_id = a.project_id
-        LEFT JOIN dev.dim_crude cr 
+        LEFT JOIN dim_crude cr 
             ON cr.dim_crude_id = a.crude_id
         WHERE a.include = TRUE
         ORDER BY a.project_name;

@@ -39,7 +39,7 @@ def load_all_data():
                 exports,    -- exports ('000 b/d)
                 reserves,   -- reserves (Billion bbl)
                 COALESCE(to_be_deleted, FALSE) AS to_be_deleted
-            FROM prod.fact_wcod_country
+            FROM fact_wcod_country
             WHERE COALESCE(to_be_deleted, FALSE) = FALSE
             """
         )
@@ -63,8 +63,8 @@ def load_all_data():
                 producers,
                 sellers,
                 ci_rank
-            FROM prod.fact_wcod_crude a
-            LEFT JOIN prod.dim_country grp ON grp.DIM_COUNTRY_ID = a.COUNTRY_ID
+            FROM fact_wcod_crude a
+            LEFT JOIN dim_country grp ON grp.DIM_COUNTRY_ID = a.COUNTRY_ID
             WHERE COALESCE(to_be_deleted, FALSE) = FALSE
             """
         )
