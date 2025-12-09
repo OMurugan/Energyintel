@@ -308,27 +308,12 @@ def load_table_data():
         return pd.DataFrame()
 
 
-def load_kpi_data():
-    """Load KPI table data from CSV"""
-    csv_path = os.path.join(
-        os.path.dirname(__file__), '..', 'data', 'project_by_status',
-        'Project by Status_KPI Table_data.csv'
-    )
-    
-    if not os.path.exists(csv_path):
-        print(f"ERROR: CSV file not found at {csv_path}")
-        return pd.DataFrame()
-    
-    try:
-        df = pd.read_csv(csv_path, encoding='utf-8')
-        df.columns = df.columns.str.strip()
-        return df
-    except Exception as e:
-        print(f"ERROR loading KPI data: {e}")
-        return pd.DataFrame()
+# NOTE: Removed CSV-based KPI loader. KPI values are calculated dynamically
+# from the treemap / project query results (see `load_treemap_data` and
+# KPI aggregation logic in `update_tables`).
 
 
-def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table_df=None):
+def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table_df=None, selected_label=None):
     """Create treemap visualization for projects by status"""
     
     if df is None or df.empty:
@@ -602,7 +587,37 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
         
         # Get domain position for this region
         domain = region_positions.get(region_name, dict(x=[0.0, 1.0], y=[0.0, 1.0]))
-        
+        # Build per-node colors with alpha to implement highlight/fade behavior.
+        # Some Plotly treemap traces do not accept per-node opacity reliably,
+        # so we adjust the color alpha for non-selected nodes instead.
+        def _hex_to_rgb(hex_color):
+            """Return (r,g,b) tuple for a hex color like '#aabbcc'"""
+            try:
+                hex_color = str(hex_color).lstrip('#')
+                if len(hex_color) == 3:
+                    hex_color = ''.join([c*2 for c in hex_color])
+                r = int(hex_color[0:2], 16)
+                g = int(hex_color[2:4], 16)
+                b = int(hex_color[4:6], 16)
+                return r, g, b
+            except Exception:
+                return 100, 100, 100
+
+        colors_with_alpha = []
+        if selected_label:
+            for lab, col in zip(labels, colors):
+                try:
+                    is_match = (str(lab).strip() == str(selected_label).strip())
+                except Exception:
+                    is_match = False
+                if is_match:
+                    colors_with_alpha.append(col)
+                else:
+                    r, g, b = _hex_to_rgb(col)
+                    colors_with_alpha.append(f"rgba({r},{g},{b},0.18)")
+        else:
+            colors_with_alpha = colors
+
         # Add treemap trace for this region
         fig.add_trace(
             go.Treemap(
@@ -616,7 +631,7 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
                 textinfo="text",
                 textfont=dict(size=12, color="#ffffff", family="Arial, sans-serif"),
                 marker=dict(
-                    colors=colors,
+                    colors=colors_with_alpha,
                     line=dict(color="white", width=1)
                 ),
                 tiling=dict(pad=1, packing="squarify", squarifyratio=1.0),
@@ -732,6 +747,8 @@ def create_layout():
                 dcc.Store(id='projects-status-treemap-store', data=[]),
                 # Store to hold region selection controlled by legend
                 dcc.Store(id='projects-status-region-selection', data=[]),
+                # Store to hold treemap click selection (selected label). None => no selection.
+                dcc.Store(id='projects-status-click-selection', data=None),
                 
                 # KPI Table Section
                 html.Div([
@@ -1141,12 +1158,13 @@ def register_callbacks(dash_app, server):
         Output('projects-status-treemap', 'figure'),
         [Input('projects-status-region-filter', 'value'),
          Input('projects-status-likely-filter', 'value'),
-         Input('current-submenu', 'data')],
+         Input('current-submenu', 'data'),
+         Input('projects-status-click-selection', 'data')],
         [State('projects-status-treemap-store', 'data'),
          State('projects-status-region-selection', 'data')],
         prevent_initial_call=False
     )
-    def update_treemap(region_filter, likely_filter, current_submenu, treemap_store, region_selection):        
+    def update_treemap(region_filter, likely_filter, current_submenu, selected_label, treemap_store, region_selection):        
         print(f"DEBUG: update_treemap triggered - current_submenu={current_submenu}, region_filter={region_filter}, likely_filter={likely_filter}, region_selection={region_selection}")
         if current_submenu != 'projects-status':
             # Return empty figure if page is not active
@@ -1190,21 +1208,56 @@ def register_callbacks(dash_app, server):
             table_df_unique = table_df.drop_duplicates(subset=["Project Name"], keep='first')
         else:
             table_df_unique = table_df
-        fig = create_treemap_figure(df=df, region_filter=region_filter, likely_filter=likely_filter, table_df=table_df_unique)
+        fig = create_treemap_figure(df=df, region_filter=region_filter, likely_filter=likely_filter, table_df=table_df_unique, selected_label=selected_label)
         return fig
+
+    # Callback to toggle treemap click selection (click same node to clear)
+    @dash_app.callback(
+        Output('projects-status-click-selection', 'data'),
+        Input('projects-status-treemap', 'clickData'),
+        State('projects-status-click-selection', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_treemap_selection(click_data, current_selection):
+        """Toggle selected treemap label. Clicking same label clears selection."""
+        try:
+            if not click_data or 'points' not in click_data or len(click_data.get('points', [])) == 0:
+                return dash.no_update
+
+            # Grab clicked label (support label or customdata)
+            point = click_data['points'][0]
+            clicked_label = None
+            if isinstance(point, dict):
+                clicked_label = point.get('label') or point.get('customdata') or None
+            # Normalize to string
+            if clicked_label is None:
+                return dash.no_update
+
+            clicked_label = str(clicked_label).strip()
+            if current_selection and str(current_selection).strip() == clicked_label:
+                # Clear selection
+                return None
+            # Set new selection
+            return clicked_label
+        except Exception as e:
+            import traceback
+            print("ERROR in toggle_treemap_selection:", e)
+            traceback.print_exc()
+            return dash.no_update
 
     @dash_app.callback(
         [Output('projects-status-kpi-table-container', 'children'),
          Output('projects-status-table-container', 'children')],
         [Input('projects-status-region-filter', 'value'),
          Input('projects-status-likely-filter', 'value'),
+         Input('projects-status-click-selection', 'data'),
          Input('projects-status-treemap', 'clickData'),
          Input('current-submenu', 'data')],
         [State('projects-status-treemap-store', 'data'),
          State('projects-status-region-selection', 'data')],
         prevent_initial_call=False
     )
-    def update_tables(region_filter, likely_filter, click_data, current_submenu, treemap_store, region_selection):
+    def update_tables(region_filter, likely_filter, click_selection, click_data, current_submenu, treemap_store, region_selection):
         """Update KPI table and project details table - only loads data when page is active"""
         # Only load data if this page is currently active
         if current_submenu != 'projects-status':
@@ -1214,7 +1267,6 @@ def register_callbacks(dash_app, server):
             return empty_kpi, empty_table
         
         # Load data
-        kpi_df = load_kpi_data()
         if treemap_store:
             treemap_df = pd.DataFrame(treemap_store)
         else:
@@ -1402,64 +1454,49 @@ def register_callbacks(dash_app, server):
 
                     filtered_table = filtered_table[mask]
         
-        # Check if a Project Status block was clicked
+        # Check if a Project Status block was clicked.
+        # Use the click_selection store as the source of truth for selection/deselection.
         clicked_project_status = None
         clicked_production_additions = None
-        
-        # Apply treemap click filter if available
-        # New structure: Region (top level) -> Project Status + Play Type (combined, second level)
-        if click_data and 'points' in click_data and len(click_data['points']) > 0:
-            point = click_data['points'][0]
-            
-            # Debug: Print click data to understand structure
-            print(f"DEBUG: Full click_data: {click_data}")
-            print(f"DEBUG: Click data point: {point}")
-            print(f"DEBUG: Point keys: {list(point.keys()) if isinstance(point, dict) else 'Not a dict'}")
-            
+
+        # Determine clicked_label from click_selection (preferred) or click_data (fallback).
+        clicked_label = None
+        if click_selection is not None:
+            # click_selection is the normalized label stored by the toggle callback
+            clicked_label = str(click_selection).strip() if click_selection else None
+        else:
+            # No selection in store => treat as no click (prevents stale clickData causing selection)
             clicked_label = None
-            if 'label' in point:
-                clicked_label = point['label']
-                print(f"DEBUG: Found label in point: {clicked_label}")
-            elif 'customdata' in point:
-                clicked_label = point['customdata']
-                print(f"DEBUG: Found label in customdata: {clicked_label}")
-            
-            if clicked_label:
-                # Check if clicked label is a region (top level)
-                if "Region" in filtered_table.columns:
-                    if clicked_label in filtered_table["Region"].values:
-                        filtered_table = filtered_table[filtered_table["Region"] == clicked_label]
-                
-                # Check if clicked label is a combined "Project Status - Play Type" (second level)
-                if " - " in clicked_label:
-                    parts = clicked_label.split(" - ", 1)
-                    if len(parts) == 2:
-                        project_status = parts[0].strip()
-                        play_type = parts[1].strip()
-                        
-                        # Check if this is a Project Status (not a region)
-                        # Project Status values: Under Development, Onstream, Appraisal
-                        if project_status in ["Under Development", "Onstream", "Appraisal"]:
-                            clicked_project_status = project_status
-                            
-                            # Calculate Production Additions for this Project Status across ALL Play Types
-                            # When a Project Status block is clicked, show the total for that status
-                            status_df = filtered_treemap[
-                                filtered_treemap["Project Status"] == project_status
-                            ]
-                            if not status_df.empty:
-                                clicked_production_additions = float(status_df["Production Additions"].sum())
-                            else:
-                                clicked_production_additions = 0.0
-                            
-                            # Debug output
-                            print(f"DEBUG: Clicked status={clicked_project_status}, value={clicked_production_additions}")
-                        
-                        # Filter table by both Project Status and Play Type
-                        if "Project Status" in filtered_table.columns:
-                            filtered_table = filtered_table[filtered_table["Project Status"] == project_status]
-                        if "Play Type" in filtered_table.columns:
-                            filtered_table = filtered_table[filtered_table["Play Type"] == play_type]
+
+        # If a selection exists, apply filters as before
+        if clicked_label:
+            print(f"DEBUG: Using click_selection label: {clicked_label}")
+            # Check if clicked label is a region (top level)
+            if "Region" in filtered_table.columns and clicked_label in filtered_table["Region"].values:
+                filtered_table = filtered_table[filtered_table["Region"] == clicked_label]
+
+            # Check if clicked label is a combined "Project Status - Play Type" (second level)
+            if " - " in clicked_label:
+                parts = clicked_label.split(" - ", 1)
+                if len(parts) == 2:
+                    project_status = parts[0].strip()
+                    play_type = parts[1].strip()
+
+                    # If it's a recognized Project Status, compute clicked KPI
+                    if project_status in ["Under Development", "Onstream", "Appraisal"]:
+                        clicked_project_status = project_status
+                        status_df = filtered_treemap[filtered_treemap["Project Status"] == project_status]
+                        if not status_df.empty:
+                            clicked_production_additions = float(status_df["Production Additions"].sum())
+                        else:
+                            clicked_production_additions = 0.0
+                        print(f"DEBUG: Clicked status={clicked_project_status}, value={clicked_production_additions}")
+
+                    # Filter details table by both Project Status and Play Type
+                    if "Project Status" in filtered_table.columns:
+                        filtered_table = filtered_table[filtered_table["Project Status"] == project_status]
+                    if "Play Type" in filtered_table.columns:
+                        filtered_table = filtered_table[filtered_table["Play Type"] == play_type]
         
         # Create KPI table - show clicked status if available, otherwise show all
         # When a Project Status block is clicked, replace the Worldwide Oil Capacity Additions table
@@ -1566,7 +1603,7 @@ def create_kpi_table_for_clicked_status(project_status, production_additions):
                 'backgroundColor': '#f8f9fa'
             },
             {
-                'if': {'filter_query': '{Project Status} = Grand Total'},
+                'if': {'filter_query': "{Project Status} = 'Grand Total'"},
                 'fontWeight': 'bold',
                 'backgroundColor': '#e9ecef'
             }
@@ -1598,6 +1635,27 @@ def create_kpi_table(df):
         {"name": "Production Additions ('000 b/d)", "id": "Production Additions"}
     ]
     
+    # Append Grand Total row
+    try:
+        # Attempt to compute numeric total from original df
+        grand_total_val = 0.0
+        if "Production Additions" in df.columns:
+            grand_total_val = float(df["Production Additions"].astype(float).sum())
+        elif table_data:
+            # Fallback: sum values parsed from formatted strings in table_data
+            for r in table_data:
+                try:
+                    grand_total_val += float(str(r.get("Production Additions", "0")).replace(',', ''))
+                except Exception:
+                    pass
+    except Exception:
+        grand_total_val = 0.0
+
+    table_data.append({
+        "Project Status": "Grand Total",
+        "Production Additions": f"{grand_total_val:,.1f}"
+    })
+
     return dash_table.DataTable(
         id='projects-status-kpi-table',
         columns=columns,
@@ -1632,6 +1690,11 @@ def create_kpi_table(df):
             {
                 'if': {'row_index': 'odd'},
                 'backgroundColor': '#f8f9fa'
+            },
+            {
+                'if': {'filter_query': "{Project Status} = 'Grand Total'"},
+                'fontWeight': 'bold',
+                'backgroundColor': '#e9ecef'
             }
         ],
         page_action='none',

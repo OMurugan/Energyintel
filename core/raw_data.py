@@ -33,6 +33,7 @@ def load_all_data():
     
     try:
         ENGINE = get_db_engine()
+        t0 = time.monotonic()
         
         # First, let's check what tables actually exist
         print("Checking available tables in database...")
@@ -118,9 +119,11 @@ def load_all_data():
         RAW_CRUDE_ANNUAL = raw_crude_annual
 
         t_done = time.monotonic()
+        # Calculate total engine time across country and crude fetch phases
+        engine_time = (t_q1_end - t_q1_start) + (t_q2_end - t_q2_start)
         logger.info(
             "[raw_data]"
-            f" engine: {t_engine - t0:.2f}s"
+            f" engine: {engine_time:.2f}s"
             f" country: {t_q1_end - t_q1_start:.2f}s ({len(raw_country)} rows)"
             f" crude: {t_q2_end - t_q2_start:.2f}s ({len(raw_crude_annual)} rows)"
             f" total: {t_done - t0:.2f}s"
