@@ -848,25 +848,6 @@ def create_layout():
                     id='projects-company-bar-chart',
                     style={'height': '500px', 'marginBottom': '20px'}
                 ),
-                html.Div(
-                    id='bar-click-info',
-                    children=[
-                        html.Div(
-                            "Click a bar to see details",
-                            style={'fontSize': '12px', 'color': '#2c3e50'}
-                        )
-                    ],
-                    style={
-                        'display': 'none',
-                        'margin': '0 0 12px',
-                        'padding': '8px 10px',
-                        'backgroundColor': '#ffffff',
-                        'border': '1px solid #dcdcdc',
-                        'borderRadius': '4px',
-                        'boxShadow': '0 1px 3px rgba(0, 0, 0, 0.08)',
-                        'maxWidth': '260px'
-                    }
-                ),
                 html.Div([
                     dcc.Graph(
                         id='projects-company-map',
@@ -1038,7 +1019,7 @@ def create_layout():
                             'marginBottom': '4px'
                         }
                     ),
-                    dcc.RadioItems(
+                    dcc.Checklist(
                         id='likely-to-go-filter',
                         options=[
                             {'label': '(All)', 'value': 'ALL'},
@@ -1046,7 +1027,7 @@ def create_layout():
                             {'label': 'Uncertain', 'value': 'U'},
                             {'label': 'Y', 'value': 'Y'},
                         ],
-                        value='Y',
+                        value=['Y'],
                         labelStyle={
                             'display': 'block',
                             'fontSize': '12px',
@@ -1330,7 +1311,8 @@ def register_callbacks(dash_app, server):
     def set_year_from_bar_click(click_data):
         """When a bar is clicked, sync the year selection controls to that year and set highlight."""
         if not click_data or 'points' not in click_data or not click_data['points']:
-            return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+            # Clear highlights when clicking outside/blank
+            return dash.no_update, dash.no_update, None, None
         
         try:
             x_val = click_data['points'][0].get('x')
@@ -1352,51 +1334,6 @@ def register_callbacks(dash_app, server):
                 quarter_val = parts[1]
         
         return selected_year, selected_year, selected_year, quarter_val
-    
-    @callback(
-        [Output('bar-click-info', 'children'),
-         Output('bar-click-info', 'style')],
-        Input('projects-company-bar-chart', 'clickData'),
-        prevent_initial_call=False
-    )
-    def show_bar_click_info(click_data):
-        """Show a small detail panel when a bar segment is clicked (country, period, value)."""
-        base_style = {
-            'display': 'none',
-            'margin': '0 0 12px',
-            'padding': '8px 10px',
-            'backgroundColor': '#ffffff',
-            'border': '1px solid #dcdcdc',
-            'borderRadius': '4px',
-            'boxShadow': '0 1px 3px rgba(0, 0, 0, 0.08)',
-            'maxWidth': '260px'
-        }
-        
-        if not click_data or 'points' not in click_data or not click_data['points']:
-            # Hide the panel when nothing is selected
-            return dash.no_update, base_style
-        
-        point = click_data['points'][0]
-        country = point.get('meta') or '—'
-        period = point.get('customdata') or point.get('x') or '—'
-        value = point.get('y', '—')
-        try:
-            value_text = f"{float(value):,.1f}"
-        except (TypeError, ValueError):
-            value_text = str(value) if value is not None else '—'
-        
-        visible_style = {**base_style, 'display': 'block'}
-        children = [
-            html.Div(
-                "Selected Capacity",
-                style={'fontWeight': 'bold', 'marginBottom': '4px', 'color': '#1b365d'}
-            ),
-            html.Div(f"Country: {country}"),
-            html.Div(f"Period: {period}"),
-            html.Div(f"Production Additions ('000 b/d): {value_text}")
-        ]
-        
-        return children, visible_style
     
     # Callback to handle play/pause/stop buttons
     @callback(
