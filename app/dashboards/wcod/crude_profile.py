@@ -7,86 +7,10 @@ import dash
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
-import os
 import re
 import numpy as np
 from datetime import datetime, date, timedelta
 from core.data_helpers import execute_query
-
-# ------------------------------------------------------------------------------
-# FILE PATHS
-# ------------------------------------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data", "Crude_Profile")
-
-CSV_PATHS = {
-    "assay_details": os.path.join(DATA_DIR, "Assay_Details_data(1).csv"),
-    "quality_specs": os.path.join(DATA_DIR, "Latest_Quality_Specs_data(1).csv"),
-    # Mars assay and refined products are now loaded dynamically from the database.
-    # These CSV paths are kept only as potential future fallbacks.
-    "mars_assay": os.path.join(DATA_DIR, "Mars_Blend_Assay(1).csv"),
-    "refined_products": os.path.join(DATA_DIR, "Refined_Products_Breakdown_and_Properties_data(1).csv"),
-    "production_exports": os.path.join(DATA_DIR, "Production_and_Exports_Chart_Production_Exports.csv"),
-    "loading_ports": os.path.join(DATA_DIR, "Country_Map_data(1).csv"),
-    "port_details": os.path.join(DATA_DIR, "Loading_Port_Details_data(1).csv"),
-    "producers_sellers": os.path.join(DATA_DIR, "Producers_Sellers_table_data(1).csv")
-}
-
-# ------------------------------------------------------------------------------
-# DATA LOADING FUNCTIONS - UPDATED FOR GROUPED REFINED PRODUCTS
-# ------------------------------------------------------------------------------
-def load_csv_data(file_path, fallback_data=None, **read_kwargs):
-    """Load CSV data with fallback to sample data if file not found."""
-    if not os.path.exists(file_path):
-        print(f"❌ File not found: {file_path}")
-        return fallback_data
-    
-    # Extract encoding if specified, but try multiple encodings
-    specified_encoding = read_kwargs.pop("encoding", None)
-    if specified_encoding:
-        # If encoding is specified, try it first, then fall back to others
-        encodings_to_try = [specified_encoding, "utf-8", "utf-8-sig", "latin-1"]
-    else:
-        encodings_to_try = ["utf-8", "utf-8-sig", "latin-1", "utf-16"]
-    
-    last_error = None
-    base_kwargs = read_kwargs or {}
-    
-    for enc in encodings_to_try:
-        try:
-            kwargs = dict(base_kwargs)
-            if enc:
-                kwargs["encoding"] = enc
-            df = pd.read_csv(file_path, **kwargs)
-            print(f"✅ Loaded {os.path.basename(file_path)} (encoding={enc})")
-            return df
-        except UnicodeDecodeError as e:
-            last_error = e
-            continue
-        except Exception as e:
-            # For non-encoding errors, try next encoding or return fallback
-            if "header" in str(e).lower() or "lines" in str(e).lower():
-                # Header/line count errors - try with different header values
-                if "header" in base_kwargs:
-                    header_val = base_kwargs["header"]
-                    # Try with header=0, then header=1, then header=None
-                    for alt_header in [0, 1, None]:
-                        if alt_header != header_val:
-                            try:
-                                kwargs = dict(base_kwargs)
-                                kwargs["header"] = alt_header
-                                if enc:
-                                    kwargs["encoding"] = enc
-                                df = pd.read_csv(file_path, **kwargs)
-                                print(f"✅ Loaded {os.path.basename(file_path)} (encoding={enc}, header={alt_header})")
-                                return df
-                            except Exception:
-                                continue
-            last_error = e
-            continue
-    
-    print(f"❌ Error loading {file_path}: {last_error}")
-    return fallback_data
 
 def load_assay_details(crude_value: str | None = None):
     """Load assay details data from DB for the selected crude (first row)."""
@@ -255,7 +179,7 @@ def _load_crude_assay_df(crude_value: str | None = None) -> pd.DataFrame:
         LEFT JOIN fact_wcod_crude c 
                ON a.crude_id = c.crude_id
         WHERE a.to_be_deleted IS NULL
-          AND a.crude_name = :crude_name AND a.product = 'Crude Oil'
+          AND a.crude_name = :crude_name
     """
 
     try:
@@ -655,8 +579,8 @@ def load_production_exports(crude_value: str | None = None):
             a.ci_rank,
             a.sellers,
 	        a.producers
-        FROM dev.fact_wcod_crude a
-        LEFT JOIN dev.dim_country grp 
+        FROM fact_wcod_crude a
+        LEFT JOIN dim_country grp 
                ON a.country_id = grp.dim_country_id
         WHERE a.ci_rank IS NOT NULL 
           AND a.crude_name = :crude_name
@@ -705,8 +629,8 @@ def load_port_details(crude_value: str | None = None):
             a.port_name AS "PortName",
             a.measure_name,
             a.value
-        FROM dev.fact_wcod_port a
-        LEFT JOIN dev.dim_crude b 
+        FROM fact_wcod_port a
+        LEFT JOIN dim_crude b 
                ON a.crude_id = b.dim_crude_id
         WHERE b.crude_name = :crude_name
     """
@@ -759,10 +683,10 @@ def load_loading_ports(crude_value: str | None = None):
             b.crude_name AS "Crude",
             a.latitude,
             a.longitude
-        FROM dev.fact_wcod_port a
-        LEFT JOIN dev.dim_crude b 
+        FROM fact_wcod_port a
+        LEFT JOIN dim_crude b 
                ON a.crude_id = b.dim_crude_id
-        LEFT JOIN dev.dim_country c 
+        LEFT JOIN dim_country c 
                ON a.country_id = c.dim_country_id
         WHERE b.crude_name = :crude_name
     """
@@ -799,7 +723,7 @@ def load_producers_sellers(crude_value: str | None = None):
         SELECT
             a.sellers,
             a.producers
-        FROM dev.fact_wcod_crude a
+        FROM fact_wcod_crude a
         WHERE a.ci_rank IS NOT NULL 
           AND a.crude_name = :crude_name
         ORDER BY a.yr
@@ -903,7 +827,7 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
             "marginBottom": "15px",
             "fontFamily": "Arial, sans-serif",
             "position": "relative",
-            "height": "1360px",  # Reduced height
+            "maxHeight": "1360px",  # Reduced height
             "overflowY": "auto",  # Add vertical scroll
             "overflowX": "auto",  # Keep horizontal scroll if needed
             "border": "1px solid #ddd",  # Add border for better visibility
@@ -929,7 +853,7 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
             "border": "1px solid #ddd",
             "padding": "10px",
             "textAlign": "left",
-            "position": "sticky",  # Make header sticky
+            "position": "static", # Make header sticky
             "top": "0",
             "zIndex": "10",
         },
@@ -1240,23 +1164,25 @@ def create_map_chart(crude_value: str | None = None):
     port_names = [port.get('port', '') for port in ports_data]
     countries = [port.get('country', '') for port in ports_data]
     crudes = [port.get('crude', '') for port in ports_data]
+    unique_countries = [c for c in dict.fromkeys(countries) if c]
     
     if lats and lons:
-        # Add choropleth to highlight US and Alaska in light green
-        fig.add_trace(go.Choropleth(
-            locations=['USA'],
-            z=[1],
-            locationmode='ISO-3',
-            colorscale=[[0, 'rgb(200, 230, 200)'], [1, 'rgb(200, 230, 200)']],
-            showscale=False,
-            geo='geo',
-            hoverinfo='skip',
-            marker_line_width=0,
-            marker_line_color='rgba(0,0,0,0)',
-            hovertemplate='<extra></extra>',
-            text='',
-            name=''
-        ))
+        # Shade all countries returned from the query
+        if unique_countries:
+            fig.add_trace(go.Choropleth(
+                locations=unique_countries,
+                z=[1] * len(unique_countries),
+                locationmode='country names',
+                colorscale=[[0, 'rgb(200, 230, 200)'], [1, 'rgb(200, 230, 200)']],
+                showscale=False,
+                geo='geo',
+                hoverinfo='skip',
+                marker_line_width=0,
+                marker_line_color='rgba(0,0,0,0)',
+                hovertemplate='<extra></extra>',
+                text='',
+                name=''
+            ))
         
         # Add scattergeo trace for ports with orange triangular markers
         fig.add_trace(go.Scattergeo(
@@ -1278,20 +1204,23 @@ def create_map_chart(crude_value: str | None = None):
                           '<b>Loading Port:</b> %{customdata[2]}<extra></extra>'
         ))
         
-        # Focus on North America region
+        # Compute bounds based on data
         lat_min, lat_max = min(lats), max(lats)
         lon_min, lon_max = min(lons), max(lons)
         
-        # Expand bounds to show North America context
-        lat_min = min(lat_min - 10, 15)
-        lat_max = max(lat_max + 10, 75)
-        lon_min = min(lon_min - 15, -180)
-        lon_max = max(lon_max + 15, -50)
+        # Expand bounds slightly for context
+        lat_pad = max(5, (lat_max - lat_min) * 0.2)
+        lon_pad = max(5, (lon_max - lon_min) * 0.2)
+        lat_min -= lat_pad
+        lat_max += lat_pad
+        lon_min -= lon_pad
+        lon_max += lon_pad
+        center_lat = (lat_min + lat_max) / 2
+        center_lon = (lon_min + lon_max) / 2
         
         fig.update_geos(
             projection_type="natural earth",
-            center=dict(lat=40, lon=-95),
-            scope="north america",
+            center=dict(lat=center_lat, lon=center_lon),
             showland=True,
             landcolor="rgb(243, 243, 243)",
             showocean=True,
@@ -1568,56 +1497,62 @@ def create_layout(server=None):
             "marginBottom": "25px",
             "marginTop": "20px"
         }, children=[
-            # Left: Headers row and Values row
+            # Left: Assay Details table
             html.Div(style={
                 "flex": "1",
-                "minWidth": "250px"
+                "minWidth": "250px",
+                "background": "#f8fafc",
+                "padding": "12px",
+                "borderRadius": "5px",
+                "border": "1px solid #e6e6e6"
             }, children=[
-                # Headers row
-                html.Div(style={
-                    "display": "flex",
-                    "gap": "15px",
-                    "marginBottom": "8px"
+                
+                html.Table(style={
+                    "width": "100%",
+                    "borderCollapse": "collapse",
+                    "fontSize": "13px",
+                    "color": "#333"
                 }, children=[
-                    html.Div("Alternate Crude Names", style={
-                        "color": "#1f3263",
-                        "fontWeight": "bold",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    }),
-                    html.Div("Country", style={
-                        "color": "#1f3263",
-                        "fontWeight": "bold",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    }),
-                    html.Div("Assay Date", style={
-                        "color": "#1f3263",
-                        "fontWeight": "bold",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    })
-                ]),
-                # Values row
-                html.Div(style={
-                    "display": "flex",
-                    "gap": "15px"
-                }, children=[
-                    html.Div(assay_details["alternate_names"], id="assay-alt-names", style={
-                        "color": "#666",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    }),
-                    html.Div(assay_details["country"], id="assay-country", style={
-                        "color": "#666",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    }),
-                    html.Div(assay_details["assay_date"], id="assay-date", style={
-                        "color": "#666",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    })
+                    html.Thead(html.Tr([
+                        html.Th("Alternate Crude Names", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "8px",
+                            "backgroundColor": "#eef3f8",
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "textAlign": "left"
+                        }),
+                        html.Th("Country", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "8px",
+                            "backgroundColor": "#eef3f8",
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "textAlign": "left"
+                        }),
+                        html.Th("Assay Date", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "8px",
+                            "backgroundColor": "#eef3f8",
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "textAlign": "left"
+                        })
+                    ])),
+                    html.Tbody(html.Tr([
+                        html.Td(assay_details["alternate_names"], id="assay-alt-names", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "8px"
+                        }),
+                        html.Td(assay_details["country"], id="assay-country", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "8px"
+                        }),
+                        html.Td(assay_details["assay_date"], id="assay-date", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "8px"
+                        })
+                    ]))
                 ])
             ]),
             
@@ -1644,10 +1579,14 @@ def create_layout(server=None):
                 })
             ]),
             
-            # Right: Latest Quality Specs
+            # Right: Latest Quality Specs table
             html.Div(style={
                 "flex": "1",
-                "minWidth": "350px"
+                "minWidth": "350px",
+                "background": "#f8fafc",
+                "padding": "12px",
+                "borderRadius": "5px",
+                "border": "1px solid #e6e6e6"
             }, children=[
                 html.Div("Latest Quality Specs", style={
                     "color": "#d65a00",
@@ -1655,53 +1594,59 @@ def create_layout(server=None):
                     "fontSize": "15px",
                     "marginBottom": "12px",
                     "borderBottom": "2px solid #d65a00",
-                    "paddingBottom": "5px"
+                    "paddingBottom": "6px"
                 }),
-                # Headers row
-                html.Div(style={
-                    "display": "flex",
-                    "gap": "15px",
-                    "marginBottom": "8px"
+                html.Table(style={
+                    "width": "100%",
+                    "borderCollapse": "collapse",
+                    "fontSize": "13px",
+                    "color": "#333"
                 }, children=[
-                    html.Div(quality_specs[0][0] if len(quality_specs) > 0 else "Gravity (API at 60F)", style={
-                        "color": "#1f3263",
-                        "fontWeight": "bold",
-                        "fontSize": "12px",
-                        "flex": "1"
-                    }),
-                    html.Div(quality_specs[1][0] if len(quality_specs) > 1 else "Sulfur Content (% Wt)", style={
-                        "color": "#1f3263",
-                        "fontWeight": "bold",
-                        "fontSize": "12px",
-                        "flex": "1"
-                    }),
-                    html.Div(quality_specs[2][0] if len(quality_specs) > 2 else "TAN (mg KOH/g)", style={
-                        "color": "#1f3263",
-                        "fontWeight": "bold",
-                        "fontSize": "12px",
-                        "flex": "1"
-                    })
-                ]),
-                # Values row
-                html.Div(style={
-                    "display": "flex",
-                    "gap": "15px"
-                }, children=[
-                    html.Div(quality_specs[0][1] if len(quality_specs) > 0 else "28.40", id="quality-spec-gravity", style={
-                        "color": "#666",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    }),
-                    html.Div(quality_specs[1][1] if len(quality_specs) > 1 else "2.17", id="quality-spec-sulfur", style={
-                        "color": "#666",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    }),
-                    html.Div(quality_specs[2][1] if len(quality_specs) > 2 else "0.48", id="quality-spec-tan", style={
-                        "color": "#666",
-                        "fontSize": "13px",
-                        "flex": "1"
-                    })
+                    html.Thead(html.Tr([
+                        html.Th("Gravity (API at 60F)", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "10px",
+                            "backgroundColor": "#eef3f8",
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "textAlign": "center"
+                        }),
+                        html.Th("Sulfur Content (% Wt)", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "10px",
+                            "backgroundColor": "#eef3f8",
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "textAlign": "center"
+                        }),
+                        html.Th("TAN (mg KOH/g)", style={
+                            "border": "1px solid #e6e6e6",
+                            "padding": "10px",
+                            "backgroundColor": "#eef3f8",
+                            "color": "#1f3263",
+                            "fontWeight": "bold",
+                            "textAlign": "center"
+                        })
+                    ])),
+                    html.Tbody([
+                        html.Tr([
+                            html.Td(quality_specs[0][1] if len(quality_specs) > 0 else "28.40", id="quality-spec-gravity", style={
+                                "border": "1px solid #e6e6e6",
+                                "padding": "10px",
+                                "textAlign": "center"
+                            }),
+                            html.Td(quality_specs[1][1] if len(quality_specs) > 1 else "2.17", id="quality-spec-sulfur", style={
+                                "border": "1px solid #e6e6e6",
+                                "padding": "10px",
+                                "textAlign": "center"
+                            }),
+                            html.Td(quality_specs[2][1] if len(quality_specs) > 2 else "0.48", id="quality-spec-tan", style={
+                                "border": "1px solid #e6e6e6",
+                                "padding": "10px",
+                                "textAlign": "center"
+                            })
+                        ])
+                    ])
                 ])
             ])
         ]),
