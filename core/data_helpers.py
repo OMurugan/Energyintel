@@ -172,8 +172,8 @@ def execute_query(query, params=None):
             else:
                 result = connection.execute(text(query))
             
-            # If it's a SELECT query, return rows
-            if query.strip().upper().startswith(('SELECT', 'WITH')):
+            # If it's a SELECT query (or a CTE starting with WITH), return rows
+            if result.returns_rows:
                 columns = result.keys()
                 rows = result.fetchall()
                 return [dict(zip(columns, row)) for row in rows]

@@ -34,10 +34,10 @@ def load_chart_data():
                     est."2027_Q1", est."2027_Q2", est."2027_Q3", est."2027_Q4",
                     est."2028_Q1", est."2028_Q2", est."2028_Q3", est."2028_Q4",
                     est."2029_Q1", est."2029_Q2", est."2029_Q3", est."2029_Q4"
-                FROM dev.fact_upstream_project_tracker a
-                LEFT JOIN dev.fact_upstream_tracker_prod_estimates est 
+                FROM fact_upstream_project_tracker a
+                LEFT JOIN fact_upstream_tracker_prod_estimates est 
                     ON a.project_id = est.project_id
-                LEFT JOIN dev.dim_country c 
+                LEFT JOIN dim_country c 
                     ON a.country_id = c.dim_country_id
                 WHERE a.include = TRUE
             ),
@@ -257,7 +257,7 @@ def load_table_data():
             SELECT 
                 project_id,
                 MIN(EXTRACT(YEAR FROM period)) AS year
-            FROM dev.fact_upstream_tracker_prod_estimates_incremental
+            FROM fact_upstream_tracker_prod_estimates_incremental
             WHERE value IS NOT NULL 
             GROUP BY project_id
         ) yr ON yr.project_id = a.project_id
