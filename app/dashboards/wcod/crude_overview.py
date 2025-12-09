@@ -24,6 +24,8 @@ import re
 import itertools
 import math
 import html as html_lib
+import json
+import urllib.request
 from core.data_helpers import execute_query
 
 # Define data paths
@@ -34,6 +36,8 @@ TABLE_YEARLY_CSV = os.path.join(DATA_DIR, 'Table - Country Production_data.csv')
 TABLE_MONTHLY_CSV = os.path.join(DATA_DIR, 'Table - monthly crude production_data.csv')
 YEARLY_GRADES_CSV = os.path.join(DATA_DIR, 'Yearly List of grades for selected country_data.csv')
 MONTHLY_GRADES_CSV = os.path.join(DATA_DIR, 'Monthly List of grades for selected country_data.csv')
+
+COUNTRIES_GEOJSON = None
 
 # Data loading functions
 def load_yearly_bar():
@@ -176,6 +180,22 @@ def load_monthly_bar():
         df = pd.DataFrame()
         df_long = pd.DataFrame()
     return df, df_long
+
+
+def _load_countries_geojson():
+    """Load and cache world countries GeoJSON for Mapbox choropleths."""
+    global COUNTRIES_GEOJSON
+    if COUNTRIES_GEOJSON is not None:
+        return COUNTRIES_GEOJSON
+    url = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            COUNTRIES_GEOJSON = json.load(response)
+            print("DEBUG: Loaded countries GeoJSON for mapbox")
+    except Exception as e:
+        print(f"WARNING: Failed to load countries GeoJSON: {e}")
+        COUNTRIES_GEOJSON = None
+    return COUNTRIES_GEOJSON
 
 
 def load_monthly_map_from_db():
@@ -1468,75 +1488,118 @@ def register_callbacks(dash_app, server):
         if tick_step == 0:
             tick_step = 500
         
-        fig = px.choropleth(
-            agg, 
-            locations="Country", 
-            locationmode="country names", 
-            color="value",
-            projection="natural earth", 
-            color_continuous_scale="Blues",
-            labels={"value":"Production ('000 b/d)"},
-            hover_data={"Country": True, "value": ":,.0f"},
-            range_color=[0, color_max]
-        )
-        fig.update_layout(
-            margin=dict(l=10,r=10,t=10,b=80),
-            height=500,  # Increased height for better map visibility
-            geo=dict(
-                bgcolor="white",
-                showframe=False,
-                showcoastlines=True,
-                projection_type="natural earth",
-                projection=dict(
-                    type="natural earth",
-                    scale=1.0,  # Base scale - prevents zooming out too far
-                    rotation=dict(lon=0, lat=0)
+        # Try Mapbox choropleth; fall back to geo-based choropleth if GeoJSON missing.
+        geojson = _load_countries_geojson()
+        if geojson:
+            fig = px.choropleth_mapbox(
+                agg,
+                geojson=geojson,
+                locations="Country",
+                featureidkey="properties.name",
+                color="value",
+                color_continuous_scale="Blues",
+                labels={"value": "Production ('000 b/d)"},
+                hover_data={"Country": True, "value": ":,.0f"},
+                range_color=[0, color_max],
+                mapbox_style="open-street-map",
+                center={"lat": 20, "lon": 0},
+                zoom=1
+            )
+            fig.update_layout(
+                margin=dict(l=10, r=10, t=10, b=80),
+                height=500,
+                coloraxis_colorbar=dict(
+                    title=dict(text="Production<br>('000 b/d)", font=dict(size=12)),
+                    tickfont=dict(size=10),
+                    orientation="h",
+                    x=0.5,
+                    xanchor="center",
+                    y=-0.12,
+                    yanchor="top",
+                    len=0.7,
+                    thickness=20,
+                    outlinewidth=0,
+                    bordercolor="white",
+                    bgcolor="rgba(255,255,255,0)",
+                    tickmode="linear",
+                    tickformat=",",
+                    tick0=0,
+                    dtick=tick_step,
+                    showticklabels=True,
+                    ticks="outside"
                 ),
-                lonaxis=dict(range=[-180, 180], showgrid=False),
-                lataxis=dict(range=[-90, 90], showgrid=False),
-                center=dict(lon=0, lat=0),
-                visible=True,
-                domain=dict(x=[0, 1], y=[0, 1]),
-                # Improve map styling for better visibility
-                showland=True,
-                showocean=True,
-                showlakes=True,
-                showrivers=False,
-                coastlinewidth=0.5,
-                countrywidth=0.5
-            ),
-            coloraxis_colorbar=dict(
-                title=dict(text="Production<br>('000 b/d)", font=dict(size=12)),
-                tickfont=dict(size=10),
-                orientation="h",
-                x=0.5,
-                xanchor="center",
-                y=-0.12,
-                yanchor="top",
-                len=0.7,
-                thickness=20,
-                outlinewidth=0,
-                bordercolor="white",
-                bgcolor="rgba(255,255,255,0)",
-                tickmode="linear",
-                tickformat=",",
-                tick0=0,
-                dtick=tick_step,
-                showticklabels=True,
-                ticks="outside"
-            ),
-            template="plotly_white",
-            autosize=True
-        )
-        fig.update_geos(
-            resolution=50,
-            showcountries=True,
-            countrycolor="lightgray",
-            coastlinecolor="lightgray",
-            landcolor="white",
-            lakecolor="white",
-            oceancolor="white"
-        )
+                template="plotly_white",
+                autosize=True
+            )
+        else:
+            fig = px.choropleth(
+                agg, 
+                locations="Country", 
+                locationmode="country names", 
+                color="value",
+                projection="natural earth", 
+                color_continuous_scale="Blues",
+                labels={"value":"Production ('000 b/d)"},
+                hover_data={"Country": True, "value": ":,.0f"},
+                range_color=[0, color_max]
+            )
+            fig.update_layout(
+                margin=dict(l=10,r=10,t=10,b=80),
+                height=500,
+                geo=dict(
+                    bgcolor="white",
+                    showframe=False,
+                    showcoastlines=True,
+                    projection_type="natural earth",
+                    projection=dict(
+                        type="natural earth",
+                        scale=1.0,
+                        rotation=dict(lon=0, lat=0)
+                    ),
+                    lonaxis=dict(range=[-180, 180], showgrid=False),
+                    lataxis=dict(range=[-90, 90], showgrid=False),
+                    center=dict(lon=0, lat=0),
+                    visible=True,
+                    domain=dict(x=[0, 1], y=[0, 1]),
+                    showland=True,
+                    showocean=True,
+                    showlakes=True,
+                    showrivers=False,
+                    coastlinewidth=0.5,
+                    countrywidth=0.5
+                ),
+                coloraxis_colorbar=dict(
+                    title=dict(text="Production<br>('000 b/d)", font=dict(size=12)),
+                    tickfont=dict(size=10),
+                    orientation="h",
+                    x=0.5,
+                    xanchor="center",
+                    y=-0.12,
+                    yanchor="top",
+                    len=0.7,
+                    thickness=20,
+                    outlinewidth=0,
+                    bordercolor="white",
+                    bgcolor="rgba(255,255,255,0)",
+                    tickmode="linear",
+                    tickformat=",",
+                    tick0=0,
+                    dtick=tick_step,
+                    showticklabels=True,
+                    ticks="outside"
+                ),
+                template="plotly_white",
+                autosize=True
+            )
+            fig.update_geos(
+                resolution=50,
+                showcountries=True,
+                countrycolor="lightgray",
+                coastlinecolor="lightgray",
+                landcolor="white",
+                lakecolor="white",
+                oceancolor="white"
+            )
         return fig
     
     @dash_app.callback(
