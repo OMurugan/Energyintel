@@ -1,6 +1,7 @@
 """
 Database connection utilities for Dash Enterprise
 SINGLE SOURCE OF TRUTH for all database connections and queries
+Uses Dash Enterprise data sources pattern
 """
 import os
 from urllib.parse import quote_plus, urlparse
@@ -12,12 +13,17 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
+# ======================= Database Credentials =======================
+# Single source of truth for database credentials
+# Priority: 1. Dash Enterprise data sources, 2. DATABASE_URL env var, 3. Individual env vars, 4. Hardcoded defaults
 
-# ===============================================================
-#              1) LOAD DATABASE CREDENTIALS
-# ===============================================================
 def _get_db_credentials():
-    """Get database credentials from Dash Enterprise, DATABASE_URL or .env"""
+    """
+    Get database credentials from Dash Enterprise or fallback to .env file.
+    Returns tuple: (db_name, user, password, host, port)
+    This is the SINGLE SOURCE OF TRUTH for database credentials.
+    """
+    # Priority 1: Try Dash Enterprise data sources first
     try:
         creds = ds.credentials("PostgreSQL")
         db_name = getattr(creds, "dbname", None) or getattr(creds, "database", None)
@@ -29,32 +35,34 @@ def _get_db_credentials():
             return db_name, user, password, host, port
     except Exception:
         pass
-
-    database_url = os.environ.get("DATABASE_URL")
+    
+    # Priority 2: Try DATABASE_URL environment variable
+    database_url = os.environ.get('DATABASE_URL')
     if database_url:
         try:
             parsed = urlparse(database_url)
-            db_name = parsed.path.lstrip("/")
-            return (
-                db_name,
-                parsed.username,
-                parsed.password,
-                parsed.hostname,
-                parsed.port or "5432",
-            )
+            db_name = parsed.path.lstrip('/') if parsed.path else None
+            user = parsed.username
+            password = parsed.password
+            host = parsed.hostname
+            port = parsed.port or '5432'
+            if all([db_name, user, password, host, port]):
+                return db_name, user, password, host, port
         except Exception:
             pass
-
+    
+    # Priority 3: Fallback to .env file or individual environment variables
     load_dotenv()
-    return (
-        os.getenv("DB_NAME"),
-        os.getenv("DB_USER"),
-        os.getenv("DB_PASSWORD"),
-        os.getenv("DB_HOST"),
-        os.getenv("DB_PORT", "5432"),
-    )
+    db_name = os.getenv("DB_NAME")
+    user = os.getenv("DB_USER")
+    password = os.getenv("DB_PASSWORD")
+    host = os.getenv("DB_HOST")
+    port = os.getenv("DB_PORT", "5432")    
+    
+    return db_name, user, password, host, port
 
 
+# Get credentials once at module load
 POSTGRES_DB_API, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT = _get_db_credentials()
 
 
@@ -103,87 +111,148 @@ def create_db_engine(
         max_overflow=max_overflow,
         pool_recycle=pool_recycle,
         pool_pre_ping=True,
-        pool_recycle=360,
-        pool_size=5,
-        max_overflow=10,
-        echo=False,
+        connect_args=connect_args,
     )
-
-
-# ⭐ GLOBAL ENGINE — DO NOT RECREATE PER QUERY
-ENGINE = create_db_engine(
-    POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB_API
-)
+    return engine
 
 
 def get_db_engine():
-    """Return global shared engine."""
-    return ENGINE
+    """
+    Get database engine using Dash Enterprise credentials or .env fallback.
+    Engine is created once and pooled to avoid excessive connections.
+    """
+    global _ENGINE
+    try:
+        if _ENGINE is None:
+            _ENGINE = create_db_engine(
+                POSTGRES_USER,
+                POSTGRES_PASSWORD,
+                POSTGRES_HOST,
+                POSTGRES_PORT,
+                POSTGRES_DB_API,
+            )
+    except NameError:
+        _ENGINE = create_db_engine(
+            POSTGRES_USER,
+            POSTGRES_PASSWORD,
+            POSTGRES_HOST,
+            POSTGRES_PORT,
+            POSTGRES_DB_API,
+        )
+    return _ENGINE
 
 
-# ===============================================================
-#                   3) EXECUTE QUERY SAFELY
-# ===============================================================
 def execute_query(query, params=None):
     """
-    Execute SQL and return rows as list[dict].
-    Prevents connection leaks and pool overflow.
+    Execute a raw SQL query and return results
+    Compatible with Dash Enterprise pattern
+    
+    Args:
+        query: SQL query string
+        params: Optional dictionary of parameters for parameterized queries
+    
+    Returns:
+        List of result rows (as dictionaries) for SELECT queries
+        Row count for other queries
+    
+    Raises:
+        Exception: With detailed error message if database connection or query fails
     """
+    # Extract connection details for error message (without password)
+    db_host = POSTGRES_HOST or "unknown"
+    db_port = POSTGRES_PORT or "unknown"
+    db_name = POSTGRES_DB_API or "unknown"
+    db_user = POSTGRES_USER or "unknown"
+    
     try:
-        with ENGINE.connect() as conn:
-            result = conn.execute(text(query), params or {})
-
-            if query.strip().upper().startswith(("SELECT", "WITH")):
-                return [dict(row._mapping) for row in result.fetchall()]
-
-            return result.rowcount
-
+        engine = get_db_engine()
+        with engine.connect() as connection:
+            if params:
+                result = connection.execute(text(query), params)
+            else:
+                result = connection.execute(text(query))
+            
+            # If it's a SELECT query (or a CTE starting with WITH), return rows
+            if result.returns_rows:
+                columns = result.keys()
+                rows = result.fetchall()
+                return [dict(zip(columns, row)) for row in rows]
+            else:
+                return result.rowcount
+                
     except Exception as e:
-        raise Exception(
+        error_msg = (
             f"Database connection error:\n"
+            # f"  Host: {db_host}\n"
+            # f"  Port: {db_port}\n"
+            # f"  Database: {db_name}\n"
+            # f"  User: {db_user}\n"
             f"  Error: {str(e)}\n\n"
-            f"Possible causes:\n"
-            f"  - DB credentials incorrect\n"
-            f"  - Too many active connections\n"
-            f"  - Network / security group blocking access\n"
-            f"  - DB server overloaded"
-        ) from e
+            f"Please check:\n"
+            f"  1. Database server is running and accessible\n"
+            f"  2. Network connectivity to Host:Port:\n"
+            f"  3. Database credentials in .env file or Dash Enterprise data sources\n"
+            f"  4. Firewall/security group settings allow connections from this host"
+        )
+        raise Exception(error_msg) from e
 
 
-# ===============================================================
-#           4) SESSIONS (For advanced raw SQL usage)
-# ===============================================================
-SessionLocal = sessionmaker(bind=ENGINE)
+def get_db_connection_string():
+    """
+    Get database connection string (for compatibility with existing code)
+    This is the SINGLE SOURCE OF TRUTH for database connection strings.
+    """
+    password = quote_plus(POSTGRES_PASSWORD) if POSTGRES_PASSWORD else ''
+    port_str = str(POSTGRES_PORT) if POSTGRES_PORT else '5432'
+    return f'postgresql://{POSTGRES_USER}:{password}@{POSTGRES_HOST}:{port_str}/{POSTGRES_DB_API}'
+
 
 def get_db_session():
-    return SessionLocal()
+    """
+    Get a database session for raw SQL queries
+    Uses the centralized database connection
+    """
+    engine = get_db_engine()
+    Session = sessionmaker(bind=engine)
+    return Session()
 
 
-# ===============================================================
-#                   5) TEST CONNECTION
-# ===============================================================
 def test_connection():
+    """
+    Test the database connection
+    Returns: (success: bool, message: str)
+    """
     try:
-        with ENGINE.connect() as conn:
-            conn.execute(text("SELECT 1"))
+        engine = get_db_engine()
+        with engine.connect() as connection:
+            result = connection.execute(text("SELECT 1"))
+            result.fetchone()
         return True, "Connection successful"
     except Exception as e:
-        return False, f"Connection failed: {str(e)}"
+        db_host = POSTGRES_HOST or "unknown"
+        db_port = POSTGRES_PORT or "unknown"
+        return False, f"Connection failed to {db_host}:{db_port} - {str(e)}"
 
 
-# ===============================================================
-#                   6) UTILITY HELPERS
-# ===============================================================
+# =============== Helpers for metrics & shaping ===============
 def rp_ratio(prod_000bd, reserves_bbl_b):
+    """
+    R/P (years) = Reserves (billion bbl) / Production (billion bbl per year).
+    prod_000bd ('000 b/d) → billion bbl/year via factor 0.365.
+    """
     if prod_000bd is None or np.isnan(prod_000bd) or prod_000bd == 0:
         return np.nan
     return reserves_bbl_b / (prod_000bd * 0.365)
 
 
 def year_options(df):
-    years = sorted(df["year"].dropna().astype(int).unique())
-    return [{"label": str(y), "value": y} for y in years], (years[-1] if years else None)
+    years = sorted([int(y) for y in df["year"].dropna().unique()])
+    return [{"label": str(y), "value": int(y)} for y in years], (
+        years[-1] if years else None
+    )
 
 
 def country_options(df, country_col="country_long_name"):
-    return [{"label": c, "value": c} for c in sorted(df[country_col].dropna().unique())]
+    countries = sorted(df[country_col].dropna().unique())
+    return [{"label": c, "value": c} for c in countries]
+
