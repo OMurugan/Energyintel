@@ -1,10 +1,16 @@
 """
-Load and cache raw data from database
-This module loads data once at startup for performance
+Load and cache raw data from database.
+This module loads data once at startup for performance.
 """
-from core.data_helpers import get_db_engine
+import logging
+import time
+
+from core.data_helpers import get_db_engine, execute_query
 from sqlalchemy import text
 import pandas as pd
+
+
+logger = logging.getLogger(__name__)
 
 # Global data storage - will be populated on first access
 RAW_COUNTRY = pd.DataFrame()
@@ -81,85 +87,49 @@ def load_all_data():
             """
         )
         
-        try:
-            # Try to get country-level data without schema prefix
-            print("Attempting to load country data...")
-            raw_country = pd.read_sql(QUERY_COUNTRY, ENGINE)
-            print(f"Successfully loaded {len(raw_country)} country records")
-            
-            raw_country = raw_country.rename(
-                columns={
-                    "output": "production",  # keep naming consistent in the UI
-                }
-            )
+        # Get country-level data
+        t_q1_start = time.monotonic()
+        raw_country = pd.read_sql(QUERY_COUNTRY, ENGINE)
+        t_q1_end = time.monotonic()
+        raw_country = raw_country.rename(
+            columns={
+                "output": "production",  # keep naming consistent in the UI
+            }
+        )
 
-            # Guard against duplicates (country,year) by keeping the latest insert if
-            #  present (remove this if your data is guaranteed unique)
-            raw_country = raw_country.sort_values(
-                ["country_id", "year"]
-            ).drop_duplicates(subset=["country_id", "year"], keep="last")
-            
-            # Try to get annual crude data
-            print("Attempting to load crude data...")
-            raw_crude_annual = pd.read_sql(QUERY_ANNUAL_CRUDE, ENGINE)
-            print(f"Successfully loaded {len(raw_crude_annual)} crude records")
-            
-            # Calculate options
-            from core.data_helpers import year_options, country_options
-            YEAR_OPTS, DEFAULT_YEAR = year_options(raw_country)
-            COUNTRY_OPTIONS = country_options(raw_country)
-            
-            # Store globally
-            RAW_COUNTRY = raw_country
-            RAW_CRUDE_ANNUAL = raw_crude_annual
-            
-            print(f"Data loading completed successfully:")
-            print(f"- Country records: {len(RAW_COUNTRY)}")
-            print(f"- Crude annual records: {len(RAW_CRUDE_ANNUAL)}")
-            print(f"- Available years: {YEAR_OPTS}")
-            print(f"- Default year: {DEFAULT_YEAR}")
-            print(f"- Number of countries: {len(COUNTRY_OPTIONS)}")
-            
-        except Exception as table_error:
-            print(f"Error loading from public schema: {table_error}")
-            
-            # Try to find the actual table names by searching all schemas
-            print("\nSearching for tables with similar names in all schemas...")
-            search_query = text("""
-                SELECT table_schema, table_name 
-                FROM information_schema.tables 
-                WHERE (table_name ILIKE '%wcod%' OR table_name ILIKE '%fact%' OR table_name ILIKE '%country%')
-                AND table_schema NOT IN ('pg_catalog', 'information_schema')
-                ORDER BY table_schema, table_name
-            """)
-            
-            similar_tables = pd.read_sql(search_query, ENGINE)
-            if not similar_tables.empty:
-                print(f"Found similar tables:\n{similar_tables.to_string()}")
-                
-                # Try the first matching table
-                schema = similar_tables.iloc[0]['table_schema']
-                table = similar_tables.iloc[0]['table_name']
-                print(f"\nTrying table: {schema}.{table}")
-                
-                try:
-                    test_query = text(f"SELECT * FROM {schema}.{table} LIMIT 5")
-                    test_data = pd.read_sql(test_query, ENGINE)
-                    print(f"Sample data from {schema}.{table}:\n{test_data.head()}")
-                except Exception as test_error:
-                    print(f"Could not read from {schema}.{table}: {test_error}")
-            else:
-                print("No similar tables found.")
-            
-            # Create empty DataFrames for development
-            print("\nCreating empty data structures for development...")
-            create_empty_data()
-            
+        # Guard against duplicates (country,year) by keeping the latest insert if
+        #  present (remove this if your data is guaranteed unique)
+        raw_country = raw_country.sort_values(
+            ["country_id", "year"]
+        ).drop_duplicates(subset=["country_id", "year"], keep="last")
+        
+        # Get annual crude data
+        t_q2_start = time.monotonic()
+        raw_crude_annual = pd.read_sql(QUERY_ANNUAL_CRUDE, ENGINE)
+        t_q2_end = time.monotonic()
+        
+        # Calculate options
+        from core.data_helpers import year_options, country_options
+        YEAR_OPTS, DEFAULT_YEAR = year_options(raw_country)
+        COUNTRY_OPTIONS = country_options(raw_country)
+        
+        # Store globally
+        RAW_COUNTRY = raw_country
+        RAW_CRUDE_ANNUAL = raw_crude_annual
+
+        t_done = time.monotonic()
+        logger.info(
+            "[raw_data]"
+            f" engine: {t_engine - t0:.2f}s"
+            f" country: {t_q1_end - t_q1_start:.2f}s ({len(raw_country)} rows)"
+            f" crude: {t_q2_end - t_q2_start:.2f}s ({len(raw_crude_annual)} rows)"
+            f" total: {t_done - t0:.2f}s"
+        )
+        
     except Exception as e:
-        print(f"Error connecting to database: {e}")
-        # Create empty data structures for development
-        print("Creating empty data structures for development...")
-        create_empty_data()
+        logger.exception("Error loading data")
+        # Keep empty DataFrames on error
+        pass
 
 
 def create_empty_data():

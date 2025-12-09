@@ -15,6 +15,8 @@ from core.data_helpers import get_db_connection_string
 class Config:
     """Base configuration"""
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
+    # Mapbox access token (defaults to provided token if env not set)
+    MAPBOX_ACCESS_TOKEN = os.environ.get('MAPBOX_ACCESS_TOKEN','')
     
     # Database configuration - PostgreSQL
     # Uses centralized database connection from core.data_helpers
@@ -51,7 +53,7 @@ class Config:
 
 class DevelopmentConfig(Config):
     """Development configuration - uses schema from DB_SCHEMA env var (defaults to 'dev')"""
-    DEBUG = True
+    DEBUG = os.environ.get('DASH_DEBUG', 'False').lower() == 'true'
     SQLALCHEMY_ECHO = True
     
     # Override engine options to use schema from .env file (DB_SCHEMA)
@@ -72,6 +74,7 @@ class DevelopmentConfig(Config):
 class ProductionConfig(Config):
     """Production configuration - uses schema from DB_SCHEMA env var (defaults to 'public')"""
     DEBUG = False
+    DASH_DEBUG = False
     CACHE_TYPE = 'redis'
     CACHE_REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
     

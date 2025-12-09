@@ -58,13 +58,50 @@ def _get_db_credentials():
 POSTGRES_DB_API, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT = _get_db_credentials()
 
 
-# ===============================================================
-#           2) CREATE GLOBAL SQLALCHEMY ENGINE (ONE TIME)
-# ===============================================================
-def create_db_engine(user, password, host, port, database):
-    """Create a single reusable SQLAlchemy engine with pooling."""
-    return create_engine(
-        f"postgresql+psycopg2://{user}:{quote_plus(password)}@{host}:{port}/{database}",
+def create_db_engine(
+    user: str,
+    password: str,
+    host: str,
+    port: str,
+    database: str,
+    echo=False,
+    pool_size: int = 5,
+    max_overflow: int = 2,
+    pool_recycle: int = 1800,
+    pool_pre_ping: bool = True,
+):
+    """
+    Create a tuned SQLAlchemy engine with pooling and keepalives.
+    """
+    port_str = str(port) if port else "5432"
+
+    connect_args = {
+        # Fail fast on bad/slow VPN links
+        "connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "10")),
+        # Keep TCP alive to avoid idle disconnects across VPN
+        "keepalives": 1,
+        "keepalives_idle": int(os.getenv("DB_KEEPALIVES_IDLE", "30")),
+        "keepalives_interval": int(os.getenv("DB_KEEPALIVES_INTERVAL", "10")),
+        "keepalives_count": int(os.getenv("DB_KEEPALIVES_COUNT", "5")),
+        # Optional per-connection statement timeout (ms)
+        "options": f"-c statement_timeout={int(os.getenv('DB_STATEMENT_TIMEOUT_MS', '30000'))}"
+        + f" -c application_name=energyintel_dash",
+    }
+
+    pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+    max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "5"))
+    pool_recycle = int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800"))
+
+    engine = create_engine(
+        (
+            f"postgresql+psycopg2://{user}:"  # noqa
+            f"{quote_plus(password)}@{host}:{port_str}/"  # noqa
+            f"{database}"
+        ),
+        echo=echo,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_recycle=pool_recycle,
         pool_pre_ping=True,
         pool_recycle=360,
         pool_size=5,
