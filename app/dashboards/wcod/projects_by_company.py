@@ -804,6 +804,9 @@ def create_layout():
         dcc.Store(id='year-period-play-store', data=False),
         dcc.Store(id='bar-highlight-year-store', data=None),
         dcc.Store(id='quarter-highlight-store', data=None),
+        # Stores to keep full table data for filtering
+        dcc.Store(id='projects-company-table-data-full', data=data_full if df_table is not None else []),
+        dcc.Store(id='projects-company-table-tooltip-full', data=tooltip_data if df_table is not None else []),
         dcc.Interval(
             id='year-period-interval',
             interval=2000,  # 2 seconds between steps when playing
@@ -1069,45 +1072,48 @@ def create_layout():
             style_table={
                 'overflowX': 'auto',
                 'overflowY': 'auto',
-                'maxHeight': '520px',
+                'maxHeight': '600px',
                 'width': '100%',
                 'minWidth': '1200px',
-                'border': 'none',
-                'backgroundColor': '#fff'
+                'border': '1px solid #ddd'
             },
             style_header={
-                'backgroundColor': '#fff',
+                'backgroundColor': '#f8f9fa',
                 'fontWeight': 'bold',
-                'color': '#2c3e50',
+                'color': 'rgb(27, 54, 93)',
                 'fontSize': '13px',
-                'border': '1px solid #e0e0e0',
-                'textAlign': 'left',
-                'font-family': 'Arial, sans-serif',
+                'border': '1px solid #ddd',
+                'textAlign': 'center',
+                'font-family': 'Lato, sans-serif',
                 'whiteSpace': 'normal',
                 'height': 'auto'
             },
             style_cell={
                 'textAlign': 'left',
-                'padding': '6px 8px',
-                'whiteSpace': 'nowrap',
+                'padding': '8px',
+                'whiteSpace': 'normal',
+                'height': 'auto',
                 'overflow': 'hidden',
                 'textOverflow': 'ellipsis',
                 'maxWidth': '180px',
                 'fontSize': '12px',
-                'border': '1px solid #e0e0e0',
+                'border': '1px solid #ddd',
                 'backgroundColor': '#fff',
-                'font-family': 'Arial, sans-serif'
+                'font-family': 'Lato, sans-serif',
+                'color': 'rgb(27, 54, 93)'
             },
             style_data_conditional=[
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#fafbfc'
+                    'backgroundColor': '#f9f9f9'
                 },
                 {
                     'if': {'column_id': 'Comments'},
-                    'whiteSpace': 'normal',
-                    'maxWidth': '600px',
-                    'minWidth': '300px'
+                    'whiteSpace': 'nowrap',
+                    'overflow': 'hidden',
+                    'textOverflow': 'ellipsis',
+                    'height': 'auto',
+                    'textAlign': 'left'
                 }
             ],
             style_cell_conditional=[
@@ -1141,6 +1147,15 @@ def create_layout():
             css=[{
                 'selector': '.dash-table-container .dash-spreadsheet-inner tr th',
                 'rule': 'text-transform: none;'
+            }, {
+                'selector': '.dash-table-tooltip',
+                'rule': 'font-size: 10px !important; font-family: Lato, sans-serif !important; color: rgb(27, 54, 93) !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
+            }, {
+                'selector': '.dash-table-container .row:last-child',
+                'rule': 'display: none !important;'
+            }, {
+                'selector': '.previous-page, .next-page, .first-page, .last-page, .page-number, .page-number--current',
+                'rule': 'display: none !important;'
             }]
         )
     ], style={'padding': '10px 18px'})
@@ -1241,6 +1256,114 @@ def register_callbacks(dash_app, server):
             return str(year_value)
         years = get_unique_years()
         return str(years[0]) if years else '2025'
+    
+    # Normalize Likely To Go checklist: (All) selects all; otherwise keep only the latest choice.
+    @callback(
+        Output('likely-to-go-filter', 'value'),
+        Input('likely-to-go-filter', 'value'),
+        prevent_initial_call=True
+    )
+    def normalize_likely_to_go(selected):
+        """Checklist behavior: (All) checks everything; otherwise allow multi-select and dedupe."""
+        options_all = ['ALL', 'N', 'U', 'Y']
+        if not selected:
+            return ['Y']
+        # If All is present, force all options on
+        if 'ALL' in selected:
+            return options_all
+        # Otherwise keep the order and remove duplicates
+        seen = []
+        for v in selected:
+            if v not in seen:
+                seen.append(v)
+        return seen
+    
+    @callback(
+        [Output('projects-company-table', 'data'),
+         Output('projects-company-table', 'tooltip_data')],
+        [Input('likely-to-go-filter', 'value')],
+        [State('projects-company-table-data-full', 'data'),
+         State('projects-company-table-tooltip-full', 'data'),
+         State('projects-company-table', 'columns')],
+        prevent_initial_call=False
+    )
+    def filter_projects_company_table(likely_filter, data_full, tooltip_full, columns_def):
+        """Filter the Projects by Company table using the Likely To Go checklist (behaves like projects_by_time)."""
+        data_full = data_full or []
+        tooltip_full = tooltip_full or []
+        columns_def = columns_def or []
+        col_ids = [c.get('id') for c in columns_def if c.get('id')]
+        
+        # Helper to truncate display strings
+        def _truncate(val, limit=11):
+            if isinstance(val, str) and len(val) > limit:
+                return val[:limit] + "..."
+            return val
+        
+        # Normalize filter input
+        if not likely_filter:
+            likely_filter = []
+        if not isinstance(likely_filter, list):
+            likely_filter = [likely_filter]
+        
+        # Determine selected statuses
+        if 'ALL' in likely_filter:
+            selected_statuses = ['Y', 'N', 'U', '']
+        else:
+            selected_statuses = []
+            for v in likely_filter:
+                v_up = str(v).upper()
+                if v_up == 'Y':
+                    selected_statuses.append('Y')
+                elif v_up == 'N':
+                    selected_statuses.append('N')
+                elif v_up.startswith('U'):
+                    selected_statuses.append('U')
+                elif v == '':
+                    selected_statuses.append('')
+        
+        # Filter rows
+        filtered_rows = []
+        filtered_tooltips = []
+        for row, tip in zip(data_full, tooltip_full):
+            likely_val = str(row.get('Likely Go-ahead', '')).strip().upper()
+            if not selected_statuses:
+                match = False
+            elif 'Y' in selected_statuses and likely_val.startswith('Y'):
+                match = True
+            elif 'N' in selected_statuses and likely_val.startswith('N'):
+                match = True
+            elif 'U' in selected_statuses and likely_val.startswith('U'):
+                match = True
+            elif '' in selected_statuses and likely_val == '':
+                match = True
+            else:
+                match = False
+            
+            if match:
+                filtered_rows.append(row)
+                filtered_tooltips.append(tip)
+        
+        # Build display rows (truncated) and tooltips
+        display_rows = []
+        display_tooltips = []
+        for idx, row in enumerate(filtered_rows):
+            display_row = {}
+            for col_id in col_ids:
+                display_row[col_id] = _truncate(row.get(col_id, ""))
+            display_rows.append(display_row)
+            
+            tip_row = {}
+            tip_source = filtered_tooltips[idx] if idx < len(filtered_tooltips) else {}
+            for col_id in col_ids:
+                val = row.get(col_id, "")
+                tip_row[col_id] = {'value': str(val), 'type': 'text'}
+            # Prefer original tooltip entries if present
+            if isinstance(tip_source, dict):
+                tip_row.update({k: v for k, v in tip_source.items() if v})
+            display_tooltips.append(tip_row)
+        
+        return display_rows, display_tooltips
     
     # Callback to sync year controls (display, dropdown, slider, prev/next buttons)
     @callback(
@@ -1377,9 +1500,8 @@ def register_callbacks(dash_app, server):
     )
     def update_projects_by_company(submenu, company, likely_to_go, selected_year, slider_year, show_history, selected_countries, bar_highlight_year):
         """Update projects by company chart and map"""
-        # Handle RadioItems value (single value instead of list)
-        if isinstance(likely_to_go, list):
-            likely_to_go = likely_to_go[0] if likely_to_go else 'Y'
+        # Handle checklist value (after normalization) - keep list for filtering
+        ltg_list = likely_to_go if isinstance(likely_to_go, list) else ([likely_to_go] if likely_to_go else [])
         
         # Check if this is the correct submenu (allow None on initial load)
         if submenu is not None and submenu != 'projects-company':
@@ -1406,7 +1528,49 @@ def register_callbacks(dash_app, server):
             return empty_fig, empty_fig
         
         # Note: Likely To Go filter would require additional data column
-        # For now, we'll skip this filter as it's not in the CSV
+        # Apply Likely To Go filter (matches table + projects_by_time behavior)
+        likely_col = None
+        for col in df.columns:
+            col_lower = str(col).lower()
+            if 'likely' in col_lower and ('go' in col_lower or 'ahead' in col_lower):
+                likely_col = col
+                break
+        if likely_col:
+            df[likely_col] = df[likely_col].astype(str).str.strip()
+            col_upper = df[likely_col].str.upper()
+            # Build selected statuses
+            selected_statuses = []
+            if isinstance(likely_to_go, list):
+                ltg_list = likely_to_go
+            else:
+                ltg_list = [likely_to_go] if likely_to_go else []
+            if 'ALL' in ltg_list:
+                selected_statuses = ['Y', 'N', 'U', '']
+            else:
+                for v in ltg_list:
+                    v_up = str(v).upper()
+                    if v_up == 'Y':
+                        selected_statuses.append('Y')
+                    elif v_up == 'N':
+                        selected_statuses.append('N')
+                    elif v_up.startswith('U'):
+                        selected_statuses.append('U')
+                    elif v == '':
+                        selected_statuses.append('')
+            if selected_statuses:
+                mask = pd.Series(False, index=col_upper.index)
+                for status in selected_statuses:
+                    if status == 'Y':
+                        mask |= col_upper.str.startswith('Y')
+                    elif status == 'N':
+                        mask |= col_upper.str.startswith('N')
+                    elif status == 'U':
+                        mask |= col_upper.str.startswith('U')
+                    elif status == '':
+                        mask |= (col_upper == '')
+                df = df[mask].copy()
+            else:
+                df = pd.DataFrame()
         
         # Use selected countries for filtering
         # If empty list, show all countries. If countries are selected, show only those.
