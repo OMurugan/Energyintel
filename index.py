@@ -140,40 +140,40 @@ app_mod.app.layout = html.Div(
 )
 
 
-app_mod.app.layout = html.Div(
-    [
-        dcc.Location(id="url"),
-        html.Nav(
-            [
-                dcc.Link(
-                    "Go Back",
-                    href=_home_href(),
-                    className="nav-link",
-                    refresh=True,
-                    style={"padding": "8px 12px", "textDecoration": "none"},
-                )
-            ],
-            id="back-link-container",
-            style=NAV_STYLE,
-        ),
-        dcc.Loading(
-            id="global-loading-nav",
-            type="circle",
-            fullscreen=True,
-            children=page_container,
-        ),
-    ]
-)
+# app_mod.app.layout = html.Div(
+#     [
+#         dcc.Location(id="url"),
+#         html.Nav(
+#             [
+#                 dcc.Link(
+#                     "Go Back",
+#                     href=_home_href(),
+#                     className="nav-link",
+#                     refresh=True,
+#                     style={"padding": "8px 12px", "textDecoration": "none"},
+#                 )
+#             ],
+#             id="back-link-container",
+#             style=NAV_STYLE,
+#         ),
+#         dcc.Loading(
+#             id="global-loading-nav",
+#             type="circle",
+#             fullscreen=True,
+#             children=page_container,
+#         ),
+#     ]
+# )
 
 
-@app_mod.app.callback(
-    Output("back-link-container", "style"),
-    Input("url", "pathname"),
-)
-def _toggle_back_link(pathname: str):
-    """Hide the Go Back link when already on the home page."""
-    if pathname in ("/", "", None):
-        return {**NAV_STYLE, "display": "none"}
-    return NAV_STYLE
+# @app_mod.app.callback(
+#     Output("back-link-container", "style"),
+#     Input("url", "pathname"),
+# )
+# def _toggle_back_link(pathname: str):
+#     """Hide the Go Back link when already on the home page."""
+#     if pathname in ("/", "", None):
+#         return {**NAV_STYLE, "display": "none"}
+#     return NAV_STYLE
 
 
