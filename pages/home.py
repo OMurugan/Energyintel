@@ -1,6 +1,5 @@
 import dash
 from dash import html, dcc
-import app_instance as app_mod
 
 
 dash.register_page(
@@ -71,22 +70,6 @@ SECTIONS = [
 ]
 
 
-def _with_prefix(path: str) -> str:
-    """Prefix internal links with routes prefix if set."""
-    prefix = getattr(app_mod, "ROUTES_PREFIX", "") or ""
-
-    base = path
-    anchor = ""
-    if "#" in path:
-        base, anchor = path.split("#", 1)
-        anchor = f"#{anchor}"
-
-    if not base.startswith("/"):
-        base = f"/{base}"
-
-    return f"{prefix}{base.lstrip('/')}{anchor}" if prefix else f"{base}{anchor}"
-
-
 def layout():
     return html.Div(
         [
@@ -97,13 +80,13 @@ def layout():
                     html.Div(
                         [
                             html.H4(
-                                html.A(section["title"], href=_with_prefix(section["path"])),
+                                html.A(section["title"], href=section["path"]),
                                 style={"marginBottom": "8px"},
                             ),
                             html.Ul(
                                 [
                                     html.Li(
-                                        html.A(name, href=_with_prefix(href)),
+                                        html.A(name, href=href),
                                         style={"marginBottom": "4px"},
                                     )
                                     for name, href in section["links"]
