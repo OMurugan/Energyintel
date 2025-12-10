@@ -445,6 +445,34 @@ def _build_map_figure(year: Optional[int], highlight_country: Optional[str] = No
             )
         ]
     )
+    # Add country labels with density control to reduce overlap at wide zooms
+    centroids = (
+        df.groupby("country")[["lat", "lon"]]
+        .mean()
+        .reset_index()
+        .dropna(subset=["lat", "lon"])
+    )
+    label_cap = len(centroids)
+    if len(centroids) > 120:
+        label_cap = 40
+    elif len(centroids) > 80:
+        label_cap = 60
+    labels_df = (
+        centroids.sort_values("country")
+        .head(label_cap)
+    )
+    fig.add_trace(
+        go.Scattergeo(
+            lon=labels_df["lon"],
+            lat=labels_df["lat"],
+            mode="text",
+            text=labels_df["country"],
+            textfont=dict(size=8, color="#2c3e50"),
+            textposition="top center",
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
     fig.update_geos(
         showframe=False,
         showcoastlines=True,
@@ -801,7 +829,18 @@ def create_layout():
                             ),
                             dcc.Graph(
                                 id="global-exports-map",
-                                config={"displayModeBar": False},
+                                config={
+                                    "displayModeBar": True,
+                                    "displaylogo": False,
+                                    "modeBarButtonsToAdd": [
+                                        "zoomInGeo",
+                                        "zoomOutGeo",
+                                        "resetGeo",
+                                        "resetScale2d",
+                                    ],
+                                    "scrollZoom": True,
+                                    "doubleClick": "reset",
+                                },
                                 figure=_build_map_figure(
                                     DEFAULT_YEAR,
                                     "Russia" if "Russia" in COUNTRY_OPTIONS else None,
