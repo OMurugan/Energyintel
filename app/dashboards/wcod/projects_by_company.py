@@ -1040,7 +1040,7 @@ def create_layout():
                 
                 html.Div([
                     html.Label(
-                        "Likely To Go",
+                        "Likely To Go Ahead",
                         style={
                             'fontSize': '12px',
                             'fontWeight': 'bold',
