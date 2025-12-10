@@ -9,6 +9,7 @@ loaded from CSV files in ``app/dashboards/data/projects_by_country``.
 import json
 import os
 import unicodedata
+from urllib.request import urlopen
 
 import dash
 from dash import (
@@ -236,6 +237,20 @@ def _build_country_colors(countries: list[str]) -> dict[str, str]:
             color_map[country] = palette[idx % len(palette)]
         return color_map
     return {}
+
+
+def _load_world_geojson() -> dict | None:
+    """Load a lightweight world GeoJSON once, with a short timeout fallback."""
+    global world_geojson
+    if world_geojson is not None:
+        return world_geojson
+    url = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json"
+    try:
+        with urlopen(url, timeout=5) as resp:
+            world_geojson = json.load(resp)
+    except Exception:
+        world_geojson = None
+    return world_geojson
 
 
 def _normalize_country_name(name: str | None) -> str:
@@ -492,7 +507,16 @@ def create_layout():
                                         dcc.Graph(
                                             id="projects-country-map",
                                             style={"height": "520px"},
-                                            config={"displayModeBar": True},
+                                            config={
+                                                "displayModeBar": True,
+                                                "modeBarButtonsToAdd": [
+                                                    "zoomIn2d",
+                                                    "zoomOut2d",
+                                                    "autoScale2d",
+                                                    "resetViewMapbox",
+                                                ],
+                                                "scrollZoom": True,
+                                            },
                                         ),
                                         type="dot",
                                     ),
@@ -937,7 +961,95 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
         group = row["Group"]
         color_map[country] = GROUP_COLORS.get(group, "#888")
 
-    # Single go.Choropleth using ISO-3 codes (no external geojson fetch)
+    # Preferred Mapbox path (with world geojson) for OSM base map + controls
+    geojson = _load_world_geojson()
+    world_center = {"lat": 24.0, "lon": 45.0}
+    map_center = (
+        dict(lat=df["Latitude"].mean(), lon=df["Longitude"].mean())
+        if selected_country
+        else world_center
+    )
+    map_zoom = 2.8 if not selected_country else 2
+
+    if geojson:
+        group_code = df["Group"].map({"Non-OPEC-Plus": 0, "OPEC-Plus": 1}).fillna(0)
+        fig = go.Figure(
+            go.Choroplethmapbox(
+                geojson=geojson,
+                locations=df["iso_alpha"],
+                z=group_code,
+                featureidkey="id",  # world.geo.json uses ISO-3 in `id`
+                colorscale=[
+                    [0, GROUP_COLORS.get("Non-OPEC-Plus", "#7194b9")],
+                    [1, GROUP_COLORS.get("OPEC-Plus", "#f5a555")],
+                ],
+                showscale=False,
+                hoverinfo="text",
+                hovertext=df.apply(
+                    lambda row: f"<b>{row['Country']}</b><br>Group: {row['Group']}<br>Click to select",
+                    axis=1,
+                ),
+                marker_line_color="white",
+                marker_line_width=0.6,
+            )
+        )
+        centroids = (
+            df.groupby("Country")[["Latitude", "Longitude"]]
+            .mean()
+            .reset_index()
+        )
+        fig.add_trace(
+            go.Scattermapbox(
+                lon=centroids["Longitude"],
+                lat=centroids["Latitude"],
+                mode="text",
+                text=centroids["Country"],
+                textfont=dict(size=9, color="#444"),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+        if selected_country and selected_country in df["Country"].values:
+            sel_iso = df.loc[df["Country"] == selected_country, "iso_alpha"].iloc[0]
+            fig.add_trace(
+                go.Choroplethmapbox(
+                    geojson=geojson,
+                    locations=[sel_iso],
+                    z=[0],
+                    featureidkey="id",
+                    colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
+                    showscale=False,
+                    marker_line_color="#FF6B35",
+                    marker_line_width=2.5,
+                    hoverinfo="skip",
+                )
+            )
+            if len(fig.data) > 1:
+                fig.data = tuple(list(fig.data)[1:] + [fig.data[0]])
+
+        mapbox_layout = dict(
+            style="carto-positron",
+            center=map_center,
+            zoom=map_zoom,
+            bearing=0,
+            pitch=0,
+        )
+        if Config.MAPBOX_ACCESS_TOKEN:
+            mapbox_layout["accesstoken"] = Config.MAPBOX_ACCESS_TOKEN
+
+        fig.update_layout(
+            margin=dict(l=0, r=0, t=0, b=0),
+            height=520,
+            mapbox=mapbox_layout,
+            hovermode="closest",
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            showlegend=False,
+        )
+        return fig
+
+    # Fallback: geo-based choropleth (no Mapbox) if GeoJSON unavailable
     group_code = df["Group"].map({"Non-OPEC-Plus": 0, "OPEC-Plus": 1}).fillna(0)
     fig = go.Figure(
         go.Choropleth(
@@ -958,7 +1070,6 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
             marker_line_width=0.7,
         )
     )
-    # Add country name labels (always on, small font; will still overlap at world view)
     centroids = (
         df.groupby("Country")[["Latitude", "Longitude"]]
         .mean()
@@ -975,10 +1086,8 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
             showlegend=False,
         )
     )
-    # Dynamic center/zoom similar to country_profile
     center_lat = df["Latitude"].mean()
     center_lon = df["Longitude"].mean()
-    map_zoom = 4 if selected_country else 1
 
     fig.update_layout(
         margin=dict(l=0, r=0, t=0, b=0),
@@ -993,7 +1102,6 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
         paper_bgcolor="white",
     )
     if selected_country and selected_country in df["Country"].values:
-        # outline highlight via overlay choropleth with transparent fill
         sel_iso = df.loc[df["Country"] == selected_country, "iso_alpha"].iloc[0]
         fig.add_trace(
             go.Choropleth(
@@ -1007,7 +1115,6 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
                 hoverinfo="skip",
             )
         )
-        # Move labels above outline
         if len(fig.data) > 1:
             fig.data = tuple(list(fig.data)[1:] + [fig.data[0]])
 
@@ -1079,9 +1186,9 @@ def _chart_figure(
             name=country,
             marker_color=color_map.get(country, "#4e79a7"),
             hovertemplate=(
-                "Quarter: %{x}<br>"
+                "Period: %{x}<br>"
                 f"Country: {country}<br>"
-                "Production Additions: %{y:,.1f}<extra></extra>"
+                "Oil Capacity Additions: %{y:,.1f}<extra></extra>"
             ),
             secondary_y=False,
         )
@@ -1093,13 +1200,13 @@ def _chart_figure(
         mode="lines+markers",
         marker=dict(size=6, color="#2f4b7c"),
         line=dict(color="#2f4b7c", width=2),
-        hovertemplate="Quarter: %{x}<br>Running sum: %{y:,.1f}<extra></extra>",
+        hovertemplate="Period: %{x}<br>Cumulative Additions ('000 b/d): %{y:,.1f}<extra></extra>",
         secondary_y=True,
     )
 
     # Axis styling per requirements
     fig.update_yaxes(
-        title_text="Additions ('000 b/d)",
+        title_text="'000 b/d",
         showgrid=True,
         gridcolor="#f0f0f0",
         range=[0, 1000],
@@ -1108,7 +1215,7 @@ def _chart_figure(
         secondary_y=False,
     )
     fig.update_yaxes(
-        title_text="Running sum ('000 b/d)",
+        title_text="'000 b/d",
         showgrid=False,
         range=[0, 12000],
         tick0=0,
@@ -1122,7 +1229,7 @@ def _chart_figure(
         plot_bgcolor="white",
         paper_bgcolor="white",
         margin=dict(l=40, r=20, t=40, b=40),
-        xaxis_title="Quarter",
+        xaxis_title="",
         showlegend=False,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
         barmode="stack",
