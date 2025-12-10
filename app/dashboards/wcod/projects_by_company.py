@@ -807,6 +807,8 @@ def create_layout():
         # Stores to keep full table data for filtering
         dcc.Store(id='projects-company-table-data-full', data=data_full if df_table is not None else []),
         dcc.Store(id='projects-company-table-tooltip-full', data=tooltip_data if df_table is not None else []),
+        # Dummy target for clientside sort UI (adds A/Z hover like projects_latest)
+        dcc.Store(id='projects-company-dummy-sort', data='', storage_type='memory'),
         dcc.Interval(
             id='year-period-interval',
             interval=2000,  # 2 seconds between steps when playing
@@ -1053,8 +1055,9 @@ def create_layout():
                         id='likely-to-go-filter',
                         options=[
                             {'label': '(All)', 'value': 'ALL'},
+                            {'label': '', 'value': 'EMPTY'},
                             {'label': 'N', 'value': 'N'},
-                            {'label': 'Uncertain', 'value': 'U'},
+                            {'label': 'Uncertain', 'value': 'UNCERTAIN'},
                             {'label': 'Y', 'value': 'Y'},
                         ],
                         value=['Y'],
@@ -1101,7 +1104,6 @@ def create_layout():
                 'overflowY': 'auto',
                 'maxHeight': '600px',
                 'width': '100%',
-                'minWidth': '1200px',
                 'border': '1px solid #ddd'
             },
             style_header={
@@ -1111,9 +1113,10 @@ def create_layout():
                 'fontSize': '13px',
                 'border': '1px solid #ddd',
                 'textAlign': 'center',
-                'font-family': 'Lato, sans-serif',
+                'fontFamily': 'Lato, sans-serif',
                 'whiteSpace': 'normal',
-                'height': 'auto'
+                'height': 'auto',
+                'position': 'relative'  # allow absolute-positioned A/Z controls
             },
             style_cell={
                 'textAlign': 'left',
@@ -1126,7 +1129,7 @@ def create_layout():
                 'fontSize': '12px',
                 'border': '1px solid #ddd',
                 'backgroundColor': '#fff',
-                'font-family': 'Lato, sans-serif',
+                'fontFamily': 'Lato, sans-serif',
                 'color': 'rgb(27, 54, 93)'
             },
             style_data_conditional=[
@@ -1166,11 +1169,7 @@ def create_layout():
                 {'if': {'column_id': q}, 'textAlign': 'center', 'minWidth': '85px'}
                 for q in quarter_columns
             ],
-            fixed_rows={'headers': True},
-            sort_action='none',
             filter_action='none',
-            row_selectable=False,
-            selected_rows=[],
             css=[{
                 'selector': '.dash-table-container .dash-spreadsheet-inner tr th',
                 'rule': 'text-transform: none;'
@@ -1292,7 +1291,7 @@ def register_callbacks(dash_app, server):
     )
     def normalize_likely_to_go(selected):
         """Checklist behavior: (All) checks everything; otherwise allow multi-select and dedupe."""
-        options_all = ['ALL', 'N', 'U', 'Y']
+        options_all = ['ALL', 'EMPTY', 'N', 'UNCERTAIN', 'Y']
         if not selected:
             return ['Y']
         # If All is present, force all options on
@@ -1307,37 +1306,49 @@ def register_callbacks(dash_app, server):
     
     @callback(
         [Output('projects-company-table', 'data'),
-         Output('projects-company-table', 'tooltip_data')],
-        [Input('likely-to-go-filter', 'value')],
+         Output('projects-company-table', 'tooltip_data'),
+         Output('projects-company-table', 'columns')],
+        [Input('likely-to-go-filter', 'value'),
+         Input('selected-countries-store', 'data')],
         [State('projects-company-table-data-full', 'data'),
-         State('projects-company-table-tooltip-full', 'data'),
-         State('projects-company-table', 'columns')],
+         State('projects-company-table-tooltip-full', 'data')],
         prevent_initial_call=False
     )
-    def filter_projects_company_table(likely_filter, data_full, tooltip_full, columns_def):
-        """Filter the Projects by Company table using the Likely To Go checklist (behaves like projects_by_time)."""
+    def filter_projects_company_table(likely_filter, selected_countries, data_full, tooltip_full):
+        """Filter and format the Projects by Company table to mirror projects_by_time layout."""
         data_full = data_full or []
         tooltip_full = tooltip_full or []
-        columns_def = columns_def or []
-        col_ids = [c.get('id') for c in columns_def if c.get('id')]
         
-        # Helper to truncate display strings
-        def _truncate(val, limit=11):
-            if isinstance(val, str) and len(val) > limit:
-                return val[:limit] + "..."
-            return val
+        if not data_full:
+            return [], [], []
         
-        # Normalize filter input
+        df = pd.DataFrame(data_full)
+        
+        # Filter by selected countries (when any are chosen)
+        if selected_countries:
+            df = df[df['Country'].isin(selected_countries)]
+        
+        if df.empty:
+            return [], [], []
+        
+        # Find likely-go-ahead column
+        likely_col = None
+        for col in df.columns:
+            col_lower = str(col).lower()
+            if 'likely' in col_lower and ('go' in col_lower or 'ahead' in col_lower):
+                likely_col = col
+                break
+        
+        # Normalize Likely To Go filter (match projects_by_time behavior)
         if not likely_filter:
             likely_filter = []
         if not isinstance(likely_filter, list):
             likely_filter = [likely_filter]
         
-        # Determine selected statuses
-        if 'ALL' in likely_filter:
-            selected_statuses = ['Y', 'N', 'U', '']
+        selected_statuses = []
+        if 'ALL' in [str(v).upper() for v in likely_filter]:
+            selected_statuses = ['Y', 'N', 'UNCERTAIN', '']
         else:
-            selected_statuses = []
             for v in likely_filter:
                 v_up = str(v).upper()
                 if v_up == 'Y':
@@ -1345,52 +1356,355 @@ def register_callbacks(dash_app, server):
                 elif v_up == 'N':
                     selected_statuses.append('N')
                 elif v_up.startswith('U'):
-                    selected_statuses.append('U')
+                    selected_statuses.append('UNCERTAIN')
+                elif v_up == 'EMPTY':
+                    selected_statuses.append('')
                 elif v == '':
                     selected_statuses.append('')
         
-        # Filter rows
-        filtered_rows = []
-        filtered_tooltips = []
-        for row, tip in zip(data_full, tooltip_full):
-            likely_val = str(row.get('Likely Go-ahead', '')).strip().upper()
-            if not selected_statuses:
-                match = False
-            elif 'Y' in selected_statuses and likely_val.startswith('Y'):
-                match = True
-            elif 'N' in selected_statuses and likely_val.startswith('N'):
-                match = True
-            elif 'U' in selected_statuses and likely_val.startswith('U'):
-                match = True
-            elif '' in selected_statuses and likely_val == '':
-                match = True
-            else:
-                match = False
-            
-            if match:
-                filtered_rows.append(row)
-                filtered_tooltips.append(tip)
+        if likely_col and selected_statuses:
+            df[likely_col] = df[likely_col].astype(str).str.strip()
+            col_upper = df[likely_col].str.upper()
+            mask = pd.Series(False, index=df.index)
+            for status in selected_statuses:
+                if status == 'Y':
+                    mask |= col_upper.str.startswith('Y')
+                elif status == 'N':
+                    mask |= col_upper.str.startswith('N')
+                elif status == 'UNCERTAIN' or status == 'U':
+                    mask |= col_upper.str.startswith('U')
+                elif status == '':
+                    mask |= (col_upper == '')
+            df = df[mask].copy()
+        elif likely_col and not selected_statuses:
+            df = pd.DataFrame()
         
-        # Build display rows (truncated) and tooltips
-        display_rows = []
-        display_tooltips = []
-        for idx, row in enumerate(filtered_rows):
-            display_row = {}
-            for col_id in col_ids:
-                display_row[col_id] = _truncate(row.get(col_id, ""))
-            display_rows.append(display_row)
-            
+        if df.empty:
+            return [], [], []
+        
+        # Preserve all available columns; order them similar to projects_by_time
+        base_priority = [
+            'Project Name',
+            'Likely Go-ahead',
+            'Country',
+            'Region',
+            'Group',
+            'Hydrocarbon',
+            'Depth',
+            'Field/Block',
+            'Play Type',
+            'Operator',
+            'Partner1',
+            'Partner2',
+            'Partner3',
+            'Partner4',
+            'Partner5',
+            'First Oil Year',
+            'Sanctioned',
+            'Comments',
+            'Project Status',
+            'Gas Reserves (mmboe)',
+            'Liquids Reserves (mmbbl)',
+            'Total Reserves (mmboe)',
+            'API',
+            'Sulfur',
+            'Operator Share %',
+            'Partner1 Share %',
+            'Partner2 Share %',
+            'Partner3 Share %',
+            'Partner4 Share %',
+            'Partner5 Share %',
+        ]
+        
+        all_cols = list(df.columns)
+        quarter_cols = [
+            c for c in all_cols
+            if isinstance(c, str) and len(c) == 7 and c[4] == '_' and c[:4].isdigit()
+        ]
+        
+        def quarter_key(name):
+            try:
+                year = int(name[:4])
+                q = int(name[-1])
+                return (year, q)
+            except Exception:
+                return (9999, 9)
+        
+        quarter_cols = sorted(quarter_cols, key=quarter_key)
+        
+        ordered_cols = (
+            [c for c in base_priority if c in all_cols] +
+            [c for c in all_cols if c not in base_priority and c not in quarter_cols] +
+            quarter_cols
+        )
+        
+        df = df[[c for c in ordered_cols if c in df.columns]].copy()
+        
+        # Format numeric reserve columns
+        numeric_cols = ['Gas Reserves (mmboe)', 'Liquids Reserves (mmbbl)', 'Total Reserves (mmboe)']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+                df[col] = df[col].apply(lambda x: f'{x:,.3f}' if pd.notna(x) and x != 0 else '')
+        
+        # Normalize boolean / categorical displays
+        bool_display_map = {
+            'Y': 'Yes',
+            'N': 'No',
+            'U': 'Uncertain',
+            'TRUE': 'Yes',
+            'FALSE': 'No'
+        }
+        
+        for col in ['Likely Go-ahead', 'Sanctioned']:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.strip()
+                df[col] = df[col].apply(lambda v: bool_display_map.get(str(v).upper(), v))
+        
+        # Preserve full comments for tooltips; truncate in display
+        if 'Comments' in df.columns:
+            original_comments = df['Comments'].copy()
+            df['Comments'] = df['Comments'].astype(str).apply(lambda x: (x[:10] + '...') if len(x) > 10 else x)
+        else:
+            original_comments = pd.Series([''] * len(df))
+        
+        # Build columns with consistent display names and widths
+        column_widths = {
+            'Project Name': '180px',
+            'Likely Go-ahead': '130px',
+            'Country': '120px',
+            'Region': '120px',
+            'Group': '140px',
+            'Hydrocarbon': '120px',
+            'Depth': '80px',
+            'Field/Block': '140px',
+            'Play Type': '120px',
+            'Operator': '120px',
+            'Partner1': '100px',
+            'Partner2': '100px',
+            'Partner3': '100px',
+            'Partner4': '100px',
+            'Partner5': '100px',
+            'First Oil Year': '100px',
+            'Sanctioned': '80px',
+            'Comments': '140px',
+            'Project Status': '120px',
+            'Gas Reserves (mmboe)': '140px',
+            'Liquids Reserves (mmbbl)': '150px',
+            'Total Reserves (mmboe)': '150px',
+            'API': '80px',
+            'Sulfur': '80px'
+        }
+        
+        display_name_map = {
+            'Likely Go-ahead': 'Likely To Go Ahead',
+            'Field/Block': 'Field/Block',
+            'Play Type': 'Play Type',
+            'Group': 'Group'
+        }
+        
+        available_cols = list(df.columns)
+        quarter_cols = [
+            c for c in available_cols
+            if isinstance(c, str) and len(c) == 7 and c[4] == '_' and c[:4].isdigit()
+        ]
+        
+        columns = []
+        for col in available_cols:
+            display_name = display_name_map.get(col, col)
+            col_def = {'name': display_name, 'id': col}
+            if col in column_widths:
+                col_def['minWidth'] = column_widths[col]
+                col_def['maxWidth'] = column_widths[col]
+            elif col in quarter_cols:
+                col_def['minWidth'] = '85px'
+            columns.append(col_def)
+        
+        df = df.fillna('')
+        data = df.to_dict('records')
+        
+        tooltip_data = []
+        for idx, row in enumerate(data):
             tip_row = {}
-            tip_source = filtered_tooltips[idx] if idx < len(filtered_tooltips) else {}
-            for col_id in col_ids:
-                val = row.get(col_id, "")
-                tip_row[col_id] = {'value': str(val), 'type': 'text'}
-            # Prefer original tooltip entries if present
-            if isinstance(tip_source, dict):
-                tip_row.update({k: v for k, v in tip_source.items() if v})
-            display_tooltips.append(tip_row)
+            if 'Comments' in row:
+                original_comment = str(original_comments.iloc[idx]) if idx < len(original_comments) else ''
+                if original_comment and original_comment != 'nan' and original_comment.strip():
+                    tip_row['Comments'] = {'value': original_comment, 'type': 'text'}
+            # Merge any existing tooltip info if present
+            if idx < len(tooltip_full) and isinstance(tooltip_full[idx], dict):
+                tip_row.update({k: v for k, v in tooltip_full[idx].items() if v})
+            tooltip_data.append(tip_row)
         
-        return display_rows, display_tooltips
+        return data, tooltip_data, columns
+    
+    # Add A/Z hover sort UI on selected headers (matches projects_latest behavior)
+    dash_app.clientside_callback(
+        """
+        function(columns) {
+            setTimeout(function() {
+                function addSortUI(header) {
+                    if (header.querySelector('.sort-order-container')) {
+                        return;
+                    }
+                    const sortContainer = document.createElement('div');
+                    sortContainer.style.position = 'absolute';
+                    sortContainer.style.right = '30px';
+                    sortContainer.style.top = '50%';
+                    sortContainer.style.transform = 'translateY(-50%)';
+                    sortContainer.style.fontSize = '10px';
+                    sortContainer.style.color = '#666';
+                    sortContainer.style.cursor = 'pointer';
+                    sortContainer.style.padding = '2px';
+                    sortContainer.style.border = '1px solid transparent';
+                    sortContainer.style.borderRadius = '2px';
+                    sortContainer.style.lineHeight = '1';
+                    sortContainer.style.textAlign = 'center';
+                    sortContainer.style.display = 'flex';
+                    sortContainer.style.flexDirection = 'column';
+                    sortContainer.style.alignItems = 'center';
+                    sortContainer.style.justifyContent = 'center';
+                    sortContainer.style.height = '30px';
+                    sortContainer.style.opacity = '0';
+                    sortContainer.style.transition = 'opacity 0.2s ease';
+                    sortContainer.style.zIndex = '2';
+                    sortContainer.className = 'sort-order-container';
+                    
+                    const aElement = document.createElement('div');
+                    aElement.textContent = 'A';
+                    aElement.title = 'Click for ascending order';
+                    aElement.style.display = 'block';
+                    aElement.style.lineHeight = '1';
+                    aElement.style.cursor = 'pointer';
+                    aElement.style.padding = '1px 2px';
+                    aElement.style.borderRadius = '1px';
+                    aElement.style.fontFamily = 'Lato, sans-serif';
+                    aElement.style.fontSize = '10px';
+                    aElement.onmouseover = function() {
+                        aElement.style.backgroundColor = '#d4e7ff';
+                        aElement.style.fontWeight = 'bold';
+                    };
+                    aElement.onmouseout = function() {
+                        aElement.style.backgroundColor = '';
+                        aElement.style.fontWeight = '';
+                    };
+                    aElement.onclick = function(e) {
+                        e.stopPropagation();
+                        for (let i = 0; i < 3; i++) {
+                            header.click();
+                        }
+                    };
+                    
+                    const zElement = document.createElement('div');
+                    zElement.textContent = 'Z';
+                    zElement.title = 'Click for descending order';
+                    zElement.style.display = 'block';
+                    zElement.style.lineHeight = '1';
+                    zElement.style.cursor = 'pointer';
+                    zElement.style.padding = '1px 2px';
+                    zElement.style.borderRadius = '1px';
+                    zElement.style.fontFamily = 'Lato, sans-serif';
+                    zElement.style.fontSize = '10px';
+                    zElement.onmouseover = function() {
+                        zElement.style.backgroundColor = '#d4e7ff';
+                        zElement.style.fontWeight = 'bold';
+                    };
+                    zElement.onmouseout = function() {
+                        zElement.style.backgroundColor = '';
+                        zElement.style.fontWeight = '';
+                    };
+                    zElement.onclick = function(e) {
+                        e.stopPropagation();
+                        for (let i = 0; i < 2; i++) {
+                            header.click();
+                        }
+                    };
+                    
+                    sortContainer.appendChild(aElement);
+                    sortContainer.appendChild(zElement);
+                    header.appendChild(sortContainer);
+                    
+                    const sortIndicator = document.createElement('div');
+                    sortIndicator.style.position = 'absolute';
+                    sortIndicator.style.right = '8px';
+                    sortIndicator.style.top = '50%';
+                    sortIndicator.style.transform = 'translateY(-50%)';
+                    sortIndicator.style.width = '15px';
+                    sortIndicator.style.height = '15px';
+                    sortIndicator.style.cursor = 'pointer';
+                    sortIndicator.style.opacity = '0';
+                    sortIndicator.style.transition = 'opacity 0.2s ease';
+                    sortIndicator.style.zIndex = '1';
+                    sortIndicator.title = 'Click to sort';
+                    sortIndicator.className = 'sort-indicator';
+                    
+                    sortIndicator.innerHTML = `
+                        <svg fill="#666" viewBox="0 0 301.219 301.219" xmlns="http://www.w3.org/2000/svg">
+                            <g>
+                                <path d="M159.365,23.736v-10c0-5.523-4.477-10-10-10H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h139.365
+                                    C154.888,33.736,159.365,29.259,159.365,23.736z"/>
+                                <path d="M130.586,66.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h120.586c5.523,0,10-4.477,10-10v-10
+                                    C140.586,71.213,136.109,66.736,130.586,66.736z"/>
+                                <path d="M111.805,129.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h101.805c5.523,0,10-4.477,10-10v-10
+                                    C121.805,134.213,117.328,129.736,111.805,129.736z"/>
+                                <path d="M93.025,199.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h83.025c5.522,0,10-4.477,10-10v-10
+                                    C103.025,204.213,98.548,199.736,93.025,199.736z"/>
+                                <path d="M74.244,262.736H10c-5.523,0-10,4.477-10,10v10c0,5.523,4.477,10,10,10h64.244c5.522,0,10-4.477,10-10v-10
+                                    C84.244,267.213,79.767,262.736,74.244,262.736z"/>
+                                <path d="M298.29,216.877l-7.071-7.071c-1.875-1.875-4.419-2.929-7.071-2.929c-2.652,0-5.196,1.054-7.072,2.929l-34.393,34.393
+                                    V18.736c0-5.523-4.477-10-10-10h-10c-5.523,0-10,4.477-10,10v225.462l-34.393-34.393c-1.876-1.875-4.419-2.929-7.071-2.929
+                                    c-2.652,0-5.196,1.054-7.071,2.929l-7.072,7.071c-3.904,3.905-3.904,10.237,0,14.142l63.536,63.536
+                                    c1.953,1.953,4.512,2.929,7.071,2.929c2.559,0,5.119-0.976,7.071-2.929l63.536-63.536
+                                    C302.195,227.113,302.195,220.781,298.29,216.877z"/>
+                            </g>
+                        </svg>
+                    `;
+                    
+                    sortIndicator.onmouseover = function() {
+                        sortIndicator.style.opacity = '1';
+                        sortIndicator.style.backgroundColor = '#e6f3ff';
+                        sortIndicator.style.borderRadius = '2px';
+                        sortIndicator.querySelector('svg').style.fill = '#1f3263';
+                    };
+                    
+                    sortIndicator.onmouseout = function() {
+                        sortIndicator.style.opacity = '0';
+                        sortIndicator.style.backgroundColor = '';
+                        sortIndicator.querySelector('svg').style.fill = '#666';
+                    };
+                    
+                    sortIndicator.onclick = function(e) {
+                        e.stopPropagation();
+                        // Toggle sort by clicking the header twice
+                        for (let i = 0; i < 2; i++) {
+                            header.click();
+                        }
+                    };
+                    
+                    header.appendChild(sortIndicator);
+                    
+                    header.onmouseover = function() {
+                        sortContainer.style.opacity = '1';
+                        sortIndicator.style.opacity = '1';
+                    };
+                    
+                    header.onmouseout = function() {
+                        sortContainer.style.opacity = '0';
+                        sortIndicator.style.opacity = '0';
+                    };
+                }
+                
+                const headers = document.querySelectorAll('#projects-company-table .dash-header');
+                headers.forEach(header => {
+                    addSortUI(header);
+                });
+            }, 500);
+            return '';
+        }
+        """,
+        Output('projects-company-dummy-sort', 'data'),
+        Input('projects-company-table', 'columns'),
+        prevent_initial_call=False
+    )
     
     # Callback to sync year controls (display, dropdown, slider, prev/next buttons)
     @callback(
@@ -1572,7 +1886,7 @@ def register_callbacks(dash_app, server):
             else:
                 ltg_list = [likely_to_go] if likely_to_go else []
             if 'ALL' in ltg_list:
-                selected_statuses = ['Y', 'N', 'U', '']
+                selected_statuses = ['Y', 'N', 'UNCERTAIN', '']
             else:
                 for v in ltg_list:
                     v_up = str(v).upper()
@@ -1581,7 +1895,9 @@ def register_callbacks(dash_app, server):
                     elif v_up == 'N':
                         selected_statuses.append('N')
                     elif v_up.startswith('U'):
-                        selected_statuses.append('U')
+                        selected_statuses.append('UNCERTAIN')
+                    elif v_up == 'EMPTY':
+                        selected_statuses.append('')
                     elif v == '':
                         selected_statuses.append('')
             if selected_statuses:
@@ -1591,7 +1907,7 @@ def register_callbacks(dash_app, server):
                         mask |= col_upper.str.startswith('Y')
                     elif status == 'N':
                         mask |= col_upper.str.startswith('N')
-                    elif status == 'U':
+                    elif status == 'UNCERTAIN' or status == 'U':
                         mask |= col_upper.str.startswith('U')
                     elif status == '':
                         mask |= (col_upper == '')
