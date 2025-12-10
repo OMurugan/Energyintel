@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 import os
+import re
 from sqlalchemy import func
 
 # Define data path
@@ -586,6 +587,19 @@ def create_layout():
         df_table = pd.read_csv(table_csv, encoding='utf-8', sep=',')
         # Strip whitespace from column names
         df_table.columns = [c.strip() for c in df_table.columns]
+        # Normalize quarter-style measure names to a consistent YYYY_Qn format
+        # so variants like "2028q2" or "2028 Q2" still sort correctly.
+        if 'Measure Names' in df_table.columns:
+            quarter_name_re = re.compile(r'^(?P<year>\d{4})[\s_]*[qQ](?P<q>[1-4])$')
+
+            def _normalize_measure_name(name):
+                s = str(name).strip()
+                match = quarter_name_re.match(s)
+                if match:
+                    return f"{match.group('year')}_Q{match.group('q')}"
+                return s
+
+            df_table['Measure Names'] = df_table['Measure Names'].apply(_normalize_measure_name)
     except Exception as e:
         print(f"Error loading table CSV: {e}")
         df_table = pd.DataFrame()
@@ -1176,7 +1190,7 @@ def create_layout():
             }, {
                 'selector': '.dash-table-tooltip',
                 'rule': 'font-size: 10px !important; font-family: Lato, sans-serif !important; color: rgb(27, 54, 93) !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
-            }, {
+            }, {    
                 'selector': '.dash-table-container .row:last-child',
                 'rule': 'display: none !important;'
             }, {
@@ -1720,12 +1734,13 @@ def register_callbacks(dash_app, server):
          Input('year-period-interval', 'n_intervals')],
         [State('year-period-slider', 'min'),
          State('year-period-slider', 'max'),
-         State('year-period-play-store', 'data')],
+         State('year-period-play-store', 'data'),
+         State('bar-highlight-year-store', 'data')],
         prevent_initial_call=True
     )
     def sync_year_controls(dropdown_value, slider_value, prev_clicks, next_clicks, 
-                           timeline_prev_clicks, interval_tick, min_year, max_year, is_playing):
-        """Sync year display, dropdown, slider, navigation buttons, and bar highlight."""
+                           timeline_prev_clicks, interval_tick, min_year, max_year, is_playing, bar_highlight_year):
+        """Sync year display, dropdown, slider, navigation buttons; keep chart highlight unchanged."""
         ctx = callback_context
         if not ctx.triggered:
             return dash.no_update, dash.no_update, dash.no_update, dash.no_update
@@ -1761,7 +1776,8 @@ def register_callbacks(dash_app, server):
         else:
             new_year = current_year
         
-        return str(new_year), new_year, new_year, new_year
+        # Do not change bar highlight when year controls change; keep prior highlight (if any)
+        return str(new_year), new_year, new_year, dash.no_update
 
     # Clicking a bar (or invisible quarter/year markers) selects that year's controls and optional quarter highlight
     @callback(
