@@ -1055,8 +1055,9 @@ def create_layout():
                         id='likely-to-go-filter',
                         options=[
                             {'label': '(All)', 'value': 'ALL'},
+                            {'label': '', 'value': 'EMPTY'},
                             {'label': 'N', 'value': 'N'},
-                            {'label': 'Uncertain', 'value': 'U'},
+                            {'label': 'Uncertain', 'value': 'UNCERTAIN'},
                             {'label': 'Y', 'value': 'Y'},
                         ],
                         value=['Y'],
@@ -1290,7 +1291,7 @@ def register_callbacks(dash_app, server):
     )
     def normalize_likely_to_go(selected):
         """Checklist behavior: (All) checks everything; otherwise allow multi-select and dedupe."""
-        options_all = ['ALL', 'N', 'U', 'Y']
+        options_all = ['ALL', 'EMPTY', 'N', 'UNCERTAIN', 'Y']
         if not selected:
             return ['Y']
         # If All is present, force all options on
@@ -1346,7 +1347,7 @@ def register_callbacks(dash_app, server):
         
         selected_statuses = []
         if 'ALL' in [str(v).upper() for v in likely_filter]:
-            selected_statuses = ['Y', 'N', 'U', '']
+            selected_statuses = ['Y', 'N', 'UNCERTAIN', '']
         else:
             for v in likely_filter:
                 v_up = str(v).upper()
@@ -1355,7 +1356,9 @@ def register_callbacks(dash_app, server):
                 elif v_up == 'N':
                     selected_statuses.append('N')
                 elif v_up.startswith('U'):
-                    selected_statuses.append('U')
+                    selected_statuses.append('UNCERTAIN')
+                elif v_up == 'EMPTY':
+                    selected_statuses.append('')
                 elif v == '':
                     selected_statuses.append('')
         
@@ -1368,7 +1371,7 @@ def register_callbacks(dash_app, server):
                     mask |= col_upper.str.startswith('Y')
                 elif status == 'N':
                     mask |= col_upper.str.startswith('N')
-                elif status == 'U':
+                elif status == 'UNCERTAIN' or status == 'U':
                     mask |= col_upper.str.startswith('U')
                 elif status == '':
                     mask |= (col_upper == '')
@@ -1883,7 +1886,7 @@ def register_callbacks(dash_app, server):
             else:
                 ltg_list = [likely_to_go] if likely_to_go else []
             if 'ALL' in ltg_list:
-                selected_statuses = ['Y', 'N', 'U', '']
+                selected_statuses = ['Y', 'N', 'UNCERTAIN', '']
             else:
                 for v in ltg_list:
                     v_up = str(v).upper()
@@ -1892,7 +1895,9 @@ def register_callbacks(dash_app, server):
                     elif v_up == 'N':
                         selected_statuses.append('N')
                     elif v_up.startswith('U'):
-                        selected_statuses.append('U')
+                        selected_statuses.append('UNCERTAIN')
+                    elif v_up == 'EMPTY':
+                        selected_statuses.append('')
                     elif v == '':
                         selected_statuses.append('')
             if selected_statuses:
@@ -1902,7 +1907,7 @@ def register_callbacks(dash_app, server):
                         mask |= col_upper.str.startswith('Y')
                     elif status == 'N':
                         mask |= col_upper.str.startswith('N')
-                    elif status == 'U':
+                    elif status == 'UNCERTAIN' or status == 'U':
                         mask |= col_upper.str.startswith('U')
                     elif status == '':
                         mask |= (col_upper == '')
