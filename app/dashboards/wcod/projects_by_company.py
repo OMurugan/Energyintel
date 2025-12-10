@@ -501,7 +501,6 @@ def create_world_map(df=None, selected_year=2025, selected_company="Exxon Mobil"
         marker_line_color='#ffffff',
         marker_line_width=0.5,
         hovertemplate='<b>%{location}</b><br>Production Addition: %{z:,.1f} \'000 b/d<extra></extra>',
-        showscale=True,
         colorbar=dict(
             title="Production Additions ('000 b/d)",
             titleside='top',
@@ -520,7 +519,8 @@ def create_world_map(df=None, selected_year=2025, selected_company="Exxon Mobil"
             ticklen=0,
             tickvals=[0.7, 135.0],
             ticktext=['0.7', '135.0']
-        )
+        ),
+        showscale=False  # hide colorbar in the map; we render a custom legend beside controls
     ))
     
     # Update geo settings to match Tableau design
@@ -961,6 +961,33 @@ def create_layout():
                             value=[],
                             labelStyle={'fontSize': '12px'}
                         ),
+                        html.Div([
+                            html.Div(
+                                "Production Additions ('000 b/d)",
+                                style={
+                                    'fontSize': '11px',
+                                    'color': '#1b365d',
+                                    'marginBottom': '4px',
+                                    'fontFamily': 'Arial, sans-serif'
+                                }
+                            ),
+                            html.Div(style={
+                                'height': '14px',
+                                'width': '210px',
+                                'background': 'linear-gradient(to right, #C7E8E4, #A4DCD5, #7DC9C3, #4FB2AF, #2A94A1, #1F7A8A, #1C6C7C)',
+                                'border': '1px solid #c5c5c5',
+                                'borderRadius': '2px'
+                            }),
+                            html.Div([
+                                html.Span('0.7', style={'fontSize': '10px', 'color': '#1b365d'}),
+                                html.Span('135.0', style={'fontSize': '10px', 'color': '#1b365d', 'marginLeft': 'auto'})
+                            ], style={
+                                'display': 'flex',
+                                'justifyContent': 'space-between',
+                                'width': '210px',
+                                'marginTop': '2px'
+                            })
+                        ], style={'marginTop': '10px'}),
                         html.Div(
                             id='year-period-display',
                             style={'display': 'none'}
