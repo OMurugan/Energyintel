@@ -24,6 +24,7 @@ from dash import (
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 from config import Config
 
@@ -380,6 +381,7 @@ def load_chart_data() -> pd.DataFrame:
         .str.strip()
         .apply(_normalize_country_name)
     )
+    df = df[df["Country"] != ""]
     df["Group"] = df["Country"].map(
         load_map_data().set_index("Country")["Group"].to_dict()
     )
@@ -459,6 +461,7 @@ def create_layout():
                     # Left column: map + chart + table
                     html.Div(
                         [
+                            # Map
                             html.Div(
                                 [
                                     html.Div(
@@ -502,6 +505,7 @@ def create_layout():
                                     "marginBottom": "16px",
                                 },
                             ),
+                            # Chart full width
                             html.Div(
                                 [
                                     html.H3(
@@ -514,7 +518,7 @@ def create_layout():
                                     dcc.Loading(
                                         dcc.Graph(
                                             id="projects-country-chart",
-                                            style={"height": "420px"},
+                                            style={"height": "420px", "width": "100%"},
                                             config={"displayModeBar": False},
                                         ),
                                         type="dot",
@@ -526,8 +530,10 @@ def create_layout():
                                     "borderRadius": "8px",
                                     "border": "1px solid #e0e0e0",
                                     "marginBottom": "16px",
+                                    "width": "100%",
                                 },
                             ),
+                            # Table full width
                             html.Div(
                                 [
                                     html.H3(
@@ -542,37 +548,65 @@ def create_layout():
                                             id="projects-country-table",
                                             columns=[
                                                 {"name": "Project", "id": "Project Name"},
+                                                {"name": "Likely Go-ahead", "id": "Likely Go-ahead"},
                                                 {"name": "Country", "id": "Country"},
                                                 {"name": "Region", "id": "Region"},
                                                 {"name": "Group", "id": "Group"},
-                                                {
-                                                    "name": "Likely Go-ahead",
-                                                    "id": "Likely Go-ahead",
-                                                },
                                                 {"name": "Field/Block", "id": "Field/Block"},
                                                 {"name": "Field Type", "id": "Field Type"},
                                                 {"name": "Play Type", "id": "Play Type"},
                                                 {"name": "Hydrocarbon", "id": "Hydrocarbon"},
+                                                {"name": "Associated Crude", "id": "Associated Crude"},
+                                                {"name": "Depth", "id": "Depth"},
                                                 {"name": "Operator", "id": "Operator"},
-                                                {
-                                                    "name": "First Oil Year",
-                                                    "id": "First Oil Year",
-                                                },
-                                                {
-                                                    "name": "Project Status",
-                                                    "id": "Project Status",
-                                                },
-                                                {
-                                                    "name": "Quarter",
-                                                    "id": "Measure Names",
-                                                },
-                                                {
-                                                    "name": "Additions ('000 b/d)",
-                                                    "id": "Measure Values",
-                                                },
+                                                {"name": "Partner1", "id": "Partner1"},
+                                                {"name": "Partner2", "id": "Partner2"},
+                                                {"name": "Partner3", "id": "Partner3"},
+                                                {"name": "Partner4", "id": "Partner4"},
+                                                {"name": "Partner5", "id": "Partner5"},
+                                                {"name": "First Oil Year", "id": "First Oil Year"},
+                                                {"name": "Sanctioned", "id": "Sanctioned"},
+                                                {"name": "Comments", "id": "Comments"},
+                                                {"name": "Comments Link", "id": "Comments_link"},
+                                                {"name": "Project Status", "id": "Project Status"},
+                                                {"name": "Gas Reserves (mmboe)", "id": "Gas Reserves (mmboe)"},
+                                                {"name": "Liquids Reserves (mmbbl)", "id": "Liquids Reserves (mmbbl)"},
+                                                {"name": "Total Reserves (mmboe)", "id": "Total Reserves (mmboe)"},
+                                                {"name": "API", "id": "API"},
+                                                {"name": "Sulfur", "id": "Sulfur"},
+                                                {"name": "Operator Share %", "id": "Operator Share %"},
+                                                {"name": "Partner1 Share %", "id": "Partner1 Share %"},
+                                                {"name": "Partner2 Share %", "id": "Partner2 Share %"},
+                                                {"name": "Partner3 Share %", "id": "Partner3 Share %"},
+                                                {"name": "Partner4 Share %", "id": "Partner4 Share %"},
+                                                {"name": "Partner5 Share %", "id": "Partner5 Share %"},
+                                                {"name": "2024 Q1", "id": "2024_Q1"},
+                                                {"name": "2024 Q2", "id": "2024_Q2"},
+                                                {"name": "2024 Q3", "id": "2024_Q3"},
+                                                {"name": "2024 Q4", "id": "2024_Q4"},
+                                                {"name": "2025 Q1", "id": "2025_Q1"},
+                                                {"name": "2025 Q2", "id": "2025_Q2"},
+                                                {"name": "2025 Q3", "id": "2025_Q3"},
+                                                {"name": "2025 Q4", "id": "2025_Q4"},
+                                                {"name": "2026 Q1", "id": "2026_Q1"},
+                                                {"name": "2026 Q2", "id": "2026_Q2"},
+                                                {"name": "2026 Q3", "id": "2026_Q3"},
+                                                {"name": "2026 Q4", "id": "2026_Q4"},
+                                                {"name": "2027 Q1", "id": "2027_Q1"},
+                                                {"name": "2027 Q2", "id": "2027_Q2"},
+                                                {"name": "2027 Q3", "id": "2027_Q3"},
+                                                {"name": "2027 Q4", "id": "2027_Q4"},
+                                                {"name": "2028 Q1", "id": "2028_Q1"},
+                                                {"name": "2028 Q2", "id": "2028_Q2"},
+                                                {"name": "2028 Q3", "id": "2028_Q3"},
+                                                {"name": "2028 Q4", "id": "2028_Q4"},
+                                                {"name": "2029 Q1", "id": "2029_Q1"},
+                                                {"name": "2029 Q2", "id": "2029_Q2"},
+                                                {"name": "2029 Q3", "id": "2029_Q3"},
+                                                {"name": "2029 Q4", "id": "2029_Q4"},
                                             ],
                                             data=[],
-                                            page_size=12,
+                                            page_action="none",
                                             sort_action="native",
                                             filter_action="native",
                                             style_table={
@@ -599,10 +633,16 @@ def create_layout():
                                     "padding": "16px",
                                     "borderRadius": "8px",
                                     "border": "1px solid #e0e0e0",
+                                    "width": "100%",
                                 },
                             ),
                         ],
-                        style={"flex": "1 1 70%", "minWidth": "0"},
+                        style={
+                            "width": "75%",
+                            "float": "left",
+                            "paddingRight": "20px",
+                            "minWidth": "0",
+                        },
                     ),
                     # Right column: filters
                     html.Div(
@@ -648,7 +688,8 @@ def create_layout():
                                                     "alignItems": "center",
                                                     "cursor": "pointer",
                                                     "padding": "6px 8px",
-                                                    "borderRadius": "4px",
+                                                "borderRadius": "4px",
+                                                "marginBottom": "6px",
                                                 },
                                             ),
                                             html.Div(
@@ -673,11 +714,12 @@ def create_layout():
                                                     "alignItems": "center",
                                                     "cursor": "pointer",
                                                     "padding": "6px 8px",
-                                                    "borderRadius": "4px",
+                                                "borderRadius": "4px",
+                                                "marginBottom": "6px",
                                                 },
                                             ),
                                         ],
-                                        style={"display": "flex", "gap": "8px"},
+                                    style={"display": "block"},
                                     ),
                                     dcc.Checklist(
                                         id="projects-group-filter",
@@ -853,7 +895,9 @@ def create_layout():
                             ),
                         ],
                         style={
-                            "flex": "0 0 28%",
+                            "width": "25%",
+                            "float": "right",
+                            "paddingLeft": "20px",
                             "minWidth": "280px",
                             "background": "white",
                             "padding": "16px",
@@ -863,7 +907,7 @@ def create_layout():
                         },
                     ),
                 ],
-                style={"display": "flex", "gap": "16px"},
+                style={"overflow": "hidden"},
             ),
         ],
         className="tab-content",
@@ -995,41 +1039,53 @@ def _chart_figure(
             return _empty_figure("Selected country is filtered out by group selection.")
         country_df = df[df["Country"] == selected_country].copy()
         title = f"Capacity Additions — {selected_country}"
-        bar_color = country_colors.get(selected_country, "#4e79a7")
     else:
         country_df = df[df["Country"].isin(base_countries)].copy()
         title = "Capacity Additions — Selected Countries"
-        bar_color = "#4e79a7"
 
     if country_df.empty:
         return _empty_figure("No chart data for the selected filters.")
-        
-    # Aggregate for multi-country view
-    if not selected_country:
-        agg = (
-            country_df.groupby(["Year", "QuarterNum", "Quarter"], as_index=False)
-            .agg({"ProductionAdditions": "sum"})
-            .sort_values(["Year", "QuarterNum"])
-        )
-        agg["RunningSumComputed"] = agg["ProductionAdditions"].cumsum()
-        x_values = agg["Quarter"]
-        bar_values = agg["ProductionAdditions"]
-        line_values = agg["RunningSumComputed"]
-    else:
-        country_df = country_df.sort_values(["Year", "QuarterNum"])
-        country_df["RunningSumComputed"] = country_df["ProductionAdditions"].cumsum()
-        x_values = country_df["Quarter"]
-        bar_values = country_df["ProductionAdditions"]
-        line_values = country_df["RunningSumComputed"]
 
-    fig = go.Figure()
-    fig.add_bar(
-        x=x_values,
-        y=bar_values,
-        name="Quarterly additions",
-        marker_color=bar_color,
-        opacity=0.85,
+    # Aggregate once per Country/Quarter to avoid duplicate bars per quarter
+    country_df = (
+        country_df.groupby(["Country", "Year", "QuarterNum", "Quarter"], as_index=False)[
+            "ProductionAdditions"
+        ]
+        .sum()
+        .sort_values(["Year", "QuarterNum", "Country"])
     )
+    country_order = sorted(country_df["Country"].unique().tolist())
+
+    totals = (
+        country_df.groupby(["Year", "QuarterNum", "Quarter"], as_index=False)["ProductionAdditions"]
+        .sum()
+        .sort_values(["Year", "QuarterNum"])
+    )
+    totals["RunningSumComputed"] = totals["ProductionAdditions"].cumsum()
+    x_values = totals["Quarter"]
+    line_values = totals["RunningSumComputed"]
+    quarter_order = totals["Quarter"].tolist()
+
+    # Build stacked bars on primary y-axis, running sum on secondary y-axis
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    color_map = {c: country_colors.get(c, "#4e79a7") for c in country_order}
+    for country in country_order:
+        sub = country_df[country_df["Country"] == country]
+        if sub.empty:
+            continue
+        fig.add_bar(
+            x=sub["Quarter"],
+            y=sub["ProductionAdditions"],
+            name=country,
+            marker_color=color_map.get(country, "#4e79a7"),
+            hovertemplate=(
+                "Quarter: %{x}<br>"
+                f"Country: {country}<br>"
+                "Production Additions: %{y:,.1f}<extra></extra>"
+            ),
+            secondary_y=False,
+        )
+
     fig.add_scatter(
         x=x_values,
         y=line_values,
@@ -1037,19 +1093,41 @@ def _chart_figure(
         mode="lines+markers",
         marker=dict(size=6, color="#2f4b7c"),
         line=dict(color="#2f4b7c", width=2),
+        hovertemplate="Quarter: %{x}<br>Running sum: %{y:,.1f}<extra></extra>",
+        secondary_y=True,
     )
+
+    # Axis styling per requirements
+    fig.update_yaxes(
+        title_text="Additions ('000 b/d)",
+        showgrid=True,
+        gridcolor="#f0f0f0",
+        range=[0, 1000],
+        tick0=0,
+        dtick=200,
+        secondary_y=False,
+    )
+    fig.update_yaxes(
+        title_text="Running sum ('000 b/d)",
+        showgrid=False,
+        range=[0, 12000],
+        tick0=0,
+        dtick=2000,
+        secondary_y=True,
+    )
+
     fig.update_layout(
         title=title,
         height=420,
         plot_bgcolor="white",
         paper_bgcolor="white",
         margin=dict(l=40, r=20, t=40, b=40),
-        yaxis_title="Additions ('000 b/d)",
         xaxis_title="Quarter",
+        showlegend=False,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+        barmode="stack",
     )
-    fig.update_xaxes(showgrid=False, tickangle=-30)
-    fig.update_yaxes(showgrid=True, gridcolor="#f0f0f0")
+    fig.update_xaxes(showgrid=False, tickangle=-30, categoryorder="array", categoryarray=quarter_order)
     return fig
 
 
@@ -1382,23 +1460,70 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         else:
             df = df[df["Country"].isin(countries)]
 
-        display_columns = [
+        quarter_columns = [
+            "2024_Q1", "2024_Q2", "2024_Q3", "2024_Q4",
+            "2025_Q1", "2025_Q2", "2025_Q3", "2025_Q4",
+            "2026_Q1", "2026_Q2", "2026_Q3", "2026_Q4",
+            "2027_Q1", "2027_Q2", "2027_Q3", "2027_Q4",
+            "2028_Q1", "2028_Q2", "2028_Q3", "2028_Q4",
+            "2029_Q1", "2029_Q2", "2029_Q3", "2029_Q4",
+        ]
+
+        share_columns = [
+            "Operator Share %",
+            "Partner1 Share %",
+            "Partner2 Share %",
+            "Partner3 Share %",
+            "Partner4 Share %",
+            "Partner5 Share %",
+        ]
+
+        base_columns = [
             "Project Name",
+            "Likely Go-ahead",
             "Country",
             "Region",
             "Group",
-            "Likely Go-ahead",
             "Field/Block",
             "Field Type",
             "Play Type",
             "Hydrocarbon",
+            "Associated Crude",
+            "Depth",
             "Operator",
+            "Partner1",
+            "Partner2",
+            "Partner3",
+            "Partner4",
+            "Partner5",
             "First Oil Year",
+            "Sanctioned",
+            "Comments",
+            "Comments_link",
             "Project Status",
-            "Measure Names",
-            "Measure Values",
+            "Gas Reserves (mmboe)",
+            "Liquids Reserves (mmbbl)",
+            "Total Reserves (mmboe)",
+            "API",
+            "Sulfur",
         ]
-        for col in display_columns:
-            if col not in df.columns:
-                df[col] = ""
-        return df[display_columns].to_dict("records")
+        # Pivot Measure Names/Values into quarter columns
+        pivot_source = df[base_columns + ["Measure Names", "Measure Values"]].copy()
+        pivot = (
+            pivot_source.groupby(base_columns + ["Measure Names"])["Measure Values"]
+            .sum()
+            .reset_index()
+            .pivot(index=base_columns, columns="Measure Names", values="Measure Values")
+            .reset_index()
+        )
+        # Ensure all quarter columns exist
+        for qc in quarter_columns:
+            if qc not in pivot.columns:
+                pivot[qc] = ""
+        # Ensure share columns exist and order after Sulfur
+        for sc in share_columns:
+            if sc not in pivot.columns:
+                pivot[sc] = ""
+        # Keep only base + shares + ordered quarters
+        display_df = pivot[base_columns + share_columns + quarter_columns].fillna("")
+        return display_df.to_dict("records")
