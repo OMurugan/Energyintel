@@ -154,19 +154,19 @@ if df_latest_updates is not None and not df_latest_updates.empty:
 def create_layout():
     """Create the exact layout matching the image"""
     return html.Div(style={
-        'backgroundColor': '#f5f5f5',
+        'backgroundColor': '#ffffff',
         'minHeight': '100vh',
         'padding': '12px 0',
         'margin': '0',
-        'fontFamily': 'Arial, sans-serif',
+        'fontFamily': 'Times New Roman, Times, serif',
     }, children=[
         html.Div(style={
             'width': '100%',
             'maxWidth': '1220px',
             'margin': '0 auto',
-            'fontFamily': 'Arial, sans-serif',
+            'fontFamily': 'Times New Roman, Times, serif',
             'backgroundColor': 'white',
-            'border': '1px solid #d6d6d6',
+            'border': 'none',
             'boxShadow': 'none',
             'borderRadius': '0',
             'padding': '12px 14px 18px 14px',
@@ -181,7 +181,7 @@ def create_layout():
                     'color': '#1155cc',
                     'textDecoration': 'underline',
                     'fontSize': '12px',
-                    'fontFamily': 'Arial, sans-serif',
+                    'fontFamily': 'Times New Roman, Times, serif',
                     'fontWeight': 'normal',
                     'marginBottom': '12px',
                     'display': 'block',
@@ -199,13 +199,13 @@ def create_layout():
                 # Title section
                 html.Div(children=[
                     html.H3(
-                        "List of Updated Projects- Week of December 1, 2025",
+                        "List of Updated Projects- Week of December 8, 2025",
                         style={
                             'color': '#ff6600',
                             'margin': '0',
-                            'fontSize': '14px',
+                            'fontSize': '16px',
                             'fontWeight': 'bold',
-                            'fontFamily': 'Arial, sans-serif',
+                            'fontFamily': 'Times New Roman, Times, serif',
                             'whiteSpace': 'nowrap',
                             'flexShrink': '0',
                             'paddingTop': '2px',
@@ -229,10 +229,10 @@ def create_layout():
                         style={
                             'display': 'block',
                             'marginBottom': '4px',
-                            'fontSize': '11px',
+                            'fontSize': '12px',
                             'fontWeight': 'normal',
                             'color': '#000000',
-                            'fontFamily': 'Arial, sans-serif',
+                            'fontFamily': 'Times New Roman, Times, serif',
                             'whiteSpace': 'nowrap',
                         }
                     ),
@@ -240,15 +240,18 @@ def create_layout():
                         id='filter-go-ahead',
                         options=[
                             {'label': '(All)', 'value': 'ALL'},
-                            {'label': 'Y', 'value': 'Y'},
+                            {'label': '', 'value': 'EMPTY'},
                             {'label': 'N', 'value': 'N'},
-                            {'label': 'Uncertain', 'value': 'UNCERTAIN'}
+                            {'label': 'Uncertain', 'value': 'UNCERTAIN'},
+                            {'label': 'Y', 'value': 'Y'},
+                           
+                           
                         ],
-                        value=['ALL'],
+                        value=['Y'],
                         inline=False,
                         style={
-                            'fontSize': '11px',
-                            'fontFamily': 'Arial, sans-serif',
+                            'fontSize': '12px',
+                            'fontFamily': 'Times New Roman, Times, serif',
                             'color': '#000000',
                         },
                         labelStyle={
@@ -273,7 +276,7 @@ def create_layout():
                                 "padding": "6px 10px", 
                                 "fontSize": "12px",
                                 "cursor": "pointer",
-                                "fontFamily": "Arial",
+                                "fontFamily": "Times New Roman, Times, serif",
                                 "color": "#333",
                             }),
                     html.Div("Alphabetic", id="popup-alphabetic-btn",
@@ -281,7 +284,7 @@ def create_layout():
                                 "padding": "6px 10px", 
                                 "fontSize": "12px",
                                 "cursor": "pointer",
-                                "fontFamily": "Arial",
+                                "fontFamily": "Times New Roman, Times, serif",
                                 "color": "#333",
                             }),
                     html.Div([
@@ -297,7 +300,7 @@ def create_layout():
                            "padding": "6px 10px", 
                            "fontSize": "12px",
                            "cursor": "pointer",
-                           "fontFamily": "Arial",
+                           "fontFamily": "Times New Roman, Times, serif",
                            "color": "#333",
                            "display": "flex",
                            "alignItems": "center",
@@ -317,7 +320,7 @@ def create_layout():
                            "padding": "6px 10px", 
                            "fontSize": "12px",
                            "cursor": "pointer",
-                           "fontFamily": "Arial",
+                           "fontFamily": "Times New Roman, Times, serif",
                            "color": "333",
                            "display": "flex",
                            "alignItems": "center",
@@ -366,15 +369,15 @@ def create_layout():
                         'border': '1px solid #999999',
                         'borderRadius': '0',
                         'boxShadow': 'none',
-                        'fontFamily': 'Arial, sans-serif',
+                        'fontFamily': 'Times New Roman, Times, serif',
                         'width': '100%',
                         'minWidth': '1180px',
                     },
                     style_cell={
                         'textAlign': 'left',
                         'padding': '2px 5px',
-                        'fontSize': '11px',
-                        'fontFamily': 'Arial, sans-serif',
+                        'fontSize': '12px',
+                        'fontFamily': 'Times New Roman, Times, serif',
                         'color': '#000000',
                         'borderBottom': '1px solid #cccccc',
                         'borderRight': '1px solid #cccccc',
@@ -388,8 +391,8 @@ def create_layout():
                     style_header={
                         'backgroundColor': '#d9d9d9',
                         'fontWeight': 'bold',
-                        'fontSize': '11px',
-                        'fontFamily': 'Arial, sans-serif',
+                        'fontSize': '12px',
+                        'fontFamily': 'Times New Roman, Times, serif',
                         'color': '#000000',
                         'borderBottom': '2px solid #999999',
                         'borderRight': '1px solid #999999',
@@ -433,7 +436,7 @@ def create_layout():
                         'selector': '.dash-cell div.dash-cell-value',
                         'rule': 'display: inline; white-space: normal;'
                     }],
-                    sort_action="native",
+                    sort_action="none",
                     filter_action="none",
                     page_action="none",
                     markdown_options={"html": True, "link_target": "_blank"},
@@ -447,12 +450,12 @@ def create_layout():
                 id='all-projects-title',
                 style={
                     'color': '#ff6600',
-                    'margin': '6px 0 8px 0',
-                    'fontSize': '14px',
+                    'margin': '12px 0 8px 0',
+                    'fontSize': '16px',
                     'fontWeight': 'bold',
-                    'fontFamily': 'Arial, sans-serif',
-                    'borderBottom': '1px solid #cccccc',
-                    'paddingBottom': '5px',
+                    'fontFamily': 'Times New Roman, Times, serif',
+                    'borderBottom': 'none',
+                    'paddingBottom': '0',
                 }
             ),
             
@@ -476,15 +479,15 @@ def create_layout():
                         'border': '1px solid #999999',
                         'borderRadius': '0',
                         'boxShadow': 'none',
-                        'fontFamily': 'Arial, sans-serif',
+                        'fontFamily': 'Times New Roman, Times, serif',
                         'width': '100%',
                         'minWidth': '1180px',
                     },
                     style_cell={
                         'textAlign': 'left',
                         'padding': '2px 5px',
-                        'fontSize': '11px',
-                        'fontFamily': 'Arial, sans-serif',
+                        'fontSize': '12px',
+                        'fontFamily': 'Times New Roman, Times, serif',
                         'color': '#000000',
                         'borderBottom': '1px solid #cccccc',
                         'borderRight': '1px solid #cccccc',
@@ -498,8 +501,8 @@ def create_layout():
                     style_header={
                         'backgroundColor': '#d9d9d9',
                         'fontWeight': 'bold',
-                        'fontSize': '11px',
-                        'fontFamily': 'Arial, sans-serif',
+                        'fontSize': '12px',
+                        'fontFamily': 'Times New Roman, Times, serif',
                         'color': '#000000',
                         'borderBottom': '2px solid #999999',
                         'borderRight': '1px solid #999999',
@@ -543,7 +546,7 @@ def create_layout():
                         'selector': '.dash-cell div.dash-cell-value',
                         'rule': 'display: inline; white-space: normal;'
                     }],
-                    sort_action="native",
+                    # sort_action="native",
                     filter_action="none",
                     page_action="none",
                     markdown_options={"html": True, "link_target": "_blank"},
@@ -596,38 +599,45 @@ def register_callbacks(dash_app, server):
                 all_table_container_style
             )
         
-        # Map checkbox values to actual data values
-        value_mapping = {
-            'Y': 'Yes',
-            'N': 'No', 
-            'UNCERTAIN': 'Uncertain'
+        # Allowed values mapping
+        filter_map = {
+            'Y': 'YES',
+            'N': 'NO',
+            'UNCERTAIN': 'UNCERTAIN',
+            'EMPTY': 'EMPTY'
         }
         
-        # Get the actual values to filter by
-        filter_values = []
-        for val in selected_go_ahead:
-            if val in value_mapping:
-                filter_values.append(value_mapping[val])
+        # Normalize selected values
+        normalized_selection = [filter_map[v] for v in selected_go_ahead if v in filter_map]
         
         # If no valid filter values, hide both table containers
-        if not filter_values:
+        if not normalized_selection:
             updated_container_style = {'display': 'none'}
             all_table_container_style = {'display': 'none'}
             return [], [], updated_container_style, all_table_container_style
         
-        # Filter both dataframes
-        df_filtered_projects = pd.DataFrame()
-        df_filtered_updates = pd.DataFrame()
+        def filter_df(df):
+            if df is None or df.empty:
+                return pd.DataFrame()
+            
+            col = df['Likely Go-ahead'].fillna('').astype(str)
+            upper = col.str.strip().str.upper()
+            
+            mask = pd.Series(False, index=df.index)
+            
+            if 'YES' in normalized_selection:
+                mask |= upper == 'YES'
+            if 'NO' in normalized_selection:
+                mask |= upper == 'NO'
+            if 'UNCERTAIN' in normalized_selection:
+                mask |= upper == 'UNCERTAIN'
+            if 'EMPTY' in normalized_selection:
+                mask |= ~upper.isin(['YES', 'NO', 'UNCERTAIN']) | (upper == '')
+            
+            return df[mask].copy()
         
-        if df_projects_table is not None and not df_projects_table.empty:
-            df_filtered_projects = df_projects_table[
-                df_projects_table['Likely Go-ahead'].isin(filter_values)
-            ].copy()
-        
-        if df_latest_updates is not None and not df_latest_updates.empty:
-            df_filtered_updates = df_latest_updates[
-                df_latest_updates['Likely Go-ahead'].isin(filter_values)
-            ].copy()
+        df_filtered_projects = filter_df(df_projects_table)
+        df_filtered_updates = filter_df(df_latest_updates)
         
         # If filtered data is empty, hide the table containers (but titles remain visible)
         if df_filtered_projects.empty:
@@ -657,31 +667,19 @@ def register_callbacks(dash_app, server):
         if not selected_values:
             return []
         
-        # If ALL is selected with other options, keep only ALL
-        if 'ALL' in selected_values and len(selected_values) > 1:
-            # If user clicked ALL while others were selected, select only ALL
-            return ['ALL']
+        # If ALL is selected, ensure all options are checked
+        if 'ALL' in selected_values:
+            return ['ALL', 'EMPTY', 'N', 'UNCERTAIN', 'Y']
         
-        # Get individual options (excluding ALL)
-        individual_options = [v for v in selected_values if v != 'ALL']
+        # Normalize to unique values (without ALL)
+        allowed_values = ['EMPTY', 'N', 'UNCERTAIN', 'Y']
+        individual_options = [v for v in allowed_values if v in selected_values]
         
-        # If all three individual options are selected, show ALL instead
-        if set(individual_options) == {'Y', 'N', 'UNCERTAIN'}:
-            return ['ALL']
+        # If all options are selected, include ALL for clarity
+        if set(individual_options) == set(allowed_values):
+            return ['ALL'] + allowed_values
         
-        # If ALL is deselected (was in previous selection but not in current), clear all
-        ctx = callback_context
-        if ctx.triggered:
-            trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-            if trigger_id == 'filter-go-ahead':
-                # Check if ALL was previously selected but is not now
-                previous_values = ctx.states.get('filter-go-ahead.value', [])
-                if 'ALL' in previous_values and 'ALL' not in selected_values:
-                    # User deselected ALL, so clear all
-                    return []
-        
-        return selected_values
-
+        return individual_options
     # SIMPLE CLIENTSIDE CALLBACK - This will definitely work
     dash_app.clientside_callback(
         """
@@ -729,7 +727,7 @@ def register_callbacks(dash_app, server):
                     aElement.style.cursor = 'pointer';
                     aElement.style.padding = '1px 2px';
                     aElement.style.borderRadius = '1px';
-                    aElement.style.fontFamily = 'Arial, sans-serif';
+                    aElement.style.fontFamily = 'Times New Roman, Times, serif';
                     aElement.style.fontSize = '10px';
                     aElement.onmouseover = function() {
                         aElement.style.backgroundColor = '#d4e7ff';
@@ -756,7 +754,7 @@ def register_callbacks(dash_app, server):
                     zElement.style.cursor = 'pointer';
                     zElement.style.padding = '1px 2px';
                     zElement.style.borderRadius = '1px';
-                    zElement.style.fontFamily = 'Arial, sans-serif';
+                    zElement.style.fontFamily = 'Times New Roman, Times, serif';
                     zElement.style.fontSize = '10px';
                     zElement.onmouseover = function() {
                         zElement.style.backgroundColor = '#d4e7ff';
