@@ -998,13 +998,25 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
             .mean()
             .reset_index()
         )
+        # Limit label density at low zoom so names stay readable
+        max_labels = len(centroids)
+        if map_zoom <= 2.8:
+            max_labels = 40
+        elif map_zoom <= 3.4:
+            max_labels = 80
+        centroids_display = (
+            centroids.sort_values("Country").head(max_labels)
+            if max_labels < len(centroids)
+            else centroids
+        )
         fig.add_trace(
             go.Scattermapbox(
-                lon=centroids["Longitude"],
-                lat=centroids["Latitude"],
+                lon=centroids_display["Longitude"],
+                lat=centroids_display["Latitude"],
                 mode="text",
-                text=centroids["Country"],
-                textfont=dict(size=9, color="#444"),
+                text=centroids_display["Country"],
+                textfont=dict(size=10, color="#2c3e50"),
+                textposition="top center",
                 hoverinfo="skip",
                 showlegend=False,
             )
@@ -1075,13 +1087,18 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
         .mean()
         .reset_index()
     )
+    # Limit label density at low zoom so names stay readable
+    fallback_labels = centroids
+    if len(centroids) > 60:
+        fallback_labels = centroids.sort_values("Country").head(60)
     fig.add_trace(
         go.Scattergeo(
-            lon=centroids["Longitude"],
-            lat=centroids["Latitude"],
+            lon=fallback_labels["Longitude"],
+            lat=fallback_labels["Latitude"],
             mode="text",
-            text=centroids["Country"],
-            textfont=dict(size=9, color="#444"),
+            text=fallback_labels["Country"],
+            textfont=dict(size=10, color="#2c3e50"),
+            textposition="top center",
             hoverinfo="skip",
             showlegend=False,
         )
