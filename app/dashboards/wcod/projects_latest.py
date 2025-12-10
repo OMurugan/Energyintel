@@ -2,153 +2,221 @@
 Latest Updates View
 Latest upstream project updates
 """
-import os
 import pandas as pd
 from dash import dcc, html, Input, Output, callback, dash_table, State, no_update, callback_context
 import re
+from core.data_helpers import execute_query
 
-# ------------------------------------------------------------------------------
-# FILE PATHS
-# ------------------------------------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data", "project_by_latets")
-
-CSV_PATHS = {
-    "projects_table": os.path.join(DATA_DIR, "Projects_Table_data(1).csv"),
-    "latest_updates": os.path.join(DATA_DIR, "Latest Updates_data.csv"),
-}
-
-# ------------------------------------------------------------------------------
-# DATA LOADING FUNCTIONS
-# ------------------------------------------------------------------------------
-def load_csv_data(file_path, fallback_data=None, **read_kwargs):
-    """Load CSV data with fallback to sample data if file not found."""
-    if not os.path.exists(file_path):
-        print(f"❌ File not found: {file_path}")
-        return fallback_data
+def create_link_text(comment, link_url, default_label="Article"):
+    """
+    Create markdown link text.
+    - If link is present, use comment as label when available, otherwise a default label.
+    - If only comment is present, return the comment text.
+    - Otherwise return a fallback string.
+    """
+    link_str = str(link_url).strip() if pd.notna(link_url) else ""
+    comment_str = str(comment).strip() if pd.notna(comment) else ""
     
-    specified_encoding = read_kwargs.pop("encoding", None)
-    if specified_encoding:
-        encodings_to_try = [specified_encoding, "utf-8", "utf-8-sig", "latin-1"]
-    else:
-        encodings_to_try = ["utf-8", "utf-8-sig", "latin-1", "utf-16"]
-    
-    last_error = None
-    base_kwargs = read_kwargs or {}
-    
-    for enc in encodings_to_try:
-        try:
-            kwargs = dict(base_kwargs)
-            if enc:
-                kwargs["encoding"] = enc
-            df = pd.read_csv(file_path, **kwargs)
-            print(f"✅ Loaded {os.path.basename(file_path)} (encoding={enc})")
-            return df
-        except UnicodeDecodeError as e:
-            last_error = e
-            continue
-        except Exception as e:
-            if "header" in str(e).lower() or "lines" in str(e).lower():
-                if "header" in base_kwargs:
-                    header_val = base_kwargs["header"]
-                    for alt_header in [0, 1, None]:
-                        if alt_header != header_val:
-                            try:
-                                kwargs = dict(base_kwargs)
-                                kwargs["header"] = alt_header
-                                if enc:
-                                    kwargs["encoding"] = enc
-                                df = pd.read_csv(file_path, **kwargs)
-                                print(f"✅ Loaded {os.path.basename(file_path)} (encoding={enc}, header={alt_header})")
-                                return df
-                            except Exception:
-                                continue
-            last_error = e
-            continue
-    
-    print(f"❌ Error loading {file_path}: {last_error}")
-    return fallback_data
+    if link_str:
+        label = comment_str or default_label
+        return f"[{label}]({link_str})"
+    if comment_str:
+        return comment_str
+    return "No link available"
 
-# Load dataframes globally once
-df_projects_table = load_csv_data(CSV_PATHS["projects_table"])
-df_latest_updates = load_csv_data(CSV_PATHS["latest_updates"])
 
-# Function to create clickable links
-def create_link_text(comment, link_url):
-    """Create markdown link text if both comment and link_url are available"""
-    if pd.notna(link_url) and pd.notna(comment) and str(link_url).strip() != '':
-        # Clean up the comment text
-        clean_comment = str(comment).strip()
-        # Return markdown formatted link
-        return f"[{clean_comment}]({link_url})"
-    elif pd.notna(comment):
-        return str(comment).strip()
-    else:
-        return 'No link available'
-
-# Pre-process dataframes to match image exactly
-if df_projects_table is not None and not df_projects_table.empty:
-    # Convert Likely Go-ahead to proper format
-    df_projects_table['Likely Go-ahead'] = df_projects_table['Likely Go-ahead'].astype(str)
-    # Map values to match image: Yes, No, Uncertain
-    df_projects_table['Likely Go-ahead'] = df_projects_table['Likely Go-ahead'].str.upper().replace({
-        'TRUE': 'Yes', 'FALSE': 'No', 'YES': 'Yes', 'NO': 'No', 
-        'Y': 'Yes', 'N': 'No', 'UNCERTAIN': 'Uncertain'
+def _normalize_likely_goahead(series: pd.Series) -> pd.Series:
+    """Normalize Likely Go-ahead values to Yes/No/Uncertain for consistent filtering."""
+    normalized = series.astype(str).str.upper().replace({
+        "TRUE": "Y",
+        "FALSE": "N",
+        "YES": "Y",
+        "NO": "N",
+        "Y": "Y",
+        "N": "N",
+        "UNCERTAIN": "UNCERTAIN",
+        "NONE": "",
+        "NAN": "",
+        "NULL": "",
+        "N/A": "",
+        "NA": "",
+        "": ""
     })
-    
-    df_projects_table['Project Name'] = df_projects_table['Project Name'].fillna('N/A')
-    df_projects_table['Country'] = df_projects_table['Country'].fillna('N/A')
-    
-    # Create clickable links for "All Projects" table
-    comment_col = 'Comments' if 'Comments' in df_projects_table.columns else None
-    link_col = 'Comments_link' if 'Comments_link' in df_projects_table.columns else None
-    
-    if comment_col and link_col:
-        df_projects_table['Click on the link below to go to the relevant article'] = df_projects_table.apply(
-            lambda row: create_link_text(row[comment_col], row[link_col]), axis=1
-        )
-    elif comment_col:
-        df_projects_table['Click on the link below to go to the relevant article'] = df_projects_table[comment_col].fillna('No link available')
-    else:
-        df_projects_table['Click on the link below to go to the relevant article'] = 'No link available'
+    return normalized
 
-if df_latest_updates is not None and not df_latest_updates.empty:
-    # Convert Likely Go-ahead to proper format
-    df_latest_updates['Likely Go-ahead'] = df_latest_updates['Likely Go-ahead'].astype(str)
-    # Map values to match image: Yes, No, Uncertain
-    df_latest_updates['Likely Go-ahead'] = df_latest_updates['Likely Go-ahead'].str.upper().replace({
-        'TRUE': 'Yes', 'FALSE': 'No', 'YES': 'Yes', 'NO': 'No',
-        'Y': 'Yes', 'N': 'No', 'UNCERTAIN': 'Uncertain'
-    })
-    
-    df_latest_updates['Project Name'] = df_latest_updates['Project Name'].fillna('N/A')
-    df_latest_updates['Country'] = df_latest_updates['Country'].fillna('N/A')
-    df_latest_updates['Project Status'] = df_latest_updates['Project Status'].fillna('N/A')
-    
-    # Handle First Oil Year/Date - check different column names
-    first_oil_col = None
-    for col in ['First Oil', 'First Oil Year', 'First Oil Date']:
-        if col in df_latest_updates.columns:
-            first_oil_col = col
-            break
-    
-    if first_oil_col:
-        df_latest_updates['First Oil'] = df_latest_updates[first_oil_col].fillna('N/A')
-    else:
-        df_latest_updates['First Oil'] = 'N/A'
-    
-    # Create clickable links for "Updated Projects" table
-    comment_col = 'Comments' if 'Comments' in df_latest_updates.columns else None
-    link_col = 'Comments_link' if 'Comments_link' in df_latest_updates.columns else None
-    
-    if comment_col and link_col:
-        df_latest_updates['Click on the link below to go to the relevant article'] = df_latest_updates.apply(
-            lambda row: create_link_text(row[comment_col], row[link_col]), axis=1
+
+def load_latest_updates_data():
+    """Load 'List of Updated Projects' table directly from the database."""
+    query = """
+        WITH latest_update AS (
+            SELECT MAX(date_modified) AS max_date
+            FROM dev.fact_upstream_project_tracker
+        ),
+        week_start AS (
+            SELECT date_trunc('week', max_date)::date AS wk_start
+            FROM latest_update
         )
-    elif comment_col:
-        df_latest_updates['Click on the link below to go to the relevant article'] = df_latest_updates[comment_col].fillna('No link available')
+
+        SELECT
+            a.project_name,
+            a.likely_goahead,
+            c.country_long_name AS country,
+            a.project_status,
+            yr.year AS first_oil_year,
+            a.external_comment_ei_link AS article_link,
+            a.external_comments AS comments,
+            a.date_modified
+        FROM dev.fact_upstream_project_tracker a
+        LEFT JOIN dev.dim_country c 
+            ON a.country_id = c.dim_country_id
+        LEFT JOIN (
+            SELECT 
+                project_id,
+                MIN(EXTRACT(YEAR FROM period)) AS year
+            FROM dev.fact_upstream_tracker_prod_estimates_incremental
+            WHERE value IS NOT NULL
+            GROUP BY project_id
+        ) yr ON yr.project_id = a.project_id
+        JOIN week_start w
+            ON a.date_modified >= w.wk_start
+        WHERE a.include = TRUE
+        AND a.external_comment_ei_link IS NOT NULL
+        ORDER BY a.project_name;
+    """
+    try:
+        results = execute_query(query)
+    except Exception as e:
+        print(f"❌ Error loading latest updates from DB: {e}")
+        return pd.DataFrame()
+    
+    df = pd.DataFrame(results) if results else pd.DataFrame()
+    if df.empty:
+        return df
+    
+    # Normalize column names to lowercase for consistent renaming
+    df.columns = df.columns.str.strip().str.lower()
+    column_mapping = {
+        "project_name": "Project Name",
+        "likely_goahead": "Likely Go-ahead",
+        "country": "Country",
+        "project_status": "Project Status",
+        "first_oil_year": "First Oil",
+        "article_link": "Article Link",
+        "comments": "Comments",
+        "date_modified": "Date Modified",
+    }
+    df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
+    
+    if "Likely Go-ahead" in df.columns:
+        df["Likely Go-ahead"] = _normalize_likely_goahead(df["Likely Go-ahead"])
+        df["Likely Go-ahead"] = df["Likely Go-ahead"].replace({
+            "Y": "Yes",
+            "N": "No",
+            "UNCERTAIN": "Uncertain"
+        })
+    
+    for col in ["Project Name", "Country", "Project Status"]:
+        if col in df.columns:
+            df[col] = df[col].fillna("N/A")
+    
+    if "First Oil" in df.columns:
+        df["First Oil"] = pd.to_numeric(df["First Oil"], errors="coerce")
+        df["First Oil"] = df["First Oil"].apply(lambda v: str(int(v)) if pd.notna(v) else "")
     else:
-        df_latest_updates['Click on the link below to go to the relevant article'] = 'No link available'
+        df["First Oil"] = ""
+    
+    df["Click on the link below to go to the relevant article"] = df.apply(
+        lambda row: create_link_text(
+            row.get("Comments") or row.get("Project Name"),
+            row.get("Article Link"),
+            default_label=row.get("Project Name") or "Article",
+        ),
+        axis=1,
+    )
+    
+    desired_cols = [
+        "Project Name",
+        "Likely Go-ahead",
+        "Country",
+        "Project Status",
+        "First Oil",
+        "Click on the link below to go to the relevant article",
+    ]
+    df = df[[c for c in desired_cols if c in df.columns]]
+    return df
+
+
+def load_all_projects_data():
+    """Load 'All Projects' table directly from the database."""
+    query = """
+    SELECT
+        a.project_name,
+        a.likely_goahead,
+        c.country_long_name AS country,
+        a.external_comment_ei_link AS article_link,
+        a.external_comments AS comments
+    FROM dev.fact_upstream_project_tracker a
+    LEFT JOIN dev.dim_country c 
+        ON a.country_id = c.dim_country_id
+    WHERE a.include = TRUE
+    AND a.external_comment_ei_link IS NOT NULL
+    ORDER BY a.project_name;
+    """
+    try:
+        results = execute_query(query)
+    except Exception as e:
+        print(f"❌ Error loading all projects from DB: {e}")
+        return pd.DataFrame()
+    
+    df = pd.DataFrame(results) if results else pd.DataFrame()
+    if df.empty:
+        return df
+    
+    # Normalize column names to lowercase for consistent renaming
+    df.columns = df.columns.str.strip().str.lower()
+    column_mapping = {
+        "project_name": "Project Name",
+        "likely_goahead": "Likely Go-ahead",
+        "country": "Country",
+        "article_link": "Article Link",
+        "comments": "Comments",
+    }
+    df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
+    
+    if "Likely Go-ahead" in df.columns:
+        df["Likely Go-ahead"] = _normalize_likely_goahead(df["Likely Go-ahead"])
+        df["Likely Go-ahead"] = df["Likely Go-ahead"].replace({
+            "Y": "Yes",
+            "N": "No",
+            "UNCERTAIN": "Uncertain"
+        })
+    
+    for col in ["Project Name", "Country"]:
+        if col in df.columns:
+            df[col] = df[col].fillna("N/A")
+    
+    df["Click on the link below to go to the relevant article"] = df.apply(
+        lambda row: create_link_text(
+            row.get("Comments") or row.get("Project Name"),
+            row.get("Article Link"),
+            default_label=row.get("Project Name") or "Article",
+        ),
+        axis=1,
+    )
+    
+    desired_cols = [
+        "Project Name",
+        "Likely Go-ahead",
+        "Country",
+        "Click on the link below to go to the relevant article",
+    ]
+    df = df[[c for c in desired_cols if c in df.columns]]
+    return df
+
+
+# Load dataframes globally once from the database
+df_latest_updates = load_latest_updates_data()
+df_projects_table = load_all_projects_data()
 
 
 def create_layout():
@@ -239,13 +307,11 @@ def create_layout():
                     dcc.Checklist(
                         id='filter-go-ahead',
                         options=[
-                            {'label': '(All)', 'value': 'ALL'},
-                            {'label': '', 'value': 'EMPTY'},
+                            {'label': '(All)', 'value': 'All'},
+                            {'label': '', 'value': ''},
                             {'label': 'N', 'value': 'N'},
-                            {'label': 'Uncertain', 'value': 'UNCERTAIN'},
+                            {'label': 'Uncertain', 'value': 'Uncertain'},
                             {'label': 'Y', 'value': 'Y'},
-                           
-                           
                         ],
                         value=['Y'],
                         inline=False,
@@ -264,7 +330,8 @@ def create_layout():
                             'marginTop': '0',
                             'marginBottom': '0',
                         }
-                    )
+                    ),
+                    dcc.Store(id='filter-go-ahead-previous', data=['Y'])
                 ])
             ]),
             
@@ -350,97 +417,100 @@ def create_layout():
             
             # Container for Updated Projects table that can be hidden
             html.Div(id='updated-projects-container', children=[
-                # FIRST TABLE: List of Updated Projects
-                dash_table.DataTable(
-                    id='latest-updates-table',
-                    columns=[
-                        {"name": "Project Name", "id": "Project Name", "presentation": "markdown"},
-                        {"name": "Likely Go-ahead", "id": "Likely Go-ahead", "presentation": "markdown"},
-                        {"name": "Country", "id": "Country", "presentation": "markdown"},
-                        {"name": "Project Status", "id": "Project Status", "presentation": "markdown"},
-                        {"name": "First Oil", "id": "First Oil", "presentation": "markdown"},
-                        {"name": "Click on the link below to go to the relevant article", "id": "Click on the link below to go to the relevant article", "presentation": "markdown"}
-                    ] if df_latest_updates is not None else [],
-                    data=df_latest_updates.to_dict('records') if df_latest_updates is not None else [],
-                    style_table={
-                        'overflowX': 'auto',
-                        'overflowY': 'hidden',
-                        'marginBottom': '18px',
-                        'border': '1px solid #999999',
-                        'borderRadius': '0',
-                        'boxShadow': 'none',
-                        'fontFamily': 'Times New Roman, Times, serif',
-                        'width': '100%',
-                        'minWidth': '1180px',
-                    },
-                    style_cell={
-                        'textAlign': 'left',
-                        'padding': '2px 5px',
-                        'fontSize': '12px',
-                        'fontFamily': 'Times New Roman, Times, serif',
-                        'color': '#000000',
-                        'borderBottom': '1px solid #cccccc',
-                        'borderRight': '1px solid #cccccc',
-                        'backgroundColor': 'white',
-                        'whiteSpace': 'normal',
-                        'overflow': 'hidden',
-                        'textOverflow': 'ellipsis',
-                        'minWidth': '90px',
-                        'maxWidth': '260px',
-                    },
-                    style_header={
-                        'backgroundColor': '#d9d9d9',
-                        'fontWeight': 'bold',
-                        'fontSize': '12px',
-                        'fontFamily': 'Times New Roman, Times, serif',
-                        'color': '#000000',
-                        'borderBottom': '2px solid #999999',
-                        'borderRight': '1px solid #999999',
-                        'borderTop': '1px solid #999999',
-                        'borderLeft': '1px solid #999999',
-                        'padding': '3px 5px',
-                        'textAlign': 'left',
-                        'whiteSpace': 'normal',
-                        'height': 'auto',
-                        'position': 'relative',
-                    },
-                    style_data_conditional=[
-                        {
-                            'if': {'row_index': 'odd'},
-                            'backgroundColor': '#ffffff'
+                dcc.Loading(
+                    type='default',
+                    color='#ff6600',
+                    children=dash_table.DataTable(
+                        id='latest-updates-table',
+                        columns=[
+                            {"name": "Project Name", "id": "Project Name", "presentation": "markdown"},
+                            {"name": "Likely Go-ahead", "id": "Likely Go-ahead", "presentation": "markdown"},
+                            {"name": "Country", "id": "Country", "presentation": "markdown"},
+                            {"name": "Project Status", "id": "Project Status", "presentation": "markdown"},
+                            {"name": "First Oil", "id": "First Oil", "presentation": "markdown"},
+                            {"name": "Click on the link below to go to the relevant article", "id": "Click on the link below to go to the relevant article", "presentation": "markdown"}
+                        ] if df_latest_updates is not None else [],
+                        data=df_latest_updates.to_dict('records') if df_latest_updates is not None else [],
+                        style_table={
+                            'overflowX': 'auto',
+                            'overflowY': 'hidden',
+                            'marginBottom': '18px',
+                            'border': '1px solid #999999',
+                            'borderRadius': '0',
+                            'boxShadow': 'none',
+                            'fontFamily': 'Times New Roman, Times, serif',
+                            'width': '100%',
+                            'minWidth': '1180px',
                         },
-                        {
-                            'if': {'row_index': 'even'},
-                            'backgroundColor': '#f8f8f8'
-                        },
-                        {
-                            'if': {'state': 'selected'},
-                            'backgroundColor': '#e6f3ff',
-                            'border': 'none'
-                        },
-                        {
-                            'if': {'column_id': 'Click on the link below to go to the relevant article'},
-                            'color': '#1155cc',
-                            'textDecoration': 'underline',
-                            'cursor': 'pointer',
+                        style_cell={
+                            'textAlign': 'left',
+                            'padding': '2px 5px',
+                            'fontSize': '12px',
+                            'fontFamily': 'Times New Roman, Times, serif',
+                            'color': '#000000',
+                            'borderBottom': '1px solid #cccccc',
+                            'borderRight': '1px solid #cccccc',
+                            'backgroundColor': 'white',
                             'whiteSpace': 'normal',
-                            'lineHeight': '1.2',
-                        }
-                    ],
-                    style_data={
-                        'whiteSpace': 'normal',
-                        'height': '22px',
-                        'lineHeight': '1.15',
-                    },
-                    css=[{
-                        'selector': '.dash-cell div.dash-cell-value',
-                        'rule': 'display: inline; white-space: normal;'
-                    }],
-                    sort_action="none",
-                    filter_action="none",
-                    page_action="none",
-                    markdown_options={"html": True, "link_target": "_blank"},
-                    editable=False,
+                            'overflow': 'hidden',
+                            'textOverflow': 'ellipsis',
+                            'minWidth': '90px',
+                            'maxWidth': '260px',
+                        },
+                        style_header={
+                            'backgroundColor': '#d9d9d9',
+                            'fontWeight': 'bold',
+                            'fontSize': '12px',
+                            'fontFamily': 'Times New Roman, Times, serif',
+                            'color': '#000000',
+                            'borderBottom': '2px solid #999999',
+                            'borderRight': '1px solid #999999',
+                            'borderTop': '1px solid #999999',
+                            'borderLeft': '1px solid #999999',
+                            'padding': '3px 5px',
+                            'textAlign': 'left',
+                            'whiteSpace': 'normal',
+                            'height': 'auto',
+                            'position': 'relative',
+                        },
+                        style_data_conditional=[
+                            {
+                                'if': {'row_index': 'odd'},
+                                'backgroundColor': '#ffffff'
+                            },
+                            {
+                                'if': {'row_index': 'even'},
+                                'backgroundColor': '#f8f8f8'
+                            },
+                            {
+                                'if': {'state': 'selected'},
+                                'backgroundColor': '#e6f3ff',
+                                'border': 'none'
+                            },
+                            {
+                                'if': {'column_id': 'Click on the link below to go to the relevant article'},
+                                'color': '#1155cc',
+                                'textDecoration': 'underline',
+                                'cursor': 'pointer',
+                                'whiteSpace': 'normal',
+                                'lineHeight': '1.2',
+                            }
+                        ],
+                        style_data={
+                            'whiteSpace': 'normal',
+                            'height': '22px',
+                            'lineHeight': '1.15',
+                        },
+                        css=[{
+                            'selector': '.dash-cell div.dash-cell-value',
+                            'rule': 'display: inline; white-space: normal;'
+                        }],
+                        sort_action="none",
+                        filter_action="none",
+                        page_action="none",
+                        markdown_options={"html": True, "link_target": "_blank"},
+                        editable=False,
+                    )
                 ),
             ]),
             
@@ -461,96 +531,99 @@ def create_layout():
             
             # Container for All Projects table that can be hidden
             html.Div(id='all-projects-table-container', children=[
-                # SECOND TABLE: All Projects
-                dash_table.DataTable(
-                    id='projects-table',
-                    columns=[
-                        {"name": "Project Name", "id": "Project Name", "presentation": "markdown"},
-                        {"name": "Likely Go-ahead", "id": "Likely Go-ahead", "presentation": "markdown"},
-                        {"name": "Country", "id": "Country", "presentation": "markdown"},
-                        {"name": "Click on the link below to go to the relevant article", "id": "Click on the link below to go to the relevant article", "presentation": "markdown"}
-                    ] if df_projects_table is not None else [],
-                    data=df_projects_table.to_dict('records') if df_projects_table is not None else [],
-                    style_table={
-                        'overflowX': 'auto',
-                        'overflowY': 'auto',
-                        'height': '460px',
-                        'maxHeight': '460px',
-                        'border': '1px solid #999999',
-                        'borderRadius': '0',
-                        'boxShadow': 'none',
-                        'fontFamily': 'Times New Roman, Times, serif',
-                        'width': '100%',
-                        'minWidth': '1180px',
-                    },
-                    style_cell={
-                        'textAlign': 'left',
-                        'padding': '2px 5px',
-                        'fontSize': '12px',
-                        'fontFamily': 'Times New Roman, Times, serif',
-                        'color': '#000000',
-                        'borderBottom': '1px solid #cccccc',
-                        'borderRight': '1px solid #cccccc',
-                        'backgroundColor': 'white',
-                        'whiteSpace': 'normal',
-                        'overflow': 'hidden',
-                        'textOverflow': 'ellipsis',
-                        'minWidth': '90px',
-                        'maxWidth': '320px',
-                    },
-                    style_header={
-                        'backgroundColor': '#d9d9d9',
-                        'fontWeight': 'bold',
-                        'fontSize': '12px',
-                        'fontFamily': 'Times New Roman, Times, serif',
-                        'color': '#000000',
-                        'borderBottom': '2px solid #999999',
-                        'borderRight': '1px solid #999999',
-                        'borderTop': '1px solid #999999',
-                        'borderLeft': '1px solid #999999',
-                        'padding': '3px 5px',
-                        'textAlign': 'left',
-                        'whiteSpace': 'normal',
-                        'height': 'auto',
-                        'position': 'relative',
-                    },
-                    style_data_conditional=[
-                        {
-                            'if': {'row_index': 'odd'},
-                            'backgroundColor': '#ffffff'
+                dcc.Loading(
+                    type='default',
+                    color='#ff6600',
+                    children=dash_table.DataTable(
+                        id='projects-table',
+                        columns=[
+                            {"name": "Project Name", "id": "Project Name", "presentation": "markdown"},
+                            {"name": "Likely Go-ahead", "id": "Likely Go-ahead", "presentation": "markdown"},
+                            {"name": "Country", "id": "Country", "presentation": "markdown"},
+                            {"name": "Click on the link below to go to the relevant article", "id": "Click on the link below to go to the relevant article", "presentation": "markdown"}
+                        ] if df_projects_table is not None else [],
+                        data=df_projects_table.to_dict('records') if df_projects_table is not None else [],
+                        style_table={
+                            'overflowX': 'auto',
+                            'overflowY': 'auto',
+                            'height': '460px',
+                            'maxHeight': '460px',
+                            'border': '1px solid #999999',
+                            'borderRadius': '0',
+                            'boxShadow': 'none',
+                            'fontFamily': 'Times New Roman, Times, serif',
+                            'width': '100%',
+                            'minWidth': '1180px',
                         },
-                        {
-                            'if': {'row_index': 'even'},
-                            'backgroundColor': '#f8f8f8'
-                        },
-                        {
-                            'if': {'state': 'selected'},
-                            'backgroundColor': '#e6f3ff',
-                            'border': 'none'
-                        },
-                        {
-                            'if': {'column_id': 'Click on the link below to go to the relevant article'},
-                            'color': '#1155cc',
-                            'textDecoration': 'underline',
-                            'cursor': 'pointer',
+                        style_cell={
+                            'textAlign': 'left',
+                            'padding': '2px 5px',
+                            'fontSize': '12px',
+                            'fontFamily': 'Times New Roman, Times, serif',
+                            'color': '#000000',
+                            'borderBottom': '1px solid #cccccc',
+                            'borderRight': '1px solid #cccccc',
+                            'backgroundColor': 'white',
                             'whiteSpace': 'normal',
-                            'lineHeight': '1.2',
-                        }
-                    ],
-                    style_data={
-                        'whiteSpace': 'normal',
-                        'height': '22px',
-                        'lineHeight': '1.15',
-                    },
-                    css=[{
-                        'selector': '.dash-cell div.dash-cell-value',
-                        'rule': 'display: inline; white-space: normal;'
-                    }],
-                    # sort_action="native",
-                    filter_action="none",
-                    page_action="none",
-                    markdown_options={"html": True, "link_target": "_blank"},
-                    editable=False,
+                            'overflow': 'hidden',
+                            'textOverflow': 'ellipsis',
+                            'minWidth': '90px',
+                            'maxWidth': '320px',
+                        },
+                        style_header={
+                            'backgroundColor': '#d9d9d9',
+                            'fontWeight': 'bold',
+                            'fontSize': '12px',
+                            'fontFamily': 'Times New Roman, Times, serif',
+                            'color': '#000000',
+                            'borderBottom': '2px solid #999999',
+                            'borderRight': '1px solid #999999',
+                            'borderTop': '1px solid #999999',
+                            'borderLeft': '1px solid #999999',
+                            'padding': '3px 5px',
+                            'textAlign': 'left',
+                            'whiteSpace': 'normal',
+                            'height': 'auto',
+                            'position': 'relative',
+                        },
+                        style_data_conditional=[
+                            {
+                                'if': {'row_index': 'odd'},
+                                'backgroundColor': '#ffffff'
+                            },
+                            {
+                                'if': {'row_index': 'even'},
+                                'backgroundColor': '#f8f8f8'
+                            },
+                            {
+                                'if': {'state': 'selected'},
+                                'backgroundColor': '#e6f3ff',
+                                'border': 'none'
+                            },
+                            {
+                                'if': {'column_id': 'Click on the link below to go to the relevant article'},
+                                'color': '#1155cc',
+                                'textDecoration': 'underline',
+                                'cursor': 'pointer',
+                                'whiteSpace': 'normal',
+                                'lineHeight': '1.2',
+                            }
+                        ],
+                        style_data={
+                            'whiteSpace': 'normal',
+                            'height': '22px',
+                            'lineHeight': '1.15',
+                        },
+                        css=[{
+                            'selector': '.dash-cell div.dash-cell-value',
+                            'rule': 'display: inline; white-space: normal;'
+                        }],
+                        # sort_action="native",
+                        filter_action="none",
+                        page_action="none",
+                        markdown_options={"html": True, "link_target": "_blank"},
+                        editable=False,
+                    )
                 ),
             ])
         ])
@@ -561,125 +634,86 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for the Upstream Projects dashboard"""
     
     @dash_app.callback(
-        [Output('projects-table', 'data'),
-         Output('latest-updates-table', 'data'),
-         Output('updated-projects-container', 'style'),
-         Output('all-projects-table-container', 'style')],
+        [
+            Output('projects-table', 'data'),
+            Output('latest-updates-table', 'data'),
+            Output('updated-projects-container', 'style'),
+            Output('all-projects-table-container', 'style'),
+            Output('filter-go-ahead', 'value'),
+        ],
         [Input('filter-go-ahead', 'value')]
     )
     def update_dashboard_data(selected_go_ahead):
-        """
-        Filter both tables based on selected Likely Go-ahead values.
-        
-        Rules:
-        1. ALL selected → show all rows in both tables
-        2. Empty selection → COMPLETELY HIDE both tables (headers only, titles remain)
-        3. N selected → show only rows with Likely Go-ahead = No
-        4. Y selected → show only rows with Likely Go-ahead = Yes  
-        5. Uncertain selected → show only rows with Likely Go-ahead = Uncertain
-        6. Multiple selected → show rows matching any of the selected values
-        """
-        
-        # Default styles - show both containers
+        # Always show containers unless fully cleared
         updated_container_style = {'display': 'block'}
         all_table_container_style = {'display': 'block'}
-        
-        # If nothing selected → HIDE both TABLE containers (but keep titles)
-        if not selected_go_ahead:
-            updated_container_style = {'display': 'none'}
-            all_table_container_style = {'display': 'none'}
-            return [], [], updated_container_style, all_table_container_style
-        
-        # If ALL selected → show all data
-        if 'ALL' in selected_go_ahead:
+
+        # Default selection if nothing provided -> Y only (filtered)
+        selection = selected_go_ahead.copy() if selected_go_ahead else ['Y']
+
+        # Normalize to uppercase for filtering
+        selection_upper = [str(v).upper() for v in selection]
+
+        # Categories available
+        all_categories = ['Y', 'N', 'UNCERTAIN', '']   # '' = blank category
+
+        # ----------------------------------------------------
+        # Handle ALL behavior
+        # ----------------------------------------------------
+        all_selected = 'ALL' in selection_upper
+
+        if all_selected:
+            # All forces every category on and should show all rows
+            normalized_ui = ['All', 'Y', 'N', 'Uncertain', '']
+            filtered_selection = all_categories.copy()
+        else:
+            filtered_selection = [v for v in selection_upper if v in all_categories]
+            normalized_ui = selection
+
+        # If nothing left → hide tables
+        if not filtered_selection:
+            return [], [], {'display': 'none'}, {'display': 'none'}, []
+
+        # When all categories are active (via All or manual selection), return all data
+        if all_selected or set(filtered_selection) == set(all_categories):
             return (
-                df_projects_table.to_dict('records') if df_projects_table is not None and not df_projects_table.empty else [],
-                df_latest_updates.to_dict('records') if df_latest_updates is not None and not df_latest_updates.empty else [],
+                df_projects_table.to_dict('records'),
+                df_latest_updates.to_dict('records'),
                 updated_container_style,
-                all_table_container_style
+                all_table_container_style,
+                normalized_ui
             )
-        
-        # Allowed values mapping
-        filter_map = {
-            'Y': 'YES',
-            'N': 'NO',
-            'UNCERTAIN': 'UNCERTAIN',
-            'EMPTY': 'EMPTY'
-        }
-        
-        # Normalize selected values
-        normalized_selection = [filter_map[v] for v in selected_go_ahead if v in filter_map]
-        
-        # If no valid filter values, hide both table containers
-        if not normalized_selection:
-            updated_container_style = {'display': 'none'}
-            all_table_container_style = {'display': 'none'}
-            return [], [], updated_container_style, all_table_container_style
-        
+
+        # ----------------------------------------------------
+        # Filtering helper
+        # ----------------------------------------------------
         def filter_df(df):
             if df is None or df.empty:
                 return pd.DataFrame()
-            
-            col = df['Likely Go-ahead'].fillna('').astype(str)
-            upper = col.str.strip().str.upper()
-            
+
+            col = df['Likely Go-ahead'].fillna('').astype(str).str.upper()
+            col = col.replace({'YES': 'Y', 'NO': 'N'})
+
             mask = pd.Series(False, index=df.index)
-            
-            if 'YES' in normalized_selection:
-                mask |= upper == 'YES'
-            if 'NO' in normalized_selection:
-                mask |= upper == 'NO'
-            if 'UNCERTAIN' in normalized_selection:
-                mask |= upper == 'UNCERTAIN'
-            if 'EMPTY' in normalized_selection:
-                mask |= ~upper.isin(['YES', 'NO', 'UNCERTAIN']) | (upper == '')
-            
+
+            for key in filtered_selection:
+                mask |= (col == key)
+
             return df[mask].copy()
-        
+
         df_filtered_projects = filter_df(df_projects_table)
         df_filtered_updates = filter_df(df_latest_updates)
-        
-        # If filtered data is empty, hide the table containers (but titles remain visible)
-        if df_filtered_projects.empty:
-            all_table_container_style = {'display': 'none'}
-        
-        if df_filtered_updates.empty:
-            updated_container_style = {'display': 'none'}
-        
+
+        # UI: return exactly what user selected (without forcing selection)
         return (
-            df_filtered_projects.to_dict('records') if not df_filtered_projects.empty else [],
-            df_filtered_updates.to_dict('records') if not df_filtered_updates.empty else [],
+            df_filtered_projects.to_dict('records'),
+            df_filtered_updates.to_dict('records'),
             updated_container_style,
-            all_table_container_style
+            all_table_container_style,
+            normalized_ui  # return adjusted selection to UI
         )
-    
-    @dash_app.callback(
-        Output('filter-go-ahead', 'value'),
-        [Input('filter-go-ahead', 'value')]
-    )
-    def manage_checklist_selection(selected_values):
-        """
-        Manage the checkbox logic:
-        - When ALL is selected with other options, keep only ALL
-        - When all three individual options are selected, show ALL
-        - When ALL is deselected, clear all selections
-        """
-        if not selected_values:
-            return []
-        
-        # If ALL is selected, ensure all options are checked
-        if 'ALL' in selected_values:
-            return ['ALL', 'EMPTY', 'N', 'UNCERTAIN', 'Y']
-        
-        # Normalize to unique values (without ALL)
-        allowed_values = ['EMPTY', 'N', 'UNCERTAIN', 'Y']
-        individual_options = [v for v in allowed_values if v in selected_values]
-        
-        # If all options are selected, include ALL for clarity
-        if set(individual_options) == set(allowed_values):
-            return ['ALL'] + allowed_values
-        
-        return individual_options
+
+
     # SIMPLE CLIENTSIDE CALLBACK - This will definitely work
     dash_app.clientside_callback(
         """
