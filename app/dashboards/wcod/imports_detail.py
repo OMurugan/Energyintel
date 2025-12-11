@@ -853,7 +853,7 @@ def register_callbacks(dash_app, server):
         return go.Figure()
     
     @callback(
-        [Output('imports-by-country-chart', 'figure')],
+        Output('imports-by-country-chart', 'figure'),
         [Input('importing-country-select', 'value'),
          Input('current-submenu', 'data'),
          State('selected-year-store', 'data')]
