@@ -848,6 +848,14 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
         y = row['Year of Year']
         q = row['Quarter of Year']
         m = row['Month of Year']
+        # Normalize day to string
+        day_val_raw = row.get('Day of Year', '')
+        day_key = ''
+        if pd.notna(day_val_raw) and day_val_raw != '':
+            try:
+                day_key = str(int(float(day_val_raw)))
+            except Exception:
+                day_key = str(day_val_raw)
         
         rec = records.setdefault(key, {
             'Exporting Region': str(key[0]) if key[0] is not None else '',
@@ -867,7 +875,7 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
         rec['_year'][y] = rec['_year'].get(y, 0) + val
         rec['_quarter'][(y, q)] = rec['_quarter'].get((y, q), 0) + val
         rec['_month'][(y, q, m)] = rec['_month'].get((y, q, m), 0) + val
-        rec['_day'][(y, q, m, row.get('Day of Year', ''))] = rec['_day'].get((y, q, m, row.get('Day of Year', '')), 0) + val
+        rec['_day'][(y, q, m, day_key)] = rec['_day'].get((y, q, m, day_key), 0) + val
     
     # Convert to list and sort for grouping, selecting values per year (with defaults)
     table_data = []
