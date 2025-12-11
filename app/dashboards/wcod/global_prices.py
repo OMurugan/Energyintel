@@ -132,6 +132,7 @@ def create_table_data(df, column_metadata):
     df['DayInt'] = pd.to_numeric(df['Day'], errors='coerce')
     
     # Sort by Year (descending), Quarter (descending), Month (descending), Day (ascending)
+    # Sort descending by year/quarter/month to match reference view (latest first)
     df_sorted = df.sort_values(['YearInt', 'QuarterOrder', 'MonthOrder', 'DayInt'], 
                                ascending=[False, False, False, True])
     
@@ -176,67 +177,54 @@ def create_table_data(df, column_metadata):
 
 def create_table_columns(column_metadata):
     """Create column definitions with hierarchical structure."""
-    # Use 3-level structure to align with data columns (region/country/blend)
-    # Empty strings for upper levels so only the label shows in the bottom row
+    # Use 3-level structure to align with data columns (region / country / blend)
+    # Left columns (Year/Quarter/Month/Day) with Quarter/Day toggle-only
     columns = [
-        {
-            'name': ['', '', 'Year'],
-            'id': 'Year',
-            'type': 'text'
-        },
-        {
-            'name': ['', '', 'Quarter'],
-            'id': 'Quarter',
-            'type': 'text'
-        },
-        {
-            'name': ['', '', 'Month'],
-            'id': 'Month',
-            'type': 'text'
-        },
-        {
-            'name': ['', '', 'Day'],
-            'id': 'Day',
-            'type': 'text'
-        }
+        {'name': ['', '', 'Year'], 'id': 'Year', 'type': 'text'},
+        {'name': ['', '', 'Quarter'], 'id': 'Quarter', 'type': 'text'},
+        {'name': ['', '', 'Month'], 'id': 'Month', 'type': 'text'},
+        {'name': ['', '', 'Day'], 'id': 'Day', 'type': 'text'},
     ]
     
-    # Group columns by region
-    regions = {}
-    for meta in column_metadata:
-        region = meta['region']
-        if region not in regions:
-            regions[region] = []
-        regions[region].append(meta)
+    # Explicit order to mirror the reference header (continents → countries → blends)
+    desired = [
+        ('Africa', 'Algeria', 'Saharan Blend'),
+        ('Africa', 'Angola', 'Cabinda'),
+        ('Africa', 'Angola', 'Girassol'),
+        ('Africa', 'Libya', 'Brega'),
+        ('Africa', 'Libya', 'Es Sider'),
+        ('Africa', 'Nigeria', 'Agbami'),
+        ('Africa', 'Nigeria', 'Amenam Blend'),
+        ('Africa', 'Nigeria', 'Antan Blend'),
+        ('Africa', 'Nigeria', 'Bonga'),
+        ('Africa', 'Nigeria', 'Bonny Light'),
+        ('Africa', 'Nigeria', 'Erha'),
+        ('Africa', 'Nigeria', 'Escravos'),
+        ('Africa', 'Nigeria', 'Forcados'),
+        ('Africa', 'Nigeria', 'Okono Blend'),
+        ('Africa', 'Nigeria', 'Qua Iboe'),
+        ('Africa', 'Nigeria', 'Yoho'),
+        ('Asia', 'Indonesia', 'Minas'),
+        ('Asia', 'Malaysia', 'Tapis'),
+        ('Asia', 'Norway', 'Ekofisk Blend'),
+        ('Asia', 'Norway', 'Oseberg'),
+    ]
     
-    # Sort regions to match Tableau order (Africa, Asia first)
-    region_order = ['Africa', 'Asia', 'Europe', 'FSU', 'Latin America', 'Middle East', 'North America', 'Oceania', 'Other']
-    sorted_regions = sorted(regions.keys(), key=lambda x: (region_order.index(x) if x in region_order else 999, x))
+    meta_lookup = {
+        (m['region'], m['country'], m['blend']): m['column_id']
+        for m in column_metadata
+    }
     
-    # Create hierarchical columns
-    for region in sorted_regions:
-        metas = regions[region]
-        
-        # Group by country within region
-        countries = {}
-        for meta in metas:
-            country = meta['country']
-            if country not in countries:
-                countries[country] = []
-            countries[country].append(meta)
-        
-        # Create columns for each country-blend combination with hierarchical structure
-        for country in sorted(countries.keys()):
-            country_metas = countries[country]
-            # Sort blends within country
-            country_metas_sorted = sorted(country_metas, key=lambda x: x['blend'])
-            for meta in country_metas_sorted:
-                columns.append({
-                    'name': [region, country, meta['blend']],
-                    'id': meta['column_id'],
-                    'type': 'numeric',
-                    'format': {'specifier': '.2f'}
-                })
+    for region, country, blend in desired:
+        col_id = meta_lookup.get((region, country, blend))
+        if not col_id:
+            continue
+        columns.append({
+            'name': [region, country, blend],
+            'id': col_id,
+            'type': 'numeric',
+            'format': {'specifier': '.2f'}
+        })
     
     return columns
 
@@ -266,7 +254,8 @@ def create_layout():
             "Monthly Crude Spot Prices ($/bbl)",
             style={
                 'textAlign': 'center',
-                'marginBottom': '20px',
+                'marginBottom': '10px',
+                'marginTop': '0px',
                 'fontSize': '20px',
                 'fontWeight': 'bold',
                 'color': '#fe5000',
@@ -281,17 +270,21 @@ def create_layout():
                 data=table_data,
                 columns=table_columns,
                 merge_duplicate_headers=True,
+                fixed_rows={'headers': True},
                 style_table={
+                    'tableLayout': 'fixed',
                     'overflowX': 'auto',
                     'overflowY': 'auto',
                     'border': '1px solid #dee2e6',
                     'fontFamily': 'Arial, sans-serif',
                     'fontSize': '12px',
                     'height': '800px',
-                    'maxHeight': '800px'
+                    'maxHeight': '800px',
+                    'minWidth': '1400px',
+                    'marginTop': '0px'
                 },
                 style_cell={
-                    'textAlign': 'left',
+                    'textAlign': 'center',
                     'padding': '6px 10px',
                     'border': '1px solid #e6e6e6',
                     'backgroundColor': 'white',
@@ -310,7 +303,10 @@ def create_layout():
                     'padding': '8px 10px',
                     'fontFamily': 'Arial, sans-serif',
                     'fontSize': '12px',
-                    'color': '#1b365d'
+                    'color': '#1b365d',
+                    'position': 'sticky',
+                    'top': 0,
+                    'zIndex': 2
                 },
                 style_data={
                     'border': '1px solid #e6e6e6'
@@ -336,26 +332,26 @@ def create_layout():
                         'fontWeight': 'bold',
                         'backgroundColor': '#f8f9fa',
                         'minWidth': '80px',
-                        'textAlign': 'left'
+                        'textAlign': 'center'
                     },
                     {
                         'if': {'column_id': 'Quarter'},
                         'fontWeight': 'bold',
                         'backgroundColor': '#f8f9fa',
                         'minWidth': '60px',
-                        'textAlign': 'left'
+                        'textAlign': 'center'
                     },
                     {
                         'if': {'column_id': 'Month'},
                         'fontWeight': 'normal',
                         'minWidth': '100px',
-                        'textAlign': 'left'
+                        'textAlign': 'center'
                     },
                     {
                         'if': {'column_id': 'Day'},
                         'fontWeight': 'normal',
                         'minWidth': '50px',
-                        'textAlign': 'left'
+                        'textAlign': 'center'
                     }
                 ],
                 page_action='none',
@@ -376,7 +372,7 @@ def create_layout():
             id='global-prices-clientside-script',
             children=''
         )
-    ], style={'padding': '20px', 'backgroundColor': '#ffffff'})
+    ], style={'padding': '10px 20px 0 20px', 'backgroundColor': '#ffffff'})
 
 
 def register_callbacks(dash_app, server):
@@ -395,6 +391,7 @@ def register_callbacks(dash_app, server):
                     style.innerHTML = `
 #global-prices-table .dash-spreadsheet-container {
     cursor: pointer;
+    table-layout: fixed;
 }
 #global-prices-table .dash-spreadsheet-container td {
     transition: opacity 0.2s ease, background-color 0.2s ease;
@@ -417,7 +414,11 @@ def register_callbacks(dash_app, server):
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"],
 #global-prices-table .dash-spreadsheet-container td[data-dash-column="Quarter"],
-#global-prices-table .dash-spreadsheet-container td[data-dash-column="Day"] {
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container table th[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container table th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container table td[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container table td[data-dash-column="Day"] {
     display: none !important;
 }
 /* Show Quarter when year is expanded */
@@ -487,13 +488,13 @@ def register_callbacks(dash_app, server):
     white-space: nowrap;
 }
 #global-prices-table .dash-spreadsheet-container.selection-active td:not(.cell-selected):not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"]) {
-    opacity: 0.3 !important;
+    opacity: 0.25 !important;
 }
 #global-prices-table .dash-spreadsheet-container td.cell-selected {
-    background-color: #b3d9ff !important;
-    border: 2px solid #0075A8 !important;
+    background-color: #a6cee9 !important;
+    border: 1px solid #2b7bb9 !important;
     font-weight: 600;
-    color: #1f2d3d !important;
+    color: #0f2d40 !important;
     opacity: 1 !important;
 }
 #global-prices-table .dash-spreadsheet-container th {
@@ -501,18 +502,18 @@ def register_callbacks(dash_app, server):
     transition: background-color 0.2s ease;
 }
 #global-prices-table .dash-spreadsheet-container th.column-selected {
-    background-color: #0075A8 !important;
-    color: white !important;
-    font-weight: bold;
+    background-color: #d0e7ff !important;
+    color: #1f2d3d !important;
+    font-weight: 700;
 }
 #global-prices-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"]):not(.column-cell-selected) {
-    opacity: 0.3 !important;
+    opacity: 0.25 !important;
 }
 #global-prices-table .dash-spreadsheet-container td.column-cell-selected {
-    background-color: #b3d9ff !important;
-    border: 2px solid #0075A8 !important;
+    background-color: #a6cee9 !important;
+    border: 1px solid #2b7bb9 !important;
     font-weight: 600;
-    color: #1f2d3d !important;
+    color: #0f2d40 !important;
     opacity: 1 !important;
 }
                     `;
@@ -589,8 +590,8 @@ def register_callbacks(dash_app, server):
                     spreadsheet.dataset.enhanced = 'true';
                     let selectedCells = [];
                     let selectedColumnId = null;
-                    let isYearExpanded = false; // Default: Quarter hidden
-                    let isMonthExpanded = false; // Default: Day hidden
+                    let isYearExpanded = false; // Default: hide Quarter
+                    let isMonthExpanded = false; // Default: hide Day
                     let isQuarterCollapsed = false; // Default: Month and Day visible when Quarter is shown
                     
                     // Helper function to get cell text without icons
@@ -884,6 +885,9 @@ def register_callbacks(dash_app, server):
                     // Initialize on load
                     initializeYearHeaderToggle();
                     initializeMonthHeaderToggle();
+                    if (isYearExpanded) {
+                        initializeQuarterHeaderToggle();
+                    }
                     
                     // Clear selection on outside click
                     document.addEventListener('click', function(event) {
