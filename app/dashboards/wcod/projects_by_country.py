@@ -489,10 +489,12 @@ def create_layout():
                                     html.Div(
                                         [
                                             html.H3(
-                                                "Producing Countries — Map View",
+                                                "Producing Countries",
                                                 style={
                                                     "marginBottom": "8px",
-                                                    "color": "#1b2838",
+                                                    "color": "#fe5000",
+                                                    "fontSize": "20px",
+                                                    "fontWeight": "bold",
                                                 },
                                             ),
                                             html.Div(
@@ -540,10 +542,12 @@ def create_layout():
                             html.Div(
                                 [
                                     html.H3(
-                                        "Projected Oil Capacity Additions by Quarter ('000 b/d)",
+                                        "Projected Oil Capacity Additions by Quarter ('000 b/d) - All",
                                         style={
                                             "marginBottom": "8px",
-                                            "color": "#1b2838",
+                                            "color": "#fe5000",
+                                            "fontSize": "20px",
+                                            "fontWeight": "bold",
                                         },
                                     ),
                                     dcc.Loading(
@@ -571,7 +575,9 @@ def create_layout():
                                         "Project Details",
                                         style={
                                             "marginBottom": "8px",
-                                            "color": "#1b2838",
+                                            "color": "#fe5000",
+                                            "fontSize": "20px",
+                                            "fontWeight": "bold",
                                         },
                                     ),
                                     dcc.Loading(
@@ -669,22 +675,22 @@ def create_layout():
                             ),
                         ],
                         style={
-                            "width": "75%",
+                            "width": "80%",
                             "float": "left",
-                            "paddingRight": "20px",
+                            "paddingRight": "10px",
                             "minWidth": "0",
                         },
                     ),
                     # Right column: filters
                     html.Div(
                         [
-                            html.H4(
-                                "Filters",
-                                style={
-                                    "marginBottom": "12px",
-                                    "color": "#1b2838",
-                                },
-                            ),
+                            # html.H4(
+                            #     "Filters",
+                            #     style={
+                            #         "marginBottom": "12px",
+                            #         "color": "#1b2838",
+                            #     },
+                            # ),
                             html.Div(
                                 [
                                     html.Label(
@@ -857,10 +863,10 @@ def create_layout():
                                     ),
                                 ],
                                 style={
-                                    "padding": "12px",
+                                    "padding": "5px",
                                     "border": "1px solid #e0e0e0",
                                     "borderRadius": "8px",
-                                    "marginBottom": "12px",
+                                    "marginBottom": "5px",
                                     "background": "#fafbfc",
                                 },
                             ),
@@ -889,10 +895,10 @@ def create_layout():
                                     ),
                                 ],
                                 style={
-                                    "padding": "12px",
+                                    "padding": "5px",
                                     "border": "1px solid #e0e0e0",
                                     "borderRadius": "8px",
-                                    "marginBottom": "12px",
+                                    "marginBottom": "5px",
                                     "background": "#fafbfc",
                                 },
                             ),
@@ -918,7 +924,7 @@ def create_layout():
                                     ),
                                 ],
                                 style={
-                                    "padding": "12px",
+                                    "padding": "5px",
                                     "border": "1px solid #e0e0e0",
                                     "borderRadius": "8px",
                                     "background": "#fafbfc",
@@ -926,16 +932,16 @@ def create_layout():
                             ),
                         ],
                         style={
-                            "width": "25%",
+                            "width": "20%",
                             "float": "right",
-                            "paddingLeft": "20px",
-                            "minWidth": "280px",
+                            "paddingLeft": "10px",
+                            "minWidth": "200px",
                             "background": "white",
-                            "padding": "16px",
+                            "padding": "10px",
                             "borderRadius": "8px",
                             "border": "1px solid #e0e0e0",
                             "height": "fit-content",
-                            "font-size": "12px",
+                            "font-size": "10px",
                         },
                     ),
                 ],
@@ -943,7 +949,7 @@ def create_layout():
             ),
         ],
         className="tab-content",
-        style={"padding": "16px", "background": "#f5f6fa"},
+        style={"padding": "5px", "background": "#f5f6fa"},
     )
 
 
@@ -1215,15 +1221,33 @@ def _chart_figure(
     )
     country_order = sorted(country_df["Country"].unique().tolist())
 
-    totals = (
-        country_df.groupby(["Year", "QuarterNum", "Quarter"], as_index=False)["ProductionAdditions"]
-        .sum()
+    # Build a complete ordered quarter list (even if some quarters have zero additions)
+    quarter_dim = (
+        country_df[["Year", "QuarterNum", "Quarter"]]
+        .drop_duplicates()
         .sort_values(["Year", "QuarterNum"])
+    )
+    quarter_order = quarter_dim["Quarter"].tolist()
+
+    totals_raw = (
+        country_df.groupby(["Year", "QuarterNum", "Quarter"])["ProductionAdditions"]
+        .sum()
+        .reset_index()
+    )
+    # Ensure every quarter exists, even if zero, and preserve order
+    totals = (
+        quarter_dim.merge(
+            totals_raw,
+            on=["Year", "QuarterNum", "Quarter"],
+            how="left",
+        )
+        .fillna({"ProductionAdditions": 0})
+        .sort_values(["Year", "QuarterNum"])
+        .reset_index(drop=True)
     )
     totals["RunningSumComputed"] = totals["ProductionAdditions"].cumsum()
     x_values = totals["Quarter"]
     line_values = totals["RunningSumComputed"]
-    quarter_order = totals["Quarter"].tolist()
 
     # Build stacked bars on primary y-axis, running sum on secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -1266,10 +1290,12 @@ def _chart_figure(
         dtick=200,
         secondary_y=False,
     )
+    # Keep secondary axis tall enough so the running-sum line is not clipped.
+    secondary_max = max(12000, float(line_values.max() if not line_values.empty else 0) * 1.05)
     fig.update_yaxes(
         title_text="'000 b/d",
         showgrid=False,
-        range=[0, 12000],
+        range=[0, secondary_max],
         tick0=0,
         dtick=2000,
         secondary_y=True,
