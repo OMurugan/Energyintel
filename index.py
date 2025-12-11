@@ -126,16 +126,11 @@ NAV_STYLE = {
     "borderBottom": "1px solid #e0e0e0",
 }
 
-# Global layout with a fullscreen loader around page content
+# Global layout without fullscreen loading wrapper to avoid double-loading
 app_mod.app.layout = html.Div(
     [
         dcc.Location(id="url"),
-        dcc.Loading(
-            id="global-loading",
-            type="circle",
-            fullscreen=True,
-            children=page_container,
-        ),
+        page_container,
     ]
 )
 
