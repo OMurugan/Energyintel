@@ -103,7 +103,7 @@ def load_table_data():
         # Normalize column names we need
         required_cols = [
             'Exporting Region', 'Exporter', 'Company', 'Crude',
-            'Year of Year', 'Quarter of Year', 'Month of Year', 'DataValue'
+            'Year of Year', 'Quarter of Year', 'Month of Year', 'Day of Year', 'DataValue'
         ]
         for col in required_cols:
             if col not in df.columns:
@@ -111,7 +111,7 @@ def load_table_data():
         
         # Clean text columns
         text_cols = ['Exporting Region', 'Exporter', 'Company', 'Crude',
-                     'Year of Year', 'Quarter of Year', 'Month of Year']
+                     'Year of Year', 'Quarter of Year', 'Month of Year', 'Day of Year']
         for col in text_cols:
             df[col] = df[col].fillna('').astype(str).str.strip()
         
@@ -121,6 +121,8 @@ def load_table_data():
         
         # Ensure year is int
         df['Year of Year'] = df['Year of Year'].astype(int)
+        # Day of year to numeric if possible
+        df['Day of Year'] = pd.to_numeric(df['Day of Year'], errors='coerce')
         
         return df
     except Exception as e:
@@ -224,17 +226,11 @@ def create_layout():
         html.Div([
             # Time dimension toggle row (Year / Quarter / Month / Day)
             html.Div([
-                html.Div([
-                    html.Span("Year of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
-                    html.Button('−', id='imports-toggle-year-btn', n_clicks=0, style={
-                        'width': '20px', 'height': '20px', 'padding': '0',
-                        'border': '1px solid #dee2e6', 'backgroundColor': '#e7f3ff',
-                        'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                        'fontSize': '14px', 'fontWeight': 'bold', 'lineHeight': '1',
-                        'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
-                        'marginLeft': '8px', 'flexShrink': '0'
-                    })
-                ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '130px'}),
+            # Year toggle hidden (Year always on)
+            html.Div([
+                html.Span("Year of Year"),
+                html.Button('−', id='imports-toggle-year-btn', n_clicks=0)
+            ], style={'display': 'none'}),
                 html.Div([
                     html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
                     html.Button('+', id='imports-toggle-quarter-btn', n_clicks=0, style={
@@ -760,7 +756,7 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
 
 
 def create_imports_table(selected_country='Japan', expansion_state=None, time_visibility=None):
-    """Create data table with stacked header text per column (Year on top, Quarter below, Month below) but still one column per year."""
+    """Create data table with stacked header text per column (Year/Quarter/Month/Day) but still one column per year."""
     df = load_table_data()
     
     if df.empty:
@@ -770,6 +766,7 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
     show_year = time_visibility.get('Year', True)
     show_quarter = time_visibility.get('Quarter', False)
     show_month = time_visibility.get('Month', False)
+    show_day = time_visibility.get('Day', False)
     
     # Orderings
     years = sorted(df['Year of Year'].unique(), reverse=True)
@@ -783,6 +780,7 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
     def year_id(y): return f"Y|{y}"
     def quarter_id(y): return f"Q|{y}"
     def month_id(y): return f"M|{y}"
+    def day_id(y): return f"D|{y}"
     
     columns = [
         {'name': 'Exporting Region', 'id': 'Exporting Region'},
@@ -797,6 +795,7 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
         df_year = df[df['Year of Year'] == year]
         q_default = ''
         m_default = ''
+        d_default = ''
         for q in quarter_order:
             if q in df_year['Quarter of Year'].unique():
                 q_default = q
@@ -804,15 +803,22 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
                 for m in month_order:
                     if m in df_q['Month of Year'].unique():
                         m_default = m
+                        df_m = df_q[df_q['Month of Year'] == m]
+                        # pick first available day
+                        if 'Day of Year' in df_m.columns and not df_m['Day of Year'].dropna().empty:
+                            d_default = str(int(df_m['Day of Year'].dropna().iloc[0]))
                         break
                 if m_default:
                     break
-        year_defaults[year] = (q_default, m_default)
+        year_defaults[year] = (q_default, m_default, d_default)
 
     dynamic_columns = []
     for year in years:
-        q_def, m_def = year_defaults.get(year, ('', ''))
-        if show_month:
+        q_def, m_def, d_def = year_defaults.get(year, ('', '', ''))
+        if show_day:
+            header_label = " ".join(part for part in [str(year), q_def, m_def, d_def] if part)
+            col_id = day_id(year)
+        elif show_month:
             header_label = " ".join(part for part in [str(year), q_def, m_def] if part)
             col_id = month_id(year)
         elif show_quarter:
@@ -850,7 +856,8 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
             'Crude': str(key[3]) if key[3] is not None else '',
             '_year': {},
             '_quarter': {},
-            '_month': {}
+            '_month': {},
+            '_day': {}
         })
         try:
             val = float(row['DataValue'])
@@ -860,6 +867,7 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
         rec['_year'][y] = rec['_year'].get(y, 0) + val
         rec['_quarter'][(y, q)] = rec['_quarter'].get((y, q), 0) + val
         rec['_month'][(y, q, m)] = rec['_month'].get((y, q, m), 0) + val
+        rec['_day'][(y, q, m, row.get('Day of Year', ''))] = rec['_day'].get((y, q, m, row.get('Day of Year', '')), 0) + val
     
     # Convert to list and sort for grouping, selecting values per year (with defaults)
     table_data = []
@@ -871,11 +879,14 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
             'Crude': rec['Crude']
         }
         for year in years:
-            q_def, m_def = year_defaults.get(year, ('', ''))
+            q_def, m_def, d_def = year_defaults.get(year, ('', '', ''))
             y_val = rec['_year'].get(year, '')
             q_val = rec['_quarter'].get((year, q_def), '') if q_def else ''
             m_val = rec['_month'].get((year, q_def, m_def), '') if (q_def and m_def) else ''
-            if show_month:
+            d_val = rec['_day'].get((year, q_def, m_def, d_def), '') if (q_def and m_def and d_def) else ''
+            if show_day:
+                out[day_id(year)] = d_val
+            elif show_month:
                 out[month_id(year)] = m_val
             elif show_quarter:
                 out[quarter_id(year)] = q_val
@@ -917,7 +928,9 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
     
     # Hidden columns: only keep the active level
     hidden = []
-    if show_month:
+    if show_day:
+        active_prefix = 'D|'
+    elif show_month:
         active_prefix = 'M|'
     elif show_quarter:
         active_prefix = 'Q|'
