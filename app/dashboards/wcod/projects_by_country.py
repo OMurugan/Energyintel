@@ -9,6 +9,7 @@ loaded from CSV files in ``app/dashboards/data/projects_by_country``.
 import json
 import os
 import unicodedata
+import logging
 from urllib.request import urlopen
 
 import dash
@@ -166,6 +167,8 @@ COUNTRY_TO_ISO = {
     "Sri Lanka": "LKA"
 }
 
+logger = logging.getLogger(__name__)
+
 try:  # Optional fallback resolver for ISO codes
     import pycountry  # type: ignore
 except Exception:  # pragma: no cover - pycountry might not be installed
@@ -239,6 +242,11 @@ def _build_country_colors(countries: list[str]) -> dict[str, str]:
     return {}
 
 
+def _ordered_countries() -> list[str]:
+    """Return countries in the same stable ordering used to render legend blocks."""
+    return sorted(load_map_data()["Country"].tolist())
+
+
 def _load_world_geojson() -> dict | None:
     """Load a lightweight world GeoJSON once, with a short timeout fallback."""
     global world_geojson
@@ -272,7 +280,7 @@ def _normalize_country_name(name: str | None) -> str:
 def _resolve_countries(selected: list[str] | None, all_countries: list[str]) -> list[str]:
     """Return concrete country list honoring '(All)' convenience value."""
     if not selected:
-        return all_countries
+        return []
     if "(All)" in selected:
         return all_countries
     return [c for c in selected if c in all_countries]
@@ -948,11 +956,26 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
         return _empty_figure("No countries match the selected filters.", height=520)
 
     df = filtered_df.copy()
+    # Guard against bad coords to avoid client-side Mapbox layer errors
+    df = df.dropna(subset=["Latitude", "Longitude"])
+    if df.empty:
+        return _empty_figure("No valid country data for mapping.", height=520)
+
     if "iso_alpha" not in df.columns:
         df["iso_alpha"] = df["Country"].apply(_iso_for_country)
     df = df.dropna(subset=["iso_alpha"])
     if df.empty:
         return _empty_figure("No valid country data for mapping.", height=520)
+
+    # Only attempt Mapbox rendering when a token looks valid; otherwise fall back
+    # to the non-Mapbox choropleth to avoid client-side "Mapbox error".
+    _mapbox_token = (getattr(Config, "MAPBOX_ACCESS_TOKEN", None) or "").strip()
+    has_mapbox_token = _mapbox_token.startswith("pk.")
+    use_mapbox = (
+        has_mapbox_token
+        and (_load_world_geojson() is not None)
+        and os.getenv("USE_MAPBOX_WCOD", "false").lower() in ("1", "true", "yes")
+    )
 
     # Color per group; selection outlined separately
     color_map = {}
@@ -964,102 +987,110 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
     # Preferred Mapbox path (with world geojson) for OSM base map + controls
     geojson = _load_world_geojson()
     world_center = {"lat": 24.0, "lon": 45.0}
+    avg_lat = df["Latitude"].mean()
+    avg_lon = df["Longitude"].mean()
     map_center = (
-        dict(lat=df["Latitude"].mean(), lon=df["Longitude"].mean())
-        if selected_country
+        dict(lat=avg_lat, lon=avg_lon)
+        if selected_country and not (pd.isna(avg_lat) or pd.isna(avg_lon))
         else world_center
     )
     map_zoom = 2.8 if not selected_country else 2
 
-    if geojson:
-        group_code = df["Group"].map({"Non-OPEC-Plus": 0, "OPEC-Plus": 1}).fillna(0)
-        fig = go.Figure(
-            go.Choroplethmapbox(
-                geojson=geojson,
-                locations=df["iso_alpha"],
-                z=group_code,
-                featureidkey="id",  # world.geo.json uses ISO-3 in `id`
-                colorscale=[
-                    [0, GROUP_COLORS.get("Non-OPEC-Plus", "#7194b9")],
-                    [1, GROUP_COLORS.get("OPEC-Plus", "#f5a555")],
-                ],
-                showscale=False,
-                hoverinfo="text",
-                hovertext=df.apply(
-                    lambda row: f"<b>{row['Country']}</b><br>Group: {row['Group']}<br>Click to select",
-                    axis=1,
-                ),
-                marker_line_color="white",
-                marker_line_width=0.6,
-            )
-        )
-        centroids = (
-            df.groupby("Country")[["Latitude", "Longitude"]]
-            .mean()
-            .reset_index()
-        )
-        # Limit label density at low zoom so names stay readable
-        max_labels = len(centroids)
-        if map_zoom <= 2.8:
-            max_labels = 40
-        elif map_zoom <= 3.4:
-            max_labels = 80
-        centroids_display = (
-            centroids.sort_values("Country").head(max_labels)
-            if max_labels < len(centroids)
-            else centroids
-        )
-        fig.add_trace(
-            go.Scattermapbox(
-                lon=centroids_display["Longitude"],
-                lat=centroids_display["Latitude"],
-                mode="text",
-                text=centroids_display["Country"],
-                textfont=dict(size=10, color="#2c3e50"),
-                textposition="top center",
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-        if selected_country and selected_country in df["Country"].values:
-            sel_iso = df.loc[df["Country"] == selected_country, "iso_alpha"].iloc[0]
-            fig.add_trace(
+    if geojson and use_mapbox:
+        try:
+            group_code = df["Group"].map({"Non-OPEC-Plus": 0, "OPEC-Plus": 1}).fillna(0)
+            fig = go.Figure(
                 go.Choroplethmapbox(
                     geojson=geojson,
-                    locations=[sel_iso],
-                    z=[0],
-                    featureidkey="id",
-                    colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
+                    locations=df["iso_alpha"],
+                    z=group_code,
+                    featureidkey="id",  # world.geo.json uses ISO-3 in `id`
+                    colorscale=[
+                        [0, GROUP_COLORS.get("Non-OPEC-Plus", "#7194b9")],
+                        [1, GROUP_COLORS.get("OPEC-Plus", "#f5a555")],
+                    ],
                     showscale=False,
-                    marker_line_color="#FF6B35",
-                    marker_line_width=2.5,
-                    hoverinfo="skip",
+                    hoverinfo="text",
+                    hovertext=df.apply(
+                        lambda row: f"<b>{row['Country']}</b><br>Group: {row['Group']}<br>Click to select",
+                        axis=1,
+                    ),
+                    marker_line_color="white",
+                    marker_line_width=0.6,
                 )
             )
-            if len(fig.data) > 1:
-                fig.data = tuple(list(fig.data)[1:] + [fig.data[0]])
+            centroids = (
+                df.groupby("Country")[["Latitude", "Longitude"]]
+                .mean()
+                .reset_index()
+                .dropna(subset=["Latitude", "Longitude"])
+            )
+            if centroids.empty:
+                raise ValueError("No centroid coordinates for Mapbox text labels.")
+            # Limit label density at low zoom so names stay readable
+            max_labels = len(centroids)
+            if map_zoom <= 2.8:
+                max_labels = 40
+            elif map_zoom <= 3.4:
+                max_labels = 80
+            centroids_display = (
+                centroids.sort_values("Country").head(max_labels)
+                if max_labels < len(centroids)
+                else centroids
+            )
+            fig.add_trace(
+                go.Scattermapbox(
+                    lon=centroids_display["Longitude"],
+                    lat=centroids_display["Latitude"],
+                    mode="text",
+                    text=centroids_display["Country"],
+                    textfont=dict(size=10, color="#2c3e50"),
+                    textposition="top center",
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
 
-        mapbox_layout = dict(
-            style="carto-positron",
-            center=map_center,
-            zoom=map_zoom,
-            bearing=0,
-            pitch=0,
-        )
-        if Config.MAPBOX_ACCESS_TOKEN:
-            mapbox_layout["accesstoken"] = Config.MAPBOX_ACCESS_TOKEN
+            if selected_country and selected_country in df["Country"].values:
+                sel_iso = df.loc[df["Country"] == selected_country, "iso_alpha"].iloc[0]
+                fig.add_trace(
+                    go.Choroplethmapbox(
+                        geojson=geojson,
+                        locations=[sel_iso],
+                        z=[0],
+                        featureidkey="id",
+                        colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
+                        showscale=False,
+                        marker_line_color="#FF6B35",
+                        marker_line_width=2.5,
+                        hoverinfo="skip",
+                    )
+                )
+                if len(fig.data) > 1:
+                    fig.data = tuple(list(fig.data)[1:] + [fig.data[0]])
 
-        fig.update_layout(
-            margin=dict(l=0, r=0, t=0, b=0),
-            height=520,
-            mapbox=mapbox_layout,
-            hovermode="closest",
-            plot_bgcolor="white",
-            paper_bgcolor="white",
-            showlegend=False,
-        )
-        return fig
+            mapbox_layout = dict(
+                style="carto-positron",
+                center=map_center,
+                zoom=map_zoom,
+                bearing=0,
+                pitch=0,
+            )
+            if has_mapbox_token:
+                mapbox_layout["accesstoken"] = _mapbox_token
+
+            fig.update_layout(
+                margin=dict(l=0, r=0, t=0, b=0),
+                height=520,
+                mapbox=mapbox_layout,
+                hovermode="closest",
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                showlegend=False,
+            )
+            return fig
+        except Exception as exc:
+            logger.warning("Mapbox rendering failed; falling back to geo map. Error: %s", exc)
 
     # Fallback: geo-based choropleth (no Mapbox) if GeoJSON unavailable
     group_code = df["Group"].map({"Non-OPEC-Plus": 0, "OPEC-Plus": 1}).fillna(0)
@@ -1152,11 +1183,11 @@ def _chart_figure(
             return True
         return country_to_group.get(country) in allowed_groups
 
-    # Resolve the working country set
-    if selected_countries:
-        base_countries = [c for c in selected_countries if _allowed(c)]
-    else:
+    # Resolve the working country set; explicit empty list means "none selected"
+    if selected_countries is None:
         base_countries = [c for c in map_data["Country"].tolist() if _allowed(c)]
+    else:
+        base_countries = [c for c in selected_countries if _allowed(c)]
 
     if selected_country:
         if not _allowed(selected_country):
@@ -1334,13 +1365,17 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         selected_set = set(selected)
         has_all = "(All)" in selected_set
 
+        normalized = selected
         if has_all and len(selected_set) == 1:
-            return ["(All)"] + all_values
-        if not has_all and set(all_values).issubset(selected_set):
-            return ["(All)"] + all_values
-        if has_all and not set(all_values).issubset(selected_set):
-            return [v for v in selected if v != "(All)"]
-        return selected
+            normalized = ["(All)"] + all_values
+        elif not has_all and set(all_values).issubset(selected_set):
+            normalized = ["(All)"] + all_values
+        elif has_all and not set(all_values).issubset(selected_set):
+            normalized = [v for v in selected if v != "(All)"]
+
+        new_sorted = sorted(normalized)
+        old_sorted = sorted(selected)
+        return new_sorted if new_sorted != old_sorted else dash.no_update
 
     @dash_app.callback(
         Output("projects-country-filter", "value", allow_duplicate=True),
@@ -1356,14 +1391,23 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         selected = selected or []
         selected_set = set(selected)
         has_all = "(All)" in selected_set
+        all_set = set(all_countries)
 
-        if has_all and len(selected_set) == 1:
-            return ["(All)"] + all_countries
-        if not has_all and set(all_countries).issubset(selected_set):
-            return ["(All)"] + all_countries
-        if has_all and not set(all_countries).issubset(selected_set):
-            return [v for v in selected if v != "(All)"]
-        return selected
+        # If "(All)" is present, always expand to full set
+        if has_all:
+            normalized = ["(All)"] + all_countries
+        # If user unchecks "(All)" while everything remains selected, clear all
+        elif not has_all and all_set.issubset(selected_set):
+            normalized = []
+        # If nothing selected, keep empty
+        elif not selected_set:
+            normalized = []
+        else:
+            normalized = selected
+
+        new_sorted = sorted(normalized)
+        old_sorted = sorted(selected)
+        return new_sorted if new_sorted != old_sorted else dash.no_update
 
     @dash_app.callback(
         Output("projects-country-filter", "value", allow_duplicate=True),
@@ -1386,7 +1430,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         if not country:
             return dash.no_update
 
-        all_countries = load_map_data()["Country"].tolist()
+        all_countries = _ordered_countries()
         selected_set = set(_resolve_countries(current_values or [], all_countries))
 
         if country in selected_set:
@@ -1408,24 +1452,27 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     )
     def update_country_legend_styles(selected_countries):
         """Dim legend items that are not selected."""
-        all_countries = load_map_data()["Country"].tolist()
+        all_countries = _ordered_countries()
         selected_set = set(_resolve_countries(selected_countries, all_countries))
+        base_style = {
+            "display": "flex",
+            "alignItems": "center",
+            "cursor": "pointer",
+            "padding": "6px 8px",
+            "borderRadius": "4px",
+            "marginBottom": "6px",
+            "border": "1px solid #e0e0e0",
+            "transition": "background-color 0.15s ease, opacity 0.15s ease",
+        }
         styles = []
         for country in all_countries:
-            base_style = {
-                "display": "flex",
-                "alignItems": "center",
-                "cursor": "pointer",
-                "padding": "6px 8px",
-                "borderRadius": "4px",
-                "marginBottom": "6px",
-                "border": "1px solid #e0e0e0",
-            }
             is_selected = country in selected_set
             styles.append(
                 {
                     **base_style,
                     "backgroundColor": "#eef2ff" if is_selected else "#ffffff",
+                    "borderColor": "#4e79a7" if is_selected else "#e0e0e0",
+                    "fontWeight": "600" if is_selected else "400",
                     "opacity": 1.0 if is_selected else 0.35,
                 }
             )
@@ -1499,14 +1546,10 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             Input("projects-group-filter", "value"),
             Input("projects-country-filter", "value"),
             Input("projects-selected-country", "data"),
-            Input("current-submenu", "data"),
         ],
         prevent_initial_call=False,
     )
-    def refresh_map(group_filter, country_filter, selected_country, submenu):
-        if submenu != "projects-country":
-            return _empty_figure("", height=520)
-
+    def refresh_map(group_filter, country_filter, selected_country):
         try:
             base_df = load_map_data()
             all_countries = base_df["Country"].tolist()
@@ -1529,16 +1572,12 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             Input("projects-country-filter", "value"),
             Input("projects-group-filter", "value"),
             Input("projects-chart-group-filter", "value"),
-            Input("current-submenu", "data"),
         ],
         prevent_initial_call=False,
     )
     def refresh_chart(
-        selected_country, country_filter, group_filter, chart_group_filter, submenu
+        selected_country, country_filter, group_filter, chart_group_filter
     ):
-        if submenu != "projects-country":
-            return _empty_figure("", height=420)
-
         group_set = set(group_filter or DEFAULT_GROUPS)
         chart_group_set = (
             set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
@@ -1561,16 +1600,12 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             Input("projects-country-filter", "value"),
             Input("projects-group-filter", "value"),
             Input("projects-likely-filter", "value"),
-            Input("current-submenu", "data"),
         ],
         prevent_initial_call=False,
     )
     def refresh_table(
-        selected_country, country_filter, group_filter, likely_filter, submenu
+        selected_country, country_filter, group_filter, likely_filter
     ):
-        if submenu != "projects-country":
-            return []
-
         df = load_table_data()
         groups = group_filter or DEFAULT_GROUPS
         likely_values = likely_filter or DEFAULT_LIKELY
