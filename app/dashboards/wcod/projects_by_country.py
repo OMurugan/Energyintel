@@ -326,7 +326,6 @@ def _empty_figure(message: str, height: int = 420) -> go.Figure:
     )
     return fig
 
-
 def _build_match_expression(df_subset: pd.DataFrame, color_map: dict[str, str]):
     """
     Build a Mapbox match expression keyed on iso_3166_1_alpha_3 to ensure
@@ -1004,6 +1003,8 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
                     geojson=geojson,
                     locations=df["iso_alpha"],
                     z=group_code,
+                    zmin=0,
+                    zmax=1,
                     featureidkey="id",  # world.geo.json uses ISO-3 in `id`
                     colorscale=[
                         [0, GROUP_COLORS.get("Non-OPEC-Plus", "#7194b9")],
@@ -1098,6 +1099,8 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
         go.Choropleth(
             locations=df["iso_alpha"],
             z=group_code,
+            zmin=0,
+            zmax=1,
             locationmode="ISO-3",
             colorscale=[
                 [0, GROUP_COLORS.get("Non-OPEC-Plus", "#7194b9")],
