@@ -935,6 +935,7 @@ def create_layout():
                             "borderRadius": "8px",
                             "border": "1px solid #e0e0e0",
                             "height": "fit-content",
+                            "font-size": "12px",
                         },
                     ),
                 ],
