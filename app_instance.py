@@ -15,7 +15,9 @@ def _normalize_prefix(raw_prefix: Optional[str]) -> str:
     """Return a routes prefix that starts/ends with '/' or empty if not set."""
     if not raw_prefix:
         return ""
-    prefix = raw_prefix
+    prefix = raw_prefix.strip()
+    if not prefix:
+        return ""
     if not prefix.startswith("/"):
         prefix = f"/{prefix}"
     if not prefix.endswith("/"):
@@ -23,13 +25,11 @@ def _normalize_prefix(raw_prefix: Optional[str]) -> str:
     return prefix
 
 
-# Read optional prefix from env; empty means "no prefix" for routing.
-# Keep the normalized value for building links, but prevent Dash from
-# auto-reading these env vars so it always serves at root.
-_raw_prefix = (os.getenv("DASH_ROUTES_PATHNAME_PREFIX") or "").strip()
+# Read optional prefix for link generation only (not for Dash binding)
+_raw_prefix = os.getenv("DASH_ROUTES_PATHNAME_PREFIX", "")
 ROUTES_PREFIX = _normalize_prefix(_raw_prefix)
 
-# Prevent Dash from picking up env-based prefixes; we control link prefixes only.
+# Remove env vars so Dash always binds at root and avoids invalid values.
 os.environ.pop("DASH_ROUTES_PATHNAME_PREFIX", None)
 os.environ.pop("DASH_REQUESTS_PATHNAME_PREFIX", None)
 
@@ -41,8 +41,12 @@ app = Dash(
     external_stylesheets=[dbc.themes.BOOTSTRAP],
     suppress_callback_exceptions=True,
     plugins=[Embeddable(origins="*")],
+    # Force root binding; prefix is handled only in generated links.
+    routes_pathname_prefix="/",
+    requests_pathname_prefix=None,
 )
 
 # Expose server for gunicorn
 server = app.server
+
 

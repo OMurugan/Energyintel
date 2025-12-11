@@ -243,12 +243,20 @@ def create_layout():
                 dcc.Graph(
                     id='imports-world-map',
                     config={
-                        'displayModeBar': False,
+                        'displayModeBar': True,
+                        'displaylogo': False,
+                        # Geo-specific controls (home/reset + zoom)
+                        'modeBarButtonsToAdd': [
+                            'zoomInGeo',
+                            'zoomOutGeo',
+                            'resetGeo',
+                            'resetScale2d'  # home-style reset icon
+                        ],
                         'scrollZoom': True,
                         'doubleClick': 'reset'
                     },
                     style={
-                        'height': '640px',
+                        'height': '100%',
                         'width': '100%',
                         'maxWidth': '100%',
                         'margin': '0 auto'
@@ -635,7 +643,7 @@ def register_callbacks(dash_app, server):
             )
             map_fig.update_layout(
                 margin=dict(l=20, r=20, t=20, b=80),
-                height=640,
+                height=550,
                 plot_bgcolor=MAP_BACKGROUND_COLOR,
                 paper_bgcolor=MAP_BACKGROUND_COLOR,
                 dragmode='zoom',
@@ -671,6 +679,31 @@ def register_callbacks(dash_app, server):
             )
             map_fig.update_coloraxes(colorscale=MAP_COLOR_SCALE, cmin=0, cmax=max_volume if max_volume > 0 else 1)
             map_fig.update_traces(marker_line_color='#ffffff', marker_line_width=0.5)
+            # Overlay country labels with density control for readability
+            labels_df = df_map.copy()
+            # Throttle label density for wide zoom; sort by volume then alphabetize for spread
+            label_cap = len(labels_df)
+            if len(labels_df) > 120:
+                label_cap = 30
+            elif len(labels_df) > 80:
+                label_cap = 45
+            labels_df = (
+                labels_df.sort_values("Import_Volume", ascending=False)
+                .head(label_cap)
+                .sort_values("Country")
+            )
+            map_fig.add_trace(
+                go.Scattergeo(
+                    locations=labels_df['Country'],
+                    locationmode='country names',
+                    mode='text',
+                    text=[denormalize_country_name(c) for c in labels_df['Country']],
+                    textfont=dict(size=8, color='#2c3e50', family='Arial'),
+                    textposition='top center',
+                    hoverinfo='skip',
+                    showlegend=False,
+                )
+            )
             # Add copyright annotation
             map_fig.add_annotation(
                 text="© 2025 Mapbox © OpenStreetMap",

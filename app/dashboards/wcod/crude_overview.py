@@ -24,18 +24,20 @@ import re
 import itertools
 import math
 import html as html_lib
+import json
+import urllib.request
 from core.data_helpers import execute_query
 
 # Define data paths
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'crude_overview')
 BAR_YEARLY_CSV = os.path.join(DATA_DIR, 'Yearly Bar - Production_data.csv')
 BAR_MONTHLY_CSV = os.path.join(DATA_DIR, 'Monthly Bar - Production_data.csv')
-MAP_YEARLY_CSV = os.path.join(DATA_DIR, 'Yearly World Map_data.csv')
-MAP_MONTHLY_CSV = os.path.join(DATA_DIR, 'Monthly World Map_data.csv')
 TABLE_YEARLY_CSV = os.path.join(DATA_DIR, 'Table - Country Production_data.csv')
 TABLE_MONTHLY_CSV = os.path.join(DATA_DIR, 'Table - monthly crude production_data.csv')
 YEARLY_GRADES_CSV = os.path.join(DATA_DIR, 'Yearly List of grades for selected country_data.csv')
 MONTHLY_GRADES_CSV = os.path.join(DATA_DIR, 'Monthly List of grades for selected country_data.csv')
+
+COUNTRIES_GEOJSON = None
 
 # Data loading functions
 def load_yearly_bar():
@@ -179,71 +181,126 @@ def load_monthly_bar():
         df_long = pd.DataFrame()
     return df, df_long
 
+
+def _load_countries_geojson():
+    """Load and cache world countries GeoJSON for Mapbox choropleths."""
+    global COUNTRIES_GEOJSON
+    if COUNTRIES_GEOJSON is not None:
+        return COUNTRIES_GEOJSON
+    url = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            COUNTRIES_GEOJSON = json.load(response)
+            print("DEBUG: Loaded countries GeoJSON for mapbox")
+    except Exception as e:
+        print(f"WARNING: Failed to load countries GeoJSON: {e}")
+        COUNTRIES_GEOJSON = None
+    return COUNTRIES_GEOJSON
+
+
+def load_monthly_map_from_db():
+    """
+    Load monthly map data from the database instead of CSV.
+    Expected columns from query:
+        country, month_year (YYYY-MM), value, country_id
+    """
+    query = """
+        SELECT DISTINCT ON (p.country, TO_CHAR(p.date, 'YYYY-MM'))
+            p.country,
+            TO_CHAR(p.date, 'YYYY-MM') AS month_year,
+            p.value,
+            p.country_id
+        FROM dev.t_wcod_monthly_stream_production p
+        ORDER BY p.country, TO_CHAR(p.date, 'YYYY-MM'), p.value DESC;
+    """
+    try:
+        rows = execute_query(query)
+        if not rows:
+            print("DEBUG: No monthly map rows returned from DB")
+            return pd.DataFrame()
+        df = pd.DataFrame(rows)
+        if df.empty:
+            print("DEBUG: Monthly map DataFrame is empty after conversion")
+            return pd.DataFrame()
+        df.columns = df.columns.str.strip()
+        required_cols = {"country", "month_year", "value"}
+        if not required_cols.issubset(set(df.columns)):
+            print(f"DEBUG: Monthly map DB result missing required columns. Columns: {df.columns.tolist()}")
+            return pd.DataFrame()
+        df["year"] = df["month_year"].astype(str).str.split("-").str[0]
+        df["month"] = pd.to_numeric(df["month_year"].astype(str).str.split("-").str[1], errors="coerce")
+        df["value"] = pd.to_numeric(df["value"], errors="coerce")
+        df = df.rename(columns={"country": "Country"})
+        df_long = df[["Country", "year", "month", "value"]].copy()
+        df_long["year"] = df_long["year"].astype(str)
+        df_long = df_long.dropna(subset=["Country", "year", "month", "value"])
+        df_long["month"] = df_long["month"].astype(int)
+        df_long = df_long[df_long["value"] > 0].copy()
+        print(f"DEBUG: Loaded {len(df_long)} monthly map records from DB")
+        return df_long
+    except Exception as e:
+        print(f"Error loading monthly map data from DB: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
+
+
+def load_yearly_map_from_db():
+    """
+    Load yearly map data from the database, averaging monthly values per year.
+    """
+    query = """
+        WITH monthly_distinct AS (
+            SELECT DISTINCT ON (p.country, TO_CHAR(p.date, 'YYYY-MM'))
+                p.country,
+                TO_CHAR(p.date, 'YYYY-MM') AS month_year,
+                TO_CHAR(p.date, 'YYYY') AS year,
+                p.value,
+                p.country_id
+            FROM dev.t_wcod_monthly_stream_production p
+            ORDER BY p.country, TO_CHAR(p.date, 'YYYY-MM'), p.value DESC
+        )
+        SELECT
+            country,
+            year,
+            AVG(value) AS value,
+            country_id
+        FROM monthly_distinct
+        GROUP BY country, year, country_id
+    """
+    try:
+        rows = execute_query(query)
+        if not rows:
+            print("DEBUG: No yearly map rows returned from DB")
+            return pd.DataFrame()
+        df = pd.DataFrame(rows)
+        if df.empty:
+            print("DEBUG: Yearly map DataFrame is empty after conversion")
+            return pd.DataFrame()
+        df.columns = df.columns.str.strip()
+        required_cols = {"country", "year", "value"}
+        if not required_cols.issubset(set(df.columns)):
+            print(f"DEBUG: Yearly map DB result missing required columns. Columns: {df.columns.tolist()}")
+            return pd.DataFrame()
+        df = df.rename(columns={"country": "Country"})
+        df["year"] = df["year"].astype(str)
+        df["value"] = pd.to_numeric(df["value"], errors="coerce")
+        df_long = df[["Country", "year", "value"]].copy()
+        df_long = df_long.dropna(subset=["Country", "year", "value"])
+        df_long = df_long[df_long["value"] > 0].copy()
+        print(f"DEBUG: Loaded {len(df_long)} yearly map records from DB")
+        return df_long
+    except Exception as e:
+        print(f"Error loading yearly map data from DB: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
+
+
 def load_map_data():
     """Load map data - both yearly and monthly"""
-    map_yearly_long = pd.DataFrame()
-    map_monthly_long = pd.DataFrame()
-    
-    try:
-        # Load yearly map data - CSV is already in long format
-        # Columns: Country, Year of YearReported, Latitude, Longitude, Exports/Production Value
-        map_yearly_df = pd.read_csv(MAP_YEARLY_CSV, encoding="utf-8", sep=",")
-        
-        # Clean column names
-        map_yearly_df.columns = map_yearly_df.columns.str.strip()
-        
-        # Map column names (handle variations)
-        if "Year of YearReported" in map_yearly_df.columns:
-            map_yearly_df = map_yearly_df.rename(columns={"Year of YearReported": "year"})
-        elif "Year" in map_yearly_df.columns:
-            map_yearly_df = map_yearly_df.rename(columns={"Year": "year"})
-        
-        if "Exports/Production Value" in map_yearly_df.columns:
-            map_yearly_df = map_yearly_df.rename(columns={"Exports/Production Value": "value"})
-        elif "Value" in map_yearly_df.columns:
-            map_yearly_df = map_yearly_df.rename(columns={"Value": "value"})
-        
-        if "Country" in map_yearly_df.columns and "year" in map_yearly_df.columns and "value" in map_yearly_df.columns:
-            map_yearly_long = map_yearly_df[["Country", "year", "value"]].copy()
-            map_yearly_long["year"] = map_yearly_long["year"].astype(str)
-            map_yearly_long["value"] = pd.to_numeric(
-                map_yearly_long["value"].astype(str).str.replace(',', ''), errors="coerce"
-            ).fillna(0)
-            map_yearly_long = map_yearly_long[map_yearly_long["value"] > 0].copy()
-    except Exception as e:
-        print(f"Error loading yearly map data: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    try:
-        # Load monthly map data - CSV is already in long format
-        # Columns: Country, Measure Names, month_year, Latitude, Longitude, Value
-        map_monthly_df = pd.read_csv(MAP_MONTHLY_CSV, encoding="utf-8", sep=",")
-        
-        # Clean column names
-        map_monthly_df.columns = map_monthly_df.columns.str.strip()
-        
-        # Map column names
-        if "Value" in map_monthly_df.columns:
-            map_monthly_df = map_monthly_df.rename(columns={"Value": "value"})
-        
-        if "month_year" in map_monthly_df.columns:
-            # Split month_year into year and month
-            map_monthly_df[["year", "month"]] = map_monthly_df["month_year"].str.split("-", expand=True)
-            map_monthly_df["year"] = map_monthly_df["year"].astype(str)
-            map_monthly_df["month"] = pd.to_numeric(map_monthly_df["month"], errors="coerce")
-        
-        if "Country" in map_monthly_df.columns and "year" in map_monthly_df.columns and "month" in map_monthly_df.columns and "value" in map_monthly_df.columns:
-            map_monthly_long = map_monthly_df[["Country", "year", "month", "value"]].copy()
-            map_monthly_long["value"] = pd.to_numeric(
-                map_monthly_long["value"].astype(str).str.replace(',', ''), errors="coerce"
-            ).fillna(0)
-            map_monthly_long = map_monthly_long[map_monthly_long["value"] > 0].copy()
-    except Exception as e:
-        print(f"Error loading monthly map data: {e}")
-        import traceback
-        traceback.print_exc()
-    
+    map_yearly_long = load_yearly_map_from_db()
+    map_monthly_long = load_monthly_map_from_db()
     return map_yearly_long, map_monthly_long
 
 def load_grades_data():
@@ -1419,76 +1476,130 @@ def register_callbacks(dash_app, server):
             fig.add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
             fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
             return fig
+
+        # Dynamically scale the color range to the data so the map colors
+        # match the production bar scale for the selected period.
+        max_val = agg["value"].max() if "value" in agg.columns and len(agg) > 0 else 0
+        if pd.isna(max_val) or max_val <= 0:
+            max_val = 1000  # sensible fallback to keep the scale visible
+        color_max = float(max_val) * 1.05  # small headroom
+        # Pick a reasonable tick step based on the max value
+        tick_step = max(500, round((color_max / 6) / 500) * 500)
+        if tick_step == 0:
+            tick_step = 500
         
-        fig = px.choropleth(
-            agg, 
-            locations="Country", 
-            locationmode="country names", 
-            color="value",
-            projection="natural earth", 
-            color_continuous_scale="Blues",
-            labels={"value":"Production ('000 b/d)"},
-            hover_data={"Country": True, "value": ":,.0f"},
-            range_color=[0, 13500]
-        )
-        fig.update_layout(
-            margin=dict(l=10,r=10,t=10,b=80),
-            height=500,  # Increased height for better map visibility
-            geo=dict(
-                bgcolor="white",
-                showframe=False,
-                showcoastlines=True,
-                projection_type="natural earth",
-                projection=dict(
-                    type="natural earth",
-                    scale=1.0,  # Base scale - prevents zooming out too far
-                    rotation=dict(lon=0, lat=0)
+        # Try Mapbox choropleth; fall back to geo-based choropleth if GeoJSON missing.
+        geojson = _load_countries_geojson()
+        if geojson:
+            fig = px.choropleth_mapbox(
+                agg,
+                geojson=geojson,
+                locations="Country",
+                featureidkey="properties.name",
+                color="value",
+                color_continuous_scale="Blues",
+                labels={"value": "Production ('000 b/d)"},
+                hover_data={"Country": True, "value": ":,.0f"},
+                range_color=[0, color_max],
+                mapbox_style="open-street-map",
+                center={"lat": 20, "lon": 0},
+                zoom=1
+            )
+            fig.update_layout(
+                margin=dict(l=10, r=10, t=10, b=80),
+                height=500,
+                coloraxis_colorbar=dict(
+                    title=dict(text="Production<br>('000 b/d)", font=dict(size=12)),
+                    tickfont=dict(size=10),
+                    orientation="h",
+                    x=0.5,
+                    xanchor="center",
+                    y=-0.12,
+                    yanchor="top",
+                    len=0.7,
+                    thickness=20,
+                    outlinewidth=0,
+                    bordercolor="white",
+                    bgcolor="rgba(255,255,255,0)",
+                    tickmode="linear",
+                    tickformat=",",
+                    tick0=0,
+                    dtick=tick_step,
+                    showticklabels=True,
+                    ticks="outside"
                 ),
-                lonaxis=dict(range=[-180, 180], showgrid=False),
-                lataxis=dict(range=[-90, 90], showgrid=False),
-                center=dict(lon=0, lat=0),
-                visible=True,
-                domain=dict(x=[0, 1], y=[0, 1]),
-                # Improve map styling for better visibility
-                showland=True,
-                showocean=True,
-                showlakes=True,
-                showrivers=False,
-                coastlinewidth=0.5,
-                countrywidth=0.5
-            ),
-            coloraxis_colorbar=dict(
-                title=dict(text="Production<br>('000 b/d)", font=dict(size=12)),
-                tickfont=dict(size=10),
-                orientation="h",
-                x=0.5,
-                xanchor="center",
-                y=-0.12,
-                yanchor="top",
-                len=0.7,
-                thickness=20,
-                outlinewidth=0,
-                bordercolor="white",
-                bgcolor="rgba(255,255,255,0)",
-                tickmode="linear",
-                tickformat=",",
-                tick0=0,
-                dtick=2000,
-                showticklabels=True,
-                ticks="outside"
-            ),
-            template="plotly_white",
-            autosize=True
-        )
-        fig.update_geos(
-            resolution=50,
-            showcountries=True,
-            countrycolor="lightgray",
-            coastlinecolor="lightgray",
-            landcolor="white",
-            lakecolor="white",
-            oceancolor="white"
-        )
+                template="plotly_white",
+                autosize=True
+            )
+        else:
+            fig = px.choropleth(
+                agg, 
+                locations="Country", 
+                locationmode="country names", 
+                color="value",
+                projection="natural earth", 
+                color_continuous_scale="Blues",
+                labels={"value":"Production ('000 b/d)"},
+                hover_data={"Country": True, "value": ":,.0f"},
+                range_color=[0, color_max]
+            )
+            fig.update_layout(
+                margin=dict(l=10,r=10,t=10,b=80),
+                height=500,
+                geo=dict(
+                    bgcolor="white",
+                    showframe=False,
+                    showcoastlines=True,
+                    projection_type="natural earth",
+                    projection=dict(
+                        type="natural earth",
+                        scale=1.0,
+                        rotation=dict(lon=0, lat=0)
+                    ),
+                    lonaxis=dict(range=[-180, 180], showgrid=False),
+                    lataxis=dict(range=[-90, 90], showgrid=False),
+                    center=dict(lon=0, lat=0),
+                    visible=True,
+                    domain=dict(x=[0, 1], y=[0, 1]),
+                    showland=True,
+                    showocean=True,
+                    showlakes=True,
+                    showrivers=False,
+                    coastlinewidth=0.5,
+                    countrywidth=0.5
+                ),
+                coloraxis_colorbar=dict(
+                    title=dict(text="Production<br>('000 b/d)", font=dict(size=12)),
+                    tickfont=dict(size=10),
+                    orientation="h",
+                    x=0.5,
+                    xanchor="center",
+                    y=-0.12,
+                    yanchor="top",
+                    len=0.7,
+                    thickness=20,
+                    outlinewidth=0,
+                    bordercolor="white",
+                    bgcolor="rgba(255,255,255,0)",
+                    tickmode="linear",
+                    tickformat=",",
+                    tick0=0,
+                    dtick=tick_step,
+                    showticklabels=True,
+                    ticks="outside"
+                ),
+                template="plotly_white",
+                autosize=True
+            )
+            fig.update_geos(
+                resolution=50,
+                showcountries=True,
+                countrycolor="lightgray",
+                coastlinecolor="lightgray",
+                landcolor="white",
+                lakecolor="white",
+                oceancolor="white"
+            )
         return fig
     
     @dash_app.callback(

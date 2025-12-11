@@ -652,21 +652,24 @@ def register_callbacks(dash_app, server):
                     // Initialize Year header toggle button
                     function initializeYearHeaderToggle() {
                         // Find the header cell that contains "Year" text (the visible one in hierarchical headers)
-                        const allYearHeaders = spreadsheet.querySelectorAll('th[data-dash-column="Year"]');
-                        let yearHeader = null;
-                        for (let header of allYearHeaders) {
-                            if (header.textContent.trim().includes('Year') || header.textContent.trim() === '') {
-                                yearHeader = header;
-                                break;
-                            }
-                        }
-                        // Fallback to first one if none found with text
-                        if (!yearHeader && allYearHeaders.length > 0) {
-                            yearHeader = allYearHeaders[allYearHeaders.length - 1]; // Get the last one (usually the visible row)
-                        }
-                        if (!yearHeader) return;
+                        const allYearHeaders = Array.from(spreadsheet.querySelectorAll('th[data-dash-column="Year"]'));
+                        if (!allYearHeaders.length) return;
                         
-                        // Remove any existing toggle button
+                        // Prefer the lowest header row that actually shows the "Year" label
+                        let yearHeader = allYearHeaders.slice().reverse().find(header => header.textContent.trim().includes('Year'));
+                        if (!yearHeader) {
+                            yearHeader = allYearHeaders[allYearHeaders.length - 1]; // Fallback to the last one (usually the visible row)
+                        }
+                        
+                        // Remove toggle buttons from any other Year headers so the icon only appears once
+                        allYearHeaders.forEach(header => {
+                            if (header !== yearHeader) {
+                                const extraToggle = header.querySelector('.year-header-toggle');
+                                if (extraToggle) extraToggle.remove();
+                            }
+                        });
+                        
+                        // Remove any existing toggle button on the chosen header
                         const existingToggle = yearHeader.querySelector('.year-header-toggle');
                         if (existingToggle) {
                             existingToggle.remove();

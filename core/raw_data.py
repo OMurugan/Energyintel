@@ -18,6 +18,8 @@ RAW_CRUDE_ANNUAL = pd.DataFrame()
 YEAR_OPTS = []
 DEFAULT_YEAR = None
 COUNTRY_OPTIONS = []
+DB_AVAILABLE = True
+LAST_DB_ERROR = None
 
 
 def load_all_data():
@@ -25,10 +27,10 @@ def load_all_data():
     Load all data from database
     This should be called once at app startup
     """
-    global RAW_COUNTRY, RAW_CRUDE_ANNUAL, YEAR_OPTS, DEFAULT_YEAR, COUNTRY_OPTIONS
+    global RAW_COUNTRY, RAW_CRUDE_ANNUAL, YEAR_OPTS, DEFAULT_YEAR, COUNTRY_OPTIONS, DB_AVAILABLE, LAST_DB_ERROR
     
-    if not RAW_COUNTRY.empty:
-        # Data already loaded
+    if not RAW_COUNTRY.empty or DB_AVAILABLE is False:
+        # Data already loaded or a previous attempt failed; do nothing.
         return
     
     try:
@@ -118,7 +120,10 @@ def load_all_data():
         )
         
     except Exception as e:
-        logger.exception("Error loading data")
-        # Keep empty DataFrames on error
-        pass
+        # Keep the message concise; allow the app to continue with CSV fallbacks.
+        DB_AVAILABLE = False
+        LAST_DB_ERROR = str(e)
+        logger.error("Error loading data: %s", e)
+        # Leave RAW_* empty so pages depending on CSV can still render.
+        return
 

@@ -842,19 +842,30 @@ def create_world_map(selected_country=None):
         map_zoom = 2.8 # World view zoom adjusted as per suggestion
         map_center = dict(lat=24.0, lon=45.0)
 
-        # Add country name labels to the world map
-        country_centroids = map_df.groupby('country_long_name').agg({
-            'latitude': 'mean',
-            'longitude': 'mean'
-        }).reset_index()
+        # Add country name labels with density control to avoid overlap at wide zooms
+        country_centroids = (
+            map_df.groupby('country_long_name')[['latitude', 'longitude']]
+            .mean()
+            .reset_index()
+            .dropna(subset=['latitude', 'longitude'])
+        )
+        label_cap = len(country_centroids)
+        if len(country_centroids) > 120:
+            label_cap = 40
+        elif len(country_centroids) > 80:
+            label_cap = 60
+        labels_df = (
+            country_centroids.sort_values('country_long_name')
+            .head(label_cap)
+        )
 
         fig.add_trace(go.Scattermapbox(
-            lat=country_centroids['latitude'],
-            lon=country_centroids['longitude'],
+            lat=labels_df['latitude'],
+            lon=labels_df['longitude'],
             mode='text',
-            text=country_centroids['country_long_name'],
-            textfont=dict(size=10, color="black"),
-            textposition="middle center",
+            text=labels_df['country_long_name'],
+            textfont=dict(size=9, color="#2c3e50"),
+            textposition="top center",
             hoverinfo='skip',
             showlegend=False
         ))

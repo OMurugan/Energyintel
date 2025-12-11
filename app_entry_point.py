@@ -16,6 +16,8 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=LOG_LEVEL,
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+    filename="energy.log",
+    filemode="a",
 )
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,12 @@ _orig_print = builtins.print
 
 
 def _redirect_print(*args, **kwargs):
+    # If print is targeting a non-stdout/stderr file (e.g., logging's StringIO),
+    # bypass redirection to avoid duplicating traceback lines.
+    target = kwargs.get("file")
+    if target is not None and target not in (sys.stdout, sys.stderr):
+        return _orig_print(*args, **kwargs)
+
     msg = " ".join(str(a) for a in args)
     lvl = logging.INFO
     lower = msg.lower().lstrip()
@@ -32,7 +40,7 @@ def _redirect_print(*args, **kwargs):
         lvl = logging.DEBUG
     elif lower.startswith(("warning", "warn")):
         lvl = logging.WARNING
-    elif lower.startswith(("error", "err", "exception")):
+    elif lower.startswith(("error", "err", "exception", "traceback")):
         lvl = logging.ERROR
     elif lower.startswith(("critical", "fatal")):
         lvl = logging.CRITICAL
@@ -44,12 +52,12 @@ builtins.print = _redirect_print
 # Load environment variables from .env file
 load_dotenv()
 
-# Load data at startup and fail fast on connection errors
+# Load data at startup. If DB is unreachable, log and continue so CSV-backed
+# pages can still work.
 try:
     load_all_data()
-except Exception:
-    logger.exception("Database connection error during startup")
-    sys.exit(1)
+except Exception as e:
+    logger.error("Startup data load failed (continuing without DB): %s", e)
 
 # Import the shared Dash instance
 from app_instance import app, server  # noqa: E402
