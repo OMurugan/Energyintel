@@ -1392,20 +1392,32 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         selected_set = set(selected)
         has_all = "(All)" in selected_set
         all_set = set(all_countries)
+        subset_set = selected_set - {"(All)"}
 
-        # If "(All)" is present, always expand to full set
-        if has_all:
+        # Rules:
+        # 1) "(All)" clicked alone => select all countries.
+        # 2) "(All)" + subset:
+        #    - If subset is nearly/all countries (user deselected while All was on), drop "(All)" and honor subset.
+        #    - Otherwise (user added All while a partial subset was selected), snap to full select-all.
+        # 3) If everything is selected but "(All)" is not present, treat as user unchecked All -> clear all.
+        # 4) If nothing selected, keep empty.
+        # 5) Otherwise, keep the chosen subset.
+        if has_all and not subset_set:
             normalized = ["(All)"] + all_countries
-        # If user unchecks "(All)" while everything remains selected, clear all
-        elif not has_all and all_set.issubset(selected_set):
-            normalized = []
-        # If nothing selected, keep empty
-        elif not selected_set:
+        elif has_all and subset_set:
+            if len(all_set) > 0 and len(subset_set) >= len(all_set) - 1:
+                normalized = sorted(subset_set)  # user is deselecting while All was active
+            else:
+                normalized = ["(All)"] + all_countries  # user added All from a partial subset
+        elif not has_all and subset_set == all_set and all_countries:
+            normalized = []  # allow explicit unselect-all after All was selected
+        elif not subset_set:
             normalized = []
         else:
-            normalized = selected
+            normalized = sorted(subset_set)
 
-        new_sorted = sorted(normalized)
+        # Avoid loops
+        new_sorted = normalized
         old_sorted = sorted(selected)
         return new_sorted if new_sorted != old_sorted else dash.no_update
 
