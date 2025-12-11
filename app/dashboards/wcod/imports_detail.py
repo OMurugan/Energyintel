@@ -51,44 +51,23 @@ def load_legend_data():
 
 
 def load_imports_by_region_data():
-    """Load and aggregate imports data by region and year from Table_Imports.csv"""
+    """Load and aggregate imports data by region and year from Table_Imports.csv (long format)."""
     try:
-        # Read CSV, skip first 2 rows (header info), use row 3 as column headers
-        df = pd.read_csv(TABLE_IMPORTS_CSV, skiprows=2, header=0, sep='\t', encoding='utf-16')
-        
-        # Get year columns (2025 to 2006)
-        year_cols = [str(year) for year in range(2025, 2005, -1)]
-        
-        # Filter to only rows with region totals (rows where Exporter == 'Total')
-        # Exclude 'Grand Total' row - we only want individual regions
-        region_totals = df[(df['Exporter'] == 'Total') & (df['Exporting Region'] != 'Grand Total')].copy()
-        
-        # Melt the dataframe to long format
-        data_rows = []
-        for _, row in region_totals.iterrows():
-            region = row['Exporting Region']
-            if pd.isna(region) or region == '' or region == 'Grand Total':
-                continue
-            for year in year_cols:
-                if year in row.index:
-                    value = row[year]
-                    if pd.notna(value) and value != '':
-                        try:
-                            # Handle comma-separated numbers (e.g., "2,223" -> 2223)
-                            if isinstance(value, str):
-                                value = value.replace(',', '').strip()
-                            value = float(value)
-                            if value > 0:
-                                data_rows.append({
-                                    'Region': str(region).strip(),
-                                    'Year': int(year),
-                                    'Volume': value
-                                })
-                        except (ValueError, TypeError):
-                            continue
-        
-        result_df = pd.DataFrame(data_rows)
-        return result_df
+        df = pd.read_csv(TABLE_IMPORTS_CSV, sep=',', encoding='utf-8-sig')
+        required_cols = ['Exporting Region', 'Year of Year', 'DataValue']
+        for col in required_cols:
+            if col not in df.columns:
+                raise ValueError(f"Missing column: {col}")
+        df['Year of Year'] = pd.to_numeric(df['Year of Year'], errors='coerce').astype('Int64')
+        df['DataValue'] = pd.to_numeric(df['DataValue'], errors='coerce')
+        df = df.dropna(subset=['Exporting Region', 'Year of Year', 'DataValue'])
+        grouped = (
+            df.groupby(['Exporting Region', 'Year of Year'])['DataValue']
+              .sum()
+              .reset_index()
+              .rename(columns={'Exporting Region': 'Region', 'Year of Year': 'Year', 'DataValue': 'Volume'})
+        )
+        return grouped
     except Exception as e:
         print(f"Error loading imports by region: {e}")
         import traceback
@@ -116,17 +95,32 @@ def load_imports_by_country_crude_data():
 
 
 def load_table_data():
-    """Load table data from Table_Imports.csv"""
+    """Load table data from Table_Imports.csv (year/quarter/month structure)"""
     try:
-        # Read CSV, skip first 2 rows, use row 3 as headers
-        df = pd.read_csv(TABLE_IMPORTS_CSV, skiprows=2, header=0, sep='\t', encoding='utf-16')
+        # New file uses UTF-8 with comma separator and long format fields
+        df = pd.read_csv(TABLE_IMPORTS_CSV, sep=',', encoding='utf-8-sig')
         
-        # Filter out total rows
-        df = df[df['Exporter'] != 'Total'].copy()
+        # Normalize column names we need
+        required_cols = [
+            'Exporting Region', 'Exporter', 'Company', 'Crude',
+            'Year of Year', 'Quarter of Year', 'Month of Year', 'DataValue'
+        ]
+        for col in required_cols:
+            if col not in df.columns:
+                raise ValueError(f"Missing column in table data: {col}")
         
-        # Remove rows where all year columns are empty
-        year_cols = [str(year) for year in range(2025, 2005, -1)]
-        df = df[df[year_cols].notna().any(axis=1)]
+        # Clean text columns
+        text_cols = ['Exporting Region', 'Exporter', 'Company', 'Crude',
+                     'Year of Year', 'Quarter of Year', 'Month of Year']
+        for col in text_cols:
+            df[col] = df[col].fillna('').astype(str).str.strip()
+        
+        # Numeric data
+        df['DataValue'] = pd.to_numeric(df['DataValue'], errors='coerce')
+        df = df[df['DataValue'].notna()]
+        
+        # Ensure year is int
+        df['Year of Year'] = df['Year of Year'].astype(int)
         
         return df
     except Exception as e:
@@ -175,6 +169,8 @@ def create_layout():
     return html.Div([
         dcc.Store(id='selected-year-store', data=2023),  # Store selected year from chart click
         dcc.Store(id='selected-country-store', data='Japan'),  # Store selected country
+        dcc.Store(id='imports-expand-store', data={'years': [], 'quarters': []}),  # Track header expansion state
+        dcc.Store(id='imports-time-visibility', data={'Year': True, 'Quarter': False, 'Month': False, 'Day': False}),
         
         # Country Selector
         html.Div([
@@ -226,6 +222,60 @@ def create_layout():
         
         # Table: Detailed Imports Data
         html.Div([
+            # Time dimension toggle row (Year / Quarter / Month / Day)
+            html.Div([
+                html.Div([
+                    html.Span("Year of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                    html.Button('−', id='imports-toggle-year-btn', n_clicks=0, style={
+                        'width': '20px', 'height': '20px', 'padding': '0',
+                        'border': '1px solid #dee2e6', 'backgroundColor': '#e7f3ff',
+                        'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                        'fontSize': '14px', 'fontWeight': 'bold', 'lineHeight': '1',
+                        'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+                        'marginLeft': '8px', 'flexShrink': '0'
+                    })
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '130px'}),
+                html.Div([
+                    html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                    html.Button('+', id='imports-toggle-quarter-btn', n_clicks=0, style={
+                        'width': '20px', 'height': '20px', 'padding': '0',
+                        'border': '1px solid #dee2e6', 'backgroundColor': '#f8f9fa',
+                        'color': '#2c3e50', 'borderRadius': '3px', 'cursor': 'pointer',
+                        'fontSize': '14px', 'fontWeight': 'bold', 'lineHeight': '1',
+                        'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+                        'marginLeft': '8px', 'flexShrink': '0'
+                    })
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '150px'}),
+                html.Div([
+                    html.Span("Month of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                    html.Button('+', id='imports-toggle-month-btn', n_clicks=0, style={
+                        'width': '20px', 'height': '20px', 'padding': '0',
+                        'border': '1px solid #dee2e6', 'backgroundColor': '#f8f9fa',
+                        'color': '#2c3e50', 'borderRadius': '3px', 'cursor': 'pointer',
+                        'fontSize': '14px', 'fontWeight': 'bold', 'lineHeight': '1',
+                        'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+                        'marginLeft': '8px', 'flexShrink': '0'
+                    })
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '140px'}),
+                html.Div([
+                    html.Span("Day of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                    html.Button('+', id='imports-toggle-day-btn', n_clicks=0, style={
+                        'width': '20px', 'height': '20px', 'padding': '0',
+                        'border': '1px solid #dee2e6', 'backgroundColor': '#f8f9fa',
+                        'color': '#2c3e50', 'borderRadius': '3px', 'cursor': 'pointer',
+                        'fontSize': '14px', 'fontWeight': 'bold', 'lineHeight': '1',
+                        'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+                        'marginLeft': '8px', 'flexShrink': '0'
+                    })
+                ], style={'display': 'flex', 'alignItems': 'center', 'width': '130px'})
+            ], style={
+                'padding': '10px 0',
+                'marginBottom': '10px',
+                'display': 'flex',
+                'justifyContent': 'flex-start',
+                'alignItems': 'center',
+                'gap': '10px'
+            }),
             html.H4(id='imports-table-title', children="Japan Crude Oil Imports by Region and Country", className='imports-table-title'),
             dash_table.DataTable(
                 id='imports-detail-table',
@@ -274,6 +324,12 @@ def create_layout():
                     'backgroundColor': 'white',
                     'color': '#333333'
                 },
+                css=[
+                    {
+                        'selector': '.dash-loading-overlay',
+                        'rule': 'display: none !important;'
+                    }
+                ],
                 style_data_conditional=[
                     {
                         'if': {'row_index': 'odd'},
@@ -312,7 +368,9 @@ def create_layout():
                 page_action='none',
                 filter_action='none',
                 sort_action='none',
-                fixed_rows={'headers': True}
+                fixed_rows={'headers': True},
+                merge_duplicate_headers=True,
+                hidden_columns=[]
             )
         ], style={'marginBottom': '30px', 'backgroundColor': 'white', 'padding': '15px', 'borderRadius': '4px', 'boxShadow': '0 1px 3px rgba(0,0,0,0.1)'}),
         
@@ -701,116 +759,31 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
     return fig
 
 
-def create_imports_table(selected_country='Japan'):
-    """Create data table from Table_Imports.csv with hierarchical grouping"""
+def create_imports_table(selected_country='Japan', expansion_state=None, time_visibility=None):
+    """Create data table with stacked header text per column (Year on top, Quarter below, Month below) but still one column per year."""
     df = load_table_data()
     
     if df.empty:
-        return [], []
+        return [], [], []
     
-    # Sort by Exporting Region, Exporter, Company, Crude for proper grouping
-    df = df.sort_values(['Exporting Region', 'Exporter', 'Company', 'Crude'], 
-                        ascending=[True, True, True, True]).reset_index(drop=True)
+    time_visibility = time_visibility or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}
+    show_year = time_visibility.get('Year', True)
+    show_quarter = time_visibility.get('Quarter', False)
+    show_month = time_visibility.get('Month', False)
     
-    # Convert to list of dictionaries for DataTable
-    # Ensure all values are native Python types (not pandas/numpy types)
-    table_data = []
-    for _, row in df.iterrows():
-        record = {}
-        for col in df.columns:
-            value = row[col]
-            # Convert pandas/numpy types to native Python types
-            if pd.isna(value) or value is None:
-                record[col] = ''
-            elif hasattr(value, 'item'):  # numpy scalar types have .item() method
-                try:
-                    record[col] = value.item()
-                except:
-                    record[col] = str(value)
-            elif isinstance(value, (int, float)):
-                # Check for NaN or inf
-                if isinstance(value, float) and (value != value or abs(value) == float('inf')):
-                    record[col] = ''
-                else:
-                    record[col] = int(value) if isinstance(value, (int, bool)) else float(value)
-            elif isinstance(value, bool):
-                record[col] = bool(value)
-            else:
-                # Convert everything else to string
-                try:
-                    record[col] = str(value) if value is not None else ''
-                except:
-                    record[col] = ''
-        table_data.append(record)
+    # Orderings
+    years = sorted(df['Year of Year'].unique(), reverse=True)
+    quarter_order = ['Q1', 'Q2', 'Q3', 'Q4']
+    month_order = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ]
     
-    # Process data for hierarchical grouping and formatting
-    prev_region = None
-    prev_exporter = None
-    prev_company = None
+    # Build IDs
+    def year_id(y): return f"Y|{y}"
+    def quarter_id(y): return f"Q|{y}"
+    def month_id(y): return f"M|{y}"
     
-    for i, record in enumerate(table_data):
-        # Ensure record is a dictionary
-        if not isinstance(record, dict):
-            continue
-            
-        # Get original values before any modifications
-        current_region = str(record.get('Exporting Region', '')).strip() if record.get('Exporting Region') else ''
-        current_exporter = str(record.get('Exporter', '')).strip() if record.get('Exporter') else ''
-        current_company = str(record.get('Company', '')).strip() if record.get('Company') else ''
-        
-        # Replace NaN/None values with empty strings or valid numbers for better display (for year columns)
-        for key, value in list(record.items()):
-            if key not in ['Exporting Region', 'Exporter', 'Company', 'Crude']:
-                if value == '' or value is None:
-                    record[key] = ''
-                elif isinstance(value, (int, float)):
-                    # Format numeric values - keep 0 as 0, ensure it's a valid number
-                    if value != value:  # Check for NaN (NaN != NaN)
-                        record[key] = ''
-                    elif abs(value) == float('inf'):
-                        record[key] = ''
-                    else:
-                        # Ensure it's a valid number (native Python type)
-                        record[key] = float(value) if isinstance(value, float) else int(value)
-                else:
-                    # For non-numeric, non-empty values, convert to string
-                    record[key] = str(value) if value is not None else ''
-        
-        # Ensure text columns are strings, not None
-        for col in ['Exporting Region', 'Exporter', 'Company', 'Crude']:
-            if col in record:
-                if record[col] is None or record[col] == '':
-                    record[col] = ''
-                else:
-                    record[col] = str(record[col])
-        
-        # Hierarchical grouping: only show region/exporter/company once per group
-        if current_region and current_region == prev_region:
-            # Same region as previous row - make it empty
-            record['Exporting Region'] = ''
-        else:
-            # New region - keep it and reset exporter/company tracking
-            prev_region = current_region
-            prev_exporter = None
-            prev_company = None
-        
-        if current_exporter and current_exporter == prev_exporter and current_region == prev_region:
-            # Same exporter within same region - make it empty
-            record['Exporter'] = ''
-        else:
-            # New exporter - keep it and reset company tracking
-            if current_exporter:
-                prev_exporter = current_exporter
-            prev_company = None
-        
-        if current_company and current_company == prev_company and current_exporter == prev_exporter:
-            # Same company within same exporter - make it empty
-            record['Company'] = ''
-        else:
-            if current_company:
-                prev_company = current_company
-    
-    # Create columns
     columns = [
         {'name': 'Exporting Region', 'id': 'Exporting Region'},
         {'name': 'Exporter', 'id': 'Exporter'},
@@ -818,19 +791,142 @@ def create_imports_table(selected_country='Japan'):
         {'name': 'Crude', 'id': 'Crude'}
     ]
     
-    # Add year columns
-    year_cols = [str(year) for year in range(2025, 2005, -1)]
-    for year in year_cols:
-        if year in df.columns:
-            columns.append({
-                'name': year, 
-                'id': year, 
-                'type': 'numeric', 
-                'format': {'specifier': ',.0f'},
-                'presentation': 'input'  # Allow empty values to show as empty
-            })
+    # Determine default quarter/month per year (first available in order)
+    year_defaults = {}
+    for year in years:
+        df_year = df[df['Year of Year'] == year]
+        q_default = ''
+        m_default = ''
+        for q in quarter_order:
+            if q in df_year['Quarter of Year'].unique():
+                q_default = q
+                df_q = df_year[df_year['Quarter of Year'] == q]
+                for m in month_order:
+                    if m in df_q['Month of Year'].unique():
+                        m_default = m
+                        break
+                if m_default:
+                    break
+        year_defaults[year] = (q_default, m_default)
+
+    dynamic_columns = []
+    for year in years:
+        q_def, m_def = year_defaults.get(year, ('', ''))
+        if show_month:
+            header_label = " ".join(part for part in [str(year), q_def, m_def] if part)
+            col_id = month_id(year)
+        elif show_quarter:
+            header_label = " ".join(part for part in [str(year), q_def] if part)
+            col_id = quarter_id(year)
+        else:
+            header_label = str(year)
+            col_id = year_id(year)
+        dynamic_columns.append({
+            'name': header_label,
+            'id': col_id,
+            'type': 'numeric',
+            'format': {'specifier': ',.1f'},
+            'presentation': 'input'
+        })
+    columns.extend(dynamic_columns)
     
-    return table_data, columns
+    # Pivot data into wide format keyed by region/exporter/company/crude
+    records = {}
+    for _, row in df.iterrows():
+        key = (
+            row.get('Exporting Region', ''),
+            row.get('Exporter', ''),
+            row.get('Company', ''),
+            row.get('Crude', '')
+        )
+        y = row['Year of Year']
+        q = row['Quarter of Year']
+        m = row['Month of Year']
+        
+        rec = records.setdefault(key, {
+            'Exporting Region': str(key[0]) if key[0] is not None else '',
+            'Exporter': str(key[1]) if key[1] is not None else '',
+            'Company': str(key[2]) if key[2] is not None else '',
+            'Crude': str(key[3]) if key[3] is not None else '',
+            '_year': {},
+            '_quarter': {},
+            '_month': {}
+        })
+        try:
+            val = float(row['DataValue'])
+        except Exception:
+            val = 0
+        
+        rec['_year'][y] = rec['_year'].get(y, 0) + val
+        rec['_quarter'][(y, q)] = rec['_quarter'].get((y, q), 0) + val
+        rec['_month'][(y, q, m)] = rec['_month'].get((y, q, m), 0) + val
+    
+    # Convert to list and sort for grouping, selecting values per year (with defaults)
+    table_data = []
+    for rec in records.values():
+        out = {
+            'Exporting Region': rec['Exporting Region'],
+            'Exporter': rec['Exporter'],
+            'Company': rec['Company'],
+            'Crude': rec['Crude']
+        }
+        for year in years:
+            q_def, m_def = year_defaults.get(year, ('', ''))
+            y_val = rec['_year'].get(year, '')
+            q_val = rec['_quarter'].get((year, q_def), '') if q_def else ''
+            m_val = rec['_month'].get((year, q_def, m_def), '') if (q_def and m_def) else ''
+            if show_month:
+                out[month_id(year)] = m_val
+            elif show_quarter:
+                out[quarter_id(year)] = q_val
+            else:
+                out[year_id(year)] = y_val
+        table_data.append(out)
+    
+    table_data = sorted(table_data, key=lambda r: (
+        r.get('Exporting Region', ''), r.get('Exporter', ''),
+        r.get('Company', ''), r.get('Crude', '')
+    ))
+    
+    # Hierarchical grouping: blank repeated text fields
+    prev_region = prev_exporter = prev_company = None
+    for record in table_data:
+        current_region = record.get('Exporting Region', '').strip()
+        current_exporter = record.get('Exporter', '').strip()
+        current_company = record.get('Company', '').strip()
+        
+        if current_region == prev_region:
+            record['Exporting Region'] = ''
+        else:
+            prev_region = current_region
+            prev_exporter = None
+            prev_company = None
+        
+        if current_exporter == prev_exporter and current_region == prev_region:
+            record['Exporter'] = ''
+        else:
+            if current_exporter:
+                prev_exporter = current_exporter
+            prev_company = None
+        
+        if current_company == prev_company and current_exporter == prev_exporter:
+            record['Company'] = ''
+        else:
+            if current_company:
+                prev_company = current_company
+    
+    # Hidden columns: only keep the active level
+    hidden = []
+    if show_month:
+        active_prefix = 'M|'
+    elif show_quarter:
+        active_prefix = 'Q|'
+    else:
+        active_prefix = 'Y|'
+    for col in dynamic_columns:
+        if not col['id'].startswith(active_prefix):
+            hidden.append(col['id'])
+    return table_data, columns, hidden
 
 
 def register_callbacks(dash_app, server):
@@ -872,11 +968,14 @@ def register_callbacks(dash_app, server):
     @callback(
         [Output('imports-detail-table', 'data'),
          Output('imports-detail-table', 'columns'),
+         Output('imports-detail-table', 'hidden_columns'),
          Output('imports-table-title', 'children')],
         [Input('importing-country-select', 'value'),
-         Input('current-submenu', 'data')]
+         Input('current-submenu', 'data'),
+         Input('imports-expand-store', 'data'),
+         Input('imports-time-visibility', 'data')]
     )
-    def update_imports_table(selected_country, submenu):
+    def update_imports_table(selected_country, submenu, expand_state, time_visibility):
         """Update imports detail table"""
         if submenu != 'imports-detail':
             # Return empty but valid structures
@@ -886,9 +985,9 @@ def register_callbacks(dash_app, server):
                 {'name': 'Company', 'id': 'Company'},
                 {'name': 'Crude', 'id': 'Crude'}
             ]
-            return [], empty_columns, ""
+            return [], empty_columns, [], ""
         try:
-            data, columns = create_imports_table(selected_country)
+            data, columns, hidden = create_imports_table(selected_country, expand_state, time_visibility)
             # Ensure data and columns are lists
             if not isinstance(data, list):
                 data = []
@@ -900,6 +999,8 @@ def register_callbacks(dash_app, server):
                     {'name': 'Company', 'id': 'Company'},
                     {'name': 'Crude', 'id': 'Crude'}
                 ]
+            if not isinstance(hidden, list):
+                hidden = []
             
             # Deep clean: Ensure all data items are dictionaries with only native Python types
             cleaned_data = []
@@ -938,10 +1039,14 @@ def register_callbacks(dash_app, server):
                 if not isinstance(col, dict):
                     continue
                 if 'name' in col and 'id' in col:
-                    # Ensure name and id are strings
+                    name_val = col['name']
+                    if isinstance(name_val, (list, tuple)):
+                        cleaned_name = list(name_val)
+                    else:
+                        cleaned_name = name_val if name_val is not None else ''
                     cleaned_col = {
-                        'name': str(col['name']) if col['name'] is not None else '',
-                        'id': str(col['id']) if col['id'] is not None else ''
+                        'name': cleaned_name,
+                        'id': col['id'] if col['id'] is not None else ''
                     }
                     # Copy other properties if they exist
                     for key, value in col.items():
@@ -959,7 +1064,7 @@ def register_callbacks(dash_app, server):
                 ]
             
             title = f"{selected_country} Crude Oil Imports by Region and Country"
-            return cleaned_data, cleaned_columns, title
+            return cleaned_data, cleaned_columns, hidden, title
         except Exception as e:
             print(f"Error updating imports table: {e}")
             import traceback
@@ -971,4 +1076,144 @@ def register_callbacks(dash_app, server):
                 {'name': 'Company', 'id': 'Company'},
                 {'name': 'Crude', 'id': 'Crude'}
             ]
-            return [], empty_columns, ""
+            return [], empty_columns, [], ""
+
+    @callback(
+        Output('imports-expand-store', 'data'),
+        Input('imports-detail-table', 'active_cell'),
+        State('imports-expand-store', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_header_expansion(active_cell, state):
+        """Toggle expansion for year/quarter headers via header clicks."""
+        state = state or {'years': [], 'quarters': []}
+        years = set(state.get('years', []))
+        quarters = set(tuple(q) for q in state.get('quarters', []))
+        
+        if not active_cell or active_cell.get('row') != -1:
+            return state
+        
+        col_id = active_cell.get('column_id') or ''
+        parts = col_id.split('|')
+        if not parts:
+            return state
+        
+        if parts[0] == 'Y' and len(parts) >= 2:
+            year = parts[1]
+            if year in years:
+                years.remove(year)
+                quarters = {q for q in quarters if q[0] != year}
+            else:
+                years.add(year)
+        elif parts[0] == 'Q' and len(parts) >= 3:
+            key = (parts[1], parts[2])
+            if key in quarters:
+                quarters.remove(key)
+            else:
+                quarters.add(key)
+        
+        return {
+            'years': sorted(years, reverse=True),
+            'quarters': sorted(list(quarters), reverse=True)
+        }
+    
+    # Button icons and styles reflecting time visibility state
+    @callback(
+        [Output('imports-toggle-year-btn', 'children'),
+         Output('imports-toggle-year-btn', 'style'),
+         Output('imports-toggle-quarter-btn', 'children'),
+         Output('imports-toggle-quarter-btn', 'style'),
+         Output('imports-toggle-month-btn', 'children'),
+         Output('imports-toggle-month-btn', 'style'),
+         Output('imports-toggle-day-btn', 'children'),
+         Output('imports-toggle-day-btn', 'style')],
+        Input('imports-time-visibility', 'data'),
+        prevent_initial_call=False
+    )
+    def update_imports_toggle_icons(vis):
+        vis = vis or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}
+        def base_style(active):
+            return {
+                'width': '20px',
+                'height': '20px',
+                'padding': '0',
+                'border': '1px solid #007bff' if active else '1px solid #dee2e6',
+                'backgroundColor': '#e7f3ff' if active else '#f8f9fa',
+                'color': '#007bff' if active else '#2c3e50',
+                'borderRadius': '3px',
+                'cursor': 'pointer',
+                'fontSize': '14px',
+                'fontWeight': 'bold',
+                'lineHeight': '1',
+                'display': 'flex',
+                'alignItems': 'center',
+                'justifyContent': 'center',
+                'marginLeft': '8px',
+                'flexShrink': '0'
+            }
+        year_active = vis.get('Year', True)
+        quarter_active = vis.get('Quarter', False)
+        month_active = vis.get('Month', False)
+        day_active = vis.get('Day', False)
+        return (
+            '−' if year_active else '+', base_style(year_active),
+            '−' if quarter_active else '+', base_style(quarter_active),
+            '−' if month_active else '+', base_style(month_active),
+            '−' if day_active else '+', base_style(day_active)
+        )
+    
+    # Toggle button callbacks to update visibility and expansion state
+    @callback(
+        [Output('imports-time-visibility', 'data', allow_duplicate=True),
+         Output('imports-expand-store', 'data', allow_duplicate=True)],
+        Input('imports-toggle-year-btn', 'n_clicks'),
+        State('imports-time-visibility', 'data'),
+        State('imports-expand-store', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_year_vis(n_clicks, vis, expand_state):
+        vis = (vis or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}).copy()
+        expand_state = expand_state or {'years': [], 'quarters': []}
+        vis['Year'] = not vis.get('Year', True)
+        if not vis['Year']:
+            expand_state = {'years': [], 'quarters': []}
+        return vis, expand_state
+    
+    @callback(
+        [Output('imports-time-visibility', 'data', allow_duplicate=True),
+         Output('imports-expand-store', 'data', allow_duplicate=True)],
+        Input('imports-toggle-quarter-btn', 'n_clicks'),
+        State('imports-time-visibility', 'data'),
+        State('imports-expand-store', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_quarter_vis(n_clicks, vis, expand_state):
+        vis = (vis or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}).copy()
+        expand_state = expand_state or {'years': [], 'quarters': []}
+        vis['Quarter'] = not vis.get('Quarter', False)
+        return vis, expand_state
+    
+    @callback(
+        [Output('imports-time-visibility', 'data', allow_duplicate=True),
+         Output('imports-expand-store', 'data', allow_duplicate=True)],
+        Input('imports-toggle-month-btn', 'n_clicks'),
+        State('imports-time-visibility', 'data'),
+        State('imports-expand-store', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_month_vis(n_clicks, vis, expand_state):
+        vis = (vis or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}).copy()
+        expand_state = expand_state or {'years': [], 'quarters': []}
+        vis['Month'] = not vis.get('Month', False)
+        return vis, expand_state
+    
+    @callback(
+        Output('imports-time-visibility', 'data', allow_duplicate=True),
+        Input('imports-toggle-day-btn', 'n_clicks'),
+        State('imports-time-visibility', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_day_vis(n_clicks, vis):
+        vis = (vis or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}).copy()
+        vis['Day'] = not vis.get('Day', False)
+        return vis
