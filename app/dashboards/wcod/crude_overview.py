@@ -210,7 +210,7 @@ def load_monthly_map_from_db():
             TO_CHAR(p.date, 'YYYY-MM') AS month_year,
             p.value,
             p.country_id
-        FROM dev.t_wcod_monthly_stream_production p
+        FROM t_wcod_monthly_stream_production p
         ORDER BY p.country, TO_CHAR(p.date, 'YYYY-MM'), p.value DESC;
     """
     try:
@@ -257,7 +257,7 @@ def load_yearly_map_from_db():
                 TO_CHAR(p.date, 'YYYY') AS year,
                 p.value,
                 p.country_id
-            FROM dev.t_wcod_monthly_stream_production p
+            FROM t_wcod_monthly_stream_production p
             ORDER BY p.country, TO_CHAR(p.date, 'YYYY-MM'), p.value DESC
         )
         SELECT

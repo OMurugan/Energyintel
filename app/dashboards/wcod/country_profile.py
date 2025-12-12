@@ -278,7 +278,7 @@ def load_production_data():
             "t_wcod_monthly_stream_production"."stream_name" AS stream_name,
             "t_wcod_monthly_stream_production"."unit" AS unit,
             "t_wcod_monthly_stream_production"."value" AS value
-        FROM "dev"."t_wcod_monthly_stream_production"
+        FROM "t_wcod_monthly_stream_production"
         """
         
         # Execute query and convert to DataFrame
@@ -802,19 +802,20 @@ def create_world_map(selected_country=None):
                 # Map symbol and a modest size so markers don't overwhelm the map
                 # Use built-in Plotly symbols (no sprite) for reliability
                 if port_value == 171:
-                    symbol, marker_size = 'circle', 14
+                    symbol, marker_size, marker_color = 'circle', 14, '#fe5000'
                 elif port_value == 513:
-                    symbol, marker_size = '+', 14   # plus symbol
+                    symbol, marker_size, marker_color = '+', 14, '#1f77b4'   # plus symbol
                 elif port_value == 342:
-                    symbol, marker_size = 'square', 14
+                    symbol, marker_size, marker_color = 'square', 14, '#2ca02c'
                 else:
-                    symbol, marker_size = 'circle', 14
+                    symbol, marker_size, marker_color = 'circle', 14, '#6c757d'
 
-                bucket = ports_by_symbol.setdefault(symbol, {"lat": [], "lon": [], "name": [], "size": [], "custom": []})
+                bucket = ports_by_symbol.setdefault(symbol, {"lat": [], "lon": [], "name": [], "size": [], "custom": [], "color": []})
                 bucket["lat"].append(port_row['latitude'])
                 bucket["lon"].append(port_row['longitude'])
                 bucket["name"].append(port_row['Port Name'])
                 bucket["size"].append(marker_size)
+                bucket["color"].append(marker_color)
                 profile_url = f"/wcod/country-profile?country={port_row['country_long_name']}"
                 bucket["custom"].append([profile_url])
 
@@ -827,7 +828,7 @@ def create_world_map(selected_country=None):
                         mode='markers',
                         marker=dict(
                             size=data_bucket["size"],
-                            color='#fe5000',
+                            color=data_bucket["color"],
                             opacity=0.9,
                             symbol='circle'
                         ),
