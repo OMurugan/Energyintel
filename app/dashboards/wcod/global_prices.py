@@ -2,75 +2,123 @@
 Global Crude Prices View
 Monthly Crude Spot Prices ($/bbl) - Matching Energy Intelligence design
 """
+import logging
 from dash import dcc, html, Input, Output, callback, dash_table, State, clientside_callback, ClientsideFunction
 import pandas as pd
-import os
+from sqlalchemy import text
 
-# Define data path
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Global crude price')
-CRUDE_PRICES_CSV = os.path.join(DATA_DIR, 'Crude Prices_data.csv')
+from core.data_helpers import get_db_engine, execute_query
 
-                                    
+logger = logging.getLogger(__name__)
+
+
+# Month → quarter mapping
+MONTH_TO_QUARTER = {
+    'January': 'Q1', 'February': 'Q1', 'March': 'Q1',
+    'April': 'Q2', 'May': 'Q2', 'June': 'Q2',
+    'July': 'Q3', 'August': 'Q3', 'September': 'Q3',
+    'October': 'Q4', 'November': 'Q4', 'December': 'Q4'
+}
+
+# Base query for monthly crude prices with country join for region.
+# Uses windowing to keep the preferred price_type per (date,country,blend):
+#   Port of Loading > GPW > Refining Margin > others
+CRUDE_PRICE_QUERY = """
+    SET LOCAL statement_timeout = 300000;  -- 300s to avoid cancel on large pull
+    WITH ranked AS (
+        SELECT
+            f.date::date                 AS price_date,
+            f.crude_country,
+            f.crude_name,
+            f.price                      AS avg_price,
+            f.price_type,
+            f.price_frequency,
+            f.tech_type,
+            f.insert_date,
+            f.last_update_date,
+            COALESCE(f.to_be_deleted, FALSE) AS to_be_deleted,
+            c.region AS region,
+            c.country_long_name AS country_name,
+            ROW_NUMBER() OVER (
+                PARTITION BY f.date::date, f.crude_country, f.crude_name
+                ORDER BY
+                    CASE f.price_type
+                        WHEN 'Port of Loading' THEN 0
+                        WHEN 'GPW' THEN 1
+                        WHEN 'Refining Margin' THEN 2
+                        ELSE 9
+                    END,
+                    f.last_update_date DESC,
+                    f.insert_date DESC
+            ) AS rn
+        FROM fact_wcod_prices f
+        LEFT JOIN dev.dim_country c
+          ON c.dim_country_id = f.crude_country_id
+        WHERE COALESCE(f.to_be_deleted, FALSE) = FALSE
+          AND f.price_frequency = 'M'
+          AND f.price IS NOT NULL
+    )
+    SELECT
+        price_date,
+        crude_country,
+        crude_name,
+        avg_price,
+        price_type,
+        price_frequency,
+        tech_type,
+        region,
+        country_name,
+        EXTRACT(YEAR FROM price_date)::int AS year_int,
+        TO_CHAR(price_date, 'FMMonth') AS month_name,
+        EXTRACT(MONTH FROM price_date)::int AS month_num,
+        EXTRACT(DAY FROM price_date)::int AS day_num,
+        CONCAT('Q', EXTRACT(QUARTER FROM price_date)::int) AS quarter
+    FROM ranked
+    WHERE rn = 1
+"""
+
+
 def load_crude_prices_data():
-    """Load and parse crude prices data from CSV (long format)."""
-    # Read the CSV file
-    encodings = ['utf-8', 'utf-16', 'utf-16le', 'latin-1']
-    df = None
-    last_error = None
-    
-    for enc in encodings:
-        try:
-            df = pd.read_csv(CRUDE_PRICES_CSV, encoding=enc)
-            break
-        except (UnicodeDecodeError, pd.errors.EmptyDataError) as exc:
-            last_error = exc
-            continue
-    
-    if df is None:
-        raise last_error if last_error else Exception("Failed to read CSV file")
-    
-    # Clean column names
-    df.columns = df.columns.str.strip()
-    
-    # Rename columns to standard names
-    column_mapping = {
-        'Year of date': 'Year',
-        'Month of date': 'Month',
-        'Day of date': 'Day',
-        'Region1': 'Region',
-        'crude_country': 'Country',
-        'crude_name': 'Blend',
-        'Avg. price': 'Price'
-    }
-    
-    for old_col, new_col in column_mapping.items():
-        if old_col in df.columns:
-            df = df.rename(columns={old_col: new_col})
-    
-    # Clean and convert data
-    df['Year'] = df['Year'].astype(str).str.strip()
-    df['Month'] = df['Month'].astype(str).str.strip()
-    df['Day'] = df['Day'].astype(str).str.strip()
-    df['Region'] = df['Region'].astype(str).str.strip()
-    df['Country'] = df['Country'].astype(str).str.strip()
-    df['Blend'] = df['Blend'].astype(str).str.strip()
-    df['Price'] = pd.to_numeric(df['Price'], errors='coerce')
-    
+    """Load and parse crude prices data from Postgres (long format)."""
+    results = execute_query(CRUDE_PRICE_QUERY)
+    df = pd.DataFrame(results)
+
+    if df.empty:
+        raise Exception("No crude price data returned from database.")
+
+    # Log a small summary to confirm query is working
+    try:
+        logger.info(
+            "[global_prices] rows=%s dates=%s..%s price_type_sample=%s",
+            len(df),
+            df['price_date'].min(),
+            df['price_date'].max(),
+            df['price_type'].value_counts().to_dict()
+        )
+    except Exception:
+        # Never fail the page due to logging issues
+        pass
+
+    # Build standard columns from SQL-provided parts
+    df['Year'] = df['year_int'].astype(int).astype(str)
+    df['Month'] = df['month_name'].astype(str).str.strip()
+    df['Day'] = df['day_num'].astype(int).astype(str)
+    df['Region'] = df['region'].fillna(df['crude_country']).astype(str).str.strip()
+    df['Country'] = df['country_name'].fillna(df['crude_country']).astype(str).str.strip()
+    df['Blend'] = df['crude_name'].astype(str).str.strip()
+    df['Price'] = pd.to_numeric(df['avg_price'], errors='coerce')
+    # Use quarter from SQL
+    df['Quarter'] = df['quarter'].astype(str)
+
     # Calculate Quarter from Month
-    month_to_quarter = {
-        'January': 'Q1', 'February': 'Q1', 'March': 'Q1',
-        'April': 'Q2', 'May': 'Q2', 'June': 'Q2',
-        'July': 'Q3', 'August': 'Q3', 'September': 'Q3',
-        'October': 'Q4', 'November': 'Q4', 'December': 'Q4'
-    }
-    df['Quarter'] = df['Month'].map(month_to_quarter)
-    
+    df['Quarter'] = df['Month'].map(MONTH_TO_QUARTER)
+
     # Filter out invalid rows
     df = df[
-        (df['Year'].notna()) & 
-        (df['Year'] != '') & 
+        (df['Year'].notna()) &
+        (df['Year'] != '') &
         (df['Year'] != 'nan') &
-        (df['Month'].notna()) & 
+        (df['Month'].notna()) &
         (df['Month'] != '') &
         (df['Month'] != 'nan') &
         (df['Day'].notna()) &
@@ -83,22 +131,21 @@ def load_crude_prices_data():
         (df['Blend'].notna()) &
         (df['Blend'] != '')
     ].copy()
-    
+
     # Create column ID for each Region-Country-Blend combination
     df['ColumnID'] = df['Region'] + '_' + df['Country'] + '_' + df['Blend']
-    
+
     # Pivot the data from long to wide format
-    # Group by Year, Quarter, Month, and Day, then pivot
     pivot_df = df.pivot_table(
         index=['Year', 'Quarter', 'Month', 'Day'],
         columns='ColumnID',
         values='Price',
         aggfunc='first'  # Use first value if duplicates exist
     ).reset_index()
-    
+
     # Get unique combinations for column metadata
     unique_combos = df[['Region', 'Country', 'Blend', 'ColumnID']].drop_duplicates()
-    
+
     # Create metadata for columns
     column_metadata = []
     for _, row in unique_combos.iterrows():
@@ -109,7 +156,7 @@ def load_crude_prices_data():
             'column_id': str(row['ColumnID']).strip(),
             'index': len(column_metadata)
         })
-    
+
     return pivot_df, column_metadata
 
 
@@ -186,42 +233,20 @@ def create_table_columns(column_metadata):
         {'name': ['', '', 'Day'], 'id': 'Day', 'type': 'text'},
     ]
     
-    # Explicit order to mirror the reference header (continents → countries → blends)
-    desired = [
-        ('Africa', 'Algeria', 'Saharan Blend'),
-        ('Africa', 'Angola', 'Cabinda'),
-        ('Africa', 'Angola', 'Girassol'),
-        ('Africa', 'Libya', 'Brega'),
-        ('Africa', 'Libya', 'Es Sider'),
-        ('Africa', 'Nigeria', 'Agbami'),
-        ('Africa', 'Nigeria', 'Amenam Blend'),
-        ('Africa', 'Nigeria', 'Antan Blend'),
-        ('Africa', 'Nigeria', 'Bonga'),
-        ('Africa', 'Nigeria', 'Bonny Light'),
-        ('Africa', 'Nigeria', 'Erha'),
-        ('Africa', 'Nigeria', 'Escravos'),
-        ('Africa', 'Nigeria', 'Forcados'),
-        ('Africa', 'Nigeria', 'Okono Blend'),
-        ('Africa', 'Nigeria', 'Qua Iboe'),
-        ('Africa', 'Nigeria', 'Yoho'),
-        ('Asia', 'Indonesia', 'Minas'),
-        ('Asia', 'Malaysia', 'Tapis'),
-        ('Asia', 'Norway', 'Ekofisk Blend'),
-        ('Asia', 'Norway', 'Oseberg'),
-    ]
-    
-    meta_lookup = {
-        (m['region'], m['country'], m['blend']): m['column_id']
-        for m in column_metadata
-    }
-    
-    for region, country, blend in desired:
-        col_id = meta_lookup.get((region, country, blend))
-        if not col_id:
-            continue
+    # Dynamic order: region → country → blend (alphabetical) so all DB data shows
+    sorted_meta = sorted(
+        column_metadata,
+        key=lambda m: (
+            str(m['region']).lower(),
+            str(m['country']).lower(),
+            str(m['blend']).lower(),
+        ),
+    )
+
+    for meta in sorted_meta:
         columns.append({
-            'name': [region, country, blend],
-            'id': col_id,
+            'name': [meta['region'], meta['country'], meta['blend']],
+            'id': meta['column_id'],
             'type': 'numeric',
             'format': {'specifier': '.2f'}
         })
@@ -280,7 +305,7 @@ def create_layout():
                     'fontSize': '12px',
                     'height': '800px',
                     'maxHeight': '800px',
-                    'minWidth': '1400px',
+                    'minWidth': '100%',
                     'marginTop': '0px'
                 },
                 style_cell={
@@ -362,7 +387,7 @@ def create_layout():
                 cell_selectable=True,
                 selected_cells=[]
             )
-        ], style={'margin': '0 auto', 'maxWidth': '100%'}),
+        ], style={'margin': '0 auto', 'maxWidth': '100%', 'overflowX': 'hidden'}),
         
         # Hidden div for clientside callback anchor
         html.Div(id='global-prices-enhancer-anchor', style={'display': 'none'}),
@@ -488,13 +513,13 @@ def register_callbacks(dash_app, server):
     white-space: nowrap;
 }
 #global-prices-table .dash-spreadsheet-container.selection-active td:not(.cell-selected):not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"]) {
-    opacity: 0.25 !important;
+    opacity: 0.3 !important;
 }
 #global-prices-table .dash-spreadsheet-container td.cell-selected {
-    background-color: #a6cee9 !important;
-    border: 1px solid #2b7bb9 !important;
+    background-color: #b3d9ff !important;
+    border: 2px solid #0075A8 !important;
     font-weight: 600;
-    color: #0f2d40 !important;
+    color: #1f2d3d !important;
     opacity: 1 !important;
 }
 #global-prices-table .dash-spreadsheet-container th {
@@ -502,18 +527,18 @@ def register_callbacks(dash_app, server):
     transition: background-color 0.2s ease;
 }
 #global-prices-table .dash-spreadsheet-container th.column-selected {
-    background-color: #d0e7ff !important;
-    color: #1f2d3d !important;
-    font-weight: 700;
+    background-color: #0075A8 !important;
+    color: white !important;
+    font-weight: bold;
 }
 #global-prices-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"]):not(.column-cell-selected) {
-    opacity: 0.25 !important;
+    opacity: 0.3 !important;
 }
 #global-prices-table .dash-spreadsheet-container td.column-cell-selected {
-    background-color: #a6cee9 !important;
-    border: 1px solid #2b7bb9 !important;
+    background-color: #b3d9ff !important;
+    border: 2px solid #0075A8 !important;
     font-weight: 600;
-    color: #0f2d40 !important;
+    color: #1f2d3d !important;
     opacity: 1 !important;
 }
                     `;
