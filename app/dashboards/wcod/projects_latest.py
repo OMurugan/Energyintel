@@ -8,12 +8,6 @@ import re
 from core.data_helpers import execute_query
 
 def create_link_text(comment, link_url, default_label="Article"):
-    """
-    Create markdown link text.
-    - If link is present, use comment as label when available, otherwise a default label.
-    - If only comment is present, return the comment text.
-    - Otherwise return a fallback string.
-    """
     link_str = str(link_url).strip() if pd.notna(link_url) else ""
     comment_str = str(comment).strip() if pd.notna(comment) else ""
     
@@ -86,7 +80,6 @@ def load_latest_updates_data():
     try:
         results = execute_query(query)
     except Exception as e:
-        print(f"❌ Error loading latest updates from DB: {e}")
         return pd.DataFrame()
     
     df = pd.DataFrame(results) if results else pd.DataFrame()
