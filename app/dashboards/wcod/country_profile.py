@@ -714,17 +714,24 @@ def create_world_map(selected_country=None):
 
     if map_df.empty:
         return create_empty_map()
-    
+    # Work with numeric latitude/longitude only to avoid NaN/invalid geometries
+    numeric_map = map_df.copy()
+    numeric_map['latitude'] = pd.to_numeric(numeric_map.get('latitude'), errors='coerce')
+    numeric_map['longitude'] = pd.to_numeric(numeric_map.get('longitude'), errors='coerce')
+    numeric_map = numeric_map.dropna(subset=['latitude', 'longitude'])
+    if numeric_map.empty:
+        return create_empty_map()
+
     # Filter by selected country if provided
     # Note: country_long_name columns are already consolidated during data loading
-    if selected_country and 'country_long_name' in map_df.columns:
+    if selected_country and 'country_long_name' in numeric_map.columns:
         print(f"DEBUG: Selected country for map: {selected_country}")
         # Filter by country name (handle case sensitivity and string conversion)
-        filtered_map = map_df[map_df['country_long_name'].astype(str).str.strip() == str(selected_country).strip()].copy()
+        filtered_map = numeric_map[numeric_map['country_long_name'].astype(str).str.strip() == str(selected_country).strip()].copy()
     else:
         print("DEBUG: No country selected for map, showing all countries.")
-        filtered_map = map_df.copy()
-    
+        filtered_map = numeric_map.copy()
+
     if filtered_map.empty:
         print(f"DEBUG: filtered_map is empty for {selected_country}. Returning empty map.")
         return create_empty_map()
@@ -837,8 +844,13 @@ def create_world_map(selected_country=None):
         # Add country name label for the selected country (if selected_country is not None)
         # Ensure this trace is only added when selected_country is present
         if selected_country:
-            map_center_lat = filtered_map['latitude'].mean() if not filtered_map.empty else 24.0
-            map_center_lon = filtered_map['longitude'].mean() if not filtered_map.empty else 45.0
+            map_center_lat = port_data['latitude'].mean() if not port_data.empty else filtered_map['latitude'].mean()
+            map_center_lon = port_data['longitude'].mean() if not port_data.empty else filtered_map['longitude'].mean()
+
+            # Guard against NaN centers to avoid Mapbox layout errors
+            if pd.isna(map_center_lat) or pd.isna(map_center_lon):
+                return create_empty_map()
+
             fig.add_trace(go.Scattermapbox(
                 lat=[map_center_lat],
                 lon=[map_center_lon],
@@ -852,11 +864,16 @@ def create_world_map(selected_country=None):
 
         title_text = f"{selected_country} Production"
         map_zoom = 4 # Zoom in for a specific country
-        map_center = dict(lat=filtered_map['latitude'].mean(), lon=filtered_map['longitude'].mean()) if not filtered_map.empty else dict(lat=24.0, lon=45.0)
+        map_center_lat = filtered_map['latitude'].mean()
+        map_center_lon = filtered_map['longitude'].mean()
+        if pd.isna(map_center_lat) or pd.isna(map_center_lon):
+            map_center = dict(lat=24.0, lon=45.0)
+        else:
+            map_center = dict(lat=map_center_lat, lon=map_center_lon)
     else:
         # For all countries, show a choropleth map of all countries
         # Use px.choropleth_mapbox for simpler all-country view
-        all_countries_df = map_df[['country_long_name']].drop_duplicates().dropna().copy()
+        all_countries_df = numeric_map[['country_long_name']].drop_duplicates().dropna().copy()
         all_countries_df['iso_alpha'] = all_countries_df['country_long_name'].map(country_to_iso)
         all_countries_df = all_countries_df.dropna(subset=['iso_alpha'])
         
@@ -877,7 +894,7 @@ def create_world_map(selected_country=None):
 
         # Add country name labels with density control to avoid overlap at wide zooms
         country_centroids = (
-            map_df.groupby('country_long_name')[['latitude', 'longitude']]
+            numeric_map.groupby('country_long_name')[['latitude', 'longitude']]
             .mean()
             .reset_index()
             .dropna(subset=['latitude', 'longitude'])
