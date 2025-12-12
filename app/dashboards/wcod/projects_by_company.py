@@ -6,48 +6,288 @@ from dash import dcc, html, Input, Output, State, callback, ALL, callback_contex
 import dash
 import json
 import plotly.graph_objects as go
-import plotly.express as px
 import pandas as pd
 import os
-import re
-from sqlalchemy import func
+from core.data_helpers import execute_query
 
-# Define data path
+# Define data path for chart/map CSVs (chart & map remain CSV-based)
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'projects_company')
 CSV_FILE = os.path.join(DATA_DIR, 'Projects by Company_Chart_data.csv')
 MAP_CSV_FILE = os.path.join(DATA_DIR, 'Map_by Company_data.csv')
 
-# Load CSV data
+
 def load_data():
-    """Load data from CSV file"""
+    """Load chart data from CSV file (used for bar chart)."""
     try:
         df = pd.read_csv(CSV_FILE, encoding="utf-8", sep=",")
         df.columns = df.columns.str.strip()
-        # Convert value_company to numeric
         df['value_company'] = pd.to_numeric(df['value_company'], errors='coerce').fillna(0)
-        # Keep all rows (including zeros) so all countries are available for the chart
-        # Countries with zero values will just show as 0 in the chart
         return df
     except Exception as e:
         print(f"Error loading data: {e}")
         return pd.DataFrame()
 
-# Load map CSV data
+
 def load_map_data():
-    """Load map data from CSV file"""
+    """Load map data from CSV file."""
     try:
         df = pd.read_csv(MAP_CSV_FILE, encoding="utf-8", sep=",")
         df.columns = df.columns.str.strip()
-        # Convert value_company to numeric, keeping NaN for countries with no data
         df['value_company'] = pd.to_numeric(df['value_company'], errors='coerce')
         return df
     except Exception as e:
         print(f"Error loading map data: {e}")
         return pd.DataFrame()
 
+# Quarter columns returned by the SQL query (used for chart, map, and table)
+QUARTER_COLUMNS = [
+    "2024_Q1", "2024_Q2", "2024_Q3", "2024_Q4",
+    "2025_Q1", "2025_Q2", "2025_Q3", "2025_Q4",
+    "2026_Q1", "2026_Q2", "2026_Q3", "2026_Q4",
+    "2027_Q1", "2027_Q2", "2027_Q3", "2027_Q4",
+    "2028_Q1", "2028_Q2", "2028_Q3", "2028_Q4",
+    "2029_Q1", "2029_Q2", "2029_Q3", "2029_Q4"
+]
+
+YEARS_FOR_CHART = list(range(2025, 2030))
+
+
+def load_projects_data():
+    """Load Projects by Company data directly from the database."""
+    query = """
+        SELECT
+            a.project_name AS "Project Name",
+            a.likely_goahead,
+            c.country_long_name AS Country,
+            c.region AS Region,
+            CASE
+                WHEN c.opec_grp = 'opec' OR c.opec_grp = 'opec_plus' THEN 'Opec-Plus'
+                ELSE 'Non-Opec-Plus'
+            END AS Opec_group,
+            a.field_type,
+            a.field,
+            a.play_type,
+            a.hydrocarbon AS Hydrocarbon,
+            cr.crude_name AS "Associated Crude",
+            a.depth AS Depth,
+            op.company_name AS Operator,
+            p1.company_name AS Partner1,
+            p2.company_name AS Partner2,
+            p3.company_name AS Partner3,
+            p4.company_name AS Partner4,
+            p5.company_name AS Partner5,
+            yr.year AS "First Oil Year",
+            a.sanctioned AS Sanctioned,
+            a.external_comments AS Comments,
+            a.project_status AS "Project Status",
+            a.reserves_gas_mmboe AS "Gas Reserves (mmboe)",
+            a.reserves_liquids_mmbbl AS "Liquids Reserves (mmbbl)",
+            (
+                COALESCE(
+                    NULLIF(SPLIT_PART(a.reserves_gas_mmboe, '-', 1), '')::numeric,
+                    0
+                )
+                +
+                COALESCE(
+                    NULLIF(SPLIT_PART(a.reserves_liquids_mmbbl, '-', 1), '')::numeric,
+                    0
+                )
+            ) AS "Total Reserves (mmboe)",
+            a.api_cat AS API,
+            a.sulfur_cat AS Sulfur,
+            a.operator_pc AS "Operator Share %",
+            a.partner1_pc AS "Partner1 Share %",
+            a.partner2_pc AS "Partner2 Share %",
+            a.partner3_pc AS "Partner3 Share %",
+            a.partner4_pc AS "Partner4 Share %",
+            a.partner5_pc AS "Partner5 Share %",
+            est."2024_Q1",
+            est."2024_Q2",
+            est."2024_Q3",
+            est."2024_Q4",
+            est."2025_Q1",
+            est."2025_Q2",
+            est."2025_Q3",
+            est."2025_Q4",
+            est."2026_Q1",
+            est."2026_Q2",
+            est."2026_Q3",
+            est."2026_Q4",
+            est."2027_Q1",
+            est."2027_Q2",
+            est."2027_Q3",
+            est."2027_Q4",
+            est."2028_Q1",
+            est."2028_Q2",
+            est."2028_Q3",
+            est."2028_Q4",
+            est."2029_Q1",
+            est."2029_Q2",
+            est."2029_Q3",
+            est."2029_Q4"
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN fact_upstream_tracker_prod_estimates est 
+            ON a.project_id = est.project_id
+        LEFT JOIN dim_country c 
+            ON a.country_id = c.dim_country_id
+        LEFT JOIN dim_company op 
+            ON a.operator_id = op.company_id
+        LEFT JOIN dim_company p1 
+            ON a.partner1_id = p1.company_id
+        LEFT JOIN dim_company p2 
+            ON a.partner2_id = p2.company_id
+        LEFT JOIN dim_company p3 
+            ON a.partner3_id = p3.company_id
+        LEFT JOIN dim_company p4 
+            ON a.partner4_id = p4.company_id
+        LEFT JOIN dim_company p5 
+            ON a.partner5_id = p5.company_id
+        LEFT JOIN (
+            SELECT 
+                project_id,
+                MIN(EXTRACT(YEAR FROM period)) AS year
+            FROM fact_upstream_tracker_prod_estimates_incremental
+            WHERE value IS NOT NULL 
+            GROUP BY project_id
+        ) yr ON yr.project_id = a.project_id
+        LEFT JOIN dim_crude cr 
+            ON cr.dim_crude_id = a.crude_id
+        WHERE a.include = TRUE
+        ORDER BY a.project_name;
+    """
+
+    try:
+        results = execute_query(query)
+        if not results:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(results)
+        column_mapping = {
+            'Project Name': 'Project Name',
+            'project_name': 'Project Name',
+            'likely_goahead': 'Likely Go-ahead',
+            'Likely Go-ahead': 'Likely Go-ahead',
+            'Country': 'Country',
+            'country': 'Country',
+            'country_long_name': 'Country',
+            'Region': 'Region',
+            'region': 'Region',
+            'Opec_group': 'Group',
+            'opec_group': 'Group',
+            'field_type': 'Field Type',
+            'Field Type': 'Field Type',
+            'field': 'Field/Block',
+            'Field': 'Field/Block',
+            'play_type': 'Play Type',
+            'Play Type': 'Play Type',
+            'Hydrocarbon': 'Hydrocarbon',
+            'hydrocarbon': 'Hydrocarbon',
+            'Associated Crude': 'Associated Crude',
+            'Depth': 'Depth',
+            'depth': 'Depth',
+            'Operator': 'Operator',
+            'operator': 'Operator',
+            'Partner1': 'Partner1',
+            'partner1': 'Partner1',
+            'Partner2': 'Partner2',
+            'partner2': 'Partner2',
+            'Partner3': 'Partner3',
+            'partner3': 'Partner3',
+            'Partner4': 'Partner4',
+            'partner4': 'Partner4',
+            'Partner5': 'Partner5',
+            'partner5': 'Partner5',
+            'First Oil Year': 'First Oil Year',
+            'year': 'First Oil Year',
+            'Sanctioned': 'Sanctioned',
+            'sanctioned': 'Sanctioned',
+            'Comments': 'Comments',
+            'comments': 'Comments',
+            'Project Status': 'Project Status',
+            'project_status': 'Project Status',
+            'Gas Reserves (mmboe)': 'Gas Reserves (mmboe)',
+            'reserves_gas_mmboe': 'Gas Reserves (mmboe)',
+            'Liquids Reserves (mmbbl)': 'Liquids Reserves (mmbbl)',
+            'reserves_liquids_mmbbl': 'Liquids Reserves (mmbbl)',
+            'Total Reserves (mmboe)': 'Total Reserves (mmboe)',
+            'api_cat': 'API',
+            'API': 'API',
+            'sulfur_cat': 'Sulfur',
+            'sulfur': 'Sulfur',
+            'Sulfur': 'Sulfur',
+            'operator_pc': 'Operator Share %',
+            'partner1_pc': 'Partner1 Share %',
+            'partner2_pc': 'Partner2 Share %',
+            'partner3_pc': 'Partner3 Share %',
+            'partner4_pc': 'Partner4 Share %',
+            'partner5_pc': 'Partner5 Share %'
+        }
+        df = df.rename(columns=column_mapping)
+
+        for col in QUARTER_COLUMNS:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        non_quarter_cols = [c for c in df.columns if c not in QUARTER_COLUMNS]
+        df[non_quarter_cols] = df[non_quarter_cols].fillna('')
+        return df
+    except Exception as e:
+        print(f"Error loading data: {e}")
+        return pd.DataFrame()
+
+
+def build_quarterly_capacity(df):
+    """Transform wide quarter columns into long format for the stacked bar chart."""
+    if df.empty:
+        return pd.DataFrame()
+
+    records = []
+    for _, row in df.iterrows():
+        country = row.get('Country')
+        if pd.isna(country) or not str(country).strip():
+            continue
+        for col in QUARTER_COLUMNS:
+            if col not in df.columns:
+                continue
+            value = pd.to_numeric(row.get(col), errors='coerce')
+            if pd.isna(value):
+                value = 0
+            year_part, quarter_part = col.split('_')
+            try:
+                year_int = int(year_part)
+            except (TypeError, ValueError):
+                continue
+            if year_int not in YEARS_FOR_CHART:
+                continue
+            records.append({
+                'Country': country,
+                'Year of Period': year_int,
+                'Quarter of Period': quarter_part.replace('Q', 'Q'),
+                'value_company': value
+            })
+
+    return pd.DataFrame(records)
+
+
+def build_map_data(quarter_df):
+    """Aggregate quarterly data to yearly totals for the map."""
+    if quarter_df.empty:
+        return pd.DataFrame()
+    try:
+        return (
+            quarter_df.groupby(['Country', 'Year of Period'])['value_company']
+            .sum()
+            .reset_index()
+        )
+    except Exception as e:
+        print(f"Error building map data: {e}")
+        return pd.DataFrame()
+
+
 # Load data once at module level
-DATA_DF = load_data()
-MAP_DF = load_map_data()
+PROJECTS_RAW_DF = load_projects_data()  # SQL – table only
+DATA_DF = load_data()  # CSV – chart
+MAP_DF = load_map_data()  # CSV – map
 
 # Get unique values for filters
 def get_unique_years():
@@ -581,173 +821,19 @@ def create_world_map(df=None, selected_year=2025, selected_company="Exxon Mobil"
 
 def create_layout():
     """Create layout for Projects by Company with filters, year controls, legend, chart, map and table."""
-    # Load table data
-    table_csv = os.path.join(DATA_DIR, 'Projects by Company_Table_data.csv')
-    try:
-        df_table = pd.read_csv(table_csv, encoding='utf-8', sep=',')
-        # Strip whitespace from column names
-        df_table.columns = [c.strip() for c in df_table.columns]
-        # Normalize quarter-style measure names to a consistent YYYY_Qn format
-        # so variants like "2028q2" or "2028 Q2" still sort correctly.
-        if 'Measure Names' in df_table.columns:
-            quarter_name_re = re.compile(r'^(?P<year>\d{4})[\s_]*[qQ](?P<q>[1-4])$')
-
-            def _normalize_measure_name(name):
-                s = str(name).strip()
-                match = quarter_name_re.match(s)
-                if match:
-                    return f"{match.group('year')}_Q{match.group('q')}"
-                return s
-
-            df_table['Measure Names'] = df_table['Measure Names'].apply(_normalize_measure_name)
-    except Exception as e:
-        print(f"Error loading table CSV: {e}")
-        df_table = pd.DataFrame()
-
-    # Prepare DataTable columns and data (pivot long Measure Names/Values to wide format like Tableau)
+    df_table = PROJECTS_RAW_DF.copy()
     if df_table.empty:
-        columns = [{"name": "No data", "id": "no_data"}]
-        data = [{"no_data": "No data available"}]
+        data_full = []
+        tooltip_data = []
     else:
-        # Identify base columns (all except Measure Names / Measure Values) and keep only the columns we want to display
-        measure_name_col = 'Measure Names'
-        measure_value_col = 'Measure Values'
-        desired_base_cols = [
-            'Project Name',
-            'Likely Go-ahead',
-            'Field Type',
-            'Country',
-            'Region',
-            'Group',
-            'Hydrocarbon',
-            'Depth',
-            'Field/Block',
-            'Play Type',
-            'Operator',
-            'Partner1',
-            'Partner2',
-            'Partner3',
-            'Partner4',
-            'Partner5',
-            'First Oil Year',
-            'Sanctioned',
-            'Project Status',
-            'Comments',
-            'Gas Reserves (mmboe)',
-            'Liquids Reserves (mmbbl)',
-            'Total Reserves (mmboe)',
-            'API',
-            'Sulfur'
-        ]
-        base_cols = [
-            c for c in desired_base_cols
-            if c in df_table.columns and c not in [measure_name_col, measure_value_col]
-        ]
-        
-        # Pivot so that each Measure Name becomes a separate column (e.g., 2024_Q1, Partner Share %, etc.)
-        try:
-            # Preserve original row order before pivoting
-            df_table['_row_order'] = df_table.index
-
-            pivot_df = df_table.pivot_table(
-                index=base_cols,
-                columns=measure_name_col,
-                values=measure_value_col,
-                aggfunc='first'
-            ).reset_index()
-            
-            # Flatten columns after pivot (base columns stay the same, others are the Measure Names)
-            pivot_df.columns = [
-                col if isinstance(col, str) else str(col)
-                for col in pivot_df.columns
-            ]
-            
-            # Determine measure columns and convert to numeric where possible
-            measure_cols = [c for c in pivot_df.columns if c not in base_cols]
-            for c in measure_cols:
-                pivot_df[c] = pd.to_numeric(pivot_df[c], errors='coerce')
-            
-            # Explicitly order measure columns to match Tableau:
-            # first operator/partner shares, then quarterly capacity columns by year/quarter
-            share_cols_preferred = [
-                'Operator Share %',
-                'Partner1 Share %',
-                'Partner2 Share %',
-                'Partner3 Share %',
-                'Partner4 Share %',
-                'Partner5 Share %',
-            ]
-            # Quarterly columns look like "2024_Q1", "2024_Q2", etc.
-            quarter_cols = [
-                c for c in measure_cols
-                if isinstance(c, str) and len(c) == 7 and c[4] == '_' and c[:4].isdigit()
-            ]
-            # Sort quarters by year then Q1–Q4
-            def quarter_key(name):
-                year = int(name[:4])
-                q = int(name[-1])
-                return (year, q)
-            quarter_cols = sorted(quarter_cols, key=quarter_key)
-            
-            # Any remaining measure columns (if any) keep at the end
-            ordered_measures = [
-                c for c in share_cols_preferred if c in measure_cols
-            ] + quarter_cols
-            remaining_measures = [
-                c for c in measure_cols if c not in ordered_measures
-            ]
-            final_measure_cols = ordered_measures + remaining_measures
-            
-            # Build final column order: project details (base) first, then measures
-            final_columns = base_cols + final_measure_cols
-            # Keep only columns that actually exist
-            final_columns = [c for c in final_columns if c in pivot_df.columns]
-            table_df = pivot_df[final_columns]
-
-            # Re-attach original ordering to match the CSV order (like Tableau)
-            try:
-                order_lookup = (
-                    df_table[base_cols + ['_row_order']]
-                    .drop_duplicates(subset=base_cols)
-                )
-                table_df = table_df.merge(order_lookup, on=base_cols, how='left')
-                table_df = table_df.sort_values('_row_order')
-                table_df = table_df.drop(columns=['_row_order'])
-            except Exception:
-                pass
-        except Exception as e:
-            # Fallback to raw table if pivot fails
-            print(f"Error pivoting Projects by Company table data: {e}")
-            table_df = df_table.copy()
-        
-        columns = [{"name": col, "id": col} for col in table_df.columns]
-        # Identify quarter columns for styling (e.g., 2029_Q4)
-        quarter_columns = [
-            col['id'] for col in columns
-            if isinstance(col.get('id'), str)
-            and len(col.get('id')) == 7
-            and col.get('id')[4] == '_'
-            and col.get('id')[:4].isdigit()
-        ]
-        # Full data for tooltips
-        data_full = table_df.fillna("").to_dict('records')
-        # Display data truncated to 11 chars with ellipsis (only for long strings)
-        def _truncate(val, limit=11):
-            if isinstance(val, str) and len(val) > limit:
-                return val[:limit] + "..."
-            return val
-        data = [
-            {col: _truncate(row.get(col, "")) for col in table_df.columns}
-            for row in data_full
-        ]
-        # Tooltips to show full text on hover (helps when cells are truncated)
-        tooltip_data = [
-            {
-                col: {'value': str(row.get(col, "")), 'type': 'text'}
-                for col in table_df.columns
-            }
-            for row in data_full
-        ]
+        data_full = df_table.fillna("").to_dict('records')
+        tooltip_data = []
+        for row in data_full:
+            tip_row = {}
+            comments_val = str(row.get('Comments', '') or '').strip()
+            if comments_val and comments_val.lower() != 'nan':
+                tip_row['Comments'] = {'value': comments_val, 'type': 'text'}
+            tooltip_data.append(tip_row)
     
     # Years for filters / slider
     years = get_unique_years()
@@ -805,13 +891,6 @@ def create_layout():
             )
         )
 
-    # Quarter columns styling (center align and consistent width)
-    quarter_style = [
-        {'if': {'column_id': col['id']}, 'textAlign': 'center', 'minWidth': '70px'}
-        for col in columns
-        if isinstance(col.get('id'), str) and len(col.get('id')) == 7 and col.get('id')[4] == '_' and col.get('id')[:4].isdigit()
-    ]
-    
     layout = html.Div([
         # Stores and interval used by callbacks
         dcc.Store(id='selected-countries-store', data=[]),
@@ -1093,118 +1172,95 @@ def create_layout():
             'alignItems': 'flex-start'
         }),
         
-        # Projects table – full width under chart and map (matches Tableau layout)
-        html.H3(
-            "Projected Oil Capacity Details by Company",
-            style={
-            'color': '#FF8C42',
-            'font-family': 'Georgia, serif',
-                'margin-top': '20px',
-            'margin-bottom': '8px',
-            'fontWeight': 'bold',
-            'fontSize': '22px',
-            'textAlign': 'left'
-            }
-        ),
-        dash_table.DataTable(
-            id='projects-company-table',
-            columns=columns,
-            data=data,
-            tooltip_data=tooltip_data,
-            tooltip_duration=None,
-            page_action='none',
-            style_table={
-                'overflowX': 'auto',
-                'overflowY': 'auto',
-                'maxHeight': '600px',
-                'width': '100%',
-                'border': '1px solid #ddd'
-            },
-            style_header={
-                'backgroundColor': '#f8f9fa',
-                'fontWeight': 'bold',
-                'color': 'rgb(27, 54, 93)',
-                'fontSize': '13px',
-                'border': '1px solid #ddd',
-                'textAlign': 'center',
-                'fontFamily': 'Lato, sans-serif',
-                'whiteSpace': 'normal',
-                'height': 'auto',
-                'position': 'relative'  # allow absolute-positioned A/Z controls
-            },
-            style_cell={
-                'textAlign': 'left',
-                'padding': '8px',
-                'whiteSpace': 'normal',
-                'height': 'auto',
-                'overflow': 'hidden',
-                'textOverflow': 'ellipsis',
-                'maxWidth': '180px',
-                'fontSize': '12px',
-                'border': '1px solid #ddd',
-                'backgroundColor': '#fff',
-                'fontFamily': 'Lato, sans-serif',
-                'color': 'rgb(27, 54, 93)'
-            },
-            style_data_conditional=[
-                {
-                    'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f9f9f9'
-                },
-                {
-                    'if': {'column_id': 'Comments'},
-                    'whiteSpace': 'nowrap',
-                    'overflow': 'hidden',
-                    'textOverflow': 'ellipsis',
-                    'height': 'auto',
+        # Projects table – match design from projects_by_time
+        html.Div([
+            html.H4(
+                "Project Details",
+                style={
+                    'marginBottom': '15px',
+                    'fontSize': '16px',
+                    'fontWeight': 'bold',
+                    'fontFamily': 'Lato, sans-serif',
+                    'color': '#fe5000',
                     'textAlign': 'left'
                 }
-            ],
-            style_cell_conditional=[
-                {'if': {'column_id': 'Project Name'}, 'minWidth': '160px'},
-                {'if': {'column_id': 'Field/Block'}, 'minWidth': '140px'},
-                {'if': {'column_id': 'Play Type'}, 'minWidth': '110px'},
-                {'if': {'column_id': 'Comments'}, 'minWidth': '180px', 'maxWidth': '280px'},
-                {'if': {'column_id': 'Hydrocarbon'}, 'minWidth': '110px'},
-                {'if': {'column_id': 'Depth'}, 'minWidth': '80px'},
-                {'if': {'column_id': 'API'}, 'minWidth': '70px'},
-                {'if': {'column_id': 'Sulfur'}, 'minWidth': '80px'},
-                {'if': {'column_id': 'Operator Share %'}, 'textAlign': 'center'},
-                {'if': {'column_id': 'Partner1 Share %'}, 'textAlign': 'center'},
-                {'if': {'column_id': 'Partner2 Share %'}, 'textAlign': 'center'},
-                {'if': {'column_id': 'Partner3 Share %'}, 'textAlign': 'center'},
-                {'if': {'column_id': 'Partner4 Share %'}, 'textAlign': 'center'},
-                {'if': {'column_id': 'Partner5 Share %'}, 'textAlign': 'center'},
-            ] + [
-                {'if': {'column_id': q}, 'textAlign': 'center', 'minWidth': '85px'}
-                for q in quarter_columns
-            ],
-            style_header_conditional=[
-                {'if': {'column_id': q}, 'textAlign': 'center', 'minWidth': '85px'}
-                for q in quarter_columns
-            ],
-            filter_action='none',
-            css=[{
-                'selector': '.dash-table-container .dash-spreadsheet-inner tr th',
-                'rule': 'text-transform: none;'
-            }, {
-                'selector': '.dash-table-tooltip',
-                'rule': 'font-size: 10px !important; font-family: Lato, sans-serif !important; color: rgb(27, 54, 93) !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
-            }, {    
-                'selector': '.dash-table-container .row:last-child',
-                'rule': 'display: none !important;'
-            }, {
-                'selector': '.previous-page, .next-page, .first-page, .last-page, .page-number, .page-number--current',
-                'rule': 'display: none !important;'
-            }]
-        )
+            ),
+            dcc.Loading(
+                id="loading-projects-company-table",
+                type="default",
+                children=dash_table.DataTable(
+                    id='projects-company-table',
+                    columns=[],
+                    data=[],
+                    tooltip_data=[],
+                    tooltip_duration=None,
+                    page_action='none',
+                    sort_action='native',
+                    filter_action='native',
+                    style_table={
+                        'overflowX': 'auto',
+                        'overflowY': 'auto',
+                        'maxHeight': '600px',
+                        'width': '100%',
+                        'border': '1px solid #ddd'
+                    },
+                    style_cell={
+                        'textAlign': 'left',
+                        'padding': '8px',
+                        'whiteSpace': 'normal',
+                        'height': 'auto',
+                        'overflow': 'hidden',
+                        'textOverflow': 'ellipsis',
+                        'maxWidth': '180px',
+                        'fontSize': '12px',
+                        'border': '1px solid #ddd',
+                        'backgroundColor': '#fff',
+                        'fontFamily': 'Lato, sans-serif',
+                        'color': 'rgb(27, 54, 93)'
+                    },
+                    style_header={
+                        'backgroundColor': '#f8f9fa',
+                        'fontWeight': 'bold',
+                        'fontFamily': 'Lato, sans-serif',
+                        'color': 'rgb(27, 54, 93)',
+                        'border': '1px solid #ddd',
+                        'textAlign': 'center',
+                        'whiteSpace': 'normal',
+                        'height': 'auto',
+                        'position': 'relative'
+                    },
+                    style_data={
+                        'border': '1px solid #ddd',
+                        'whiteSpace': 'normal',
+                        'fontFamily': 'Lato, sans-serif',
+                        'color': 'rgb(27, 54, 93)'
+                    },
+                    style_data_conditional=[
+                        {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'},
+                        {
+                            'if': {'column_id': 'Comments'},
+                            'whiteSpace': 'nowrap',
+                            'overflow': 'hidden',
+                            'textOverflow': 'ellipsis',
+                            'height': 'auto',
+                            'textAlign': 'left'
+                        }
+                    ],
+                    css=[{
+                        'selector': '.dash-table-tooltip',
+                        'rule': 'font-size: 10px !important; font-family: Lato, sans-serif !important; color: rgb(27, 54, 93) !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
+                    }, {
+                        'selector': '.dash-table-container .row:last-child',
+                        'rule': 'display: none !important;'
+                    }, {
+                        'selector': '.previous-page, .next-page, .first-page, .last-page, .page-number, .page-number--current',
+                        'rule': 'display: none !important;'
+                    }]
+                )
+            )
+        ], style={'marginTop': '20px'})
     ], style={'padding': '10px 18px'})
     return layout
-
-def register_callbacks(dash_app, server):
-    """Register callbacks for the Projects by Company view. (No interactive callbacks required for the static table display.)"""
-    # No callbacks required for static table display. Placeholder kept for future use.
-    return
 
 def register_callbacks(dash_app, server):
     """Register all callbacks for Projects by Company"""
@@ -1453,6 +1509,7 @@ def register_callbacks(dash_app, server):
         )
         
         df = df[[c for c in ordered_cols if c in df.columns]].copy()
+        df = df.reset_index(drop=True)
         
         # Format numeric reserve columns
         numeric_cols = ['Gas Reserves (mmboe)', 'Liquids Reserves (mmbbl)', 'Total Reserves (mmboe)']
@@ -1540,13 +1597,11 @@ def register_callbacks(dash_app, server):
         tooltip_data = []
         for idx, row in enumerate(data):
             tip_row = {}
-            if 'Comments' in row:
-                original_comment = str(original_comments.iloc[idx]) if idx < len(original_comments) else ''
-                if original_comment and original_comment != 'nan' and original_comment.strip():
-                    tip_row['Comments'] = {'value': original_comment, 'type': 'text'}
-            # Merge any existing tooltip info if present
-            if idx < len(tooltip_full) and isinstance(tooltip_full[idx], dict):
-                tip_row.update({k: v for k, v in tooltip_full[idx].items() if v})
+            comment_val = original_comments.iloc[idx] if idx < len(original_comments) else ''
+            if pd.notna(comment_val):
+                comment_str = str(comment_val).strip()
+                if comment_str and comment_str.lower() != 'nan':
+                    tip_row['Comments'] = {'value': comment_str, 'type': 'text'}
             tooltip_data.append(tip_row)
         
         return data, tooltip_data, columns
