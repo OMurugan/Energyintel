@@ -9,6 +9,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 import os
+import threading
 from datetime import datetime
 from core.data_helpers import execute_query
 from config import Config
@@ -28,6 +29,12 @@ key_figures_df = pd.DataFrame() # Initialize key_figures_df
 country_list = []
 default_country = None
 
+# Locks to prevent duplicate concurrent DB loads on first paint
+_map_lock = threading.Lock()
+_prod_lock = threading.Lock()
+_port_lock = threading.Lock()
+_key_lock = threading.Lock()
+
 # Mapbox access token (falls back to config default token if env not set)
 MAPBOX_ACCESS_TOKEN = Config.MAPBOX_ACCESS_TOKEN
 # Set Plotly-wide token for px maps
@@ -37,6 +44,14 @@ if MAPBOX_ACCESS_TOKEN:
 def load_map_data():
     """Load map data from database - called only when needed"""
     global map_df
+    if not map_df.empty:
+        return map_df
+
+    # Guard against concurrent initial loads across callbacks
+    with _map_lock:
+        if not map_df.empty:
+            return map_df
+
     if not map_df.empty:
         return map_df
     
@@ -184,6 +199,14 @@ def load_map_data():
 def load_production_data():
     """Load production data from database - called only when needed"""
     global monthly_prod_df, country_list, default_country
+
+    if not monthly_prod_df.empty:
+        return monthly_prod_df, country_list, default_country
+
+    # Prevent multiple concurrent initial DB fetches
+    with _prod_lock:
+        if not monthly_prod_df.empty:
+            return monthly_prod_df, country_list, default_country
     
     if not monthly_prod_df.empty:
         return monthly_prod_df, country_list, default_country
@@ -298,6 +321,11 @@ def load_port_data():
     global port_df
     if not port_df.empty:
         return port_df
+
+    # Prevent duplicate concurrent loads on first paint
+    with _port_lock:
+        if not port_df.empty:
+            return port_df
     
     try:
         # Query port data from database
@@ -342,6 +370,11 @@ def load_key_figures_data():
     global key_figures_df
     if not key_figures_df.empty:
         return key_figures_df
+
+    # Prevent duplicate concurrent loads on initial render
+    with _key_lock:
+        if not key_figures_df.empty:
+            return key_figures_df
     
     try:
         # Query key figures data from database
