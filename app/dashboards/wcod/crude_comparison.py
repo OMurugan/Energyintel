@@ -3,6 +3,8 @@ import pandas as pd
 import os
 import dash
 import re
+import copy
+from functools import lru_cache
 
 from core.data_helpers import execute_query
 
@@ -10,7 +12,8 @@ from core.data_helpers import execute_query
 # ------------------------------------------------------------------------------
 # LOAD DATA FROM DATABASE
 # ------------------------------------------------------------------------------
-def load_crude_data(mode):
+@lru_cache(maxsize=4)
+def _load_crude_data_cached(mode):
     """
     Load crude oil data from database
     mode: 'production' or 'exports'
@@ -236,7 +239,7 @@ def load_crude_data(mode):
         print(f"   Columns: {[c['name'] for c in columns]}")
         if data_records:
             print(f"   Sample record keys: {list(data_records[0].keys())[:5]}...")
-        return data_records, columns
+        return data_records, tuple(columns)
         
     except Exception as e:
         error_msg = str(e)
@@ -245,7 +248,32 @@ def load_crude_data(mode):
         import traceback
         traceback.print_exc()
         print(f"\n⚠️ Returning empty data for {mode}. Please check database connection and configuration.")
-        return [], []
+        return tuple([]), tuple([])
+
+
+def load_crude_data(mode):
+    """
+    Cached wrapper that defends against multiple initial calls triggering
+    duplicate database hits. Returns deep copies so downstream callbacks
+    can safely mutate data (sorting, etc.) without altering the cached
+    baseline.
+    """
+    data_records, columns = _load_crude_data_cached(mode)
+    return copy.deepcopy(list(data_records)), copy.deepcopy(list(columns))
+
+
+def _columns_from_records(records):
+    """Derive DataTable columns from cached data without re-querying the DB."""
+    if not records:
+        return []
+    first = records[0]
+    columns = []
+    for key in first.keys():
+        if key == "CrudeOil":
+            columns.append({"name": key, "id": key, "presentation": "markdown"})
+        else:
+            columns.append({"name": str(key), "id": str(key)})
+    return columns
 
 # ------------------------------------------------------------------------------
 # SAMPLE DATA IF DATABASE QUERY FAILS
@@ -258,7 +286,8 @@ def load_crude_data(mode):
 # ------------------------------------------------------------------------------
 # CALCULATE COMBINED SUM DATA (Production + Exports) - SORTED BY MAXIMUM VALUE DESC
 # ------------------------------------------------------------------------------
-def calculate_combined_sums():
+@lru_cache(maxsize=1)
+def _calculate_combined_sums_cached():
     """Calculate combined sums of Production and Exports for each crude oil and year, sorted by maximum value descending"""
         
     # Query to get both production and exports data - using exact query format
@@ -484,13 +513,18 @@ def calculate_combined_sums():
         combined_data = pivot_df.to_dict('records')
         
         print(f"✅ Calculated combined sums for {len(combined_data)} crude oils")
-        return combined_data
+        return tuple(combined_data)
         
     except Exception as e:
         print(f"❌ Error calculating combined sums: {e}")
         import traceback
         traceback.print_exc()
-        return []
+        return tuple()
+
+
+def calculate_combined_sums():
+    """Return a cached deep copy to avoid repeated DB queries on initial load."""
+    return copy.deepcopy(list(_calculate_combined_sums_cached()))
 
 # ------------------------------------------------------------------------------
 # CALCULATE SUM ROW FOR REGULAR DATA
@@ -1169,9 +1203,14 @@ def register_callbacks(app, server):
 
     @app.callback(
         Output("crude-comparison-table", "columns"),
-        Input("export-production-dropdown", "value"),
+        [
+            Input("original-data-store", "data"),
+            Input("export-production-dropdown", "value"),
+        ],
     )
-    def reload_columns(mode):
+    def reload_columns(original_data, mode):
+        if original_data:
+            return _columns_from_records(original_data)
         _, columns = load_crude_data(mode)
         return columns
 

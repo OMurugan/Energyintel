@@ -14,7 +14,7 @@ Crude Overview View
 Replicates Energy Intelligence WCoD Crude Overview functionality
 Monthly World Crude Production Dashboard - Based on Tableau source
 """
-from dash import Dash, dcc, html, Input, Output, State, callback, clientside_callback, dash_table, ALL
+from dash import Dash, dcc, html, Input, Output, State, callback, clientside_callback, dash_table, ALL, no_update
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -30,156 +30,194 @@ from core.data_helpers import execute_query
 
 # Define data paths
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'crude_overview')
-BAR_YEARLY_CSV = os.path.join(DATA_DIR, 'Yearly Bar - Production_data.csv')
-BAR_MONTHLY_CSV = os.path.join(DATA_DIR, 'Monthly Bar - Production_data.csv')
-TABLE_YEARLY_CSV = os.path.join(DATA_DIR, 'Table - Country Production_data.csv')
-TABLE_MONTHLY_CSV = os.path.join(DATA_DIR, 'Table - monthly crude production_data.csv')
 YEARLY_GRADES_CSV = os.path.join(DATA_DIR, 'Yearly List of grades for selected country_data.csv')
 MONTHLY_GRADES_CSV = os.path.join(DATA_DIR, 'Monthly List of grades for selected country_data.csv')
 
 COUNTRIES_GEOJSON = None
 
+# Helpers
+def _resolve_countries_selection(selected):
+    """Normalize country selection; expand '(All)' to full list."""
+    if selected is None:
+        return []
+    if isinstance(selected, str):
+        selected_list = [selected]
+    else:
+        selected_list = list(selected)
+    if "(All)" in selected_list:
+        return COUNTRIES[:] if COUNTRIES else []
+    return [c for c in selected_list if c]
+
+def _format_production_breakdown_title(country_selection):
+    """Format the production breakdown title based on country selection.
+    
+    Args:
+        country_selection: Original country selection (before resolution)
+    
+    Returns:
+        Formatted title string
+    """
+    if country_selection is None:
+        return "Production Breakdown"
+    
+    # Normalize to list
+    if isinstance(country_selection, str):
+        selected_list = [country_selection]
+    else:
+        selected_list = list(country_selection) if country_selection else []
+    
+    # Check if "(All)" is selected
+    if "(All)" in selected_list:
+        return "Production Breakdown – All"
+    
+    # Filter out "(All)" and get actual countries
+    countries = [c for c in selected_list if c != "(All)"]
+    
+    if not countries:
+        return "Production Breakdown"
+    
+    # If 3 or fewer countries, show all names
+    if len(countries) <= 3:
+        return f"Production Breakdown – {', '.join(countries)}"
+    
+    # If more than 3, show first 3 + count of remaining
+    first_three = countries[:3]
+    remaining_count = len(countries) - 3
+    return f"Production Breakdown – {', '.join(first_three)} and {remaining_count} more"
+
+def _resolve_years_selection(selected):
+    """Normalize year selection; expand '(All)' to full list."""
+    if selected is None:
+        return []
+    if isinstance(selected, str):
+        selected_list = [selected]
+    else:
+        selected_list = list(selected)
+    if "(All)" in selected_list:
+        # Ensure data is loaded to get PRODUCTION_YEARS
+        _ensure_data_loaded()
+        return PRODUCTION_YEARS[:] if PRODUCTION_YEARS else []
+    # Filter out "(All)" and convert to integers (years are stored as ints in PRODUCTION_YEARS)
+    years = []
+    for y in selected_list:
+        if y != "(All)":
+            try:
+                # Handle both string and int inputs
+                year_val = int(y) if isinstance(y, str) else y
+                if isinstance(year_val, int):
+                    years.append(year_val)
+            except (ValueError, TypeError):
+                # If it can't convert, skip
+                pass
+    return years
+
 # Data loading functions
 def load_yearly_bar():
-    """Load yearly bar data from Yearly Bar - Production_data.csv"""
+    """Load yearly bar data from DB (dev.fact_wcod_crude)."""
+    query = """
+        SELECT
+            a.country_name AS "Country",
+            a.crude_name AS "CrudeOil",
+            EXTRACT(YEAR FROM a.yr) AS "YearReported",
+            a.production_kbpd AS "ProductionDataValue",
+            a.exports_kbpd AS "ExportDataValue",
+            a.ci_rank
+        FROM dev.fact_wcod_crude a
+        LEFT JOIN dev.dim_country grp
+            ON a.country_id = grp.dim_country_id
+    """
     try:
-        df = pd.read_csv(BAR_YEARLY_CSV, encoding="utf-8", sep=",")
+        rows = execute_query(query)
+        if not rows:
+            print("DEBUG: No yearly bar rows returned from DB")
+            return pd.DataFrame(), pd.DataFrame(), {}
+        df = pd.DataFrame(rows)
+        if df.empty:
+            print("DEBUG: Yearly bar DataFrame empty after conversion")
+            return pd.DataFrame(), pd.DataFrame(), {}
         df.columns = df.columns.str.strip()
-        print(f"DEBUG: Yearly bar data columns: {df.columns.tolist()}")
-        print(f"DEBUG: Yearly bar data sample:\n{df.head(3)}")
-        
-        # Extract year-level ProductionDataValue BEFORE filtering by Country/CrudeOil
-        # ProductionDataValue is a single value per year, not per stream
-        # Note: ProductionDataValue rows may have blank Country/CrudeOil/Crude Color/Avg. ProductionDataValue
-        year_production_data_value = {}
-        if "ProductionDataValue" in df.columns and "Year of YearReported" in df.columns:
-            print(f"DEBUG: Extracting ProductionDataValue from {len(df)} rows")
-            # Get ALL rows with ProductionDataValue (don't filter by Country/CrudeOil yet)
-            year_value_df = df[["Year of YearReported", "ProductionDataValue"]].copy()
-            print(f"DEBUG: ProductionDataValue column sample:\n{year_value_df.head(10)}")
-            print(f"DEBUG: ProductionDataValue non-null count: {year_value_df['ProductionDataValue'].notna().sum()}")
-            
-            # Remove rows where ProductionDataValue is blank/empty/null
-            year_value_df = year_value_df[
-                year_value_df["ProductionDataValue"].notna() & 
-                (year_value_df["ProductionDataValue"].astype(str).str.strip() != "") &
-                (year_value_df["ProductionDataValue"].astype(str).str.strip().str.lower() != "nan")
-            ].copy()
-            print(f"DEBUG: After filtering blanks, {len(year_value_df)} rows with ProductionDataValue")
-            
-            if len(year_value_df) > 0:
-                # Convert to numeric
-                year_value_df["ProductionDataValue"] = pd.to_numeric(
-                    year_value_df["ProductionDataValue"].astype(str).str.replace(',', '').str.replace('$', ''),
-                    errors="coerce"
-                )
-                # Remove any rows that couldn't be converted to numeric
-                year_value_df = year_value_df[year_value_df["ProductionDataValue"].notna()].copy()
-                print(f"DEBUG: After numeric conversion, {len(year_value_df)} valid ProductionDataValue rows")
-                
-                # Group by year and take the first non-null value (should be unique per year)
-                for year, group in year_value_df.groupby("Year of YearReported"):
-                    year_str = str(year).strip()
-                    valid_values = group[group["ProductionDataValue"].notna() & (group["ProductionDataValue"] > 0)]["ProductionDataValue"]
-                    if len(valid_values) > 0:
-                        year_production_data_value[year_str] = float(valid_values.iloc[0])
-                        print(f"DEBUG: Found ProductionDataValue for year {year_str}: {year_production_data_value[year_str]}")
-            else:
-                print(f"DEBUG: WARNING - No valid ProductionDataValue found in CSV!")
-        else:
-            print(f"DEBUG: WARNING - ProductionDataValue or Year of YearReported column not found!")
-            if "ProductionDataValue" not in df.columns:
-                print(f"DEBUG: Available columns: {df.columns.tolist()}")
-        
-        print(f"DEBUG: Final year-level ProductionDataValue dictionary: {year_production_data_value}")
-        
-        # Filter out rows where Country or CrudeOil is missing
+        # Basic cleaning
         df = df[(df["Country"].notna()) & (df["CrudeOil"].notna())].copy()
+        df["YearReported"] = pd.to_numeric(df["YearReported"], errors="coerce")
+        df["ProductionDataValue"] = pd.to_numeric(df["ProductionDataValue"], errors="coerce")
+        df = df.dropna(subset=["YearReported", "ProductionDataValue"])
+        # Long format for chart
         df_long = pd.DataFrame()
-        
-        value_columns = []
-        # For bar chart values, use Avg. ProductionDataValue (NOT ProductionDataValue which is year-level only)
-        if "Avg. ProductionDataValue" in df.columns:
-            value_columns.append("Avg. ProductionDataValue")
-        
-        required_cols = {"CrudeOil", "Country", "Year of YearReported"}
-        if required_cols.issubset(df.columns) and value_columns:
-            columns_to_keep = ["CrudeOil", "Country", "Year of YearReported"] + value_columns
-            df_long = df[columns_to_keep].copy()
-            df_long = df_long.rename(columns={
-                "CrudeOil": "Stream",
-                "Year of YearReported": "year"
-            })
-            
-            # Use Avg. ProductionDataValue for bar chart (stream-level values)
-            if "Avg. ProductionDataValue" in df_long.columns:
-                value_source = df_long["Avg. ProductionDataValue"]
-            else:
-                value_source = pd.Series([0] * len(df_long), index=df_long.index)
-            
-            df_long["value"] = pd.to_numeric(
-                value_source.astype(str).str.replace(',', ''),
-                errors="coerce"
-            ).fillna(0)
-            
-            df_long["year"] = df_long["year"].astype(str)
+        required_cols = {"CrudeOil", "Country", "YearReported", "ProductionDataValue"}
+        if required_cols.issubset(df.columns):
+            df_long = df[["CrudeOil", "Country", "YearReported", "ProductionDataValue"]].copy()
+            df_long = df_long.rename(columns={"CrudeOil": "Stream", "YearReported": "year", "ProductionDataValue": "value"})
+            df_long["year"] = df_long["year"].astype(int).astype(str)
+            df_long["value"] = pd.to_numeric(df_long["value"], errors="coerce").fillna(0)
             df_long["month_idx"] = 0
             df_long = df_long[df_long["value"] > 0].copy()
-            print(f"DEBUG: Loaded {len(df_long)} yearly bar records from {BAR_YEARLY_CSV}")
-            if len(df_long) > 0:
-                print(f"DEBUG: Value range: {df_long['value'].min():.0f} to {df_long['value'].max():.0f}")
-                print(f"DEBUG: Years: {sorted(df_long['year'].unique())}")
-                print(f"DEBUG: Streams: {df_long['Stream'].unique().tolist()}")
+            print(f"DEBUG: Loaded {len(df_long)} yearly bar records from DB")
+        # Year-level totals for annotations (sum of production by year)
+        year_production_data_value = {}
+        if not df_long.empty:
+            totals = df_long.groupby("year")["value"].sum()
+            year_production_data_value = {str(k): float(v) for k, v in totals.items() if pd.notna(v)}
+        return df, df_long, year_production_data_value
     except Exception as e:
-        print(f"Error loading yearly bar data: {e}")
+        print(f"Error loading yearly bar data from DB: {e}")
         import traceback
         traceback.print_exc()
-        df = pd.DataFrame()
-        df_long = pd.DataFrame()
-        year_production_data_value = {}
-    return df, df_long, year_production_data_value
+        return pd.DataFrame(), pd.DataFrame(), {}
 
 def load_monthly_bar():
-    """Load monthly bar data from Monthly Bar - Production_data.csv"""
+    """Load monthly bar data from DB (dev.t_wcod_monthly_stream_production)."""
+    query = """
+        SELECT  
+            EXTRACT(YEAR FROM date) AS "Year of Date",
+            TO_CHAR(date, 'FMMonth') AS "Month of Date",
+            country AS "Country",
+            stream_name AS "Stream Name",
+            value AS "Value"
+        FROM dev.t_wcod_monthly_stream_production
+        ORDER BY date DESC, stream_name;
+    """
     try:
-        df = pd.read_csv(BAR_MONTHLY_CSV, encoding="utf-8", sep=",")
+        rows = execute_query(query)
+        if not rows:
+            print("DEBUG: No monthly bar rows returned from DB")
+            return pd.DataFrame(), pd.DataFrame()
+        df = pd.DataFrame(rows)
+        if df.empty:
+            print("DEBUG: Monthly bar DataFrame empty after conversion")
+            return pd.DataFrame(), pd.DataFrame()
         df.columns = df.columns.str.strip()
-        
         df_long = pd.DataFrame()
-        if "Stream Name" in df.columns and "Country" in df.columns and "Year of Date" in df.columns and "Month of Date" in df.columns and "Avg. Value" in df.columns:
-            df_long = df[["Stream Name", "Country", "Year of Date", "Month of Date", "Avg. Value"]].copy()
+        required = {"Stream Name", "Country", "Year of Date", "Month of Date", "Value"}
+        if required.issubset(df.columns):
+            df_long = df[["Stream Name", "Country", "Year of Date", "Month of Date", "Value"]].copy()
             df_long = df_long.rename(columns={
                 "Stream Name": "Stream",
                 "Year of Date": "year",
                 "Month of Date": "month",
-                "Avg. Value": "value"
+                "Value": "value"
             })
-            
-            # Convert year to string
+            df_long["year"] = pd.to_numeric(df_long["year"], errors="coerce").astype("Int64")
             df_long["year"] = df_long["year"].astype(str)
-            
-            # Map month names to numbers
             month_map = {
                 "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
                 "July": 7, "August": 8, "September": 9, "October": 10, "November": 11, "December": 12
             }
             df_long["month_idx"] = df_long["month"].map(month_map)
-            
-            # Convert value to numeric
-            df_long["value"] = pd.to_numeric(df_long["value"].astype(str).str.replace(',', ''), errors="coerce").fillna(0)
-            
-            # Filter out invalid data
-            df_long = df_long[(df_long["value"] > 0) & 
+            df_long["value"] = pd.to_numeric(df_long["value"], errors="coerce").fillna(0)
+            df_long = df_long[
+                (df_long["value"] > 0) &
                               (df_long["Country"].notna()) & 
-                              (df_long["Stream"].notna())].copy()
-            print(f"DEBUG: Loaded {len(df_long)} monthly bar records from {BAR_MONTHLY_CSV}")
+                (df_long["Stream"].notna()) &
+                (df_long["month_idx"].notna())
+            ].copy()
+            df_long["month_idx"] = df_long["month_idx"].astype(int)
+            print(f"DEBUG: Loaded {len(df_long)} monthly bar records from DB")
+        return df, df_long
     except Exception as e:
-        print(f"Error loading monthly bar data: {e}")
+        print(f"Error loading monthly bar data from DB: {e}")
         import traceback
         traceback.print_exc()
-        df = pd.DataFrame()
-        df_long = pd.DataFrame()
-    return df, df_long
+        return pd.DataFrame(), pd.DataFrame()
 
 
 def _load_countries_geojson():
@@ -210,7 +248,7 @@ def load_monthly_map_from_db():
             TO_CHAR(p.date, 'YYYY-MM') AS month_year,
             p.value,
             p.country_id
-        FROM dev.t_wcod_monthly_stream_production p
+        FROM t_wcod_monthly_stream_production p
         ORDER BY p.country, TO_CHAR(p.date, 'YYYY-MM'), p.value DESC;
     """
     try:
@@ -257,7 +295,7 @@ def load_yearly_map_from_db():
                 TO_CHAR(p.date, 'YYYY') AS year,
                 p.value,
                 p.country_id
-            FROM dev.t_wcod_monthly_stream_production p
+            FROM t_wcod_monthly_stream_production p
             ORDER BY p.country, TO_CHAR(p.date, 'YYYY-MM'), p.value DESC
         )
         SELECT
@@ -295,7 +333,7 @@ def load_yearly_map_from_db():
         import traceback
         traceback.print_exc()
         return pd.DataFrame()
-
+    
 
 def load_map_data():
     """Load map data - both yearly and monthly"""
@@ -304,46 +342,475 @@ def load_map_data():
     return map_yearly_long, map_monthly_long
 
 def load_grades_data():
-    """Load grades/streams data for selected country - both yearly and monthly"""
-    yearly_grades = pd.DataFrame()
-    monthly_grades = pd.DataFrame()
-    
-    try:
-        # Load yearly grades data
-        yearly_grades = pd.read_csv(YEARLY_GRADES_CSV, encoding="utf-8", sep=",")
-        yearly_grades.columns = yearly_grades.columns.str.strip()
-        # Map column names
-        if "CrudeOil" in yearly_grades.columns:
-            yearly_grades = yearly_grades.rename(columns={"CrudeOil": "Stream"})
-        elif "Stream" in yearly_grades.columns:
-            pass  # Already has Stream column
-        elif "Stream Name" in yearly_grades.columns:
-            yearly_grades = yearly_grades.rename(columns={"Stream Name": "Stream"})
-    except Exception as e:
-        print(f"Error loading yearly grades data: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    try:
-        # Load monthly grades data
-        monthly_grades = pd.read_csv(MONTHLY_GRADES_CSV, encoding="utf-8", sep=",")
-        monthly_grades.columns = monthly_grades.columns.str.strip()
-        # Map column names
-        if "Stream Name" in monthly_grades.columns:
-            monthly_grades = monthly_grades.rename(columns={"Stream Name": "Stream"})
-        elif "Stream" in monthly_grades.columns:
-            pass  # Already has Stream column
-        elif "CrudeOil" in monthly_grades.columns:
-            monthly_grades = monthly_grades.rename(columns={"CrudeOil": "Stream"})
-    except Exception as e:
-        print(f"Error loading monthly grades data: {e}")
-        import traceback
-        traceback.print_exc()
-    
+    """Load grades/streams data.
+    Yearly grades are now fetched dynamically from the database per-country.
+    Monthly grades remain DB-backed and are fetched on-demand elsewhere.
+    """
+    yearly_grades = pd.DataFrame()   # fetched per country via load_yearly_grades_for_country
+    monthly_grades = pd.DataFrame()  # fetched per country via load_monthly_grades_for_country
     return yearly_grades, monthly_grades
+
+
+def load_yearly_grades_for_country(countries):
+    """Fetch yearly grades/streams for given countries from DB.
+    
+    Args:
+        countries: Can be a single country name (str), list of countries, or empty list/None for all countries
+    """
+    # Normalize input to list
+    if not countries:
+        country_list = []
+    elif isinstance(countries, str):
+        country_list = [countries]
+    else:
+        country_list = list(countries)
+    
+    # Build query with appropriate WHERE clause
+    base_query = """
+        SELECT
+            a.crude_name AS "CrudeOil",
+            c.BSP_link AS "profile_url",
+            a.country_name || ' ' || a.crude_name AS "crude_color",
+            1 AS avg_calculation1
+        FROM dev.fact_wcod_crude a
+        LEFT JOIN dev.dim_country grp
+            ON a.country_id = grp.dim_country_id
+        LEFT JOIN dev.fact_wcod_crude_bsp_links c 
+            ON a.crude_id = c.crude_id
+    """
+    
+    # If empty list (all countries), don't add WHERE clause
+    # If single country, use = 
+    # If multiple countries, use IN with tuple
+    if not country_list:
+        # All countries - no WHERE clause
+        query = base_query + ";"
+        params = {}
+    elif len(country_list) == 1:
+        # Single country
+        query = base_query + " WHERE a.country_name = :country;"
+        params = {"country": country_list[0]}
+    else:
+        # Multiple countries - use IN clause with tuple
+        # Build placeholders for SQLAlchemy text() with bindparam expanding
+        placeholders = ", ".join([f":country_{i}" for i in range(len(country_list))])
+        query = base_query + f" WHERE a.country_name IN ({placeholders});"
+        params = {f"country_{i}": country for i, country in enumerate(country_list)}
+    
+    try:
+        rows = execute_query(query, params)
+        if not rows:
+            return pd.DataFrame()
+        df = pd.DataFrame(rows)
+        df.columns = df.columns.str.strip()
+        # Normalize stream column
+        if "CrudeOil" in df.columns:
+            df = df.rename(columns={"CrudeOil": "Stream"})
+        elif "Stream Name" in df.columns:
+            df = df.rename(columns={"Stream Name": "Stream"})
+        elif "stream_name" in df.columns:
+            df = df.rename(columns={"stream_name": "Stream"})
+        # Normalize color column naming
+        if "CRUDE COLOR" in df.columns:
+            df = df.rename(columns={"CRUDE COLOR": "crude_color"})
+        # Ensure helper columns exist
+        for col in ["crude_color", "avg_calculation1"]:
+            if col not in df.columns:
+                if col == "crude_color":
+                    df[col] = df.get("Stream", "")
+                else:
+                    df[col] = 1
+        df = df.drop_duplicates(subset=["Stream"]).reset_index(drop=True)
+        return df
+    except Exception as e:
+        print(f"Error loading yearly grades data from DB for countries '{countries}': {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
+
+
+def get_yearly_grades_for_country(countries):
+    """Cached accessor for yearly grades per country/countries."""
+    global YEARLY_GRADES_CACHE
+    # Create cache key from sorted country list
+    if not countries:
+        key = "__ALL__"
+    elif isinstance(countries, str):
+        key = countries
+    else:
+        key = "__".join(sorted(countries))
+    
+    if key in YEARLY_GRADES_CACHE:
+        return YEARLY_GRADES_CACHE[key]
+    df = load_yearly_grades_for_country(countries)
+    YEARLY_GRADES_CACHE[key] = df
+    return df
+
+
+def load_monthly_grades_for_country(countries):
+    """Fetch monthly grades/streams for given countries from DB.
+    
+    Args:
+        countries: Can be a single country name (str), list of countries, or empty list/None for all countries
+    """
+    # Normalize input to list
+    if not countries:
+        country_list = []
+    elif isinstance(countries, str):
+        country_list = [countries]
+    else:
+        country_list = list(countries)
+    
+    # Build query with appropriate WHERE clause
+    base_query = """
+        SELECT DISTINCT ON (A.stream_name)
+            A.stream_name,
+            b.BSP_link,
+            A.country || ' ' || A.stream_name AS crude_color,
+            1 AS avg_calculation1
+        FROM dev.t_wcod_monthly_stream_production A
+        LEFT JOIN dev.fact_wcod_crude_bsp_links b 
+            ON A.crude_id = b.crude_id
+    """
+    
+    # If empty list (all countries), don't add WHERE clause for country
+    # If single country, use = 
+    # If multiple countries, use IN
+    if not country_list:
+        # All countries - only filter out 'Total' stream
+        query = base_query + " WHERE A.stream_name != 'Total' ORDER BY A.stream_name;"
+        params = {}
+    elif len(country_list) == 1:
+        # Single country
+        query = base_query + " WHERE A.country = :country AND A.stream_name != 'Total' ORDER BY A.stream_name;"
+        params = {"country": country_list[0]}
+    else:
+        # Multiple countries - use IN clause
+        placeholders = ", ".join([f":country_{i}" for i in range(len(country_list))])
+        query = base_query + f" WHERE A.country IN ({placeholders}) AND A.stream_name != 'Total' ORDER BY A.stream_name;"
+        params = {f"country_{i}": country for i, country in enumerate(country_list)}
+    
+    try:
+        rows = execute_query(query, params)
+        if not rows:
+            return pd.DataFrame()
+        df = pd.DataFrame(rows)
+        df.columns = df.columns.str.strip()
+        # Normalize stream column
+        if "stream_name" in df.columns:
+            df = df.rename(columns={"stream_name": "Stream"})
+        elif "Stream Name" in df.columns:
+            df = df.rename(columns={"Stream Name": "Stream"})
+        elif "CrudeOil" in df.columns:
+            df = df.rename(columns={"CrudeOil": "Stream"})
+        # Ensure expected helper columns exist
+        for col in ["crude_color", "avg_calculation1"]:
+            if col not in df.columns:
+                if col == "crude_color":
+                    df[col] = df.get("Stream", "")
+                else:
+                    df[col] = 1
+        return df
+    except Exception as e:
+        print(f"Error loading monthly grades data from DB for countries '{countries}': {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
+
+
+def get_monthly_grades_for_country(countries):
+    """Cached accessor for monthly grades per country/countries."""
+    global MONTHLY_GRADES_CACHE
+    # Create cache key from sorted country list
+    if not countries:
+        key = "__ALL__"
+    elif isinstance(countries, str):
+        key = countries
+    else:
+        key = "__".join(sorted(countries))
+    
+    if key in MONTHLY_GRADES_CACHE:
+        return MONTHLY_GRADES_CACHE[key]
+    df = load_monthly_grades_for_country(countries)
+    MONTHLY_GRADES_CACHE[key] = df
+    return df
+
+
+def build_monthly_table_from_bar(bar_long_monthly):
+    """Fallback monthly table builder using BAR_LONG_MONTHLY when DB table data is empty."""
+    if bar_long_monthly is None or bar_long_monthly.empty:
+        return pd.DataFrame(), {}
+    
+    required_cols = {"Stream", "year", "month_idx", "value"}
+    if not required_cols.issubset(set(bar_long_monthly.columns)):
+        return pd.DataFrame(), {}
+    
+    df = bar_long_monthly.copy()
+    # Normalize month name
+    month_map = {
+        1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
+        7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December"
+    }
+    if "month" not in df.columns:
+        df["month"] = df["month_idx"].map(month_map)
+    df["value"] = pd.to_numeric(df["value"], errors="coerce").fillna(0)
+    df = df[df["value"] > 0]
+    if df.empty:
+        return pd.DataFrame(), {}
+    
+    group = df.groupby(["Stream", "year", "month"])["value"].sum().reset_index()
+    streams = sorted(group["Stream"].dropna().unique().tolist())
+    years = sorted(group["year"].dropna().unique().tolist(), reverse=True)
+    months_order = ["January", "February", "March", "April", "May", "June",
+                    "July", "August", "September", "October", "November", "December"]
+    
+    table_df = pd.DataFrame({"Crude": streams})
+    table_df.set_index("Crude", inplace=True)
+    year_to_month_cols = {}
+    new_columns = {}
+    
+    for year in years:
+        year_str = str(year)
+        year_to_month_cols[year_str] = []
+        for month in months_order:
+            mask = (group["year"] == year) & (group["month"] == month)
+            if not mask.any():
+                continue
+            month_values = (
+                group.loc[mask, ["Stream", "value"]]
+                .drop_duplicates(subset=["Stream"])
+                .set_index("Stream")["value"]
+            )
+            if month_values.empty:
+                continue
+            col_name = f"{year_str}_{month}"
+            new_columns[col_name] = table_df.index.map(month_values)
+            year_to_month_cols[year_str].append({"month": month, "column": col_name})
+    
+    if new_columns:
+        table_df = pd.concat([table_df, pd.DataFrame(new_columns, index=table_df.index)], axis=1)
+    
+    table_df.reset_index(inplace=True)
+    return table_df, year_to_month_cols
+
+
+# Comprehensive color mapping for monthly crudes (fallback for missing colors)
+MONTHLY_CRUDE_COLORS = {
+    "Agbami": "#0077A3",
+    "Akpo Blend": "#5A8FB8",
+    "Alaska North Slope": "#0077A3",
+    "Algerian Condensate": "#4F8BB6",
+    "Al-Shaheen": "#2CA02C",
+    "Al-shaheen": "#2CA02C",  # Alternative spelling
+    "Al Shaheen": "#2CA02C",  # Alternative spelling
+    "Alvheim": "#5C8FB8",
+    "Amenam Blend": "#A9A9A9",
+    "Anyala-madu": "#9B5C42",
+    "Arab Extra Light": "#5F5F5F",
+    "Arab Heavy": "#5C8FB8",
+    "Arab Light": "#A9A9A9",
+    "Arab Medium": "#2E3D4F",
+    "Arab Super Light": "#0077A3",
+    "Arco": "#0077A3",
+    "Asgard Blend": "#9B5C42",
+    "Atapu": "#7E8BC7",
+    "Azeri (Btc)": "#FF6A00",
+    "Azeri Light": "#0077A3",
+    "Bach Ho": "#D62728",
+    "Bakken": "#C9D9A3",
+    "Balder": "#5F5F5F",
+    "Banoco Arab Medium": "#C7C7C7",
+    "Basrah Heavy": "#A9A9A9",
+    "Basrah Light": "#2E3D4F",
+    "Basrah Medium": "#5A8FB8",
+    "Belayim Blend": "#1F3B5D",
+    "Bonga": "#5A8FB8",
+    "Bonny Light": "#2E3D4F",
+    "Brass River": "#0077A3",
+    "Brent Blend": "#2E3D4F",
+    "Buzios": "#5A8FB8",
+    "Cabinda": "#FF6A00",
+    "Castilla": "#1F3B5D",
+    "Cepu": "#9B5C42",
+    "Champion": "#7F7F7F",
+    "Clair": "#C35A2E",
+    "Clifhead": "#C7C7C7",
+    "Clov": "#1F3B5D",
+    "Condensate": "#2E3D4F",
+    "Cossack": "#8C564B",
+    "CPC Blend - Russia": "#C35A2E",
+    "Cpc Blend - Russia": "#C35A2E",  # Alternative spelling
+    "Dalia": "#FF6A00",
+    "Danish Crude Blend": "#A9A9A9",
+    "Dar Blend South Sudan": "#7E8BC7",
+    "Das Blend": "#9B5C42",
+    "Deodorized Field Condensate": "#98DF8A",
+    "Djeno": "#7E8BC7",
+    "Doba": "#C9D9A3",
+    "Dubai": "#0077A3",
+    "Duri": "#C9D9A3",
+    "Dussafu": "#7E8BC7",
+    "Eagle Ford": "#FF6A00",
+    "Egina": "#0077A3",
+    "Ekofisk Blend": "#2E3D4F",
+    "Eocene": "#5F5F5F",
+    "Erha": "#9B5C42",
+    "Escalante": "#C9D9A3",
+    "Escravos": "#2E3D4F",
+    "Espo Blend": "#C9D9A3",
+    "Flotta Gold": "#A9A9A9",
+    "Forcados": "#A9A9A9",
+    "Forties Blend": "#5A8FB8",
+    "Frade": "#FF6A00",
+    "Gindungo": "#0077A3",
+    "Girassol": "#7E8BC7",
+    "Goliat": "#2E3D4F",
+    "Grane": "#5F5F5F",
+    "Gudrun Blend": "#A9A9A9",
+    "Gullfaks Blend": "#FF6A00",
+    "Heavy Louisiana Sweet": "#A9A9A9",
+    "Heidrun": "#C35A2E",
+    "Hoops Blend": "#0077A3",
+    "Hungo": "#9B5C42",
+    "Ichthys Condensate": "#7F7F7F",
+    "Iran Heavy": "#FF6A00",
+    "Iran Light": "#C35A2E",
+    "Isthmus": "#5A8FB8",
+    "Johan Sverdrup": "#5A8FB8",
+    "Jubarte": "#C9D9A3",
+    "Jubilee": "#5F5F5F",
+    "Kashagan": "#5A8FB8",
+    "Kebco": "#C9D9A3",
+    "Ketapang": "#C7C7C7",
+    "Khafji": "#5F5F5F",
+    "Kikeh": "#DBDB8D",
+    "Kimanis": "#1F3B5D",
+    "Kirkuk": "#0077A3",
+    "Kissanje Blend": "#5A8FB8",
+    "Kumkol": "#C35A2E",
+    "Kurdish Crude": "#C9D9A3",
+    "Kutubu": "#5A8FB8",
+    "Kuwait": "#5F5F5F",
+    "Kuwait Export Heavy": "#7E8BC7",
+    "Kuwait Super Light": "#FF6A00",
+    "Lalang": "#1F77B4",
+    "Lapa": "#C9D9A3",
+    "Light Louisiana Sweet": "#1F3B5D",
+    "Liza": "#0077A3",
+    "Mandji": "#FF6A00",
+    "Mares Blend": "#AEC7E8",
+    "Marlim": "#A9A9A9",
+    "Mars Blend": "#C9D9A3",
+    "Maya": "#1F3B5D",
+    "Medanito": "#9B5C42",
+    "Mero": "#FF6A00",
+    "Minas": "#1F3B5D",
+    "Miri": "#5F5F5F",
+    "Mostarda": "#7E8BC7",
+    "Mubarras Blend": "#1F77B4",
+    "Murban": "#FF6A00",
+    "Napo": "#98DF8A",
+    "Nemba": "#C35A2E",
+    "Nile Blend South Sudan": "#C35A2E",
+    "Nile Blend Sudan": "#1F3B5D",
+    "Nkossa": "#A9A9A9",
+    "Novy Port": "#1F3B5D",
+    "Oguendjo Blend": "#5A8FB8",
+    "Okwuibome": "#7E8BC7",
+    "Olmeca": "#C9D9A3",
+    "Olombendo": "#5F5F5F",
+    "Oman": "#7E8BC7",
+    "Oriente": "#FF9896",
+    "Oseberg": "#7E8BC7",
+    "Other Crudes - Algeria": "#1F3B5D",
+    "Other Crudes - Angola": "#2E3D4F",
+    "Other Crudes - Argentina": "#A9A9A9",
+    "Other Crudes - Azerbaijan": "#C9D9A3",
+    "Other Crudes - Brazil": "#2E3D4F",
+    "Other Crudes - Chad": "#A9A9A9",
+    "Other Crudes - Colombia (Brazzaville)": "#0077A3",
+    "Other Crudes - Denmark": "#C35A2E",
+    "Other Crudes - Egypt": "#1F3B5D",
+    "Other Crudes - Ghana": "#C9D9A3",
+    "Other Crudes - Indonesia": "#C35A2E",
+    "Other Crudes - Iran": "#5F5F5F",
+    "Kazakhstan": "#5F5F5F",
+    "Other Crudes - Kuwait": "#C35A2E",
+    "Other Crudes - Malaysia": "#A9A9A9",
+    "Other Crudes - Nigeria": "#0077A3",
+    "Other Crudes - Norway": "#1F3B5D",
+    "Other Crudes - Russia": "#1F3B5D",
+    "Other Crudes - Sudan": "#FF6A00",
+    "Kingdom": "#9B5C42",
+    "States": "#5F5F5F",
+    "Payara Gold": "#C35A2E",
+    "Pazflor": "#C9D9A3",
+    "Peregrino": "#5A8FB8",
+    "Plutonio": "#5A8FB8",
+    "Poseidon": "#1F3B5D",
+    "Pyrenees": "#C49C94",
+    "Qua Iboe": "#9B5C42",
+    "Qatar Land": "#C7C7C7",
+    "Qatar Low Sulphur Condensate": "#BCBD22",
+    "Qatar Marine": "#DBDB8D",
+    "Rabi Blend": "#C9D9A3",
+    "Rabi Light": "#FF6A00",
+    "Roncador": "#1F3B5D",
+    "Ruby": "#F7B6D2",
+    "Saharan Blend": "#C9D9A3",
+    "Sakhalin Blend": "#5F5F5F",
+    "Sangos": "#A9A9A9",
+    "Sankofa": "#1F3B5D",
+    "Sapinhoa": "#9B5C42",
+    "Saturno": "#C35A2E",
+    "Schiehallion Blend": "#5F5F5F",
+    "Sepia": "#5A8FB8",
+    "Sepat": "#BCBD22",
+    "Seria Light": "#17BECF",
+    "Siberian Light": "#5A8FB8",
+    "Skarv": "#0077A3",
+    "Sokol": "#A9A9A9",
+    "Southern Green Canyon": "#FF6A00",
+    "Stag": "#9EDAE5",
+    "Suez Blend": "#FF6A00",
+    "Sururu": "#0077A3",
+    "Tapis": "#2E3D4F",
+    "Ten": "#9B5C42",
+    "Tengiz": "#A9A9A9",
+    "Thang Long": "#FFBB78",
+    "Thunder Horse": "#FF6A00",
+    "Troll": "#C9D9A3",
+    "Tupi": "#9B5C42",
+    "Umm Lulu": "#5F5F5F",
+    "Unity Gold": "#5A8FB8",
+    "Upper Zakum": "#9B5C42",
+    "Urals": "#9B5C42",
+    "Varandey": "#7E8BC7",
+    "Vasconia": "#7E8BC7",
+    "Vityaz": "#0069AA",
+    "Wafra": "#5F5F5F",
+    "Wandoo": "#2CA02C",
+    "West Texas Intermediate": "#AEC7E8",
+    "West Texas Intermediate (Midland)": "#0077A3",
+    "(Midland)": "#474F5C",
+    "West Texas Light": "#B4B4B4",
+    "West Texas Sour": "#1F3B5D",
+    "Western Desert Blend": "#FF6A00",
+    "YK Blend": "#595959"
+}
+
 
 def load_stream_color_order():
     """Load stream color and order from grades CSV files"""
+    def _is_valid_color(val):
+        if not isinstance(val, str):
+            return False
+        v = val.strip()
+        if v.startswith("#") and len(v) in (4, 7):
+            return True
+        if v.lower().startswith("rgb"):
+            return True
+        return False
     # Default fallback values (current hardcoded lists)
     default_yearly = [
         ("Arco", "#0069aa"),
@@ -375,87 +842,40 @@ def load_stream_color_order():
     yearly_order = []
     monthly_order = []
     
-    try:
-        # Load yearly stream color/order
-        if os.path.exists(YEARLY_GRADES_CSV):
-            yearly_df = pd.read_csv(YEARLY_GRADES_CSV, encoding="utf-8", sep=",")
-            yearly_df.columns = yearly_df.columns.str.strip()
-            
-            # Map Stream column
-            stream_col = None
-            if "Stream" in yearly_df.columns:
-                stream_col = "Stream"
-            elif "Stream Name" in yearly_df.columns:
-                stream_col = "Stream Name"
-            elif "CrudeOil" in yearly_df.columns:
-                stream_col = "CrudeOil"
-            
-            # Map Color column
-            color_col = None
-            for col in ["Color", "colour", "COLOUR", "Stream Color", "Stream Colour"]:
-                if col in yearly_df.columns:
-                    color_col = col
-                    break
-            
-            if stream_col and color_col:
-                # Build list of (stream, color) tuples, preserving order
-                for _, row in yearly_df.iterrows():
-                    stream = str(row[stream_col]).strip() if pd.notna(row[stream_col]) else None
-                    color = str(row[color_col]).strip() if pd.notna(row[color_col]) else None
-                    if stream and color:
-                        yearly_order.append((stream, color))
-            elif stream_col:
-                # If no color column, use default colors for streams found in CSV
-                streams_in_csv = yearly_df[stream_col].dropna().unique().tolist()
-                default_color_map = dict(default_yearly)
-                for stream in streams_in_csv:
-                    stream_str = str(stream).strip()
-                    color = default_color_map.get(stream_str, "#808080")  # Default gray if not found
-                    yearly_order.append((stream_str, color))
-    except Exception as e:
-        print(f"Error loading yearly stream color/order: {e}")
-        import traceback
-        traceback.print_exc()
+    # Keep existing yearly colors/order static (per current design)
+    yearly_order = default_yearly[:]
     
     try:
-        # Load monthly stream color/order
-        if os.path.exists(MONTHLY_GRADES_CSV):
-            monthly_df = pd.read_csv(MONTHLY_GRADES_CSV, encoding="utf-8", sep=",")
-            monthly_df.columns = monthly_df.columns.str.strip()
-            
-            # Map Stream column
-            stream_col = None
-            if "Stream" in monthly_df.columns:
-                stream_col = "Stream"
-            elif "Stream Name" in monthly_df.columns:
-                stream_col = "Stream Name"
-            elif "CrudeOil" in monthly_df.columns:
-                stream_col = "CrudeOil"
-            
-            # Map Color column
-            color_col = None
-            for col in ["Color", "colour", "COLOUR", "Stream Color", "Stream Colour"]:
-                if col in monthly_df.columns:
-                    color_col = col
-                    break
+        # Load monthly stream color/order via DB for default country (Russia fallback)
+        default_country = "Russia"
+        monthly_df = load_monthly_grades_for_country(default_country)
+        if not monthly_df.empty:
+            # Use crude_color if present for ordering, else stream
+            stream_col = "Stream" if "Stream" in monthly_df.columns else None
+            color_col = "crude_color" if "crude_color" in monthly_df.columns else None
+            default_color_map = dict(default_monthly)
+            # Merge comprehensive color mapping with default_monthly (comprehensive takes precedence)
+            comprehensive_color_map = {**default_color_map, **MONTHLY_CRUDE_COLORS}
             
             if stream_col and color_col:
-                # Build list of (stream, color) tuples, preserving order
                 for _, row in monthly_df.iterrows():
                     stream = str(row[stream_col]).strip() if pd.notna(row[stream_col]) else None
                     color = str(row[color_col]).strip() if pd.notna(row[color_col]) else None
-                    if stream and color:
+                    # If color is not a valid css/hex color, fall back to comprehensive color mapping
+                    if stream:
+                        if not _is_valid_color(color):
+                            # Try comprehensive mapping first, then default_monthly, then gray fallback
+                            color = comprehensive_color_map.get(stream, default_color_map.get(stream, "#808080"))
                         monthly_order.append((stream, color))
             elif stream_col:
-                # If no color column, use default colors for streams found in CSV
-                streams_in_csv = monthly_df[stream_col].dropna().unique().tolist()
-                default_color_map = dict(default_monthly)
-                for stream in streams_in_csv:
+                streams_in_result = monthly_df[stream_col].dropna().unique().tolist()
+                for stream in streams_in_result:
                     stream_str = str(stream).strip()
-                    color = default_color_map.get(stream_str, "#808080")  # Default gray if not found
+                    # Use comprehensive color mapping first, then default_monthly, then gray fallback
+                    color = comprehensive_color_map.get(stream_str, default_color_map.get(stream_str, "#808080"))
                     monthly_order.append((stream_str, color))
     except Exception as e:
-        print(f"Error loading monthly stream color/order: {e}")
+        print(f"Error loading monthly stream color/order from DB: {e}")
         import traceback
         traceback.print_exc()
     
@@ -476,35 +896,82 @@ def load_stream_color_order():
     
     return yearly_result, monthly_result
 
+
+def _ensure_color_maps():
+    """Initialize color maps/orders if missing without reloading all data."""
+    global YEARLY_STREAM_COLOR_ORDER, MONTHLY_STREAM_COLOR_ORDER
+    global STREAM_COLOR_ORDERS, STREAM_COLOR_MAPS, STREAM_ORDERS
+    # If already built, ensure maps exist
+    if STREAM_COLOR_MAPS and STREAM_COLOR_ORDERS and STREAM_ORDERS:
+        # Still merge comprehensive colors to ensure all streams have colors
+        if "monthly" in STREAM_COLOR_MAPS:
+            STREAM_COLOR_MAPS["monthly"] = {**STREAM_COLOR_MAPS["monthly"], **MONTHLY_CRUDE_COLORS}
+        return
+    # Build orders if missing
+    if not YEARLY_STREAM_COLOR_ORDER or not MONTHLY_STREAM_COLOR_ORDER:
+        YEARLY_STREAM_COLOR_ORDER, MONTHLY_STREAM_COLOR_ORDER = load_stream_color_order()
+    STREAM_COLOR_ORDERS = {
+        "yearly": YEARLY_STREAM_COLOR_ORDER,
+        "monthly": MONTHLY_STREAM_COLOR_ORDER
+    }
+    STREAM_COLOR_MAPS = {mode: {name: color for name, color in order} for mode, order in STREAM_COLOR_ORDERS.items()}
+    # Merge comprehensive monthly colors into the color map (comprehensive takes precedence)
+    if "monthly" in STREAM_COLOR_MAPS:
+        STREAM_COLOR_MAPS["monthly"] = {**STREAM_COLOR_MAPS["monthly"], **MONTHLY_CRUDE_COLORS}
+    STREAM_ORDERS = {mode: [name for name, _ in order] for mode, order in STREAM_COLOR_ORDERS.items()}
+
 def load_table():
-    """Load table data from Table - Country Production_data.csv (yearly) and Table - monthly crude production_data.csv (monthly)"""
+    """Load table data: yearly from DB query; monthly from DB monthly production."""
     yearly_df = pd.DataFrame()
     monthly_df = pd.DataFrame()
     year_to_month_cols = {}
     
     try:
-        # Load yearly table data
-        yearly_raw = pd.read_csv(TABLE_YEARLY_CSV, encoding="utf-8", sep=",")
-        yearly_raw.columns = yearly_raw.columns.str.strip()
-        profile_col = next((col for col in yearly_raw.columns if col.strip().lower() == "profile_url"), None)
-        if profile_col and profile_col != "profile_url":
-            yearly_raw = yearly_raw.rename(columns={profile_col: "profile_url"})
-        
-        # Pivot yearly data: CrudeOil -> rows, Year of YearReported -> columns
-        if not yearly_raw.empty and "CrudeOil" in yearly_raw.columns and "Year of YearReported" in yearly_raw.columns:
-            # Get unique crudes and years
-            crudes = yearly_raw["CrudeOil"].dropna().unique()
-            years = sorted(yearly_raw["Year of YearReported"].dropna().unique(), reverse=True)
+        # Load yearly table data from DB
+        yearly_query = """
+            SELECT
+                a.country_name AS "Country",
+                a.crude_name AS "CrudeOil",
+                b.BSP_link AS profile_url,
+                EXTRACT(YEAR FROM a.yr) AS "YearReported",
+                a.production_kbpd AS "ProductionDataValue",
+                a.exports_kbpd AS "ExportDataValue",
+                a.ci_rank
+            FROM dev.fact_wcod_crude a
+            LEFT JOIN dev.dim_country grp
+                ON a.country_id = grp.dim_country_id
+            LEFT JOIN dev.fact_wcod_crude_bsp_links b
+                ON a.crude_id = b.crude_id
+            ORDER BY a.crude_name ASC;
+        """
+        yearly_rows = execute_query(yearly_query)
+        if yearly_rows:
+            yearly_raw = pd.DataFrame(yearly_rows)
+            yearly_raw.columns = yearly_raw.columns.str.strip()
+            # Normalize optional column names
+            if "BSP link" in yearly_raw.columns and "profile_url" not in yearly_raw.columns:
+                yearly_raw = yearly_raw.rename(columns={"BSP link": "profile_url"})
+            yearly_raw["YearReported"] = pd.to_numeric(yearly_raw.get("YearReported"), errors="coerce")
+            yearly_raw["ProductionDataValue"] = pd.to_numeric(yearly_raw.get("ProductionDataValue"), errors="coerce")
+            yearly_raw = yearly_raw.dropna(subset=["CrudeOil", "YearReported", "ProductionDataValue"])
             
-            # Create base dataframe with CrudeOil
+            # Aggregate by crude and year (sum production) to get one value per year column
+            yearly_agg = (
+                yearly_raw
+                .groupby(["CrudeOil", "YearReported"], as_index=False)["ProductionDataValue"]
+                .sum()
+            )
+            
+            crudes = sorted(yearly_agg["CrudeOil"].dropna().unique())
+            years = sorted(yearly_agg["YearReported"].dropna().unique(), reverse=True)
+            
             yearly_df = pd.DataFrame({"CrudeOil": crudes})
-            
-            # Add year columns with values
             for year in years:
                 year_str = str(int(year))
-                year_data = yearly_raw[yearly_raw["Year of YearReported"] == year]
-            # Merge values by CrudeOil
-                year_values = year_data[["CrudeOil", "Avg. ProductionDataValue"]].set_index("CrudeOil")["Avg. ProductionDataValue"]
+                year_values = (
+                    yearly_agg[yearly_agg["YearReported"] == year]
+                    .set_index("CrudeOil")["ProductionDataValue"]
+                )
                 yearly_df[year_str] = yearly_df["CrudeOil"].map(year_values)
             
             # Add profile_url metadata if available
@@ -517,72 +984,129 @@ def load_table():
                 )
                 yearly_df["profile_url"] = yearly_df["CrudeOil"].map(profile_map)
             
-            # Add metadata columns if available (from bar data or grades data)
-            # We'll add these in the callback when we have country context
+            # Add CI Rank metadata if available
+            if "ci_rank" in yearly_raw.columns:
+                ci_map = (
+                    yearly_raw[["CrudeOil", "ci_rank"]]
+                    .dropna(subset=["CrudeOil"])
+                    .drop_duplicates(subset=["CrudeOil"])
+                    .set_index("CrudeOil")["ci_rank"]
+                )
+                yearly_df["CI Rank"] = yearly_df["CrudeOil"].map(ci_map)
             
         # Load monthly table data
-        monthly_raw = pd.read_csv(TABLE_MONTHLY_CSV, encoding="utf-8", sep=",")
-        monthly_raw.columns = monthly_raw.columns.str.strip()
-        monthly_profile_col = next((col for col in monthly_raw.columns if col.strip().lower() == "profile_url"), None)
-        if monthly_profile_col and monthly_profile_col != "profile_url":
-            monthly_raw = monthly_raw.rename(columns={monthly_profile_col: "profile_url"})
+        # Load monthly table data from DB
+        monthly_query = """
+            SELECT     
+                b.crude_name AS "Crude",
+                b.ci_rank,
+                b.api,
+                b.sulfur_pct,
+                EXTRACT(YEAR FROM a.date) AS "Year of Date",
+                TO_CHAR(a.date, 'FMMonth') AS "Month of Date",
+                a.value as "Value"
+            FROM dev.t_wcod_monthly_stream_production a
+            LEFT JOIN dev.fact_wcod_crude b  on a.crude_id = b.crude_id 
+        """
+        monthly_rows = execute_query(monthly_query)
+        if monthly_rows:
+            monthly_raw = pd.DataFrame(monthly_rows)
+            monthly_raw.columns = monthly_raw.columns.str.strip()
+            
+            # Normalize columns
+            monthly_raw = monthly_raw.rename(columns={
+                "ci_rank": "CI Rank",
+                "api": "API",
+                "sulfur_pct": "Sulfur"
+            })
+            
+            # Clean numeric fields
+            monthly_raw["Year of Date"] = pd.to_numeric(monthly_raw.get("Year of Date"), errors="coerce")
+            monthly_raw["Value"] = pd.to_numeric(monthly_raw.get("Value"), errors="coerce")
+            
+            # Drop invalid rows
+            monthly_raw = monthly_raw.dropna(subset=["Crude", "Year of Date", "Month of Date", "Value"])
         
-        if not monthly_raw.empty and {"Crude", "Year of Date", "Month of Date", "Measure Values"}.issubset(monthly_raw.columns):
-            metadata_cols = ["Crude", "CI Rank", "API", "Sulfur", "BSP link", "profile_url"]
-            available_metadata = [col for col in metadata_cols if col in monthly_raw.columns]
-            
-            if available_metadata:
-                monthly_df = monthly_raw[available_metadata].drop_duplicates(subset=["Crude"]).copy()
+            if not monthly_raw.empty:
+                # Aggregate by Crude/Year/Month (sum values) to ensure one value per cell
+                monthly_agg = (
+                    monthly_raw
+                    .groupby(["Crude", "Year of Date", "Month of Date"], as_index=False)["Value"]
+                    .sum()
+                )
+                
+                metadata_cols = ["Crude", "CI Rank", "API", "Sulfur", "profile_url"]
+                available_metadata = [col for col in metadata_cols if col in monthly_raw.columns]
+                
+                if available_metadata:
+                    monthly_df = monthly_raw[available_metadata].drop_duplicates(subset=["Crude"]).copy()
+                else:
+                    monthly_df = pd.DataFrame({"Crude": monthly_raw["Crude"].dropna().unique()})
+                
+                monthly_df = monthly_df.sort_values("Crude")
+                monthly_df.set_index("Crude", inplace=True)
+                
+                months_order = ['January', 'February', 'March', 'April', 'May', 'June',
+                               'July', 'August', 'September', 'October', 'November', 'December']
+                
+                years = sorted(monthly_agg["Year of Date"].dropna().unique(), reverse=True)
+                
+                year_to_month_cols = {}
+                new_columns = {}
+                
+                for year in years:
+                    year_str = str(int(year))
+                    year_to_month_cols[year_str] = []
+                    for month in months_order:
+                        mask = (
+                                (monthly_agg["Year of Date"] == year) &
+                                (monthly_agg["Month of Date"] == month)
+                        )
+                        if not mask.any():
+                            continue
+                        
+                        month_values = (
+                                monthly_agg.loc[mask, ["Crude", "Value"]]
+                            .drop_duplicates(subset=["Crude"])
+                                .set_index("Crude")["Value"]
+                        )
+                        if month_values.empty:
+                            continue
+                        
+                        col_name = f"{year_str}_{month}"
+                        new_columns[col_name] = monthly_df.index.map(month_values)
+                        year_to_month_cols[year_str].append({"month": month, "column": col_name})
+                
+                if new_columns:
+                    new_cols_df = pd.DataFrame(new_columns, index=monthly_df.index)
+                    monthly_df = pd.concat([monthly_df, new_cols_df], axis=1)
+                
+                monthly_df.reset_index(inplace=True)
             else:
-                monthly_df = pd.DataFrame({"Crude": monthly_raw["Crude"].dropna().unique()})
-            
-            monthly_df = monthly_df.sort_values("Crude")
-            monthly_df.set_index("Crude", inplace=True)
-            
-            months_order = ['January', 'February', 'March', 'April', 'May', 'June',
-                           'July', 'August', 'September', 'October', 'November', 'December']
-            
-            monthly_raw["Year of Date"] = monthly_raw["Year of Date"].astype(int)
-            years = sorted(monthly_raw["Year of Date"].dropna().unique(), reverse=True)
-            
-            # Collect all new columns in a dictionary to avoid DataFrame fragmentation
-            new_columns = {}
-            
-            for year in years:
-                year_str = str(year)
-                year_to_month_cols[year_str] = []
-                for month in months_order:
-                    mask = (
-                        (monthly_raw["Year of Date"] == year) &
-                        (monthly_raw["Month of Date"] == month)
-                    )
-                    if not mask.any():
-                        continue
-                    
-                    month_values = (
-                        monthly_raw.loc[mask, ["Crude", "Measure Values"]]
-                        .drop_duplicates(subset=["Crude"])
-                        .set_index("Crude")["Measure Values"]
-                    )
-                    if month_values.empty:
-                        continue
-                    
-                    col_name = f"{year_str}_{month}"
-                    # Map values and store in dictionary instead of assigning directly
-                    new_columns[col_name] = monthly_df.index.map(month_values)
-                    year_to_month_cols[year_str].append({"month": month, "column": col_name})
-            
-            # Concatenate all new columns at once to avoid fragmentation
-            if new_columns:
-                new_cols_df = pd.DataFrame(new_columns, index=monthly_df.index)
-                monthly_df = pd.concat([monthly_df, new_cols_df], axis=1)
-            
-            monthly_df.reset_index(inplace=True)
-            
+                monthly_df = pd.DataFrame()
+                year_to_month_cols = {}
+        else:
+            monthly_df = pd.DataFrame()
+            year_to_month_cols = {}
+
+        # Fallback: if monthly table is empty, rebuild from BAR_LONG_MONTHLY to avoid blank table
+        if (monthly_df.empty or not year_to_month_cols) and not BAR_LONG_MONTHLY.empty:
+            fallback_df, fallback_year_to_month_cols = build_monthly_table_from_bar(BAR_LONG_MONTHLY)
+            if not fallback_df.empty:
+                monthly_df = fallback_df
+                year_to_month_cols = fallback_year_to_month_cols
+                print(f"DEBUG: Using fallback monthly table from BAR_LONG_MONTHLY ({len(monthly_df)} rows, {len(year_to_month_cols)} years)")
     except Exception as e:
         print(f"Error loading table data: {e}")
         import traceback
         traceback.print_exc()
+        # Fallback on error: try to build monthly table from already loaded bar data
+        if (monthly_df is None or monthly_df.empty) and not BAR_LONG_MONTHLY.empty:
+            fallback_df, fallback_year_to_month_cols = build_monthly_table_from_bar(BAR_LONG_MONTHLY)
+            if not fallback_df.empty:
+                monthly_df = fallback_df
+                year_to_month_cols = fallback_year_to_month_cols
+                print(f"DEBUG: Table fallback from BAR_LONG_MONTHLY after error ({len(monthly_df)} rows, {len(year_to_month_cols)} years)")
     
     return yearly_df, monthly_df, year_to_month_cols
 
@@ -599,6 +1123,8 @@ TABLE_DF_MONTHLY = pd.DataFrame()
 YEAR_TO_MONTH_COLS = {}
 YEARLY_GRADES_DF = pd.DataFrame()
 MONTHLY_GRADES_DF = pd.DataFrame()
+YEARLY_GRADES_CACHE = {}
+MONTHLY_GRADES_CACHE = {}
 
 def _ensure_data_loaded():
     """Lazy load all data - only called when page is active"""
@@ -622,7 +1148,12 @@ def _ensure_data_loaded():
         YEARLY_GRADES_DF, MONTHLY_GRADES_DF = load_grades_data()
         
         # Initialize derived variables
-        COUNTRIES = sorted(BAR_DF_MONTHLY["Country"].dropna().unique().tolist()) if not BAR_DF_MONTHLY.empty and "Country" in BAR_DF_MONTHLY.columns else []
+        if not BAR_DF_YEARLY.empty and "Country" in BAR_DF_YEARLY.columns:
+            COUNTRIES = sorted(BAR_DF_YEARLY["Country"].dropna().unique().tolist())
+        elif not BAR_DF_MONTHLY.empty and "Country" in BAR_DF_MONTHLY.columns:
+            COUNTRIES = sorted(BAR_DF_MONTHLY["Country"].dropna().unique().tolist())
+        else:
+            COUNTRIES = []
         STREAMS = sorted(BAR_DF_MONTHLY["Stream"].dropna().unique().tolist()) if not BAR_DF_MONTHLY.empty and "Stream" in BAR_DF_MONTHLY.columns else []
         YEARS_YEARLY = sorted(BAR_LONG_YEARLY["year"].dropna().unique().tolist()) if not BAR_LONG_YEARLY.empty and "year" in BAR_LONG_YEARLY.columns else []
         YEARS_MONTHLY = sorted(BAR_LONG_MONTHLY["year"].dropna().unique().tolist()) if not BAR_LONG_MONTHLY.empty and "year" in BAR_LONG_MONTHLY.columns else []
@@ -633,9 +1164,8 @@ def _ensure_data_loaded():
         SULFUR_OPTIONS = _collect_filter_values("Sulfur")
         
         PRODUCTION_YEARS = sorted([int(y) for y in YEAR_TO_MONTH_COLS.keys() if y.isdigit()], reverse=True) if YEAR_TO_MONTH_COLS else []
-        PRODUCTION_YEAR_DEFAULT = [y for y in PRODUCTION_YEARS if y in (2025, 2024)]
-        if not PRODUCTION_YEAR_DEFAULT:
-            PRODUCTION_YEAR_DEFAULT = PRODUCTION_YEARS[:2] if PRODUCTION_YEARS else []
+        # Default to the two most recent years available (e.g., 2024, 2025)
+        PRODUCTION_YEAR_DEFAULT = PRODUCTION_YEARS[:2] if len(PRODUCTION_YEARS) >= 2 else PRODUCTION_YEARS[:] if PRODUCTION_YEARS else []
         
         YEARLY_STREAM_COLOR_ORDER, MONTHLY_STREAM_COLOR_ORDER = load_stream_color_order()
         STREAM_COLOR_ORDERS = {
@@ -644,6 +1174,9 @@ def _ensure_data_loaded():
         }
         STREAM_COLOR_MAPS = {mode: {name: color for name, color in order} for mode, order in STREAM_COLOR_ORDERS.items()}
         STREAM_ORDERS = {mode: [name for name, _ in order] for mode, order in STREAM_COLOR_ORDERS.items()}
+    else:
+        # Colors may not be initialized if data loaded before code change
+        _ensure_color_maps()
 
 def _collect_filter_values(column_name):
     values = set()
@@ -741,15 +1274,33 @@ TABLE_LINK_CSS = [
 
 
 def get_stream_order(tab="yearly"):
-    return STREAM_ORDERS.get(tab, STREAM_ORDERS["yearly"])
+    # Ensure colors/orders are initialized
+    _ensure_color_maps()
+    if not STREAM_ORDERS:
+        return []
+    return STREAM_ORDERS.get(tab) or STREAM_ORDERS.get("yearly", [])
 
 
 def get_stream_color_map(tab="yearly"):
-    return STREAM_COLOR_MAPS.get(tab, STREAM_COLOR_MAPS["yearly"])
+    # Ensure colors/orders are initialized
+    _ensure_color_maps()
+    if not STREAM_COLOR_MAPS:
+        # Return comprehensive monthly colors if available
+        if tab == "monthly":
+            return MONTHLY_CRUDE_COLORS.copy()
+        return {}
+    color_map = STREAM_COLOR_MAPS.get(tab) or STREAM_COLOR_MAPS.get("yearly", {})
+    # For monthly, ensure comprehensive colors are included
+    if tab == "monthly":
+        color_map = {**color_map, **MONTHLY_CRUDE_COLORS}
+    return color_map
 
 
 def get_color_sequence(tab="yearly"):
-    base = [color for _, color in STREAM_COLOR_ORDERS.get(tab, STREAM_COLOR_ORDERS["yearly"])]
+    # Ensure colors/orders are initialized
+    _ensure_color_maps()
+    base_pairs = STREAM_COLOR_ORDERS.get(tab) or STREAM_COLOR_ORDERS.get("yearly") or []
+    base = [color for _, color in base_pairs]
     return base + [c for c in FALLBACK_COLORS if c not in base]
 
 
@@ -772,6 +1323,7 @@ def order_streams_list(streams, tab="yearly"):
 
 def create_layout(server=None):
     """Create the Crude Overview layout matching Tableau dashboard"""
+    default_country_value = ["Russia"] if "Russia" in COUNTRIES else ([COUNTRIES[0]] if COUNTRIES else None)
     return html.Div([
         # Custom CSS to style markdown links in DataTable to look like normal text
         html.Div(
@@ -856,16 +1408,24 @@ def create_layout(server=None):
         ),
         html.Div([
             html.Div([
-                dcc.Graph(
-                    id="crude-map", 
-                    config={
-                        "displayModeBar": False,
-                        "scrollZoom": True,  # Allow scroll zoom
-                        "doubleClick": "reset",  # Double-click to reset zoom
-                        "modeBarButtonsToRemove": ["pan2d", "lasso2d"]  # Remove some controls
-                    }, 
-                    style={"height":"500px", "width":"100%"},
-                    figure=go.Figure()  # Initialize with empty figure
+                dcc.Loading(
+                    id="loading-map",
+                    type="dot",
+                    color="#d35400",
+                    children=[
+                        dcc.Graph(
+                            id="crude-map", 
+                            config={
+                                "displayModeBar": False,
+                                "scrollZoom": True,  # Allow scroll zoom
+                                "doubleClick": "reset",  # Double-click to reset zoom
+                                "modeBarButtonsToRemove": ["pan2d", "lasso2d"]  # Remove some controls
+                            }, 
+                            style={"height":"500px", "width":"100%"},
+                            figure=go.Figure()  # Initialize with empty figure
+                        )
+                    ],
+                    style={"height":"500px", "width":"100%"}
                 )
             ], className='col-md-10', style={'padding': '10px'}),
             html.Div([
@@ -897,23 +1457,41 @@ def create_layout(server=None):
                     ]
                 ),
                 html.Label("Country", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
-                dcc.Dropdown(
-                    id="crude-country-dropdown", 
-                    options=[{"label":c,"value":c} for c in COUNTRIES], 
-                    value=None,
-                    multi=True,
-                    placeholder="Select countries",
-                    style={"fontSize":"12px"}
+                dcc.Checklist(
+                    id="crude-country-dropdown",
+                    options=([{"label": "(All)", "value": "(All)"}] + [{"label": c, "value": c} for c in COUNTRIES]),
+                    value=["(All)"],
+                    inputStyle={"marginRight": "8px"},
+                    labelStyle={"display": "block", "marginBottom": "6px"},
+                    style={
+                        "maxHeight": "280px",
+                        "overflowY": "auto",
+                        "padding": "8px",
+                        "border": "1px solid #e0e0e0",
+                        "borderRadius": "6px",
+                        "background": "white",
+                        "fontSize": "12px"
+                    },
+                    persistence=True,
+                    persistence_type="session",
                 )
             ], className='col-md-2', style={'padding': '10px', 'paddingTop': '20px'})
         ], className='row'),
         html.Br(),
         html.Div([
             html.Div(
-                dcc.Graph(
-                    id="production-breakdown-chart", 
-                    style={"height":"520px"},
-                    figure=go.Figure()  # Initialize with empty figure
+                dcc.Loading(
+                    id="loading-chart",
+                    type="dot",
+                    color="#d35400",
+                    children=[
+                        dcc.Graph(
+                            id="production-breakdown-chart", 
+                            style={"height":"520px"},
+                            figure=go.Figure()  # Initialize with empty figure
+                        )
+                    ],
+                    style={"height":"520px"}
                 ), 
                 className='col-md-9',
                 style={'padding': '15px'}
@@ -926,14 +1504,25 @@ def create_layout(server=None):
                     style={"display": "none"},
                     children=[
                         html.Label("Year of Date", style={"fontWeight": "bold", "color": "#2c3e50", "fontSize": "13px", "marginBottom": "5px"}),
-                        dcc.Dropdown(
+                        dcc.Checklist(
                             id="production-year-dropdown",
-                            options=([{"label": str(y), "value": y} for y in PRODUCTION_YEARS]
-                                     if PRODUCTION_YEARS else [{"label": str(y), "value": y} for y in range(2000, 2026)]),
+                            options=([{"label": "(All)", "value": "(All)"}] + [{"label": str(y), "value": y} for y in PRODUCTION_YEARS]
+                                     if PRODUCTION_YEARS else [{"label": "(All)", "value": "(All)"}] + [{"label": str(y), "value": y} for y in range(2000, 2026)]),
                             value=PRODUCTION_YEAR_DEFAULT if PRODUCTION_YEAR_DEFAULT else [],
-                            multi=True,
-                            placeholder="Select years",
-                            style={"marginBottom": "15px", "fontSize": "12px"}
+                            inputStyle={"marginRight": "8px"},
+                            labelStyle={"display": "block", "marginBottom": "6px"},
+                            style={
+                                "maxHeight": "280px",
+                                "overflowY": "auto",
+                                "padding": "8px",
+                                "border": "1px solid #e0e0e0",
+                                "borderRadius": "6px",
+                                "background": "white",
+                                "fontSize": "12px",
+                                "marginBottom": "15px"
+                            },
+                            persistence=True,
+                            persistence_type="session",
                         )
                     ]
                 ),
@@ -965,28 +1554,36 @@ def create_layout(server=None):
         ),
         html.Div([
             html.Div([
-            dash_table.DataTable(
-                id="crude-table",
-                columns=[{"name":str(c),"id":str(c)} for c in TABLE_DF_YEARLY.columns.tolist()] if not TABLE_DF_YEARLY.empty else [],
-                data=TABLE_DF_YEARLY.to_dict("records") if not TABLE_DF_YEARLY.empty else [],
-                page_action='none',
-                markdown_options={"link_target": "_blank"},
-                style_table={
-                    "overflowX": "auto", 
-                    "overflowY": "auto", 
-                    "minHeight": "400px",
-                    "maxHeight": "600px",
-                    "height": "auto"
-                },
-                style_cell={"textAlign":"left","minWidth":"80px","whiteSpace":"normal"},
-                style_header={
-                    "textAlign": "center",
-                    "fontWeight": "bold"
-                },
-                style_data_conditional=TABLE_LINK_STYLE,
-                css=TABLE_LINK_CSS,
-                merge_duplicate_headers=True
-            )
+                dcc.Loading(
+                    id="loading-table",
+                    type="dot",
+                    color="#d35400",
+                    children=[
+                        dash_table.DataTable(
+                            id="crude-table",
+                            columns=[{"name":str(c),"id":str(c)} for c in TABLE_DF_YEARLY.columns.tolist()] if not TABLE_DF_YEARLY.empty else [],
+                            data=TABLE_DF_YEARLY.to_dict("records") if not TABLE_DF_YEARLY.empty else [],
+                            page_action='none',
+                            markdown_options={"link_target": "_blank"},
+                            style_table={
+                                "overflowX": "auto", 
+                                "overflowY": "auto", 
+                                "minHeight": "400px",
+                                "maxHeight": "600px",
+                                "height": "auto"
+                            },
+                            style_cell={"textAlign":"left","minWidth":"80px","whiteSpace":"normal"},
+                            style_header={
+                                "textAlign": "center",
+                                "fontWeight": "bold"
+                            },
+                            style_data_conditional=TABLE_LINK_STYLE,
+                            css=TABLE_LINK_CSS,
+                            merge_duplicate_headers=True
+                        )
+                    ],
+                    style={"minHeight": "400px"}
+                )
             ], className='col-md-9', style={'padding': '15px', 'minHeight': '400px'}),
             html.Div([
                 html.Label("Stream Name"),
@@ -1021,6 +1618,64 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for Crude Overview"""
     
     @dash_app.callback(
+        [Output("crude-country-dropdown", "options"),
+         Output("crude-country-dropdown", "value", allow_duplicate=True)],
+        Input("current-submenu", "data"),
+        # Using initial_duplicate to allow initial population alongside other callbacks on the same output
+        prevent_initial_call="initial_duplicate"
+    )
+    def populate_countries(current_submenu):
+        """Populate country dropdown options once data is loaded."""
+        if current_submenu != 'crude-overview':
+            return no_update, no_update
+        
+        _ensure_data_loaded()
+        countries = []
+        if not BAR_DF_YEARLY.empty and "Country" in BAR_DF_YEARLY.columns:
+            countries = sorted(BAR_DF_YEARLY["Country"].dropna().unique().tolist())
+        elif not BAR_DF_MONTHLY.empty and "Country" in BAR_DF_MONTHLY.columns:
+            countries = sorted(BAR_DF_MONTHLY["Country"].dropna().unique().tolist())
+        
+        options = [{"label": "(All)", "value": "(All)"}] + [{"label": c, "value": c} for c in countries]
+        default_value = ["(All)"]
+        return options, default_value
+
+    @dash_app.callback(
+        Output("crude-country-dropdown", "value", allow_duplicate=True),
+        Input("crude-country-dropdown", "value"),
+        State("crude-country-dropdown", "options"),
+        prevent_initial_call=True,
+    )
+    def sync_country_all(selected, options):
+        """Ensure '(All)' behaves as select-all for country checklist."""
+        if not options:
+            return no_update
+        all_countries = [o["value"] for o in options if o["value"] != "(All)"]
+        selected = selected or []
+        selected_set = set(selected)
+        has_all = "(All)" in selected_set
+        all_set = set(all_countries)
+        subset_set = selected_set - {"(All)"}
+
+        if has_all and not subset_set:
+            normalized = ["(All)"] + all_countries
+        elif has_all and subset_set:
+            if len(all_set) > 0 and len(subset_set) >= len(all_set) - 1:
+                normalized = sorted(subset_set)  # user is deselecting while All was active
+            else:
+                normalized = ["(All)"] + all_countries  # user added All from a partial subset
+        elif not has_all and subset_set == all_set and all_countries:
+            normalized = []  # allow explicit unselect-all after All was selected
+        elif not subset_set:
+            normalized = []
+        else:
+            normalized = sorted(subset_set)
+
+        new_sorted = normalized
+        old_sorted = sorted(selected)
+        return new_sorted if new_sorted != old_sorted else no_update
+    
+    @dash_app.callback(
         Output("crude-country-dropdown", "value", allow_duplicate=True),
         Input("crude-map", "clickData"),
         prevent_initial_call=True
@@ -1032,6 +1687,63 @@ def register_callbacks(dash_app, server):
             if clicked_country:
                 return [clicked_country]
         return no_update
+    
+    @dash_app.callback(
+        [Output("production-year-dropdown", "options"),
+         Output("production-year-dropdown", "value", allow_duplicate=True)],
+        Input("current-submenu", "data"),
+        prevent_initial_call="initial_duplicate"
+    )
+    def populate_production_years(current_submenu):
+        """Populate production year dropdown options once data is loaded."""
+        if current_submenu != 'crude-overview':
+            return no_update, no_update
+        
+        _ensure_data_loaded()
+        years = PRODUCTION_YEARS if PRODUCTION_YEARS else []
+        
+        options = [{"label": "(All)", "value": "(All)"}] + [{"label": str(y), "value": y} for y in years]
+        # Default to the two most recent years (e.g., 2024, 2025)
+        # Use integer values to match the option values
+        default_value = PRODUCTION_YEAR_DEFAULT if PRODUCTION_YEAR_DEFAULT else []
+        return options, default_value
+    
+    @dash_app.callback(
+        Output("production-year-dropdown", "value", allow_duplicate=True),
+        Input("production-year-dropdown", "value"),
+        State("production-year-dropdown", "options"),
+        prevent_initial_call=True,
+    )
+    def sync_years_all(selected, options):
+        """Ensure '(All)' behaves as select-all for year checklist."""
+        if not options:
+            return no_update
+        all_years = [o["value"] for o in options if o["value"] != "(All)"]
+        selected = selected or []
+        selected_set = set(selected)
+        has_all = "(All)" in selected_set
+        all_set = set(all_years)
+        subset_set = selected_set - {"(All)"}
+
+        if has_all and not subset_set:
+            normalized = ["(All)"] + all_years
+        elif has_all and subset_set:
+            if len(all_set) > 0 and len(subset_set) >= len(all_set) - 1:
+                # Sort years (integers) in descending order
+                normalized = sorted(subset_set, key=lambda x: x if isinstance(x, int) else int(x) if str(x).isdigit() else 0, reverse=True)
+            else:
+                normalized = ["(All)"] + all_years  # user added All from a partial subset
+        elif not has_all and subset_set == all_set and all_years:
+            normalized = []  # allow explicit unselect-all after All was selected
+        elif not subset_set:
+            normalized = []
+        else:
+            # Sort years (integers) in descending order
+            normalized = sorted(subset_set, key=lambda x: x if isinstance(x, int) else int(x) if str(x).isdigit() else 0, reverse=True)
+
+        new_sorted = normalized
+        old_sorted = sorted(selected, key=lambda x: x if isinstance(x, int) else int(x) if str(x).isdigit() else 0, reverse=True)
+        return new_sorted if new_sorted != old_sorted else no_update
     
     @dash_app.callback(
         [Output("profiled-streams", "options"),
@@ -1054,31 +1766,24 @@ def register_callbacks(dash_app, server):
         
         try:
             # Handle country - ensure it's a list
-            if not country:
-                country = [COUNTRIES[0]] if COUNTRIES else ["Russia"]
-            elif isinstance(country, str):
-                country = [country]
-            elif not isinstance(country, list):
-                country = [country] if country else [COUNTRIES[0]] if COUNTRIES else ["Russia"]
+            resolved_countries = _resolve_countries_selection(country)
+            # If no countries selected, return empty options
+            if not resolved_countries:
+                print(f"DEBUG update_profiled_streams_options: No countries selected, returning empty options")
+                return [], []
             
-            selected_country = country[0] if country else ("Russia" if not COUNTRIES else COUNTRIES[0])
+            selected_country = resolved_countries[0] if resolved_countries else None
             
-            print(f"DEBUG update_profiled_streams_options: country={country}, selected_country={selected_country}, tab={tab}")
+            print(f"DEBUG update_profiled_streams_options: country={country}, resolved_countries={resolved_countries}, tab={tab}")
             
             # Get streams from grades CSV based on tab
             available_streams = []
             stream_to_url = {}  # Map stream name to profile_url
             
             if tab == "yearly" or tab is None:
-                # Use yearly grades CSV
-                if not YEARLY_GRADES_DF.empty and "Stream" in YEARLY_GRADES_DF.columns:
-                    # Filter by country if Country column exists
-                    if "Country" in YEARLY_GRADES_DF.columns:
-                        country_df = YEARLY_GRADES_DF[YEARLY_GRADES_DF["Country"] == selected_country].copy()
-                    else:
-                        # If no Country column, use all streams
-                        country_df = YEARLY_GRADES_DF.copy()
-                    
+                # Fetch yearly grades dynamically from DB - pass all resolved countries
+                country_df = get_yearly_grades_for_country(resolved_countries)
+                if not country_df.empty and "Stream" in country_df.columns:
                     # Extract link if available (profile_url or BSP link)
                     link_col = None
                     for col in ["profile_url", "Profile URL", "Profile_URL", "profile-url", "Profile-URL", "BSP link", "BSP Link"]:
@@ -1095,20 +1800,14 @@ def register_callbacks(dash_app, server):
                     
                     country_streams = country_df["Stream"].dropna().unique().tolist()
                     available_streams = order_streams_list(country_streams, tab="yearly")
-                    print(f"DEBUG: Yearly streams for {selected_country}: {len(available_streams)} streams")
+                    print(f"DEBUG: Yearly streams for {resolved_countries}: {len(available_streams)} streams (from DB)")
             else:
-                # Use monthly grades CSV - use exact order from MONTHLY_STREAM_COLOR_ORDER
-                if not MONTHLY_GRADES_DF.empty and "Stream" in MONTHLY_GRADES_DF.columns:
-                    # Filter by country if Country column exists
-                    if "Country" in MONTHLY_GRADES_DF.columns:
-                        country_df = MONTHLY_GRADES_DF[MONTHLY_GRADES_DF["Country"] == selected_country].copy()
-                    else:
-                        # If no Country column, use all streams
-                        country_df = MONTHLY_GRADES_DF.copy()
-                    
+                # Load monthly grades dynamically for all selected countries - pass all resolved countries
+                country_df = get_monthly_grades_for_country(resolved_countries)
+                if not country_df.empty and "Stream" in country_df.columns:
                     # Extract link if available (profile_url or BSP link)
                     link_col = None
-                    for col in ["profile_url", "Profile URL", "Profile_URL", "profile-url", "Profile-URL", "BSP link", "BSP Link"]:
+                    for col in ["profile_url", "Profile URL", "Profile_URL", "profile-url", "Profile-URL", "BSP link", "BSP Link", "BSP_link"]:
                         if col in country_df.columns:
                             link_col = col
                             break
@@ -1213,9 +1912,21 @@ def register_callbacks(dash_app, server):
     
     def get_stream_color(stream, all_streams_list, tab="yearly"):
         """Get consistent color for a stream based on its position in the full streams list"""
+        all_streams_list = all_streams_list or []
+        _ensure_color_maps()
         color_map = get_stream_color_map(tab)
         if stream in color_map:
             return color_map[stream]
+        # For monthly streams, check comprehensive color mapping as fallback (case-insensitive)
+        if tab == "monthly":
+            if stream in MONTHLY_CRUDE_COLORS:
+                return MONTHLY_CRUDE_COLORS[stream]
+            # Try case-insensitive lookup
+            stream_normalized = stream.strip()
+            stream_lower = stream_normalized.lower()
+            for key, value in MONTHLY_CRUDE_COLORS.items():
+                if key.lower().strip() == stream_lower:
+                    return value
         if stream in all_streams_list:
             idx = all_streams_list.index(stream)
             return FALLBACK_COLORS[idx % len(FALLBACK_COLORS)]
@@ -1231,6 +1942,7 @@ def register_callbacks(dash_app, server):
     )
     def update_profiled_streams_with_colors(selected_streams, stream_options, chart_figure, active_tab):
         """Create combined checklist with checkbox and color badge for each stream - single list with both"""
+        _ensure_color_maps()
         if not stream_options:
             return html.Div("No streams available")
         
@@ -1238,6 +1950,9 @@ def register_callbacks(dash_app, server):
         
         # Get all available streams from options
         all_available_streams = [opt["value"] for opt in stream_options] if stream_options else []
+        print(f"DEBUG COLOR: update_profiled_streams_with_colors called with tab='{active_tab}', {len(all_available_streams)} streams")
+        if active_tab == "monthly" and len(all_available_streams) > 0:
+            print(f"DEBUG COLOR: First 10 monthly streams: {all_available_streams[:10]}")
         
         # Get colors from chart if available
         color_map = {}
@@ -1259,21 +1974,78 @@ def register_callbacks(dash_app, server):
                             elif hasattr(color, '__iter__') and not isinstance(color, str):
                                 color_map[stream_name] = str(color)
         
+        # Also populate color_map from STREAM_COLOR_MAPS and comprehensive mapping
+        tab_value = active_tab if active_tab in STREAM_COLOR_ORDERS else "yearly"
+        stream_color_map = get_stream_color_map(tab_value)
+        for stream_name, stream_color in stream_color_map.items():
+            if stream_name not in color_map:  # Don't override chart colors
+                color_map[stream_name] = stream_color
+        
+        # For monthly streams, also add comprehensive color mapping
+        # Create a normalized lookup map for case-insensitive matching
+        normalized_color_map = {}
+        if tab_value == "monthly":
+            print(f"DEBUG COLOR: Populating monthly color map, MONTHLY_CRUDE_COLORS has {len(MONTHLY_CRUDE_COLORS)} entries")
+            for stream_name, stream_color in MONTHLY_CRUDE_COLORS.items():
+                normalized_key = stream_name.lower().strip()
+                if normalized_key not in normalized_color_map:
+                    normalized_color_map[normalized_key] = (stream_name, stream_color)
+                # Also add exact match if not already in color_map
+                if stream_name not in color_map:
+                    color_map[stream_name] = stream_color
+            print(f"DEBUG COLOR: After populating, color_map has {len(color_map)} entries, normalized_color_map has {len(normalized_color_map)} entries")
+        
         # Create combined checklist items with checkbox and color badge
         checklist_items = []
         selected_set = set(selected_streams) if selected_streams else set()
         
         for opt in stream_options:
             stream = opt["value"]
+            # Normalize stream name (strip whitespace, handle None)
+            if stream:
+                stream = str(stream).strip()
+            else:
+                stream = ""
             is_checked = stream in selected_set
             profile_url = opt.get("profile_url")  # Get profile_url from options
             
-            # Get color for this stream
+            # Get color for this stream - check multiple sources
+            color = None
+            stream_normalized = stream.lower().strip() if stream else ""
+            
+            # First check exact match in color_map
             if stream in color_map:
                 color = color_map[stream]
+                if tab_value == "monthly":
+                    print(f"DEBUG COLOR: Stream '{stream}' found in color_map with color '{color}'")
+            # Then check normalized lookup for monthly streams
+            elif tab_value == "monthly" and stream_normalized in normalized_color_map:
+                _, color = normalized_color_map[stream_normalized]
+                print(f"DEBUG COLOR: Stream '{stream}' (normalized: '{stream_normalized}') found in normalized_color_map with color '{color}'")
+            # Then check comprehensive mapping directly (case-insensitive)
+            elif tab_value == "monthly":
+                found_match = False
+                for key, value in MONTHLY_CRUDE_COLORS.items():
+                    if key.lower().strip() == stream_normalized:
+                        color = value
+                        found_match = True
+                        print(f"DEBUG COLOR: Stream '{stream}' matched '{key}' in MONTHLY_CRUDE_COLORS with color '{color}'")
+                        break
+                # If still not found, use get_stream_color which also checks comprehensive mapping
+                if not found_match:
+                    print(f"DEBUG COLOR: Stream '{stream}' not found in MONTHLY_CRUDE_COLORS, trying get_stream_color")
+                    color = get_stream_color(stream, all_available_streams, tab=tab_value)
+                    print(f"DEBUG COLOR: get_stream_color returned '{color}' for '{stream}'")
             else:
-                tab_value = active_tab if active_tab in STREAM_COLOR_ORDERS else "yearly"
+                # Final fallback
                 color = get_stream_color(stream, all_available_streams, tab=tab_value)
+            
+            # Ensure we have a color (fallback to gray if still None)
+            if not color:
+                print(f"DEBUG COLOR: WARNING - No color found for stream '{stream}', using gray fallback")
+                color = "#808080"
+            elif tab_value == "monthly" and color == "#808080":
+                print(f"DEBUG COLOR: Stream '{stream}' got gray fallback color")
             
             # Convert color to hex if needed
             color_hex = color
@@ -1281,6 +2053,9 @@ def register_callbacks(dash_app, server):
                 color_hex = color
             elif isinstance(color, tuple):
                 color_hex = f"rgb({color[0]}, {color[1]}, {color[2]})"
+            
+            if tab_value == "monthly" and stream in ["Agbami", "Akpo Blend", "Alaska North Slope", "Algerian Condensate", "Al-shaheen", "Alvheim"]:
+                print(f"DEBUG COLOR: Final color_hex for '{stream}': '{color_hex}' (type: {type(color_hex)})")
             
             # Check if color is dark for text contrast
             is_dark = False
@@ -1291,7 +2066,9 @@ def register_callbacks(dash_app, server):
                     b = int(color_hex[5:7], 16)
                     brightness = (r * 299 + g * 587 + b * 114) / 1000
                     is_dark = brightness < 128
-                except:
+                except Exception as e:
+                    if tab_value == "monthly":
+                        print(f"DEBUG COLOR: Error parsing color '{color_hex}' for '{stream}': {e}")
                     pass
             
             # Create stream name element - with link if profile_url is available
@@ -1400,6 +2177,7 @@ def register_callbacks(dash_app, server):
         
         # Ensure data is loaded
         _ensure_data_loaded()
+        selected_countries = _resolve_countries_selection(selected_countries)
         
         # Set defaults if None
         if selected_year is None:
@@ -1476,7 +2254,7 @@ def register_callbacks(dash_app, server):
             fig.add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
             fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
             return fig
-
+        
         # Dynamically scale the color range to the data so the map colors
         # match the production bar scale for the selected period.
         max_val = agg["value"].max() if "value" in agg.columns and len(agg) > 0 else 0
@@ -1591,15 +2369,15 @@ def register_callbacks(dash_app, server):
                 template="plotly_white",
                 autosize=True
             )
-            fig.update_geos(
-                resolution=50,
-                showcountries=True,
-                countrycolor="lightgray",
-                coastlinecolor="lightgray",
-                landcolor="white",
-                lakecolor="white",
-                oceancolor="white"
-            )
+        fig.update_geos(
+            resolution=50,
+            showcountries=True,
+            countrycolor="lightgray",
+            coastlinecolor="lightgray",
+            landcolor="white",
+            lakecolor="white",
+            oceancolor="white"
+        )
         return fig
     
     @dash_app.callback(
@@ -1625,6 +2403,13 @@ def register_callbacks(dash_app, server):
         
         # Ensure data is loaded
         _ensure_data_loaded()
+        _ensure_color_maps()
+        
+        # Store original country selection for title formatting (before resolution)
+        original_country_selection = country
+        
+        # Resolve country selection for data filtering
+        country = _resolve_countries_selection(country)
         
         try:
             month_names = ["January", "February", "March", "April", "May", "June",
@@ -1636,8 +2421,10 @@ def register_callbacks(dash_app, server):
                 if clicked_country:
                     if not country:
                         country = [clicked_country]
+                        original_country_selection = [clicked_country]
                     elif clicked_country not in country:
                         country = [clicked_country]
+                        original_country_selection = [clicked_country]
                     print(f"DEBUG: Map clicked, country={clicked_country}, updated country={country}")
             
             if year is None:
@@ -1645,18 +2432,34 @@ def register_callbacks(dash_app, server):
             if tab is None:
                 tab = "yearly"
             
-            # Handle country - ensure it's a list
-            if not country:
-                country = [COUNTRIES[0]] if COUNTRIES else ["Russia"]
-            elif isinstance(country, str):
-                country = [country]
-            elif not isinstance(country, list):
-                country = [country] if country else [COUNTRIES[0]] if COUNTRIES else ["Russia"]
+            # Handle country - ensure it's a list and resolve "(All)" if present
+            resolved_countries = _resolve_countries_selection(original_country_selection)
+            # If no countries selected, return empty chart
+            if not resolved_countries:
+                print(f"DEBUG BREAKDOWN: No countries selected, returning empty chart")
+                fig = go.Figure()
+                fig.add_annotation(
+                    text="No countries selected. Please select at least one country.",
+                    xref="paper", yref="paper",
+                    x=0.5, y=0.5, showarrow=False,
+                    font=dict(size=14, color='#7f8c8d')
+                )
+                fig.update_layout(
+                    height=360,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    xaxis=dict(showgrid=False, showticklabels=False),
+                    yaxis=dict(showgrid=False, showticklabels=False)
+                )
+                return fig, "Production Breakdown"
+            
+            country = resolved_countries  # Use resolved list for filtering
             
             # Handle profiled streams - if empty, show all available streams (don't filter)
             # profiled will be used later to filter if it has values
             
-            title_text = f"Production Breakdown - {' & '.join(country)}"
+            # Format title based on original country selection
+            title_text = _format_production_breakdown_title(original_country_selection)
             
             if tab == "yearly":
                 # For yearly view: Show all years on X-axis, stack streams for each year
@@ -1674,33 +2477,27 @@ def register_callbacks(dash_app, server):
                     print(f"DEBUG BREAKDOWN YEARLY: After country filter, df length={len(df)}")
                     print(f"DEBUG BREAKDOWN YEARLY: Unique streams in data: {df['Stream'].unique().tolist() if len(df) > 0 else 'N/A'}")
                     
-                    # Get available streams from yearly grades CSV for the selected country
-                    if not YEARLY_GRADES_DF.empty and "Stream" in YEARLY_GRADES_DF.columns:
-                        # Filter by country if Country column exists
-                        if "Country" in YEARLY_GRADES_DF.columns:
-                            selected_country = country[0] if country else "Russia"
-                            grades_for_country = YEARLY_GRADES_DF[YEARLY_GRADES_DF["Country"] == selected_country]
-                            available_streams = grades_for_country["Stream"].dropna().unique().tolist()
-                        else:
-                            # If no Country column, use all streams (grades CSV is country-specific)
-                            available_streams = YEARLY_GRADES_DF["Stream"].dropna().unique().tolist()
-                        print(f"DEBUG BREAKDOWN YEARLY: Available streams from grades CSV: {available_streams} ({len(available_streams)} streams)")
+                    # Get available streams from yearly grades (DB) for all selected countries
+                    grades_for_country = get_yearly_grades_for_country(country)
+                    if not grades_for_country.empty and "Stream" in grades_for_country.columns:
+                        available_streams = order_streams_list(grades_for_country["Stream"].dropna().unique().tolist(), tab="yearly")
+                        print(f"DEBUG BREAKDOWN YEARLY: Available streams from yearly DB: {available_streams} ({len(available_streams)} streams)")
                         
-                        # Filter data to only show streams from grades CSV
+                        # Filter data to only show streams from DB result
                         if available_streams:
                             streams_in_data = df["Stream"].unique().tolist()
                             matching_streams = [s for s in available_streams if s in streams_in_data]
-                            print(f"DEBUG BREAKDOWN YEARLY: Matching streams between grades CSV and data: {matching_streams}")
+                            print(f"DEBUG BREAKDOWN YEARLY: Matching streams between yearly DB and data: {matching_streams}")
                             if matching_streams:
                                 df = df[df["Stream"].isin(matching_streams)].copy()
-                                print(f"DEBUG BREAKDOWN YEARLY: After grades CSV filter, df length={len(df)}")
+                                print(f"DEBUG BREAKDOWN YEARLY: After yearly DB filter, df length={len(df)}")
                             else:
-                                print(f"DEBUG BREAKDOWN YEARLY: WARNING - No matching streams found! Grades CSV streams: {available_streams}, Data streams: {streams_in_data}")
+                                print(f"DEBUG BREAKDOWN YEARLY: WARNING - No matching streams found! Yearly DB streams: {available_streams}, Data streams: {streams_in_data}")
                                 # Don't filter - show all streams from data
                         else:
-                            print(f"DEBUG BREAKDOWN YEARLY: No streams in grades CSV, showing all streams from data")
+                            print(f"DEBUG BREAKDOWN YEARLY: No streams from yearly DB, showing all streams from data")
                     else:
-                        print(f"DEBUG BREAKDOWN YEARLY: YEARLY_GRADES_DF is empty or missing Stream column")
+                        print(f"DEBUG BREAKDOWN YEARLY: Yearly DB result is empty or missing Stream column")
                         # Use all streams from data
                         available_streams = order_streams_list(df["Stream"].dropna().unique().tolist(), tab="yearly") if len(df) > 0 else []
                 else:
@@ -2059,462 +2856,127 @@ def register_callbacks(dash_app, server):
                 print(f"DEBUG BREAKDOWN YEARLY: Chart layout updated, returning figure")
                 return fig, title_text
             else:
-                # Monthly view implementation - Show months on X-axis, filter by multiple years from Year of Date filter
+                # Monthly view: simplified and robust stacked bars
                 print(f"DEBUG BREAKDOWN MONTHLY: production_years={production_years}, country={country}")
                 
-                # Handle production_years (Year of Date filter) - use this for the chart
-                selected_years = []
-                if production_years:
-                    if isinstance(production_years, list):
-                        selected_years = [str(y) for y in production_years]
-                    elif isinstance(production_years, (int, str)):
-                        selected_years = [str(production_years)]
+                # Default country/year handling
+                if not country:
+                    country = ["Russia"] if "Russia" in COUNTRIES else COUNTRIES[:1]
+                if isinstance(country, str):
+                    country = [country]
+                
+                # Resolve year selection - expand "(All)" to all available years
+                resolved_years = _resolve_years_selection(production_years)
+                if resolved_years:
+                    selected_years = [str(y) for y in resolved_years]
                 else:
-                    # Default to 2024 and 2025
-                    selected_years = ["2024", "2025"]
-                
-                print(f"DEBUG BREAKDOWN MONTHLY: Country={country}, Selected Years={selected_years}, Tab={tab}")
-                print(f"DEBUG BREAKDOWN MONTHLY: BAR_LONG_MONTHLY empty={BAR_LONG_MONTHLY.empty}")
-                
-                available_streams = []
-                
-                if selected_years and not BAR_LONG_MONTHLY.empty and "year" in BAR_LONG_MONTHLY.columns:
-                    print(f"DEBUG BREAKDOWN MONTHLY: Filtering by years={selected_years}, country={country}")
-                    print(f"DEBUG BREAKDOWN MONTHLY: BAR_LONG_MONTHLY columns={BAR_LONG_MONTHLY.columns.tolist()}")
-                    print(f"DEBUG BREAKDOWN MONTHLY: BAR_LONG_MONTHLY length={len(BAR_LONG_MONTHLY)}")
-                    
-                    # Filter by country and multiple years (show all months for selected years)
-                    country_mask = BAR_LONG_MONTHLY["Country"].isin(country)
-                    year_series = BAR_LONG_MONTHLY["year"].astype(str)
-                    year_mask = year_series.isin(selected_years)
-                    df = BAR_LONG_MONTHLY[country_mask & year_mask].copy()
-                    df["year"] = df["year"].astype(str)
-                    print(f"DEBUG BREAKDOWN MONTHLY: After country/years filter, df length={len(df)}")
-                    
-                    # Get available streams from monthly grades CSV for color mapping only
-                    # DO NOT filter the data - show ALL streams from the data
-                    available_streams = []
-                    if not MONTHLY_GRADES_DF.empty and "Stream" in MONTHLY_GRADES_DF.columns:
-                        available_streams = order_streams_list(MONTHLY_GRADES_DF["Stream"].dropna().unique().tolist(), tab="monthly")
-                        print(f"DEBUG BREAKDOWN MONTHLY: Available streams from grades (for color mapping only): {len(available_streams)}")
-                    # DO NOT filter df by available_streams - show all streams in the data
-                    all_streams_in_df = sorted(df["Stream"].unique().tolist())
-                    print(f"DEBUG BREAKDOWN MONTHLY: All streams in data (NOT filtered by grades CSV): {all_streams_in_df} ({len(all_streams_in_df)} streams)")
-                else:
-                    print(f"DEBUG BREAKDOWN MONTHLY: BAR_LONG_MONTHLY is empty or missing columns")
-                    df = pd.DataFrame(columns=["Stream", "Country", "year", "value", "month_idx"])
-                
-                if len(df) == 0:
-                    print("DEBUG BREAKDOWN MONTHLY: No data after filtering, returning empty chart")
-                    # Create empty chart with all months on X-axis
-                    month_names = ["January", "February", "March", "April", "May", "June",
-                                  "July", "August", "September", "October", "November", "December"]
-                    empty_df = pd.DataFrame({"month": month_names, "value": [0]*12})
-                    fig = px.bar(empty_df, x="month", y="value", labels={"value":"Avg. Value", "month":"Month"})
-                    fig.update_layout(
-                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
-                        xaxis_title="Month",
-                        yaxis_title="Avg. Value",
-                        barmode="stack",
-                        plot_bgcolor="white",
-                        paper_bgcolor="white",
-                        xaxis=dict(
-                            type="category",
-                            categoryorder="array",
-                            categoryarray=month_names
-                        )
-                    )
-                    return fig, title_text
-                
-                # Month names / mappings for ordering
-                month_names = ["January", "February", "March", "April", "May", "June",
-                              "July", "August", "September", "October", "November", "December"]
-                month_to_idx = {name: idx+1 for idx, name in enumerate(month_names)}
-                idx_to_month = {idx+1: name for idx, name in enumerate(month_names)}
-                
-                if len(df) > 0:
-                    if "month_idx" not in df.columns:
-                        df["month_idx"] = df["month"].map(month_to_idx)
-                    df["month_idx"] = pd.to_numeric(df["month_idx"], errors="coerce")
-                    df["month"] = df["month_idx"].map(idx_to_month)
-                    
-                    # Apply profiled streams filter if provided
-                    all_streams_before_profiled = sorted(df["Stream"].unique().tolist())
-                    print(f"DEBUG BREAKDOWN MONTHLY: All streams before profiled filter: {all_streams_before_profiled} ({len(all_streams_before_profiled)} streams)")
-                    print(f"DEBUG BREAKDOWN MONTHLY: Profiled filter value: {profiled}")
-                    
-                    if profiled and len(profiled) > 0:
-                        profiled_list = [str(s).strip() for s in profiled] if isinstance(profiled, (list, tuple)) else [str(profiled).strip()]
-                        df_streams_list = [str(s).strip() for s in df["Stream"].values]
-                        profiled_in_data = [s for s in profiled_list if s in df_streams_list]
-                        missing_profiled = [s for s in profiled_list if s not in df_streams_list]
-                        print(f"DEBUG BREAKDOWN MONTHLY: Profiled streams in data: {profiled_in_data} ({len(profiled_in_data)} streams)")
-                        if missing_profiled:
-                            print(f"DEBUG BREAKDOWN MONTHLY: WARNING - Profiled streams NOT in data: {missing_profiled}")
-                        if profiled_in_data:
-                            df = df[df["Stream"].isin(profiled_in_data)].copy()
-                            print(f"DEBUG BREAKDOWN MONTHLY: After profiled filter ({len(profiled_in_data)} streams), df length={len(df)}")
-                            print(f"DEBUG BREAKDOWN MONTHLY: Streams after profiled filter: {sorted(df['Stream'].unique().tolist())}")
-                        else:
-                            print(f"DEBUG BREAKDOWN MONTHLY: No profiled streams found in data, showing all streams")
+                    # default to latest two years if available, else 2024/2025
+                    if not BAR_LONG_MONTHLY.empty and "year" in BAR_LONG_MONTHLY.columns:
+                        latest_years = sorted(BAR_LONG_MONTHLY["year"].astype(int).unique(), reverse=True)[:2]
+                        selected_years = [str(y) for y in latest_years] if latest_years else ["2024", "2025"]
                     else:
-                        print(f"DEBUG BREAKDOWN MONTHLY: No profiled filter or empty, showing all {len(all_streams_before_profiled)} streams")
-                    
-                    agg = df.groupby(["year", "month_idx", "Stream"])["value"].sum().reset_index()
-                    agg["month"] = agg["month_idx"].map(idx_to_month)
-                    print(f"DEBUG BREAKDOWN MONTHLY: After grouping by year/month/stream, agg length={len(agg)}")
-                else:
-                    agg = pd.DataFrame(columns=["year", "month_idx", "Stream", "value", "month"])
-                    print(f"DEBUG BREAKDOWN MONTHLY: No data after filtering")
+                        selected_years = ["2024", "2025"]
                 
-                if len(agg) == 0:
-                    print("DEBUG BREAKDOWN MONTHLY: No data after profiled filter, returning empty chart")
-                    empty_df = pd.DataFrame({
-                        "year": selected_years,
-                        "month": month_names * max(1, len(selected_years)),
-                        "value": [0] * (len(selected_years) * len(month_names))
-                    })
-                    fig = px.bar(empty_df, x="month", y="value", facet_col="year")
-                    fig.update_layout(
-                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
-                        plot_bgcolor="white",
-                        paper_bgcolor="white"
-                    )
-                    return fig, title_text
+                print(f"DEBUG BREAKDOWN MONTHLY: Selected years={selected_years}, countries={country}")
                 
-                selected_years_sorted = sorted(set(selected_years), key=lambda y: int(y))
-                if not selected_years_sorted:
-                    selected_years_sorted = sorted(agg["year"].unique(), key=lambda y: int(y))
-                
-                # Determine which months actually have data for each selected year
-                months_by_year = {}
-                year_has_data = {}
-                for year in selected_years_sorted:
-                    year_data = agg[agg["year"] == year]
-                    if len(year_data) == 0:
-                        months_by_year[str(year)] = []
-                        year_has_data[str(year)] = False
-                        continue
-                    
-                    monthly_totals = year_data.groupby("month_idx")["value"].sum().reset_index()
-                    months_with_data = monthly_totals[monthly_totals["value"] > 0]["month_idx"].tolist()
-                    months_with_data_names = [idx_to_month[idx] for idx in sorted(months_with_data)]
-                    months_by_year[str(year)] = months_with_data_names
-                    year_has_data[str(year)] = len(months_with_data_names) > 0
-                
-                print(f"DEBUG BREAKDOWN MONTHLY: Months by year: {months_by_year}")
-                
-                # Filter out years with no data
-                selected_years_sorted = [y for y in selected_years_sorted if year_has_data.get(str(y), False)]
-                if not selected_years_sorted:
-                    print("DEBUG BREAKDOWN MONTHLY: No years with data after filtering")
+                if BAR_LONG_MONTHLY.empty or "year" not in BAR_LONG_MONTHLY.columns:
                     fig = go.Figure()
-                    fig.add_annotation(
-                        text="No monthly data available for selected filters and time period",
-                        xref="paper", yref="paper",
-                        x=0.5, y=0.5, showarrow=False,
-                        font=dict(size=14, color='#7f8c8d')
-                    )
-                    fig.update_layout(
-                        height=400,
-                        plot_bgcolor='white',
-                        paper_bgcolor='white',
-                        xaxis=dict(showgrid=False, showticklabels=False),
-                        yaxis=dict(showgrid=False, showticklabels=False)
-                    )
+                    fig.add_annotation(text="No monthly data available.", xref="paper", yref="paper",
+                                       x=0.5, y=0.5, showarrow=False,
+                                       font=dict(size=14, color='#7f8c8d'))
+                    fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
                     return fig, title_text
                 
-                # Filter agg to only include years and months that have data
-                # This removes blank months from the data before chart creation
-                filtered_agg = []
-                for year in selected_years_sorted:
-                    year_months = months_by_year.get(str(year), [])
-                    month_indices = [month_to_idx[m] for m in year_months]
-                    year_data = agg[(agg["year"] == year) & (agg["month_idx"].isin(month_indices))]
-                    filtered_agg.append(year_data)
-                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year}: filtered to {len(year_data)} rows (only months with data: {year_months})")
+                df = BAR_LONG_MONTHLY.copy()
+                df["year"] = df["year"].astype(str)
+                df = df[df["year"].isin(selected_years)]
+                df = df[df["Country"].isin(country)]
+                print(f"DEBUG BREAKDOWN MONTHLY: After country/year filter len={len(df)}")
                 
-                if filtered_agg:
-                    agg = pd.concat(filtered_agg, ignore_index=True)
+                if df.empty:
+                    # fallback to all countries for selected years
+                    df = BAR_LONG_MONTHLY.copy()
+                    df["year"] = df["year"].astype(str)
+                    df = df[df["year"].isin(selected_years)]
+                    print(f"DEBUG BREAKDOWN MONTHLY: Fallback all countries len={len(df)}")
+                
+                if df.empty:
+                    fig = go.Figure()
+                    fig.add_annotation(text="No monthly data available for selected filters.",
+                                       xref="paper", yref="paper",
+                                       x=0.5, y=0.5, showarrow=False,
+                                       font=dict(size=14, color='#7f8c8d'))
+                    fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
+                    return fig, title_text
+                
+                month_names = ["January", "February", "March", "April", "May", "June",
+                               "July", "August", "September", "October", "November", "December"]
+                month_map = {i+1: name for i, name in enumerate(month_names)}
+                if "month" not in df.columns:
+                    df["month"] = df["month_idx"].map(month_map)
                 else:
-                    agg = pd.DataFrame(columns=["year", "month_idx", "Stream", "value", "month"])
+                    # normalize month text to standard names if numeric
+                    df["month"] = pd.to_numeric(df["month"], errors="ignore")
+                    df["month"] = df["month"].map(month_map).fillna(df["month"])
                 
-                print(f"DEBUG BREAKDOWN MONTHLY: Final data shape after removing blank months: {agg.shape}")
-                # Verify no blank months in final data
-                for year in selected_years_sorted:
-                    year_data = agg[agg["year"] == year]
-                    months_in_data = sorted(year_data["month"].unique().tolist())
-                    expected_months = months_by_year.get(str(year), [])
-                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year} - months in final data: {months_in_data}, expected: {expected_months}")
-                    if set(months_in_data) != set(expected_months):
-                        print(f"DEBUG BREAKDOWN MONTHLY: WARNING - Year {year} has unexpected months in data!")
-                print(f"DEBUG BREAKDOWN MONTHLY: Unique streams in final agg: {sorted(agg['Stream'].unique().tolist())}")
-                
-                # Determine final stream order/colors strictly from monthly default order
-                streams_in_data = order_streams_list(agg["Stream"].dropna().unique().tolist(), tab="monthly")
-                print(f"DEBUG BREAKDOWN MONTHLY: Streams in data (ordered): {streams_in_data}")
-                
-                reference_order = get_stream_order("monthly")
-                stream_categories = [s for s in reference_order if s in streams_in_data]
-                extras = [s for s in streams_in_data if s not in stream_categories]
-                stream_categories.extend(extras)
-                if not stream_categories:
-                    stream_categories = reference_order[:]
-                print(f"DEBUG BREAKDOWN MONTHLY: Stream categories (for chart): {stream_categories}")
-                
-                base_color_map = get_stream_color_map("monthly")
-                color_map = {}
-                fallback_index = 0
-                for stream in stream_categories:
-                    if stream in base_color_map:
-                        color_map[stream] = base_color_map[stream]
-                    else:
-                        color_map[stream] = FALLBACK_COLORS[fallback_index % len(FALLBACK_COLORS)]
-                        fallback_index += 1
-                print(f"DEBUG BREAKDOWN MONTHLY: Color map keys: {list(color_map.keys())}")
-                
-                agg = agg[agg["year"].isin(selected_years_sorted)].copy()
-                agg["Stream"] = pd.Categorical(agg["Stream"], categories=stream_categories, ordered=True)
-                agg["month_order"] = agg["month_idx"]
-                agg = agg.sort_values(["year", "month_order", "Stream"])
-                
-                agg["year"] = pd.Categorical(agg["year"], categories=selected_years_sorted, ordered=True)
-                # Use month names directly (not numeric positions) - this works better with Plotly's grouping
-                # IMPORTANT: Only use months that have data - don't create categorical with all 12 months
-                agg["month"] = agg["month_idx"].map(idx_to_month)
-                agg_for_chart = agg.sort_values(["year", "month_order", "Stream"]).copy()
-                
-                # Convert to string (NOT categorical) to avoid Plotly showing all possible months
-                # This ensures only months with actual data are in the chart
-                agg_for_chart["Stream"] = agg_for_chart["Stream"].astype(str)
-                agg_for_chart["month"] = agg_for_chart["month"].astype(str)
-                country_display = ", ".join(country)
-                agg_for_chart["country_display"] = country_display
-                agg_for_chart["year_label"] = agg_for_chart["year"].astype(str)
-                
-                # Verify only months with data are present
-                for year in selected_years_sorted:
-                    year_data = agg_for_chart[agg_for_chart["year"] == year]
-                    months_in_chart = sorted(year_data["month"].unique().tolist())
-                    expected_months = months_by_year.get(str(year), [])
-                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year} - months in chart data: {months_in_chart}, expected: {expected_months}")
-                    if set(months_in_chart) != set(expected_months):
-                        print(f"DEBUG BREAKDOWN MONTHLY: ERROR - Year {year} has unexpected months! Filtering out blank months...")
-                        # Remove any months not in expected_months
-                        agg_for_chart = agg_for_chart[
-                            ~((agg_for_chart["year"] == year) & (~agg_for_chart["month"].isin(expected_months)))
-                        ].copy()
-                
-                print(f"DEBUG BREAKDOWN MONTHLY: Chart data shape: {agg_for_chart.shape}")
-                print(f"DEBUG BREAKDOWN MONTHLY: Unique streams in agg_for_chart: {sorted(agg_for_chart['Stream'].unique().tolist())}")
-                print(f"DEBUG BREAKDOWN MONTHLY: Stream categories: {stream_categories}")
-                
-                years_in_chart = agg_for_chart["year"].astype(str).unique().tolist()
-                selected_years_sorted = [y for y in selected_years_sorted if y in years_in_chart]
-                print(f"DEBUG BREAKDOWN MONTHLY: Years in chart: {selected_years_sorted}")
-                
-                print(f"DEBUG BREAKDOWN MONTHLY: Streams in final data: {sorted(agg_for_chart['Stream'].unique().tolist())}")
-                print(f"DEBUG BREAKDOWN MONTHLY: Number of unique streams: {len(agg_for_chart['Stream'].unique())}")
-                
-                # Final verification: ensure no blank months in data
-                all_months_in_data = set()
-                for year in selected_years_sorted:
-                    year_data = agg_for_chart[agg_for_chart["year"] == year]
-                    year_months = set(year_data["month"].unique())
-                    all_months_in_data.update(year_months)
-                    expected = set(months_by_year.get(str(year), []))
-                    if year_months != expected:
-                        print(f"DEBUG BREAKDOWN MONTHLY: CRITICAL - Year {year} data contains months not in expected list!")
-                        print(f"  Data has: {sorted(year_months)}, Expected: {sorted(expected)}")
-                        print(f"  Removing unexpected months...")
-                        # Keep only expected months for this year
-                        mask = (agg_for_chart["year"] != year) | (agg_for_chart["month"].isin(expected))
-                        agg_for_chart = agg_for_chart[mask].copy()
-                
-                print(f"DEBUG BREAKDOWN MONTHLY: Final verification - all months in data: {sorted(all_months_in_data)}")
-                
-                cols = min(4, len(selected_years_sorted)) if selected_years_sorted else 1
-                rows = math.ceil(len(selected_years_sorted) / cols) if selected_years_sorted else 1
-                horizontal_spacing = 0.02 if cols == 1 else 0.03
-                vertical_spacing = 0.06 if rows == 1 else 0.08
-                subplot_titles = [str(y) for y in selected_years_sorted] if selected_years_sorted else []
-                
-                fig = make_subplots(
-                    rows=rows,
-                    cols=cols,
-                    subplot_titles=subplot_titles,
-                    shared_yaxes=True,
-                    horizontal_spacing=horizontal_spacing,
-                    vertical_spacing=vertical_spacing
+                # Aggregate
+                agg = (
+                    df.groupby(["year", "month", "Stream"], as_index=False)["value"]
+                    .sum()
                 )
+                print(f"DEBUG BREAKDOWN MONTHLY: Aggregated rows={len(agg)}, years={agg['year'].unique().tolist() if not agg.empty else []}")
                 
-                print(f"DEBUG BREAKDOWN MONTHLY: Creating custom subplots with rows={rows}, cols={cols}")
+                # Apply profiled streams filter if provided
+                if profiled:
+                    profiled_list = [str(s).strip() for s in profiled] if isinstance(profiled, (list, tuple)) else [str(profiled)]
+                    agg = agg[agg["Stream"].isin(profiled_list)]
+                    print(f"DEBUG BREAKDOWN MONTHLY: After profiled filter rows={len(agg)}")
                 
-                year_month_counts = {}
-                stack_order = list(reversed(stream_categories))
+                # If no rows or all values are zero, show a friendly message
+                if agg.empty or (agg["value"].fillna(0).sum() <= 0):
+                    print(f"DEBUG BREAKDOWN MONTHLY: No usable data (rows={len(agg)}, total={agg['value'].fillna(0).sum() if not agg.empty else 0})")
+                    fig = go.Figure()
+                    fig.add_annotation(text="No monthly data available for selected filters.",
+                                       xref="paper", yref="paper",
+                                       x=0.5, y=0.5, showarrow=False,
+                                       font=dict(size=14, color='#7f8c8d'))
+                    fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
+                    return fig, title_text
                 
-                # Build stacked bars manually to gain precise control over axes
-                for idx, year in enumerate(selected_years_sorted):
-                    row = (idx // cols) + 1
-                    col = (idx % cols) + 1
-                    year_str = str(year)
-                    year_data = agg_for_chart[agg_for_chart["year"] == year]
-                    if len(year_data) == 0:
-                        print(f"DEBUG BREAKDOWN MONTHLY: Year {year_str} has no data after filtering, skipping subplot")
-                        continue
-                    
-                    month_info = (
-                        year_data[["month", "month_order"]]
-                        .drop_duplicates()
-                        .sort_values("month_order", ascending=True)
-                    )
-                    month_info["month_position"] = range(len(month_info))
-                    month_count = len(month_info)
-                    year_month_counts[str(year)] = max(1, month_count)
-                    month_pos_map = dict(zip(month_info["month"], month_info["month_position"]))
-                    year_data = year_data.copy()
-                    year_data["month_position"] = year_data["month"].map(month_pos_map)
-                    
-                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year_str} month positions: {month_pos_map}")
-                    
-                    for stream in stack_order:
-                        stream_data = year_data[year_data["Stream"] == stream]
-                        if len(stream_data) == 0:
-                            continue
-                        
-                        customdata = list(zip(
-                            stream_data["month"],
-                            stream_data["country_display"],
-                            stream_data["year_label"]
-                        ))
-                        
-                        fig.add_trace(
-                            go.Bar(
-                                x=stream_data["month_position"],
-                                y=stream_data["value"],
-                                name=stream,
-                                marker=dict(
-                                    color=color_map.get(stream),
-                                    line=dict(width=1, color="white")
-                                ),
-                                legendgroup=stream,
-                                showlegend=False,
-                                customdata=customdata,
-                                hovertemplate=(
-                                    "Month of Date: %{customdata[0]}<br>"
-                                    "Country: %{customdata[1]}<br>"
-                                    "Stream Name: %{fullData.name}<br>"
-                                    "Year of Date: %{customdata[2]}<br>"
-                                    "Production Volume: %{y:,.0f} (\\'000 b/d)"
-                                    "<extra></extra>"
-                                ),
-                                width=0.95
-                            ),
-                            row=row,
-                            col=col
-                        )
-                    
-                    tickvals = month_info["month_position"].tolist()
-                    ticktext = month_info["month"].tolist()
-                    axis_range = [-0.5, tickvals[-1] + 0.5] if tickvals else [-0.5, 0.5]
-                    
-                    fig.update_xaxes(
-                        row=row,
-                        col=col,
-                        type="linear",
-                        tickmode="array",
-                        tickvals=tickvals,
-                        ticktext=ticktext,
-                        range=axis_range,
-                        showgrid=True,
-                        gridcolor="#e0e0e0",
-                        tickfont=dict(size=9, color="#2c3e50"),
-                        tickangle=-45,
-                        showline=True,
-                        linewidth=1,
-                        linecolor="#c0c0c0",
-                        title=""
-                    )
+                # Stream color map
+                color_map = get_stream_color_map("monthly")
                 
-                fig.update_yaxes(
-                    showgrid=True,
-                    gridcolor="#e0e0e0",
-                    tickformat='s',
-                    showline=True,
-                    linewidth=1,
-                    linecolor="#c0c0c0"
+                fig = px.bar(
+                    agg,
+                    x="month",
+                    y="value",
+                    color="Stream",
+                    facet_col="year",
+                    category_orders={"month": month_names},
+                    color_discrete_map=color_map if color_map else None,
+                    labels={"value": "Production Volume ('000 b/d)", "month": "Month", "Stream": "Stream"}
                 )
-                
-                if "yaxis" in fig.layout:
-                    fig.layout["yaxis"].update(title="Avg. Value", tickformat='s')
-                for axis_name in fig.layout:
-                    if axis_name.startswith("yaxis") and axis_name != "yaxis":
-                        fig.layout[axis_name].update(title="")
-                
-                # Adjust subplot domains to keep bar width consistent across years
-                if selected_years_sorted:
-                    total_weight = sum(year_month_counts.get(str(year), 1) for year in selected_years_sorted)
-                    total_weight = total_weight if total_weight > 0 else len(selected_years_sorted)
-                    n_years = len(selected_years_sorted)
-                    gap = 0.02
-                    usable_width = 1.0 - gap * (n_years - 1)
-                    usable_width = max(0.2, usable_width)
-                    current_start = 0.0
-                    axis_centers = {}
-                    
-                    for idx, year in enumerate(selected_years_sorted):
-                        year_str = str(year)
-                        weight = year_month_counts.get(year_str, 1)
-                        width = usable_width * (weight / total_weight) if total_weight > 0 else usable_width / n_years
-                        domain_start = current_start
-                        domain_end = domain_start + width
-                        axis_key = "xaxis" if idx == 0 else f"xaxis{idx+1}"
-                        yaxis_key = "yaxis" if idx == 0 else f"yaxis{idx+1}"
-                        
-                        if axis_key in fig.layout:
-                            fig.layout[axis_key].domain = [domain_start, domain_end]
-                            axis_centers[year_str] = (domain_start + domain_end) / 2
-                            print(f"DEBUG BREAKDOWN MONTHLY: Set {axis_key}.domain to {[domain_start, domain_end]} for year {year_str} (weight={weight})")
-                        if yaxis_key in fig.layout:
-                            fig.layout[yaxis_key].domain = [0.0, 1.0]
-                        
-                        current_start = domain_end + (gap if idx < n_years - 1 else 0)
-                    
-                    # Reposition subplot titles to match new domains
-                    if hasattr(fig.layout, "annotations"):
-                        for ann in fig.layout.annotations:
-                            if ann.text:
-                                ann_year = ann.text.strip()
-                                if ann_year in axis_centers:
-                                    ann.update(x=axis_centers[ann_year])
-                                    print(f"DEBUG BREAKDOWN MONTHLY: Repositioned annotation for {ann_year} to {axis_centers[ann_year]}")
-                
                 fig.update_layout(
                     title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                     showlegend=False,
                     plot_bgcolor="white",
                     paper_bgcolor="white",
-                    margin=dict(l=60, r=10, t=80, b=120),
-                    hovermode='closest',
-                    height=520 * rows,
-                    barmode='stack',
                     bargap=0.02,
                     bargroupgap=0.0,
-                    shapes=[dict(
-                        type="rect",
-                        xref="paper",
-                        yref="paper",
-                        x0=0,
-                        y0=0,
-                        x1=1,
-                        y1=1,
-                        line=dict(color="#bfbfbf", width=1),
-                        fillcolor="rgba(0,0,0,0)"
-                    )]
+                    barmode="stack",
+                    hovermode="closest",
+                    margin=dict(l=60, r=10, t=80, b=120),
+                    height=520
                 )
-                fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1], font=dict(size=11, color="#2c3e50")))
                 
-                print(f"DEBUG BREAKDOWN MONTHLY: Faceted chart layout updated, returning figure")
+                if not fig.data:
+                    fig = go.Figure()
+                    fig.add_annotation(text="No monthly data available for selected filters.",
+                                       xref="paper", yref="paper",
+                                       x=0.5, y=0.5, showarrow=False,
+                                       font=dict(size=14, color='#7f8c8d'))
+                    fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
+                
                 return fig, title_text
         except Exception as e:
             print(f"Error in update_breakdown: {e}")
@@ -2522,8 +2984,9 @@ def register_callbacks(dash_app, server):
             traceback.print_exc()
             # Return empty figure on error
             fig = go.Figure()
+            err_text = f"Error loading chart data: {e}"
             fig.add_annotation(
-                text="Error loading chart data. Please check filters.",
+                text=err_text,
                 xref="paper", yref="paper",
                 x=0.5, y=0.5, showarrow=False,
                 font=dict(size=14, color='#7f8c8d')
@@ -2571,6 +3034,7 @@ def register_callbacks(dash_app, server):
         
         # Ensure data is loaded
         _ensure_data_loaded()
+        country = _resolve_countries_selection(country)
         
         # Set defaults if None
         if tab is None:

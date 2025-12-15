@@ -8,12 +8,6 @@ import re
 from core.data_helpers import execute_query
 
 def create_link_text(comment, link_url, default_label="Article"):
-    """
-    Create markdown link text.
-    - If link is present, use comment as label when available, otherwise a default label.
-    - If only comment is present, return the comment text.
-    - Otherwise return a fallback string.
-    """
     link_str = str(link_url).strip() if pd.notna(link_url) else ""
     comment_str = str(comment).strip() if pd.notna(comment) else ""
     
@@ -50,7 +44,7 @@ def load_latest_updates_data():
     query = """
         WITH latest_update AS (
             SELECT MAX(date_modified) AS max_date
-            FROM dev.fact_upstream_project_tracker
+            FROM fact_upstream_project_tracker
         ),
         week_start AS (
             SELECT date_trunc('week', max_date)::date AS wk_start
@@ -66,14 +60,14 @@ def load_latest_updates_data():
             a.external_comment_ei_link AS article_link,
             a.external_comments AS comments,
             a.date_modified
-        FROM dev.fact_upstream_project_tracker a
-        LEFT JOIN dev.dim_country c 
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN dim_country c 
             ON a.country_id = c.dim_country_id
         LEFT JOIN (
             SELECT 
                 project_id,
                 MIN(EXTRACT(YEAR FROM period)) AS year
-            FROM dev.fact_upstream_tracker_prod_estimates_incremental
+            FROM fact_upstream_tracker_prod_estimates_incremental
             WHERE value IS NOT NULL
             GROUP BY project_id
         ) yr ON yr.project_id = a.project_id
@@ -86,7 +80,6 @@ def load_latest_updates_data():
     try:
         results = execute_query(query)
     except Exception as e:
-        print(f"❌ Error loading latest updates from DB: {e}")
         return pd.DataFrame()
     
     df = pd.DataFrame(results) if results else pd.DataFrame()
@@ -155,8 +148,8 @@ def load_all_projects_data():
         c.country_long_name AS country,
         a.external_comment_ei_link AS article_link,
         a.external_comments AS comments
-    FROM dev.fact_upstream_project_tracker a
-    LEFT JOIN dev.dim_country c 
+    FROM fact_upstream_project_tracker a
+    LEFT JOIN dim_country c 
         ON a.country_id = c.dim_country_id
     WHERE a.include = TRUE
     AND a.external_comment_ei_link IS NOT NULL
@@ -268,6 +261,7 @@ def create_layout():
                 html.Div(children=[
                     html.H3(
                         "List of Updated Projects- Week of December 8, 2025",
+                        id='updated-projects-title',
                         style={
                             'color': '#ff6600',
                             'margin': '0',
@@ -313,7 +307,7 @@ def create_layout():
                             {'label': 'Uncertain', 'value': 'Uncertain'},
                             {'label': 'Y', 'value': 'Y'},
                         ],
-                        value=['Y'],
+                        value=['Y'],  # Default: Y is checked
                         inline=False,
                         style={
                             'fontSize': '12px',
@@ -334,86 +328,6 @@ def create_layout():
                     dcc.Store(id='filter-go-ahead-previous', data=['Y'])
                 ])
             ]),
-            
-            # Sorting controls popup (initially hidden)
-            html.Div([
-                html.Div([
-                    html.Div("Data source order", id="popup-source-btn", 
-                            style={
-                                "padding": "6px 10px", 
-                                "fontSize": "12px",
-                                "cursor": "pointer",
-                                "fontFamily": "Times New Roman, Times, serif",
-                                "color": "#333",
-                            }),
-                    html.Div("Alphabetic", id="popup-alphabetic-btn",
-                            style={
-                                "padding": "6px 10px", 
-                                "fontSize": "12px",
-                                "cursor": "pointer",
-                                "fontFamily": "Times New Roman, Times, serif",
-                                "color": "#333",
-                            }),
-                    html.Div([
-                        html.Span("Field", style={"flex": "1"}),
-                        html.Span("▶", id="field-arrow-btn", style={
-                            "cursor": "pointer",
-                            "fontSize": "10px",
-                            "color": "#666",
-                            "marginLeft": "8px",
-                        }),
-                    ], id="popup-field-btn",
-                       style={
-                           "padding": "6px 10px", 
-                           "fontSize": "12px",
-                           "cursor": "pointer",
-                           "fontFamily": "Times New Roman, Times, serif",
-                           "color": "#333",
-                           "display": "flex",
-                           "alignItems": "center",
-                           "justifyContent": "space-between",
-                           "position": "relative",
-                       }),
-                    html.Div([
-                        html.Span("Nested", style={"flex": "1"}),
-                        html.Span("▶", id="nested-arrow-btn", style={
-                            "cursor": "pointer",
-                            "fontSize": "10px",
-                            "color": "#666",
-                            "marginLeft": "8px",
-                        }),
-                    ], id="popup-nested-btn",
-                       style={
-                           "padding": "6px 10px", 
-                           "fontSize": "12px",
-                           "cursor": "pointer",
-                           "fontFamily": "Times New Roman, Times, serif",
-                           "color": "333",
-                           "display": "flex",
-                           "alignItems": "center",
-                           "justifyContent": "space-between",
-                           "position": "relative",
-                       }),
-                ]),
-            ], id="sorting-controls", style={
-                "position": "absolute", 
-                "backgroundColor": "white", 
-                "padding": "15px",
-                "boxShadow": "0 2px 10px rgba(0,0,0,0.1)",
-                "zIndex": "1000",
-                "display": "none",
-                "minWidth": "160px",
-                "border": "1px solid #ccc",
-                "borderRadius": "2px",
-            }),
-
-            # Hidden buttons for header interactions
-            html.Button("Sort Ascending Click", id="sort-asc-btn-hidden", n_clicks=0, style={"display": "none"}),
-            html.Button("Sort Descending Click", id="sort-desc-btn-hidden", n_clicks=0, style={"display": "none"}),
-            html.Button("Popup Menu Click", id="popup-menu-btn", n_clicks=0, style={"display": "none"}),
-            html.Button("Field Sort Click", id="field-sort-btn", n_clicks=0, style={"display": "none"}),
-            html.Button("Nested Sort Click", id="nested-sort-btn", n_clicks=0, style={"display": "none"}),
-            html.Div(id='dummy-output-clientside', style={'display': 'none'}),
             
             # Container for Updated Projects table that can be hidden
             html.Div(id='updated-projects-container', children=[
@@ -618,7 +532,6 @@ def create_layout():
                             'selector': '.dash-cell div.dash-cell-value',
                             'rule': 'display: inline; white-space: normal;'
                         }],
-                        # sort_action="native",
                         filter_action="none",
                         page_action="none",
                         markdown_options={"html": True, "link_target": "_blank"},
@@ -640,79 +553,129 @@ def register_callbacks(dash_app, server):
             Output('updated-projects-container', 'style'),
             Output('all-projects-table-container', 'style'),
             Output('filter-go-ahead', 'value'),
+            Output('filter-go-ahead-previous', 'data'),
         ],
-        [Input('filter-go-ahead', 'value')]
+        Input('filter-go-ahead', 'value'),
+        State('filter-go-ahead-previous', 'data'),
+        prevent_initial_call=False
     )
-    def update_dashboard_data(selected_go_ahead):
-        # Always show containers unless fully cleared
-        updated_container_style = {'display': 'block'}
-        all_table_container_style = {'display': 'block'}
-
-        # Default selection if nothing provided -> Y only (filtered)
-        selection = selected_go_ahead.copy() if selected_go_ahead else ['Y']
-
-        # Normalize to uppercase for filtering
-        selection_upper = [str(v).upper() for v in selection]
-
-        # Categories available
-        all_categories = ['Y', 'N', 'UNCERTAIN', '']   # '' = blank category
-
-        # ----------------------------------------------------
-        # Handle ALL behavior
-        # ----------------------------------------------------
-        all_selected = 'ALL' in selection_upper
-
-        if all_selected:
-            # All forces every category on and should show all rows
-            normalized_ui = ['All', 'Y', 'N', 'Uncertain', '']
-            filtered_selection = all_categories.copy()
+    def update_dashboard_data(selected_values, previous_values):
+        if selected_values is None:
+            current_values = []
         else:
-            filtered_selection = [v for v in selection_upper if v in all_categories]
-            normalized_ui = selection
-
-        # If nothing left → hide tables
-        if not filtered_selection:
-            return [], [], {'display': 'none'}, {'display': 'none'}, []
-
-        # When all categories are active (via All or manual selection), return all data
-        if all_selected or set(filtered_selection) == set(all_categories):
-            return (
-                df_projects_table.to_dict('records'),
-                df_latest_updates.to_dict('records'),
-                updated_container_style,
-                all_table_container_style,
-                normalized_ui
-            )
-
-        # ----------------------------------------------------
-        # Filtering helper
-        # ----------------------------------------------------
-        def filter_df(df):
-            if df is None or df.empty:
-                return pd.DataFrame()
-
-            col = df['Likely Go-ahead'].fillna('').astype(str).str.upper()
-            col = col.replace({'YES': 'Y', 'NO': 'N'})
-
-            mask = pd.Series(False, index=df.index)
-
-            for key in filtered_selection:
-                mask |= (col == key)
-
-            return df[mask].copy()
-
-        df_filtered_projects = filter_df(df_projects_table)
-        df_filtered_updates = filter_df(df_latest_updates)
-
-        # UI: return exactly what user selected (without forcing selection)
+            if not isinstance(selected_values, list):
+                current_values = [selected_values] if selected_values else []
+            else:
+                current_values = selected_values
+        
+        # Define all options
+        all_options = ['All', 'Y', 'N', 'Uncertain', '']
+        individual_options = ['Y', 'N', 'Uncertain', '']
+        
+        if previous_values is None:
+            previous_values = []
+        if not isinstance(previous_values, list):
+            previous_values = [previous_values] if previous_values else []
+        
+        # Get current state
+        was_all_selected = 'All' in previous_values
+        is_all_selected = 'All' in current_values
+        prev_individual = [opt for opt in previous_values if opt in individual_options]
+        curr_individual = [opt for opt in current_values if opt in individual_options]
+        
+        # Determine the new final values
+        new_final_values = current_values.copy()
+        
+        # 1. If "All" was just checked
+        if not was_all_selected and is_all_selected:
+            # Select all options
+            new_final_values = all_options
+        
+        # 2. If "All" was just unchecked
+        elif was_all_selected and not is_all_selected:
+            # Clear all selections
+            new_final_values = []
+        
+        # 3. If "All" was and still is selected, but individual checkboxes changed
+        elif was_all_selected and is_all_selected and prev_individual != curr_individual:
+            # If user unchecked some individual boxes, remove "All"
+            if len(curr_individual) < len(prev_individual):
+                new_final_values = curr_individual
+            # If all individual boxes are checked again, keep "All"
+            elif len(curr_individual) == len(individual_options):
+                new_final_values = all_options
+        
+        # 4. If user manually checks all individual boxes
+        elif not is_all_selected and len(curr_individual) == len(individual_options):
+            new_final_values = all_options
+        
+        # Determine if we should show all data
+        show_all_data = 'All' in new_final_values
+        
+        # Update data based on selection
+        if show_all_data:
+            # Show all data
+            data_projects = df_projects_table.to_dict('records')
+            data_updates = df_latest_updates.to_dict('records')
+            updated_container_style = {'display': 'block'}
+            all_container_style = {'display': 'block'}
+        elif not new_final_values:
+            # No selections
+            data_projects = []
+            data_updates = []
+            updated_container_style = {'display': 'none'}
+            all_container_style = {'display': 'none'}
+        else:
+            # Filter based on individual selections
+            def filter_df(df):
+                if df is None or df.empty:
+                    return pd.DataFrame()
+                
+                # Map UI values to data values
+                value_mapping = {
+                    'Y': 'Yes',
+                    'N': 'No',
+                    'Uncertain': 'Uncertain',
+                    '': ''
+                }
+                
+                # Create mask
+                mask = pd.Series(False, index=df.index)
+                for value in new_final_values:
+                    if value in value_mapping:
+                        data_value = value_mapping[value]
+                        mask |= (df['Likely Go-ahead'] == data_value)
+                
+                return df[mask].copy()
+            
+            df_filtered_projects = filter_df(df_projects_table)
+            df_filtered_updates = filter_df(df_latest_updates)
+            
+            data_projects = df_filtered_projects.to_dict('records')
+            data_updates = df_filtered_updates.to_dict('records')
+            
+            # Show/hide containers based on data
+            if not data_projects:
+                all_container_style = {'display': 'none'}
+            else:
+                all_container_style = {'display': 'block'}
+            
+            if not data_updates:
+                updated_container_style = {'display': 'none'}
+            else:
+                updated_container_style = {'display': 'block'}
+        
+        # Update the previous values store
+        previous_values_to_store = new_final_values.copy()
+        
         return (
-            df_filtered_projects.to_dict('records'),
-            df_filtered_updates.to_dict('records'),
+            data_projects,
+            data_updates,
             updated_container_style,
-            all_table_container_style,
-            normalized_ui  # return adjusted selection to UI
+            all_container_style,
+            new_final_values,              # Current checkbox values
+            previous_values_to_store       # Store for next comparison
         )
-
 
     # SIMPLE CLIENTSIDE CALLBACK - This will definitely work
     dash_app.clientside_callback(

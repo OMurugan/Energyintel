@@ -326,7 +326,6 @@ def _empty_figure(message: str, height: int = 420) -> go.Figure:
     )
     return fig
 
-
 def _build_match_expression(df_subset: pd.DataFrame, color_map: dict[str, str]):
     """
     Build a Mapbox match expression keyed on iso_3166_1_alpha_3 to ensure
@@ -490,10 +489,12 @@ def create_layout():
                                     html.Div(
                                         [
                                             html.H3(
-                                                "Producing Countries — Map View",
+                                                "Producing Countries",
                                                 style={
                                                     "marginBottom": "8px",
-                                                    "color": "#1b2838",
+                                                    "color": "#fe5000",
+                                                    "fontSize": "20px",
+                                                    "fontWeight": "bold",
                                                 },
                                             ),
                                             html.Div(
@@ -541,10 +542,12 @@ def create_layout():
                             html.Div(
                                 [
                                     html.H3(
-                                        "Projected Oil Capacity Additions by Quarter ('000 b/d)",
+                                        "Projected Oil Capacity Additions by Quarter ('000 b/d) - All",
                                         style={
                                             "marginBottom": "8px",
-                                            "color": "#1b2838",
+                                            "color": "#fe5000",
+                                            "fontSize": "20px",
+                                            "fontWeight": "bold",
                                         },
                                     ),
                                     dcc.Loading(
@@ -572,7 +575,9 @@ def create_layout():
                                         "Project Details",
                                         style={
                                             "marginBottom": "8px",
-                                            "color": "#1b2838",
+                                            "color": "#fe5000",
+                                            "fontSize": "20px",
+                                            "fontWeight": "bold",
                                         },
                                     ),
                                     dcc.Loading(
@@ -670,22 +675,22 @@ def create_layout():
                             ),
                         ],
                         style={
-                            "width": "75%",
+                            "width": "80%",
                             "float": "left",
-                            "paddingRight": "20px",
+                            "paddingRight": "10px",
                             "minWidth": "0",
                         },
                     ),
                     # Right column: filters
                     html.Div(
                         [
-                            html.H4(
-                                "Filters",
-                                style={
-                                    "marginBottom": "12px",
-                                    "color": "#1b2838",
-                                },
-                            ),
+                            # html.H4(
+                            #     "Filters",
+                            #     style={
+                            #         "marginBottom": "12px",
+                            #         "color": "#1b2838",
+                            #     },
+                            # ),
                             html.Div(
                                 [
                                     html.Label(
@@ -858,10 +863,10 @@ def create_layout():
                                     ),
                                 ],
                                 style={
-                                    "padding": "12px",
+                                    "padding": "5px",
                                     "border": "1px solid #e0e0e0",
                                     "borderRadius": "8px",
-                                    "marginBottom": "12px",
+                                    "marginBottom": "5px",
                                     "background": "#fafbfc",
                                 },
                             ),
@@ -890,10 +895,10 @@ def create_layout():
                                     ),
                                 ],
                                 style={
-                                    "padding": "12px",
+                                    "padding": "5px",
                                     "border": "1px solid #e0e0e0",
                                     "borderRadius": "8px",
-                                    "marginBottom": "12px",
+                                    "marginBottom": "5px",
                                     "background": "#fafbfc",
                                 },
                             ),
@@ -919,7 +924,7 @@ def create_layout():
                                     ),
                                 ],
                                 style={
-                                    "padding": "12px",
+                                    "padding": "5px",
                                     "border": "1px solid #e0e0e0",
                                     "borderRadius": "8px",
                                     "background": "#fafbfc",
@@ -927,15 +932,16 @@ def create_layout():
                             ),
                         ],
                         style={
-                            "width": "25%",
+                            "width": "20%",
                             "float": "right",
-                            "paddingLeft": "20px",
-                            "minWidth": "280px",
+                            "paddingLeft": "10px",
+                            "minWidth": "200px",
                             "background": "white",
-                            "padding": "16px",
+                            "padding": "10px",
                             "borderRadius": "8px",
                             "border": "1px solid #e0e0e0",
                             "height": "fit-content",
+                            "font-size": "10px",
                         },
                     ),
                 ],
@@ -943,7 +949,7 @@ def create_layout():
             ),
         ],
         className="tab-content",
-        style={"padding": "16px", "background": "#f5f6fa"},
+        style={"padding": "5px", "background": "#f5f6fa"},
     )
 
 
@@ -1004,6 +1010,8 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
                     geojson=geojson,
                     locations=df["iso_alpha"],
                     z=group_code,
+                    zmin=0,
+                    zmax=1,
                     featureidkey="id",  # world.geo.json uses ISO-3 in `id`
                     colorscale=[
                         [0, GROUP_COLORS.get("Non-OPEC-Plus", "#7194b9")],
@@ -1098,6 +1106,8 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
         go.Choropleth(
             locations=df["iso_alpha"],
             z=group_code,
+            zmin=0,
+            zmax=1,
             locationmode="ISO-3",
             colorscale=[
                 [0, GROUP_COLORS.get("Non-OPEC-Plus", "#7194b9")],
@@ -1211,15 +1221,33 @@ def _chart_figure(
     )
     country_order = sorted(country_df["Country"].unique().tolist())
 
-    totals = (
-        country_df.groupby(["Year", "QuarterNum", "Quarter"], as_index=False)["ProductionAdditions"]
-        .sum()
+    # Build a complete ordered quarter list (even if some quarters have zero additions)
+    quarter_dim = (
+        country_df[["Year", "QuarterNum", "Quarter"]]
+        .drop_duplicates()
         .sort_values(["Year", "QuarterNum"])
+    )
+    quarter_order = quarter_dim["Quarter"].tolist()
+
+    totals_raw = (
+        country_df.groupby(["Year", "QuarterNum", "Quarter"])["ProductionAdditions"]
+        .sum()
+        .reset_index()
+    )
+    # Ensure every quarter exists, even if zero, and preserve order
+    totals = (
+        quarter_dim.merge(
+            totals_raw,
+            on=["Year", "QuarterNum", "Quarter"],
+            how="left",
+        )
+        .fillna({"ProductionAdditions": 0})
+        .sort_values(["Year", "QuarterNum"])
+        .reset_index(drop=True)
     )
     totals["RunningSumComputed"] = totals["ProductionAdditions"].cumsum()
     x_values = totals["Quarter"]
     line_values = totals["RunningSumComputed"]
-    quarter_order = totals["Quarter"].tolist()
 
     # Build stacked bars on primary y-axis, running sum on secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -1262,10 +1290,12 @@ def _chart_figure(
         dtick=200,
         secondary_y=False,
     )
+    # Keep secondary axis tall enough so the running-sum line is not clipped.
+    secondary_max = max(12000, float(line_values.max() if not line_values.empty else 0) * 1.05)
     fig.update_yaxes(
         title_text="'000 b/d",
         showgrid=False,
-        range=[0, 12000],
+        range=[0, secondary_max],
         tick0=0,
         dtick=2000,
         secondary_y=True,
@@ -1392,20 +1422,32 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         selected_set = set(selected)
         has_all = "(All)" in selected_set
         all_set = set(all_countries)
+        subset_set = selected_set - {"(All)"}
 
-        # If "(All)" is present, always expand to full set
-        if has_all:
+        # Rules:
+        # 1) "(All)" clicked alone => select all countries.
+        # 2) "(All)" + subset:
+        #    - If subset is nearly/all countries (user deselected while All was on), drop "(All)" and honor subset.
+        #    - Otherwise (user added All while a partial subset was selected), snap to full select-all.
+        # 3) If everything is selected but "(All)" is not present, treat as user unchecked All -> clear all.
+        # 4) If nothing selected, keep empty.
+        # 5) Otherwise, keep the chosen subset.
+        if has_all and not subset_set:
             normalized = ["(All)"] + all_countries
-        # If user unchecks "(All)" while everything remains selected, clear all
-        elif not has_all and all_set.issubset(selected_set):
-            normalized = []
-        # If nothing selected, keep empty
-        elif not selected_set:
+        elif has_all and subset_set:
+            if len(all_set) > 0 and len(subset_set) >= len(all_set) - 1:
+                normalized = sorted(subset_set)  # user is deselecting while All was active
+            else:
+                normalized = ["(All)"] + all_countries  # user added All from a partial subset
+        elif not has_all and subset_set == all_set and all_countries:
+            normalized = []  # allow explicit unselect-all after All was selected
+        elif not subset_set:
             normalized = []
         else:
-            normalized = selected
+            normalized = sorted(subset_set)
 
-        new_sorted = sorted(normalized)
+        # Avoid loops
+        new_sorted = normalized
         old_sorted = sorted(selected)
         return new_sorted if new_sorted != old_sorted else dash.no_update
 
