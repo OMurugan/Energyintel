@@ -32,15 +32,15 @@ CRUDE_PRICE_QUERY = """
             fwp.crude_name, 
             dc.region,
             dc.country_long_name AS country_name
-        FROM dev.fact_wcod_prices fwp 
-        JOIN dev.dim_country dc ON fwp.crude_country_id = dc.dim_country_id 
+        FROM fact_wcod_prices fwp 
+        JOIN dim_country dc ON fwp.crude_country_id = dc.dim_country_id 
         WHERE fwp.price_type = 'Spot'
           AND COALESCE(fwp.to_be_deleted, FALSE) = FALSE
     ),
     date_range AS (
         SELECT generate_series(
-            (SELECT MIN(date) FROM dev.fact_wcod_prices WHERE price_type = 'Spot' AND COALESCE(to_be_deleted, FALSE) = FALSE),
-            (SELECT MAX(date) FROM dev.fact_wcod_prices WHERE price_type = 'Spot' AND COALESCE(to_be_deleted, FALSE) = FALSE),
+            (SELECT MIN(date) FROM fact_wcod_prices WHERE price_type = 'Spot' AND COALESCE(to_be_deleted, FALSE) = FALSE),
+            (SELECT MAX(date) FROM fact_wcod_prices WHERE price_type = 'Spot' AND COALESCE(to_be_deleted, FALSE) = FALSE),
             '1 day'::interval
         )::date AS price_date
     ),
@@ -67,7 +67,7 @@ CRUDE_PRICE_QUERY = """
             fwp.crude_country_id,
             fwp.crude_id,
             ROUND(fwp.price, 2) AS spot_price
-        FROM dev.fact_wcod_prices fwp 
+        FROM fact_wcod_prices fwp 
         WHERE fwp.price_type = 'Spot'
           AND COALESCE(fwp.to_be_deleted, FALSE) = FALSE
     )
