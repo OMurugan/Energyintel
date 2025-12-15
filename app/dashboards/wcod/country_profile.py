@@ -9,6 +9,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 import os
+import threading
 from datetime import datetime
 from core.data_helpers import execute_query
 from config import Config
@@ -28,6 +29,12 @@ key_figures_df = pd.DataFrame() # Initialize key_figures_df
 country_list = []
 default_country = None
 
+# Locks to prevent duplicate concurrent DB loads on first paint
+_map_lock = threading.Lock()
+_prod_lock = threading.Lock()
+_port_lock = threading.Lock()
+_key_lock = threading.Lock()
+
 # Mapbox access token (falls back to config default token if env not set)
 MAPBOX_ACCESS_TOKEN = Config.MAPBOX_ACCESS_TOKEN
 # Set Plotly-wide token for px maps
@@ -37,6 +44,14 @@ if MAPBOX_ACCESS_TOKEN:
 def load_map_data():
     """Load map data from database - called only when needed"""
     global map_df
+    if not map_df.empty:
+        return map_df
+
+    # Guard against concurrent initial loads across callbacks
+    with _map_lock:
+        if not map_df.empty:
+            return map_df
+
     if not map_df.empty:
         return map_df
     
@@ -184,6 +199,14 @@ def load_map_data():
 def load_production_data():
     """Load production data from database - called only when needed"""
     global monthly_prod_df, country_list, default_country
+
+    if not monthly_prod_df.empty:
+        return monthly_prod_df, country_list, default_country
+
+    # Prevent multiple concurrent initial DB fetches
+    with _prod_lock:
+        if not monthly_prod_df.empty:
+            return monthly_prod_df, country_list, default_country
     
     if not monthly_prod_df.empty:
         return monthly_prod_df, country_list, default_country
@@ -255,7 +278,7 @@ def load_production_data():
             "t_wcod_monthly_stream_production"."stream_name" AS stream_name,
             "t_wcod_monthly_stream_production"."unit" AS unit,
             "t_wcod_monthly_stream_production"."value" AS value
-        FROM "dev"."t_wcod_monthly_stream_production"
+        FROM "t_wcod_monthly_stream_production"
         """
         
         # Execute query and convert to DataFrame
@@ -298,6 +321,11 @@ def load_port_data():
     global port_df
     if not port_df.empty:
         return port_df
+
+    # Prevent duplicate concurrent loads on first paint
+    with _port_lock:
+        if not port_df.empty:
+            return port_df
     
     try:
         # Query port data from database
@@ -342,6 +370,11 @@ def load_key_figures_data():
     global key_figures_df
     if not key_figures_df.empty:
         return key_figures_df
+
+    # Prevent duplicate concurrent loads on initial render
+    with _key_lock:
+        if not key_figures_df.empty:
+            return key_figures_df
     
     try:
         # Query key figures data from database
@@ -681,17 +714,24 @@ def create_world_map(selected_country=None):
 
     if map_df.empty:
         return create_empty_map()
-    
+    # Work with numeric latitude/longitude only to avoid NaN/invalid geometries
+    numeric_map = map_df.copy()
+    numeric_map['latitude'] = pd.to_numeric(numeric_map.get('latitude'), errors='coerce')
+    numeric_map['longitude'] = pd.to_numeric(numeric_map.get('longitude'), errors='coerce')
+    numeric_map = numeric_map.dropna(subset=['latitude', 'longitude'])
+    if numeric_map.empty:
+        return create_empty_map()
+
     # Filter by selected country if provided
     # Note: country_long_name columns are already consolidated during data loading
-    if selected_country and 'country_long_name' in map_df.columns:
+    if selected_country and 'country_long_name' in numeric_map.columns:
         print(f"DEBUG: Selected country for map: {selected_country}")
         # Filter by country name (handle case sensitivity and string conversion)
-        filtered_map = map_df[map_df['country_long_name'].astype(str).str.strip() == str(selected_country).strip()].copy()
+        filtered_map = numeric_map[numeric_map['country_long_name'].astype(str).str.strip() == str(selected_country).strip()].copy()
     else:
         print("DEBUG: No country selected for map, showing all countries.")
-        filtered_map = map_df.copy()
-    
+        filtered_map = numeric_map.copy()
+
     if filtered_map.empty:
         print(f"DEBUG: filtered_map is empty for {selected_country}. Returning empty map.")
         return create_empty_map()
@@ -762,19 +802,20 @@ def create_world_map(selected_country=None):
                 # Map symbol and a modest size so markers don't overwhelm the map
                 # Use built-in Plotly symbols (no sprite) for reliability
                 if port_value == 171:
-                    symbol, marker_size = 'circle', 14
+                    symbol, marker_size, marker_color = 'circle', 14, '#fe5000'
                 elif port_value == 513:
-                    symbol, marker_size = '+', 14   # plus symbol
+                    symbol, marker_size, marker_color = '+', 14, '#1f77b4'   # plus symbol
                 elif port_value == 342:
-                    symbol, marker_size = 'square', 14
+                    symbol, marker_size, marker_color = 'square', 14, '#2ca02c'
                 else:
-                    symbol, marker_size = 'circle', 14
+                    symbol, marker_size, marker_color = 'circle', 14, '#6c757d'
 
-                bucket = ports_by_symbol.setdefault(symbol, {"lat": [], "lon": [], "name": [], "size": [], "custom": []})
+                bucket = ports_by_symbol.setdefault(symbol, {"lat": [], "lon": [], "name": [], "size": [], "custom": [], "color": []})
                 bucket["lat"].append(port_row['latitude'])
                 bucket["lon"].append(port_row['longitude'])
                 bucket["name"].append(port_row['Port Name'])
                 bucket["size"].append(marker_size)
+                bucket["color"].append(marker_color)
                 profile_url = f"/wcod/country-profile?country={port_row['country_long_name']}"
                 bucket["custom"].append([profile_url])
 
@@ -787,7 +828,7 @@ def create_world_map(selected_country=None):
                         mode='markers',
                         marker=dict(
                             size=data_bucket["size"],
-                            color='#fe5000',
+                            color=data_bucket["color"],
                             opacity=0.9,
                             symbol='circle'
                         ),
@@ -804,8 +845,13 @@ def create_world_map(selected_country=None):
         # Add country name label for the selected country (if selected_country is not None)
         # Ensure this trace is only added when selected_country is present
         if selected_country:
-            map_center_lat = filtered_map['latitude'].mean() if not filtered_map.empty else 24.0
-            map_center_lon = filtered_map['longitude'].mean() if not filtered_map.empty else 45.0
+            map_center_lat = port_data['latitude'].mean() if not port_data.empty else filtered_map['latitude'].mean()
+            map_center_lon = port_data['longitude'].mean() if not port_data.empty else filtered_map['longitude'].mean()
+
+            # Guard against NaN centers to avoid Mapbox layout errors
+            if pd.isna(map_center_lat) or pd.isna(map_center_lon):
+                return create_empty_map()
+
             fig.add_trace(go.Scattermapbox(
                 lat=[map_center_lat],
                 lon=[map_center_lon],
@@ -819,11 +865,16 @@ def create_world_map(selected_country=None):
 
         title_text = f"{selected_country} Production"
         map_zoom = 4 # Zoom in for a specific country
-        map_center = dict(lat=filtered_map['latitude'].mean(), lon=filtered_map['longitude'].mean()) if not filtered_map.empty else dict(lat=24.0, lon=45.0)
+        map_center_lat = filtered_map['latitude'].mean()
+        map_center_lon = filtered_map['longitude'].mean()
+        if pd.isna(map_center_lat) or pd.isna(map_center_lon):
+            map_center = dict(lat=24.0, lon=45.0)
+        else:
+            map_center = dict(lat=map_center_lat, lon=map_center_lon)
     else:
         # For all countries, show a choropleth map of all countries
         # Use px.choropleth_mapbox for simpler all-country view
-        all_countries_df = map_df[['country_long_name']].drop_duplicates().dropna().copy()
+        all_countries_df = numeric_map[['country_long_name']].drop_duplicates().dropna().copy()
         all_countries_df['iso_alpha'] = all_countries_df['country_long_name'].map(country_to_iso)
         all_countries_df = all_countries_df.dropna(subset=['iso_alpha'])
         
@@ -844,7 +895,7 @@ def create_world_map(selected_country=None):
 
         # Add country name labels with density control to avoid overlap at wide zooms
         country_centroids = (
-            map_df.groupby('country_long_name')[['latitude', 'longitude']]
+            numeric_map.groupby('country_long_name')[['latitude', 'longitude']]
             .mean()
             .reset_index()
             .dropna(subset=['latitude', 'longitude'])

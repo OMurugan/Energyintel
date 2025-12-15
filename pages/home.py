@@ -1,3 +1,5 @@
+import os
+
 import dash
 from dash import html, dcc
 import app_instance as app_mod
@@ -73,7 +75,15 @@ SECTIONS = [
 
 def _with_prefix(path: str) -> str:
     """Prefix internal links with routes prefix if set."""
-    prefix = getattr(app_mod, "ROUTES_PREFIX", "") or ""
+    raw = os.getenv("DASH_ROUTES_PATHNAME_PREFIX", "")
+    if raw:
+        prefix = raw.strip()
+        if prefix and not prefix.startswith("/"):
+            prefix = f"/{prefix}"
+        if prefix and not prefix.endswith("/"):
+            prefix = f"{prefix}/"
+    else:
+        prefix = ""
 
     base = path
     anchor = ""

@@ -8,12 +8,6 @@ import re
 from core.data_helpers import execute_query
 
 def create_link_text(comment, link_url, default_label="Article"):
-    """
-    Create markdown link text.
-    - If link is present, use comment as label when available, otherwise a default label.
-    - If only comment is present, return the comment text.
-    - Otherwise return a fallback string.
-    """
     link_str = str(link_url).strip() if pd.notna(link_url) else ""
     comment_str = str(comment).strip() if pd.notna(comment) else ""
     
@@ -50,7 +44,7 @@ def load_latest_updates_data():
     query = """
         WITH latest_update AS (
             SELECT MAX(date_modified) AS max_date
-            FROM dev.fact_upstream_project_tracker
+            FROM fact_upstream_project_tracker
         ),
         week_start AS (
             SELECT date_trunc('week', max_date)::date AS wk_start
@@ -66,14 +60,14 @@ def load_latest_updates_data():
             a.external_comment_ei_link AS article_link,
             a.external_comments AS comments,
             a.date_modified
-        FROM dev.fact_upstream_project_tracker a
-        LEFT JOIN dev.dim_country c 
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN dim_country c 
             ON a.country_id = c.dim_country_id
         LEFT JOIN (
             SELECT 
                 project_id,
                 MIN(EXTRACT(YEAR FROM period)) AS year
-            FROM dev.fact_upstream_tracker_prod_estimates_incremental
+            FROM fact_upstream_tracker_prod_estimates_incremental
             WHERE value IS NOT NULL
             GROUP BY project_id
         ) yr ON yr.project_id = a.project_id
@@ -86,7 +80,6 @@ def load_latest_updates_data():
     try:
         results = execute_query(query)
     except Exception as e:
-        print(f"❌ Error loading latest updates from DB: {e}")
         return pd.DataFrame()
     
     df = pd.DataFrame(results) if results else pd.DataFrame()
@@ -155,8 +148,8 @@ def load_all_projects_data():
         c.country_long_name AS country,
         a.external_comment_ei_link AS article_link,
         a.external_comments AS comments
-    FROM dev.fact_upstream_project_tracker a
-    LEFT JOIN dev.dim_country c 
+    FROM fact_upstream_project_tracker a
+    LEFT JOIN dim_country c 
         ON a.country_id = c.dim_country_id
     WHERE a.include = TRUE
     AND a.external_comment_ei_link IS NOT NULL
