@@ -1497,7 +1497,7 @@ def create_layout(server=None):
                 dcc.Checklist(
                     id="crude-country-dropdown",
                     options=([{"label": "(All)", "value": "(All)"}] + [{"label": c, "value": c} for c in COUNTRIES]),
-                    value=["(All)"],
+                    value=["Russia"],
                     inputStyle={"marginRight": "8px"},
                     labelStyle={"display": "block", "marginBottom": "6px"},
                     style={
@@ -1609,7 +1609,7 @@ def create_layout(server=None):
                                 "maxHeight": "600px",
                                 "height": "auto"
                             },
-                            style_cell={"textAlign":"left","minWidth":"80px","whiteSpace":"normal"},
+                            style_cell={"textAlign":"left","minWidth":"80px","whiteSpace":"normal","fontSize":"12px"},
                             style_header={
                                 "textAlign": "center",
                                 "fontWeight": "bold"
@@ -1674,7 +1674,7 @@ def register_callbacks(dash_app, server):
             countries = sorted(BAR_DF_MONTHLY["Country"].dropna().unique().tolist())
         
         options = [{"label": "(All)", "value": "(All)"}] + [{"label": c, "value": c} for c in countries]
-        default_value = ["(All)"]
+        default_value = ["Russia"] if "Russia" in countries else (["(All)"] if countries else [])
         return options, default_value
 
     @dash_app.callback(
