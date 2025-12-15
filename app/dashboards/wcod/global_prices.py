@@ -20,61 +20,76 @@ MONTH_TO_QUARTER = {
     'October': 'Q4', 'November': 'Q4', 'December': 'Q4'
 }
 
-# Base query for monthly crude prices with country join for region.
-# Uses windowing to keep the preferred price_type per (date,country,blend):
-#   Port of Loading > GPW > Refining Margin > others
+# Query for Spot Prices - generates all combinations of dates × crudes
+# Ensures all date/crude combinations exist (with NULL prices where missing)
 CRUDE_PRICE_QUERY = """
     SET LOCAL statement_timeout = 300000;  -- 300s to avoid cancel on large pull
-    WITH ranked AS (
-        SELECT
-            f.date::date                 AS price_date,
-            f.crude_country,
-            f.crude_name,
-            f.price                      AS avg_price,
-            f.price_type,
-            f.price_frequency,
-            f.tech_type,
-            f.insert_date,
-            f.last_update_date,
-            COALESCE(f.to_be_deleted, FALSE) AS to_be_deleted,
-            c.region AS region,
-            c.country_long_name AS country_name,
-            ROW_NUMBER() OVER (
-                PARTITION BY f.date::date, f.crude_country, f.crude_name
-                ORDER BY
-                    CASE f.price_type
-                        WHEN 'Port of Loading' THEN 0
-                        WHEN 'GPW' THEN 1
-                        WHEN 'Refining Margin' THEN 2
-                        ELSE 9
-                    END,
-                    f.last_update_date DESC,
-                    f.insert_date DESC
-            ) AS rn
-        FROM fact_wcod_prices f
-        LEFT JOIN dev.dim_country c
-          ON c.dim_country_id = f.crude_country_id
-        WHERE COALESCE(f.to_be_deleted, FALSE) = FALSE
-          AND f.price_frequency = 'M'
-          AND f.price IS NOT NULL
+    WITH crude_names AS (
+        SELECT DISTINCT 
+            fwp.crude_country_id, 
+            fwp.crude_country, 
+            fwp.crude_id, 
+            fwp.crude_name, 
+            dc.region,
+            dc.country_long_name AS country_name
+        FROM dev.fact_wcod_prices fwp 
+        JOIN dev.dim_country dc ON fwp.crude_country_id = dc.dim_country_id 
+        WHERE fwp.price_type = 'Spot'
+          AND COALESCE(fwp.to_be_deleted, FALSE) = FALSE
+    ),
+    date_range AS (
+        SELECT generate_series(
+            (SELECT MIN(date) FROM dev.fact_wcod_prices WHERE price_type = 'Spot' AND COALESCE(to_be_deleted, FALSE) = FALSE),
+            (SELECT MAX(date) FROM dev.fact_wcod_prices WHERE price_type = 'Spot' AND COALESCE(to_be_deleted, FALSE) = FALSE),
+            '1 day'::interval
+        )::date AS price_date
+    ),
+    all_combinations AS (
+        SELECT 
+            cn.crude_country_id, 
+            cn.crude_country, 
+            cn.crude_id, 
+            cn.crude_name, 
+            cn.region, 
+            cn.country_name,
+            dr.price_date,
+            EXTRACT(YEAR FROM dr.price_date)::int AS year_int,
+            TO_CHAR(dr.price_date, 'FMMonth') AS month_name,
+            EXTRACT(MONTH FROM dr.price_date)::int AS month_num,
+            EXTRACT(DAY FROM dr.price_date)::int AS day_num,
+            CONCAT('Q', EXTRACT(QUARTER FROM dr.price_date)::int) AS quarter
+        FROM crude_names cn
+        CROSS JOIN date_range dr
+    ),
+    spot_prices AS (
+        SELECT 
+            fwp.date AS price_date,
+            fwp.crude_country_id,
+            fwp.crude_id,
+            ROUND(fwp.price, 2) AS spot_price
+        FROM dev.fact_wcod_prices fwp 
+        WHERE fwp.price_type = 'Spot'
+          AND COALESCE(fwp.to_be_deleted, FALSE) = FALSE
     )
-    SELECT
-        price_date,
-        crude_country,
-        crude_name,
-        avg_price,
-        price_type,
-        price_frequency,
-        tech_type,
-        region,
-        country_name,
-        EXTRACT(YEAR FROM price_date)::int AS year_int,
-        TO_CHAR(price_date, 'FMMonth') AS month_name,
-        EXTRACT(MONTH FROM price_date)::int AS month_num,
-        EXTRACT(DAY FROM price_date)::int AS day_num,
-        CONCAT('Q', EXTRACT(QUARTER FROM price_date)::int) AS quarter
-    FROM ranked
-    WHERE rn = 1
+    SELECT 
+        ac.price_date,
+        ac.region,
+        ac.crude_country_id,
+        ac.crude_country,
+        ac.crude_id,
+        ac.crude_name,
+        ac.country_name,
+        sp.spot_price AS avg_price,
+        ac.year_int,
+        ac.month_name,
+        ac.month_num,
+        ac.day_num,
+        ac.quarter
+    FROM all_combinations ac
+    LEFT JOIN spot_prices sp ON sp.crude_country_id = ac.crude_country_id
+                            AND sp.crude_id = ac.crude_id
+                            AND sp.price_date = ac.price_date
+    ORDER BY ac.year_int DESC, ac.month_num DESC, ac.region, ac.crude_country, ac.crude_name
 """
 
 
@@ -89,11 +104,12 @@ def load_crude_prices_data():
     # Log a small summary to confirm query is working
     try:
         logger.info(
-            "[global_prices] rows=%s dates=%s..%s price_type_sample=%s",
+            "[global_prices] rows=%s dates=%s..%s crudes=%s regions=%s",
             len(df),
             df['price_date'].min(),
             df['price_date'].max(),
-            df['price_type'].value_counts().to_dict()
+            df['crude_name'].nunique(),
+            df['region'].nunique()
         )
     except Exception:
         # Never fail the page due to logging issues
@@ -107,11 +123,8 @@ def load_crude_prices_data():
     df['Country'] = df['country_name'].fillna(df['crude_country']).astype(str).str.strip()
     df['Blend'] = df['crude_name'].astype(str).str.strip()
     df['Price'] = pd.to_numeric(df['avg_price'], errors='coerce')
-    # Use quarter from SQL
+    # Use quarter from SQL (already computed)
     df['Quarter'] = df['quarter'].astype(str)
-
-    # Calculate Quarter from Month
-    df['Quarter'] = df['Month'].map(MONTH_TO_QUARTER)
 
     # Filter out invalid rows
     df = df[
@@ -156,6 +169,16 @@ def load_crude_prices_data():
             'column_id': str(row['ColumnID']).strip(),
             'index': len(column_metadata)
         })
+
+    # Log column count for debugging
+    try:
+        logger.info(
+            "[global_prices] Generated %s columns from %s unique region/country/blend combinations",
+            len(column_metadata),
+            len(unique_combos)
+        )
+    except Exception:
+        pass
 
     return pivot_df, column_metadata
 
@@ -233,13 +256,28 @@ def create_table_columns(column_metadata):
         {'name': ['', '', 'Day'], 'id': 'Day', 'type': 'text'},
     ]
     
-    # Dynamic order: region → country → blend (alphabetical) so all DB data shows
+    # Region priority order matching first image exactly:
+    # Latin America → Middle East → North America → Oceania → Other
+    # (Africa and Asia come first if present, but may be off-screen)
+    region_priority = {
+        'Africa': 1,
+        'Asia': 2,
+        'Europe': 3,
+        'FSU': 4,
+        'Latin America': 5,
+        'Middle East': 6,
+        'North America': 7,
+        'Oceania': 8,
+        'Other': 9,
+    }
+    
+    # Dynamic order: use region priority, then alphabetical within each region
     sorted_meta = sorted(
         column_metadata,
         key=lambda m: (
-            str(m['region']).lower(),
-            str(m['country']).lower(),
-            str(m['blend']).lower(),
+            region_priority.get(str(m['region']).strip(), 99),  # Use priority, strip whitespace
+            str(m['country']).lower().strip(),  # Then by country (alphabetical)
+            str(m['blend']).lower().strip(),    # Then by blend (alphabetical)
         ),
     )
 
@@ -250,6 +288,19 @@ def create_table_columns(column_metadata):
             'type': 'numeric',
             'format': {'specifier': '.2f'}
         })
+    
+    # Log final column count and region order for debugging
+    try:
+        regions_in_order = [m['region'] for m in sorted_meta]
+        unique_regions = list(dict.fromkeys(regions_in_order))  # Preserve order, remove duplicates
+        logger.info(
+            "[global_prices] Created %s table columns (4 date columns + %s data columns). Regions in order: %s",
+            len(columns),
+            len(sorted_meta),
+            unique_regions
+        )
+    except Exception:
+        pass
     
     return columns
 
@@ -296,8 +347,9 @@ def create_layout():
                 columns=table_columns,
                 merge_duplicate_headers=True,
                 fixed_rows={'headers': True},
+                # Note: Using CSS sticky positioning instead of fixed_columns to avoid empty space issues
                 style_table={
-                    'tableLayout': 'fixed',
+                    'tableLayout': 'auto',  # Changed to 'auto' for dynamic column widths
                     'overflowX': 'auto',
                     'overflowY': 'auto',
                     'border': '1px solid #dee2e6',
@@ -305,7 +357,8 @@ def create_layout():
                     'fontSize': '12px',
                     'height': '800px',
                     'maxHeight': '800px',
-                    'minWidth': '100%',
+                    'width': '100%',
+                    'maxWidth': '100%',  # Prevent table from exceeding container
                     'marginTop': '0px'
                 },
                 style_cell={
@@ -387,7 +440,15 @@ def create_layout():
                 cell_selectable=True,
                 selected_cells=[]
             )
-        ], style={'margin': '0 auto', 'maxWidth': '100%', 'overflowX': 'hidden'}),
+        ], style={
+            'margin': '0 auto', 
+            'width': '100%', 
+            'maxWidth': '100%',
+            'overflowX': 'auto', 
+            'overflowY': 'auto',
+            'boxSizing': 'border-box',
+            'position': 'relative'
+        }),
         
         # Hidden div for clientside callback anchor
         html.Div(id='global-prices-enhancer-anchor', style={'display': 'none'}),
@@ -397,7 +458,15 @@ def create_layout():
             id='global-prices-clientside-script',
             children=''
         )
-    ], style={'padding': '10px 20px 0 20px', 'backgroundColor': '#ffffff'})
+    ], style={
+        'padding': '10px 20px 0 20px', 
+        'backgroundColor': '#ffffff', 
+        'overflowX': 'hidden', 
+        'overflowY': 'auto',
+        'width': '100%',
+        'maxWidth': '100%',
+        'boxSizing': 'border-box'
+    })
 
 
 def register_callbacks(dash_app, server):
@@ -414,9 +483,43 @@ def register_callbacks(dash_app, server):
                     style.id = styleId;
                     style.type = 'text/css';
                     style.innerHTML = `
+#global-prices-table {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: auto;
+}
 #global-prices-table .dash-spreadsheet-container {
     cursor: pointer;
-    table-layout: fixed;
+    table-layout: auto;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: auto;
+    overflow-y: auto;
+}
+#global-prices-table .dash-table-container {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: auto;
+    width: 100%;
+}
+#global-prices-table .dash-spreadsheet-container table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: auto;
+    min-width: 100%;
+}
+#global-prices-table .dash-spreadsheet-container .row {
+    width: auto;
+}
+#global-prices-table .dash-spreadsheet-container .row-1 {
+    width: auto;
+}
+/* Ensure data columns are visible and properly sized */
+#global-prices-table .dash-spreadsheet-container td:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"]),
+#global-prices-table .dash-spreadsheet-container th:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"]) {
+    display: table-cell !important;
+    min-width: 80px;
 }
 #global-prices-table .dash-spreadsheet-container td {
     transition: opacity 0.2s ease, background-color 0.2s ease;
@@ -435,7 +538,79 @@ def register_callbacks(dash_app, server):
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"]:empty {
     display: none !important;
 }
-/* Default: Quarter and Day columns hidden */
+/* Fixed columns: Year, Quarter, Month, Day - position sticky */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Day"] {
+    position: sticky !important;
+    z-index: 10 !important;
+}
+/* Fixed column headers - higher z-index */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"] {
+    z-index: 11 !important;
+    background-color: #f8f9fa !important;
+}
+/* Fixed column data cells - inherit background from row */
+#global-prices-table .dash-spreadsheet-container tr:nth-child(odd) td[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container tr:nth-child(odd) td[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container tr:nth-child(odd) td[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container tr:nth-child(odd) td[data-dash-column="Day"] {
+    background-color: #f8f9fa !important;
+}
+#global-prices-table .dash-spreadsheet-container tr:nth-child(even) td[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container tr:nth-child(even) td[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container tr:nth-child(even) td[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container tr:nth-child(even) td[data-dash-column="Day"] {
+    background-color: white !important;
+}
+/* Year column - left: 0 (always first) */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Year"] {
+    left: 0 !important;
+}
+/* Quarter column - left: 80px (after Year, only when visible) */
+#global-prices-table .dash-spreadsheet-container.year-expanded th[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container.year-expanded td[data-dash-column="Quarter"] {
+    left: 80px !important;
+}
+/* Month column - left position depends on Quarter visibility */
+/* Default: Month is second column (after Year) */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Month"] {
+    left: 80px !important;
+}
+/* When Quarter is visible, Month is third column */
+#global-prices-table .dash-spreadsheet-container.year-expanded th[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container.year-expanded td[data-dash-column="Month"] {
+    left: 140px !important;
+}
+/* Day column - left position depends on Quarter and Month visibility */
+/* Default: Day is hidden, but if shown without Quarter, it's third column */
+#global-prices-table .dash-spreadsheet-container.month-expanded:not(.year-expanded) th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container.month-expanded:not(.year-expanded) td[data-dash-column="Day"] {
+    left: 180px !important;
+}
+/* When Quarter is visible, Day is fourth column */
+#global-prices-table .dash-spreadsheet-container.year-expanded.month-expanded:not(.quarter-collapsed) th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container.year-expanded.month-expanded:not(.quarter-collapsed) td[data-dash-column="Day"] {
+    left: 240px !important;
+}
+/* Default: Quarter and Day columns hidden - ensure Year and Month are always visible */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Month"] {
+    display: table-cell !important;
+}
+/* Default: Quarter and Day columns hidden - ensure they don't take up space */
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"],
 #global-prices-table .dash-spreadsheet-container td[data-dash-column="Quarter"],
@@ -445,22 +620,36 @@ def register_callbacks(dash_app, server):
 #global-prices-table .dash-spreadsheet-container table td[data-dash-column="Quarter"],
 #global-prices-table .dash-spreadsheet-container table td[data-dash-column="Day"] {
     display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
 }
 /* Show Quarter when year is expanded */
 #global-prices-table .dash-spreadsheet-container.year-expanded th[data-dash-column="Quarter"],
-#global-prices-table .dash-spreadsheet-container.year-expanded td[data-dash-column="Quarter"] {
+#global-prices-table .dash-spreadsheet-container.year-expanded td[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container.year-expanded table th[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container.year-expanded table td[data-dash-column="Quarter"] {
     display: table-cell !important;
 }
 /* Hide Month and Day when quarter is collapsed (only when Quarter is visible) */
 #global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed th[data-dash-column="Month"],
 #global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed th[data-dash-column="Day"],
 #global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Month"],
-#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Day"] {
+#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed table th[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed table th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed table td[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed table td[data-dash-column="Day"] {
     display: none !important;
 }
 /* Show Day when month is expanded (hide if quarter is collapsed) */
 #global-prices-table .dash-spreadsheet-container.month-expanded:not(.quarter-collapsed) th[data-dash-column="Day"],
-#global-prices-table .dash-spreadsheet-container.month-expanded:not(.quarter-collapsed) td[data-dash-column="Day"] {
+#global-prices-table .dash-spreadsheet-container.month-expanded:not(.quarter-collapsed) td[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container.month-expanded:not(.quarter-collapsed) table th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container.month-expanded:not(.quarter-collapsed) table td[data-dash-column="Day"] {
     display: table-cell !important;
 }
 #global-prices-table .dash-spreadsheet-container td[data-dash-column="Year"],
@@ -618,6 +807,92 @@ def register_callbacks(dash_app, server):
                     let isYearExpanded = false; // Default: hide Quarter
                     let isMonthExpanded = false; // Default: hide Day
                     let isQuarterCollapsed = false; // Default: Month and Day visible when Quarter is shown
+                    
+                    // Ensure default state: Year and Month visible, Quarter and Day hidden
+                    spreadsheet.classList.remove('year-expanded', 'month-expanded', 'quarter-collapsed');
+                    
+                    // Function to update sticky column positions
+                    function updateStickyPositions() {
+                        const yearCells = spreadsheet.querySelectorAll('th[data-dash-column="Year"], td[data-dash-column="Year"]');
+                        const quarterCells = spreadsheet.querySelectorAll('th[data-dash-column="Quarter"], td[data-dash-column="Quarter"]');
+                        const monthCells = spreadsheet.querySelectorAll('th[data-dash-column="Month"], td[data-dash-column="Month"]');
+                        const dayCells = spreadsheet.querySelectorAll('th[data-dash-column="Day"], td[data-dash-column="Day"]');
+                        
+                        // Get actual column widths
+                        let yearWidth = 80;
+                        let quarterWidth = 60;
+                        let monthWidth = 100;
+                        let dayWidth = 50;
+                        
+                        if (yearCells.length > 0) {
+                            const firstYearCell = yearCells[0];
+                            yearWidth = firstYearCell.offsetWidth || 80;
+                        }
+                        if (quarterCells.length > 0 && isYearExpanded) {
+                            const firstQuarterCell = quarterCells[0];
+                            quarterWidth = firstQuarterCell.offsetWidth || 60;
+                        }
+                        if (monthCells.length > 0) {
+                            const firstMonthCell = monthCells[0];
+                            monthWidth = firstMonthCell.offsetWidth || 100;
+                        }
+                        if (dayCells.length > 0 && isMonthExpanded && !isQuarterCollapsed) {
+                            const firstDayCell = dayCells[0];
+                            dayWidth = firstDayCell.offsetWidth || 50;
+                        }
+                        
+                        // Year is always at left: 0
+                        yearCells.forEach(cell => {
+                            cell.style.left = '0px';
+                            cell.style.position = 'sticky';
+                            cell.style.zIndex = cell.tagName === 'TH' ? '11' : '10';
+                        });
+                        
+                        // Quarter position (only when visible)
+                        if (isYearExpanded) {
+                            quarterCells.forEach(cell => {
+                                cell.style.left = yearWidth + 'px';
+                                cell.style.position = 'sticky';
+                                cell.style.zIndex = cell.tagName === 'TH' ? '11' : '10';
+                            });
+                        }
+                        
+                        // Month position depends on Quarter visibility
+                        if (isYearExpanded) {
+                            // Month is after Quarter
+                            monthCells.forEach(cell => {
+                                cell.style.left = (yearWidth + quarterWidth) + 'px';
+                                cell.style.position = 'sticky';
+                                cell.style.zIndex = cell.tagName === 'TH' ? '11' : '10';
+                            });
+                        } else {
+                            // Month is after Year
+                            monthCells.forEach(cell => {
+                                cell.style.left = yearWidth + 'px';
+                                cell.style.position = 'sticky';
+                                cell.style.zIndex = cell.tagName === 'TH' ? '11' : '10';
+                            });
+                        }
+                        
+                        // Day position depends on Quarter and Month visibility
+                        if (isMonthExpanded && !isQuarterCollapsed) {
+                            if (isYearExpanded) {
+                                // Day is after Year + Quarter + Month
+                                dayCells.forEach(cell => {
+                                    cell.style.left = (yearWidth + quarterWidth + monthWidth) + 'px';
+                                    cell.style.position = 'sticky';
+                                    cell.style.zIndex = cell.tagName === 'TH' ? '11' : '10';
+                                });
+                            } else {
+                                // Day is after Year + Month
+                                dayCells.forEach(cell => {
+                                    cell.style.left = (yearWidth + monthWidth) + 'px';
+                                    cell.style.position = 'sticky';
+                                    cell.style.zIndex = cell.tagName === 'TH' ? '11' : '10';
+                                });
+                            }
+                        }
+                    }
                     
                     // Helper function to get cell text without icons
                     function getCellTextWithoutIcons(cell, iconClass) {
@@ -834,18 +1109,32 @@ def register_callbacks(dash_app, server):
                         }
                         
                         // Toggle Quarter column visibility
+                        const quarterCells = spreadsheet.querySelectorAll('th[data-dash-column="Quarter"], td[data-dash-column="Quarter"]');
                         if (isYearExpanded) {
                             spreadsheet.classList.add('year-expanded');
+                            // Show Quarter columns
+                            quarterCells.forEach(cell => {
+                                cell.style.display = 'table-cell';
+                            });
                             // Initialize Quarter header toggle when Quarter becomes visible
                             setTimeout(function() {
                                 initializeQuarterHeaderToggle();
                             }, 100);
                         } else {
                             spreadsheet.classList.remove('year-expanded');
+                            // Hide Quarter columns
+                            quarterCells.forEach(cell => {
+                                cell.style.display = 'none';
+                            });
                             // Reset quarter collapse state when Quarter is hidden
                             isQuarterCollapsed = false;
                             spreadsheet.classList.remove('quarter-collapsed');
                         }
+                        
+                        // Update sticky positions after toggling
+                        setTimeout(function() {
+                            updateStickyPositions();
+                        }, 50);
                         
                         // Clear selections
                         clearAllColumnSelections(spreadsheet);
@@ -867,11 +1156,47 @@ def register_callbacks(dash_app, server):
                         }
                         
                         // Toggle Month and Day column visibility
+                        const monthCells = spreadsheet.querySelectorAll('th[data-dash-column="Month"], td[data-dash-column="Month"]');
+                        const dayCells = spreadsheet.querySelectorAll('th[data-dash-column="Day"], td[data-dash-column="Day"]');
                         if (isQuarterCollapsed) {
                             spreadsheet.classList.add('quarter-collapsed');
+                            // Hide Month and Day columns
+                            monthCells.forEach(cell => {
+                                cell.style.display = 'none';
+                            });
+                            dayCells.forEach(cell => {
+                                cell.style.display = 'none';
+                            });
+                            // Reset month expanded state since Day is hidden
+                            isMonthExpanded = false;
+                            spreadsheet.classList.remove('month-expanded');
+                            const monthHeaderToggle = spreadsheet.querySelector('th[data-dash-column="Month"] .month-header-toggle');
+                            if (monthHeaderToggle) {
+                                monthHeaderToggle.textContent = '+';
+                                monthHeaderToggle.setAttribute('aria-label', 'Expand Day');
+                            }
                         } else {
                             spreadsheet.classList.remove('quarter-collapsed');
+                            // Show Month columns
+                            monthCells.forEach(cell => {
+                                cell.style.display = 'table-cell';
+                            });
+                            // Show Day columns only if month is expanded
+                            if (isMonthExpanded) {
+                                dayCells.forEach(cell => {
+                                    cell.style.display = 'table-cell';
+                                });
+                            } else {
+                                dayCells.forEach(cell => {
+                                    cell.style.display = 'none';
+                                });
+                            }
                         }
+                        
+                        // Update sticky positions after toggling
+                        setTimeout(function() {
+                            updateStickyPositions();
+                        }, 50);
                         
                         // Clear selections
                         clearAllColumnSelections(spreadsheet);
@@ -892,12 +1217,26 @@ def register_callbacks(dash_app, server):
                             monthHeaderToggle.setAttribute('aria-label', isMonthExpanded ? 'Collapse Day' : 'Expand Day');
                         }
                         
-                        // Toggle Day column visibility
-                        if (isMonthExpanded) {
+                        // Toggle Day column visibility (only if Quarter is not collapsed)
+                        const dayCells = spreadsheet.querySelectorAll('th[data-dash-column="Day"], td[data-dash-column="Day"]');
+                        if (isMonthExpanded && !isQuarterCollapsed) {
                             spreadsheet.classList.add('month-expanded');
+                            // Show Day columns
+                            dayCells.forEach(cell => {
+                                cell.style.display = 'table-cell';
+                            });
                         } else {
                             spreadsheet.classList.remove('month-expanded');
+                            // Hide Day columns
+                            dayCells.forEach(cell => {
+                                cell.style.display = 'none';
+                            });
                         }
+                        
+                        // Update sticky positions after toggling
+                        setTimeout(function() {
+                            updateStickyPositions();
+                        }, 50);
                         
                         // Clear selections
                         clearAllColumnSelections(spreadsheet);
@@ -907,12 +1246,68 @@ def register_callbacks(dash_app, server):
                         updateSelectionState(spreadsheet, selectedCells);
                     }
                     
-                    // Initialize on load
+                    // Initialize on load - ensure default state
+                    // Force hide Quarter and Day columns initially
+                    const quarterCells = spreadsheet.querySelectorAll('th[data-dash-column="Quarter"], td[data-dash-column="Quarter"]');
+                    quarterCells.forEach(cell => {
+                        cell.style.display = 'none';
+                    });
+                    const dayCells = spreadsheet.querySelectorAll('th[data-dash-column="Day"], td[data-dash-column="Day"]');
+                    dayCells.forEach(cell => {
+                        cell.style.display = 'none';
+                    });
+                    
+                    // Ensure Year and Month are visible
+                    const yearCells = spreadsheet.querySelectorAll('th[data-dash-column="Year"], td[data-dash-column="Year"]');
+                    yearCells.forEach(cell => {
+                        cell.style.display = 'table-cell';
+                    });
+                    const monthCells = spreadsheet.querySelectorAll('th[data-dash-column="Month"], td[data-dash-column="Month"]');
+                    monthCells.forEach(cell => {
+                        cell.style.display = 'table-cell';
+                    });
+                    
                     initializeYearHeaderToggle();
                     initializeMonthHeaderToggle();
                     if (isYearExpanded) {
                         initializeQuarterHeaderToggle();
                     }
+                    
+                    // Function to ensure table renders correctly with all columns visible
+                    function ensureTableLayout() {
+                        const table = spreadsheet.querySelector('table');
+                        if (table) {
+                            // Ensure table has auto width to show all columns
+                            table.style.width = 'auto';
+                            table.style.minWidth = '100%';
+                            
+                            // Ensure all data columns are visible
+                            const allCells = spreadsheet.querySelectorAll('td, th');
+                            allCells.forEach(cell => {
+                                const colId = cell.getAttribute('data-dash-column');
+                                if (colId && colId !== 'Year' && colId !== 'Quarter' && colId !== 'Month' && colId !== 'Day') {
+                                    // This is a data column - ensure it's visible
+                                    if (cell.style.display === 'none') {
+                                        cell.style.display = '';
+                                    }
+                                }
+                            });
+                            
+                            // Force a reflow to ensure layout updates
+                            void table.offsetWidth;
+                        }
+                    }
+                    
+                    // Initialize sticky positions after a short delay to ensure DOM is ready
+                    setTimeout(function() {
+                        ensureTableLayout();
+                        updateStickyPositions();
+                    }, 100);
+                    
+                    // Also ensure layout after any column visibility changes
+                    setTimeout(function() {
+                        ensureTableLayout();
+                    }, 300);
                     
                     // Clear selection on outside click
                     document.addEventListener('click', function(event) {
