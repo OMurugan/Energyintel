@@ -150,7 +150,7 @@ def _resolve_years_selection(selected):
 
 # Data loading functions
 def load_yearly_bar():
-    """Load yearly bar data from DB (dev.fact_wcod_crude)."""
+    """Load yearly bar data from DB (fact_wcod_crude)."""
     query = """
         SELECT
             a.country_name AS "Country",
@@ -159,8 +159,8 @@ def load_yearly_bar():
             a.production_kbpd AS "ProductionDataValue",
             a.exports_kbpd AS "ExportDataValue",
             a.ci_rank
-        FROM dev.fact_wcod_crude a
-        LEFT JOIN dev.dim_country grp
+        FROM fact_wcod_crude a
+        LEFT JOIN dim_country grp
             ON a.country_id = grp.dim_country_id
     """
     try:
@@ -202,7 +202,7 @@ def load_yearly_bar():
         return pd.DataFrame(), pd.DataFrame(), {}
 
 def load_monthly_bar():
-    """Load monthly bar data from DB (dev.t_wcod_monthly_stream_production)."""
+    """Load monthly bar data from DB (t_wcod_monthly_stream_production)."""
     query = """
         SELECT  
             EXTRACT(YEAR FROM date) AS "Year of Date",
@@ -210,7 +210,7 @@ def load_monthly_bar():
             country AS "Country",
             stream_name AS "Stream Name",
             value AS "Value"
-        FROM dev.t_wcod_monthly_stream_production
+        FROM t_wcod_monthly_stream_production
         ORDER BY date DESC, stream_name;
     """
     try:
@@ -409,10 +409,10 @@ def load_yearly_grades_for_country(countries):
             c.BSP_link AS "profile_url",
             a.country_name || ' ' || a.crude_name AS "crude_color",
             1 AS avg_calculation1
-        FROM dev.fact_wcod_crude a
-        LEFT JOIN dev.dim_country grp
+        FROM fact_wcod_crude a
+        LEFT JOIN dim_country grp
             ON a.country_id = grp.dim_country_id
-        LEFT JOIN dev.fact_wcod_crude_bsp_links c 
+        LEFT JOIN fact_wcod_crude_bsp_links c 
             ON a.crude_id = c.crude_id
     """
     
@@ -505,8 +505,8 @@ def load_monthly_grades_for_country(countries):
             b.BSP_link,
             A.country || ' ' || A.stream_name AS crude_color,
             1 AS avg_calculation1
-        FROM dev.t_wcod_monthly_stream_production A
-        LEFT JOIN dev.fact_wcod_crude_bsp_links b 
+        FROM t_wcod_monthly_stream_production A
+        LEFT JOIN fact_wcod_crude_bsp_links b 
             ON A.crude_id = b.crude_id
     """
     
@@ -974,10 +974,10 @@ def load_table():
                 a.production_kbpd AS "ProductionDataValue",
                 a.exports_kbpd AS "ExportDataValue",
                 a.ci_rank
-            FROM dev.fact_wcod_crude a
-            LEFT JOIN dev.dim_country grp
+            FROM fact_wcod_crude a
+            LEFT JOIN dim_country grp
                 ON a.country_id = grp.dim_country_id
-            LEFT JOIN dev.fact_wcod_crude_bsp_links b
+            LEFT JOIN fact_wcod_crude_bsp_links b
                 ON a.crude_id = b.crude_id
             ORDER BY a.crude_name ASC;
         """
@@ -1042,8 +1042,8 @@ def load_table():
                 EXTRACT(YEAR FROM a.date) AS "Year of Date",
                 TO_CHAR(a.date, 'FMMonth') AS "Month of Date",
                 a.value as "Value"
-            FROM dev.t_wcod_monthly_stream_production a
-            LEFT JOIN dev.fact_wcod_crude b  on a.crude_id = b.crude_id 
+            FROM t_wcod_monthly_stream_production a
+            LEFT JOIN fact_wcod_crude b  on a.crude_id = b.crude_id 
         """
         monthly_rows = execute_query(monthly_query)
         if monthly_rows:
