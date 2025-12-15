@@ -315,6 +315,14 @@ def load_table_data():
 
 def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table_df=None, selected_label=None):
     """Create treemap visualization for projects by status"""
+    # Normalize selection to a unique key (dict with 'key') so only one block stays active
+    selected_key = None
+    if isinstance(selected_label, dict):
+        key_val = selected_label.get("key") or selected_label.get("label")
+        if key_val:
+            selected_key = str(key_val).strip()
+    elif selected_label is not None:
+        selected_key = str(selected_label).strip()
     
     if df is None or df.empty:
         fig = go.Figure()
@@ -331,16 +339,28 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
         return fig
     
     filtered_df = df.copy()
-    print(f"DEBUG: region filter0001: {region_filter}")
+    
+    # Normalize Region column to ensure consistent comparison
+    if "Region" in filtered_df.columns:
+        filtered_df["Region"] = filtered_df["Region"].astype(str).str.strip()
+    
+    print(f"DEBUG: create_treemap_figure - region_filter={region_filter}, type={type(region_filter)}")
+    print(f"DEBUG: create_treemap_figure - unique regions in df before filter: {filtered_df['Region'].unique().tolist() if 'Region' in filtered_df.columns else 'N/A'}")
+    
     # Apply region filter (now handles list of regions)
     if region_filter:
         if isinstance(region_filter, list):
             if len(region_filter) > 0:
-                # Filter to selected regions
-                filtered_df = filtered_df[filtered_df["Region"].isin(region_filter)]
+                # Normalize region filter values for consistent comparison
+                normalized_filter = [str(r).strip() for r in region_filter]
+                print(f"DEBUG: create_treemap_figure - normalized_filter={normalized_filter}")
+                # Filter to selected regions (keep rows where Region is in the filter list)
+                filtered_df = filtered_df[filtered_df["Region"].isin(normalized_filter)]
+                print(f"DEBUG: create_treemap_figure - unique regions in df after filter: {filtered_df['Region'].unique().tolist() if 'Region' in filtered_df.columns and not filtered_df.empty else 'N/A'}")
         elif region_filter != "(All)":
             # Single region (backward compatibility)
-            filtered_df = filtered_df[filtered_df["Region"] == region_filter]
+            normalized_single = str(region_filter).strip()
+            filtered_df = filtered_df[filtered_df["Region"] == normalized_single]
     
     # Apply likely filter by joining with table data if available
     if likely_filter and table_df is not None:
@@ -454,7 +474,15 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
         .agg({"Production Additions": "sum"})
         .reset_index()
     )
+    print(f"DEBUG: create_treemap_figure - grouped regions before Production Additions > 0 filter: {grouped['Region'].unique().tolist() if not grouped.empty else 'empty'}")
+    print(f"DEBUG: create_treemap_figure - Africa rows before Production Additions > 0 filter: {len(grouped[grouped['Region'] == 'Africa']) if not grouped.empty else 0}")
+    if not grouped.empty:
+        africa_before = grouped[grouped['Region'] == 'Africa']
+        if not africa_before.empty:
+            print(f"DEBUG: create_treemap_figure - Africa Production Additions values: {africa_before['Production Additions'].tolist()}")
     grouped = grouped[grouped["Production Additions"] > 0]
+    print(f"DEBUG: create_treemap_figure - grouped regions after Production Additions > 0 filter: {grouped['Region'].unique().tolist() if not grouped.empty else 'empty'}")
+    print(f"DEBUG: create_treemap_figure - Africa rows after Production Additions > 0 filter: {len(grouped[grouped['Region'] == 'Africa']) if not grouped.empty else 0}")
     
     if grouped.empty:
         fig = go.Figure()
@@ -537,10 +565,13 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
     fig = go.Figure()
     
     # Create a separate treemap trace for each region with its specific domain
+    print(f"DEBUG: create_treemap_figure - Creating treemap traces for regions: {ordered_regions}")
     for region in ordered_regions:
         region_df = grouped[grouped["Region"] == region]
         if region_df.empty:
+            print(f"DEBUG: create_treemap_figure - Skipping {region} - empty region_df")
             continue
+        print(f"DEBUG: create_treemap_figure - Creating trace for {region} with {len(region_df)} rows")
         
         region_total = region_df["Production Additions"].sum()
         region_name = str(region).strip()
@@ -556,6 +587,16 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
         ]
         text_entries = [f"<b>{region_name}</b>"]
         colors = [region_color]
+        selection_data = [
+            {
+                "key": f"region|{region_name}",
+                "type": "region",
+                "region": region_name,
+                "project_status": None,
+                "play_type": None,
+                "label": region_name,
+            }
+        ]
         
         # Add combined Project Status + Play Type children
         for _, row in region_df.iterrows():
@@ -569,6 +610,16 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
             labels.append(combined_label)
             parents.append(region_name)
             values.append(prod_additions)
+            selection_data.append(
+                {
+                    "key": f"status|{region_name}|{project_status}|{play_type}",
+                    "type": "status",
+                    "region": region_name,
+                    "project_status": project_status,
+                    "play_type": play_type,
+                    "label": combined_label,
+                }
+            )
             
             hover_texts.append(
                 f"<span style='color:#333333;'>Region:</span> <span style='color:#000000;'><b>{region_name}</b></span><br>"
@@ -604,12 +655,10 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
                 return 100, 100, 100
 
         colors_with_alpha = []
-        if selected_label:
-            for lab, col in zip(labels, colors):
-                try:
-                    is_match = (str(lab).strip() == str(selected_label).strip())
-                except Exception:
-                    is_match = False
+        if selected_key:
+            sel_key_norm = str(selected_key).strip()
+            for sel, col in zip(selection_data, colors):
+                is_match = str(sel.get("key", "")).strip() == sel_key_norm
                 if is_match:
                     colors_with_alpha.append(col)
                 else:
@@ -634,9 +683,11 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
                     colors=colors_with_alpha,
                     line=dict(color="white", width=1)
                 ),
+                customdata=selection_data,
                 tiling=dict(pad=1, packing="squarify", squarifyratio=1.0),
                 maxdepth=2,
-                pathbar=dict(visible=True, side="top", thickness=20, edgeshape=">"),
+                # Disable pathbar/expansion UI; keep click purely for selection
+                pathbar=dict(visible=False),
                 domain=domain,
                 root=dict(color="rgba(255,255,255,0)")
             )
@@ -656,6 +707,11 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
         plot_bgcolor="white",
         showlegend=False,
         hovermode="closest",
+        # Disable built-in expand/collapse; clicks are used only for selection
+        clickmode="event+select",
+        transition=dict(duration=0),
+        # Preserve layout to avoid full redraw lag; selection still re-colors nodes
+        uirevision="treemap-static",
         hoverlabel=dict(
             bgcolor="white",
             bordercolor="#cccccc",
@@ -663,6 +719,16 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
             font_family="Arial, sans-serif",
             align="left"
         )
+    )
+
+    # Enforce non-zooming treemap behavior (no expand/collapse)
+    fig.update_traces(
+        selector=dict(type="treemap"),
+        # Keep treemap non-drillable (no expand/collapse)
+        pathbar=dict(visible=False),
+        maxdepth=2,
+        root_color="rgba(0,0,0,0)",
+        branchvalues="total",
     )
     
     return fig
@@ -714,39 +780,45 @@ def create_layout():
             
             # Right panel (25% width)
             html.Div([
-                # Region Filter (using same design as Carbon Intensity filter)
-                html.Div([
-                    html.Label("Region:", style={
-                        'fontWeight': '600', 
-                        'marginBottom': '12px', 
-                        'fontSize': '13px',
-                        'color': '#2c3e50',
-                        'fontFamily': 'Arial, sans-serif'
-                    }),
-                    html.Div(
-                        id='region-legend-container',
-                        children=[]  # Will be populated by callback
-                    )
-                ], style={'marginBottom': '25px', 'padding': '15px', 'border': '1px solid #e0e0e0', 'borderRadius': '5px', 'backgroundColor': '#fafafa'}),
-                
-                # Hidden region filter checklist
+                # Region filter temporarily removed from UI; keep hidden checklist for defaults
                 dcc.Checklist(
                     id='projects-status-region-filter',
-                    options=[],  # Will be populated by callback
-                    value=[],  # Will be populated by callback
+                    options=[],  # Populated by callback
+                    value=None,  # None = show all regions until filter is initialized
                     style={'display': 'none'}
                 ),
-                
-                # Store region legend item IDs for callback
-                html.Div(id='region-legend-items-store', style={'display': 'none'}, children=[]),
+                # Visible region legend filter (color boxes + labels)
+                html.Div([
+                    html.Label(
+                        "Region",
+                        style={
+                            'fontWeight': '600',
+                            'marginBottom': '8px',
+                            'display': 'block',
+                            'fontSize': '13px',
+                            'color': '#2c3e50',
+                            'fontFamily': 'Arial, sans-serif'
+                        },
+                    ),
+                    html.Div(
+                        id='region-legend-container',
+                        children=[],
+                        style={
+                            "maxHeight": "240px",
+                            "overflowY": "auto",
+                            "padding": "8px",
+                            "border": "1px solid #e0e0e0",
+                            "borderRadius": "6px",
+                            "background": "#fafbfc",
+                        },
+                    ),
+                ], style={'marginBottom': '16px'}),
                 
                 # Store to track if region filter has been initialized (prevents overwriting on subsequent updates)
                 dcc.Store(id='region-filter-initialized', data=False),
                 
                 # Store to cache treemap dataframe (avoids repeated DB queries)
                 dcc.Store(id='projects-status-treemap-store', data=[]),
-                # Store to hold region selection controlled by legend
-                dcc.Store(id='projects-status-region-selection', data=[]),
                 # Store to hold treemap click selection (selected label). None => no selection.
                 dcc.Store(id='projects-status-click-selection', data=None),
                 
@@ -890,20 +962,25 @@ def register_callbacks(dash_app, server):
 
     # Callback to update region filter options when page loads
     @dash_app.callback(
-        [Output('projects-status-region-filter', 'options'),
-         Output('projects-status-region-filter', 'value', allow_duplicate=True),
-         Output('region-legend-items-store', 'children'),
-         Output('region-filter-initialized', 'data')],
-        Input('current-submenu', 'data'),
+        [
+            Output('projects-status-region-filter', 'options'),
+            Output('projects-status-region-filter', 'value', allow_duplicate=True),
+            Output('region-filter-initialized', 'data'),
+        ],
+        [
+            Input('current-submenu', 'data'),
+            Input('projects-status-likely-filter', 'value'),
+        ],
         State('projects-status-region-filter', 'value'),
         State('region-filter-initialized', 'data'),
         State('projects-status-treemap-store', 'data'),
         prevent_initial_call='initial_duplicate'
     )
-    def update_region_filter_options(current_submenu, current_filter_value, is_initialized, treemap_store):
+    def update_region_filter_options(current_submenu, likely_filter, current_filter_value, is_initialized, treemap_store):
         """Update region filter options when page is accessed"""
+        print(f"DEBUG: update_region_filter_options - current_submenu={current_submenu}, is_initialized={is_initialized}, current_filter_value={current_filter_value}")
         if current_submenu != 'projects-status':
-            return [], dash.no_update, [], dash.no_update
+            return [], dash.no_update, dash.no_update
         
         # Prefer cached treemap store if available to avoid extra DB call
         if treemap_store:
@@ -912,8 +989,63 @@ def register_callbacks(dash_app, server):
             treemap_df = load_treemap_data()
         regions = []
         
+        def _apply_likely_filter(df: pd.DataFrame, likely_vals):
+            if df.empty or "Region" not in df.columns:
+                return df
+            if likely_vals is None:
+                return df
+            if isinstance(likely_vals, list):
+                if len(likely_vals) == 0:
+                    return df.iloc[0:0]
+                if 'All' in likely_vals:
+                    return df
+            table_df = load_table_data()
+            # Find likely column in table
+            likely_col = None
+            for col in table_df.columns:
+                lc = col.lower()
+                if 'likely' in lc and ('go' in lc or 'ahead' in lc):
+                    likely_col = col
+                    break
+            if likely_col is None:
+                return df
+            col_upper = table_df[likely_col].astype(str).str.upper()
+            filter_values = likely_vals if isinstance(likely_vals, list) else [likely_vals]
+            mask = pd.Series(False, index=col_upper.index)
+            for v in filter_values:
+                v_str = str(v).strip()
+                v_up = v_str.upper()
+                if v_up == 'ALL' or v == 'All':
+                    mask |= pd.Series(True, index=col_upper.index)
+                elif v_up == '' or v_str.lower() == 'blank':
+                    mask |= (col_upper == '')
+                elif v_up.startswith('Y') or v_up == 'YES':
+                    mask |= col_upper.str.startswith('Y')
+                elif v_up.startswith('N'):
+                    mask |= col_upper.str.startswith('N')
+                elif v_up.startswith('UNCERT') or v_up.startswith('U'):
+                    mask |= col_upper.str.startswith('U')
+            matching_projects = table_df[mask]
+            if matching_projects.empty:
+                return df.iloc[0:0]
+            combos = set()
+            for _, row in matching_projects.iterrows():
+                combos.add((str(row.get("Region", "")).strip(), str(row.get("Play Type", "")).strip(), str(row.get("Project Status", "")).strip()))
+            def _match_combo(r):
+                return (str(r.get("Region", "")).strip(), str(r.get("Play Type", "")).strip(), str(r.get("Project Status", "")).strip()) in combos
+            filtered = df[df.apply(_match_combo, axis=1)]
+            return filtered
+
         if not treemap_df.empty and "Region" in treemap_df.columns:
-            unique_regions = treemap_df['Region'].dropna().unique().tolist()
+            treemap_df = _apply_likely_filter(treemap_df, likely_filter)
+            unique_regions = (
+                treemap_df['Region']
+                .astype(str)
+                .str.strip()
+                .dropna()
+                .unique()
+                .tolist()
+            )
             # Order regions according to REGION_ORDER
             ordered_regions = [r for r in REGION_ORDER if r in unique_regions]
             # Add any regions not in REGION_ORDER at the end
@@ -921,251 +1053,224 @@ def register_callbacks(dash_app, server):
             ordered_regions.extend(sorted(remaining_regions))
             regions = ordered_regions
         
-        options = [{'label': r, 'value': r} for r in regions]
+        # Normalize region names for consistent comparison
+        regions_normalized = [str(r).strip() for r in regions]
+        options = [{'label': r, 'value': r} for r in regions_normalized]
         
-        # CRITICAL: Only set default_value on the very first initialization
-        # Use is_initialized flag to prevent overwriting the filter value on subsequent updates
-        # This ensures Africa is never removed from the filter
+            # CRITICAL: Only set default_value on the very first initialization
+            # Use is_initialized flag to prevent overwriting the filter value on subsequent updates
+            # This ensures Africa is never removed from the filter
         if not is_initialized:
             # First initialization: Set all regions as default, including Africa
-            # Build default_value in REGION_ORDER to ensure consistent ordering
+            # Build default_value in REGION_ORDER to ensure consistent ordering (use normalized regions)
             default_value = []
             for region in REGION_ORDER:
-                if region in regions:
-                    default_value.append(region)
+                region_normalized = str(region).strip()
+                if region_normalized in regions_normalized:
+                    default_value.append(region_normalized)
             # Add any remaining regions not in REGION_ORDER
-            for region in regions:
-                if region not in default_value:
-                    default_value.append(region)
+            for region_norm in regions_normalized:
+                if region_norm not in default_value:
+                    default_value.append(region_norm)
             
             # CRITICAL: Verify Africa is included - this is essential
             # Double-check: if Africa exists in regions, it MUST be in default_value
-            if 'Africa' in regions:
-                if 'Africa' not in default_value:
+            africa_normalized = 'Africa'.strip()
+            if africa_normalized in regions_normalized:
+                if africa_normalized not in default_value:
                     # Force insert Africa at the beginning
-                    default_value.insert(0, 'Africa')
-                elif default_value[0] != 'Africa':
+                    default_value.insert(0, africa_normalized)
+                    print(f"DEBUG: update_region_filter_options - Force inserted Africa into default_value: {default_value}")
+                elif default_value[0] != africa_normalized:
                     # Africa exists but not first - move it to first position
-                    default_value.remove('Africa')
-                    default_value.insert(0, 'Africa')
+                    default_value.remove(africa_normalized)
+                    default_value.insert(0, africa_normalized)
+                    print(f"DEBUG: update_region_filter_options - Moved Africa to first position: {default_value}")
+            else:
+                print(f"DEBUG: update_region_filter_options - WARNING: Africa not found in regions_normalized: {regions_normalized}")
             
-            # CRITICAL: Also check if current_filter_value already has all regions
-            # If so, preserve it (might have been set by another callback)
-            if current_filter_value and isinstance(current_filter_value, list) and len(current_filter_value) > 0:
-                # Check if current_filter_value already includes all regions (including Africa)
-                if 'Africa' in current_filter_value and len(current_filter_value) == len(regions):
-                    # Current value already has all regions - preserve it but ensure Africa is first
-                    preserved_value = current_filter_value.copy()
-                    if preserved_value[0] != 'Africa':
-                        preserved_value.remove('Africa')
-                        preserved_value.insert(0, 'Africa')
-                    return options, preserved_value, regions, True
+            print(f"DEBUG: update_region_filter_options - Returning initialized filter with default_value: {default_value}")
             # Mark as initialized to prevent future overwrites
-            return options, default_value, regions, True
+            return options, default_value, True
         else:
-            # Already initialized: Only restore Africa if filter value is None/empty (unexpected state)
-            # DO NOT add Africa back if user explicitly removed it by clicking
-            if current_filter_value is None or (isinstance(current_filter_value, list) and len(current_filter_value) == 0):
-                # CRITICAL: If filter value is None or empty after initialization, 
-                # it means something reset it - restore all regions including Africa
-                restored_value = []
-                for region in REGION_ORDER:
-                    if region in regions:
-                        restored_value.append(region)
-                for region in regions:
-                    if region not in restored_value:
-                        restored_value.append(region)
-                # Ensure Africa is first
-                if 'Africa' in regions and 'Africa' not in restored_value:
-                    restored_value.insert(0, 'Africa')
-                elif 'Africa' in restored_value and restored_value[0] != 'Africa':
-                    restored_value.remove('Africa')
-                    restored_value.insert(0, 'Africa')
-                return options, restored_value, regions, dash.no_update
+            # If likely filter changed, reset to all available regions
+            ctx = dash.callback_context
+            if ctx and ctx.triggered and ctx.triggered[0].get("prop_id", "").startswith("projects-status-likely-filter"):
+                return options, regions_normalized, dash.no_update
+
+            # Otherwise intersect current selection with available regions; allow empty
+            # Normalize for consistent comparison
+            current_normalized = [str(v).strip() for v in (current_filter_value or [])]
+            current_set = set(current_normalized)
+            regions_normalized = [str(r).strip() for r in regions]
+            new_values = [r for r in regions_normalized if r in current_set] if current_set else []
             
-            # Already initialized: NEVER overwrite the filter value
-            # This allows users to explicitly remove Africa by clicking, and we won't add it back
-            # This ensures user interactions are respected
-            print(f"DEBUG: update_region_filter_options - Already initialized, preserving current_filter_value: {current_filter_value}")
-            return options, dash.no_update, regions, dash.no_update
+            print(f"DEBUG: update_region_filter_options - current_filter_value={current_normalized}, regions={regions_normalized}, new_values={new_values}")
+            
+            return options, new_values, dash.no_update
     
-    # Callback to create region legend items dynamically
+    # Build region legend items (color boxes + labels) that mirror the hidden checklist
     @dash_app.callback(
         Output('region-legend-container', 'children'),
-        Input('region-legend-items-store', 'children'),
-        prevent_initial_call=False
+        [
+            Input('projects-status-region-filter', 'options'),
+            Input('projects-status-region-filter', 'value'),
+        ],
+        prevent_initial_call=False,
     )
-    def create_region_legend_items(regions):
-        """Create clickable legend items for regions"""
-        if not regions:
-            return []
+    def render_region_legend(options, selected_values):
+        # Normalize all values for consistent comparison
+        regions = [str(opt.get('value', '')).strip() for opt in (options or [])]
+        selected_normalized = [str(v).strip() for v in (selected_values or [])]
+        selected = set(selected_normalized)
         
-        legend_items = []
+        print(f"DEBUG: render_region_legend - regions={regions}, selected_values={selected_normalized}")
+        
+        items = []
         for region in regions:
-            legend_items.append(
-                html.Div([
-                    html.Div(style={
-                        'width': '18px',
-                        'height': '18px',
-                        'backgroundColor': get_region_color(region, regions),
-                        'border': '2px solid white',
-                        'display': 'inline-block',
-                        'marginRight': '10px',
-                        'verticalAlign': 'middle',
-                        'boxShadow': '0 1px 3px rgba(0,0,0,0.2)'
-                    }),
-                    html.Span(region, style={
-                        'fontSize': '12px', 
-                        'verticalAlign': 'middle',
-                        'fontWeight': '500',
-                        'color': '#333333'
-                    })
-                ], id={'type': 'region-legend-item', 'index': region}, n_clicks=0, style={
-                    'marginBottom': '8px', 
-                    'display': 'flex', 
-                    'alignItems': 'center', 
-                    'cursor': 'pointer',
-                    'padding': '4px 8px',
-                    'borderRadius': '3px',
-                    'border': '1px solid transparent'
-                })
+            color = REGION_COLORS.get(region, "#666666")
+            is_active = region in selected
+            print(f"DEBUG: render_region_legend - region={region}, is_active={is_active}")
+            item_style = {
+                "display": "flex",
+                "alignItems": "center",
+                "cursor": "pointer",
+                "padding": "6px 8px",
+                "borderRadius": "6px",
+                "marginBottom": "6px",
+                "border": "1px solid #e0e0e0",
+                "backgroundColor": "#ffffff" if is_active else "#f9f9f9",
+                "opacity": 1.0 if is_active else 0.45,
+                "transition": "background-color 0.15s ease, opacity 0.15s ease",
+            }
+            items.append(
+                html.Div(
+                    [
+                        html.Div(
+                            style={
+                                "width": "16px",
+                                "height": "16px",
+                                "backgroundColor": color,
+                                "borderRadius": "3px",
+                                "marginRight": "8px",
+                                "border": "1px solid #ffffff",
+                                "boxShadow": "0 1px 2px rgba(0,0,0,0.2)",
+                            }
+                        ),
+                        html.Span(
+                            region,
+                            style={
+                                "fontSize": "12px",
+                                "color": "#2c3e50",
+                                "fontWeight": "600" if is_active else "500",
+                                "fontFamily": "Arial, sans-serif",
+                            },
+                        ),
+                    ],
+                    id={'type': 'region-legend-item', 'value': region},
+                    n_clicks=0,
+                    style=item_style,
+                )
             )
-        
-        return legend_items
+        return items
     
-    # Mirror the visible checklist into the legend-driven store so the store is the single source of truth
-    @dash_app.callback(
-        Output('projects-status-region-selection', 'data'),
-        Input('projects-status-region-filter', 'value'),
-        prevent_initial_call=False
-    )
-    def mirror_region_to_store(checklist_value):
-        if checklist_value is None:
-            return []
-        return checklist_value
-    
-    # Callback to handle Region legend clicks (similar to Carbon Intensity filter)
+    # Toggle region selection via legend clicks (mirrors hidden checklist)
     @dash_app.callback(
         Output('projects-status-region-filter', 'value', allow_duplicate=True),
-        [Input({'type': 'region-legend-item', 'index': ALL}, 'n_clicks')],
+        Input({'type': 'region-legend-item', 'value': ALL}, 'n_clicks'),
         State('projects-status-region-filter', 'value'),
-        State('region-legend-items-store', 'children'),
-        prevent_initial_call=True
+        State('projects-status-region-filter', 'options'),
+        State('region-filter-initialized', 'data'),
+        prevent_initial_call=True,
     )
-    def toggle_region_filter(n_clicks_list, current_values, all_regions):
-        """Toggle Region filter when legend items are clicked"""
-        if current_values is None:
-            current_values = all_regions if all_regions else []
-
+    def toggle_region_from_legend(n_clicks_list, current_values, options, filter_initialized):
         ctx = dash.callback_context
         if not ctx.triggered:
-            return current_values
-
-        trigger_id = ctx.triggered[0].get('prop_id', '')
-        if not trigger_id:
-            return current_values
-
-        # Extract pattern id JSON (left of ".n_clicks")
-        id_part = trigger_id.split('.')[0]
+            return dash.no_update
+        
+        # CRITICAL: Ignore any triggers before filter is initialized to prevent race conditions
+        if not filter_initialized:
+            print(f"DEBUG: toggle_region_from_legend - Filter not initialized yet, ignoring toggle")
+            return dash.no_update
+        
+        trigger = ctx.triggered[0].get("prop_id", "")
+        if not trigger:
+            return dash.no_update
+        
+        # Check if this is a real click (n_clicks > 0) or just initialization
         try:
             import json
-            id_dict = json.loads(id_part.replace("'", '"'))
-            toggled_region = id_dict.get('index')
+            trigger_id = json.loads(trigger.split(".")[0].replace("'", '"'))
         except Exception:
-            toggled_region = None
-
-        if toggled_region:
-            if toggled_region in current_values:
-                # Remove if already selected
-                new_values = [v for v in current_values if v != toggled_region]
-            else:
-                # Add if not selected
-                new_values = current_values + [toggled_region] if current_values else [toggled_region]
-            return new_values
-
-        return current_values
-    
-    # Callback to update region legend item visual states
-    @dash_app.callback(
-        Output({'type': 'region-legend-item', 'index': MATCH}, 'style'),
-        [Input('projects-status-region-filter', 'value'),
-         Input('current-submenu', 'data'),
-         Input('region-legend-items-store', 'children')],
-        State({'type': 'region-legend-item', 'index': MATCH}, 'id'),
-        State('projects-status-region-selection', 'data'),
-        prevent_initial_call=False
-    )
-    def update_region_legend_styles(selected_regions, current_submenu, all_regions, item_id, region_selection):
-        """Update legend item styles to show which are selected - only when page is active"""
-        # Only update styles if this page is currently active
-        if current_submenu != 'projects-status':
-            base_style = {
-                'marginBottom': '8px', 
-                'display': 'flex', 
-                'alignItems': 'center', 
-                'cursor': 'pointer',
-                'padding': '4px 8px',
-                'borderRadius': '3px',
-                'border': '1px solid transparent',
-                'opacity': '0.3'
-            }
-            return base_style
+            return dash.no_update
         
-        base_style = {
-            'marginBottom': '8px', 
-            'display': 'flex', 
-            'alignItems': 'center', 
-            'cursor': 'pointer',
-            'padding': '4px 8px',
-            'borderRadius': '3px',
-            'border': '1px solid transparent'
-        }
+        # Extract n_clicks value from the trigger to ensure it's a real click
+        trigger_prop = trigger.split(".")[-1] if "." in trigger else ""
+        if trigger_prop != "n_clicks":
+            return dash.no_update
         
-        # Prefer region selection from the region-selection store (legend-driven)
-        if region_selection and isinstance(region_selection, list) and len(region_selection) > 0:
-            selected_regions = region_selection
-
-        if selected_regions is None or (isinstance(selected_regions, list) and len(selected_regions) == 0):
-            return {**base_style, 'opacity': '1.0'}
-
+        # Find which item was clicked by checking which n_clicks increased
+        # We need to compare with previous state, but since we don't have it, we'll check if any n_clicks > 0
+        clicked_index = None
+        for idx, click_count in enumerate(n_clicks_list or []):
+            if click_count is not None and click_count > 0:
+                clicked_index = idx
+                break
         
-        if all_regions is None:
-            all_regions = []
+        if clicked_index is None:
+            print(f"DEBUG: toggle_region_from_legend - No valid click detected (n_clicks_list={n_clicks_list}), ignoring")
+            return dash.no_update
         
-        region_name = item_id.get('index') if item_id else None
+        # Verify the clicked item matches the trigger
+        option_values = [str(opt.get("value", "")).strip() for opt in (options or [])]
+        if clicked_index < len(option_values):
+            clicked_region = option_values[clicked_index]
+            trigger_region = trigger_id.get("value", "")
+            if str(clicked_region).strip() != str(trigger_region).strip():
+                print(f"DEBUG: toggle_region_from_legend - Mismatch: clicked_index={clicked_index}, clicked_region={clicked_region}, trigger_region={trigger_region}, ignoring")
+                return dash.no_update
         
-        # Determine if this region should be shown as selected
-        is_selected = False
-        if region_name:
-            # If selected_regions has values, check if region is in it
-            if isinstance(selected_regions, list) and len(selected_regions) > 0:
-                is_selected = region_name in selected_regions
-            # If selected_regions is empty but all_regions is available, assume all are selected
-            elif isinstance(all_regions, list) and len(all_regions) > 0:
-                is_selected = region_name in all_regions
-            # Fallback: if both are empty, show as selected (will be corrected when values are set)
-            else:
-                is_selected = True
+        region = trigger_id.get("value")
+        if not region:
+            return dash.no_update
         
-        if is_selected:
-            style = {**base_style, 'opacity': '1.0'}
+        # Normalize region and current values for consistent comparison
+        region_normalized = str(region).strip()
+        current = current_values or []
+        current_normalized = [str(v).strip() for v in current]
+        
+        print(f"DEBUG: toggle_region_from_legend - region={region_normalized}, current_values={current_normalized}, filter_initialized={filter_initialized}")
+        
+        if region_normalized in current_normalized:
+            # Region is currently selected, so unselect it (remove from filter)
+            new_values = [v for v in current_normalized if v != region_normalized]
+            print(f"DEBUG: toggle_region_from_legend - unselecting {region_normalized}, new_values={new_values}")
         else:
-            style = {**base_style, 'opacity': '0.3'}
+            # Region is not currently selected, so select it (add to filter)
+            new_values = current_normalized + [region_normalized]
+            print(f"DEBUG: toggle_region_from_legend - selecting {region_normalized}, new_values={new_values}")
         
-        return style
+        # Preserve order according to options
+        option_order = [str(opt.get("value", "")).strip() for opt in (options or [])]
+        if option_order:
+            new_values = [v for v in option_order if v in new_values]
+        
+        print(f"DEBUG: toggle_region_from_legend - final new_values={new_values}")
+        return new_values
+    
     
     @dash_app.callback(
         Output('projects-status-treemap', 'figure'),
         [Input('projects-status-region-filter', 'value'),
          Input('projects-status-likely-filter', 'value'),
          Input('current-submenu', 'data'),
-         Input('projects-status-click-selection', 'data')],
-        [State('projects-status-treemap-store', 'data'),
-         State('projects-status-region-selection', 'data')],
+         Input('projects-status-click-selection', 'data'),
+         Input('region-filter-initialized', 'data')],  # Ensure treemap re-renders when filter is initialized
+        [State('projects-status-treemap-store', 'data')],
         prevent_initial_call=False
     )
-    def update_treemap(region_filter, likely_filter, current_submenu, selected_label, treemap_store, region_selection):        
-        print(f"DEBUG: update_treemap triggered - current_submenu={current_submenu}, region_filter={region_filter}, likely_filter={likely_filter}, region_selection={region_selection}")
+    def update_treemap(region_filter, likely_filter, current_submenu, selected_label, filter_initialized, treemap_store):        
+        print(f"DEBUG: update_treemap triggered - current_submenu={current_submenu}, region_filter={region_filter} (type: {type(region_filter)}), likely_filter={likely_filter}, filter_initialized={filter_initialized}")
         if current_submenu != 'projects-status':
             # Return empty figure if page is not active
             fig = go.Figure()
@@ -1180,29 +1285,99 @@ def register_callbacks(dash_app, server):
             fig.update_layout(height=700, plot_bgcolor="white", paper_bgcolor="white", margin=dict(l=0, r=0, t=0, b=0))
             return fig
         
-        # If legend-driven region selection store is present, prefer it
-        if region_selection and isinstance(region_selection, list) and len(region_selection) > 0:
-            region_filter = region_selection
-
-        # CRITICAL: Only handle None/empty filter on initial load
-        # DO NOT add Africa back if user explicitly removed it - respect user's filter selection
-        if region_filter is None or (isinstance(region_filter, list) and len(region_filter) == 0):
-            # Load data to get all available regions (only for initial load when filter is None/empty)
+        # CRITICAL: Wait for filter initialization before rendering treemap
+        # This prevents race condition where treemap renders before filter is set
+        # Only wait if filter is not initialized AND region_filter is None
+        # Once filter_initialized is True, proceed regardless of region_filter value
+        if filter_initialized is False and region_filter is None:
+            print(f"DEBUG: update_treemap - Filter not initialized yet (filter_initialized={filter_initialized}, region_filter={region_filter}), waiting...")
+            # Return empty figure with loading message until filter is initialized
+            fig = go.Figure()
+            fig.add_annotation(
+                text="Loading...",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font=dict(size=16, color="#666666")
+            )
+            fig.update_layout(height=700, plot_bgcolor="white", paper_bgcolor="white", margin=dict(l=0, r=0, t=0, b=0))
+            return fig
+        
+        # Normalize region filter values (trim/case)
+        if isinstance(region_filter, list):
+            region_filter = [str(r).strip() for r in region_filter]
+            print(f"DEBUG: update_treemap - normalized region_filter={region_filter}")
+        # If region filter empty => no regions; if None => default to all available
+        if region_filter is None:
             if treemap_store:
                 df_temp = pd.DataFrame(treemap_store)
             else:
                 df_temp = load_treemap_data()
             if not df_temp.empty and "Region" in df_temp.columns:
-                all_regions = df_temp['Region'].dropna().unique().tolist()
-                # Order according to REGION_ORDER
+                all_regions = (
+                    df_temp['Region'].astype(str).str.strip().dropna().unique().tolist()
+                )
                 ordered_all = [r for r in REGION_ORDER if r in all_regions]
                 remaining_all = [r for r in all_regions if r not in REGION_ORDER]
                 ordered_all.extend(sorted(remaining_all))
                 region_filter = ordered_all
+        elif isinstance(region_filter, list) and len(region_filter) == 0:
+            df_empty = pd.DataFrame(columns=["Region", "Project Status", "Play Type", "Production Additions"])
+            return create_treemap_figure(df_empty, [], likely_filter, None, selected_label)
         if treemap_store:
             df = pd.DataFrame(treemap_store)
         else:
             df = load_treemap_data()
+        # Apply likely filter to treemap data before rendering
+        def _apply_likely_filter(df_in: pd.DataFrame, likely_vals):
+            if df_in.empty or "Region" not in df_in.columns:
+                return df_in
+            if likely_vals is None:
+                return df_in
+            if isinstance(likely_vals, list):
+                if len(likely_vals) == 0:
+                    return df_in.iloc[0:0]
+                if 'All' in likely_vals:
+                    return df_in
+            table_df = load_table_data()
+            likely_col = None
+            for col in table_df.columns:
+                lc = col.lower()
+                if 'likely' in lc and ('go' in lc or 'ahead' in lc):
+                    likely_col = col
+                    break
+            if likely_col is None:
+                return df_in
+            col_upper = table_df[likely_col].astype(str).str.upper()
+            filter_values = likely_vals if isinstance(likely_vals, list) else [likely_vals]
+            mask = pd.Series(False, index=col_upper.index)
+            for v in filter_values:
+                v_str = str(v).strip()
+                v_up = v_str.upper()
+                if v_up == 'ALL' or v == 'All':
+                    mask |= pd.Series(True, index=col_upper.index)
+                elif v_up == '' or v_str.lower() == 'blank':
+                    mask |= (col_upper == '')
+                elif v_up.startswith('Y') or v_up == 'YES':
+                    mask |= col_upper.str.startswith('Y')
+                elif v_up.startswith('N'):
+                    mask |= col_upper.str.startswith('N')
+                elif v_up.startswith('UNCERT') or v_up.startswith('U'):
+                    mask |= col_upper.str.startswith('U')
+            matching_projects = table_df[mask]
+            if matching_projects.empty:
+                return df_in.iloc[0:0]
+            combos = set()
+            for _, row in matching_projects.iterrows():
+                combos.add((str(row.get("Region", "")).strip(), str(row.get("Play Type", "")).strip(), str(row.get("Project Status", "")).strip()))
+            def _match_combo(r):
+                return (str(r.get("Region", "")).strip(), str(r.get("Play Type", "")).strip(), str(r.get("Project Status", "")).strip()) in combos
+            filtered_df = df_in[df_in.apply(_match_combo, axis=1)]
+            return filtered_df
+
+        df = _apply_likely_filter(df, likely_filter)
         table_df = load_table_data()
         if not table_df.empty and "Project Name" in table_df.columns:
             table_df_unique = table_df.drop_duplicates(subset=["Project Name"], keep='first')
@@ -1226,19 +1401,34 @@ def register_callbacks(dash_app, server):
 
             # Grab clicked label (support label or customdata)
             point = click_data['points'][0]
-            clicked_label = None
+            selection_payload = None
             if isinstance(point, dict):
-                clicked_label = point.get('label') or point.get('customdata') or None
-            # Normalize to string
-            if clicked_label is None:
-                return dash.no_update
+                cd = point.get('customdata')
+                if isinstance(cd, dict) and cd.get('key'):
+                    # Normalize key/label to strings for consistent downstream matching
+                    selection_payload = {
+                        **cd,
+                        "key": str(cd.get("key")).strip() if cd.get("key") is not None else None,
+                        "label": str(cd.get("label")).strip() if cd.get("label") is not None else cd.get("label"),
+                    }
+                elif point.get('label'):
+                    selection_payload = {"key": str(point['label']).strip(), "label": str(point['label']).strip()}
 
-            clicked_label = str(clicked_label).strip()
-            if current_selection and str(current_selection).strip() == clicked_label:
-                # Clear selection
+            # If click produced no identifiable selection, clear to reset active/inactive state
+            if selection_payload is None:
                 return None
-            # Set new selection
-            return clicked_label
+
+            # If same block clicked again, clear selection
+            if isinstance(current_selection, dict):
+                curr_key = current_selection.get("key")
+            else:
+                curr_key = str(current_selection).strip() if current_selection else None
+            new_key = selection_payload.get("key")
+
+            if curr_key and new_key and str(curr_key).strip() == str(new_key).strip():
+                return None
+
+            return selection_payload
         except Exception as e:
             import traceback
             print("ERROR in toggle_treemap_selection:", e)
@@ -1253,11 +1443,10 @@ def register_callbacks(dash_app, server):
          Input('projects-status-click-selection', 'data'),
          Input('projects-status-treemap', 'clickData'),
          Input('current-submenu', 'data')],
-        [State('projects-status-treemap-store', 'data'),
-         State('projects-status-region-selection', 'data')],
+        [State('projects-status-treemap-store', 'data')],
         prevent_initial_call=False
     )
-    def update_tables(region_filter, likely_filter, click_selection, click_data, current_submenu, treemap_store, region_selection):
+    def update_tables(region_filter, likely_filter, click_selection, click_data, current_submenu, treemap_store):
         """Update KPI table and project details table - only loads data when page is active"""
         # Only load data if this page is currently active
         if current_submenu != 'projects-status':
@@ -1280,10 +1469,6 @@ def register_callbacks(dash_app, server):
             empty_table = html.Div("", style={'display': 'none'})
             return empty_kpi, empty_table
         
-        # If legend-driven selection exists, prefer it
-        if region_selection and isinstance(region_selection, list) and len(region_selection) > 0:
-            region_filter = region_selection
-
         # Calculate KPI data based on region filter and likely filter
         filtered_treemap = treemap_df.copy()
         
@@ -1459,30 +1644,63 @@ def register_callbacks(dash_app, server):
         clicked_project_status = None
         clicked_production_additions = None
 
-        # Determine clicked_label from click_selection (preferred) or click_data (fallback).
+        # Determine selection (dict with key/metadata) from store; fall back to string label
+        selection = click_selection if click_selection is not None else None
+        selection_type = None
         clicked_label = None
-        if click_selection is not None:
-            # click_selection is the normalized label stored by the toggle callback
-            clicked_label = str(click_selection).strip() if click_selection else None
-        else:
-            # No selection in store => treat as no click (prevents stale clickData causing selection)
-            clicked_label = None
+        sel_region = None
+        sel_status = None
+        sel_play = None
 
-        # If a selection exists, apply filters as before
+        if isinstance(selection, dict):
+            selection_type = selection.get("type")
+            clicked_label = selection.get("label") or selection.get("key")
+            sel_region = selection.get("region")
+            sel_status = selection.get("project_status")
+            sel_play = selection.get("play_type")
+        elif selection:
+            clicked_label = str(selection).strip()
+
         if clicked_label:
-            print(f"DEBUG: Using click_selection label: {clicked_label}")
-            # Check if clicked label is a region (top level)
+            print(f"DEBUG: Using click selection label: {clicked_label}")
+
+        # Apply filters / KPI based on selection type
+        if selection_type == "region" and sel_region:
+            if "Region" in filtered_table.columns:
+                filtered_table = filtered_table[filtered_table["Region"] == sel_region]
+        elif selection_type == "status":
+            # Compute KPI value for the selected status (scoped to region/play type when provided)
+            sel_mask = filtered_treemap["Project Status"] == sel_status if sel_status else pd.Series([False] * len(filtered_treemap))
+            if sel_region:
+                sel_mask = sel_mask & (filtered_treemap["Region"] == sel_region)
+            if sel_play:
+                sel_mask = sel_mask & (filtered_treemap["Play Type"] == sel_play)
+            status_df = filtered_treemap[sel_mask]
+            clicked_project_status = sel_status
+            if not status_df.empty:
+                clicked_production_additions = float(status_df["Production Additions"].sum())
+            else:
+                clicked_production_additions = 0.0
+            print(f"DEBUG: Clicked status={clicked_project_status}, value={clicked_production_additions}")
+
+            # Filter details table accordingly
+            if sel_region and "Region" in filtered_table.columns:
+                filtered_table = filtered_table[filtered_table["Region"] == sel_region]
+            if sel_status and "Project Status" in filtered_table.columns:
+                filtered_table = filtered_table[filtered_table["Project Status"] == sel_status]
+            if sel_play and "Play Type" in filtered_table.columns:
+                filtered_table = filtered_table[filtered_table["Play Type"] == sel_play]
+        elif clicked_label:
+            # Fallback for legacy string-based selection
             if "Region" in filtered_table.columns and clicked_label in filtered_table["Region"].values:
                 filtered_table = filtered_table[filtered_table["Region"] == clicked_label]
 
-            # Check if clicked label is a combined "Project Status - Play Type" (second level)
             if " - " in clicked_label:
                 parts = clicked_label.split(" - ", 1)
                 if len(parts) == 2:
                     project_status = parts[0].strip()
                     play_type = parts[1].strip()
 
-                    # If it's a recognized Project Status, compute clicked KPI
                     if project_status in ["Under Development", "Onstream", "Appraisal"]:
                         clicked_project_status = project_status
                         status_df = filtered_treemap[filtered_treemap["Project Status"] == project_status]
@@ -1492,7 +1710,6 @@ def register_callbacks(dash_app, server):
                             clicked_production_additions = 0.0
                         print(f"DEBUG: Clicked status={clicked_project_status}, value={clicked_production_additions}")
 
-                    # Filter details table by both Project Status and Play Type
                     if "Project Status" in filtered_table.columns:
                         filtered_table = filtered_table[filtered_table["Project Status"] == project_status]
                     if "Play Type" in filtered_table.columns:
