@@ -335,7 +335,13 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
             showarrow=False,
             font=dict(size=16, color="#666666")
         )
-        fig.update_layout(height=700, plot_bgcolor="white", paper_bgcolor="white", margin=dict(l=0, r=0, t=0, b=0))
+        fig.update_layout(
+            title=dict(text="Total Capacity Additions 2025 Q1 - 2029 Q4", x=0.5, xanchor="center"),
+            height=700,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            margin=dict(l=10, r=10, t=60, b=10)
+        )
         return fig
     
     filtered_df = df.copy()
@@ -451,7 +457,13 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
             showarrow=False,
             font=dict(size=16, color="#666666")
         )
-        fig.update_layout(height=700, plot_bgcolor="white", paper_bgcolor="white", margin=dict(l=0, r=0, t=0, b=0))
+        fig.update_layout(
+            title=dict(text="Total Capacity Additions 2025 Q1 - 2029 Q4", x=0.5, xanchor="center"),
+            height=700,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            margin=dict(l=10, r=10, t=60, b=10)
+        )
         return fig
     
     # Get unique regions and order them according to REGION_ORDER
@@ -495,7 +507,13 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
             showarrow=False,
             font=dict(size=16, color="#666666")
         )
-        fig.update_layout(height=700, plot_bgcolor="white", paper_bgcolor="white", margin=dict(l=0, r=0, t=0, b=0))
+        fig.update_layout(
+            title=dict(text="Total Capacity Additions 2025 Q1 - 2029 Q4", x=0.5, xanchor="center"),
+            height=700,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            margin=dict(l=10, r=10, t=60, b=10)
+        )
         return fig
     
     # Order regions according to REGION_ORDER
@@ -775,8 +793,58 @@ def create_layout():
                     id='projects-status-treemap',
                     style={'height': '700px'},
                     config={'displayModeBar': False}
+                ),
+                # Loading overlay
+                html.Div(
+                    id='treemap-loading-overlay',
+                    children=[
+                        html.Div(
+                            [
+                                html.Div(
+                                    className="spinner",
+                                    style={
+                                        'border': '4px solid #f3f3f3',
+                                        'borderTop': '4px solid #E75224',
+                                        'borderRadius': '50%',
+                                        'width': '40px',
+                                        'height': '40px',
+                                        'animation': 'spin 1s linear infinite',
+                                        'margin': '0 auto'
+                                    }
+                                ),
+                                html.Div(
+                                    "Updating...",
+                                    style={
+                                        'marginTop': '15px',
+                                        'color': '#666666',
+                                        'fontSize': '14px',
+                                        'fontFamily': 'Arial, sans-serif'
+                                    }
+                                )
+                            ],
+                            style={
+                                'position': 'absolute',
+                                'top': '50%',
+                                'left': '50%',
+                                'transform': 'translate(-50%, -50%)',
+                                'textAlign': 'center',
+                                'zIndex': '1000'
+                            }
+                        )
+                    ],
+                    style={
+                        'display': 'none',
+                        'position': 'absolute',
+                        'top': '0',
+                        'left': '0',
+                        'width': '100%',
+                        'height': '100%',
+                        'backgroundColor': 'rgba(255, 255, 255, 0.8)',
+                        'zIndex': '999',
+                        'pointerEvents': 'none'
+                    }
                 )
-            ], style={'width': '75%', 'float': 'left', 'paddingRight': '20px'}),
+            ], style={'width': '75%', 'float': 'left', 'paddingRight': '20px', 'position': 'relative'}),
             
             # Right panel (25% width)
             html.Div([
@@ -817,10 +885,17 @@ def create_layout():
                 # Store to track if region filter has been initialized (prevents overwriting on subsequent updates)
                 dcc.Store(id='region-filter-initialized', data=False),
                 
+                # Hidden div for CSS injection trigger
+                html.Div(id='treemap-css-injector', style={'display': 'none'}),
+                
                 # Store to cache treemap dataframe (avoids repeated DB queries)
                 dcc.Store(id='projects-status-treemap-store', data=[]),
+                # Store to cache table data (avoids repeated DB queries)
+                dcc.Store(id='projects-status-table-store', data=[]),
                 # Store to hold treemap click selection (selected label). None => no selection.
                 dcc.Store(id='projects-status-click-selection', data=None),
+                # Store to track loading state
+                dcc.Store(id='treemap-loading-state', data=False),
                 
                 # KPI Table Section
                 html.Div([
@@ -894,6 +969,24 @@ def create_layout():
 
 def register_callbacks(dash_app, server):
     """Register all callbacks for Projects by Status"""
+    
+    # Clientside callback to inject CSS for spinner animation
+    dash_app.clientside_callback(
+        """
+        function(n) {
+            if (n && !document.getElementById('treemap-spinner-style')) {
+                var style = document.createElement('style');
+                style.id = 'treemap-spinner-style';
+                style.textContent = '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
+                document.head.appendChild(style);
+            }
+            return '';
+        }
+        """,
+        Output('treemap-css-injector', 'children'),
+        Input('current-submenu', 'data'),
+        prevent_initial_call=False
+    )
     
     @dash_app.callback(
         [Output('projects-status-likely-filter', 'value'),
@@ -1259,6 +1352,59 @@ def register_callbacks(dash_app, server):
         return new_values
     
     
+    # Callback to show loading overlay when treemap click selection changes
+    @dash_app.callback(
+        [Output('treemap-loading-overlay', 'style'),
+         Output('treemap-loading-state', 'data')],
+        Input('projects-status-click-selection', 'data'),
+        prevent_initial_call=True
+    )
+    def show_loading_overlay(click_selection):
+        """Show loading overlay when treemap is updating due to click"""
+        return {
+            'display': 'block',
+            'position': 'absolute',
+            'top': '0',
+            'left': '0',
+            'width': '100%',
+            'height': '100%',
+            'backgroundColor': 'rgba(255, 255, 255, 0.8)',
+            'zIndex': '999',
+            'pointerEvents': 'none'
+        }, True
+    
+    # Callback to hide loading overlay when treemap update completes
+    @dash_app.callback(
+        [Output('treemap-loading-overlay', 'style', allow_duplicate=True),
+         Output('treemap-loading-state', 'data', allow_duplicate=True)],
+        Input('projects-status-treemap', 'figure'),
+        State('treemap-loading-state', 'data'),
+        prevent_initial_call=True
+    )
+    def hide_loading_overlay(figure, loading_state):
+        """Hide loading overlay when treemap figure is updated"""
+        # Check if figure is valid and loading state is active
+        if loading_state and figure is not None:
+            # Verify figure has required structure
+            try:
+                # Just check if figure exists, don't access properties that might not exist
+                if isinstance(figure, dict) or hasattr(figure, 'data'):
+                    return {
+                        'display': 'none',
+                        'position': 'absolute',
+                        'top': '0',
+                        'left': '0',
+                        'width': '100%',
+                        'height': '100%',
+                        'backgroundColor': 'rgba(255, 255, 255, 0.8)',
+                        'zIndex': '999',
+                        'pointerEvents': 'none'
+                    }, False
+            except Exception:
+                # If there's any error accessing figure properties, just return no_update
+                pass
+        return dash.no_update, dash.no_update
+
     @dash_app.callback(
         Output('projects-status-treemap', 'figure'),
         [Input('projects-status-region-filter', 'value'),
@@ -1266,10 +1412,11 @@ def register_callbacks(dash_app, server):
          Input('current-submenu', 'data'),
          Input('projects-status-click-selection', 'data'),
          Input('region-filter-initialized', 'data')],  # Ensure treemap re-renders when filter is initialized
-        [State('projects-status-treemap-store', 'data')],
+        [State('projects-status-treemap-store', 'data'),
+         State('projects-status-table-store', 'data')],
         prevent_initial_call=False
     )
-    def update_treemap(region_filter, likely_filter, current_submenu, selected_label, filter_initialized, treemap_store):        
+    def update_treemap(region_filter, likely_filter, current_submenu, selected_label, filter_initialized, treemap_store, table_store):        
         print(f"DEBUG: update_treemap triggered - current_submenu={current_submenu}, region_filter={region_filter} (type: {type(region_filter)}), likely_filter={likely_filter}, filter_initialized={filter_initialized}")
         if current_submenu != 'projects-status':
             # Return empty figure if page is not active
@@ -1282,7 +1429,13 @@ def register_callbacks(dash_app, server):
                 y=0.5,
                 showarrow=False
             )
-            fig.update_layout(height=700, plot_bgcolor="white", paper_bgcolor="white", margin=dict(l=0, r=0, t=0, b=0))
+            fig.update_layout(
+                title=dict(text="Total Capacity Additions 2025 Q1 - 2029 Q4", x=0.5, xanchor="center"),
+                height=700,
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                margin=dict(l=10, r=10, t=60, b=10)
+            )
             return fig
         
         # CRITICAL: Wait for filter initialization before rendering treemap
@@ -1302,7 +1455,13 @@ def register_callbacks(dash_app, server):
                 showarrow=False,
                 font=dict(size=16, color="#666666")
             )
-            fig.update_layout(height=700, plot_bgcolor="white", paper_bgcolor="white", margin=dict(l=0, r=0, t=0, b=0))
+            fig.update_layout(
+                title=dict(text="Total Capacity Additions 2025 Q1 - 2029 Q4", x=0.5, xanchor="center"),
+                height=700,
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                margin=dict(l=10, r=10, t=60, b=10)
+            )
             return fig
         
         # Normalize region filter values (trim/case)
@@ -1330,6 +1489,13 @@ def register_callbacks(dash_app, server):
             df = pd.DataFrame(treemap_store)
         else:
             df = load_treemap_data()
+        
+        # Load table data once (use cache if available)
+        if table_store:
+            cached_table_df = pd.DataFrame(table_store)
+        else:
+            cached_table_df = load_table_data()
+        
         # Apply likely filter to treemap data before rendering
         def _apply_likely_filter(df_in: pd.DataFrame, likely_vals):
             if df_in.empty or "Region" not in df_in.columns:
@@ -1341,7 +1507,8 @@ def register_callbacks(dash_app, server):
                     return df_in.iloc[0:0]
                 if 'All' in likely_vals:
                     return df_in
-            table_df = load_table_data()
+            # Use cached table data
+            table_df = cached_table_df.copy()
             likely_col = None
             for col in table_df.columns:
                 lc = col.lower()
@@ -1378,7 +1545,14 @@ def register_callbacks(dash_app, server):
             return filtered_df
 
         df = _apply_likely_filter(df, likely_filter)
-        table_df = load_table_data()
+        
+        # Use cached table data if available to avoid repeated DB calls
+        if table_store:
+            table_df = pd.DataFrame(table_store)
+        else:
+            table_df = load_table_data()
+            # Cache will be populated by another callback
+        
         if not table_df.empty and "Project Name" in table_df.columns:
             table_df_unique = table_df.drop_duplicates(subset=["Project Name"], keep='first')
         else:
