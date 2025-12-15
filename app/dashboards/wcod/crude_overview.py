@@ -48,6 +48,69 @@ def _resolve_countries_selection(selected):
         return COUNTRIES[:] if COUNTRIES else []
     return [c for c in selected_list if c]
 
+def _format_production_breakdown_title(country_selection):
+    """Format the production breakdown title based on country selection.
+    
+    Args:
+        country_selection: Original country selection (before resolution)
+    
+    Returns:
+        Formatted title string
+    """
+    if country_selection is None:
+        return "Production Breakdown"
+    
+    # Normalize to list
+    if isinstance(country_selection, str):
+        selected_list = [country_selection]
+    else:
+        selected_list = list(country_selection) if country_selection else []
+    
+    # Check if "(All)" is selected
+    if "(All)" in selected_list:
+        return "Production Breakdown – All"
+    
+    # Filter out "(All)" and get actual countries
+    countries = [c for c in selected_list if c != "(All)"]
+    
+    if not countries:
+        return "Production Breakdown"
+    
+    # If 3 or fewer countries, show all names
+    if len(countries) <= 3:
+        return f"Production Breakdown – {', '.join(countries)}"
+    
+    # If more than 3, show first 3 + count of remaining
+    first_three = countries[:3]
+    remaining_count = len(countries) - 3
+    return f"Production Breakdown – {', '.join(first_three)} and {remaining_count} more"
+
+def _resolve_years_selection(selected):
+    """Normalize year selection; expand '(All)' to full list."""
+    if selected is None:
+        return []
+    if isinstance(selected, str):
+        selected_list = [selected]
+    else:
+        selected_list = list(selected)
+    if "(All)" in selected_list:
+        # Ensure data is loaded to get PRODUCTION_YEARS
+        _ensure_data_loaded()
+        return PRODUCTION_YEARS[:] if PRODUCTION_YEARS else []
+    # Filter out "(All)" and convert to integers (years are stored as ints in PRODUCTION_YEARS)
+    years = []
+    for y in selected_list:
+        if y != "(All)":
+            try:
+                # Handle both string and int inputs
+                year_val = int(y) if isinstance(y, str) else y
+                if isinstance(year_val, int):
+                    years.append(year_val)
+            except (ValueError, TypeError):
+                # If it can't convert, skip
+                pass
+    return years
+
 # Data loading functions
 def load_yearly_bar():
     """Load yearly bar data from DB (dev.fact_wcod_crude)."""
@@ -537,6 +600,9 @@ MONTHLY_CRUDE_COLORS = {
     "Akpo Blend": "#5A8FB8",
     "Alaska North Slope": "#0077A3",
     "Algerian Condensate": "#4F8BB6",
+    "Al-Shaheen": "#2CA02C",
+    "Al-shaheen": "#2CA02C",  # Alternative spelling
+    "Al Shaheen": "#2CA02C",  # Alternative spelling
     "Alvheim": "#5C8FB8",
     "Amenam Blend": "#A9A9A9",
     "Anyala-madu": "#9B5C42",
@@ -550,8 +616,10 @@ MONTHLY_CRUDE_COLORS = {
     "Atapu": "#7E8BC7",
     "Azeri (Btc)": "#FF6A00",
     "Azeri Light": "#0077A3",
+    "Bach Ho": "#D62728",
     "Bakken": "#C9D9A3",
     "Balder": "#5F5F5F",
+    "Banoco Arab Medium": "#C7C7C7",
     "Basrah Heavy": "#A9A9A9",
     "Basrah Light": "#2E3D4F",
     "Basrah Medium": "#5A8FB8",
@@ -564,14 +632,19 @@ MONTHLY_CRUDE_COLORS = {
     "Cabinda": "#FF6A00",
     "Castilla": "#1F3B5D",
     "Cepu": "#9B5C42",
+    "Champion": "#7F7F7F",
     "Clair": "#C35A2E",
+    "Clifhead": "#C7C7C7",
     "Clov": "#1F3B5D",
+    "Condensate": "#2E3D4F",
+    "Cossack": "#8C564B",
     "CPC Blend - Russia": "#C35A2E",
     "Cpc Blend - Russia": "#C35A2E",  # Alternative spelling
     "Dalia": "#FF6A00",
     "Danish Crude Blend": "#A9A9A9",
     "Dar Blend South Sudan": "#7E8BC7",
     "Das Blend": "#9B5C42",
+    "Deodorized Field Condensate": "#98DF8A",
     "Djeno": "#7E8BC7",
     "Doba": "#C9D9A3",
     "Dubai": "#0077A3",
@@ -599,16 +672,18 @@ MONTHLY_CRUDE_COLORS = {
     "Heidrun": "#C35A2E",
     "Hoops Blend": "#0077A3",
     "Hungo": "#9B5C42",
+    "Ichthys Condensate": "#7F7F7F",
     "Iran Heavy": "#FF6A00",
     "Iran Light": "#C35A2E",
     "Isthmus": "#5A8FB8",
     "Johan Sverdrup": "#5A8FB8",
     "Jubarte": "#C9D9A3",
     "Jubilee": "#5F5F5F",
-    "Condensate": "#2E3D4F",
     "Kashagan": "#5A8FB8",
     "Kebco": "#C9D9A3",
+    "Ketapang": "#C7C7C7",
     "Khafji": "#5F5F5F",
+    "Kikeh": "#DBDB8D",
     "Kimanis": "#1F3B5D",
     "Kirkuk": "#0077A3",
     "Kissanje Blend": "#5A8FB8",
@@ -618,10 +693,12 @@ MONTHLY_CRUDE_COLORS = {
     "Kuwait": "#5F5F5F",
     "Kuwait Export Heavy": "#7E8BC7",
     "Kuwait Super Light": "#FF6A00",
+    "Lalang": "#1F77B4",
     "Lapa": "#C9D9A3",
     "Light Louisiana Sweet": "#1F3B5D",
     "Liza": "#0077A3",
     "Mandji": "#FF6A00",
+    "Mares Blend": "#AEC7E8",
     "Marlim": "#A9A9A9",
     "Mars Blend": "#C9D9A3",
     "Maya": "#1F3B5D",
@@ -630,7 +707,9 @@ MONTHLY_CRUDE_COLORS = {
     "Minas": "#1F3B5D",
     "Miri": "#5F5F5F",
     "Mostarda": "#7E8BC7",
+    "Mubarras Blend": "#1F77B4",
     "Murban": "#FF6A00",
+    "Napo": "#98DF8A",
     "Nemba": "#C35A2E",
     "Nile Blend South Sudan": "#C35A2E",
     "Nile Blend Sudan": "#1F3B5D",
@@ -641,6 +720,7 @@ MONTHLY_CRUDE_COLORS = {
     "Olmeca": "#C9D9A3",
     "Olombendo": "#5F5F5F",
     "Oman": "#7E8BC7",
+    "Oriente": "#FF9896",
     "Oseberg": "#7E8BC7",
     "Other Crudes - Algeria": "#1F3B5D",
     "Other Crudes - Angola": "#2E3D4F",
@@ -668,10 +748,15 @@ MONTHLY_CRUDE_COLORS = {
     "Peregrino": "#5A8FB8",
     "Plutonio": "#5A8FB8",
     "Poseidon": "#1F3B5D",
+    "Pyrenees": "#C49C94",
     "Qua Iboe": "#9B5C42",
+    "Qatar Land": "#C7C7C7",
+    "Qatar Low Sulphur Condensate": "#BCBD22",
+    "Qatar Marine": "#DBDB8D",
     "Rabi Blend": "#C9D9A3",
     "Rabi Light": "#FF6A00",
     "Roncador": "#1F3B5D",
+    "Ruby": "#F7B6D2",
     "Saharan Blend": "#C9D9A3",
     "Sakhalin Blend": "#5F5F5F",
     "Sangos": "#A9A9A9",
@@ -680,15 +765,19 @@ MONTHLY_CRUDE_COLORS = {
     "Saturno": "#C35A2E",
     "Schiehallion Blend": "#5F5F5F",
     "Sepia": "#5A8FB8",
+    "Sepat": "#BCBD22",
+    "Seria Light": "#17BECF",
     "Siberian Light": "#5A8FB8",
     "Skarv": "#0077A3",
     "Sokol": "#A9A9A9",
     "Southern Green Canyon": "#FF6A00",
+    "Stag": "#9EDAE5",
     "Suez Blend": "#FF6A00",
     "Sururu": "#0077A3",
     "Tapis": "#2E3D4F",
     "Ten": "#9B5C42",
     "Tengiz": "#A9A9A9",
+    "Thang Long": "#FFBB78",
     "Thunder Horse": "#FF6A00",
     "Troll": "#C9D9A3",
     "Tupi": "#9B5C42",
@@ -698,12 +787,16 @@ MONTHLY_CRUDE_COLORS = {
     "Urals": "#9B5C42",
     "Varandey": "#7E8BC7",
     "Vasconia": "#7E8BC7",
+    "Vityaz": "#0069AA",
     "Wafra": "#5F5F5F",
+    "Wandoo": "#2CA02C",
+    "West Texas Intermediate": "#AEC7E8",
     "West Texas Intermediate (Midland)": "#0077A3",
     "(Midland)": "#474F5C",
     "West Texas Light": "#B4B4B4",
     "West Texas Sour": "#1F3B5D",
-    "Western Desert Blend": "#FF6A00"
+    "Western Desert Blend": "#FF6A00",
+    "YK Blend": "#595959"
 }
 
 
@@ -810,6 +903,9 @@ def _ensure_color_maps():
     global STREAM_COLOR_ORDERS, STREAM_COLOR_MAPS, STREAM_ORDERS
     # If already built, ensure maps exist
     if STREAM_COLOR_MAPS and STREAM_COLOR_ORDERS and STREAM_ORDERS:
+        # Still merge comprehensive colors to ensure all streams have colors
+        if "monthly" in STREAM_COLOR_MAPS:
+            STREAM_COLOR_MAPS["monthly"] = {**STREAM_COLOR_MAPS["monthly"], **MONTHLY_CRUDE_COLORS}
         return
     # Build orders if missing
     if not YEARLY_STREAM_COLOR_ORDER or not MONTHLY_STREAM_COLOR_ORDER:
@@ -819,6 +915,9 @@ def _ensure_color_maps():
         "monthly": MONTHLY_STREAM_COLOR_ORDER
     }
     STREAM_COLOR_MAPS = {mode: {name: color for name, color in order} for mode, order in STREAM_COLOR_ORDERS.items()}
+    # Merge comprehensive monthly colors into the color map (comprehensive takes precedence)
+    if "monthly" in STREAM_COLOR_MAPS:
+        STREAM_COLOR_MAPS["monthly"] = {**STREAM_COLOR_MAPS["monthly"], **MONTHLY_CRUDE_COLORS}
     STREAM_ORDERS = {mode: [name for name, _ in order] for mode, order in STREAM_COLOR_ORDERS.items()}
 
 def load_table():
@@ -1065,9 +1164,8 @@ def _ensure_data_loaded():
         SULFUR_OPTIONS = _collect_filter_values("Sulfur")
         
         PRODUCTION_YEARS = sorted([int(y) for y in YEAR_TO_MONTH_COLS.keys() if y.isdigit()], reverse=True) if YEAR_TO_MONTH_COLS else []
-        PRODUCTION_YEAR_DEFAULT = [y for y in PRODUCTION_YEARS if y in (2025, 2024)]
-        if not PRODUCTION_YEAR_DEFAULT:
-            PRODUCTION_YEAR_DEFAULT = PRODUCTION_YEARS[:2] if PRODUCTION_YEARS else []
+        # Default to the two most recent years available (e.g., 2024, 2025)
+        PRODUCTION_YEAR_DEFAULT = PRODUCTION_YEARS[:2] if len(PRODUCTION_YEARS) >= 2 else PRODUCTION_YEARS[:] if PRODUCTION_YEARS else []
         
         YEARLY_STREAM_COLOR_ORDER, MONTHLY_STREAM_COLOR_ORDER = load_stream_color_order()
         STREAM_COLOR_ORDERS = {
@@ -1187,8 +1285,15 @@ def get_stream_color_map(tab="yearly"):
     # Ensure colors/orders are initialized
     _ensure_color_maps()
     if not STREAM_COLOR_MAPS:
+        # Return comprehensive monthly colors if available
+        if tab == "monthly":
+            return MONTHLY_CRUDE_COLORS.copy()
         return {}
-    return STREAM_COLOR_MAPS.get(tab) or STREAM_COLOR_MAPS.get("yearly", {})
+    color_map = STREAM_COLOR_MAPS.get(tab) or STREAM_COLOR_MAPS.get("yearly", {})
+    # For monthly, ensure comprehensive colors are included
+    if tab == "monthly":
+        color_map = {**color_map, **MONTHLY_CRUDE_COLORS}
+    return color_map
 
 
 def get_color_sequence(tab="yearly"):
@@ -1303,16 +1408,24 @@ def create_layout(server=None):
         ),
         html.Div([
             html.Div([
-                dcc.Graph(
-                    id="crude-map", 
-                    config={
-                        "displayModeBar": False,
-                        "scrollZoom": True,  # Allow scroll zoom
-                        "doubleClick": "reset",  # Double-click to reset zoom
-                        "modeBarButtonsToRemove": ["pan2d", "lasso2d"]  # Remove some controls
-                    }, 
-                    style={"height":"500px", "width":"100%"},
-                    figure=go.Figure()  # Initialize with empty figure
+                dcc.Loading(
+                    id="loading-map",
+                    type="dot",
+                    color="#d35400",
+                    children=[
+                        dcc.Graph(
+                            id="crude-map", 
+                            config={
+                                "displayModeBar": False,
+                                "scrollZoom": True,  # Allow scroll zoom
+                                "doubleClick": "reset",  # Double-click to reset zoom
+                                "modeBarButtonsToRemove": ["pan2d", "lasso2d"]  # Remove some controls
+                            }, 
+                            style={"height":"500px", "width":"100%"},
+                            figure=go.Figure()  # Initialize with empty figure
+                        )
+                    ],
+                    style={"height":"500px", "width":"100%"}
                 )
             ], className='col-md-10', style={'padding': '10px'}),
             html.Div([
@@ -1367,10 +1480,18 @@ def create_layout(server=None):
         html.Br(),
         html.Div([
             html.Div(
-                dcc.Graph(
-                    id="production-breakdown-chart", 
-                    style={"height":"520px"},
-                    figure=go.Figure()  # Initialize with empty figure
+                dcc.Loading(
+                    id="loading-chart",
+                    type="dot",
+                    color="#d35400",
+                    children=[
+                        dcc.Graph(
+                            id="production-breakdown-chart", 
+                            style={"height":"520px"},
+                            figure=go.Figure()  # Initialize with empty figure
+                        )
+                    ],
+                    style={"height":"520px"}
                 ), 
                 className='col-md-9',
                 style={'padding': '15px'}
@@ -1383,14 +1504,25 @@ def create_layout(server=None):
                     style={"display": "none"},
                     children=[
                         html.Label("Year of Date", style={"fontWeight": "bold", "color": "#2c3e50", "fontSize": "13px", "marginBottom": "5px"}),
-                        dcc.Dropdown(
+                        dcc.Checklist(
                             id="production-year-dropdown",
-                            options=([{"label": str(y), "value": y} for y in PRODUCTION_YEARS]
-                                     if PRODUCTION_YEARS else [{"label": str(y), "value": y} for y in range(2000, 2026)]),
+                            options=([{"label": "(All)", "value": "(All)"}] + [{"label": str(y), "value": y} for y in PRODUCTION_YEARS]
+                                     if PRODUCTION_YEARS else [{"label": "(All)", "value": "(All)"}] + [{"label": str(y), "value": y} for y in range(2000, 2026)]),
                             value=PRODUCTION_YEAR_DEFAULT if PRODUCTION_YEAR_DEFAULT else [],
-                            multi=True,
-                            placeholder="Select years",
-                            style={"marginBottom": "15px", "fontSize": "12px"}
+                            inputStyle={"marginRight": "8px"},
+                            labelStyle={"display": "block", "marginBottom": "6px"},
+                            style={
+                                "maxHeight": "280px",
+                                "overflowY": "auto",
+                                "padding": "8px",
+                                "border": "1px solid #e0e0e0",
+                                "borderRadius": "6px",
+                                "background": "white",
+                                "fontSize": "12px",
+                                "marginBottom": "15px"
+                            },
+                            persistence=True,
+                            persistence_type="session",
                         )
                     ]
                 ),
@@ -1422,28 +1554,36 @@ def create_layout(server=None):
         ),
         html.Div([
             html.Div([
-            dash_table.DataTable(
-                id="crude-table",
-                columns=[{"name":str(c),"id":str(c)} for c in TABLE_DF_YEARLY.columns.tolist()] if not TABLE_DF_YEARLY.empty else [],
-                data=TABLE_DF_YEARLY.to_dict("records") if not TABLE_DF_YEARLY.empty else [],
-                page_action='none',
-                markdown_options={"link_target": "_blank"},
-                style_table={
-                    "overflowX": "auto", 
-                    "overflowY": "auto", 
-                    "minHeight": "400px",
-                    "maxHeight": "600px",
-                    "height": "auto"
-                },
-                style_cell={"textAlign":"left","minWidth":"80px","whiteSpace":"normal"},
-                style_header={
-                    "textAlign": "center",
-                    "fontWeight": "bold"
-                },
-                style_data_conditional=TABLE_LINK_STYLE,
-                css=TABLE_LINK_CSS,
-                merge_duplicate_headers=True
-            )
+                dcc.Loading(
+                    id="loading-table",
+                    type="dot",
+                    color="#d35400",
+                    children=[
+                        dash_table.DataTable(
+                            id="crude-table",
+                            columns=[{"name":str(c),"id":str(c)} for c in TABLE_DF_YEARLY.columns.tolist()] if not TABLE_DF_YEARLY.empty else [],
+                            data=TABLE_DF_YEARLY.to_dict("records") if not TABLE_DF_YEARLY.empty else [],
+                            page_action='none',
+                            markdown_options={"link_target": "_blank"},
+                            style_table={
+                                "overflowX": "auto", 
+                                "overflowY": "auto", 
+                                "minHeight": "400px",
+                                "maxHeight": "600px",
+                                "height": "auto"
+                            },
+                            style_cell={"textAlign":"left","minWidth":"80px","whiteSpace":"normal"},
+                            style_header={
+                                "textAlign": "center",
+                                "fontWeight": "bold"
+                            },
+                            style_data_conditional=TABLE_LINK_STYLE,
+                            css=TABLE_LINK_CSS,
+                            merge_duplicate_headers=True
+                        )
+                    ],
+                    style={"minHeight": "400px"}
+                )
             ], className='col-md-9', style={'padding': '15px', 'minHeight': '400px'}),
             html.Div([
                 html.Label("Stream Name"),
@@ -1547,6 +1687,63 @@ def register_callbacks(dash_app, server):
             if clicked_country:
                 return [clicked_country]
         return no_update
+    
+    @dash_app.callback(
+        [Output("production-year-dropdown", "options"),
+         Output("production-year-dropdown", "value", allow_duplicate=True)],
+        Input("current-submenu", "data"),
+        prevent_initial_call="initial_duplicate"
+    )
+    def populate_production_years(current_submenu):
+        """Populate production year dropdown options once data is loaded."""
+        if current_submenu != 'crude-overview':
+            return no_update, no_update
+        
+        _ensure_data_loaded()
+        years = PRODUCTION_YEARS if PRODUCTION_YEARS else []
+        
+        options = [{"label": "(All)", "value": "(All)"}] + [{"label": str(y), "value": y} for y in years]
+        # Default to the two most recent years (e.g., 2024, 2025)
+        # Use integer values to match the option values
+        default_value = PRODUCTION_YEAR_DEFAULT if PRODUCTION_YEAR_DEFAULT else []
+        return options, default_value
+    
+    @dash_app.callback(
+        Output("production-year-dropdown", "value", allow_duplicate=True),
+        Input("production-year-dropdown", "value"),
+        State("production-year-dropdown", "options"),
+        prevent_initial_call=True,
+    )
+    def sync_years_all(selected, options):
+        """Ensure '(All)' behaves as select-all for year checklist."""
+        if not options:
+            return no_update
+        all_years = [o["value"] for o in options if o["value"] != "(All)"]
+        selected = selected or []
+        selected_set = set(selected)
+        has_all = "(All)" in selected_set
+        all_set = set(all_years)
+        subset_set = selected_set - {"(All)"}
+
+        if has_all and not subset_set:
+            normalized = ["(All)"] + all_years
+        elif has_all and subset_set:
+            if len(all_set) > 0 and len(subset_set) >= len(all_set) - 1:
+                # Sort years (integers) in descending order
+                normalized = sorted(subset_set, key=lambda x: x if isinstance(x, int) else int(x) if str(x).isdigit() else 0, reverse=True)
+            else:
+                normalized = ["(All)"] + all_years  # user added All from a partial subset
+        elif not has_all and subset_set == all_set and all_years:
+            normalized = []  # allow explicit unselect-all after All was selected
+        elif not subset_set:
+            normalized = []
+        else:
+            # Sort years (integers) in descending order
+            normalized = sorted(subset_set, key=lambda x: x if isinstance(x, int) else int(x) if str(x).isdigit() else 0, reverse=True)
+
+        new_sorted = normalized
+        old_sorted = sorted(selected, key=lambda x: x if isinstance(x, int) else int(x) if str(x).isdigit() else 0, reverse=True)
+        return new_sorted if new_sorted != old_sorted else no_update
     
     @dash_app.callback(
         [Output("profiled-streams", "options"),
@@ -2207,6 +2404,11 @@ def register_callbacks(dash_app, server):
         # Ensure data is loaded
         _ensure_data_loaded()
         _ensure_color_maps()
+        
+        # Store original country selection for title formatting (before resolution)
+        original_country_selection = country
+        
+        # Resolve country selection for data filtering
         country = _resolve_countries_selection(country)
         
         try:
@@ -2219,8 +2421,10 @@ def register_callbacks(dash_app, server):
                 if clicked_country:
                     if not country:
                         country = [clicked_country]
+                        original_country_selection = [clicked_country]
                     elif clicked_country not in country:
                         country = [clicked_country]
+                        original_country_selection = [clicked_country]
                     print(f"DEBUG: Map clicked, country={clicked_country}, updated country={country}")
             
             if year is None:
@@ -2229,7 +2433,7 @@ def register_callbacks(dash_app, server):
                 tab = "yearly"
             
             # Handle country - ensure it's a list and resolve "(All)" if present
-            resolved_countries = _resolve_countries_selection(country)
+            resolved_countries = _resolve_countries_selection(original_country_selection)
             # If no countries selected, return empty chart
             if not resolved_countries:
                 print(f"DEBUG BREAKDOWN: No countries selected, returning empty chart")
@@ -2254,7 +2458,8 @@ def register_callbacks(dash_app, server):
             # Handle profiled streams - if empty, show all available streams (don't filter)
             # profiled will be used later to filter if it has values
             
-            title_text = f"Production Breakdown - {' & '.join(country)}"
+            # Format title based on original country selection
+            title_text = _format_production_breakdown_title(original_country_selection)
             
             if tab == "yearly":
                 # For yearly view: Show all years on X-axis, stack streams for each year
@@ -2660,11 +2865,10 @@ def register_callbacks(dash_app, server):
                 if isinstance(country, str):
                     country = [country]
                 
-                if production_years:
-                    if isinstance(production_years, list):
-                        selected_years = [str(y) for y in production_years]
-                    else:
-                        selected_years = [str(production_years)]
+                # Resolve year selection - expand "(All)" to all available years
+                resolved_years = _resolve_years_selection(production_years)
+                if resolved_years:
+                    selected_years = [str(y) for y in resolved_years]
                 else:
                     # default to latest two years if available, else 2024/2025
                     if not BAR_LONG_MONTHLY.empty and "year" in BAR_LONG_MONTHLY.columns:
