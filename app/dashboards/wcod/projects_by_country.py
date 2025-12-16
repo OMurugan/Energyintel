@@ -1,17 +1,8 @@
-"""
-Projects by Country dashboard
-
-Implements a Tableau-inspired view that links a Mapbox country map with
-quarterly capacity additions and a project-level table. All data is
-loaded from CSV files in ``app/dashboards/data/projects_by_country``.
-"""
-
 import json
 import os
 import unicodedata
 import logging
 from urllib.request import urlopen
-
 import dash
 from dash import (
     ALL,
@@ -27,18 +18,12 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-
 from config import Config
 from core.data_helpers import execute_query
 
 # ---------------------------------------------------------------------
 # Data locations and shared constants
 # ---------------------------------------------------------------------
-DATA_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "data", "projects_by_country"
-)
-
-TABLE_CSV = os.path.join(DATA_DIR, "Projects by Country_Table_data.csv")
 
 GROUP_COLORS = {
     "OPEC-Plus": "#f5a555",
