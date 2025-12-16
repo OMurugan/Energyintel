@@ -10,34 +10,292 @@ import pandas as pd
 import os
 from core.data_helpers import execute_query
 
-# Define data path for chart/map CSVs (chart & map remain CSV-based)
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'projects_company')
-CSV_FILE = os.path.join(DATA_DIR, 'Projects by Company_Chart_data.csv')
-MAP_CSV_FILE = os.path.join(DATA_DIR, 'Map_by Company_data.csv')
-
-
-def load_data():
-    """Load chart data from CSV file (used for bar chart)."""
+def load_chart_data(company_name=None, likely_goahead_filter=None):
+    """Load chart data from database using Query 1 (quarterly data for bar chart)."""
+    # Build query conditionally based on filters
+    company_filter = ""
+    likely_filter = ""
+    params = {}
+    
+    if company_name:
+        company_filter = "AND op.company_name = :company_name"
+        params['company_name'] = company_name
+    
+    # Build likely_goahead filter
+    if likely_goahead_filter and isinstance(likely_goahead_filter, list) and len(likely_goahead_filter) > 0:
+        # Normalize filter values
+        selected_statuses = []
+        if 'ALL' in [str(v).upper() for v in likely_goahead_filter]:
+            # If ALL is selected, don't filter
+            likely_filter = ""
+        else:
+            for v in likely_goahead_filter:
+                v_up = str(v).upper()
+                if v_up == 'Y':
+                    selected_statuses.append('Y')
+                elif v_up == 'N':
+                    selected_statuses.append('N')
+                elif v_up.startswith('U'):
+                    selected_statuses.append('UNCERTAIN')
+                elif v_up == 'EMPTY' or v == '':
+                    selected_statuses.append('')
+            
+            if selected_statuses:
+                # Build OR conditions for likely_goahead
+                conditions = []
+                for idx, status in enumerate(selected_statuses):
+                    param_name = f'likely_{idx}'
+                    if status == 'Y':
+                        conditions.append(f"COALESCE(TRIM(a.likely_goahead), '') LIKE 'Y%'")
+                    elif status == 'N':
+                        conditions.append(f"COALESCE(TRIM(a.likely_goahead), '') LIKE 'N%'")
+                    elif status == 'UNCERTAIN' or status == 'U':
+                        conditions.append(f"COALESCE(TRIM(a.likely_goahead), '') LIKE 'U%'")
+                    elif status == '':
+                        conditions.append(f"COALESCE(TRIM(a.likely_goahead), '') = ''")
+                
+                if conditions:
+                    likely_filter = "AND (" + " OR ".join(conditions) + ")"
+    
+    query = f"""
+    WITH base AS (
+        SELECT
+            a.project_id,
+            c.country_long_name AS country,
+            c.region,
+            op.company_name AS company_name,
+            COALESCE(TRIM(a.likely_goahead), '') AS likely_goahead,
+            a.operator_pc,
+            est."2024_Q1", est."2024_Q2", est."2024_Q3", est."2024_Q4",
+            est."2025_Q1", est."2025_Q2", est."2025_Q3", est."2025_Q4",
+            est."2026_Q1", est."2026_Q2", est."2026_Q3", est."2026_Q4",
+            est."2027_Q1", est."2027_Q2", est."2027_Q3", est."2027_Q4",
+            est."2028_Q1", est."2028_Q2", est."2028_Q3", est."2028_Q4",
+            est."2029_Q1", est."2029_Q2", est."2029_Q3", est."2029_Q4"
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN fact_upstream_tracker_prod_estimates est
+            ON a.project_id = est.project_id
+        LEFT JOIN dim_country c
+            ON a.country_id = c.dim_country_id
+        LEFT JOIN dim_company op
+            ON a.operator_id = op.company_id
+        WHERE a.include = TRUE
+            {company_filter}
+            {likely_filter}
+    ),
+    unpvt AS (
+        SELECT
+            country,
+            region,
+            company_name,
+            likely_goahead,
+            operator_pc,
+            SPLIT_PART(qtr, '_', 1)::INT AS year_of_period,
+            SPLIT_PART(qtr, '_', 2) AS quarter_of_period,
+            value AS production_value
+        FROM base
+        CROSS JOIN LATERAL (
+            VALUES
+                ('2025_Q1', "2025_Q1"), ('2025_Q2', "2025_Q2"),
+                ('2025_Q3', "2025_Q3"), ('2025_Q4', "2025_Q4"),
+                ('2026_Q1', "2026_Q1"), ('2026_Q2', "2026_Q2"),
+                ('2026_Q3', "2026_Q3"), ('2026_Q4', "2026_Q4"),
+                ('2027_Q1', "2027_Q1"), ('2027_Q2', "2027_Q2"),
+                ('2027_Q3', "2027_Q3"), ('2027_Q4', "2027_Q4"),
+                ('2028_Q1', "2028_Q1"), ('2028_Q2', "2028_Q2"),
+                ('2028_Q3', "2028_Q3"), ('2028_Q4', "2028_Q4"),
+                ('2029_Q1', "2029_Q1"), ('2029_Q2', "2029_Q2"),
+                ('2029_Q3', "2029_Q3"), ('2029_Q4', "2029_Q4")
+        ) AS t(qtr, value)
+        WHERE value IS NOT NULL
+    )
+    SELECT
+        year_of_period AS "Year of Period",
+        quarter_of_period AS "Quarter of Period",
+        country AS "Country",
+        company_name AS "Company Name",
+        region AS "Region",
+        likely_goahead AS "Likely Go-ahead",
+        (production_value * operator_pc) / 100.0 AS value_company
+    FROM unpvt
+    ORDER BY
+        year_of_period,
+        quarter_of_period;
+    """
+    
     try:
-        df = pd.read_csv(CSV_FILE, encoding="utf-8", sep=",")
+        results = execute_query(query, params if params else None)
+        if not results:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(results)
         df.columns = df.columns.str.strip()
         df['value_company'] = pd.to_numeric(df['value_company'], errors='coerce').fillna(0)
         return df
     except Exception as e:
-        print(f"Error loading data: {e}")
+        print(f"Error loading chart data: {e}")
         return pd.DataFrame()
 
 
-def load_map_data():
-    """Load map data from CSV file."""
+def load_map_data(company_name=None, likely_goahead_filter=None):
+    """Load map data from database using Query 2 (yearly aggregated data for map)."""
+    # Build query conditionally based on filters
+    company_filter = ""
+    likely_filter = ""
+    params = {}
+    
+    if company_name:
+        company_filter = "AND op.company_name = :company_name"
+        params['company_name'] = company_name
+    
+    # Build likely_goahead filter
+    if likely_goahead_filter and isinstance(likely_goahead_filter, list) and len(likely_goahead_filter) > 0:
+        # Normalize filter values
+        selected_statuses = []
+        if 'ALL' in [str(v).upper() for v in likely_goahead_filter]:
+            # If ALL is selected, don't filter
+            likely_filter = ""
+        else:
+            for v in likely_goahead_filter:
+                v_up = str(v).upper()
+                if v_up == 'Y':
+                    selected_statuses.append('Y')
+                elif v_up == 'N':
+                    selected_statuses.append('N')
+                elif v_up.startswith('U'):
+                    selected_statuses.append('UNCERTAIN')
+                elif v_up == 'EMPTY' or v == '':
+                    selected_statuses.append('')
+            
+            if selected_statuses:
+                # Build OR conditions for likely_goahead
+                conditions = []
+                for idx, status in enumerate(selected_statuses):
+                    if status == 'Y':
+                        conditions.append(f"COALESCE(TRIM(a.likely_goahead), '') LIKE 'Y%'")
+                    elif status == 'N':
+                        conditions.append(f"COALESCE(TRIM(a.likely_goahead), '') LIKE 'N%'")
+                    elif status == 'UNCERTAIN' or status == 'U':
+                        conditions.append(f"COALESCE(TRIM(a.likely_goahead), '') LIKE 'U%'")
+                    elif status == '':
+                        conditions.append(f"COALESCE(TRIM(a.likely_goahead), '') = ''")
+                
+                if conditions:
+                    likely_filter = "AND (" + " OR ".join(conditions) + ")"
+    
+    query = f"""
+    WITH base AS (
+        SELECT
+            a.project_id,
+            c.country_long_name AS country,
+            c.region,
+            op.company_name AS company_name,
+            c.latitude,
+            c.longitude,
+            COALESCE(TRIM(a.likely_goahead), '') AS likely_goahead,
+            a.operator_pc,
+            est."2024_Q1", est."2024_Q2", est."2024_Q3", est."2024_Q4",
+            est."2025_Q1", est."2025_Q2", est."2025_Q3", est."2025_Q4",
+            est."2026_Q1", est."2026_Q2", est."2026_Q3", est."2026_Q4",
+            est."2027_Q1", est."2027_Q2", est."2027_Q3", est."2027_Q4",
+            est."2028_Q1", est."2028_Q2", est."2028_Q3", est."2028_Q4",
+            est."2029_Q1", est."2029_Q2", est."2029_Q3", est."2029_Q4"
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN fact_upstream_tracker_prod_estimates est
+            ON a.project_id = est.project_id
+        LEFT JOIN dim_country c
+            ON a.country_id = c.dim_country_id 
+        LEFT JOIN dim_company op
+            ON a.operator_id = op.company_id
+        WHERE a.include = TRUE
+            {company_filter}
+            {likely_filter}
+    ),
+    unpvt AS (
+        SELECT
+            country,
+            region,
+            company_name,
+            latitude,
+            longitude,
+            likely_goahead,
+            operator_pc,
+            SPLIT_PART(qtr, '_', 1)::INT AS year_of_period,
+            value AS production_value
+        FROM base
+        CROSS JOIN LATERAL (
+            VALUES
+                ('2025_Q1', "2025_Q1"), ('2025_Q2', "2025_Q2"),
+                ('2025_Q3', "2025_Q3"), ('2025_Q4', "2025_Q4"),
+                ('2026_Q1', "2026_Q1"), ('2026_Q2', "2026_Q2"),
+                ('2026_Q3', "2026_Q3"), ('2026_Q4', "2026_Q4"),
+                ('2027_Q1', "2027_Q1"), ('2027_Q2', "2027_Q2"),
+                ('2027_Q3', "2027_Q3"), ('2027_Q4', "2027_Q4"),
+                ('2028_Q1', "2028_Q1"), ('2028_Q2', "2028_Q2"),
+                ('2028_Q3', "2028_Q3"), ('2028_Q4', "2028_Q4"),
+                ('2029_Q1', "2029_Q1"), ('2029_Q2', "2029_Q2"),
+                ('2029_Q3', "2029_Q3"), ('2029_Q4', "2029_Q4")
+        ) AS t(qtr, value)
+        WHERE value IS NOT NULL
+    )
+    SELECT
+        year_of_period AS "Year of Period",
+        country AS "Country",
+        company_name AS "Company Name",
+        region AS "Region",
+        latitude AS "Latitude",
+        longitude AS "Longitude",
+        likely_goahead AS "Likely Go-ahead",
+        SUM((production_value * operator_pc) / 100.0) AS value_company
+    FROM unpvt
+    GROUP BY
+        year_of_period,
+        country,
+        company_name,
+        region,
+        latitude,
+        longitude,
+        likely_goahead
+    ORDER BY
+        year_of_period;
+    """
+    
     try:
-        df = pd.read_csv(MAP_CSV_FILE, encoding="utf-8", sep=",")
+        results = execute_query(query, params if params else None)
+        if not results:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(results)
         df.columns = df.columns.str.strip()
         df['value_company'] = pd.to_numeric(df['value_company'], errors='coerce')
         return df
     except Exception as e:
         print(f"Error loading map data: {e}")
         return pd.DataFrame()
+
+
+def get_unique_companies():
+    """Get unique companies from database for dropdown filter."""
+    query = """
+    SELECT DISTINCT op.company_name AS company_name
+    FROM fact_upstream_project_tracker a
+    LEFT JOIN dim_company op
+        ON a.operator_id = op.company_id
+    WHERE a.include = TRUE
+        AND op.company_name IS NOT NULL
+        AND TRIM(op.company_name) != ''
+    ORDER BY op.company_name;
+    """
+    
+    try:
+        results = execute_query(query)
+        if not results:
+            return []
+        companies = [row['company_name'] for row in results if row.get('company_name')]
+        return sorted(companies)
+    except Exception as e:
+        print(f"Error loading companies: {e}")
+        return []
 
 # Quarter columns returned by the SQL query (used for chart, map, and table)
 QUARTER_COLUMNS = [
@@ -52,9 +310,16 @@ QUARTER_COLUMNS = [
 YEARS_FOR_CHART = list(range(2025, 2030))
 
 
-def load_projects_data():
+def load_projects_data(company_name=None):
     """Load Projects by Company data directly from the database."""
-    query = """
+    # Build query conditionally based on whether company_name is provided
+    company_filter = ""
+    params = {}
+    if company_name:
+        company_filter = "AND op.company_name = :company_name"
+        params = {'company_name': company_name}
+    
+    query = f"""
         SELECT
             a.project_name AS "Project Name",
             a.likely_goahead,
@@ -153,11 +418,12 @@ def load_projects_data():
         LEFT JOIN dim_crude cr 
             ON cr.dim_crude_id = a.crude_id
         WHERE a.include = TRUE
+            {company_filter}
         ORDER BY a.project_name;
     """
 
     try:
-        results = execute_query(query)
+        results = execute_query(query, params if params else None)
         if not results:
             return pd.DataFrame()
 
@@ -284,24 +550,47 @@ def build_map_data(quarter_df):
         return pd.DataFrame()
 
 
-# Load data once at module level
+# Load data once at module level (will be reloaded when company changes)
 PROJECTS_RAW_DF = load_projects_data()  # SQL – table only
-DATA_DF = load_data()  # CSV – chart
-MAP_DF = load_map_data()  # CSV – map
 
 # Get unique values for filters
-def get_unique_years():
-    """Get unique years from data"""
-    if DATA_DF.empty:
+def get_unique_years(company_name=None, likely_goahead_filter=None):
+    """Get unique years from chart data for selected company and filters"""
+    df = load_chart_data(company_name, likely_goahead_filter)
+    if df.empty:
         return []
-    return sorted(DATA_DF['Year of Period'].unique().tolist())
+    return sorted(df['Year of Period'].unique().tolist())
 
-def get_unique_countries():
-    """Get unique countries from data"""
-    if DATA_DF.empty:
+def get_unique_countries(company_name=None):
+    """Get unique countries from chart data for selected company (for filtering)"""
+    df = load_chart_data(company_name)
+    if df.empty:
         return []
-    countries = sorted([c for c in DATA_DF['Country'].unique().tolist() if pd.notna(c) and str(c).strip()])
+    countries = sorted([c for c in df['Country'].unique().tolist() if pd.notna(c) and str(c).strip()])
     return countries
+
+def get_all_unique_countries():
+    """Get ALL unique countries from database (for country list display, regardless of filters)"""
+    query = """
+    SELECT DISTINCT c.country_long_name AS country
+    FROM fact_upstream_project_tracker a
+    LEFT JOIN dim_country c
+        ON a.country_id = c.dim_country_id
+    WHERE a.include = TRUE
+        AND c.country_long_name IS NOT NULL
+        AND TRIM(c.country_long_name) != ''
+    ORDER BY c.country_long_name;
+    """
+    
+    try:
+        results = execute_query(query)
+        if not results:
+            return []
+        countries = [row['country'] for row in results if row.get('country')]
+        return sorted(countries)
+    except Exception as e:
+        print(f"Error loading all countries: {e}")
+        return []
 
 def get_unique_quarters():
     """Get unique quarters"""
@@ -413,9 +702,8 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
         )
         return fig
     
-    # Always use DATA_DF to ensure we have ALL countries from CSV (including those with zeros like Algeria)
-    # This ensures all countries are available for the chart
-    original_df = DATA_DF.copy() if not DATA_DF.empty else df.copy()
+    # Use the provided df which is already filtered by company
+    original_df = df.copy()
     
     # Create period labels on the full dataset first
     if 'Period' not in original_df.columns:
@@ -674,11 +962,10 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
     
     return fig
 
-def create_world_map(df=None, selected_year=2025, selected_company="Exxon Mobil"):
+def create_world_map(selected_year=2025, selected_company=None, likely_goahead_filter=None):
     """Create world map showing geographical distribution for selected year - matching Tableau design exactly"""
-    # Always use the dedicated map CSV when present to mirror the Tableau export.
-    # Fall back to provided df only if the CSV is unavailable.
-    map_df = MAP_DF.copy() if not MAP_DF.empty else (df.copy() if df is not None else pd.DataFrame())
+    # Load map data from database for selected company with filters
+    map_df = load_map_data(selected_company, likely_goahead_filter)
     
     if map_df.empty:
         fig = go.Figure()
@@ -835,8 +1122,9 @@ def create_layout():
                 tip_row['Comments'] = {'value': comments_val, 'type': 'text'}
             tooltip_data.append(tip_row)
     
-    # Years for filters / slider
-    years = get_unique_years()
+    # Years for filters / slider (will be updated dynamically based on company)
+    # Use default values for initial layout (will be updated by callbacks)
+    years = get_unique_years(None, None)
     if years:
         min_year = min(years)
         max_year = max(years)
@@ -845,8 +1133,8 @@ def create_layout():
         # Sensible fallback based on Tableau dashboard (2025–2029)
         min_year, max_year, default_year = 2025, 2029, 2025
     
-    # Countries for legend (match CSV as closely as possible)
-    all_countries_from_data = get_unique_countries()
+    # Countries for legend - show ALL countries from database (not filtered)
+    all_countries_from_data = get_all_unique_countries()
     legend_countries = (
         sorted(all_countries_from_data)
         if all_countries_from_data
@@ -923,9 +1211,10 @@ def create_layout():
             ),
             dcc.Dropdown(
                 id='company-filter',
-                options=[{'label': 'Exxon Mobil', 'value': 'Exxon Mobil'}],
-                value='Exxon Mobil',
+                options=[],
+                value=None,
                 clearable=False,
+                placeholder="Select Company...",
                 style={
                     'width': '100%'
                 }
@@ -1265,9 +1554,9 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register all callbacks for Projects by Company"""
     
-    # Get all countries from CSV data for creating dynamic outputs
-    # This ensures all countries in the data are available for filtering
-    all_countries_from_data = get_unique_countries()
+    # Get all countries from database for creating dynamic outputs
+    # Show ALL countries regardless of filters (for country list display)
+    all_countries_from_data = get_all_unique_countries()
     legend_countries = sorted(all_countries_from_data) if all_countries_from_data else sorted(list(COUNTRY_COLORS.keys()))
     
     # Create outputs for all country items
@@ -1350,7 +1639,7 @@ def register_callbacks(dash_app, server):
         """Initialize year display on page load"""
         if year_value:
             return str(year_value)
-        years = get_unique_years()
+        years = get_unique_years(None, None)
         return str(years[0]) if years else '2025'
     
     # Normalize Likely To Go checklist: (All) selects all; otherwise keep only the latest choice.
@@ -1377,20 +1666,53 @@ def register_callbacks(dash_app, server):
     @callback(
         [Output('projects-company-table', 'data'),
          Output('projects-company-table', 'tooltip_data'),
-         Output('projects-company-table', 'columns')],
-        [Input('likely-to-go-filter', 'value'),
+         Output('projects-company-table', 'columns'),
+         Output('projects-company-table-data-full', 'data', allow_duplicate=True),
+         Output('projects-company-table-tooltip-full', 'data', allow_duplicate=True)],
+        [Input('company-filter', 'value'),
+         Input('likely-to-go-filter', 'value'),
          Input('selected-countries-store', 'data')],
         [State('projects-company-table-data-full', 'data'),
          State('projects-company-table-tooltip-full', 'data')],
-        prevent_initial_call=False
+        prevent_initial_call='initial_duplicate'
     )
-    def filter_projects_company_table(likely_filter, selected_countries, data_full, tooltip_full):
-        """Filter and format the Projects by Company table to mirror projects_by_time layout."""
-        data_full = data_full or []
-        tooltip_full = tooltip_full or []
+    def filter_projects_company_table(company, likely_filter, selected_countries, data_full, tooltip_full):
+        """Filter and format the Projects by Company table to mirror projects_by_time layout.
+        Reloads table data when company changes to ensure synchronization with chart and map."""
+        ctx = callback_context
+        triggered_id = None
+        if ctx.triggered:
+            triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        
+        # Reload table data when company changes (to ensure synchronization)
+        if triggered_id == 'company-filter' or (company and (not data_full or len(data_full) == 0)):
+            if company:
+                # Load fresh data for the selected company
+                df_table = load_projects_data(company)
+                if not df_table.empty:
+                    data_full = df_table.fillna("").to_dict('records')
+                    tooltip_data = []
+                    for row in data_full:
+                        tip_row = {}
+                        comments_val = str(row.get('Comments', '') or '').strip()
+                        if comments_val and comments_val.lower() != 'nan':
+                            tip_row['Comments'] = {'value': comments_val, 'type': 'text'}
+                        tooltip_data.append(tip_row)
+                    tooltip_full = tooltip_data
+                else:
+                    data_full = []
+                    tooltip_full = []
+            else:
+                # No company selected - show empty table
+                data_full = []
+                tooltip_full = []
+        else:
+            # Use existing data if company hasn't changed
+            data_full = data_full or []
+            tooltip_full = tooltip_full or []
         
         if not data_full:
-            return [], [], []
+            return [], [], [], dash.no_update, dash.no_update
         
         df = pd.DataFrame(data_full)
         
@@ -1399,7 +1721,7 @@ def register_callbacks(dash_app, server):
             df = df[df['Country'].isin(selected_countries)]
         
         if df.empty:
-            return [], [], []
+            return [], [], [], dash.no_update, dash.no_update
         
         # Find likely-go-ahead column
         likely_col = None
@@ -1450,7 +1772,7 @@ def register_callbacks(dash_app, server):
             df = pd.DataFrame()
         
         if df.empty:
-            return [], [], []
+            return [], [], [], dash.no_update, dash.no_update
         
         # Preserve all available columns; order them similar to projects_by_time
         base_priority = [
@@ -1604,7 +1926,8 @@ def register_callbacks(dash_app, server):
                     tip_row['Comments'] = {'value': comment_str, 'type': 'text'}
             tooltip_data.append(tip_row)
         
-        return data, tooltip_data, columns
+        # Return table data and updated full data store
+        return data, tooltip_data, columns, data_full, tooltip_full
     
     # Add A/Z hover sort UI on selected headers (matches projects_latest behavior)
     dash_app.clientside_callback(
@@ -1897,6 +2220,54 @@ def register_callbacks(dash_app, server):
         
         return dash.no_update, dash.no_update, dash.no_update
     
+    # Callback to populate company dropdown on initial load
+    @callback(
+        [Output('company-filter', 'options'),
+         Output('company-filter', 'value')],
+        Input('current-submenu', 'data'),
+        prevent_initial_call=False
+    )
+    def populate_company_dropdown(submenu):
+        """Populate company dropdown with companies from database"""
+        if submenu is not None and submenu != 'projects-company':
+            return [], None
+        
+        companies = get_unique_companies()
+        if not companies:
+            return [], None
+        
+        options = [{'label': c, 'value': c} for c in companies]
+        # Default to first company (or Exxon Mobil if available)
+        default_value = 'Exxon Mobil' if 'Exxon Mobil' in companies else companies[0]
+        
+        return options, default_value
+    
+    # Callback to update years dropdown options when company or likely_goahead filter changes
+    @callback(
+        [Output('year-of-period-filter', 'options'),
+         Output('year-period-slider', 'min'),
+         Output('year-period-slider', 'max'),
+         Output('year-period-slider', 'marks')],
+        [Input('company-filter', 'value'),
+         Input('likely-to-go-filter', 'value')],
+        prevent_initial_call=False
+    )
+    def update_years_options(company, likely_to_go):
+        """Update years dropdown and slider options based on selected company and filters"""
+        ltg_list = likely_to_go if isinstance(likely_to_go, list) else ([likely_to_go] if likely_to_go else [])
+        years = get_unique_years(company, ltg_list)
+        
+        if not years:
+            # Fallback to default years
+            years = list(range(2025, 2030))
+        
+        options = [{'label': str(y), 'value': y} for y in years]
+        min_year = min(years) if years else 2025
+        max_year = max(years) if years else 2029
+        marks = {y: {'label': '|', 'style': {'color': '#666666', 'fontSize': '14px'}} for y in years}
+        
+        return options, min_year, max_year, marks
+    
     @callback(
         [Output('projects-company-bar-chart', 'figure'),
          Output('projects-company-map', 'figure')],
@@ -1921,13 +2292,25 @@ def register_callbacks(dash_app, server):
             empty_fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
             return empty_fig, empty_fig
         
+        # If no company selected, show empty charts
+        if not company:
+            empty_fig = go.Figure()
+            empty_fig.add_annotation(
+                text="Please select a company",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            empty_fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
+            return empty_fig, empty_fig
+        
         # Use the year from dropdown or slider (whichever is more recent)
         year_to_use = selected_year if selected_year else slider_year
         if not year_to_use:
-            year_to_use = get_unique_years()[0] if get_unique_years() else 2025
+            years = get_unique_years(company, ltg_list)
+            year_to_use = years[0] if years else 2025
         
-        # Filter data
-        df = DATA_DF.copy()
+        # Load chart data with filters applied (company and likely_goahead)
+        df = load_chart_data(company, ltg_list)
         
         if df.empty:
             empty_fig = go.Figure()
@@ -1939,55 +2322,11 @@ def register_callbacks(dash_app, server):
             empty_fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
             return empty_fig, empty_fig
         
-        # Note: Likely To Go filter would require additional data column
-        # Apply Likely To Go filter (matches table + projects_by_time behavior)
-        likely_col = None
-        for col in df.columns:
-            col_lower = str(col).lower()
-            if 'likely' in col_lower and ('go' in col_lower or 'ahead' in col_lower):
-                likely_col = col
-                break
-        if likely_col:
-            df[likely_col] = df[likely_col].astype(str).str.strip()
-            col_upper = df[likely_col].str.upper()
-            # Build selected statuses
-            selected_statuses = []
-            if isinstance(likely_to_go, list):
-                ltg_list = likely_to_go
-            else:
-                ltg_list = [likely_to_go] if likely_to_go else []
-            if 'ALL' in ltg_list:
-                selected_statuses = ['Y', 'N', 'UNCERTAIN', '']
-            else:
-                for v in ltg_list:
-                    v_up = str(v).upper()
-                    if v_up == 'Y':
-                        selected_statuses.append('Y')
-                    elif v_up == 'N':
-                        selected_statuses.append('N')
-                    elif v_up.startswith('U'):
-                        selected_statuses.append('UNCERTAIN')
-                    elif v_up == 'EMPTY':
-                        selected_statuses.append('')
-                    elif v == '':
-                        selected_statuses.append('')
-            if selected_statuses:
-                mask = pd.Series(False, index=col_upper.index)
-                for status in selected_statuses:
-                    if status == 'Y':
-                        mask |= col_upper.str.startswith('Y')
-                    elif status == 'N':
-                        mask |= col_upper.str.startswith('N')
-                    elif status == 'UNCERTAIN' or status == 'U':
-                        mask |= col_upper.str.startswith('U')
-                    elif status == '':
-                        mask |= (col_upper == '')
-                df = df[mask].copy()
-            else:
-                df = pd.DataFrame()
-        
-        # Use selected countries for filtering
+        # Apply country filter if countries are selected
         # If empty list, show all countries. If countries are selected, show only those.
+        if selected_countries:
+            df = df[df['Country'].isin(selected_countries)].copy()
+        
         countries_to_show = selected_countries if selected_countries else None
         
         # Create bar chart - show all years by default (matches Tableau behavior)
@@ -2001,6 +2340,7 @@ def register_callbacks(dash_app, server):
         )
         
         # Create map - always filtered by selected year (Year of Period filter controls the map)
-        map_fig = create_world_map(df, year_to_use, company or "Company")
+        # Pass filters to load_map_data
+        map_fig = create_world_map(year_to_use, company, ltg_list)
         
         return bar_fig, map_fig

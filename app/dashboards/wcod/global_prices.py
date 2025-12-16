@@ -236,11 +236,23 @@ def create_table_columns(column_metadata):
     """Create column definitions with hierarchical structure."""
     # Use 3-level structure to align with data columns (region / country / blend)
     # Left columns (Year/Quarter/Month/Day) with Quarter/Day toggle-only
+    # Get region name from metadata to ensure proper header alignment
+    region_name = ''
+    if column_metadata:
+        # Get the region from the first metadata entry (all should have the same region)
+        region_name = str(column_metadata[0].get('region', '')).strip()
+    
+    # Use region name in top level, zero-width character in middle level that will merge across left columns,
+    # and column name in bottom level. The zero-width character creates proper cell structure for alignment
+    # but is visually invisible. This ensures country headers align correctly with their blend columns.
+    # The same placeholder value across all left columns causes Dash to merge them into a single colspan cell
+    # in the middle header row, which properly aligns with the country header row (Algeria, Angola, etc.)
+    date_placeholder = '\u200B'  # Zero-width space - invisible but creates proper cell structure and colspan
     columns = [
-        {'name': ['', '', 'Year'], 'id': 'Year', 'type': 'text'},
-        {'name': ['', '', 'Quarter'], 'id': 'Quarter', 'type': 'text'},
-        {'name': ['', '', 'Month'], 'id': 'Month', 'type': 'text'},
-        {'name': ['', '', 'Day'], 'id': 'Day', 'type': 'text'},
+        {'name': [region_name, date_placeholder, 'Year'], 'id': 'Year', 'type': 'text'},
+        {'name': [region_name, date_placeholder, 'Quarter'], 'id': 'Quarter', 'type': 'text'},
+        {'name': [region_name, date_placeholder, 'Month'], 'id': 'Month', 'type': 'text'},
+        {'name': [region_name, date_placeholder, 'Day'], 'id': 'Day', 'type': 'text'},
     ]
     
     # Dynamic order: region → country → blend (alphabetical) so all DB data shows
@@ -359,6 +371,40 @@ def create_layout():
                     {
                         'if': {'column_id': 'Quarter', 'filter_query': '{Quarter} != ""'},
                         'fontWeight': 'bold'
+                    },
+                    # Ensure fixed columns maintain background color for odd rows
+                    {
+                        'if': {'row_index': 'odd', 'column_id': 'Year'},
+                        'backgroundColor': '#f8f9fa'
+                    },
+                    {
+                        'if': {'row_index': 'odd', 'column_id': 'Quarter'},
+                        'backgroundColor': '#f8f9fa'
+                    },
+                    {
+                        'if': {'row_index': 'odd', 'column_id': 'Month'},
+                        'backgroundColor': '#f8f9fa'
+                    },
+                    {
+                        'if': {'row_index': 'odd', 'column_id': 'Day'},
+                        'backgroundColor': '#f8f9fa'
+                    },
+                    # Ensure fixed columns maintain white background for even rows
+                    {
+                        'if': {'row_index': 'even', 'column_id': 'Year'},
+                        'backgroundColor': 'white'
+                    },
+                    {
+                        'if': {'row_index': 'even', 'column_id': 'Quarter'},
+                        'backgroundColor': 'white'
+                    },
+                    {
+                        'if': {'row_index': 'even', 'column_id': 'Month'},
+                        'backgroundColor': 'white'
+                    },
+                    {
+                        'if': {'row_index': 'even', 'column_id': 'Day'},
+                        'backgroundColor': 'white'
                     }
                 ],
                 style_cell_conditional=[
@@ -438,14 +484,65 @@ def register_callbacks(dash_app, server):
 #global-prices-table .dash-spreadsheet-container td[data-dash-column="Day"] {
     cursor: pointer;
 }
-/* Hide empty header cells for Year/Quarter/Month/Day (they use 3-level structure with empty upper levels) */
-#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"]:empty,
-#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"]:empty,
-#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"]:empty,
-#global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"]:empty {
-    display: none !important;
+/* Fix first 4 columns (Year, Quarter, Month, Day) on the left - they don't scroll */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Year"] {
+    position: sticky !important;
+    left: 0 !important;
+    z-index: 10 !important;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.1);
 }
-/* Default: Quarter and Day columns hidden */
+/* Quarter: positioned after Year (80px) when visible */
+#global-prices-table .dash-spreadsheet-container.year-expanded th[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container.year-expanded td[data-dash-column="Quarter"] {
+    position: sticky !important;
+    left: 80px !important;
+    z-index: 10 !important;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+}
+/* Month: positioned at 80px when Quarter is hidden, 140px when Quarter is visible */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Month"] {
+    position: sticky !important;
+    left: 80px !important;
+    z-index: 10 !important;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+}
+#global-prices-table .dash-spreadsheet-container.year-expanded th[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container.year-expanded td[data-dash-column="Month"] {
+    left: 140px !important;
+}
+/* Day: positioned after Month (180px when Quarter hidden, 240px when Quarter visible) */
+#global-prices-table .dash-spreadsheet-container.month-expanded:not(.year-expanded) th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container.month-expanded:not(.year-expanded) td[data-dash-column="Day"] {
+    position: sticky !important;
+    left: 180px !important;
+    z-index: 10 !important;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+}
+#global-prices-table .dash-spreadsheet-container.month-expanded.year-expanded:not(.quarter-collapsed) th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container.month-expanded.year-expanded:not(.quarter-collapsed) td[data-dash-column="Day"] {
+    position: sticky !important;
+    left: 240px !important;
+    z-index: 10 !important;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+}
+/* Ensure header cells have higher z-index and background color */
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Year"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Month"],
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"] {
+    z-index: 11 !important;
+    background-color: #f8f9fa !important;
+}
+/* Ensure middle-level header cells for Year/Quarter/Month/Day are properly aligned */
+/* The zero-width character in middle level creates proper cell structure without visual content */
+/* Dash DataTable's merge_duplicate_headers=True automatically creates colspan:
+   - Default (Year + Month): colspan 2
+   - With Quarter: colspan 3 (Year, Quarter, Month)
+   - With Day: colspan 4 (Year, Quarter, Month, Day)
+   This ensures the middle-level header spans all visible date columns and aligns with country headers */
+/* Default: Quarter and Day columns hidden (Year and Month visible by default) */
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"],
 #global-prices-table .dash-spreadsheet-container td[data-dash-column="Quarter"],
