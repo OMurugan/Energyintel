@@ -8,66 +8,74 @@ import plotly.express as px
 import pandas as pd
 import os
 from datetime import datetime
+from core.data_helpers import execute_query
 
 
-# File paths
+# File paths (keeping for source/footnote if needed, but data now from DB)
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Trade')
-LEGEND_CSV = os.path.join(DATA_DIR, 'Chart 1_Legend .csv')
-IMPORTS_BY_COUNTRY_CSV = os.path.join(DATA_DIR, 'Chart_Imports by Country and Crude.csv')
-TABLE_IMPORTS_CSV = os.path.join(DATA_DIR, 'Table_Imports.csv')
 SOURCE_CSV = os.path.join(DATA_DIR, 'Source.csv')
 FOOTNOTE_CSV = os.path.join(DATA_DIR, 'Footnote.csv')
 
 
 def load_legend_data():
-    """Load region colors from legend CSV"""
+    """Load region colors - static mapping based on standard regions"""
+    # Define colors for each region (matching the figure exactly)
+    # Based on the legend: Africa=Medium Blue, Asia-Pacific=Bright Orange, Europe=Vibrant Green,
+    # FSU=Strong Red, Latin America=Medium Purple, Middle East=Dark Brown, 
+    # North America=Light Pink/Magenta, Others=Medium Grey
+    color_map = {
+        'Africa': '#1f77b4',  # Medium Blue
+        'Asia-Pacific': '#ff7f0e',  # Bright Orange
+        'Europe': '#2ea12e',  # Vibrant Green
+        'FSU': '#d62a2b',  # Strong Red (Crimson)
+        'Latin America': '#9569be',  # Medium Purple
+        'Middle East': '#8d584d',  # Dark Brown
+        'North America': '#e379c3',  # Light Pink/Magenta (Hot Pink)
+        'Others': '#808080'  # Medium Grey
+    }
+    # Regions list will be dynamically determined from the data
+    regions = list(color_map.keys())
+    return regions, color_map
+
+
+def load_imports_by_region_data(selected_country='Japan'):
+    """Load and aggregate imports data by region and year from database."""
     try:
-        df = pd.read_csv(LEGEND_CSV, skiprows=3, header=None, sep='\t', encoding='utf-16')
-        df.columns = ['Region', 'Value']
-        # Filter out empty rows and get unique regions
-        df = df[df['Region'].notna() & (df['Region'] != '')]
-        regions = df['Region'].unique().tolist()
+        query = """
+        SELECT
+            DATE_PART('year', yr)::INT AS "Year",
+            import_region AS "Exporting Region",
+            import_country AS "Importer",
+            SUM(vol_kbpd) AS "DataValue"
+        FROM dev.fact_wcod_imports
+        WHERE
+            import_country = :import_country
+            AND (
+                import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+                OR source <> 'OECD Imports'
+            )
+        GROUP BY
+            DATE_PART('year', yr),
+            import_region,
+            import_country
+        ORDER BY
+            "Year",
+            "Exporting Region";
+        """
         
-        # Define colors for each region (matching the figure exactly)
-        # Based on the legend: Africa=Medium Blue, Asia-Pacific=Bright Orange, Europe=Vibrant Green,
-        # FSU=Strong Red, Latin America=Medium Purple, Middle East=Dark Brown, 
-        # North America=Light Pink/Magenta, Others=Medium Grey
-        color_map = {
-            'Africa': '#1f77b4',  # Medium Blue
-            'Asia-Pacific': '#ff7f0e',  # Bright Orange
-            'Europe': '#2ea12e',  # Vibrant Green
-            'FSU': '#d62a2b',  # Strong Red (Crimson)
-            'Latin America': '#9569be',  # Medium Purple
-            'Middle East': '#8d584d',  # Dark Brown
-            'North America': '#e379c3',  # Light Pink/Magenta (Hot Pink)
-            'Others': '#808080'  # Medium Grey
-        }
-        return regions, color_map
-    except Exception as e:
-        print(f"Error loading legend: {e}")
-        import traceback
-        traceback.print_exc()
-        return [], {}
-
-
-def load_imports_by_region_data():
-    """Load and aggregate imports data by region and year from Table_Imports.csv (long format)."""
-    try:
-        df = pd.read_csv(TABLE_IMPORTS_CSV, sep=',', encoding='utf-8-sig')
-        required_cols = ['Exporting Region', 'Year of Year', 'DataValue']
-        for col in required_cols:
-            if col not in df.columns:
-                raise ValueError(f"Missing column: {col}")
-        df['Year of Year'] = pd.to_numeric(df['Year of Year'], errors='coerce').astype('Int64')
-        df['DataValue'] = pd.to_numeric(df['DataValue'], errors='coerce')
-        df = df.dropna(subset=['Exporting Region', 'Year of Year', 'DataValue'])
-        grouped = (
-            df.groupby(['Exporting Region', 'Year of Year'])['DataValue']
-              .sum()
-              .reset_index()
-              .rename(columns={'Exporting Region': 'Region', 'Year of Year': 'Year', 'DataValue': 'Volume'})
-        )
-        return grouped
+        rows = execute_query(query, {'import_country': selected_country})
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        # Rename columns to match expected format
+        df = df.rename(columns={'Exporting Region': 'Region', 'DataValue': 'Volume'})
+        df['Year'] = pd.to_numeric(df['Year'], errors='coerce').astype('Int64')
+        df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce')
+        df = df.dropna(subset=['Region', 'Year', 'Volume'])
+        
+        return df
     except Exception as e:
         print(f"Error loading imports by region: {e}")
         import traceback
@@ -75,13 +83,50 @@ def load_imports_by_region_data():
         return pd.DataFrame()
 
 
-def load_imports_by_country_crude_data():
-    """Load imports data by country and crude from Chart_Imports by Country and Crude.csv"""
+def load_imports_by_country_crude_data(selected_country='Japan', selected_year=2023):
+    """Load imports data by country and crude from database"""
     try:
-        df = pd.read_csv(IMPORTS_BY_COUNTRY_CSV, sep='\t', encoding='utf-16')
+        # Use exact query structure as provided
+        query = """
+        SELECT
+            yr AS "Year",
+            import_country AS "Importer",
+            export_country AS "Exporter",
+            COALESCE(crude_name, 'Other') AS "Crude",
+            company_name AS "Company",
+            vol_kbpd AS "DataValue"
+        FROM dev.fact_wcod_imports a
+        WHERE
+            import_country = :import_country
+            AND (
+                import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+                OR source <> 'OECD Imports'
+            )
+            AND yr >= (
+                SELECT DATE_TRUNC('year', MAX(yr))
+                FROM dev.fact_wcod_imports
+            )
+            AND yr < (
+                SELECT DATE_TRUNC('year', MAX(yr)) + INTERVAL '1 year'
+                FROM dev.fact_wcod_imports
+            );
+        """
         
-        # Parse the Year column (format: 01-01-YYYY)
-        df['Year'] = pd.to_datetime(df['Year'], format='%d-%m-%Y', errors='coerce').dt.year
+        params = {'import_country': selected_country}
+        
+        rows = execute_query(query, params)
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        
+        # Extract year from date for consistency with chart code
+        if 'Year' in df.columns:
+            df['Year'] = pd.to_datetime(df['Year'], errors='coerce').dt.year
+            df['Year'] = pd.to_numeric(df['Year'], errors='coerce').astype('Int64')
+        
+        df['DataValue'] = pd.to_numeric(df['DataValue'], errors='coerce')
         
         # Clean up the data
         df = df[df['DataValue'].notna() & (df['DataValue'] > 0)]
@@ -94,35 +139,71 @@ def load_imports_by_country_crude_data():
         return pd.DataFrame()
 
 
-def load_table_data():
-    """Load table data from Table_Imports.csv (year/quarter/month structure)"""
+def load_table_data(selected_country='Japan'):
+    """Load table data from database (year/quarter/month/day structure)"""
     try:
-        # New file uses UTF-8 with comma separator and long format fields
-        df = pd.read_csv(TABLE_IMPORTS_CSV, sep=',', encoding='utf-8-sig')
+        # Use exact query structure as provided
+        query = """
+        SELECT
+            import_region AS "Exporting Region",
+            export_country AS "Exporter",
+            company_name AS "Company",
+            COALESCE(crude_name, 'Other') AS "Crude",
+            EXTRACT(YEAR FROM yr)::INT AS "Year of Year",
+            EXTRACT(QUARTER FROM yr)::INT AS "Quarter of Year",
+            EXTRACT(MONTH FROM yr)::INT AS "Month of Year",
+            EXTRACT(DAY FROM yr)::INT AS "Day of Year",
+            vol_kbpd AS "DataValue"
+        FROM dev.fact_wcod_imports a
+        WHERE
+            import_country = :import_country
+            AND (
+                import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+                OR source <> 'OECD Imports'
+            );
+        """
         
-        # Normalize column names we need
-        required_cols = [
-            'Exporting Region', 'Exporter', 'Company', 'Crude',
-            'Year of Year', 'Quarter of Year', 'Month of Year', 'Day of Year', 'DataValue'
-        ]
-        for col in required_cols:
-            if col not in df.columns:
-                raise ValueError(f"Missing column in table data: {col}")
+        rows = execute_query(query, {'import_country': selected_country})
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        
+        # Convert quarter integer (1-4) to string format (Q1, Q2, Q3, Q4)
+        if 'Quarter of Year' in df.columns:
+            quarter_map = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4'}
+            df['Quarter of Year'] = df['Quarter of Year'].map(quarter_map).fillna('').astype(str)
+        
+        # Convert month integer (1-12) to month name
+        if 'Month of Year' in df.columns:
+            month_names = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+                          'July', 'August', 'September', 'October', 'November', 'December']
+            def convert_month(x):
+                try:
+                    if pd.notna(x) and 1 <= int(x) <= 12:
+                        return month_names[int(x)]
+                except (ValueError, TypeError):
+                    pass
+                return ''
+            df['Month of Year'] = df['Month of Year'].apply(convert_month).astype(str)
         
         # Clean text columns
-        text_cols = ['Exporting Region', 'Exporter', 'Company', 'Crude',
-                     'Year of Year', 'Quarter of Year', 'Month of Year', 'Day of Year']
+        text_cols = ['Exporting Region', 'Exporter', 'Company', 'Crude']
         for col in text_cols:
-            df[col] = df[col].fillna('').astype(str).str.strip()
+            if col in df.columns:
+                df[col] = df[col].fillna('').astype(str).str.strip()
         
         # Numeric data
         df['DataValue'] = pd.to_numeric(df['DataValue'], errors='coerce')
         df = df[df['DataValue'].notna()]
         
         # Ensure year is int
-        df['Year of Year'] = df['Year of Year'].astype(int)
+        if 'Year of Year' in df.columns:
+            df['Year of Year'] = pd.to_numeric(df['Year of Year'], errors='coerce').astype('Int64')
         # Day of year to numeric if possible
-        df['Day of Year'] = pd.to_numeric(df['Day of Year'], errors='coerce')
+        if 'Day of Year' in df.columns:
+            df['Day of Year'] = pd.to_numeric(df['Day of Year'], errors='coerce')
         
         return df
     except Exception as e:
@@ -158,19 +239,41 @@ def load_footnote_data():
         return []
 
 
+def load_available_countries():
+    """Load available countries from the same imports table (import_country)"""
+    try:
+        query = """
+        SELECT DISTINCT import_country AS "Importer"
+        FROM dev.fact_wcod_imports
+        WHERE import_country IS NOT NULL
+        ORDER BY import_country;
+        """
+        rows = execute_query(query)
+        if rows:
+            return [row['Importer'] for row in rows]
+        return ['Japan']  # Default fallback
+    except Exception as e:
+        print(f"Error loading available countries: {e}")
+        import traceback
+        traceback.print_exc()
+        return ['Japan']  # Default fallback
+
+
 def create_layout():
     """Create the Imports - Country Detail layout"""
     regions, _ = load_legend_data()
     source = load_source_data()
     footnotes = load_footnote_data()
     
-    # Get available countries from the data
-    country_crude_df = load_imports_by_country_crude_data()
-    available_countries = sorted(country_crude_df['Importer'].unique().tolist()) if not country_crude_df.empty else ['Japan']
+    # Get available countries from the database
+    available_countries = load_available_countries()
+    
+    # Set default country - use Japan if available, otherwise first in list
+    default_country = 'Japan' if 'Japan' in available_countries else (available_countries[0] if available_countries else 'Japan')
     
     return html.Div([
         dcc.Store(id='selected-year-store', data=2023),  # Store selected year from chart click
-        dcc.Store(id='selected-country-store', data='Japan'),  # Store selected country
+        dcc.Store(id='selected-country-store', data=default_country),  # Store selected country
         dcc.Store(id='imports-expand-store', data={'years': [], 'quarters': []}),  # Track header expansion state
         dcc.Store(id='imports-time-visibility', data={'Year': True, 'Quarter': False, 'Month': False, 'Day': False}),
         
@@ -192,7 +295,7 @@ def create_layout():
             dcc.Dropdown(
                 id='importing-country-select',
                 options=[{'label': country, 'value': country} for country in available_countries],
-                value='Japan',
+                value=default_country,
                 style={
                     'width': '1200px',
                     'fontSize': '13px',
@@ -385,7 +488,7 @@ def create_layout():
 
 def create_imports_by_region_chart(selected_country='Japan'):
     """Create stacked bar chart showing imports by region over time"""
-    df = load_imports_by_region_data()
+    df = load_imports_by_region_data(selected_country)
     _, color_map = load_legend_data()
     
     if df.empty:
@@ -441,6 +544,42 @@ def create_imports_by_region_chart(selected_country='Japan'):
     year_totals = df_grouped.groupby('Year')['Volume'].sum()
     total_volumes = [year_totals.get(year, 0) for year in years]
     
+    # Calculate max value for dynamic y-axis (4 or 5 ticks)
+    max_value = max(total_volumes) if total_volumes else 4500
+    import math
+    # Calculate approximate interval for 4-5 ticks (divide max by 4 for 5 ticks, or by 3 for 4 ticks)
+    # Prefer 5 ticks if possible, otherwise 4 ticks
+    approx_interval_5 = max_value / 4  # For 5 ticks: 0, interval, 2*interval, 3*interval, 4*interval
+    approx_interval_4 = max_value / 3  # For 4 ticks: 0, interval, 2*interval, 3*interval
+    
+    # Choose between 4 or 5 ticks based on which gives nicer numbers
+    # Round intervals to nice numbers
+    def round_to_nice(num):
+        if num <= 250:
+            return max(50, round(num / 50) * 50)
+        elif num <= 500:
+            return round(num / 100) * 100
+        elif num <= 1000:
+            return round(num / 200) * 200
+        elif num <= 2000:
+            return round(num / 500) * 500
+        else:
+            return round(num / 1000) * 1000
+    
+    tick_interval_5 = round_to_nice(approx_interval_5)
+    tick_interval_4 = round_to_nice(approx_interval_4)
+    
+    # Prefer 5 ticks if the interval is reasonable, otherwise use 4
+    if tick_interval_5 >= 50 and (tick_interval_5 * 4) >= max_value:
+        tick_interval = tick_interval_5
+        num_ticks = 5
+    else:
+        tick_interval = tick_interval_4
+        num_ticks = 4
+    
+    # Calculate y-axis max: round max up to next multiple of tick_interval to cover all data
+    yaxis_max = math.ceil(max_value / tick_interval) * tick_interval
+    
     # Add total values on top of bars
     fig.add_trace(go.Scatter(
         x=years,
@@ -489,10 +628,11 @@ def create_imports_by_region_chart(selected_country='Japan'):
         ),
         yaxis=dict(
             title="Import Volume ('000 b/d)",
-            range=[0, 4500],  # Set range to 0-4500 to show up to 4000 clearly
+            range=[0, yaxis_max],  # Dynamic range based on max value
             tickmode='linear',
             tick0=0,
-            dtick=1000,  # Show ticks at 0, 1000, 2000, 3000, 4000
+            dtick=tick_interval,  # Dynamic tick interval
+            tickvals=[tick_interval * i for i in range(num_ticks)],  # Explicitly set tick values: 0, interval, 2*interval, etc.
             tickfont={
                 'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
                 'size': 11,
@@ -548,28 +688,45 @@ def create_imports_by_region_chart(selected_country='Japan'):
 
 def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'):
     """Create stacked bar chart showing imports by country for selected year, broken down by crude"""
-    df = load_imports_by_country_crude_data()
+    df = load_imports_by_country_crude_data(selected_country, selected_year)
     
     if df.empty:
         return go.Figure()
     
-    # Filter by year and country
-    df_filtered = df[(df['Year'] == selected_year) & (df['Importer'] == selected_country)].copy()
+    # Extract the actual year from the data (since query now uses latest year dynamically)
+    actual_year = int(df['Year'].iloc[0]) if 'Year' in df.columns and not df['Year'].isna().all() else selected_year
     
-    if df_filtered.empty:
-        return go.Figure()
-    
-    # Remove duplicates based on Exporter, Crude, and DataValue
-    # Keep only the first occurrence of each unique combination
-    df_filtered = df_filtered.drop_duplicates(subset=['Exporter', 'Crude', 'DataValue'], keep='first')
-    
-    # Group by Exporter and Crude, sum volumes
-    # Note: Color column contains crude names, not actual colors
-    df_grouped = df_filtered.groupby(['Exporter', 'Crude'])['DataValue'].sum().reset_index()
+    # Group by Exporter and Crude, sum volumes (query returns individual records)
+    df_grouped = df.groupby(['Exporter', 'Crude'])['DataValue'].sum().reset_index()
     
     # Get all exporters and order by total volume
     exporter_totals = df_grouped.groupby('Exporter')['DataValue'].sum().sort_values(ascending=False)
     exporters = exporter_totals.index.tolist()
+    
+    # Calculate max value for dynamic y-axis - use maximum total sum per exporter (total bar height)
+    # Example: Saudi Arabia = 965, UAE = 843, Kuwait = 190.5 -> max = 965
+    max_value = exporter_totals.max() if not exporter_totals.empty else 100
+    # For 4 tick marks (0, interval, 2*interval, 3*interval), calculate interval from max
+    # Example: max 965 -> divide by 3 = 321.67, round to nice number 250 or 300
+    # Result: ticks at 0, 250, 500, 750 or 0, 300, 600, 900
+    import math
+    # Calculate approximate interval for 4 ticks (divide max by 3)
+    approx_interval = max_value / 3
+    # Round to nice number (nearest 50, 100, 200, 250, 500, etc.)
+    if approx_interval <= 50:
+        tick_interval = max(10, round(approx_interval / 10) * 10)
+    elif approx_interval <= 100:
+        tick_interval = round(approx_interval / 25) * 25
+    elif approx_interval <= 250:
+        tick_interval = round(approx_interval / 50) * 50
+    elif approx_interval <= 500:
+        tick_interval = round(approx_interval / 100) * 100
+    else:
+        tick_interval = round(approx_interval / 250) * 250
+    
+    # Calculate y-axis max: round max up to next multiple of tick_interval to cover all data
+    # This ensures range covers the data while ticks are at nice intervals
+    yaxis_max = math.ceil(max_value / tick_interval) * tick_interval
     
     # Define exact color mapping for each crude type
     crude_color_map = {
@@ -642,12 +799,16 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
         # Only add trace if there's at least one non-zero value
         if sum(volumes) > 0:
             # Format year as "01-01-YYYY" for hover tooltip
-            year_str = f"01-01-{selected_year}"
+            year_str = f"01-01-{actual_year}"
+            # Use rgba format for crudes not in color map (Other crudes)
+            # Convert #1f77b400 to rgba(31, 119, 180, 0.25) - semi-transparent blue
+            # Note: 00 in hex alpha = 0 (fully transparent), using 0.25 for visibility
+            crude_color = crude_color_map.get(crude, 'rgba(31, 119, 180, 1)')
             fig.add_trace(go.Bar(
                 x=exporters,
                 y=volumes,
                 name=crude,
-                marker_color=crude_color_map.get(crude, '#CCCCCC'),
+                marker_color=crude_color,
                 hovertemplate=f'Crude: {crude}<br>Year: {year_str}<br>Traded Volume: %{{y:,.1f}}(\'000 b/d)<extra></extra>',
                 text=[f'{v:,.1f}' if v >= 10 else '' for v in volumes],  # Show value if >= 10
                 textposition='inside',
@@ -661,7 +822,7 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
     # Update layout
     fig.update_layout(
         title={
-            'text': f"{selected_country} Crude Imports by Country - {selected_year}",
+            'text': f"{selected_country} Crude Imports by Country - {actual_year}",
             'x': 0.5,
             'xanchor': 'center',
             'font': {
@@ -706,10 +867,11 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
                 'size': 11,
                 'color': '#666666'
             },
-            range=[0, 1100],  # Set range to 0-1100 to show up to 1000 clearly (matching Figure 1)
+            range=[0, max(yaxis_max, max_value)],  # Dynamic range covering all data
             tickmode='linear',
             tick0=0,
-            dtick=200,  # Show ticks at 0, 200, 400, 600, 800, 1000 (matching Figure 1)
+            dtick=tick_interval,  # Dynamic tick interval - will show ticks at 0, interval, 2*interval, etc.
+            tickvals=[0, tick_interval, tick_interval * 2, tick_interval * 3],  # Explicitly set 4 tick values
             gridcolor='#e0e0e0',
             gridwidth=1,
             showgrid=False,  # Remove horizontal grid lines
@@ -757,7 +919,7 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
 
 def create_imports_table(selected_country='Japan', expansion_state=None, time_visibility=None):
     """Create data table with stacked header text per column (Year/Quarter/Month/Day) but still one column per year."""
-    df = load_table_data()
+    df = load_table_data(selected_country)
     
     if df.empty:
         return [], [], []
