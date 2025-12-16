@@ -24,6 +24,8 @@ from dash import (
     no_update,
 )
 
+from core.data_helpers import execute_query
+
 # Data locations
 DATA_DIR = os.path.join(
     os.path.dirname(os.path.dirname(__file__)),
@@ -57,16 +59,42 @@ def _to_numeric(series: pd.Series) -> pd.Series:
 
 
 def _prepare_map_df() -> pd.DataFrame:
-    """Normalize map CSV."""
-    df = _read_csv(MAP_CSV)
+    """Load and normalize map data from database."""
+    query = """
+    SELECT 
+        -- Static columns
+        'Source: Energy Intelligence' AS "Source",
+        'COPYRIGHT &copy; 2001-2021 ENERGY INTELLIGENCE GROUP, INC. / ENERGY INTELLIGENCE GROUP (UK) LIMITED.'
+            AS "Copyright",
+        fwc.country_long_name AS "Country",
+        EXTRACT(YEAR FROM fwc.yr) AS "Year of Year",
+        dc.latitude AS "Latitude",
+        dc.longitude AS "Longitude",
+        fwc.exports AS "Value"
+    FROM dev.fact_wcod_country AS fwc
+    LEFT JOIN dev.dim_country AS dc
+        ON dc.dim_country_id = fwc.country_id
+    """
+    
+    try:
+        results = execute_query(query)
+        if not results:
+            return pd.DataFrame()
+        df = pd.DataFrame(results)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        print(f"[global_exports] Failed to execute map data query: {exc}")
+        return pd.DataFrame()
+    
     if df.empty:
         return df
+    
+    df.columns = df.columns.str.strip()
     df = df.rename(
         columns={
             "Country": "country",
             "Year of Year": "year",
-            "Latitude (generated)": "lat",
-            "Longitude (generated)": "lon",
+            "Latitude": "lat",
+            "Longitude": "lon",
             "Value": "value",
         }
     )
@@ -255,6 +283,17 @@ TABLE_YEAR_COLUMNS = [
     for year in YEAR_COLUMNS
 ]
 TABLE_COLUMNS = TABLE_STATIC_COLUMNS + TABLE_YEAR_COLUMNS
+
+
+def _country_filter_options(country_names: Sequence[str]) -> List[Dict[str, str]]:
+    """Create checklist options for countries with ALL option first."""
+    options: List[Dict[str, str]] = [
+        {"label": "ALL", "value": "ALL"}
+    ] + [
+        {"label": country, "value": country}
+        for country in country_names
+    ]
+    return options
 
 
 def _stream_filter_options(stream_names: Sequence[str]) -> List[Dict[str, html.Span]]:
@@ -487,7 +526,7 @@ def _build_map_figure(year: Optional[int], highlight_country: Optional[str] = No
         height=520,
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=10, r=10, t=20, b=110),
+        margin=dict(l=0, r=0, t=20, b=110),
         template="plotly_white",
     )
     if highlight_country:
@@ -803,12 +842,12 @@ def create_layout():
                         },
                     ),
                     html.H3(
-                        "Global Exports",
+                        "Crude Exports",
                         style={
                             "marginBottom": "20px",
                             "color": "#fe5000",
                             "textAlign": "center",
-                            "fontSize": "19px",
+                            "fontSize": "21px",
                             "fontWeight": "bold",
                         },
                     ),
@@ -818,15 +857,15 @@ def create_layout():
                 [
                     html.Div(
                         [
-                            html.Div(
-                                id="global-exports-map-title",
-                                children=f"Crude Exports — {DEFAULT_YEAR or 'N/A'}",
-                                style={
-                                    "fontWeight": "bold",
-                                    "color": "#1b365d",
-                                    "marginBottom": "10px",
-                                },
-                            ),
+                            # html.Div(
+                            #     id="global-exports-map-title",
+                            #     children=f"Crude Exports — {DEFAULT_YEAR or 'N/A'}",
+                            #     style={
+                            #         "fontWeight": "bold",
+                            #         "color": "#1b365d",
+                            #         "marginBottom": "10px",
+                            #     },
+                            # ),
                             dcc.Graph(
                                 id="global-exports-map",
                                 config={
@@ -845,7 +884,7 @@ def create_layout():
                                     DEFAULT_YEAR,
                                     "Russia" if "Russia" in COUNTRY_OPTIONS else None,
                                 ),
-                                style={"height": "520px"},
+                                style={"height": "520px", "width": "100%"},
                             ),
                     html.Div(
                         [
@@ -910,7 +949,7 @@ def create_layout():
                     ),
                         ],
                         className="col-md-9",
-                        style={"padding": "10px"},
+                        style={"padding": "10px 5px 10px 10px"},
                     ),
                     html.Div(
                         [
@@ -1107,18 +1146,48 @@ def create_layout():
                                     "marginBottom": "5px",
                                 },
                             ),
-                            dcc.Dropdown(
-                                id="global-exports-country-filter",
-                                options=[
-                                    {"label": "ALL", "value": "ALL"}
-                                ] + [
-                                    {"label": country, "value": country}
-                                    for country in COUNTRY_OPTIONS
-                                ],
-                                value=["Russia"] if "Russia" in COUNTRY_OPTIONS else [],
-                                multi=True,
-                                clearable=False,
-                                placeholder="Select country(ies)",
+                            html.Div(
+                                dcc.Checklist(
+                                    id="global-exports-country-filter",
+                                    options=_country_filter_options(COUNTRY_OPTIONS),
+                                    value=["Russia"] if "Russia" in COUNTRY_OPTIONS else [],
+                                    style={
+                                        "display": "flex",
+                                        "flexDirection": "column",
+                                        "gap": "2px",
+                                        "marginTop": "2px",
+                                    },
+                                    labelStyle={
+                                        "display": "flex",
+                                        "alignItems": "center",
+                                        "gap": "2px",
+                                        "padding": "2px 2px",
+                                        "borderRadius": "4px",
+                                        "border": "0px solid #dfe3eb",
+                                        "backgroundColor": "#ffffff",
+                                        "width": "100%",
+                                        "boxShadow": "0 1px 2px rgba(0,0,0,0.05)",
+                                        "cursor": "pointer",
+                                        "transition": "background-color 0.2s ease, border-color 0.2s ease",
+                                        "userSelect": "none",
+                                        "fontSize": "12px",
+                                    },
+                                    inputStyle={
+                                        "marginRight": "8px",
+                                        "width": "16px",
+                                        "height": "16px",
+                                        "cursor": "pointer",
+                                    },
+                                ),
+                                style={
+                                    "marginBottom": "20px",
+                                    "maxHeight": "300px",
+                                    "overflowY": "auto",
+                                    "border": "1px solid rgb(221, 221, 221)",
+                                    "borderRadius": "4px",
+                                    "padding": "10px",
+                                    "backgroundColor": "rgb(249, 249, 249)",
+                                },
                             ),
                         ],
                         className="col-md-3",
@@ -1394,7 +1463,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         prevent_initial_call=True,
     )
     def update_country_from_map(click_data, current_value):
-        """Sync dropdown selection when clicking map."""
+        """Sync checklist selection when clicking map."""
         if not click_data or not click_data.get("points"):
             return dash.no_update
         country = click_data["points"][0].get("location") or click_data["points"][0].get("text")
