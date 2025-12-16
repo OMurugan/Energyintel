@@ -47,7 +47,7 @@ def load_imports_by_region_data(selected_country='Japan'):
             import_region AS "Exporting Region",
             import_country AS "Importer",
             SUM(vol_kbpd) AS "DataValue"
-        FROM dev.fact_wcod_imports
+        FROM fact_wcod_imports
         WHERE
             import_country = :import_country
             AND (
@@ -95,7 +95,7 @@ def load_imports_by_country_crude_data(selected_country='Japan', selected_year=2
             COALESCE(crude_name, 'Other') AS "Crude",
             company_name AS "Company",
             vol_kbpd AS "DataValue"
-        FROM dev.fact_wcod_imports a
+        FROM fact_wcod_imports a
         WHERE
             import_country = :import_country
             AND (
@@ -104,11 +104,11 @@ def load_imports_by_country_crude_data(selected_country='Japan', selected_year=2
             )
             AND yr >= (
                 SELECT DATE_TRUNC('year', MAX(yr))
-                FROM dev.fact_wcod_imports
+                FROM fact_wcod_imports
             )
             AND yr < (
                 SELECT DATE_TRUNC('year', MAX(yr)) + INTERVAL '1 year'
-                FROM dev.fact_wcod_imports
+                FROM fact_wcod_imports
             );
         """
         
@@ -154,7 +154,7 @@ def load_table_data(selected_country='Japan'):
             EXTRACT(MONTH FROM yr)::INT AS "Month of Year",
             EXTRACT(DAY FROM yr)::INT AS "Day of Year",
             vol_kbpd AS "DataValue"
-        FROM dev.fact_wcod_imports a
+        FROM fact_wcod_imports a
         WHERE
             import_country = :import_country
             AND (
@@ -244,7 +244,7 @@ def load_available_countries():
     try:
         query = """
         SELECT DISTINCT import_country AS "Importer"
-        FROM dev.fact_wcod_imports
+        FROM fact_wcod_imports
         WHERE import_country IS NOT NULL
         ORDER BY import_country;
         """
