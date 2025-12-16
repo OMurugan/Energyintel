@@ -5,54 +5,35 @@ Detailed Russian exports data
 from dash import html, Input, Output, callback, dash_table
 import pandas as pd
 import os
+from core.data_helpers import execute_query
 
 
-def get_year_columns_from_csv():
-    """Extract year columns dynamically from the CSV file"""
-    # Get the CSV file path
-    csv_path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)),
-        'data',
-        'Trade',
-        'Russian Exports by Terminal.csv'
-    )
-    
+def get_year_columns_from_db():
+    """Extract year columns dynamically from the database"""
     try:
-        raw = pd.read_csv(
-            csv_path,
-            encoding="utf-16",
-            sep="\t",
-            header=None,
-            engine="python"
-        )
+        query = """
+        SELECT DISTINCT yr AS "Year"
+        FROM t_wcod_icoh_exports
+        WHERE exportercountry = 'Russia'
+        ORDER BY yr DESC
+        """
         
-        # Drop completely empty rows
-        raw = raw.dropna(how="all")
+        results = execute_query(query)
+        if results:
+            years = [str(row['Year']) for row in results if row.get('Year')]
+            return years
         
-        # Skip first two "Source / COPYRIGHT" rows
-        raw = raw.iloc[2:].reset_index(drop=True)
-        
-        # Header is in first row (index 0)
-        headers = raw.iloc[0].fillna("").astype(str).str.strip().tolist()
-        
-        # Extract year columns (4-digit years starting with '20' or all digits)
-        year_columns = []
-        for col in headers:
-            col_str = str(col).strip()
-            if col_str.isdigit() or (col_str.startswith('20') and len(col_str) == 4):
-                year_columns.append(col_str)
-        
-        return year_columns
+        return []
     except Exception as e:
-        # Fallback to default years if CSV can't be read
+        # Fallback to default years if database query fails
         return ['2022', '2021', '2020', '2019', '2018', '2017', '2016', '2015', '2014', '2013', '2012', '2011', '2010', '2009', '2008', '2007', '2006']
 
 
 def create_layout():
     """Create the Russian Exports layout"""
     # Build conditional styles for year columns (right-align numeric data)
-    # Get year columns dynamically from CSV
-    year_columns = get_year_columns_from_csv()
+    # Get year columns dynamically from database
+    year_columns = get_year_columns_from_db()
     conditional_styles = [
         {
             'if': {'filter_query': '{Company} contains Total'},
@@ -222,86 +203,119 @@ def register_callbacks(dash_app, server):
         Input('current-submenu', 'data')
     )
     def update_russian_exports(submenu):
-        """Update Russian exports table from CSV"""
+        """Update Russian exports table from database"""
         if submenu != 'russian-exports':
             return [], []
         
-        # Get the CSV file path
-        csv_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            'data',
-            'Trade',
-            'Russian Exports by Terminal.csv'
-        )
-        
         try:
-            raw = pd.read_csv(
-                csv_path,
-                encoding="utf-16",
-                sep="\t",
-                header=None,
-                engine="python"
-            )
+            # Query data from database
+            query = """
+            SELECT 
+                concat(value1, ' ', exportercountry) AS "Terminal, Country",
+                value2 AS "Company",
+                source,
+                yr AS "Year",
+                datavalue AS "DataValue",
+                'Source: Energy Intelligence' AS "Sourced",
+                'COPYRIGHT &copy; 2001-2021 ENERGY INTELLIGENCE GROUP, INC. / ENERGY INTELLIGENCE GROUP (UK) LIMITED.' AS "Copyright"
+            FROM t_wcod_icoh_exports
+            WHERE exportercountry = 'Russia'
+            """
             
-            # Drop completely empty rows
-            raw = raw.dropna(how="all")
+            # Execute query and convert to DataFrame
+            results = execute_query(query)
+            raw = pd.DataFrame(results)
             
-            # Skip first two "Source / COPYRIGHT" rows
-            raw = raw.iloc[2:].reset_index(drop=True)
+            if raw.empty:
+                raise ValueError("No data returned from database")
             
-            # Header is in first row (index 0)
-            headers = raw.iloc[0].fillna("").astype(str).str.strip().tolist()
+            # Ensure we have required columns
+            if 'Year' not in raw.columns or 'DataValue' not in raw.columns or 'Company' not in raw.columns:
+                raise ValueError("Missing required columns: Year, DataValue, or Company")
             
-            # Data starts from row index 1
-            df = raw.iloc[1:].reset_index(drop=True)
-            df.columns = headers
+            # Convert Year to int and DataValue to numeric
+            raw['Year'] = pd.to_numeric(raw['Year'], errors='coerce')
+            raw['DataValue'] = pd.to_numeric(raw['DataValue'], errors='coerce')
             
-            # Remove any completely empty columns
-            df = df.dropna(axis=1, how='all')
+            # Remove rows with invalid data
+            raw = raw[raw['Year'].notna() & raw['DataValue'].notna()].copy()
             
-            # Replace empty strings with None
-            df = df.replace(r'^\s*$', None, regex=True)
-            df = df.replace('', None)
+            # Pivot from long format to wide format
+            # Group by Terminal/Country and Company, pivot Year values to columns
+            df_pivot = raw.pivot_table(
+                index=['Terminal, Country', 'Company'],
+                columns='Year',
+                values='DataValue',
+                aggfunc='sum',
+                fill_value=None
+            ).reset_index()
             
+            # Get year columns (all numeric columns except Terminal, Country and Company)
+            # After pivot, year columns might be integers or floats
             year_columns = []
-            for col in df.columns:
-                col_str = str(col)
-                if col_str.isdigit() or (col_str.startswith('20') and len(col_str) == 4):
-                    year_columns.append(col)
+            for col in df_pivot.columns:
+                if col not in ['Terminal, Country', 'Company']:
+                    try:
+                        # Try to convert to int (year)
+                        year_val = int(float(col))
+                        if 1900 <= year_val <= 2100:  # Reasonable year range
+                            year_columns.append(year_val)
+                    except (ValueError, TypeError):
+                        pass
             
-            for col in year_columns:
+            # Sort years descending and convert to strings
+            year_columns = sorted(year_columns, reverse=True)
+            year_columns_str = [str(col) for col in year_columns]
+            
+            # Convert year column names in pivot table to strings for consistency
+            column_mapping = {}
+            for col in df_pivot.columns:
+                if col not in ['Terminal, Country', 'Company']:
+                    try:
+                        year_val = int(float(col))
+                        if 1900 <= year_val <= 2100:
+                            column_mapping[col] = str(year_val)
+                    except (ValueError, TypeError):
+                        pass
+            
+            if column_mapping:
+                df_pivot = df_pivot.rename(columns=column_mapping)
+            
+            # Reorder columns: Terminal, Country, Company, then years
+            df = df_pivot[['Terminal, Country', 'Company'] + year_columns_str].copy()
+            
+            # Sort by Terminal, Country and Company
+            df = df.sort_values(['Terminal, Country', 'Company']).reset_index(drop=True)
+            
+            # Handle Terminal, Country merging (clear duplicate values)
+            terminal_col = 'Terminal, Country'
+            prev_terminal = None
+            
+            for idx in df.index:
+                current_terminal = df.loc[idx, terminal_col]
+                if pd.isna(current_terminal) or current_terminal is None:
+                    current_terminal = ''
+                else:
+                    current_terminal = str(current_terminal).strip()
+                
+                # If current terminal matches previous, clear it (except for first occurrence)
+                if current_terminal == prev_terminal and prev_terminal != '':
+                    df.loc[idx, terminal_col] = ''
+                else:
+                    prev_terminal = current_terminal
+            
+            # Convert year columns to numeric
+            for col in year_columns_str:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            terminal_col = 'Terminal, Country'
-            df = df.reset_index(drop=True)
-            
-            if terminal_col in df.columns:
-                prev_terminal = None
-                
-                for idx in df.index:
-                    current_terminal = df.loc[idx, terminal_col]
-                    if pd.isna(current_terminal) or current_terminal is None:
-                        current_terminal = ''
-                    else:
-                        current_terminal = str(current_terminal).strip()
-                    
-                    # If current terminal matches previous, clear it (except for first occurrence)
-                    if current_terminal == prev_terminal and prev_terminal != '':
-                        df.loc[idx, terminal_col] = ''
-                    else:
-                        prev_terminal = current_terminal
-            
-            if terminal_col in df.columns:
-                # Store empty string values
-                terminal_values = df[terminal_col].copy()
-                # Convert other columns (not Terminal, Country) to None where null
-                for col in df.columns:
-                    if col != terminal_col:
-                        df[col] = df[col].where(pd.notnull(df[col]), None)
-                # Restore Terminal, Country values (including empty strings)
-                df[terminal_col] = terminal_values
-            else:
-                df = df.where(pd.notnull(df), None)
+            # Store empty string values for Terminal, Country
+            terminal_values = df[terminal_col].copy()
+            # Convert other columns to None where null
+            for col in df.columns:
+                if col != terminal_col:
+                    df[col] = df[col].where(pd.notnull(df[col]), None)
+            # Restore Terminal, Country values (including empty strings)
+            df[terminal_col] = terminal_values
             
             table_data = df.to_dict('records')
             
@@ -320,7 +334,7 @@ def register_callbacks(dash_app, server):
                 elif col_str == 'Company':
                     col_config['width'] = '500px'
                 
-                if col in year_columns:
+                if col_str in year_columns_str:
                     col_config['type'] = 'numeric'
                     col_config['format'] = {'specifier': '.0f'}
                 
