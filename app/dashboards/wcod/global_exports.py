@@ -26,16 +26,6 @@ from dash import (
 
 from core.data_helpers import execute_query
 
-# Data locations
-DATA_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)),
-    "data",
-    "global-exports",
-)
-MAP_CSV = os.path.join(DATA_DIR, "Map_data.csv")
-CHART_CSV = os.path.join(DATA_DIR, "Chart_Crude_data.csv")
-TABLE_CSV = os.path.join(DATA_DIR, "Exports Table_data.csv")
-
 
 def _read_csv(path: str) -> pd.DataFrame:
     """Read a CSV file and trim column names."""
@@ -71,8 +61,8 @@ def _prepare_map_df() -> pd.DataFrame:
         dc.latitude AS "Latitude",
         dc.longitude AS "Longitude",
         fwc.exports AS "Value"
-    FROM dev.fact_wcod_country AS fwc
-    LEFT JOIN dev.dim_country AS dc
+    FROM fact_wcod_country AS fwc
+    LEFT JOIN dim_country AS dc
         ON dc.dim_country_id = fwc.country_id
     """
     
@@ -111,10 +101,33 @@ def _prepare_map_df() -> pd.DataFrame:
 
 
 def _prepare_chart_df() -> pd.DataFrame:
-    """Normalize stacked area chart CSV."""
-    df = _read_csv(CHART_CSV)
+    """Load and normalize stacked area chart data from database."""
+    query = """
+    SELECT 
+        -- Static columns
+        'Source: Energy Intelligence' AS "Source",
+        'COPYRIGHT &copy; 2001-2021 ENERGY INTELLIGENCE GROUP, INC. / ENERGY INTELLIGENCE GROUP (UK) LIMITED.'
+            AS "Copyright",
+        EXTRACT(YEAR FROM yr) AS "Year of Year",
+        country_name AS "Country",	
+        crude_name AS "Crude",  
+        exports_kbpd AS "Avg. Value"
+    FROM fact_wcod_crude
+    """
+    
+    try:
+        results = execute_query(query)
+        if not results:
+            return pd.DataFrame()
+        df = pd.DataFrame(results)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        print(f"[global_exports] Failed to execute chart data query: {exc}")
+        return pd.DataFrame()
+    
     if df.empty:
         return df
+    
+    df.columns = df.columns.str.strip()
     df = df.rename(
         columns={
             "Year of Year": "year",
@@ -134,10 +147,33 @@ def _prepare_chart_df() -> pd.DataFrame:
 
 
 def _prepare_table_df() -> pd.DataFrame:
-    """Normalize table CSV."""
-    df = _read_csv(TABLE_CSV)
+    """Load and normalize table data from database."""
+    query = """
+    SELECT 
+        country_name AS "Country",	
+        crude_name AS "Crude",  
+        -- Static columns
+        'Source: Energy Intelligence' AS "Source",
+        'COPYRIGHT &copy; 2001-2021 ENERGY INTELLIGENCE GROUP, INC. / ENERGY INTELLIGENCE GROUP (UK) LIMITED.'
+            AS "Copyright",
+        EXTRACT(YEAR FROM yr) AS "Year of Year",    
+        exports_kbpd AS "Value"
+    FROM fact_wcod_crude
+    """
+    
+    try:
+        results = execute_query(query)
+        if not results:
+            return pd.DataFrame()
+        df = pd.DataFrame(results)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        print(f"[global_exports] Failed to execute table data query: {exc}")
+        return pd.DataFrame()
+    
     if df.empty:
         return df
+    
+    df.columns = df.columns.str.strip()
     df = df.rename(
         columns={
             "Country": "country",
@@ -317,7 +353,7 @@ def _stream_filter_options(stream_names: Sequence[str]) -> List[Dict[str, html.S
                         "height": "14px",
                         "backgroundColor": color,
                         "borderRadius": "2px",
-                        "marginRight": "10px",
+                        "marginRight": "5px",
                         "border": "1px solid #cfd8e3",
                         "boxShadow": "0 0 2px rgba(0,0,0,0.1)",
                     },
@@ -334,8 +370,8 @@ def _stream_filter_options(stream_names: Sequence[str]) -> List[Dict[str, html.S
                         "margin": "0",
                         "textAlign": "left",
                         "color": "#1b365d",
-                        "fontWeight": "600",
-                        "fontSize": "13px",
+                        "fontWeight": "normal",
+                        "fontSize": "12px",
                         "cursor": "pointer",
                         "userSelect": "none",
                     },
@@ -1223,7 +1259,7 @@ def create_layout():
                             ),
                         ],
                         className="col-md-9",
-                        style={"padding": "15px"},
+                        style={"padding": "10px"},
                     ),
                     html.Div(
                         [
@@ -1250,11 +1286,12 @@ def create_layout():
                                     "cursor": "pointer",
                                     "transition": "background-color 0.2s ease, border-color 0.2s ease",
                                     "userSelect": "none",
+                                    "fontSize": "12px",
                                 },
                                 inputStyle={
-                                    "marginRight": "12px",
-                                    "width": "18px",
-                                    "height": "18px",
+                                    "marginRight": "5px",
+                                    "width": "16px",
+                                    "height": "16px",
                                     "cursor": "pointer",
                                 },
                             ),
@@ -1354,7 +1391,7 @@ def create_layout():
                     ),
                 ],
                 className="col-md-9",
-                style={"padding": "15px"},
+                style={"padding": "10px"},
             ),
             html.P(
                 "Source: Energy Intelligence (Global Crude Exports dashboard).",
