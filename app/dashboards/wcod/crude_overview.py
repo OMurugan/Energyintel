@@ -85,6 +85,43 @@ def _format_production_breakdown_title(country_selection):
     remaining_count = len(countries) - 3
     return f"Production Breakdown – {', '.join(first_three)} and {remaining_count} more"
 
+def _calculate_yaxis_ticks(max_value):
+    """Calculate 5 evenly spaced Y-axis ticks from 0 to max_value.
+    
+    Args:
+        max_value: Maximum value for the Y-axis
+    
+    Returns:
+        Tuple of (y_axis_max, tick_values) where tick_values is a list of 5 evenly spaced values
+    """
+    import math
+    
+    if max_value <= 0:
+        # Default fallback
+        y_axis_max = 10000
+        tick_values = [0, 2500, 5000, 7500, 10000]
+        return y_axis_max, tick_values
+    
+    # Round up max_value to a nice round number for better readability
+    # Find the order of magnitude
+    order_of_magnitude = 10 ** math.floor(math.log10(max_value))
+    
+    # Round up to next nice number (add 20% padding, then round up)
+    padded_max = max_value * 1.2
+    rounded_max = math.ceil(padded_max / order_of_magnitude) * order_of_magnitude
+    
+    # If the rounded value is too small, try rounding to half order of magnitude
+    if rounded_max < padded_max:
+        rounded_max = math.ceil(padded_max / (order_of_magnitude * 0.5)) * (order_of_magnitude * 0.5)
+    
+    y_axis_max = rounded_max
+    
+    # Create 5 evenly spaced ticks: 0, 1/4, 1/2, 3/4, 1 of max
+    tick_step = y_axis_max / 4
+    tick_values = [0, tick_step, tick_step * 2, tick_step * 3, y_axis_max]
+    
+    return y_axis_max, tick_values
+
 def _resolve_years_selection(selected):
     """Normalize year selection; expand '(All)' to full list."""
     if selected is None:
@@ -1460,7 +1497,7 @@ def create_layout(server=None):
                 dcc.Checklist(
                     id="crude-country-dropdown",
                     options=([{"label": "(All)", "value": "(All)"}] + [{"label": c, "value": c} for c in COUNTRIES]),
-                    value=["(All)"],
+                    value=["Russia"],
                     inputStyle={"marginRight": "8px"},
                     labelStyle={"display": "block", "marginBottom": "6px"},
                     style={
@@ -1506,7 +1543,7 @@ def create_layout(server=None):
                         html.Label("Year of Date", style={"fontWeight": "bold", "color": "#2c3e50", "fontSize": "13px", "marginBottom": "5px"}),
                         dcc.Checklist(
                             id="production-year-dropdown",
-                            options=([{"label": "(All)", "value": "(All)"}] + [{"label": str(y), "value": y} for y in PRODUCTION_YEARS]
+                            options=([{"label": "(All)", "value": "(All)"}] + [{"label": str(y), "value": y} for y in sorted(PRODUCTION_YEARS) if PRODUCTION_YEARS]
                                      if PRODUCTION_YEARS else [{"label": "(All)", "value": "(All)"}] + [{"label": str(y), "value": y} for y in range(2000, 2026)]),
                             value=PRODUCTION_YEAR_DEFAULT if PRODUCTION_YEAR_DEFAULT else [],
                             inputStyle={"marginRight": "8px"},
@@ -1572,7 +1609,7 @@ def create_layout(server=None):
                                 "maxHeight": "600px",
                                 "height": "auto"
                             },
-                            style_cell={"textAlign":"left","minWidth":"80px","whiteSpace":"normal"},
+                            style_cell={"textAlign":"left","minWidth":"80px","whiteSpace":"normal","fontSize":"12px"},
                             style_header={
                                 "textAlign": "center",
                                 "fontWeight": "bold"
@@ -1637,7 +1674,7 @@ def register_callbacks(dash_app, server):
             countries = sorted(BAR_DF_MONTHLY["Country"].dropna().unique().tolist())
         
         options = [{"label": "(All)", "value": "(All)"}] + [{"label": c, "value": c} for c in countries]
-        default_value = ["(All)"]
+        default_value = ["Russia"] if "Russia" in countries else (["(All)"] if countries else [])
         return options, default_value
 
     @dash_app.callback(
@@ -1702,7 +1739,10 @@ def register_callbacks(dash_app, server):
         _ensure_data_loaded()
         years = PRODUCTION_YEARS if PRODUCTION_YEARS else []
         
-        options = [{"label": "(All)", "value": "(All)"}] + [{"label": str(y), "value": y} for y in years]
+        # Sort years in ascending order for display (PRODUCTION_YEARS is in descending order)
+        years_ascending = sorted(years) if years else []
+        
+        options = [{"label": "(All)", "value": "(All)"}] + [{"label": str(y), "value": y} for y in years_ascending]
         # Default to the two most recent years (e.g., 2024, 2025)
         # Use integer values to match the option values
         default_value = PRODUCTION_YEAR_DEFAULT if PRODUCTION_YEAR_DEFAULT else []
@@ -2537,7 +2577,21 @@ def register_callbacks(dash_app, server):
                     print(f"DEBUG BREAKDOWN YEARLY: No profiled streams selected, showing all available streams")
                 
                 # Group by year and stream, sum values
-                agg = df.groupby(["year", "Stream"])["value"].sum().reset_index()
+                # Include Country in aggregation if available for hover template
+                if "Country" in df.columns:
+                    # Aggregate with Country - get unique countries per year/Stream combination
+                    country_info = df.groupby(["year", "Stream"])["Country"].apply(
+                        lambda x: ", ".join(sorted(x.unique()))
+                    ).reset_index(name="Country")
+                    agg = df.groupby(["year", "Stream"])["value"].sum().reset_index()
+                    agg = agg.merge(country_info, on=["year", "Stream"], how="left")
+                else:
+                    # Fallback: use country filter variable
+                    agg = df.groupby(["year", "Stream"])["value"].sum().reset_index()
+                    if country and len(country) > 0:
+                        agg["Country"] = ", ".join(sorted(country)) if len(country) > 1 else country[0]
+                    else:
+                        agg["Country"] = ""
                 
                 # Filter years to 2006-2024 range
                 agg["year"] = agg["year"].astype(str)
@@ -2628,6 +2682,11 @@ def register_callbacks(dash_app, server):
                         "Stream": [all_streams_list[0]] * len(missing_years),
                         "value": [0.0001] * len(missing_years)  # Tiny invisible value
                     })
+                    # Add Country column to placeholder if Country exists in agg_complete
+                    if "Country" in agg_complete.columns:
+                        # Get Country from the first non-null value in agg_complete, or use empty string
+                        default_country = agg_complete["Country"].dropna().iloc[0] if not agg_complete["Country"].dropna().empty else ""
+                        placeholder_data["Country"] = default_country
                     agg_for_chart = pd.concat([agg_nonzero, placeholder_data], ignore_index=True)
                     print(f"DEBUG BREAKDOWN YEARLY: Added placeholder entries for {len(missing_years)} years")
                 else:
@@ -2729,11 +2788,58 @@ def register_callbacks(dash_app, server):
                     year_totals = agg.groupby("year")["value"].sum().reset_index()
                 year_totals_dict = dict(zip(year_totals["year"], year_totals["value"]))
                 
-                # Format traces first
-                fig.update_traces(
-                    marker=dict(line=dict(width=1, color='white')),
-                    hovertemplate='<b>%{fullData.name}</b><br>Year: %{x}<br>Production: %{y:,.0f} (\'000 b/d)<extra></extra>'
-                )
+                # Format traces first - ensure equal bar widths
+                # Update hover template to show: Country, Crude (Stream), Year
+                # Need to set customdata for each trace with Country information
+                # Use agg_for_chart which is the actual data used to create the chart
+                for trace_idx, trace in enumerate(fig.data):
+                    stream_name = trace.name
+                    # Build customdata array: [Country] for each data point
+                    customdata_list = []
+                    if len(trace.x) > 0:
+                        for year_val in trace.x:
+                            # Match by Stream and year to get Country from agg_for_chart
+                            matching_rows = agg_for_chart[
+                                (agg_for_chart["Stream"] == stream_name) & 
+                                (agg_for_chart["year"] == str(year_val))
+                            ]
+                            if not matching_rows.empty and "Country" in matching_rows.columns:
+                                country_val = matching_rows.iloc[0]["Country"]
+                                # Handle NaN/None values
+                                if pd.isna(country_val) or country_val == "":
+                                    # Fallback to agg if Country is missing in agg_for_chart
+                                    agg_matching = agg[
+                                        (agg["Stream"] == stream_name) & 
+                                        (agg["year"] == str(year_val))
+                                    ]
+                                    if not agg_matching.empty and "Country" in agg_matching.columns:
+                                        country_val = agg_matching.iloc[0]["Country"]
+                                    else:
+                                        country_val = ""
+                            else:
+                                # Fallback to agg if not found in agg_for_chart
+                                agg_matching = agg[
+                                    (agg["Stream"] == stream_name) & 
+                                    (agg["year"] == str(year_val))
+                                ]
+                                if not agg_matching.empty and "Country" in agg_matching.columns:
+                                    country_val = agg_matching.iloc[0]["Country"]
+                                else:
+                                    country_val = ""
+                            customdata_list.append([country_val if country_val else ""])
+                    
+                    # Set customdata
+                    if customdata_list:
+                        trace.customdata = customdata_list
+                    
+                    # Update hover template
+                    trace.hovertemplate = (
+                        "<b>Country:</b> %{customdata[0]}<br>"
+                        "<b>Crude:</b> %{fullData.name}<br>"
+                        "<b>Year:</b> %{x}<extra></extra>"
+                    )
+                    trace.marker = dict(line=dict(width=1, color='white'))
+                    trace.width = None  # Let Plotly calculate equal widths automatically
                 
                 # Calculate max bar height first (needed for annotation positioning)
                 max_bar_height = max(year_totals_dict.values()) if year_totals_dict else 0
@@ -2793,12 +2899,17 @@ def register_callbacks(dash_app, server):
                 # Use the larger of actual max annotation Y or expected, then add padding
                 # Ensure we have enough space - use at least 25% padding above the highest point
                 base_max = max(max_annotation_y, expected_max_annotation_y, max_bar_height)
-                y_axis_max = base_max * 1.25  # Add 25% padding above highest point
+                # Recalculate Y-axis ticks based on the max value needed for annotations
+                y_axis_max, y_axis_ticks = _calculate_yaxis_ticks(base_max)
                 
-                if y_axis_max == 0:
-                    y_axis_max = 12000
+                # Ensure y_axis_max is at least as high as needed for annotations
+                if y_axis_max < base_max * 1.1:
+                    y_axis_max = base_max * 1.25
+                    # Recalculate ticks with the adjusted max
+                    tick_step = y_axis_max / 4
+                    y_axis_ticks = [0, tick_step, tick_step * 2, tick_step * 3, y_axis_max]
                 
-                print(f"DEBUG BREAKDOWN YEARLY: max_bar_height={max_bar_height}, max_annotation_y={max_annotation_y}, expected_max_annotation_y={expected_max_annotation_y}, base_max={base_max}, y_axis_max={y_axis_max}")
+                print(f"DEBUG BREAKDOWN YEARLY: max_bar_height={max_bar_height}, max_annotation_y={max_annotation_y}, expected_max_annotation_y={expected_max_annotation_y}, base_max={base_max}, y_axis_max={y_axis_max}, y_axis_ticks={y_axis_ticks}")
                 
                 # Verify all annotations are within Y-axis range
                 for i, ann in enumerate(annotations_list):
@@ -2815,7 +2926,7 @@ def register_callbacks(dash_app, server):
                     yaxis_title="Production Volume ('000 b/d)",
                     title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                     xaxis=dict(
-                        showgrid=True, 
+                        showgrid=False,  # Remove X-axis grid lines (match original)
                         gridcolor="#e0e0e0", 
                         type="category",  # Treat as categorical to show all years
                         categoryorder="array",
@@ -2826,7 +2937,8 @@ def register_callbacks(dash_app, server):
                         tickmode='array',
                         tickvals=years_sorted,
                         ticktext=years_sorted,
-                        range=[-0.5, len(years_sorted) - 0.5]
+                        range=[-0.5, len(years_sorted) - 0.5],
+                        zeroline=False  # Remove zero line
                     ),
                     yaxis=dict(
                         showgrid=True, 
@@ -2835,14 +2947,17 @@ def register_callbacks(dash_app, server):
                         range=[0, y_axis_max],
                         tickfont=dict(size=11, color="#2c3e50"),
                         titlefont=dict(size=12, color="#2c3e50"),
-                        tickmode='linear',
-                        tick0=0,
-                        dtick=2000,
+                        tickmode='array',
+                        tickvals=y_axis_ticks,
+                        ticktext=[f"{int(t):,}" for t in y_axis_ticks],
                         tickformat=',.0f'
                     ),
                     showlegend=False,
                     plot_bgcolor="white",
                     paper_bgcolor="white",
+                    bargap=0.2,  # Add proper spacing between bars (10% gap)
+                    bargroupgap=0.0,
+                    barmode="stack",
                     margin=dict(l=70, r=30, t=70, b=80),
                     hovermode='closest',
                     annotations=annotations_list  # Add annotations directly to layout
@@ -2919,11 +3034,27 @@ def register_callbacks(dash_app, server):
                     df["month"] = pd.to_numeric(df["month"], errors="ignore")
                     df["month"] = df["month"].map(month_map).fillna(df["month"])
                 
-                # Aggregate
+                # Aggregate by year, month, Stream (summing across countries)
                 agg = (
                     df.groupby(["year", "month", "Stream"], as_index=False)["value"]
                     .sum()
                 )
+                
+                # Add Country information for hover template
+                # Get unique countries from the filtered data or use the country filter variable
+                if "Country" in df.columns:
+                    # Get unique countries per year/month/Stream combination
+                    country_info = df.groupby(["year", "month", "Stream"])["Country"].apply(
+                        lambda x: ", ".join(sorted(x.unique()))
+                    ).reset_index(name="Country")
+                    agg = agg.merge(country_info, on=["year", "month", "Stream"], how="left")
+                else:
+                    # Fallback: use country filter variable
+                    if country and len(country) > 0:
+                        agg["Country"] = ", ".join(sorted(country)) if len(country) > 1 else country[0]
+                    else:
+                        agg["Country"] = ""
+                
                 print(f"DEBUG BREAKDOWN MONTHLY: Aggregated rows={len(agg)}, years={agg['year'].unique().tolist() if not agg.empty else []}")
                 
                 # Apply profiled streams filter if provided
@@ -2946,6 +3077,12 @@ def register_callbacks(dash_app, server):
                 # Stream color map
                 color_map = get_stream_color_map("monthly")
                 
+                # Prepare hover_data with Country and Year
+                hover_data_dict = {}
+                if "Country" in agg.columns:
+                    hover_data_dict["Country"] = True
+                hover_data_dict["year"] = True
+                
                 fig = px.bar(
                     agg,
                     x="month",
@@ -2954,20 +3091,136 @@ def register_callbacks(dash_app, server):
                     facet_col="year",
                     category_orders={"month": month_names},
                     color_discrete_map=color_map if color_map else None,
-                    labels={"value": "Production Volume ('000 b/d)", "month": "Month", "Stream": "Stream"}
+                    labels={"value": "Production Volume ('000 b/d)", "month": "", "Stream": "Stream"},
+                    hover_data=hover_data_dict if hover_data_dict else None
                 )
+                
+                # Update facet column titles to show just the year (remove "year=" prefix)
+                # Plotly Express creates annotations for facet column titles
+                if fig.layout.annotations:
+                    for annotation in fig.layout.annotations:
+                        if hasattr(annotation, 'text') and annotation.text:
+                            # Check if it's a facet column title (starts with "year=")
+                            if annotation.text.startswith("year="):
+                                # Extract just the year value
+                                year_value = annotation.text.replace("year=", "")
+                                annotation.text = year_value
+                
+                # Get unique years to update each subplot's xaxis
+                unique_years = sorted(agg["year"].unique().tolist()) if not agg.empty else []
+                
+                # Calculate max value across all data for Y-axis scaling
+                max_value = agg["value"].max() if not agg.empty and "value" in agg.columns else 0
+                
+                # Calculate Y-axis ticks (5 evenly spaced values from 0 to max)
+                y_axis_max, y_axis_ticks = _calculate_yaxis_ticks(max_value)
+                
+                # Calculate bar width to match yearly chart appearance
+                # Yearly chart has ~19 years with bargap=0.2, monthly has 12 months per facet
+                # To match bar width, we need to set explicit width for monthly bars
+                # Calculate width: yearly has ~19 categories, monthly has 12 categories per facet
+                # Use a width that makes monthly bars similar in appearance to yearly bars
+                # Width is a fraction (0-1) of the category width
+                num_months = 12
+                # Calculate proportional width: if yearly bars look good, monthly bars need to be wider
+                # Since monthly has fewer categories per facet (12 vs ~19), we can use a larger width fraction
+                # Yearly: ~19 categories with bargap=0.2 means bars use ~0.8/19 = ~0.042 per category
+                # Monthly: 12 categories, to match visual width, use width ~0.7-0.8
+                monthly_bar_width = 0.75  # 75% of category width to make bars wider
+                monthly_bargap = 0.2  # Keep same gap as yearly for consistency
+                
+                # Update layout
                 fig.update_layout(
                     title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                     showlegend=False,
                     plot_bgcolor="white",
                     paper_bgcolor="white",
-                    bargap=0.02,
+                    bargap=monthly_bargap,  # Same gap as yearly chart
                     bargroupgap=0.0,
                     barmode="stack",
                     hovermode="closest",
                     margin=dict(l=60, r=10, t=80, b=120),
                     height=520
                 )
+                
+                # Set explicit bar width and update hover template
+                # With facet_col, each trace represents one Stream, and data points are distributed across facets
+                # We need to manually construct customdata that matches each trace's data points
+                for trace_idx, trace in enumerate(fig.data):
+                    trace.width = monthly_bar_width
+                    
+                    # Get the Stream name for this trace
+                    stream_name = trace.name
+                    
+                    # Determine which facet (year) this trace belongs to
+                    # With facet_col, traces are ordered: all streams for year1, then all streams for year2, etc.
+                    # Calculate facet index from trace index (once per trace)
+                    unique_streams = sorted(agg["Stream"].unique().tolist()) if not agg.empty else []
+                    num_streams = len(unique_streams) if unique_streams else 1
+                    
+                    # Calculate which facet this trace belongs to
+                    facet_idx = trace_idx // num_streams if num_streams > 0 else 0
+                    unique_years_sorted = sorted(unique_years)
+                    year_for_trace = unique_years_sorted[facet_idx] if facet_idx < len(unique_years_sorted) else (unique_years_sorted[0] if unique_years_sorted else "")
+                    
+                    # Build customdata array matching this trace's data points
+                    # Each trace has x (month) values, and we match them with the determined year and Country
+                    customdata_list = []
+                    if len(trace.x) > 0:
+                        for month_val in trace.x:
+                            # Match by Stream, month, and the determined year
+                            matching_rows = agg[
+                                (agg["Stream"] == stream_name) & 
+                                (agg["month"] == month_val) & 
+                                (agg["year"] == str(year_for_trace))
+                            ]
+                            
+                            if not matching_rows.empty:
+                                country_val = matching_rows.iloc[0]["Country"] if "Country" in matching_rows.columns else ""
+                            else:
+                                country_val = ""
+                            
+                            # Add to customdata: [Country, Year]
+                            customdata_list.append([country_val, str(year_for_trace)])
+                    
+                    # Set customdata
+                    trace.customdata = customdata_list if customdata_list else None
+                    
+                    # Create custom hover template
+                    # Always include Country and Year fields - they'll show empty if customdata is not available
+                    trace.hovertemplate = (
+                        "<b>Month of Date:</b> %{x}<br>"
+                        "<b>Country:</b> %{customdata[0]}<br>"
+                        "<b>Stream Name:</b> %{fullData.name}<br>"
+                        "<b>Year of Date:</b> %{customdata[1]}<br>"
+                        "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
+                    )
+                
+                # Update Y-axis for all subplots (yaxis, yaxis2, yaxis3, etc.) with 5 evenly spaced ticks
+                for i in range(len(unique_years)):
+                    yaxis_key = f"yaxis{i+1}" if i > 0 else "yaxis"
+                    if yaxis_key in fig.layout:
+                        fig.layout[yaxis_key].update(
+                            range=[0, y_axis_max],
+                            tickmode='array',
+                            tickvals=y_axis_ticks,
+                            ticktext=[f"{int(t):,}" for t in y_axis_ticks],
+                            tickformat=',.0f',
+                            showgrid=True,  # Keep Y-axis grid lines
+                            gridcolor="#e0e0e0"
+                        )
+                
+                # Remove "Month" label text and X-axis grid lines from each subplot (match original)
+                # Update xaxis for each facet (xaxis, xaxis2, xaxis3, etc.)
+                for i in range(len(unique_years)):
+                    xaxis_key = f"xaxis{i+1}" if i > 0 else "xaxis"
+                    if xaxis_key in fig.layout:
+                        fig.layout[xaxis_key].update(
+                            title_text="",  # Remove "Month" label text, but keep month tick labels visible
+                            showgrid=False,  # Remove X-axis grid lines (match original)
+                            gridwidth=0,
+                            zeroline=False  # Remove zero line
+                        )
                 
                 if not fig.data:
                     fig = go.Figure()
