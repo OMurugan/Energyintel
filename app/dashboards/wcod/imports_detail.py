@@ -473,14 +473,18 @@ def create_layout():
             )
         ], style={'marginBottom': '30px', 'backgroundColor': 'white', 'padding': '15px', 'borderRadius': '4px', 'boxShadow': '0 1px 3px rgba(0,0,0,0.1)'}),
         
-        # Source and Footer
+        # Source and Footer (Static content)
         html.Div([
             html.Div([
-                html.P(f"Source: {source}", style={'fontSize': '11px', 'marginBottom': '5px'})
+                html.P("Source: Energy Intelligence", style={'fontSize': '11px', 'marginBottom': '5px'})
             ]),
             html.Div([
-                html.P(note, style={'fontSize': '11px', 'marginBottom': '2px'}) 
-                for note in footnotes
+                html.P("EIA Data is through June 2025", style={'fontSize': '11px', 'marginBottom': '2px'}),
+                html.P("Energy Intelligence Data is through July 2025", style={'fontSize': '11px', 'marginBottom': '2px'}),
+                html.P("OECD Data is through July 2025", style={'fontSize': '11px', 'marginBottom': '2px'}),
+                html.P("Russian Imports Data is through August 2022", style={'fontSize': '11px', 'marginBottom': '2px'}),
+                html.P("South Korea trade data source: KNOC", style={'fontSize': '11px', 'marginBottom': '2px'}),
+                html.P("Countries: Select jurisdictions are included under countries for data presentation purposes.", style={'fontSize': '11px', 'marginBottom': '2px'})
             ])
         ], style={'marginTop': '20px', 'fontSize': '11px', 'color': '#666'})
     ], className='tab-content', style={'padding': '20px'})
