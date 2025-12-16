@@ -373,7 +373,7 @@ def load_map_data() -> pd.DataFrame:
                 c.longitude AS "Longitude (generated)",
                 a.likely_goahead AS "Likely Go-ahead"
             FROM fact_upstream_project_tracker a
-            LEFT JOIN dev.dim_country c
+            LEFT JOIN dim_country c
                 ON a.country_id = c.dim_country_id
             WHERE a.include = true
             ORDER BY c.country_long_name DESC;
