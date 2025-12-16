@@ -29,6 +29,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from config import Config
+from core.data_helpers import execute_query
 
 # ---------------------------------------------------------------------
 # Data locations and shared constants
@@ -36,7 +37,7 @@ from config import Config
 DATA_DIR = os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "data", "projects_by_country"
 )
-MAP_CSV = os.path.join(DATA_DIR, "Map_data.csv")
+
 CHART_CSV = os.path.join(DATA_DIR, "Projects by Country_Chart_data.csv")
 TABLE_CSV = os.path.join(DATA_DIR, "Projects by Country_Table_data.csv")
 
@@ -179,13 +180,24 @@ except Exception:  # pragma: no cover - pycountry might not be installed
 # Utilities
 # ---------------------------------------------------------------------
 def _normalize_group(raw_value: str | None) -> str | None:
-    """Normalize group names to OPEC / Non-OPEC buckets."""
+    """Normalize group names to OPEC / Non-OPEC buckets.
+    Handles SQL query values: 'opec_plus' and 'Non opec_plus'
+    Converts them to UI format: 'OPEC-Plus' and 'Non-OPEC-Plus'
+    """
     if raw_value is None:
         return None
     value = str(raw_value).strip()
     if not value:
         return None
     lower = value.lower()
+    
+    # Handle SQL query normalized values
+    if lower == "opec_plus":
+        return "OPEC-Plus"
+    if lower == "non opec_plus" or lower == "non_opec_plus":
+        return "Non-OPEC-Plus"
+    
+    # Handle legacy/other formats
     if "non" in lower:
         return "Non-OPEC-Plus"
     return "OPEC-Plus"
@@ -347,8 +359,9 @@ def _build_match_expression(df_subset: pd.DataFrame, color_map: dict[str, str]):
 # Data loaders
 # ---------------------------------------------------------------------
 def load_map_data() -> pd.DataFrame:
-    """Load and cache map data."""
+    """Load and cache map data from SQL query."""
     global map_df, country_colors
+    
     def _normalize_map_df(df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         df["Country"] = (
@@ -364,16 +377,51 @@ def load_map_data() -> pd.DataFrame:
         return df
 
     if map_df.empty:
-        df = pd.read_csv(MAP_CSV)
-        df = df.rename(
-            columns={
-                "Country": "Country",
-                "Group": "Group",
-                "Latitude (generated)": "Latitude",
-                "Longitude (generated)": "Longitude",
-            }
-        )
-        map_df = _normalize_map_df(df)
+        try:
+            query = """
+            SELECT DISTINCT
+                c.country_long_name AS "Country",
+                CASE
+                    WHEN LOWER(c.opec_grp) IN ('opec', 'opec_plus') THEN 'opec_plus'
+                    ELSE 'Non opec_plus'
+                END AS "Group",
+                c.latitude AS "Latitude (generated)",
+                c.longitude AS "Longitude (generated)",
+                a.likely_goahead AS "Likely Go-ahead"
+            FROM dev.fact_upstream_project_tracker a
+            LEFT JOIN dev.dim_country c
+                ON a.country_id = c.dim_country_id
+            WHERE a.include = true
+            ORDER BY c.country_long_name DESC;
+            """
+            
+            results = execute_query(query)
+            if not results:
+                logger.warning("SQL query returned no results for map data")
+                return pd.DataFrame()
+            
+            df = pd.DataFrame(results)
+            
+            if df.empty:
+                logger.warning("SQL query returned empty DataFrame for map data")
+                return pd.DataFrame()
+            
+            # Rename columns to match expected format
+            df = df.rename(
+                columns={
+                    "Country": "Country",
+                    "Group": "Group",
+                    "Latitude (generated)": "Latitude",
+                    "Longitude (generated)": "Longitude",
+                }
+            )
+            
+            map_df = _normalize_map_df(df)
+        except Exception as e:
+            logger.error(f"Error loading map data from SQL: {e}")
+            import traceback
+            traceback.print_exc()
+            return pd.DataFrame()
     else:
         map_df = _normalize_map_df(map_df)
 
@@ -425,43 +473,182 @@ def load_table_data() -> pd.DataFrame:
     if not table_df.empty:
         return table_df
 
-    df = pd.read_csv(TABLE_CSV)
-    df = df.rename(
-        columns={
-            "Project Name": "Project Name",
-            "Likely Go-ahead": "Likely Go-ahead",
-            "Country": "Country",
-            "Region": "Region",
-            "Group": "Group",
-            "Field/Block": "Field/Block",
-            "Field Type": "Field Type",
-            "Play Type": "Play Type",
-            "Hydrocarbon": "Hydrocarbon",
-            "Operator": "Operator",
-            "First Oil Year": "First Oil Year",
-            "Project Status": "Project Status",
-            "Measure Names": "Measure Names",
-            "Measure Values": "Measure Values",
+    try:
+        query = """
+        SELECT
+            a.project_name AS "Project Name",
+            a.likely_goahead,
+            c.country_long_name AS Country,
+            c.region AS Region,
+            CASE
+                WHEN c.opec_grp = 'opec' OR c.opec_grp = 'opec_plus' THEN 'Opec-Plus'
+                ELSE 'Non-Opec-Plus'
+            END AS Opec_group,
+            a.field_type,
+            a.field,
+            a.play_type,
+            a.hydrocarbon AS Hydrocarbon,
+            cr.crude_name AS "Associated Crude",
+            a.depth AS Depth,
+            op.company_name AS Operator,
+            p1.company_name AS Partner1,
+            p2.company_name AS Partner2,
+            p3.company_name AS Partner3,
+            p4.company_name AS Partner4,
+            p5.company_name AS Partner5,
+            yr.year AS "First Oil Year",
+            a.sanctioned AS Sanctioned,
+            a.external_comments AS Comments,
+            a.project_status AS "Project Status",
+            a.reserves_gas_mmboe AS "Gas Reserves (mmboe)",
+            a.reserves_liquids_mmbbl AS "Liquids Reserves (mmbbl)",
+            (
+                COALESCE(
+                    NULLIF(SPLIT_PART(a.reserves_gas_mmboe, '-', 1), '')::numeric,
+                    0
+                )
+                +
+                COALESCE(
+                    NULLIF(SPLIT_PART(a.reserves_liquids_mmbbl, '-', 1), '')::numeric,
+                    0
+                )
+            ) AS "Total Reserves (mmboe)",
+            a.api_cat AS API,
+            a.sulfur_cat AS Sulfur,
+            a.operator_pc AS "Operator Share %",
+            a.partner1_pc AS "Partner1 Share %",
+            a.partner2_pc AS "Partner2 Share %",
+            a.partner3_pc AS "Partner3 Share %",
+            a.partner4_pc AS "Partner4 Share %",
+            a.partner5_pc AS "Partner5 Share %",
+            est."2024_Q1",
+            est."2024_Q2",
+            est."2024_Q3",
+            est."2024_Q4",
+            est."2025_Q1",
+            est."2025_Q2",
+            est."2025_Q3",
+            est."2025_Q4",
+            est."2026_Q1",
+            est."2026_Q2",
+            est."2026_Q3",
+            est."2026_Q4",
+            est."2027_Q1",
+            est."2027_Q2",
+            est."2027_Q3",
+            est."2027_Q4",
+            est."2028_Q1",
+            est."2028_Q2",
+            est."2028_Q3",
+            est."2028_Q4",
+            est."2029_Q1",
+            est."2029_Q2",
+            est."2029_Q3",
+            est."2029_Q4"
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN fact_upstream_tracker_prod_estimates est 
+            ON a.project_id = est.project_id
+        LEFT JOIN dim_country c 
+            ON a.country_id = c.dim_country_id
+        LEFT JOIN dim_company op 
+            ON a.operator_id = op.company_id
+        LEFT JOIN dim_company p1 
+            ON a.partner1_id = p1.company_id
+        LEFT JOIN dim_company p2 
+            ON a.partner2_id = p2.company_id
+        LEFT JOIN dim_company p3 
+            ON a.partner3_id = p3.company_id
+        LEFT JOIN dim_company p4 
+            ON a.partner4_id = p4.company_id
+        LEFT JOIN dim_company p5 
+            ON a.partner5_id = p5.company_id
+        LEFT JOIN (
+            SELECT 
+                project_id,
+                MIN(EXTRACT(YEAR FROM period)) AS year
+            FROM fact_upstream_tracker_prod_estimates_incremental
+            WHERE value IS NOT NULL 
+            GROUP BY project_id
+        ) yr ON yr.project_id = a.project_id
+        LEFT JOIN dim_crude cr 
+            ON cr.dim_crude_id = a.crude_id
+        WHERE a.include = TRUE
+        ORDER BY a.project_name;
+        """
+        
+        results = execute_query(query)
+        if not results:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(results)
+        
+        if df.empty:
+            logger.warning("SQL query returned no results")
+            return pd.DataFrame()
+        
+        # Keep original column names like projects_by_time.py does
+        # Only normalize values, not column names
+        column_mapping = {
+            'Country': 'Country',
+            'country': 'Country',
+            'Region': 'Region',
+            'region': 'Region',
+            'Opec_group': 'Opec_group',
+            'opec_group': 'Opec_group',
+            'field_type': 'field_type',
+            'Field Type': 'field_type',
+            'field': 'field',
+            'Field': 'field',
+            'play_type': 'play_type',
+            'Play Type': 'play_type',
+            'hydrocarbon': 'Hydrocarbon',
+            'Hydrocarbon': 'Hydrocarbon',
+            'depth': 'Depth',
+            'Depth': 'Depth',
+            'operator': 'Operator',
+            'Operator': 'Operator',
+            'partner1': 'Partner1',
+            'Partner1': 'Partner1',
+            'partner2': 'Partner2',
+            'Partner2': 'Partner2',
+            'partner3': 'Partner3',
+            'Partner3': 'Partner3',
+            'partner4': 'Partner4',
+            'Partner4': 'Partner4',
+            'partner5': 'Partner5',
+            'Partner5': 'Partner5',
+            'sanctioned': 'Sanctioned',
+            'Sanctioned': 'Sanctioned',
+            'comments': 'Comments',
+            'Comments': 'Comments',
+            'api': 'API',
+            'API': 'API',
+            'sulfur': 'Sulfur',
+            'Sulfur': 'Sulfur',
+            'likely_goahead': 'likely_goahead'
         }
-    )
-    df["Country"] = df["Country"].astype(str).str.strip().apply(_normalize_country_name)
-    df["Group"] = df["Group"].apply(_normalize_group)
-    def _normalize_likely(val: str) -> str:
-        text = str(val or "").strip().lower()
-        if not text:
-            return ""
-        if text.startswith("y"):
-            return "Y"
-        if text.startswith("n"):
-            return "N"
-        if "uncertain" in text:
-            return "Uncertain"
-        return text.capitalize()
-
-    df["Likely Go-ahead"] = df["Likely Go-ahead"].apply(_normalize_likely)
-    df["Measure Values"] = pd.to_numeric(df["Measure Values"], errors="coerce")
-    table_df = df
-    return table_df
+        
+        df = df.rename(columns=column_mapping)
+        
+        # Normalize country names (keep column name as Country)
+        if "Country" in df.columns:
+            df["Country"] = df["Country"].astype(str).str.strip().apply(_normalize_country_name)
+        
+        # Normalize Group values but keep column name as Opec_group for now
+        if "Opec_group" in df.columns:
+            df["Opec_group"] = df["Opec_group"].apply(_normalize_group)
+        
+        # Fill NaN values with empty strings
+        df = df.fillna("")
+        
+        table_df = df
+        logger.info(f"Loaded {len(table_df)} rows for table data")
+        return table_df
+    except Exception as e:
+        logger.error(f"Error loading table data: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
 
 
 # ---------------------------------------------------------------------
@@ -478,9 +665,10 @@ def create_layout():
     return html.Div(
         [
             dcc.Store(id="projects-selected-country", data=None),
+            # Top row: Map + Chart on left, Filters on right
             html.Div(
                 [
-                    # Left column: map + chart + table
+                    # Left column: map + chart
                     html.Div(
                         [
                             # Map
@@ -538,7 +726,7 @@ def create_layout():
                                     "marginBottom": "16px",
                                 },
                             ),
-                            # Chart full width
+                            # Chart
                             html.Div(
                                 [
                                     html.H3(
@@ -564,112 +752,6 @@ def create_layout():
                                     "padding": "16px",
                                     "borderRadius": "8px",
                                     "border": "1px solid #e0e0e0",
-                                    "marginBottom": "16px",
-                                    "width": "100%",
-                                },
-                            ),
-                            # Table full width
-                            html.Div(
-                                [
-                                    html.H3(
-                                        "Project Details",
-                                        style={
-                                            "marginBottom": "8px",
-                                            "color": "#fe5000",
-                                            "fontSize": "20px",
-                                            "fontWeight": "bold",
-                                        },
-                                    ),
-                                    dcc.Loading(
-                                        dash_table.DataTable(
-                                            id="projects-country-table",
-                                            columns=[
-                                                {"name": "Project", "id": "Project Name"},
-                                                {"name": "Likely Go-ahead", "id": "Likely Go-ahead"},
-                                                {"name": "Country", "id": "Country"},
-                                                {"name": "Region", "id": "Region"},
-                                                {"name": "Group", "id": "Group"},
-                                                {"name": "Field/Block", "id": "Field/Block"},
-                                                {"name": "Field Type", "id": "Field Type"},
-                                                {"name": "Play Type", "id": "Play Type"},
-                                                {"name": "Hydrocarbon", "id": "Hydrocarbon"},
-                                                {"name": "Associated Crude", "id": "Associated Crude"},
-                                                {"name": "Depth", "id": "Depth"},
-                                                {"name": "Operator", "id": "Operator"},
-                                                {"name": "Partner1", "id": "Partner1"},
-                                                {"name": "Partner2", "id": "Partner2"},
-                                                {"name": "Partner3", "id": "Partner3"},
-                                                {"name": "Partner4", "id": "Partner4"},
-                                                {"name": "Partner5", "id": "Partner5"},
-                                                {"name": "First Oil Year", "id": "First Oil Year"},
-                                                {"name": "Sanctioned", "id": "Sanctioned"},
-                                                {"name": "Comments", "id": "Comments"},
-                                                {"name": "Comments Link", "id": "Comments_link"},
-                                                {"name": "Project Status", "id": "Project Status"},
-                                                {"name": "Gas Reserves (mmboe)", "id": "Gas Reserves (mmboe)"},
-                                                {"name": "Liquids Reserves (mmbbl)", "id": "Liquids Reserves (mmbbl)"},
-                                                {"name": "Total Reserves (mmboe)", "id": "Total Reserves (mmboe)"},
-                                                {"name": "API", "id": "API"},
-                                                {"name": "Sulfur", "id": "Sulfur"},
-                                                {"name": "Operator Share %", "id": "Operator Share %"},
-                                                {"name": "Partner1 Share %", "id": "Partner1 Share %"},
-                                                {"name": "Partner2 Share %", "id": "Partner2 Share %"},
-                                                {"name": "Partner3 Share %", "id": "Partner3 Share %"},
-                                                {"name": "Partner4 Share %", "id": "Partner4 Share %"},
-                                                {"name": "Partner5 Share %", "id": "Partner5 Share %"},
-                                                {"name": "2024 Q1", "id": "2024_Q1"},
-                                                {"name": "2024 Q2", "id": "2024_Q2"},
-                                                {"name": "2024 Q3", "id": "2024_Q3"},
-                                                {"name": "2024 Q4", "id": "2024_Q4"},
-                                                {"name": "2025 Q1", "id": "2025_Q1"},
-                                                {"name": "2025 Q2", "id": "2025_Q2"},
-                                                {"name": "2025 Q3", "id": "2025_Q3"},
-                                                {"name": "2025 Q4", "id": "2025_Q4"},
-                                                {"name": "2026 Q1", "id": "2026_Q1"},
-                                                {"name": "2026 Q2", "id": "2026_Q2"},
-                                                {"name": "2026 Q3", "id": "2026_Q3"},
-                                                {"name": "2026 Q4", "id": "2026_Q4"},
-                                                {"name": "2027 Q1", "id": "2027_Q1"},
-                                                {"name": "2027 Q2", "id": "2027_Q2"},
-                                                {"name": "2027 Q3", "id": "2027_Q3"},
-                                                {"name": "2027 Q4", "id": "2027_Q4"},
-                                                {"name": "2028 Q1", "id": "2028_Q1"},
-                                                {"name": "2028 Q2", "id": "2028_Q2"},
-                                                {"name": "2028 Q3", "id": "2028_Q3"},
-                                                {"name": "2028 Q4", "id": "2028_Q4"},
-                                                {"name": "2029 Q1", "id": "2029_Q1"},
-                                                {"name": "2029 Q2", "id": "2029_Q2"},
-                                                {"name": "2029 Q3", "id": "2029_Q3"},
-                                                {"name": "2029 Q4", "id": "2029_Q4"},
-                                            ],
-                                            data=[],
-                                            page_action="none",
-                                            sort_action="native",
-                                            filter_action="native",
-                                            style_table={
-                                                "overflowX": "auto",
-                                                "maxHeight": "500px",
-                                            },
-                                            style_cell={
-                                                "fontFamily": "Arial, sans-serif",
-                                                "fontSize": "12px",
-                                                "padding": "6px",
-                                                "whiteSpace": "normal",
-                                                "height": "auto",
-                                            },
-                                            style_header={
-                                                "backgroundColor": "#f5f6fa",
-                                                "fontWeight": "600",
-                                            },
-                                        ),
-                                        type="dot",
-                                    ),
-                                ],
-                                style={
-                                    "background": "white",
-                                    "padding": "16px",
-                                    "borderRadius": "8px",
-                                    "border": "1px solid #e0e0e0",
                                     "width": "100%",
                                 },
                             ),
@@ -684,21 +766,24 @@ def create_layout():
                     # Right column: filters
                     html.Div(
                         [
-                            # html.H4(
-                            #     "Filters",
-                            #     style={
-                            #         "marginBottom": "12px",
-                            #         "color": "#1b2838",
-                            #     },
-                            # ),
+                            html.H4(
+                                "Filters",
+                                style={
+                                    "marginBottom": "10px",
+                                    "marginTop": "0px",
+                                    "color": "#1b2838",
+                                    "fontSize": "16px",
+                                },
+                            ),
                             html.Div(
                                 [
                                     html.Label(
                                         "Group",
                                         style={
                                             "fontWeight": "600",
-                                            "marginBottom": "8px",
+                                            "marginBottom": "6px",
                                             "display": "block",
+                                            "fontSize": "13px",
                                         },
                                     ),
                                     html.Div(
@@ -724,9 +809,10 @@ def create_layout():
                                                     "display": "flex",
                                                     "alignItems": "center",
                                                     "cursor": "pointer",
-                                                    "padding": "6px 8px",
+                                                    "padding": "4px 6px",
                                                 "borderRadius": "4px",
-                                                "marginBottom": "6px",
+                                                "marginBottom": "4px",
+                                                "fontSize": "11px",
                                                 },
                                             ),
                                             html.Div(
@@ -750,9 +836,10 @@ def create_layout():
                                                     "display": "flex",
                                                     "alignItems": "center",
                                                     "cursor": "pointer",
-                                                    "padding": "6px 8px",
+                                                    "padding": "4px 6px",
                                                 "borderRadius": "4px",
-                                                "marginBottom": "6px",
+                                                "marginBottom": "4px",
+                                                "fontSize": "11px",
                                                 },
                                             ),
                                         ],
@@ -769,10 +856,10 @@ def create_layout():
                                     ),
                                 ],
                                 style={
-                                    "padding": "12px",
+                                    "padding": "8px",
                                     "border": "1px solid #e0e0e0",
                                     "borderRadius": "8px",
-                                    "marginBottom": "12px",
+                                    "marginBottom": "8px",
                                     "background": "#fafbfc",
                                 },
                             ),
@@ -782,8 +869,9 @@ def create_layout():
                                         "Country",
                                         style={
                                             "fontWeight": "600",
-                                            "marginBottom": "8px",
+                                            "marginBottom": "6px",
                                             "display": "block",
+                                            "fontSize": "13px",
                                         },
                                     ),
                                     dcc.Checklist(
@@ -791,11 +879,11 @@ def create_layout():
                                         options=[{"label": "(All)", "value": "(All)"}] + country_options,
                                         value=default_country_values,
                                         inputStyle={"marginRight": "8px"},
-                                        labelStyle={"display": "block", "marginBottom": "6px"},
+                                        labelStyle={"display": "block", "marginBottom": "4px", "fontSize": "11px"},
                                         style={
-                                            "maxHeight": "260px",
+                                            "maxHeight": "180px",
                                             "overflowY": "auto",
-                                            "padding": "8px",
+                                            "padding": "6px",
                                             "border": "1px solid #e0e0e0",
                                             "borderRadius": "6px",
                                             "background": "white",
@@ -803,10 +891,10 @@ def create_layout():
                                     ),
                                 ],
                                 style={
-                                    "padding": "12px",
+                                    "padding": "8px",
                                     "border": "1px solid #e0e0e0",
                                     "borderRadius": "8px",
-                                    "marginBottom": "12px",
+                                    "marginBottom": "8px",
                                     "background": "#fafbfc",
                                 },
                             ),
@@ -816,8 +904,9 @@ def create_layout():
                                         "Country (Legend Style)",
                                         style={
                                             "fontWeight": "600",
-                                            "marginBottom": "8px",
+                                            "marginBottom": "6px",
                                             "display": "block",
+                                            "fontSize": "12px",
                                         },
                                     ),
                                     html.Div(
@@ -826,16 +915,23 @@ def create_layout():
                                                 [
                                                     html.Div(
                                                         style={
-                                                            "width": "14px",
-                                                            "height": "14px",
+                                                            "width": "12px",
+                                                            "height": "12px",
                                                             "backgroundColor": country_colors.get(
                                                                 country, "#888"
                                                             ),
                                                             "borderRadius": "2px",
-                                                            "marginRight": "8px",
+                                                            "marginRight": "6px",
+                                                            "flexShrink": "0",
                                                         }
                                                     ),
-                                                    html.Span(country),
+                                                    html.Span(
+                                                        country,
+                                                        style={
+                                                            "fontSize": "10px",
+                                                            "lineHeight": "1.2",
+                                                        }
+                                                    ),
                                                 ],
                                                 id={"type": "country-legend", "value": country},
                                                 n_clicks=0,
@@ -843,19 +939,20 @@ def create_layout():
                                                     "display": "flex",
                                                     "alignItems": "center",
                                                     "cursor": "pointer",
-                                                    "padding": "6px 8px",
-                                                    "borderRadius": "4px",
-                                                    "marginBottom": "6px",
+                                                    "padding": "3px 4px",
+                                                    "borderRadius": "3px",
+                                                    "marginBottom": "2px",
                                                     "backgroundColor": "#ffffff",
                                                     "border": "1px solid #e0e0e0",
+                                                    "minHeight": "20px",
                                                 },
                                             )
                                             for country in available_countries
                                         ],
                                         style={
-                                            "maxHeight": "260px",
+                                            "maxHeight": "200px",
                                             "overflowY": "auto",
-                                            "padding": "8px",
+                                            "padding": "4px",
                                             "border": "1px solid #e0e0e0",
                                             "borderRadius": "6px",
                                             "background": "white",
@@ -863,10 +960,10 @@ def create_layout():
                                     ),
                                 ],
                                 style={
-                                    "padding": "5px",
+                                    "padding": "8px",
                                     "border": "1px solid #e0e0e0",
                                     "borderRadius": "8px",
-                                    "marginBottom": "5px",
+                                    "marginBottom": "8px",
                                     "background": "#fafbfc",
                                 },
                             ),
@@ -876,8 +973,9 @@ def create_layout():
                                         "Likely To Go Ahead",
                                         style={
                                             "fontWeight": "600",
-                                            "marginBottom": "8px",
+                                            "marginBottom": "6px",
                                             "display": "block",
+                                            "fontSize": "13px",
                                         },
                                     ),
                                     dcc.Checklist(
@@ -890,15 +988,15 @@ def create_layout():
                                             {"label": "Y", "value": "Y"},
                                         ],
                                         value=["Y"],
-                                        inputStyle={"marginRight": "8px"},
-                                        labelStyle={"display": "block", "marginBottom": "4px"},
+                                        inputStyle={"marginRight": "6px"},
+                                        labelStyle={"display": "block", "marginBottom": "3px", "fontSize": "11px"},
                                     ),
                                 ],
                                 style={
-                                    "padding": "5px",
+                                    "padding": "8px",
                                     "border": "1px solid #e0e0e0",
                                     "borderRadius": "8px",
-                                    "marginBottom": "5px",
+                                    "marginBottom": "8px",
                                     "background": "#fafbfc",
                                 },
                             ),
@@ -908,8 +1006,9 @@ def create_layout():
                                         "Group Chart Filter",
                                         style={
                                             "fontWeight": "600",
-                                            "marginBottom": "8px",
+                                            "marginBottom": "6px",
                                             "display": "block",
+                                            "fontSize": "13px",
                                         },
                                     ),
                                     dcc.Checklist(
@@ -919,12 +1018,12 @@ def create_layout():
                                             {"label": "OPEC-Plus", "value": "OPEC-Plus"},
                                         ],
                                         value=DEFAULT_GROUPS,
-                                        inputStyle={"marginRight": "8px"},
-                                        labelStyle={"display": "block"},
+                                        inputStyle={"marginRight": "6px"},
+                                        labelStyle={"display": "block", "fontSize": "11px"},
                                     ),
                                 ],
                                 style={
-                                    "padding": "5px",
+                                    "padding": "8px",
                                     "border": "1px solid #e0e0e0",
                                     "borderRadius": "8px",
                                     "background": "#fafbfc",
@@ -937,15 +1036,78 @@ def create_layout():
                             "paddingLeft": "10px",
                             "minWidth": "200px",
                             "background": "white",
-                            "padding": "10px",
+                            "padding": "12px",
                             "borderRadius": "8px",
                             "border": "1px solid #e0e0e0",
                             "height": "fit-content",
-                            "font-size": "10px",
+                            "maxHeight": "1000px",
+                            "overflowY": "auto",
                         },
                     ),
                 ],
-                style={"overflow": "hidden"},
+                style={"overflow": "hidden", "marginBottom": "16px"},
+            ),
+            # Full width table below
+            html.Div(
+                [
+                    html.H3(
+                        "Project Details",
+                        style={
+                            "marginBottom": "8px",
+                            "color": "#1b2838",
+                        },
+                    ),
+                    dcc.Loading(
+                        dash_table.DataTable(
+                            id="projects-country-table",
+                            columns=[],  # Columns will be dynamically generated in callback
+                            data=[],
+                            page_action="none",
+                            sort_action="native",
+                            filter_action="native",
+                            tooltip_duration=None,
+                            style_table={
+                                "overflowX": "auto",
+                                "maxHeight": "600px",
+                            },
+                            style_cell={
+                                "fontFamily": "Arial, sans-serif",
+                                "fontSize": "12px",
+                                "padding": "6px",
+                                "whiteSpace": "normal",
+                                "height": "auto",
+                            },
+                            style_cell_conditional=[
+                                {
+                                    "if": {"column_id": "Comments"},
+                                    "whiteSpace": "nowrap",
+                                    "overflow": "hidden",
+                                    "textOverflow": "ellipsis",
+                                    "height": "auto",
+                                    "textAlign": "left",
+                                }
+                            ],
+                            style_header={
+                                "backgroundColor": "#f5f6fa",
+                                "fontWeight": "600",
+                            },
+                            css=[
+                                {
+                                    "selector": ".dash-table-tooltip",
+                                    "rule": "font-size: 10px !important; font-family: Arial, sans-serif !important; color: #1b2838 !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;",
+                                }
+                            ],
+                        ),
+                        type="dot",
+                    ),
+                ],
+                style={
+                    "background": "white",
+                    "padding": "16px",
+                    "borderRadius": "8px",
+                    "border": "1px solid #e0e0e0",
+                    "width": "100%",
+                },
             ),
         ],
         className="tab-content",
@@ -1500,11 +1662,13 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             "display": "flex",
             "alignItems": "center",
             "cursor": "pointer",
-            "padding": "6px 8px",
-            "borderRadius": "4px",
-            "marginBottom": "6px",
+            "padding": "3px 4px",
+            "borderRadius": "3px",
+            "marginBottom": "2px",
             "border": "1px solid #e0e0e0",
             "transition": "background-color 0.15s ease, opacity 0.15s ease",
+            "minHeight": "20px",
+            "fontSize": "10px",
         }
         styles = []
         for country in all_countries:
@@ -1636,7 +1800,11 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         return _chart_figure(selected_country, selected_countries, allowed_groups)
 
     @dash_app.callback(
-        Output("projects-country-table", "data"),
+        [
+            Output("projects-country-table", "data"),
+            Output("projects-country-table", "columns"),
+            Output("projects-country-table", "tooltip_data"),
+        ],
         [
             Input("projects-selected-country", "data"),
             Input("projects-country-filter", "value"),
@@ -1649,17 +1817,62 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         selected_country, country_filter, group_filter, likely_filter
     ):
         df = load_table_data()
+        
+        if df.empty:
+            logger.warning("Table data is empty after loading")
+            return [], [], []
+        
         groups = group_filter or DEFAULT_GROUPS
         likely_values = likely_filter or DEFAULT_LIKELY
-        countries = _resolve_countries(country_filter, df["Country"].unique().tolist())
-
-        df = df[df["Group"].isin(groups)]
-        if "(All)" not in likely_values:
-            df = df[df["Likely Go-ahead"].isin(likely_values)]
-        if selected_country:
-            df = df[df["Country"] == selected_country]
+        
+        # Get available countries from the dataframe
+        if "Country" in df.columns:
+            available_countries = df["Country"].unique().tolist()
+            countries = _resolve_countries(country_filter, available_countries)
         else:
-            df = df[df["Country"].isin(countries)]
+            countries = []
+            logger.warning("Country column not found in table data")
+
+        # Filter by group - use Opec_group column name
+        if "Opec_group" in df.columns:
+            df = df[df["Opec_group"].isin(groups)]
+        elif "Group" in df.columns:
+            df = df[df["Group"].isin(groups)]
+        else:
+            logger.warning("Group column not found in table data")
+        
+        # Filter by likely go-ahead - use likely_goahead column name
+        if "likely_goahead" in df.columns:
+            # Normalize likely_goahead values for filtering
+            def _normalize_likely(val: str) -> str:
+                if pd.isna(val):
+                    return ""
+                text = str(val or "").strip().lower()
+                if not text:
+                    return ""
+                if text.startswith("y"):
+                    return "Y"
+                if text.startswith("n"):
+                    return "N"
+                if "uncertain" in text:
+                    return "Uncertain"
+                return text.capitalize()
+            
+            df["likely_goahead_normalized"] = df["likely_goahead"].apply(_normalize_likely)
+            if "(All)" not in likely_values:
+                df = df[df["likely_goahead_normalized"].isin(likely_values)]
+            df = df.drop(columns=["likely_goahead_normalized"], errors="ignore")
+        
+        # Filter by country
+        if "Country" in df.columns:
+            if selected_country:
+                df = df[df["Country"] == selected_country]
+            elif countries:
+                df = df[df["Country"].isin(countries)]
+        
+        if df.empty:
+            logger.warning("Table data is empty after filtering")
+            return [], [], []
 
         quarter_columns = [
             "2024_Q1", "2024_Q2", "2024_Q3", "2024_Q4",
@@ -1679,15 +1892,16 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             "Partner5 Share %",
         ]
 
+        # Use original column names like projects_by_time.py
         base_columns = [
             "Project Name",
-            "Likely Go-ahead",
+            "likely_goahead",
             "Country",
             "Region",
-            "Group",
-            "Field/Block",
-            "Field Type",
-            "Play Type",
+            "Opec_group",
+            "field_type",
+            "field",
+            "play_type",
             "Hydrocarbon",
             "Associated Crude",
             "Depth",
@@ -1700,7 +1914,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             "First Oil Year",
             "Sanctioned",
             "Comments",
-            "Comments_link",
             "Project Status",
             "Gas Reserves (mmboe)",
             "Liquids Reserves (mmbbl)",
@@ -1708,23 +1921,130 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             "API",
             "Sulfur",
         ]
-        # Pivot Measure Names/Values into quarter columns
-        pivot_source = df[base_columns + ["Measure Names", "Measure Values"]].copy()
-        pivot = (
-            pivot_source.groupby(base_columns + ["Measure Names"])["Measure Values"]
-            .sum()
-            .reset_index()
-            .pivot(index=base_columns, columns="Measure Names", values="Measure Values")
-            .reset_index()
-        )
-        # Ensure all quarter columns exist
+        
+        # Data already has quarter columns from SQL query, no pivot needed
+        # Ensure all required columns exist
         for qc in quarter_columns:
-            if qc not in pivot.columns:
-                pivot[qc] = ""
-        # Ensure share columns exist and order after Sulfur
+            if qc not in df.columns:
+                df[qc] = ""
+            else:
+                # Convert quarter columns to numeric, then to string for display
+                df[qc] = pd.to_numeric(df[qc], errors="coerce").fillna(0)
+                df[qc] = df[qc].apply(lambda x: "" if x == 0 or pd.isna(x) else str(x))
+        
         for sc in share_columns:
-            if sc not in pivot.columns:
-                pivot[sc] = ""
+            if sc not in df.columns:
+                df[sc] = ""
+            else:
+                # Convert share columns to numeric, then to string for display
+                df[sc] = pd.to_numeric(df[sc], errors="coerce").fillna("")
+                df[sc] = df[sc].apply(lambda x: "" if pd.isna(x) else str(x) if x != "" else "")
+        
         # Keep only base + shares + ordered quarters
-        display_df = pivot[base_columns + share_columns + quarter_columns].fillna("")
-        return display_df.to_dict("records")
+        all_columns = base_columns + share_columns + quarter_columns
+        available_columns = [col for col in all_columns if col in df.columns]
+        
+        if not available_columns:
+            logger.warning("No available columns found for table display")
+            return []
+        
+        display_df = df[available_columns].copy()
+        
+        # Format numeric columns like projects_by_time.py
+        numeric_cols = ['Gas Reserves (mmboe)', 'Liquids Reserves (mmbbl)', 'Total Reserves (mmboe)']
+        for col in numeric_cols:
+            if col in display_df.columns:
+                display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
+                display_df[col] = display_df[col].apply(lambda x: f'{x:,.3f}' if pd.notna(x) and x != 0 else '')
+        
+        # Format boolean columns
+        bool_display_map = {
+            'Y': 'Yes',
+            'N': 'No',
+            'true': 'Yes',
+            'false': 'No',
+            'True': 'Yes',
+            'False': 'No'
+        }
+        
+        if 'likely_goahead' in display_df.columns:
+            display_df['likely_goahead'] = display_df['likely_goahead'].astype(str).str.strip().map(bool_display_map).fillna(display_df['likely_goahead'])
+        
+        if 'Sanctioned' in display_df.columns:
+            display_df['Sanctioned'] = display_df['Sanctioned'].astype(str).str.strip().map(bool_display_map).fillna(display_df['Sanctioned'])
+        
+        # Handle Comments column - truncate for display, save original for tooltip
+        if 'Comments' in display_df.columns:
+            original_comments = display_df['Comments'].copy()
+            display_df['Comments'] = display_df['Comments'].astype(str).apply(
+                lambda x: (x[:10] + '...') if len(x) > 10 else x
+            )
+        else:
+            original_comments = pd.Series([''] * len(display_df))
+        
+        # Fill any remaining NaN values
+        display_df = display_df.fillna("")
+        
+        # Generate columns with display names like projects_by_time.py
+        display_name_map = {
+            'Opec_group': 'Group',
+            'field_type': 'Field Type',
+            'field': 'Field/Block',
+            'play_type': 'Play Type',
+            'likely_goahead': 'Likely To Go Ahead',
+        }
+        
+        column_widths = {
+            'Project Name': '180px',
+            'likely_goahead': '100px',
+            'Country': '120px',
+            'Region': '120px',
+            'Opec_group': '140px',
+            'field_type': '100px',
+            'field': '150px',
+            'play_type': '120px',
+            'Hydrocarbon': '120px',
+            'Associated Crude': '140px',
+            'Depth': '80px',
+            'Operator': '120px',
+            'Partner1': '100px',
+            'Partner2': '100px',
+            'Partner3': '100px',
+            'Partner4': '100px',
+            'Partner5': '100px',
+            'First Oil Year': '100px',
+            'Sanctioned': '80px',
+            'Comments': '120px',
+            'Project Status': '120px',
+            'Gas Reserves (mmboe)': '140px',
+            'Liquids Reserves (mmbbl)': '150px',
+            'Total Reserves (mmboe)': '150px',
+            'API': '80px',
+            'Sulfur': '80px'
+        }
+        
+        columns = []
+        for col in available_columns:
+            display_name = display_name_map.get(col, col)
+            col_def = {'name': display_name, 'id': col}
+            if col in column_widths:
+                col_def['minWidth'] = column_widths[col]
+                col_def['maxWidth'] = column_widths[col]
+            columns.append(col_def)
+        
+        # Create tooltip_data for Comments column
+        data = display_df.to_dict("records")
+        tooltip_data = []
+        for i, row in enumerate(data):
+            tooltip_row = {}
+            if 'Comments' in row:
+                original_comment = str(original_comments.iloc[i]) if i < len(original_comments) else ''
+                if original_comment and original_comment != 'nan' and original_comment.strip():
+                    tooltip_row['Comments'] = {
+                        'value': original_comment,
+                        'type': 'text'
+                    }
+            tooltip_data.append(tooltip_row)
+        
+        logger.info(f"Returning {len(display_df)} rows to table")
+        return data, columns, tooltip_data
