@@ -715,24 +715,13 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
         original_df['SortKey'] = original_df['Year of Period'] * 10 + original_df['Quarter of Period'].map(quarter_order)
         original_df = original_df.sort_values(['SortKey'])
     
-    if selected_countries:
-        # If countries are selected, show ONLY those selected countries (even if they have zero values)
-        # This matches Tableau behavior - clicking a country filters to show only that country
-        all_countries_in_data = [c for c in selected_countries if pd.notna(c) and str(c).strip()]
-    else:
-        # If no countries selected, show ALL countries from the CSV data (including those with zeros)
-        # This ensures all countries from the CSV are displayed in the chart
-        # Countries with zero values will still appear in tooltips and chart structure
-        all_countries_in_data = [c for c in original_df['Country'].unique().tolist() if pd.notna(c) and str(c).strip()]
+    # Always show ALL countries in the chart (not just selected ones)
+    # Selected countries will be highlighted, non-selected will be greyed out but still visible
+    all_countries_in_data = [c for c in original_df['Country'].unique().tolist() if pd.notna(c) and str(c).strip()]
     
-    # Filter by selected countries if any are selected (after getting country list)
-    # Always use original_df (full DATA_DF) to ensure we have data for all countries even if they have zeros
-    if selected_countries:
-        # Filter to selected countries only
-        df = original_df[original_df['Country'].isin(selected_countries)].copy()
-    else:
-        # When showing all countries, use the full original data
-        df = original_df.copy()
+    # Always use the full original data - don't filter countries out
+    # Instead, we'll apply opacity to non-selected countries in the chart rendering
+    df = original_df.copy()
     
     # Generate all possible periods from min year to max year (to ensure all quarters are shown)
     # Use the full data range (2025-2029) to show all quarters consistently
@@ -787,11 +776,21 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
     
     # Add a trace for each country
     for country in countries:
-        # Always use the filtered df (which has Period column already created)
-        # If country is selected, df is filtered to that country
-        # If no countries selected, df has all countries
+        # Always use the full df (which has Period column already created)
+        # All countries are shown, but non-selected ones will be greyed out
         country_data = df[df['Country'] == country]
         base_color = get_country_color(country)
+        
+        # Check if this country is selected (highlighted)
+        # If no countries are selected (empty list), show all countries normally (not greyed out)
+        # If countries are selected, only those are highlighted, others are greyed out
+        if len(selected_countries) == 0:
+            # No countries selected: show all countries normally
+            is_selected = True
+        else:
+            # Some countries selected: only those are highlighted
+            is_selected = country in selected_countries
+        
         highlight_year_int = None
         highlight_quarter_label = None
         try:
@@ -818,8 +817,10 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
                 # If no data for this period, set to 0
                 values.append(0)
             
-            # Dual highlight: keep full color if matches year and/or quarter selection; otherwise fade.
-            if highlight_year_int is not None or highlight_quarter_label is not None:
+            # Apply year/quarter highlighting only for selected countries
+            # For non-selected countries, we'll use trace opacity to grey them out
+            if is_selected and (highlight_year_int is not None or highlight_quarter_label is not None):
+                # Selected country with year/quarter highlighting
                 is_year_match = (highlight_year_int is not None and period_year == highlight_year_int)
                 is_quarter_match = (
                     highlight_quarter_label is not None and str(period).endswith(f" {highlight_quarter_label}")
@@ -831,7 +832,18 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
                 else:
                     marker_colors.append(apply_opacity_to_color(base_color, 0.18))
             else:
+                # Selected country without highlighting, or non-selected country (opacity handled at trace level)
                 marker_colors.append(base_color)
+        
+        # Determine overall opacity for the trace
+        # Non-selected countries should be visible but greyed out (disabled)
+        # Selected countries should be fully visible
+        if not is_selected:
+            # Non-selected countries: greyed out but still visible (not hidden)
+            trace_opacity = 0.3
+        else:
+            # Selected countries: full opacity (or minimal for zero values to maintain hover)
+            trace_opacity = 1.0 if any(v > 0 for v in values) else 0.01
         
         # Always create a trace for all countries, even if all values are 0
         # This ensures the chart structure is maintained and tooltips work for countries with zeros
@@ -841,14 +853,14 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
             name=country,
             x=periods,
             y=values,
-            marker_color=marker_colors if highlight_year_int is not None else base_color,
+            marker_color=marker_colors if (is_selected and (highlight_year_int is not None or highlight_quarter_label is not None)) else base_color,
             customdata=hover_periods,
             meta=country,
             hovertemplate='Country: %{meta}<br>Period: %{customdata}<br>Production Additions (\'000 b/d): %{y:,.1f}<extra></extra>',
             showlegend=False,  # Hide legend - using sidebar legend instead
             marker_line_width=0,  # No border on bars
-            # Make zero-value bars still hoverable
-            opacity=1.0 if any(v > 0 for v in values) else 0.01
+            # Apply opacity: selected countries full opacity, non-selected greyed out (disabled but visible)
+            opacity=trace_opacity
         ))
     
     # Y-axis should be exactly 0-70 to match images exactly; extend slightly to host invisible click-capture markers.
@@ -1612,21 +1624,43 @@ def register_callbacks(dash_app, server):
         selected_countries = selected_countries or []
         styles = []
         for country in legend_countries:
-            is_selected = country in selected_countries
+            # If no countries are selected, show all countries normally (not greyed out)
+            # If countries are selected, only those are highlighted, others are greyed out
+            if len(selected_countries) == 0:
+                is_selected = True  # Show all normally when none selected
+            else:
+                is_selected = country in selected_countries
+            
             country_color = get_country_color(country)
-            # Match Tableau design: selected countries get a colored border matching their color
-            # and a subtle background highlight
-            styles.append({
-                'display': 'flex',
-                'alignItems': 'center',
-                'marginBottom': '4px',
-                'padding': '2px 4px',
-                'cursor': 'pointer',
-                'borderRadius': '3px',
-                'border': f'2px solid {country_color}' if is_selected else '1px solid transparent',
-                'backgroundColor': 'rgba(240, 240, 240, 0.5)' if is_selected else 'transparent',
-                'transition': 'all 0.2s ease'
-            })
+            # Selected countries get a subtle background highlight. Non-selected countries are greyed out but still visible.
+            if is_selected:
+                # Selected country: highlighted with background color, no border
+                styles.append({
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'marginBottom': '4px',
+                    'padding': '2px 4px',
+                    'cursor': 'pointer',
+                    'borderRadius': '3px',
+                    'border': '1px solid transparent',
+                    'backgroundColor': 'rgba(240, 240, 240, 0.5)',
+                    'transition': 'all 0.2s ease',
+                    'opacity': '1.0'
+                })
+            else:
+                # Non-selected country: greyed out but still visible
+                styles.append({
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'marginBottom': '4px',
+                    'padding': '2px 4px',
+                    'cursor': 'pointer',
+                    'borderRadius': '3px',
+                    'border': '1px solid transparent',
+                    'backgroundColor': 'transparent',
+                    'transition': 'all 0.2s ease',
+                    'opacity': '0.3'  # Grey out non-selected countries
+                })
         return styles
     
     # Initial callback to set year display
@@ -2310,6 +2344,8 @@ def register_callbacks(dash_app, server):
             year_to_use = years[0] if years else 2025
         
         # Load chart data with filters applied (company and likely_goahead)
+        # Don't filter by countries here - we want to show ALL countries in the chart
+        # Selected countries will be highlighted, non-selected will be greyed out
         df = load_chart_data(company, ltg_list)
         
         if df.empty:
@@ -2322,11 +2358,8 @@ def register_callbacks(dash_app, server):
             empty_fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
             return empty_fig, empty_fig
         
-        # Apply country filter if countries are selected
-        # If empty list, show all countries. If countries are selected, show only those.
-        if selected_countries:
-            df = df[df['Country'].isin(selected_countries)].copy()
-        
+        # Pass selected countries to chart function for highlighting/greyout logic
+        # The chart will show ALL countries, but highlight selected ones and grey out non-selected
         countries_to_show = selected_countries if selected_countries else None
         
         # Create bar chart - show all years by default (matches Tableau behavior)
