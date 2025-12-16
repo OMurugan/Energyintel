@@ -7,6 +7,8 @@ import dash
 import pandas as pd
 import os
 from pathlib import Path
+from functools import lru_cache
+from core.data_helpers import execute_query
 
 
 def create_layout():
@@ -107,69 +109,189 @@ def create_layout():
             'textAlign': 'left'
         }),
         
-        # Store selected CSV type
-        dcc.Store(id='selected-csv-type', data='Cost_to_Refiners'),
+        # Store selected type filter
+        dcc.Store(id='selected-type-filter', data='Cost to Refiners'),
         
-        # Table container
-        html.Div(id='price-scorecard-table-container')
+        # Table container with loading indicator
+        dcc.Loading(
+            id='price-scorecard-loading',
+            type='dot',
+            fullscreen=False,
+            overlay_style={'backgroundColor': 'rgba(255, 255, 255, 0.8)'},
+            children=html.Div(
+                id='price-scorecard-table-container',
+                style={'minHeight': '400px'}
+            )
+        )
     ], className='tab-content', style={'padding': '20px', 'backgroundColor': '#ffffff'})
 
 
-def load_csv_data(csv_type='Cost_to_Refiners'):
-    """Load and parse CSV data with multi-level headers"""
-    # Get the base directory
-    base_dir = Path(__file__).parent.parent / 'data' / 'price'
-    csv_file = base_dir / f'{csv_type}.csv'
-    
-    if not csv_file.exists():
-        print(f"CSV file not found: {csv_file}")
-        return None, None, None, None, None
-    
+def clear_price_scorecard_cache():
+    """Clear the cache for price scorecard data - useful for testing or when data is updated"""
+    _load_sql_data_cached.cache_clear()
+
+
+@lru_cache(maxsize=3)
+def _load_sql_data_cached(type_filter_value):
+    """
+    Cached function to load SQL data - filters at SQL level for performance
+    type_filter_value: 'Cost to Refiners', 'Port of Loading', or 'Price Formula Adjustment'
+    """
     try:
-        # Read CSV with tab separator, skip first 2 rows (copyright info)
-        # Try UTF-16 first (common for Excel exports), fallback to UTF-8
-        try:
-            df = pd.read_csv(csv_file, sep='\t', header=None, skiprows=2, encoding='utf-16')
-        except UnicodeDecodeError:
-            df = pd.read_csv(csv_file, sep='\t', header=None, skiprows=2, encoding='utf-8')
+        # Map type filter to SQL value
+        type_mapping = {
+            'Cost to Refiners': 'Cost to Refiners',
+            'Port of Loading': 'Port of Loading',
+            'Price Formula': 'Price Formula Adjustment'
+        }
+        sql_type_value = type_mapping.get(type_filter_value, 'Cost to Refiners')
+        
+        # Optimized query with SQL-level filtering - much faster than filtering in Python
+        query = """
+        SELECT
+            a.date,
+            a.price_type AS type,
+            a.crude_id,
+            a.crude_name AS crude,
+            a.crude_country AS country,
+            b.region AS region,
+            a.price AS price,
+            a.delivery_to AS deliveryto,
+            a.point_of_sale AS "Point Of Sale"
+        FROM fact_wcod_prices a
+        LEFT JOIN dim_country b
+            ON a.crude_country_id = b.dim_country_id
+        WHERE EXTRACT(YEAR FROM a.date) >= 2000
+          AND a.price_type = :type_filter
+        """
+        
+        # Execute query with parameterized filter - prevents SQL injection and allows query plan caching
+        results = execute_query(query, params={'type_filter': sql_type_value})
+        if not results:
+            return None
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(results)
+        
+        if df.empty:
+            return None
+        
+        return df
     except Exception as e:
-        print(f"Error reading CSV file: {e}")
+        print(f"Error loading SQL data: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def load_sql_data(type_filter='Cost to Refiners'):
+    """Load and transform SQL data with multi-level headers - optimized version"""
+    try:
+        # Load data using cached function (filters at SQL level)
+        df = _load_sql_data_cached(type_filter)
+        
+        if df is None or df.empty:
+            return None, None, None, None, None
+        
+        # Optimized date processing - convert once and extract in one pass
+        df['date'] = pd.to_datetime(df['date'], errors='coerce')
+        df = df.dropna(subset=['date']).copy()  # Use copy to avoid SettingWithCopyWarning
+        df['Year'] = df['date'].dt.year.astype(str)
+        df['Month'] = df['date'].dt.strftime('%B')
+        
+        # Fill NaN values once for all columns to avoid repeated operations
+        fill_cols = ['region', 'country', 'crude', 'Point Of Sale', 'deliveryto']
+        for col in fill_cols:
+            if col in df.columns:
+                df[col] = df[col].fillna('').astype(str)
+        
+        # Create a unique identifier for each column combination
+        # This will be used to create the multi-level headers
+        # For Port of Loading: Level 1 = region, Level 2 = country, Level 3 = crude, Level 4 = Point Of Sale
+        # For others: Level 1 = deliveryto, Level 2 = country, Level 3 = crude, Level 4 = Point Of Sale
+        if type_filter == 'Port of Loading':
+            # For Port of Loading: region -> country -> crude -> Point Of Sale
+            df['column_key'] = (
+                df['region'] + '|' +
+                df['country'] + '|' +
+                df['crude'] + '|' +
+                df['Point Of Sale']
+            )
+            # Get unique column combinations with region and country - optimized with subset
+            header_cols = ['region', 'country', 'crude', 'Point Of Sale', 'column_key']
+            unique_combinations = df[header_cols].drop_duplicates().sort_values(
+                ['region', 'country', 'crude', 'Point Of Sale']
+            )
+            # Extract header levels - Level 1 = region, Level 2 = country
+            delivery_locations = unique_combinations['region'].tolist()
+            countries = unique_combinations['country'].tolist()
+        else:
+            # Use country for Cost to Refiners and Price Formula
+            df['column_key'] = (
+                df['deliveryto'] + '|' +
+                df['country'] + '|' +
+                df['crude'] + '|' +
+                df['Point Of Sale']
+            )
+            # Get unique column combinations with country - optimized
+            header_cols = ['deliveryto', 'country', 'crude', 'Point Of Sale', 'column_key']
+            unique_combinations = df[header_cols].drop_duplicates().sort_values(
+                ['deliveryto', 'country', 'crude', 'Point Of Sale']
+            )
+            # Extract header levels - Level 1 = deliveryto, Level 2 = country
+            # Add "Delivered to " prefix for Cost to Refiners and Price Formula
+            delivery_locations = ['Delivered to ' + v if v else '' for v in unique_combinations['deliveryto'].tolist()]
+            countries = unique_combinations['country'].tolist()
+        
+        crude_types = unique_combinations['crude'].tolist()
+        pricing_terms = unique_combinations['Point Of Sale'].tolist()
+        
+        # Get the ordered list of column keys (this determines the column order)
+        ordered_column_keys = unique_combinations['column_key'].tolist()
+        
+        # Optimized pivot: use groupby + unstack for better performance on large datasets
+        # First, ensure we have unique (Year, Month, column_key) combinations
+        df_pivot = df.groupby(['Year', 'Month', 'column_key'])['price'].first().reset_index()
+        
+        # Pivot using unstack for better performance
+        pivot_df = df_pivot.set_index(['Year', 'Month', 'column_key'])['price'].unstack(fill_value=None).reset_index()
+        
+        # Ensure all column keys are present (add missing ones as None columns)
+        missing_keys = set(ordered_column_keys) - set(pivot_df.columns)
+        for key in missing_keys:
+            pivot_df[key] = None
+        
+        # Reorder columns efficiently - build list once
+        reordered_cols = ['Year', 'Month'] + [key for key in ordered_column_keys if key in pivot_df.columns]
+        pivot_df = pivot_df[reordered_cols]
+        
+        # Rename columns to col_0, col_1, etc. for consistency with existing code
+        value_cols_final = [col for col in pivot_df.columns if col not in ['Year', 'Month']]
+        col_mapping = dict(zip(value_cols_final, [f'col_{i}' for i in range(len(value_cols_final))]))
+        pivot_df = pivot_df.rename(columns=col_mapping)
+        
+        # Ensure Year and Month are strings, convert value columns to numeric in one pass
+        pivot_df['Year'] = pivot_df['Year'].astype(str)
+        pivot_df['Month'] = pivot_df['Month'].astype(str)
+        
+        # Convert value columns to numeric efficiently
+        value_cols_to_convert = [c for c in pivot_df.columns if c.startswith('col_')]
+        if value_cols_to_convert:
+            pivot_df[value_cols_to_convert] = pivot_df[value_cols_to_convert].apply(pd.to_numeric, errors='coerce')
+        
+        # Convert header lists to match expected format (None for empty strings)
+        delivery_locations = [None if not v or v == '' else v for v in delivery_locations]
+        countries = [None if not v or v == '' else v for v in countries]
+        crude_types = [None if not v or v == '' else v for v in crude_types]
+        pricing_terms = [None if not v or v == '' else v for v in pricing_terms]
+        
+        return delivery_locations, countries, crude_types, pricing_terms, pivot_df
+    
+    except Exception as e:
+        print(f"Error loading SQL data: {e}")
         import traceback
         traceback.print_exc()
         return None, None, None, None, None
-    
-    # Extract header rows
-    # Row 0 (index 0): Delivery locations
-    # Row 1 (index 1): Countries
-    # Row 2 (index 2): Crude types
-    # Row 3 (index 3): Pricing terms
-    
-    # Extract header rows and convert NaN to None for easier handling
-    delivery_locations = [None if pd.isna(v) else v for v in df.iloc[0].values[2:]]  # Skip first 2 empty columns
-    countries = [None if pd.isna(v) else v for v in df.iloc[1].values[2:]]
-    crude_types = [None if pd.isna(v) else v for v in df.iloc[2].values[2:]]
-    pricing_terms = [None if pd.isna(v) else v for v in df.iloc[3].values[2:]]
-    
-    # Extract data rows (starting from row 4, index 4)
-    data_df = df.iloc[4:].copy()
-    
-    # Set first two columns as Year and Month
-    if len(data_df.columns) >= 2:
-        data_df.columns = ['Year', 'Month'] + [f'col_{i}' for i in range(len(data_df.columns) - 2)]
-    
-    # Clean data - remove rows with all NaN
-    data_df = data_df.dropna(how='all')
-    
-    # Convert year and month columns
-    data_df['Year'] = data_df['Year'].astype(str).str.strip()
-    data_df['Month'] = data_df['Month'].astype(str).str.strip()
-    
-    # Convert value columns to numeric
-    value_cols = [col for col in data_df.columns if col.startswith('col_')]
-    for col in value_cols:
-        data_df[col] = pd.to_numeric(data_df[col], errors='coerce')
-    
-    return delivery_locations, countries, crude_types, pricing_terms, data_df
 
 
 def build_column_structure(delivery_locations, countries, crude_types, pricing_terms):
@@ -180,8 +302,6 @@ def build_column_structure(delivery_locations, countries, crude_types, pricing_t
     columns.append({'name': ['', '', '', 'Year'], 'id': 'Year'})
     columns.append({'name': ['', '', '', 'Month'], 'id': 'Month'})
     
-    # Forward-fill all header levels to handle empty cells in CSV
-    # This ensures headers span across all their related columns
     max_len = max(len(delivery_locations), len(countries), len(crude_types), len(pricing_terms))
     
     filled_delivery = []
@@ -312,13 +432,13 @@ def format_data_for_table(data_df, num_value_cols):
     for year in sorted(data_df['Year'].unique(), reverse=True):
         year_data = data_df[data_df['Year'] == year].copy()
         
-        # Sort months in descending order
+        # Sort months in descending order (December to January)
         year_data['Month'] = pd.Categorical(
             year_data['Month'], 
             categories=months_order, 
             ordered=True
         )
-        year_data = year_data.sort_values('Month', ascending=False)
+        year_data = year_data.sort_values('Month', ascending=True)  # ascending=True because categories are already in descending order
         
         # Show year only in the first row of each year group, empty for others
         for idx, (_, row) in enumerate(year_data.iterrows()):
@@ -367,40 +487,40 @@ def format_data_for_table(data_df, num_value_cols):
 def register_callbacks(dash_app, server):
     """Register all callbacks for Price Scorecard"""
     
-    # Callback to update selected CSV type when buttons are clicked
+    # Callback to update selected type filter when buttons are clicked
     @callback(
-        Output('selected-csv-type', 'data'),
+        Output('selected-type-filter', 'data'),
         [Input('costs-to-refiners-btn', 'n_clicks'),
          Input('port-of-loading-btn', 'n_clicks'),
          Input('price-formula-btn', 'n_clicks')],
         prevent_initial_call=False
     )
-    def update_selected_csv(costs_clicks, port_clicks, formula_clicks):
-        """Update selected CSV type based on button clicks"""
+    def update_selected_type(costs_clicks, port_clicks, formula_clicks):
+        """Update selected type filter based on button clicks"""
         ctx = dash.callback_context
         if not ctx.triggered:
-            # Initial load - default to Cost_to_Refiners
-            return 'Cost_to_Refiners'
+            # Initial load - default to Cost to Refiners
+            return 'Cost to Refiners'
         
         triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
         
         if triggered_id == 'costs-to-refiners-btn':
-            return 'Cost_to_Refiners'
+            return 'Cost to Refiners'
         elif triggered_id == 'port-of-loading-btn':
-            return 'Port_of_Loading'
+            return 'Port of Loading'
         elif triggered_id == 'price-formula-btn':
-            return 'Price_Formula'
+            return 'Price Formula'
         
-        return 'Cost_to_Refiners'  # Default
+        return 'Cost to Refiners'  # Default
     
     # Callback to update button styles based on selection
     @callback(
         [Output('costs-to-refiners-btn', 'style'),
          Output('port-of-loading-btn', 'style'),
          Output('price-formula-btn', 'style')],
-        Input('selected-csv-type', 'data')
+        Input('selected-type-filter', 'data')
     )
-    def update_button_styles(selected_csv):
+    def update_button_styles(selected_type):
         """Update button styles to show which one is active"""
         base_style = {
             'display': 'inline-block',
@@ -437,45 +557,45 @@ def register_callbacks(dash_app, server):
         last_button_inactive = last_button_base.copy()
         last_button_inactive['backgroundColor'] = 'transparent'
         
-        # Default to Cost_to_Refiners if selected_csv is None
-        if not selected_csv:
-            selected_csv = 'Cost_to_Refiners'
+        # Default to Cost to Refiners if selected_type is None
+        if not selected_type:
+            selected_type = 'Cost to Refiners'
         
-        if selected_csv == 'Cost_to_Refiners':
+        if selected_type == 'Cost to Refiners':
             return active_style, inactive_style, last_button_inactive
-        elif selected_csv == 'Port_of_Loading':
+        elif selected_type == 'Port of Loading':
             return inactive_style, active_style, last_button_inactive
-        elif selected_csv == 'Price_Formula':
+        elif selected_type == 'Price Formula':
             return inactive_style, inactive_style, last_button_active
         
-        # Default to Cost_to_Refiners
+        # Default to Cost to Refiners
         return active_style, inactive_style, last_button_inactive
     
-    # Callback to update table based on selected CSV
+    # Callback to update table based on selected type filter
     @callback(
         Output('price-scorecard-table-container', 'children'),
-        [Input('selected-csv-type', 'data'),
+        [Input('selected-type-filter', 'data'),
          Input('current-submenu', 'data')]
     )
-    def update_price_scorecard(selected_csv, submenu):
+    def update_price_scorecard(selected_type, submenu):
         """Update price scorecard table"""
         if submenu != 'price-scorecard':
             return html.Div()
         
-        # Use the selected CSV type
-        csv_type = selected_csv if selected_csv else 'Cost_to_Refiners'
+        # Use the selected type filter
+        type_filter = selected_type if selected_type else 'Cost to Refiners'
         
-        # Load the CSV data
-        delivery_locations, countries, crude_types, pricing_terms, data_df = load_csv_data(csv_type)
+        # Load the SQL data
+        delivery_locations, countries, crude_types, pricing_terms, data_df = load_sql_data(type_filter)
         
         if data_df is None or data_df.empty:
-            error_msg = f"Error loading data from {csv_type}.csv"
+            error_msg = f"Error loading data for type: {type_filter}"
             if delivery_locations is None:
-                error_msg += " - File not found or could not be read"
+                error_msg += " - Query returned no results or error occurred"
             return html.Div(error_msg, style={'padding': '20px', 'color': 'red'})
         
         if len(data_df) == 0:
-            return html.Div("No data rows found in CSV", style={'padding': '20px', 'color': 'red'})
+            return html.Div("No data rows found for selected filter", style={'padding': '20px', 'color': 'red'})
         
         # Build columns with multi-level structure
         columns = build_column_structure(delivery_locations, countries, crude_types, pricing_terms)
