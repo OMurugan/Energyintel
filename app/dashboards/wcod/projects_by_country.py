@@ -38,12 +38,11 @@ DATA_DIR = os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "data", "projects_by_country"
 )
 
-CHART_CSV = os.path.join(DATA_DIR, "Projects by Country_Chart_data.csv")
 TABLE_CSV = os.path.join(DATA_DIR, "Projects by Country_Table_data.csv")
 
 GROUP_COLORS = {
     "OPEC-Plus": "#f5a555",
-    "Non-OPEC-Plus": "#7194b9",
+    "Non-OPEC-Plus": "#7194b9", 
 }
 DEFAULT_GROUPS = list(GROUP_COLORS.keys())
 DEFAULT_LIKELY = ["Y"]
@@ -388,7 +387,7 @@ def load_map_data() -> pd.DataFrame:
                 c.latitude AS "Latitude (generated)",
                 c.longitude AS "Longitude (generated)",
                 a.likely_goahead AS "Likely Go-ahead"
-            FROM dev.fact_upstream_project_tracker a
+            FROM fact_upstream_project_tracker a
             LEFT JOIN dev.dim_country c
                 ON a.country_id = c.dim_country_id
             WHERE a.include = true
@@ -430,41 +429,111 @@ def load_map_data() -> pd.DataFrame:
 
 
 def load_chart_data() -> pd.DataFrame:
-    """Load and cache chart data."""
+    """Load and cache chart data from SQL query."""
     global chart_df
     if not chart_df.empty:
         return chart_df
 
-    df = pd.read_csv(CHART_CSV)
-    df = df.rename(
-        columns={
-            "Quarter of Period": "Quarter",
-            "Country": "Country",
-            "Production Additions": "ProductionAdditions",
-        }
-    )
+    try:
+        query = """
+        WITH unpivoted AS (
+            SELECT
+                c.country_long_name AS country,
+                q.quarter,
+                q.value
+            FROM fact_upstream_project_tracker a
+            LEFT JOIN fact_upstream_tracker_prod_estimates est
+                ON a.project_id = est.project_id
+            LEFT JOIN dim_country c
+                ON a.country_id = c.dim_country_id
+            CROSS JOIN LATERAL (
+                VALUES
+                    ('2025 Q1', est."2025_Q1"),
+                    ('2025 Q2', est."2025_Q2"),
+                    ('2025 Q3', est."2025_Q3"),
+                    ('2025 Q4', est."2025_Q4"),
+                    ('2026 Q1', est."2026_Q1"),
+                    ('2026 Q2', est."2026_Q2"),
+                    ('2026 Q3', est."2026_Q3"),
+                    ('2026 Q4', est."2026_Q4"),
+                    ('2027 Q1', est."2027_Q1"),
+                    ('2027 Q2', est."2027_Q2"),
+                    ('2027 Q3', est."2027_Q3"),
+                    ('2027 Q4', est."2027_Q4"),
+                    ('2028 Q1', est."2028_Q1"),
+                    ('2028 Q2', est."2028_Q2"),
+                    ('2028 Q3', est."2028_Q3"),
+                    ('2028 Q4', est."2028_Q4"),
+                    ('2029 Q1', est."2029_Q1"),
+                    ('2029 Q2', est."2029_Q2"),
+                    ('2029 Q3', est."2029_Q3"),
+                    ('2029 Q4', est."2029_Q4")
+            ) AS q(quarter, value)
+            WHERE a.include = TRUE
+        ),
+        aggregated AS (
+            SELECT
+                quarter AS "Quarter of Period",
+                country AS "Country",
+                SUM(value) AS "Production Additions"
+            FROM unpivoted
+            GROUP BY quarter, country
+        )
+        SELECT
+            "Quarter of Period",
+            "Country",
+            "Production Additions"
+        FROM aggregated
+        ORDER BY
+            SPLIT_PART("Quarter of Period", ' ', 1)::INT,
+            SPLIT_PART("Quarter of Period", ' ', 2);
+        """
+        
+        results = execute_query(query)
+        if not results:
+            logger.warning("SQL query returned no results for chart data")
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(results)
+        
+        if df.empty:
+            logger.warning("SQL query returned empty DataFrame for chart data")
+            return pd.DataFrame()
+        
+        df = df.rename(
+            columns={
+                "Quarter of Period": "Quarter",
+                "Country": "Country",
+                "Production Additions": "ProductionAdditions",
+            }
+        )
 
-    df["Country"] = (
-        df["Country"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .apply(_normalize_country_name)
-    )
-    df = df[df["Country"] != ""]
-    df["Group"] = df["Country"].map(
-        load_map_data().set_index("Country")["Group"].to_dict()
-    )
-    df["Quarter"] = df["Quarter"].astype(str).str.strip()
-    df[["Year", "QuarterNum"]] = df["Quarter"].apply(
-        lambda q: pd.Series(_quarter_components(q))
-    )
-    df["ProductionAdditions"] = pd.to_numeric(
-        df["ProductionAdditions"], errors="coerce"
-    ).fillna(0)
-    df = df.sort_values(["Year", "QuarterNum"])
-    chart_df = df
-    return chart_df
+        df["Country"] = (
+            df["Country"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .apply(_normalize_country_name)
+        )
+        df = df[df["Country"] != ""]
+        df["Group"] = df["Country"].map(
+            load_map_data().set_index("Country")["Group"].to_dict()
+        )
+        df["Quarter"] = df["Quarter"].astype(str).str.strip()
+        df[["Year", "QuarterNum"]] = df["Quarter"].apply(
+            lambda q: pd.Series(_quarter_components(q))
+        )
+        df["ProductionAdditions"] = pd.to_numeric(
+            df["ProductionAdditions"], errors="coerce"
+        ).fillna(0)
+        df = df.sort_values(["Year", "QuarterNum"])
+        chart_df = df
+        return chart_df
+    except Exception as e:
+        logger.error(f"Error loading chart data from SQL: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
 
 
 def load_table_data() -> pd.DataFrame:
