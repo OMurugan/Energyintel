@@ -6,15 +6,7 @@ from dash import dcc, html, Input, Output, callback, State, dash_table
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
-import os
-from datetime import datetime
 from core.data_helpers import execute_query
-
-
-# File paths (keeping for source/footnote if needed, but data now from DB)
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Trade')
-SOURCE_CSV = os.path.join(DATA_DIR, 'Source.csv')
-FOOTNOTE_CSV = os.path.join(DATA_DIR, 'Footnote.csv')
 
 
 def load_legend_data():
@@ -213,32 +205,6 @@ def load_table_data(selected_country='Japan'):
         return pd.DataFrame()
 
 
-def load_source_data():
-    """Load source information"""
-    try:
-        with open(SOURCE_CSV, 'r', encoding='utf-16') as f:
-            lines = f.readlines()
-            if len(lines) > 1:
-                return lines[1].strip()
-        return "Energy Intelligence"
-    except Exception as e:
-        print(f"Error loading source: {e}")
-        return "Energy Intelligence"
-
-
-def load_footnote_data():
-    """Load footnote information"""
-    try:
-        df = pd.read_csv(FOOTNOTE_CSV, encoding='utf-16')
-        if 'Note' in df.columns:
-            notes = df['Note'].dropna().unique().tolist()
-            return notes
-        return []
-    except Exception as e:
-        print(f"Error loading footnote: {e}")
-        return []
-
-
 def load_available_countries():
     """Load available countries from the same imports table (import_country)"""
     try:
@@ -262,8 +228,6 @@ def load_available_countries():
 def create_layout():
     """Create the Imports - Country Detail layout"""
     regions, _ = load_legend_data()
-    source = load_source_data()
-    footnotes = load_footnote_data()
     
     # Get available countries from the database
     available_countries = load_available_countries()
