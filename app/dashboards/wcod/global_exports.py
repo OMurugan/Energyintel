@@ -608,12 +608,17 @@ def _build_map_figure(
         landcolor="#ffffff",
         countrycolor="#d0d0d0",
         coastlinecolor="#d0d0d0",
+        # Adjust projection to fill more of the available space
+        projection=dict(
+            scale=1.15,  # Scale up to reduce blank space around the map
+        ),
     )
     fig.update_layout(
         height=520,
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=0, r=0, t=20, b=110),
+        # Reduce margins to minimize blank space - keep bottom margin for legend
+        margin=dict(l=0, r=0, t=5, b=5),  # Minimal margins
         template="plotly_white",
     )
     if highlight_country:
@@ -1371,7 +1376,7 @@ def create_layout():
                                 },
                             ),
                         ],
-                        className="col-md-3",
+                        className="col-md-2",
                         style={
                             "padding": "25px 10px",
                             "border": "0px solid #dfe3eb",
@@ -1474,7 +1479,7 @@ def create_layout():
             ),
         ],
         className="tab-content",
-        style={"padding": "20px 10px", "backgroundColor": "#f8f9fa"},
+        style={"padding": "0px 0px", "backgroundColor": "#f8f9fa"},
     )
 
 
