@@ -9,11 +9,6 @@ import plotly.express as px
 import pandas as pd
 from core.data_helpers import execute_query
 
-# Define data path (keeping for other CSV files if needed)
-import os
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Trade')
-ANNUAL_IMPORTS_CSV = os.path.join(DATA_DIR, 'comparison_Yearly Imports_data.csv')
-
 # Styling constants to match Energy Intelligence design
 MAP_COLOR_SCALE = [
     (0.0, '#d9dee7'),
