@@ -7,17 +7,12 @@ from dash import dcc, html, Input, Output, State, callback, dash_table
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
-import os
-# from app import db
-# from app.models import Country, Imports
-# from sqlalchemy import func
+from core.data_helpers import execute_query
 
-# Define data path
+# Define data path (keeping for other CSV files if needed)
+import os
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Trade')
-COMPARISON_MAP_CSV = os.path.join(DATA_DIR, 'comparison_map.csv')
 ANNUAL_IMPORTS_CSV = os.path.join(DATA_DIR, 'comparison_Yearly Imports_data.csv')
-IMPORT_EXPORT_MATRIX_CSV = os.path.join(DATA_DIR, 'Import-Export Matrix_data.csv')
-IMPORT_EXPORT_MATRIX_YEAR = 2023
 
 # Styling constants to match Energy Intelligence design
 MAP_COLOR_SCALE = [
@@ -32,19 +27,42 @@ MAP_BACKGROUND_COLOR = '#d6e1eb'
 MAP_LAND_COLOR = '#f4f4f4'
 
 # Load data
-def load_imports_data():
-    """Load imports comparison data from CSV"""
+def load_imports_data(selected_year=2023):
+    """Load imports comparison data from database"""
     try:
-        df = pd.read_csv(COMPARISON_MAP_CSV, encoding='utf-16', sep='\t', skiprows=2)
-        df.columns = ['Importer', 'Year', 'Import_Volume']
+        query = """
+        SELECT
+            EXTRACT(YEAR FROM yr)::INT AS "Year",
+            import_country AS "Importer",
+            SUM(vol_kbpd) AS "DataValue"
+        FROM dev.fact_wcod_imports
+        WHERE
+            (import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+            OR source <> 'OECD Imports')
+            AND EXTRACT(YEAR FROM yr) = :selected_year
+        GROUP BY
+            EXTRACT(YEAR FROM yr),
+            import_country
+        ORDER BY
+            "Year",
+            "Importer";
+        """
+        
+        rows = execute_query(query, {'selected_year': selected_year})
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        # Rename DataValue to Import_Volume for consistency
+        df = df.rename(columns={'DataValue': 'Import_Volume'})
         
         # Clean the data
         df = df[df['Importer'].notna()].copy()
-        df['Year'] = pd.to_numeric(df['Year'], errors='coerce')
+        df['Year'] = pd.to_numeric(df['Year'], errors='coerce').astype('Int64')
         df = df[df['Year'].notna()].copy()
         
-        # Clean import volume - remove commas and convert to numeric
-        df['Import_Volume'] = df['Import_Volume'].astype(str).str.replace(',', '').str.strip()
+        # Convert import volume to numeric
         df['Import_Volume'] = pd.to_numeric(df['Import_Volume'], errors='coerce')
         df = df[df['Import_Volume'].notna()].copy()
         
@@ -78,19 +96,60 @@ def denormalize_country_name(country):
     return REVERSE_COUNTRY_MAP.get(country, country)
 
 # Load annual imports data
-def load_annual_imports_data():
-    """Load annual imports data from CSV"""
+def load_annual_imports_data(selected_countries=None):
+    """Load annual imports data from database with dynamic country filtering"""
     try:
-        df = pd.read_csv(ANNUAL_IMPORTS_CSV, encoding='utf-8')
-        df.columns = df.columns.str.strip()
+        # Base query
+        base_query = """
+        SELECT
+            EXTRACT(YEAR FROM yr)::INT AS "Year",
+            import_country AS "Importer",
+            SUM(vol_kbpd) AS "DataValue"
+        FROM dev.fact_wcod_imports
+        WHERE
+            (import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+            OR source <> 'OECD Imports')
+        """
         
-        # Rename columns
-        if 'Year of Year' in df.columns:
-            df = df.rename(columns={'Year of Year': 'Year', 'DataValue': 'Import_Volume'})
+        params = {}
+        
+        # Add country filter if countries are specified (filter out 'All' if present)
+        if selected_countries:
+            # Remove 'All' from the list if present
+            countries_to_filter = [c for c in selected_countries if c != 'All']
+            
+            if countries_to_filter:
+                if len(countries_to_filter) == 1:
+                    # Single country - use = operator
+                    base_query += " AND import_country = :import_country"
+                    params['import_country'] = countries_to_filter[0]
+                else:
+                    # Multiple countries - use IN clause
+                    placeholders = ", ".join([f":country_{i}" for i in range(len(countries_to_filter))])
+                    base_query += f" AND import_country IN ({placeholders})"
+                    params = {f"country_{i}": country for i, country in enumerate(countries_to_filter)}
+        
+        base_query += """
+        GROUP BY
+            EXTRACT(YEAR FROM yr),
+            import_country
+        ORDER BY
+            "Year",
+            "Importer";
+        """
+        
+        rows = execute_query(base_query, params)
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        # Rename DataValue to Import_Volume for consistency
+        df = df.rename(columns={'DataValue': 'Import_Volume'})
         
         # Clean the data
         df = df[df['Importer'].notna()].copy()
-        df['Year'] = pd.to_numeric(df['Year'], errors='coerce')
+        df['Year'] = pd.to_numeric(df['Year'], errors='coerce').astype('Int64')
         df = df[df['Year'].notna()].copy()
         
         # Convert import volume to numeric
@@ -108,76 +167,113 @@ def load_annual_imports_data():
         return pd.DataFrame()
 
 
-def load_import_export_matrix_data():
-    """Load Import – Export Matrix data (single-year snapshot)"""
+def load_import_export_matrix_data(selected_year=2023):
+    """Load Import – Export Matrix data from database (single-year snapshot)"""
     try:
-        df = pd.read_csv(
-            IMPORT_EXPORT_MATRIX_CSV,
-            encoding='utf-16',
-            sep='\t',
-            skiprows=3
-        )
-        df.columns = df.columns.str.strip()
-        if 'Exporter' not in df.columns:
-            return pd.DataFrame()
-
-        df = df[df['Exporter'].notna()].copy()
-
-        numeric_cols = [col for col in df.columns if col != 'Exporter']
-        for col in numeric_cols:
-            df[col] = (
-                df[col]
-                .astype(str)
-                .str.replace(',', '', regex=False)
-                .str.strip()
+        query = """
+        SELECT
+            EXTRACT(YEAR FROM yr)::INT AS "Year",
+            import_country AS "Importer",
+            export_country AS "Exporter",
+            SUM(vol_kbpd) AS "DataValue"
+        FROM dev.fact_wcod_imports
+        WHERE
+            EXTRACT(YEAR FROM yr) = :selected_year
+            AND (
+                import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+                OR source <> 'OECD Imports'
             )
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-
-        df[numeric_cols] = df[numeric_cols].fillna(0)
-        return df
+        GROUP BY
+            EXTRACT(YEAR FROM yr),
+            import_country,
+            export_country
+        ORDER BY
+            "Year",
+            "Importer",
+            "Exporter";
+        """
+        
+        rows = execute_query(query, {'selected_year': selected_year})
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        
+        # Clean the data
+        df = df[df['Importer'].notna() & df['Exporter'].notna()].copy()
+        df['Year'] = pd.to_numeric(df['Year'], errors='coerce').astype('Int64')
+        df['DataValue'] = pd.to_numeric(df['DataValue'], errors='coerce')
+        df = df[df['DataValue'].notna()].copy()
+        
+        # Filter out zero values
+        df = df[df['DataValue'] > 0].copy()
+        
+        # Pivot the data: Exporter as rows, Importer as columns
+        if df.empty:
+            return pd.DataFrame()
+        
+        df_pivot = df.pivot_table(
+            index='Exporter',
+            columns='Importer',
+            values='DataValue',
+            aggfunc='sum',
+            fill_value=0
+        ).reset_index()
+        
+        # Sort exporters alphabetically
+        df_pivot = df_pivot.sort_values('Exporter').reset_index(drop=True)
+        
+        return df_pivot
     except Exception as e:
         print(f"Error loading import-export matrix data: {e}")
         import traceback
         traceback.print_exc()
         return pd.DataFrame()
 
-# Load data on module import
-IMPORTS_DF = load_imports_data()
-ANNUAL_IMPORTS_DF = load_annual_imports_data()
-IMPORT_EXPORT_MATRIX_DF = load_import_export_matrix_data()
-MATRIX_COLUMN_ORDER = [
-    col for col in IMPORT_EXPORT_MATRIX_DF.columns if col != 'Exporter'
-] if not IMPORT_EXPORT_MATRIX_DF.empty else []
-
-# Normalize country names in the dataframes
-if not IMPORTS_DF.empty:
-    IMPORTS_DF['Importer'] = IMPORTS_DF['Importer'].apply(normalize_country_name)
-if not ANNUAL_IMPORTS_DF.empty:
-    # Keep original country names for annual table (don't normalize for display)
-    pass
+# Load data on module import (all data is now loaded dynamically)
+# Matrix data is loaded dynamically based on selected year
 
 def get_available_years():
-    """Get continuous list of available years across all datasets"""
-    years = set()
-    if not IMPORTS_DF.empty:
-        years.update(IMPORTS_DF['Year'].dropna().astype(int).tolist())
-    if not ANNUAL_IMPORTS_DF.empty:
-        years.update(ANNUAL_IMPORTS_DF['Year'].dropna().astype(int).tolist())
-    if years:
-        year_min, year_max = min(years), max(years)
-        return list(range(year_min, year_max + 1))
-    return list(range(2000, 2026))
+    """Get continuous list of available years from database"""
+    try:
+        query = """
+        SELECT DISTINCT EXTRACT(YEAR FROM yr)::INT AS "Year"
+        FROM dev.fact_wcod_imports
+        WHERE (import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+            OR source <> 'OECD Imports')
+        ORDER BY "Year";
+        """
+        rows = execute_query(query)
+        if rows:
+            years = [int(row['Year']) for row in rows if row['Year'] is not None]
+            if years:
+                year_min, year_max = min(years), max(years)
+                return list(range(year_min, year_max + 1))
+        # Fallback to default range
+        return list(range(2000, 2026))
+    except Exception as e:
+        print(f"Error getting available years: {e}")
+        return list(range(2000, 2026))
 
 def get_available_countries():
-    """Get list of available countries - use original names from annual imports CSV"""
-    if not ANNUAL_IMPORTS_DF.empty:
-        countries = sorted(ANNUAL_IMPORTS_DF['Importer'].unique().tolist())
-        return countries
-    elif not IMPORTS_DF.empty:
-        # Fallback to map data countries
-        countries = sorted(IMPORTS_DF['Importer'].unique().tolist())
-        return countries
-    return []
+    """Get list of available countries from database"""
+    try:
+        query = """
+        SELECT DISTINCT import_country AS "Importer"
+        FROM dev.fact_wcod_imports
+        WHERE (import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+            OR source <> 'OECD Imports')
+        ORDER BY import_country;
+        """
+        rows = execute_query(query)
+        if rows:
+            countries = [row['Importer'] for row in rows if row['Importer'] is not None]
+            return sorted(countries)
+        return []
+    except Exception as e:
+        print(f"Error getting available countries: {e}")
+        return []
 
 AVAILABLE_YEARS = get_available_years()
 YEAR_MIN = AVAILABLE_YEARS[0] if AVAILABLE_YEARS else 2000
@@ -507,7 +603,7 @@ def create_layout():
             ),
             html.P(
                 id='imports-matrix-caption',
-                children=f"Import – Export Matrix for {IMPORT_EXPORT_MATRIX_YEAR} ('000 b/d)",
+                children="Import – Export Matrix ('000 b/d)",
                 style={
                     'textAlign': 'center',
                     'fontWeight': 'bold',
@@ -562,7 +658,15 @@ def register_callbacks(dash_app, server):
     )
     def update_imports_dashboard(selected_year, selected_countries):
         """Update map and annual chart based on filters"""
-        matrix_caption = f"Import – Export Matrix for {IMPORT_EXPORT_MATRIX_YEAR} ('000 b/d)"
+        matrix_caption = f"Import – Export Matrix for {selected_year} ('000 b/d)"
+        
+        # Load imports data dynamically for the selected year
+        IMPORTS_DF = load_imports_data(selected_year)
+        
+        # Normalize country names for map compatibility
+        if not IMPORTS_DF.empty:
+            IMPORTS_DF['Importer'] = IMPORTS_DF['Importer'].apply(normalize_country_name)
+        
         if IMPORTS_DF.empty:
             empty_fig = go.Figure()
             empty_fig.add_annotation(
@@ -575,18 +679,14 @@ def register_callbacks(dash_app, server):
             return (
                 empty_fig,
                 html.Div("No data available", style={'padding': '20px', 'textAlign': 'center', 'color': '#666'}),
+                html.Div("No data available", style={'padding': '20px', 'textAlign': 'center', 'color': '#666'}),
                 '0',
                 '0',
                 matrix_caption
             )
         
-        # Filter by year
-        df_filtered = IMPORTS_DF[IMPORTS_DF['Year'] == selected_year].copy()
-        if df_filtered.empty and not ANNUAL_IMPORTS_DF.empty:
-            fallback_df = ANNUAL_IMPORTS_DF[ANNUAL_IMPORTS_DF['Year'] == selected_year].copy()
-            if not fallback_df.empty:
-                fallback_df['Importer'] = fallback_df['Importer'].apply(normalize_country_name)
-                df_filtered = fallback_df.rename(columns={'Importer': 'Importer', 'Import_Volume': 'Import_Volume'})
+        # Data is already filtered by year in the query
+        df_filtered = IMPORTS_DF.copy()
         
         # Filter by countries if not "All"
         # The checklist uses original country names, but map data uses normalized names
@@ -715,16 +815,13 @@ def register_callbacks(dash_app, server):
                 bordercolor='rgba(255,255,255,0.8)'
             )
         
-        # Create annual table using the annual imports CSV data
-        if ANNUAL_IMPORTS_DF.empty:
+        # Create annual table using database query with dynamic country filtering
+        # Load annual imports data based on selected countries
+        df_annual = load_annual_imports_data(selected_countries)
+        
+        if df_annual.empty:
             annual_table = html.Div("No data available", style={'padding': '20px', 'textAlign': 'center', 'color': '#666'})
         else:
-            # Filter by selected countries if not "All"
-            # The checklist uses original country names (from annual CSV)
-            if 'All' in selected_countries or not selected_countries:
-                df_annual = ANNUAL_IMPORTS_DF.copy()
-            else:
-                df_annual = ANNUAL_IMPORTS_DF[ANNUAL_IMPORTS_DF['Importer'].isin(selected_countries)].copy()
             
             if df_annual.empty:
                 annual_table = html.Div("No data available for selected countries", style={'padding': '20px', 'textAlign': 'center', 'color': '#666'})
@@ -849,16 +946,46 @@ def register_callbacks(dash_app, server):
                     merge_duplicate_headers=True
                 )
 
+        # Load matrix data dynamically for the selected year
+        IMPORT_EXPORT_MATRIX_DF = load_import_export_matrix_data(selected_year)
+        
         if IMPORT_EXPORT_MATRIX_DF.empty:
             matrix_table = html.Div(
                 "Import – Export matrix data unavailable",
                 style={'padding': '20px', 'textAlign': 'center', 'color': '#666'}
             )
         else:
+            # Get column order (all columns except 'Exporter')
+            MATRIX_COLUMN_ORDER = [
+                col for col in IMPORT_EXPORT_MATRIX_DF.columns if col != 'Exporter'
+            ]
+            
+            # Sort importers (columns) alphabetically
+            MATRIX_COLUMN_ORDER = sorted(MATRIX_COLUMN_ORDER)
+            
+            # Add row totals (sum of all importers for each exporter)
+            IMPORT_EXPORT_MATRIX_DF = IMPORT_EXPORT_MATRIX_DF.copy()
+            IMPORT_EXPORT_MATRIX_DF['Grand Total'] = IMPORT_EXPORT_MATRIX_DF[MATRIX_COLUMN_ORDER].sum(axis=1)
+            
+            # Add column totals (sum of all exporters for each importer)
+            totals_row = {'Exporter': 'Grand Total'}
+            for col in MATRIX_COLUMN_ORDER:
+                totals_row[col] = IMPORT_EXPORT_MATRIX_DF[col].sum()
+            totals_row['Grand Total'] = IMPORT_EXPORT_MATRIX_DF[MATRIX_COLUMN_ORDER].sum().sum()
+            
+            # Append totals row to dataframe
+            IMPORT_EXPORT_MATRIX_DF = pd.concat([
+                IMPORT_EXPORT_MATRIX_DF,
+                pd.DataFrame([totals_row])
+            ], ignore_index=True)
+            
+            # Update column order to include Grand Total column
+            MATRIX_COLUMN_ORDER_WITH_TOTAL = MATRIX_COLUMN_ORDER + ['Grand Total']
+            
             matrix_data_records = []
             for record in IMPORT_EXPORT_MATRIX_DF.to_dict('records'):
                 formatted = {'Exporter': record.get('Exporter', '')}
-                for column in MATRIX_COLUMN_ORDER:
+                for column in MATRIX_COLUMN_ORDER_WITH_TOTAL:
                     value = record.get(column)
                     if value is None or pd.isna(value) or value == 0:
                         formatted[column] = ''
@@ -867,7 +994,7 @@ def register_callbacks(dash_app, server):
                 matrix_data_records.append(formatted)
 
             matrix_columns = [{'name': 'Exporter', 'id': 'Exporter'}] + [
-                {'name': col, 'id': col} for col in MATRIX_COLUMN_ORDER
+                {'name': col, 'id': col} for col in MATRIX_COLUMN_ORDER_WITH_TOTAL
             ]
 
             matrix_table = dash_table.DataTable(
@@ -919,7 +1046,17 @@ def register_callbacks(dash_app, server):
                     'backgroundColor': 'white'
                 },
                 style_data_conditional=[
-                    {'if': {'row_index': 'odd'}, 'backgroundColor': '#f8f9fa'}
+                    {'if': {'row_index': 'odd'}, 'backgroundColor': '#f8f9fa'},
+                    {
+                        'if': {'filter_query': '{Exporter} = "Grand Total"'},
+                        'fontWeight': 'bold',
+                        'backgroundColor': '#f0f0f0'
+                    },
+                    {
+                        'if': {'column_id': 'Grand Total'},
+                        'fontWeight': 'bold',
+                        'backgroundColor': '#f0f0f0'
+                    }
                 ],
                 fixed_rows={'headers': True},
                 page_action='none',
