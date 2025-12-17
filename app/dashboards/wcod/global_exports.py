@@ -225,7 +225,7 @@ else:
 
 COUNTRY_OPTIONS = sorted(TABLE_DF["country"].unique().tolist()) if not TABLE_DF.empty else []
 DEFAULT_COUNTRY = (
-    ["Russia"] if "Russia" in COUNTRY_OPTIONS else (COUNTRY_OPTIONS[:1] if COUNTRY_OPTIONS else [])
+    ["Russia"] if "Russia" in COUNTRY_OPTIONS else (COUNTRY_OPTIONS[0] if COUNTRY_OPTIONS else [])
 )
 
 # Base stream configuration – explicit ordering and colors requested by design
@@ -322,14 +322,25 @@ TABLE_COLUMNS = TABLE_STATIC_COLUMNS + TABLE_YEAR_COLUMNS
 
 
 def _country_filter_options(country_names: Sequence[str]) -> List[Dict[str, str]]:
-    """Create checklist options for countries with ALL option first."""
+    """Create checklist options for countries with (All) option first."""
     options: List[Dict[str, str]] = [
-        {"label": "ALL", "value": "ALL"}
+        {"label": "(All)", "value": "(All)"}
     ] + [
         {"label": country, "value": country}
         for country in country_names
     ]
     return options
+
+
+def _resolve_countries(selected: Optional[Sequence[str]], all_countries: Sequence[str]) -> List[str]:
+    """Return concrete country list honoring '(All)' convenience value."""
+    if not selected:
+        return []
+    if not all_countries:
+        return []
+    if "(All)" in selected:
+        return list(all_countries)
+    return [c for c in selected if c in all_countries]
 
 
 def _stream_filter_options(stream_names: Sequence[str]) -> List[Dict[str, html.Span]]:
@@ -389,7 +400,7 @@ def _streams_for_countries(
     """
     Return ordered list of crude streams available for the given countries.
 
-    - If no countries are selected or "ALL" is included, use all countries.
+    - If no countries are selected or "(All)" is included, use all countries.
     - Order:
         1. Streams in STREAM_ORDER that appear in the data.
         2. Any additional streams for those countries, sorted alphabetically.
@@ -398,12 +409,23 @@ def _streams_for_countries(
         return STREAM_ORDER
 
     df = CHART_DF.copy()
-    if "country" in df.columns and selected_countries and "ALL" not in selected_countries:
-        selected_lower = [c.lower() for c in selected_countries]
-        df = df[df["country"].str.strip().str.lower().isin(selected_lower)]
-        # If filtering by country removes everything, fall back to all data
-        if df.empty:
-            df = CHART_DF.copy()
+    # Handle empty selection (when "(All)" is unselected)
+    if selected_countries is not None and isinstance(selected_countries, list) and len(selected_countries) == 0:
+        # Empty selection - return empty list (no streams available)
+        return []
+    
+    if "country" in df.columns and selected_countries:
+        # Resolve (All) to actual country list
+        all_countries_in_data = df["country"].str.strip().unique()
+        available_countries = sorted([c for c in all_countries_in_data if pd.notna(c)])
+        resolved_countries = _resolve_countries(selected_countries, available_countries)
+        
+        if resolved_countries:
+            selected_lower = [c.lower() for c in resolved_countries]
+            df = df[df["country"].str.strip().str.lower().isin(selected_lower)]
+            # If filtering by country removes everything, fall back to all data
+            if df.empty:
+                df = CHART_DF.copy()
 
     if "stream" not in df.columns:
         return STREAM_ORDER
@@ -441,13 +463,24 @@ def _filter_table_data(
     year: Optional[int],
     countries: Optional[Sequence[str]],
 ) -> pd.DataFrame:
+    """
+    Filter table data by year and countries.
+    
+    Note: The year parameter is accepted for API consistency but the table shows
+    all years in columns. Only country filtering is applied when countries is provided.
+    When countries is None, all countries are returned.
+    """
     if TABLE_DF.empty:
         return pd.DataFrame(columns=["country", "crude", "year", "value"])
     df = TABLE_DF.copy()
-    if countries:
+    # Only filter by countries if explicitly provided (not None)
+    # When countries is None, return all countries
+    if countries is not None:
         if isinstance(countries, str):
             countries = [countries]
-        df = df[df["country"].isin(countries)]
+        if countries:  # Only filter if list is not empty
+            df = df[df["country"].isin(countries)]
+    # Note: year parameter is not used - table shows all years in columns
     return df.sort_values(["country", "crude"])
 
 
@@ -496,13 +529,31 @@ def _empty_figure(message: str, height: int = 420) -> go.Figure:
     return fig
 
 
-def _build_map_figure(year: Optional[int], highlight_country: Optional[str] = None) -> go.Figure:
+def _build_map_figure(
+    year: Optional[int], 
+    highlight_country: Optional[str] = None,
+    selected_countries: Optional[Sequence[str]] = None
+) -> go.Figure:
     if MAP_DF.empty:
         return _empty_figure("No map data available")
     normalized_year = _normalize_year(year)
-    df = MAP_DF[MAP_DF["year"] == normalized_year]
+    df = MAP_DF[MAP_DF["year"] == normalized_year].copy()
     if df.empty:
         return _empty_figure("No data for the selected year")
+    
+    # Filter by selected countries if provided
+    # Note: selected_countries is already resolved (no "(All)" in it)
+    # None = show all countries, [] = show no countries, [list] = show specific countries
+    if selected_countries is not None and "country" in df.columns:
+        if isinstance(selected_countries, list) and len(selected_countries) == 0:
+            # Empty list means no countries selected - return empty figure
+            return _empty_figure("No countries selected")
+        elif selected_countries:
+            # Filter df by matching countries (case-insensitive)
+            df_countries_normalized = df["country"].str.strip().str.lower()
+            target_countries_normalized = {c.lower().strip(): c for c in selected_countries}
+            mask = df_countries_normalized.isin(target_countries_normalized.keys())
+            df = df[mask].copy()
     max_value = df["value"].max() if not df.empty else None
     fig = go.Figure(
         data=[
@@ -601,54 +652,50 @@ def _build_chart_figure(
     )
     if not streams:
         return _empty_figure("Select at least one stream")
+    # Handle empty selection (when "(All)" is unselected)
+    if selected_countries is not None and isinstance(selected_countries, list) and len(selected_countries) == 0:
+        return _empty_figure("No countries selected")
+    
     # First, determine which countries to include (before filtering by streams)
-    # Use selected countries directly, but match with data country names for consistency
-    if selected_countries:
-        if "ALL" in selected_countries:
-            # Get all countries from the full dataset
-            if "country" in CHART_DF.columns:
-                all_countries_in_data = CHART_DF["country"].str.strip().unique()
-                target_countries = sorted([c for c in all_countries_in_data if pd.notna(c)])
-            else:
-                target_countries = []
-        else:
-            # Start with selected countries, then match with data country names
-            target_countries = []
-            if "country" in CHART_DF.columns:
-                all_countries_in_data = CHART_DF["country"].str.strip().unique()
-                data_countries_lower = {c.lower(): c for c in all_countries_in_data if pd.notna(c)}
-                
-                # Match each selected country with data country names (case-insensitive)
-                for selected in selected_countries:
-                    selected_lower = selected.lower().strip()
-                    if selected_lower in data_countries_lower:
-                        # Use the exact name from data
-                        target_countries.append(data_countries_lower[selected_lower])
-                    else:
-                        # If not found in data, still include the selected name
-                        # (it might have data, or will show as 0)
-                        target_countries.append(selected)
-            else:
-                # No country column in data, use selected countries as-is
-                target_countries = selected_countries.copy()
-            target_countries = sorted(set(target_countries))
-    else:
-        # Default to Russia if no selection
+    # Note: selected_countries is already resolved (no "(All)" in it) from the callback
+    # None means show all countries (optimization: skip country filtering), empty list means show no countries, list means show those countries
+    filter_by_countries = False
+    if selected_countries is not None and len(selected_countries) > 0:
+        # Match resolved countries with data country names (case-insensitive)
+        target_countries = []
         if "country" in CHART_DF.columns:
             all_countries_in_data = CHART_DF["country"].str.strip().unique()
-            russia_match = [c for c in all_countries_in_data if pd.notna(c) and c.lower().strip() == "russia"]
-            target_countries = russia_match if russia_match else ["Russia"]
+            data_countries_lower = {c.lower(): c for c in all_countries_in_data if pd.notna(c)}
+            
+            # Match each resolved country with data country names (case-insensitive)
+            for selected in selected_countries:
+                selected_lower = str(selected).lower().strip()
+                if selected_lower in data_countries_lower:
+                    # Use the exact name from data
+                    target_countries.append(data_countries_lower[selected_lower])
+                else:
+                    # If not found in data, still include the selected name
+                    # (it might have data, or will show as 0)
+                    target_countries.append(selected)
         else:
-            target_countries = ["Russia"]
+            # No country column in data, use resolved countries as-is
+            target_countries = list(selected_countries)
+        target_countries = sorted(set(target_countries))
+        filter_by_countries = True
+    else:
+        # None means all countries - optimize by skipping country filtering
+        # This avoids expensive filtering operations when showing all countries
+        target_countries = []
+        filter_by_countries = False
     
-    # Now filter by streams and years
+    # Now filter by streams and years (always needed)
     df = CHART_DF[
         (CHART_DF["year"].between(2006, 2024))
         & (CHART_DF["stream"].isin(streams))
     ].copy()
     
-    # Filter by selected countries (case-insensitive, using exact names from target_countries)
-    if "country" in df.columns and target_countries:
+    # Filter by selected countries only if needed (optimization for "All" selection)
+    if filter_by_countries and "country" in df.columns and target_countries:
         # Normalize both data countries and target countries for matching
         df_countries_normalized = df["country"].str.strip().str.lower()
         target_countries_normalized = {c.lower().strip(): c for c in target_countries}
@@ -672,27 +719,26 @@ def _build_chart_figure(
             
             df["country"] = df["country"].map(country_name_map).fillna(df["country"])
     
-    if df.empty and not target_countries:
+    if df.empty:
         return _empty_figure("No data in the selected range")
+    
     # Determine country label for display
-    if selected_countries and "ALL" not in selected_countries and len(selected_countries) == 1:
-        country_label = selected_countries[0]
-    elif selected_countries and "ALL" in selected_countries:
-        country_label = "All Countries"
-    elif selected_countries and len(selected_countries) > 1:
-        country_label = f"{len(selected_countries)} Countries"
+    if filter_by_countries and target_countries:
+        if len(target_countries) == 1:
+            country_label = target_countries[0]
+        elif len(target_countries) > 1:
+            country_label = f"{len(target_countries)} Countries"
+        else:
+            country_label = "All Countries"
     else:
-        country_label = (
-            df["country"].dropna().iloc[0]
-            if "country" in df.columns and not df["country"].dropna().empty
-            else "Russia"
-        )
+        country_label = "All Countries"
     # Group by year, stream, and country to keep each country-crude combination separate
     if not df.empty:
         if "country" in df.columns:
             agg = df.groupby(["year", "stream", "country"])["value"].sum().reset_index()
             # Ensure country names match target_countries exactly (case-insensitive match)
-            if target_countries:
+            # Only do this if we're filtering by countries (optimization for "All" selection)
+            if filter_by_countries and target_countries:
                 # Create mapping from current country names to target_countries names
                 country_mapping = {}
                 for country in agg["country"].unique():
@@ -918,7 +964,7 @@ def create_layout():
                                 },
                                 figure=_build_map_figure(
                                     DEFAULT_YEAR,
-                                    "Russia" if "Russia" in COUNTRY_OPTIONS else None,
+                                    None,
                                 ),
                                 style={"height": "520px", "width": "100%"},
                             ),
@@ -1186,7 +1232,7 @@ def create_layout():
                                 dcc.Checklist(
                                     id="global-exports-country-filter",
                                     options=_country_filter_options(COUNTRY_OPTIONS),
-                                    value=["Russia"] if "Russia" in COUNTRY_OPTIONS else [],
+                                    value=DEFAULT_COUNTRY,
                                     style={
                                         "display": "flex",
                                         "flexDirection": "column",
@@ -1245,7 +1291,7 @@ def create_layout():
                         [
                             html.H4(
                                 id="global-exports-chart-title",
-                                children="Russia Annual Exports by Crude Stream",
+                                children="All Countries Annual Exports by Crude Stream",
                                 style={
                                     "color": "#fe5000",
                                     "textAlign": "center",
@@ -1255,7 +1301,6 @@ def create_layout():
                             ),
                             dcc.Graph(
                                 id="global-exports-stream-chart",
-                                figure=_build_chart_figure(STREAM_ORDER, ["Russia"]),
                             ),
                         ],
                         className="col-md-9",
@@ -1298,7 +1343,7 @@ def create_layout():
                         ],
                         className="col-md-3",
                         style={
-                            "padding": "25px 20px",
+                            "padding": "25px 10px",
                             "border": "0px solid #dfe3eb",
                             "borderRadius": "6px",
                             "backgroundColor": "#f8f9fb",
@@ -1329,7 +1374,7 @@ def create_layout():
                     dash_table.DataTable(
                         id="global-exports-table",
                         columns=TABLE_COLUMNS,
-                        data=INITIAL_TABLE_DATA,
+                        data=[],
                         sort_action="native",
                         page_action="none",
                         style_table={
@@ -1399,14 +1444,14 @@ def create_layout():
             ),
         ],
         className="tab-content",
-        style={"padding": "20px", "backgroundColor": "#f8f9fa"},
+        style={"padding": "20px 10px", "backgroundColor": "#f8f9fa"},
     )
 
 
 def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     """Register callbacks for the Global Exports view."""
     
-    @callback(
+    @dash_app.callback(
         Output("global-exports-year-input", "value"),
         Output("global-exports-year-slider", "value"),
         Output("global-exports-year-display", "children"),
@@ -1466,12 +1511,12 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             new_year = current_year_int
         return new_year, new_year, str(new_year)
 
-    @callback(
+    @dash_app.callback(
         Output("global-exports-map", "figure"),
-        Output("global-exports-map-title", "children"),
         Input("current-submenu", "data"),
         Input("global-exports-year-display", "children"),
         Input("global-exports-country-filter", "value"),
+        prevent_initial_call=False,
     )
     def update_map(
         submenu: str,
@@ -1479,71 +1524,170 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         country_value: Optional[Sequence[str]],
     ):
         """Update the map when the submenu or year changes."""
-        if submenu != "global-exports":
-            return _empty_figure(""), no_update
-        year_value = _parse_year_value(year_str)
-        normalized_year = _normalize_year(year_value)
-        if country_value:
-            if "ALL" in country_value:
-                highlight = None
-            else:
-                highlight = country_value[0] if len(country_value) == 1 else None
-        else:
-            highlight = "Russia" if "Russia" in COUNTRY_OPTIONS else None
-        title = f"Crude Exports — {normalized_year or 'N/A'}"
-        return _build_map_figure(normalized_year, highlight), title
+        try:
+            if submenu != "global-exports":
+                return _empty_figure("")
+            year_value = _parse_year_value(year_str)
+            normalized_year = _normalize_year(year_value)
+            
+            # Resolve countries for filtering
+            selected_countries = None
+            highlight = None
+            if country_value is not None:
+                # Handle empty list (when "(All)" is unselected)
+                if isinstance(country_value, list) and len(country_value) == 0:
+                    # Empty selection - show no countries
+                    selected_countries = []
+                else:
+                    # Resolve countries (handles "(All)" option)
+                    resolved_countries = _resolve_countries(country_value, COUNTRY_OPTIONS)
+                    if len(resolved_countries) == 0:
+                        # No countries matched - show empty
+                        selected_countries = []
+                    else:
+                        selected_countries = resolved_countries
+                        # Highlight if exactly one country is selected
+                        if len(resolved_countries) == 1:
+                            highlight = resolved_countries[0]
+            
+            return _build_map_figure(normalized_year, highlight, selected_countries)
+        except Exception as e:
+            print(f"Error in update_map: {e}")
+            import traceback
+            traceback.print_exc()
+            return _empty_figure("Error loading map")
 
-    @callback(
+    @dash_app.callback(
+        Output("global-exports-country-filter", "value", allow_duplicate=True),
+        Input("global-exports-country-filter", "value"),
+        State("global-exports-country-filter", "options"),
+        prevent_initial_call=True,
+    )
+    def sync_country_all(selected: Optional[Sequence[str]], options: Optional[List[Dict[str, str]]]):
+        """Ensure '(All)' behaves as a real select-all for dropdown."""
+        if not options:
+            return selected
+        
+        all_countries = [o["value"] for o in options if o["value"] != "(All)"]
+        if not all_countries:
+            return selected
+        
+        selected = selected or []
+        selected_set = set(selected)
+        has_all = "(All)" in selected_set
+        all_set = set(all_countries)
+        subset_set = selected_set - {"(All)"}
+
+        # Rules (matching requirements exactly):
+        # 1) "(All)" clicked alone => select all countries.
+        # 2) "(All)" + subset:
+        #    - If subset is nearly/all countries (>= len(all_set) - 1), user is deselecting while All was active
+        #      -> drop "(All)" and honor subset
+        #    - Otherwise (subset is smaller), user clicked "(All)" while individual countries were selected
+        #      -> snap to full select-all (requirement: "When the user re-selects 'All': All individual countries must be selected again")
+        # 3) If everything is selected but "(All)" is not present, treat as user unchecked All -> clear all.
+        # 4) If nothing selected, keep empty.
+        # 5) Otherwise, keep the chosen subset.
+        if has_all and not subset_set:
+            # Case 1: "(All)" clicked alone -> select all countries
+            # This can happen when:
+            # - User clicks "(All)" when nothing is selected
+            # - User clicks "(All)" when individual countries are selected (checklist sends only "(All)")
+            normalized = ["(All)"] + all_countries
+        elif has_all and subset_set:
+            # Case 2: "(All)" + some countries selected
+            if len(all_set) > 0 and len(subset_set) >= len(all_set) - 1:
+                # User is deselecting countries while All was active (nearly all still selected)
+                # Drop "(All)" and honor the subset
+                normalized = sorted(subset_set)
+            else:
+                # User clicked "(All)" while individual countries were already selected
+                # Requirement: "When the user re-selects 'All': All individual countries must be selected again"
+                # Snap to full select-all
+                normalized = ["(All)"] + all_countries
+        elif not has_all and subset_set == all_set and all_countries:
+            # Case 3: All countries selected but "(All)" not present -> user unchecked All, clear all
+            normalized = []
+        elif not subset_set:
+            # Case 4: Nothing selected
+            normalized = []
+        else:
+            # Case 5: Some countries selected (not all) -> keep the chosen subset
+            # This handles when user selects individual countries (no "(All)" in selection)
+            # Requirement: "If a user selects any individual country while 'All' is active:
+            # The 'All' option must automatically become unselected."
+            # This is already handled - when user clicks individual country while All is active,
+            # the checklist sends the individual country without "(All)", so we're in Case 5
+            # 
+            # IMPORTANT: When user clicks "(All)" while individual countries are selected,
+            # the checklist sends ["(All)", ...individual countries...], which triggers Case 2.
+            # But if the checklist only sends ["(All)"] (without individual countries), we need to handle it.
+            # However, this should not happen in normal operation.
+            normalized = sorted(subset_set)
+
+        # Avoid loops - only return if value actually changed
+        new_sorted = normalized
+        old_sorted = sorted(selected)
+        if new_sorted == old_sorted:
+            return dash.no_update
+        
+        return new_sorted
+
+    @dash_app.callback(
         Output("global-exports-country-filter", "value", allow_duplicate=True),
         Input("global-exports-map", "clickData"),
         State("global-exports-country-filter", "value"),
+        State("global-exports-country-filter", "options"),
         prevent_initial_call=True,
     )
-    def update_country_from_map(click_data, current_value):
+    def update_country_from_map(click_data, current_value, options):
         """Sync checklist selection when clicking map."""
         if not click_data or not click_data.get("points"):
             return dash.no_update
-        country = click_data["points"][0].get("location") or click_data["points"][0].get("text")
-        if not country:
+        
+        # Get country name from click data
+        point = click_data["points"][0]
+        country = point.get("location") or point.get("text")
+        if not country or not options:
             return dash.no_update
-        if country not in COUNTRY_OPTIONS:
+        
+        # Extract all country options (excluding "(All)")
+        all_country_options = [opt["value"] for opt in options if opt["value"] != "(All)"]
+        if country not in all_country_options:
             return dash.no_update
+        
+        # Get current selection
         current_list = current_value if isinstance(current_value, list) else (
             [current_value] if current_value else []
         )
-        if country in current_list:
-            return dash.no_update
-        # If "ALL" is currently selected, replace it with the clicked country
-        if "ALL" in current_list:
-            return [country]
-        return current_list + [country]
+        
+        # Resolve current selection to actual countries (handle "(All)")
+        all_countries = all_country_options
+        resolved_current = _resolve_countries(current_list, all_countries)
+        selected_set = set(resolved_current)
+        
+        # Toggle the clicked country
+        if country in selected_set:
+            selected_set.remove(country)
+        else:
+            selected_set.add(country)
+        
+        # Build new values
+        if not selected_set:
+            new_values = []
+        elif selected_set == set(all_countries):
+            new_values = ["(All)"] + all_countries
+        else:
+            new_values = sorted(selected_set)
+        
+        return new_values
 
-    @callback(
-        Output("global-exports-country-filter", "value", allow_duplicate=True),
-        Input("global-exports-country-filter", "value"),
-        prevent_initial_call=True,
-    )
-    def normalize_country_filter(value: Optional[Sequence[str]]):
-        """
-        Ensure 'ALL' behaves as a true 'select all':
-        - If 'ALL' is selected, clear any other countries so the value becomes ['ALL'].
-        """
-        if not value:
-            return dash.no_update
-        # If ALL is present with others, reduce to just ALL
-        if isinstance(value, (list, tuple)) and "ALL" in value:
-            if len(value) == 1 and value[0] == "ALL":
-                return dash.no_update
-            return ["ALL"]
-        return dash.no_update
-
-    @callback(
+    @dash_app.callback(
         Output("global-exports-stream-filter", "options"),
         Output("global-exports-stream-filter", "value", allow_duplicate=True),
         Input("current-submenu", "data"),
         Input("global-exports-country-filter", "value"),
         State("global-exports-stream-filter", "value"),
-        # Run on initial load, but still allow duplicate output updates safely.
         prevent_initial_call="initial_duplicate",
     )
     def sync_stream_filter_options(
@@ -1553,57 +1697,215 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     ):
         """
         Keep the crude stream filter in sync with the selected countries.
-
-        - When countries change, recompute the list of available streams for those countries.
-        - All available streams are selected by default (so the chart and table show full data).
-        - If the current selection is still valid, preserve it.
+        Always ensures all available streams are checked by default.
         """
-        if submenu != "global-exports":
+        try:
+            if submenu != "global-exports":
+                return no_update, no_update
+
+            # Handle empty country selection (when "(All)" is unselected)
+            if countries is not None and isinstance(countries, list) and len(countries) == 0:
+                # No countries selected - return empty options and empty value
+                return _stream_filter_options([]), []
+
+            # Get available streams for selected countries
+            available_streams = _streams_for_countries(countries)
+            
+            # If no streams available (shouldn't happen unless data is empty or countries have no streams)
+            if not available_streams:
+                # Only fallback to global list if countries is None (initial load)
+                # If countries is explicitly set but no streams found, return empty
+                if countries is None:
+                    available_streams = STREAM_ORDER if STREAM_ORDER else []
+                else:
+                    # Countries selected but no streams available - return empty
+                    return _stream_filter_options([]), []
+            
+            if not available_streams:
+                return no_update, no_update
+            
+            # Determine new value:
+            # 1. If current_value is None or empty, select all available streams (default)
+            # 2. If current_value has some streams but not all are valid, select all available streams
+            # 3. If current_value has all valid streams, keep current selection
+            # 4. Always default to all streams if selection is invalid or incomplete
+            if current_value and len(current_value) > 0:
+                # Check if all current streams are valid for the new country selection
+                valid_streams = [s for s in current_value if s in available_streams]
+                # If we have valid streams and it's a subset, keep them
+                # But if country filter changed significantly, default to all
+                if len(valid_streams) == len(current_value) and len(valid_streams) == len(available_streams):
+                    # All current streams are valid and we have all available streams - keep selection
+                    new_value = current_value
+                else:
+                    # Some streams are invalid or we don't have all streams - default to all
+                    new_value = available_streams
+            else:
+                # No current selection - default to all available streams
+                new_value = available_streams
+
+            return _stream_filter_options(available_streams), new_value
+        except Exception as e:
+            print(f"Error in sync_stream_filter_options: {e}")
+            import traceback
+            traceback.print_exc()
             return no_update, no_update
 
-        available_streams = _streams_for_countries(countries)
-        if not available_streams:
-            # Fallback to global list
-            available_streams = STREAM_ORDER
-
-        # For each country selection change, always show all available crudes as checked.
-        # This matches the Tableau behaviour: the filter list updates and everything is
-        # selected by default for the chosen countries.
-        new_value = available_streams
-
-        return _stream_filter_options(available_streams), new_value
-
-    @callback(
+    @dash_app.callback(
         Output("global-exports-stream-chart", "figure"),
         Output("global-exports-chart-title", "children"),
         Input("current-submenu", "data"),
         Input("global-exports-stream-filter", "value"),
         Input("global-exports-country-filter", "value"),
+        prevent_initial_call=False,
     )
     def update_chart(
-        submenu: str,
+        submenu: Optional[str],
         streams: Optional[Sequence[str]],
         countries: Optional[Sequence[str]],
     ):
         """Update stacked area chart."""
-        if submenu != "global-exports":
-            return _empty_figure(""), no_update
-        fig = _build_chart_figure(streams, countries)
-        # Update title based on selected countries
-        if countries:
-            if "ALL" in countries:
+        # Default values
+        default_title = "All Countries Annual Exports by Crude Stream"
+        default_fig = _empty_figure("Loading chart...")
+        
+        try:
+            # Check if we're on the right submenu
+            if submenu != "global-exports":
+                return default_fig, default_title
+            
+            # Handle streams - default to all streams if empty
+            if not streams:
+                streams = STREAM_ORDER if STREAM_ORDER else []
+            if isinstance(streams, list) and len(streams) == 0:
+                streams = STREAM_ORDER if STREAM_ORDER else []
+            
+            # Resolve countries (handle "(All)" option and empty selection)
+            # Get available countries from chart data for proper resolution
+            resolved_countries = None
+            try:
+                # Get countries available in chart data
+                if not CHART_DF.empty and "country" in CHART_DF.columns:
+                    available_countries_in_chart = sorted(
+                        [c for c in CHART_DF["country"].str.strip().unique() if pd.notna(c)]
+                    )
+                else:
+                    available_countries_in_chart = COUNTRY_OPTIONS if COUNTRY_OPTIONS else []
+                
+                # Handle country selection
+                if countries is None:
+                    # None means default - show all countries (for initial load)
+                    resolved_countries = None
+                elif isinstance(countries, list) and len(countries) == 0:
+                    # Empty list means "(All)" was unselected - show no countries
+                    resolved_countries = []
+                elif countries and len(countries) > 0:
+                    # Check if "(All)" is in the selection first (before resolving)
+                    # This is important because when "(All)" is selected, we want to show all countries
+                    if "(All)" in countries:
+                        # "(All)" was selected - show all countries (optimization)
+                        # Pass None to _build_chart_figure to skip country filtering
+                        resolved_countries = None
+                    else:
+                        # Countries selected (without "(All)") - resolve them
+                        if available_countries_in_chart:
+                            resolved = _resolve_countries(countries, available_countries_in_chart)
+                            # _resolve_countries always returns a list (never None)
+                            # If resolved is empty list, it means no countries matched
+                            if len(resolved) == 0:
+                                # No countries match the selection, show empty (no data)
+                                resolved_countries = []
+                            else:
+                                # We have resolved countries - use them
+                                resolved_countries = resolved
+                        else:
+                            # No available countries in chart data - show empty
+                            resolved_countries = []
+            except Exception as resolve_error:
+                print(f"Error resolving countries for chart: {resolve_error}")
+                import traceback
+                traceback.print_exc()
+                resolved_countries = None
+            
+            # Build the figure
+            try:
+                if not streams or (isinstance(streams, list) and len(streams) == 0):
+                    fig = _empty_figure("No streams selected")
+                else:
+                    # Pass resolved countries (or None if no selection)
+                    # None = show all countries, [] = show no countries, [list] = show specific countries
+                    fig = _build_chart_figure(streams, resolved_countries)
+                    # Validate figure
+                    if not isinstance(fig, go.Figure):
+                        fig = _empty_figure("Invalid chart data")
+            except Exception as fig_error:
+                print(f"Error building chart figure: {fig_error}")
+                import traceback
+                traceback.print_exc()
+                fig = _empty_figure("Error loading chart data")
+            
+            # Generate title
+            title = default_title
+            try:
+                if countries and COUNTRY_OPTIONS and len(COUNTRY_OPTIONS) > 0:
+                    # Use resolved_countries from above if available, otherwise resolve again for title
+                    if resolved_countries is not None and len(resolved_countries) > 0:
+                        title_countries = resolved_countries
+                    elif resolved_countries is None:
+                        # All countries selected - use all for title
+                        title_countries = COUNTRY_OPTIONS
+                    else:
+                        # Resolve for title generation
+                        title_countries = _resolve_countries(countries, COUNTRY_OPTIONS)
+                    
+                    if len(title_countries) == 1:
+                        title = f"{title_countries[0]} Annual Exports by Crude Stream"
+                    elif len(title_countries) > 1:
+                        if len(title_countries) <= 3:
+                            country_names = ", ".join(title_countries)
+                        else:
+                            country_names = ", ".join(title_countries[:3]) + f" and {len(title_countries) - 3} more"
+                        title = f"{country_names} Annual Exports by Crude Stream"
+            except Exception as title_error:
+                print(f"Error generating title: {title_error}")
+                import traceback
+                traceback.print_exc()
+                title = default_title
+            
+            # Final validation - ensure we always return valid types
+            if not isinstance(fig, go.Figure):
+                print(f"WARNING: fig is not go.Figure, type={type(fig)}")
+                fig = default_fig
+            if not isinstance(title, str) or not title:
+                print(f"WARNING: title is not string, type={type(title)}, value={title}")
+                title = default_title
+            
+            # Double-check return values
+            if not isinstance(fig, go.Figure):
+                fig = _empty_figure("Error: Invalid figure type")
+            if not isinstance(title, str):
                 title = "All Countries Annual Exports by Crude Stream"
-            elif len(countries) == 1:
-                title = f"{countries[0]} Annual Exports by Crude Stream"
-            else:
-                # Join country names with commas
-                country_names = ", ".join(countries)
-                title = f"{country_names} Annual Exports by Crude Stream"
-        else:
-            title = "Russia Annual Exports by Crude Stream"
-        return fig, title
+            
+            return fig, title
+            
+        except Exception as e:
+            print(f"CRITICAL ERROR in update_chart callback: {e}")
+            import traceback
+            traceback.print_exc()
+            # Always return valid values - this is critical
+            try:
+                error_fig = _empty_figure("Error loading chart")
+                if not isinstance(error_fig, go.Figure):
+                    error_fig = go.Figure()
+                return error_fig, "All Countries Annual Exports by Crude Stream"
+            except Exception as final_error:
+                print(f"CRITICAL: Even error handling failed: {final_error}")
+                # Last resort - return minimal valid figure
+                minimal_fig = go.Figure()
+                minimal_fig.add_annotation(text="Error loading chart", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+                return minimal_fig, "All Countries Annual Exports by Crude Stream"
 
-    @callback(
+    @dash_app.callback(
         Output("global-exports-stream-filter", "value", allow_duplicate=True),
         Input({"type": "stream-isolate-button", "stream": ALL}, "n_clicks"),
         State("global-exports-stream-filter", "value"),
@@ -1627,38 +1929,90 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             return STREAM_ORDER
         return [stream_name]
 
-    @callback(
+    @dash_app.callback(
         Output("global-exports-table", "data"),
         Input("current-submenu", "data"),
         Input("global-exports-year-display", "children"),
         Input("global-exports-stream-filter", "value"),
+        Input("global-exports-country-filter", "value"),
+        prevent_initial_call=False,
     )
     def update_table(
         submenu: str,
         year_str: Optional[str],
         stream_filter_state: Optional[Sequence[str]],
+        country_filter: Optional[Sequence[str]],
     ):
-        """Update table data."""
-        if submenu != "global-exports":
+        """
+        Update table data.
+        Table is filtered by both country filter and stream filter.
+        """
+        try:
+            if submenu != "global-exports":
+                return []
+            
+            year_value = _parse_year_value(year_str)
+            
+            # Resolve country filter to actual countries
+            countries_to_filter = None
+            if country_filter is not None:
+                # Handle empty list (when "(All)" is unselected)
+                if isinstance(country_filter, list) and len(country_filter) == 0:
+                    # Empty selection - show no countries
+                    countries_to_filter = []
+                else:
+                    try:
+                        resolved = _resolve_countries(country_filter, COUNTRY_OPTIONS)
+                        # When "(All)" is selected, resolved will be a list of all countries
+                        # Pass None to _filter_table_data to show all countries (more efficient)
+                        if "(All)" in country_filter:
+                            # "(All)" selected - pass None to show all countries
+                            countries_to_filter = None
+                        elif resolved and len(resolved) > 0:
+                            # Specific countries selected - use the resolved list
+                            countries_to_filter = resolved
+                        else:
+                            # No countries matched - show empty
+                            countries_to_filter = []
+                    except Exception as e:
+                        print(f"Error resolving countries: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        countries_to_filter = None
+            
+            # Filter by countries
+            try:
+                filtered = _filter_table_data(year_value, countries_to_filter)
+            except Exception as e:
+                print(f"Error filtering table data: {e}")
+                filtered = TABLE_DF.copy() if not TABLE_DF.empty else pd.DataFrame()
+            
+            # When streams are filtered (not all streams selected), filter by selected streams
+            if stream_filter_state:
+                try:
+                    # Get all available streams from the table data (not just STREAM_ORDER)
+                    # to properly detect if all streams are selected
+                    all_available_streams = set(TABLE_DF["crude"].unique()) if not TABLE_DF.empty else set()
+                    # Check if all streams are selected (default state)
+                    all_streams_selected = (
+                        set(stream_filter_state) == all_available_streams
+                        if isinstance(stream_filter_state, (list, tuple)) and all_available_streams
+                        else False
+                    )
+                    # Only filter if not all streams are selected (user has filtered)
+                    if not all_streams_selected:
+                        filtered = filtered[filtered["crude"].isin(stream_filter_state)]
+                except Exception as e:
+                    print(f"Error filtering by streams: {e}")
+            
+            return _prepare_table_records(filtered)
+        except Exception as e:
+            print(f"Error in update_table callback: {e}")
+            import traceback
+            traceback.print_exc()
             return []
-        year_value = _parse_year_value(year_str)
-        # By default, show all countries (no country filter)
-        filtered = _filter_table_data(year_value, None)
-        # When streams are filtered (not all streams selected), filter by selected streams
-        # This automatically shows only countries that have data for those streams
-        if stream_filter_state:
-            # Check if all streams are selected (default state)
-            all_streams_selected = (
-                set(stream_filter_state) == set(STREAM_ORDER)
-                if isinstance(stream_filter_state, (list, tuple))
-                else False
-            )
-            # Only filter if not all streams are selected (user has filtered)
-            if not all_streams_selected:
-                filtered = filtered[filtered["crude"].isin(stream_filter_state)]
-        return _prepare_table_records(filtered)
 
-    @callback(
+    @dash_app.callback(
         Output("global-exports-play-direction", "data"),
         Input("global-exports-year-play", "n_clicks"),
         Input("global-exports-year-stop", "n_clicks"),
@@ -1677,7 +2031,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             return "reverse"
         return "stop"
 
-    @callback(
+    @dash_app.callback(
         Output("global-exports-year-interval", "disabled"),
         Input("global-exports-play-direction", "data"),
     )
@@ -1685,7 +2039,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         """Enable or disable animation interval."""
         return direction == "stop"
 
-    @callback(
+    @dash_app.callback(
         Output("global-exports-year-slider", "value", allow_duplicate=True),
         Output("global-exports-year-input", "value", allow_duplicate=True),
         Output("global-exports-year-display", "children", allow_duplicate=True),
