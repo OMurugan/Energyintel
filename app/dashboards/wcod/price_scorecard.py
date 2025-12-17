@@ -897,20 +897,17 @@ def register_callbacks(dash_app, server):
                 function enhanceTable() {
                     const tableEl = document.getElementById('price-scorecard-table');
                     if (!tableEl) {
-                        console.log('Price scorecard: Table element not found');
                         return;
                     }
                     
                     const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
                     if (!spreadsheet) {
-                        console.log('Price scorecard: Spreadsheet container not found');
                         return;
                     }
                     
                     // Check if headers exist
                     const headers = spreadsheet.querySelectorAll('th[data-dash-column]');
                     if (headers.length === 0) {
-                        console.log('Price scorecard: No headers found yet');
                         return;
                     }
                     
@@ -929,9 +926,6 @@ def register_callbacks(dash_app, server):
                     const signatureChanged = window.priceScorecardState.lastTableSignature !== tableSignature;
                     if (signatureChanged) {
                         // Table was re-rendered, reset enhanced flag and clear handlers
-                        console.log('Price scorecard: Table structure changed, resetting enhancement');
-                        console.log('Price scorecard: Old signature:', window.priceScorecardState.lastTableSignature);
-                        console.log('Price scorecard: New signature:', tableSignature);
                         spreadsheet.dataset.priceScorecardEnhanced = 'false';
                         
                         // Remove old click handler
@@ -951,14 +945,11 @@ def register_callbacks(dash_app, server):
                     
                     // Skip if already enhanced (but only if signature hasn't changed)
                     if (spreadsheet.dataset.priceScorecardEnhanced === 'true' && !signatureChanged) {
-                        console.log('Price scorecard: Table already enhanced, skipping');
                         return;
                     }
                     
                     // If signature changed or not enhanced, proceed with enhancement
-                    console.log('Price scorecard: Proceeding with enhancement (enhanced:', spreadsheet.dataset.priceScorecardEnhanced, ', signatureChanged:', signatureChanged, ')');
                     
-                    console.log('Price scorecard: Enhancing table');
                     spreadsheet.dataset.priceScorecardEnhanced = 'true';
                     
                     // Remove any existing click handler to avoid duplicates
@@ -998,7 +989,6 @@ def register_callbacks(dash_app, server):
                             
                             // Get header text for debugging
                             const headerText = header.textContent.trim();
-                            console.log('Price scorecard: Header clicked, columnId:', columnId, ', text:', headerText);
                             
                             // Skip Year and Month columns
                             if (columnId === 'Year' || columnId === 'Month') {
@@ -1022,13 +1012,11 @@ def register_callbacks(dash_app, server):
                             
                             if (thead) {
                                 headerRows = Array.from(thead.querySelectorAll('tr'));
-                                console.log('Price scorecard: Found thead with', headerRows.length, 'rows');
                             }
                             
                             // If no rows found in thead, try in spreadsheet
                             if (headerRows.length === 0 && clickedSpreadsheet) {
                                 headerRows = Array.from(clickedSpreadsheet.querySelectorAll('thead tr'));
-                                console.log('Price scorecard: Found', headerRows.length, 'header rows in spreadsheet');
                             }
                             
                             // If still no rows, try finding any tr containing headers
@@ -1037,7 +1025,6 @@ def register_callbacks(dash_app, server):
                                 headerRows = Array.from(allTrs).filter(tr => {
                                     return tr.querySelector('th[data-dash-column]') !== null;
                                 });
-                                console.log('Price scorecard: Found', headerRows.length, 'rows with headers');
                             }
                             
                             // Filter out rows that only contain Year/Month headers - we only want data column header rows
@@ -1051,13 +1038,6 @@ def register_callbacks(dash_app, server):
                             
                             if (headerRow && headerRows.length > 0) {
                                 headerIndex = headerRows.indexOf(headerRow);
-                                console.log('Price scorecard: Header row found at index:', headerIndex);
-                                
-                                // Debug: log all header rows to verify structure
-                                console.log('Price scorecard: All header rows (data columns only):', headerRows.map((r, i) => {
-                                    const firstDataHeader = r.querySelector('th[data-dash-column^="col_"]');
-                                    return `Row ${i}: ${firstDataHeader ? firstDataHeader.getAttribute('data-dash-column') : 'no data column'}`;
-                                }));
                             } else if (headerRow) {
                                 // If headerRow is not in the filtered list, it might be a Year/Month row
                                 // Try to find it in the original thead rows
@@ -1070,12 +1050,9 @@ def register_callbacks(dash_app, server):
                                     headerIndex = allDataRows.indexOf(headerRow);
                                     headerRows = allDataRows;
                                     totalHeaderRows = headerRows.length;
-                                    console.log('Price scorecard: Found header row in data rows at index:', headerIndex);
                                 }
                             }
                             
-                            console.log('Price scorecard: Final - Header index:', headerIndex, 'of', totalHeaderRows, 'total rows');
-                            console.log('Price scorecard: Bottom header index should be:', totalHeaderRows - 1);
                             
                             // Create a unique key for this selection (columnId + headerIndex)
                             const selectionKey = columnId + '_' + headerIndex;
@@ -1083,14 +1060,12 @@ def register_callbacks(dash_app, server):
                             // Check if this exact header level is already selected
                             if (window.priceScorecardState && window.priceScorecardState.selectedColumnId === selectionKey) {
                                 // Deselect column
-                                console.log('Price scorecard: Deselecting column');
                                 clearAllColumnSelections(clickedSpreadsheet);
                                 if (window.priceScorecardState) {
                                     window.priceScorecardState.selectedColumnId = null;
                                 }
                             } else {
                                 // Select new column
-                                console.log('Price scorecard: Selecting column:', columnId, 'at header level:', headerIndex);
                                 clearAllColumnSelections(clickedSpreadsheet);
                                 clearAllRowSelections(clickedSpreadsheet);
                                 
@@ -1101,27 +1076,22 @@ def register_callbacks(dash_app, server):
                                 
                                 // Only highlight headers at the SAME header level (headerIndex) for this column
                                 const allHeadersForColumn = clickedSpreadsheet.querySelectorAll(`th[data-dash-column="${columnId}"]`);
-                                console.log('Price scorecard: Found', allHeadersForColumn.length, 'headers for column');
                                 
                                 // Check if this is the bottom-most header level
                                 const isBottomHeader = (headerIndex >= 0 && totalHeaderRows > 0 && headerIndex === totalHeaderRows - 1);
                                 // Check if this is the top-most header level (index 0)
                                 const isTopHeader = (headerIndex === 0);
                                 
-                                console.log('Price scorecard: Is bottom header?', isBottomHeader, ', Is top header?', isTopHeader, '(headerIndex:', headerIndex, ', totalHeaderRows:', totalHeaderRows, ')');
                                 
                                 if (isBottomHeader || isTopHeader) {
                                     // Bottom or top header clicked - highlight ALL header levels and data cells
                                     if (isTopHeader) {
-                                        console.log('Price scorecard: ✓ TOP HEADER CLICKED - Finding all columns under this spanning header');
                                         
                                         // For top header, find all columns that share the same top-level header text
                                         const topHeaderText = header.textContent.trim();
-                                        console.log('Price scorecard: Top header text:', topHeaderText);
                                         
                                         // Check if header has colspan (spans multiple columns)
                                         const colspan = header.getAttribute('colspan') || header.colSpan;
-                                        console.log('Price scorecard: Header colspan:', colspan);
                                         
                                         // Find all headers in the top row (index 0) with the same text
                                         const topRow = headerRows[0];
@@ -1132,7 +1102,6 @@ def register_callbacks(dash_app, server):
                                             if (colspan && parseInt(colspan) > 1) {
                                                 // Header spans multiple columns - find all columns under it
                                                 const spanCount = parseInt(colspan);
-                                                console.log('Price scorecard: Header spans', spanCount, 'columns');
                                                 
                                                 // Get all cells in the top row (including merged cells)
                                                 const allTopRowCells = Array.from(topRow.querySelectorAll('th'));
@@ -1146,14 +1115,12 @@ def register_callbacks(dash_app, server):
                                                     }
                                                 }
                                                 
-                                                console.log('Price scorecard: Clicked header cell index:', clickedCellIndex);
                                                 
                                                 // Get all bottom row headers (index 3) to find actual column IDs
                                                 const bottomRow = headerRows[headerRows.length - 1];
                                                 if (bottomRow) {
                                                     // Get ALL cells from bottom row (including any merged cells)
                                                     const allBottomRowCells = Array.from(bottomRow.querySelectorAll('th'));
-                                                    console.log('Price scorecard: Found', allBottomRowCells.length, 'total bottom row cells');
                                                     
                                                     // Calculate the data column start position by counting colspan of all previous headers
                                                     // This accounts for headers like "Africa" (colspan=14) that come before "Asia"
@@ -1173,7 +1140,6 @@ def register_callbacks(dash_app, server):
                                                         topRowDataStart += cellColspan;
                                                     }
                                                     
-                                                    console.log('Price scorecard: Top row data start:', topRowDataStart, '(clickedCellIndex:', clickedCellIndex, ')');
                                                     
                                                     // Now map to bottom row: count Year/Month in bottom row, then get data columns
                                                     let bottomRowDataColIndex = 0;
@@ -1199,7 +1165,6 @@ def register_callbacks(dash_app, server):
                                                                 const cellColspan = parseInt(bottomCell.getAttribute('colspan') || bottomCell.colSpan || '1');
                                                                 // For merged cells, we need to get the actual column IDs from data cells
                                                                 // This is a fallback - try to find columns by position
-                                                                console.log('Price scorecard: Bottom cell at index', i, 'has no data-dash-column, colspan:', cellColspan);
                                                             }
                                                         }
                                                         
@@ -1207,26 +1172,20 @@ def register_callbacks(dash_app, server):
                                                         bottomRowDataColIndex++;
                                                     }
                                                     
-                                                    console.log('Price scorecard: Found', columnIds.size, 'columns within span (expected', spanCount, ')');
                                                     
                                                     // If we still don't have enough columns, use alternative method
                                                     // Get column IDs in the order they appear in the first data row
                                                     if (columnIds.size < spanCount) {
-                                                        console.log('Price scorecard: Not enough columns found (', columnIds.size, 'of', spanCount, '), trying alternative method');
                                                         
                                                         // Get the first data row - try multiple selectors
-                                                        console.log('Price scorecard: Trying to find first data row...');
                                                         let firstDataRow = clickedSpreadsheet.querySelector('tbody tr');
                                                         let allFirstRowCells = [];
-                                                        console.log('Price scorecard: tbody tr found?', !!firstDataRow);
                                                         if (!firstDataRow) {
                                                             firstDataRow = clickedSpreadsheet.querySelector('tr[data-dash-row]');
-                                                            console.log('Price scorecard: tr[data-dash-row] found?', !!firstDataRow);
                                                         }
                                                         if (!firstDataRow) {
                                                             // Try to find any row with data cells
                                                             const allRows = clickedSpreadsheet.querySelectorAll('tr');
-                                                            console.log('Price scorecard: Found', allRows.length, 'total rows');
                                                             for (let row of allRows) {
                                                                 // Skip header rows (rows with th elements)
                                                                 if (row.querySelector('th')) {
@@ -1236,7 +1195,6 @@ def register_callbacks(dash_app, server):
                                                                 const dataCells = row.querySelectorAll('td[data-dash-column^="col_"]');
                                                                 if (dataCells.length > 0) {
                                                                     firstDataRow = row;
-                                                                    console.log('Price scorecard: Found data row with', dataCells.length, 'data cells');
                                                                     break;
                                                                 }
                                                             }
@@ -1245,18 +1203,15 @@ def register_callbacks(dash_app, server):
                                                         if (firstDataRow) {
                                                             // Get all cells from the first row in order (including Year/Month)
                                                             allFirstRowCells = Array.from(firstDataRow.querySelectorAll('td'));
-                                                            console.log('Price scorecard: Found', allFirstRowCells.length, 'cells in first data row');
                                                             
                                                             // If no cells found with td, try a different approach - get all cells including th
                                                             if (allFirstRowCells.length === 0) {
-                                                                console.log('Price scorecard: No td cells found, trying alternative approach');
                                                                 // Try getting cells from the table body directly
                                                                 const tbody = clickedSpreadsheet.querySelector('tbody');
                                                                 if (tbody) {
                                                                     const firstTbodyRow = tbody.querySelector('tr');
                                                                     if (firstTbodyRow) {
                                                                         const tbodyCells = Array.from(firstTbodyRow.querySelectorAll('td, th'));
-                                                                        console.log('Price scorecard: Found', tbodyCells.length, 'cells in first tbody row');
                                                                         allFirstRowCells.push(...tbodyCells);
                                                                     }
                                                                 }
@@ -1270,7 +1225,6 @@ def register_callbacks(dash_app, server):
                                                                         const rowCells = Array.from(row.querySelectorAll('td'));
                                                                         if (rowCells.length > 0) {
                                                                             allFirstRowCells.push(...rowCells);
-                                                                            console.log('Price scorecard: Found', rowCells.length, 'cells in alternative row');
                                                                             break;
                                                                         }
                                                                     }
@@ -1286,13 +1240,11 @@ def register_callbacks(dash_app, server):
                                                                 }
                                                             });
                                                             
-                                                            console.log('Price scorecard: Ordered column IDs from first row:', orderedColIds.length, '(first 10:', orderedColIds.slice(0, 10), ')');
                                                             
                                                             // Get columns starting from topRowDataStart, spanning spanCount columns
                                                             const startIndex = topRowDataStart;
                                                             const endIndex = Math.min(startIndex + spanCount, orderedColIds.length);
                                                             
-                                                            console.log('Price scorecard: Getting columns from index', startIndex, 'to', endIndex, 'from', orderedColIds.length, 'total columns');
                                                             
                                                             // Clear and rebuild columnIds with the correct range
                                                             columnIds.clear();
@@ -1300,14 +1252,11 @@ def register_callbacks(dash_app, server):
                                                                 columnIds.add(orderedColIds[i]);
                                                             }
                                                             
-                                                            console.log('Price scorecard: After alternative method, found', columnIds.size, 'columns:', Array.from(columnIds));
                                                             
                                                             // If still not enough columns, we'll fall through to all data cells method
                                                             if (columnIds.size >= spanCount) {
                                                                 // Enough columns found, we're done
-                                                                console.log('Price scorecard: Sufficient columns found from first row method');
                                                             } else {
-                                                                console.log('Price scorecard: Still not enough columns (', columnIds.size, 'of', spanCount, '), will try all data cells method');
                                                             }
                                                         }
                                                         
@@ -1315,7 +1264,6 @@ def register_callbacks(dash_app, server):
                                                         // Key insight: "Africa" spans 14 columns starting from the first data column (index 0)
                                                         // We need to get all columns in visual order from the first row, then fill in any missing ones
                                                         if (columnIds.size < spanCount) {
-                                                            console.log('Price scorecard: Using comprehensive method to get all columns in visual order');
                                                             
                                                             // Step 1: Get all unique column IDs from all data cells
                                                             const allDataCells = clickedSpreadsheet.querySelectorAll('td[data-dash-column^="col_"]');
@@ -1324,7 +1272,6 @@ def register_callbacks(dash_app, server):
                                                                 const colId = cell.getAttribute('data-dash-column');
                                                                 if (colId) allUniqueColIds.add(colId);
                                                             });
-                                                            console.log('Price scorecard: Found', allUniqueColIds.size, 'unique column IDs in table');
                                                             
                                                             // Step 2: Build complete position map by scanning all data rows
                                                             // Then extract the range from topRowDataStart to topRowDataStart + spanCount
@@ -1332,11 +1279,9 @@ def register_callbacks(dash_app, server):
                                                             
                                                             // Calculate the maximum position we need
                                                             const maxPositionNeeded = topRowDataStart + spanCount;
-                                                            console.log('Price scorecard: Need columns from position', topRowDataStart, 'to', maxPositionNeeded - 1, '(spanCount:', spanCount, ')');
                                                             
                                                             // Get all data rows
                                                             const allDataRows = clickedSpreadsheet.querySelectorAll('tbody tr, tr[data-dash-row]');
-                                                            console.log('Price scorecard: Scanning', allDataRows.length, 'data rows to build complete column map');
                                                             
                                                             // Scan each row to build the position map for ALL positions up to maxPositionNeeded
                                                             allDataRows.forEach((row, rowIndex) => {
@@ -1358,7 +1303,6 @@ def register_callbacks(dash_app, server):
                                                                         if (colId && colId.startsWith('col_')) {
                                                                             columnPositionMap.set(dataColIndex, colId);
                                                                             if (dataColIndex >= topRowDataStart && dataColIndex < maxPositionNeeded) {
-                                                                                console.log('Price scorecard: Mapped position', dataColIndex, 'to column', colId, '(from row', rowIndex, ')');
                                                                             }
                                                                         }
                                                                     }
@@ -1379,15 +1323,12 @@ def register_callbacks(dash_app, server):
                                                                 if (columnPositionMap.has(i)) {
                                                                     orderedColIds.push(columnPositionMap.get(i));
                                                                 } else {
-                                                                    console.log('Price scorecard: WARNING - No column found for position', i);
                                                                 }
                                                             }
                                                             
-                                                            console.log('Price scorecard: Built column map for range', topRowDataStart, 'to', maxPositionNeeded - 1, ', got', orderedColIds.length, 'columns:', orderedColIds);
                                                             
                                                             // orderedColIds already contains the correct range (from topRowDataStart to topRowDataStart + spanCount)
                                                             // Just add all of them to columnIds
-                                                            console.log('Price scorecard: Final column list for header:', orderedColIds);
                                                             
                                                             // Clear and rebuild columnIds with the correct columns
                                                             columnIds.clear();
@@ -1395,7 +1336,6 @@ def register_callbacks(dash_app, server):
                                                                 columnIds.add(colId);
                                                             });
                                                             
-                                                            console.log('Price scorecard: After comprehensive method, found', columnIds.size, 'columns:', Array.from(columnIds));
                                                         }
                                                     }
                                                 }
@@ -1407,7 +1347,6 @@ def register_callbacks(dash_app, server):
                                                     return hText === topHeaderText || h === header || h.contains(header);
                                                 });
                                                 
-                                                console.log('Price scorecard: Found', matchingTopHeaders.length, 'headers with same text');
                                                 
                                                 matchingTopHeaders.forEach(topH => {
                                                     const colId = topH.getAttribute('data-dash-column');
@@ -1420,7 +1359,6 @@ def register_callbacks(dash_app, server):
                                                 }
                                             }
                                             
-                                            console.log('Price scorecard: Column IDs under top header:', Array.from(columnIds), '(', columnIds.size, 'columns)');
                                             
                                             // Highlight only the clicked top header cell itself (not all headers with same column IDs)
                                             header.classList.add('column-selected');
@@ -1429,12 +1367,10 @@ def register_callbacks(dash_app, server):
                                             header.style.fontWeight = 'bold';
                                             
                                             // Highlight data cells for all columns under this top header
-                                            console.log('Price scorecard: Highlighting data cells for', columnIds.size, 'columns');
                                             let totalCellsHighlighted = 0;
                                             columnIds.forEach(colId => {
                                                 // Highlight all data cells for these columns (no border)
                                                 const colCells = clickedSpreadsheet.querySelectorAll(`td[data-dash-column="${colId}"]`);
-                                                console.log('Price scorecard: Found', colCells.length, 'data cells for column', colId);
                                                 colCells.forEach(cell => {
                                                     const cellValue = getCellValue(cell);
                                                     // Highlight all cells, not just numeric ones
@@ -1447,7 +1383,6 @@ def register_callbacks(dash_app, server):
                                                     totalCellsHighlighted++;
                                                 });
                                             });
-                                            console.log('Price scorecard: Total cells highlighted:', totalCellsHighlighted);
                                             
                                             clickedSpreadsheet.classList.add('column-selection-active');
                                             
@@ -1462,7 +1397,6 @@ def register_callbacks(dash_app, server):
                                         }
                                     } else {
                                         // Bottom header clicked - highlight only the bottom header level and data cells
-                                        console.log('Price scorecard: ✓ BOTTOM HEADER CLICKED - Highlighting bottom header level and data cells');
                                         
                                         // Only highlight headers at the bottom level (last row)
                                         const bottomRow = headerRows[headerRows.length - 1];
@@ -1478,10 +1412,8 @@ def register_callbacks(dash_app, server):
                                         
                                         // Highlight all data cells for this column (no border)
                                         const columnCells = clickedSpreadsheet.querySelectorAll(`td[data-dash-column="${columnId}"]`);
-                                        console.log('Price scorecard: Found', columnCells.length, 'cells for column', columnId);
                                         
                                         if (columnCells.length === 0) {
-                                            console.log('Price scorecard: WARNING - No data cells found for column', columnId);
                                         }
                                         
                                         columnCells.forEach(cell => {
@@ -1500,7 +1432,6 @@ def register_callbacks(dash_app, server):
                                         
                                         // Dim other columns
                                         const allDataCells = clickedSpreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Year"]):not([data-dash-column="Month"])');
-                                        console.log('Price scorecard: Dimming', allDataCells.length, 'other data cells');
                                         allDataCells.forEach(cell => {
                                             if (!cell.classList.contains('column-cell-selected')) {
                                                 cell.style.opacity = '0.3';
@@ -1509,14 +1440,12 @@ def register_callbacks(dash_app, server):
                                     }
                                 } else {
                                     // Middle header - highlight the clicked header level and check if it spans columns
-                                    console.log('Price scorecard: ⚠ MIDDLE HEADER (index', headerIndex, 'of', totalHeaderRows, ')');
                                     
                                     // Check if this header spans multiple columns
                                     const headerColspan = header.getAttribute('colspan') || header.colSpan;
                                     const spanCount = headerColspan ? parseInt(headerColspan) : 1;
                                     const headerText = header.textContent.trim();
                                     
-                                    console.log('Price scorecard: Middle header text:', headerText, ', colspan:', spanCount);
                                     
                                     // Get all columns under this middle header
                                     const columnIds = new Set();
@@ -1536,7 +1465,6 @@ def register_callbacks(dash_app, server):
                                                 }
                                             }
                                             
-                                            console.log('Price scorecard: Middle header cell index:', clickedCellIndex);
                                             
                                             // Count data columns before this header in the middle row
                                             // We need to count how many data column positions come before the clicked header
@@ -1556,7 +1484,6 @@ def register_callbacks(dash_app, server):
                                                 columnsBefore += cellColspan;
                                             }
                                             
-                                            console.log('Price scorecard: Middle header - columnsBefore:', columnsBefore, '(clickedCellIndex:', clickedCellIndex, ')');
                                             
                                             // Use comprehensive method to find columns - same as top header
                                             // Get first data row to build column position map
@@ -1581,7 +1508,6 @@ def register_callbacks(dash_app, server):
                                                 const allDataRows = clickedSpreadsheet.querySelectorAll('tbody tr, tr[data-dash-row]');
                                                 const columnPositionMap = new Map();
                                                 
-                                                console.log('Price scorecard: Building column position map for middle header, starting at position', columnsBefore);
                                                 
                                                 // Scan all rows to build position map
                                                 allDataRows.forEach(row => {
@@ -1616,13 +1542,11 @@ def register_callbacks(dash_app, server):
                                                     }
                                                 }
                                                 
-                                                console.log('Price scorecard: Found', columnIds.size, 'columns under middle header (positions', columnsBefore, 'to', columnsBefore + spanCount - 1, ')');
                                             } else {
                                                 // Fallback: use bottom row
                                                 const bottomRow = headerRows[headerRows.length - 1];
                                                 if (bottomRow) {
                                                     const allBottomHeaders = Array.from(bottomRow.querySelectorAll('th[data-dash-column^="col_"]'));
-                                                    console.log('Price scorecard: Fallback - Found', allBottomHeaders.length, 'bottom headers');
                                                     
                                                     for (let i = 0; i < spanCount && (columnsBefore + i) < allBottomHeaders.length; i++) {
                                                         const bottomHeader = allBottomHeaders[columnsBefore + i];
@@ -1636,11 +1560,9 @@ def register_callbacks(dash_app, server):
                                         }
                                     } else {
                                         // Single column - use the clicked column
-                                        console.log('Price scorecard: Single column middle header, using columnId:', columnId);
                                         columnIds.add(columnId);
                                     }
                                     
-                                    console.log('Price scorecard: Final columnIds for middle header:', Array.from(columnIds), '(', columnIds.size, 'columns)');
                                     
                                     // Highlight only the clicked header cell itself (not other headers with same text)
                                     if (headerIndex >= 0 && headerRows.length > 0) {
@@ -1653,17 +1575,14 @@ def register_callbacks(dash_app, server):
                                             header.style.color = '#1b365d';
                                             header.style.fontWeight = 'bold';
                                             
-                                            console.log('Price scorecard: Highlighted clicked header only');
                                         }
                                     }
                                     
                                     // Highlight data cells for all columns under this middle header
                                     if (columnIds.size > 0) {
-                                        console.log('Price scorecard: Highlighting data cells for', columnIds.size, 'columns:', Array.from(columnIds));
                                         let totalCellsHighlighted = 0;
                                         columnIds.forEach(colId => {
                                             const colCells = clickedSpreadsheet.querySelectorAll(`td[data-dash-column="${colId}"]`);
-                                            console.log('Price scorecard: Found', colCells.length, 'data cells for column', colId);
                                             colCells.forEach(cell => {
                                                 // Highlight all cells, not just numeric ones
                                                 cell.classList.add('column-cell-selected');
@@ -1675,10 +1594,8 @@ def register_callbacks(dash_app, server):
                                                 totalCellsHighlighted++;
                                             });
                                         });
-                                        console.log('Price scorecard: Total cells highlighted:', totalCellsHighlighted);
                                         
                                         if (totalCellsHighlighted === 0) {
-                                            console.log('Price scorecard: WARNING - No cells were highlighted! Check if column IDs are correct.');
                                         }
                                         
                                         clickedSpreadsheet.classList.add('column-selection-active');
@@ -1703,7 +1620,6 @@ def register_callbacks(dash_app, server):
                         const yearCell = event.target.closest('td[data-dash-column="Year"]');
                         if (yearCell) {
                             event.stopPropagation();
-                            console.log('Price scorecard: Year cell clicked');
                             
                             // Clear column selections first
                             clearAllColumnSelections(clickedSpreadsheet);
@@ -1714,13 +1630,11 @@ def register_callbacks(dash_app, server):
                             
                             // Get the year value
                             const yearValue = getCellValue(yearCell);
-                            console.log('Price scorecard: Year value:', yearValue);
                             
                             if (yearValue) {
                                 // Check if this year is already selected
                                 if (window.priceScorecardState && window.priceScorecardState.selectedYear === yearValue) {
                                     // Deselect year - clear all row selections
-                                    console.log('Price scorecard: Deselecting year', yearValue);
                                     clearAllRowSelections(clickedSpreadsheet);
                                     if (window.priceScorecardState) {
                                         window.priceScorecardState.selectedYear = null;
@@ -1728,7 +1642,6 @@ def register_callbacks(dash_app, server):
                                     }
                                 } else {
                                     // Clear any previous selection
-                                    console.log('Price scorecard: Selecting year', yearValue);
                                     clearAllRowSelections(clickedSpreadsheet);
                                     
                                     // Find all rows with this year and highlight them
@@ -1789,7 +1702,6 @@ def register_callbacks(dash_app, server):
                                         }
                                     });
                                     
-                                    console.log('Price scorecard: Highlighted', highlightedRows, 'rows with year', yearValue, '(', highlightedCells, 'cells)');
                                     
                                     if (highlightedRows > 0) {
                                         // For Year selection, we don't add row-selection-active class
@@ -1820,7 +1732,6 @@ def register_callbacks(dash_app, server):
                         const monthCell = event.target.closest('td[data-dash-column="Month"]');
                         if (monthCell) {
                             event.stopPropagation();
-                            console.log('Price scorecard: Month cell clicked');
                             
                             // Clear column selections first
                             clearAllColumnSelections(clickedSpreadsheet);
@@ -1959,29 +1870,24 @@ def register_callbacks(dash_app, server):
                                     const allRows = Array.from(tbody.querySelectorAll('tr'));
                                     const rowPosition = allRows.indexOf(row);
                                     rowIndex = rowPosition.toString();
-                                    console.log('Price scorecard: No data-dash-row, using position:', rowIndex);
                                 }
                             }
                             
-                            console.log('Price scorecard: Row index:', rowIndex);
                             
                             // Check if this row is already selected
                             if (window.priceScorecardState && window.priceScorecardState.selectedRowIndex === rowIndex) {
                                 // Deselect row
-                                console.log('Price scorecard: Deselecting row', rowIndex);
                                 clearAllRowSelections(clickedSpreadsheet);
                                 if (window.priceScorecardState) {
                                     window.priceScorecardState.selectedRowIndex = null;
                                 }
                             } else {
                                 // Clear any previous row selection
-                                console.log('Price scorecard: Selecting row', rowIndex);
                                 clearAllRowSelections(clickedSpreadsheet);
                                     
                                 // Get all cells directly from the row element
                                 // This ensures we get ALL cells in the row
                                 const allRowCells = Array.from(row.querySelectorAll('td'));
-                                console.log('Price scorecard: Found', allRowCells.length, 'total cells in row');
                                 
                                 // Highlight Month and data columns, but NOT Year
                                 let highlightedCount = 0;
@@ -2008,18 +1914,15 @@ def register_callbacks(dash_app, server):
                                         // Remove any conflicting styles that might dim the cell
                                         c.style.removeProperty('filter');
                                         highlightedCount++;
-                                        console.log('Price scorecard: Highlighted cell', index, 'colId:', colId || 'none');
                                     }
                                 });
                                 
-                                console.log('Price scorecard: Highlighted', highlightedCount, 'cells in row');
                                 
                                 // Add row-selected class to row element
                                 row.classList.add('row-selected');
                                 
                                 // Dim other rows first
                                 const allDataRows = clickedSpreadsheet.querySelectorAll('tbody tr');
-                                console.log('Price scorecard: Found', allDataRows.length, 'data rows');
                                 allDataRows.forEach((r, rPos) => {
                                     const rIndex = r.getAttribute('data-dash-row') || rPos.toString();
                                     if (rIndex !== rowIndex) {
@@ -2108,7 +2011,6 @@ def register_callbacks(dash_app, server):
                     
                     // Add click handler with capture phase
                     spreadsheet.addEventListener('click', spreadsheet._priceScorecardClickHandler, true);
-                    console.log('Price scorecard: Click handler attached');
                 }
                 
                 // Clear selection on outside click (use a single global handler)
@@ -2133,13 +2035,10 @@ def register_callbacks(dash_app, server):
                 
                 // Reset enhanced flag when container updates (table was re-rendered)
                 // This ensures the table is re-enhanced when switching tabs
-                console.log('Price scorecard: Container updated, checking for table...');
                 const tableEl = document.getElementById('price-scorecard-table');
                 if (tableEl) {
-                    console.log('Price scorecard: Table element found');
                     const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
                     if (spreadsheet) {
-                        console.log('Price scorecard: Spreadsheet container found, resetting enhancement');
                         // Force reset to allow re-enhancement when switching tabs
                         spreadsheet.dataset.priceScorecardEnhanced = 'false';
                         
@@ -2147,7 +2046,6 @@ def register_callbacks(dash_app, server):
                         if (spreadsheet._priceScorecardClickHandler) {
                             spreadsheet.removeEventListener('click', spreadsheet._priceScorecardClickHandler, true);
                             spreadsheet._priceScorecardClickHandler = null;
-                            console.log('Price scorecard: Removed old click handler');
                         }
                         
                         // Clear any existing selections
@@ -2163,51 +2061,40 @@ def register_callbacks(dash_app, server):
                         // Force enhancement to run by calling tryEnhance after a short delay
                         // This ensures the table is enhanced even if the structure detection fails
                         setTimeout(function() {
-                            console.log('Price scorecard: Forcing enhancement after container update');
                             tryEnhance();
                         }, 200);
                     } else {
-                        console.log('Price scorecard: WARNING - Spreadsheet container not found in table');
                     }
                 } else {
-                    console.log('Price scorecard: WARNING - Table element not found');
                 }
                 
                 // Apply enhancements with multiple attempts to ensure table is rendered
                 function tryEnhance() {
-                    console.log('Price scorecard: tryEnhance called');
                     const tableEl = document.getElementById('price-scorecard-table');
                     if (!tableEl) {
-                        console.log('Price scorecard: tryEnhance - Table element not found');
                         return false;
                     }
                     
                     const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
                     if (!spreadsheet) {
-                        console.log('Price scorecard: tryEnhance - Spreadsheet container not found');
                         return false;
                     }
                     
                     // Check if headers exist
                     const headers = spreadsheet.querySelectorAll('th[data-dash-column]');
-                    console.log('Price scorecard: tryEnhance - Found', headers.length, 'headers');
                     if (headers.length === 0) {
-                        console.log('Price scorecard: tryEnhance - No headers found, returning false');
                         return false;
                     }
                     
                     // Check enhancement status
                     const isEnhanced = spreadsheet.dataset.priceScorecardEnhanced === 'true';
-                    console.log('Price scorecard: tryEnhance - Already enhanced?', isEnhanced);
                     
                     // Only enhance if not already enhanced
                     if (!isEnhanced) {
-                        console.log('Price scorecard: tryEnhance - Calling enhanceTable()');
                         enhanceTable();
                         return true;
                     }
                     
-                    console.log('Price scorecard: tryEnhance - Already enhanced, skipping');
                     return true;
                 }
                 
@@ -2271,7 +2158,7 @@ def register_callbacks(dash_app, server):
                 }, 50);
                 
             } catch (error) {
-                console.error('Price scorecard table enhancer error:', error);
+                // Error handled silently
             }
             return window.dash_clientside.no_update;
         }
