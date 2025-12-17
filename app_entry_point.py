@@ -33,7 +33,14 @@ def _redirect_print(*args, **kwargs):
     if target is not None and target not in (sys.stdout, sys.stderr):
         return _orig_print(*args, **kwargs)
 
-    msg = " ".join(str(a) for a in args)
+    # Always print to stdout/stderr first so output is immediately visible
+    _orig_print(*args, **kwargs)
+    
+    # Also log the message for log file capture
+    sep = kwargs.get("sep", " ")
+    end = kwargs.get("end", "")
+    msg = sep.join(str(a) for a in args) + end
+    msg = msg.rstrip("\n")
     lvl = logging.INFO
     lower = msg.lower().lstrip()
     if lower.startswith(("debug", "dbg")):
