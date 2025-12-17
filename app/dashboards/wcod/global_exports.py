@@ -775,58 +775,49 @@ def _build_chart_figure(
     fallback_idx = 0
     years_sorted = YEAR_AXIS_FULL
     
-    # Get unique countries - use target_countries to ensure all selected countries are included
-    # target_countries already contains matched country names from data, so use it directly
-    if target_countries:
-        unique_countries = target_countries.copy()
-        # Also add any countries from the filtered data that might not be in target_countries
-        # (this handles edge cases where country names in data don't match exactly)
-        if "country" in df.columns and not df.empty:
-            for country in df["country"].unique():
-                country_str = str(country).strip()
-                # Check if this country is already in unique_countries (case-insensitive)
-                if not any(c.lower().strip() == country_str.lower() for c in unique_countries):
-                    unique_countries.append(country_str)
-        elif "country" in agg.columns and not agg.empty:
-            for country in agg["country"].unique():
-                country_str = str(country).strip()
-                if not any(c.lower().strip() == country_str.lower() for c in unique_countries):
-                    unique_countries.append(country_str)
-        unique_countries = sorted(set(unique_countries))
+    # Get unique countries - OPTIMIZATION: Only include countries that actually have data
+    # This significantly reduces the number of combinations when "All" is selected
+    if not agg.empty and "country" in agg.columns:
+        # Only use countries that have data (filter out zero-only combinations early)
+        countries_with_data = sorted(agg[agg["value"] > 0]["country"].unique().tolist())
+        if target_countries:
+            # If specific countries were selected, ensure they're included even if no data
+            # But prioritize countries with actual data
+            unique_countries = sorted(set(countries_with_data + target_countries))
+        else:
+            # When "All" is selected, only show countries that have data (major optimization)
+            unique_countries = countries_with_data
+    elif target_countries:
+        unique_countries = sorted(target_countries)
     elif "country" in df.columns and not df.empty:
         unique_countries = sorted(df["country"].unique().tolist())
-    elif "country" in agg.columns and not agg.empty:
-        unique_countries = sorted(agg["country"].unique().tolist())
     else:
         unique_countries = [country_label]
     
-    # Create a complete index for all year-stream-country combinations
-    # Use unique_countries to ensure all selected countries are included
+    # Early exit if no countries with data
+    if not unique_countries:
+        return _empty_figure("No data for selected countries")
+    
+    # OPTIMIZATION: Pre-filter agg to only countries with data before creating complete index
+    # This reduces the size of the complete_index significantly
+    if not agg.empty and "country" in agg.columns:
+        agg_filtered = agg[agg["country"].isin(unique_countries)].copy()
+    else:
+        agg_filtered = agg.copy()
+    
+    # Create a complete index only for countries that have data
+    # This is much smaller than including all countries
     complete_index = pd.MultiIndex.from_product(
         (YEAR_AXIS_FULL, available_streams, unique_countries),
         names=["year", "stream", "country"]
     )
     
-    # Prepare agg for reindexing - ensure country column exists and has correct names
-    if not agg.empty:
-        if "country" in agg.columns:
-            # Ensure country names in agg match unique_countries (case-insensitive)
-            country_name_map = {}
-            for country in agg["country"].unique():
-                country_lower = str(country).lower().strip()
-                for unique_country in unique_countries:
-                    if country_lower == unique_country.lower().strip():
-                        country_name_map[country] = unique_country
-                        break
-                # If no match, keep original
-                if country not in country_name_map:
-                    country_name_map[country] = country
-            agg["country"] = agg["country"].map(country_name_map).fillna(agg["country"])
-        
+    # Prepare agg for reindexing - OPTIMIZED: work with filtered data
+    if not agg_filtered.empty:
         # Convert year to string for reindexing
-        agg["year"] = agg["year"].astype(str)
+        agg_filtered["year"] = agg_filtered["year"].astype(str)
         agg_complete = (
-            agg.set_index(["year", "stream", "country"])
+            agg_filtered.set_index(["year", "stream", "country"])
             .reindex(complete_index, fill_value=0)
             .reset_index()
         )
@@ -835,8 +826,21 @@ def _build_chart_figure(
         agg_complete = pd.DataFrame(list(complete_index), columns=["year", "stream", "country"])
         agg_complete["value"] = 0
     
+    # OPTIMIZATION: Pre-filter to only non-zero combinations before the loop
+    # This avoids processing thousands of zero-value combinations
+    non_zero_mask = agg_complete["value"] > 0
+    if non_zero_mask.any():
+        agg_non_zero = agg_complete[non_zero_mask].copy()
+        # Get unique combinations that have data
+        valid_combinations = agg_non_zero[["stream", "country"]].drop_duplicates()
+    else:
+        valid_combinations = pd.DataFrame(columns=["stream", "country"])
+    
+    # OPTIMIZATION: Pre-create year array as string to avoid repeated conversion
+    years_sorted_str = [str(y) for y in years_sorted]
+    
     # Create a separate bar series for each country-stream combination
-    # This ensures each combination stacks separately in the chart
+    # OPTIMIZATION: Only iterate through combinations that have data
     for stream in available_streams:
         # Get color for this stream
         stream_color = STREAM_COLOR_MAP.get(stream)
@@ -844,39 +848,30 @@ def _build_chart_figure(
             stream_color = FALLBACK_COLORS[fallback_idx % len(FALLBACK_COLORS)]
             fallback_idx += 1
         
-        # Create a series for each country with this stream
-        for country in unique_countries:
-            country_stream_df = agg_complete[
-                (agg_complete["stream"] == stream) & 
-                (agg_complete["country"] == country)
-            ].copy()
+        # Get countries for this stream that have data
+        stream_countries = valid_combinations[valid_combinations["stream"] == stream]["country"].unique()
+        
+        # Create a series for each country with this stream that has data
+        for country in stream_countries:
+            # Filter efficiently using vectorized operations
+            mask = (agg_complete["stream"] == stream) & (agg_complete["country"] == country)
+            country_stream_df = agg_complete[mask].copy()
             
-            # Only skip if truly empty (shouldn't happen after reindex, but safety check)
+            # Should not be empty due to our filtering, but safety check
             if country_stream_df.empty:
                 continue
             
-            # Ensure all years are included and sorted correctly
-            # Reindex to ensure all years from YEAR_AXIS_FULL are present
-            # This prevents blank entries on the X-axis
-            country_stream_df = country_stream_df.set_index("year").reindex(
-                years_sorted, fill_value=0
-            ).reset_index()
-            # Ensure year column is string type to match categoryarray
-            country_stream_df["year"] = country_stream_df["year"].astype(str)
-            
-            # Check if this country-stream combination has any non-zero data
-            # If all values are 0, skip this combination
-            if country_stream_df["value"].sum() == 0:
-                continue
+            # OPTIMIZATION: agg_complete already has all years from reindex, so no need to check/add missing years
+            # Just ensure years are in the correct order (matching years_sorted_str)
+            # Since reindex already filled missing years with 0, we just need to sort
+            country_stream_df = country_stream_df.sort_values("year")
             
             # Create unique bar series name for each country-stream combination
-            # This ensures each combination is a separate series that stacks
-            # Use format that includes both country and stream for uniqueness
             bar_name = f"{country} - {stream}"
             
             fig.add_bar(
-                x=country_stream_df["year"],
-                y=country_stream_df["value"],
+                x=country_stream_df["year"].tolist(),
+                y=country_stream_df["value"].tolist(),
                 name=bar_name,
                 marker_color=stream_color,
                 hovertemplate=(
