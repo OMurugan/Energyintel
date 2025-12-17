@@ -844,11 +844,20 @@ def _build_chart_figure(
             country_stream_df = agg_complete[
                 (agg_complete["stream"] == stream) & 
                 (agg_complete["country"] == country)
-            ]
+            ].copy()
             
             # Only skip if truly empty (shouldn't happen after reindex, but safety check)
             if country_stream_df.empty:
                 continue
+            
+            # Ensure all years are included and sorted correctly
+            # Reindex to ensure all years from YEAR_AXIS_FULL are present
+            # This prevents blank entries on the X-axis
+            country_stream_df = country_stream_df.set_index("year").reindex(
+                years_sorted, fill_value=0
+            ).reset_index()
+            # Ensure year column is string type to match categoryarray
+            country_stream_df["year"] = country_stream_df["year"].astype(str)
             
             # Check if this country-stream combination has any non-zero data
             # If all values are 0, skip this combination
@@ -875,20 +884,41 @@ def _build_chart_figure(
                     "<extra></extra>"
                 ),
             )
+    
+    # Add a hidden trace with all years to ensure all year labels appear on X-axis
+    # This ensures that even if some years have no data, they still appear on the axis
+    # The trace is invisible (transparent) and won't affect the chart appearance
+    # Add it first so Plotly knows all categories from the start
+    fig.add_bar(
+        x=years_sorted,
+        y=[0] * len(years_sorted),
+        name="_hidden_all_years",
+        marker_color="rgba(0,0,0,0)",  # Transparent
+        showlegend=False,
+        hoverinfo="skip",
+    )
+    
     fig.update_layout(
         height=460,
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=20, r=20, t=40, b=40),
+        margin=dict(l=90, r=20, t=40, b=40),  # Increased left margin to accommodate Y-axis title and labels
         barmode="stack",
         showlegend=False,
         xaxis=dict(
             title="",
-            tickformat="d",
+            type="category",  # Use category type to ensure all categories are shown
             categoryorder="array",
             categoryarray=years_sorted,
+            tickvals=years_sorted,  # Explicitly set all tick positions
+            ticktext=years_sorted,  # Explicitly set all tick labels
         ),
-        yaxis=dict(title="Export Volume ('000 b/d)", separatethousands=True),
+        yaxis=dict(
+            title="Export Volume ('000 b/d)",
+            separatethousands=True,
+            titlefont=dict(size=12),
+            tickfont=dict(size=10),
+        ),
         hovermode="closest",
         hoverlabel=dict(
             bgcolor="#ffffff",
