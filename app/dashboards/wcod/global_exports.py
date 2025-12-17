@@ -1066,7 +1066,7 @@ def create_layout():
                     ),
                         ],
                         className="col-md-9",
-                        style={"padding": "10px 5px 10px 10px"},
+                        style={"padding": "10px 5px 10px 10px", "maxWidth": "100%", "boxSizing": "border-box"},
                     ),
                     html.Div(
                         [
@@ -1308,10 +1308,11 @@ def create_layout():
                             ),
                         ],
                         className="col-md-3",
-                        style={"padding": "10px"},
+                        style={"padding": "10px", "maxWidth": "100%", "boxSizing": "border-box"},
                     ),
                 ],
                 className="row",
+                style={"marginLeft": "0", "marginRight": "0", "width": "100%"},
             ),
             dcc.Interval(
                 id="global-exports-year-interval",
@@ -1339,7 +1340,7 @@ def create_layout():
                             ),
                         ],
                         className="col-md-9",
-                        style={"padding": "10px"},
+                        style={"padding": "10px", "maxWidth": "100%", "boxSizing": "border-box"},
                     ),
                     html.Div(
                         [
@@ -1387,11 +1388,13 @@ def create_layout():
                             "overflowY": "auto",
                             "boxShadow": "0 2px 6px rgba(0,0,0,0.05)",
                             "marginLeft": "0",
+                            "maxWidth": "100%",
+                            "boxSizing": "border-box",
                         },
                     ),
                 ],
                 className="row",
-                style={"marginTop": "30px"},
+                style={"marginTop": "30px", "marginLeft": "0", "marginRight": "0", "width": "100%"},
             ),
             html.Div(
                 [
@@ -1418,6 +1421,8 @@ def create_layout():
                             "backgroundColor": "white",
                             "maxHeight": "520px",
                             "border": "1px solid #e6e9ef",
+                            "width": "100%",
+                            "maxWidth": "100%",
                         },
                         style_cell={
                             "fontSize": "12px",
@@ -1479,7 +1484,14 @@ def create_layout():
             ),
         ],
         className="tab-content",
-        style={"padding": "0px 0px", "backgroundColor": "#f8f9fa"},
+        style={
+            "padding": "0px 0px",
+            "backgroundColor": "#f8f9fa",
+            "overflowX": "hidden",  # Prevent horizontal scrolling
+            "width": "100%",
+            "maxWidth": "100%",
+            "boxSizing": "border-box",
+        },
     )
 
 
