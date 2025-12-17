@@ -22,13 +22,16 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
         params['company_name'] = company_name
     
     # Build likely_goahead filter
-    if likely_goahead_filter and isinstance(likely_goahead_filter, list) and len(likely_goahead_filter) > 0:
-        # Normalize filter values
-        selected_statuses = []
-        if 'ALL' in [str(v).upper() for v in likely_goahead_filter]:
+    if likely_goahead_filter is not None and isinstance(likely_goahead_filter, list):
+        if len(likely_goahead_filter) == 0:
+            # Empty list means all checkboxes unchecked - return no data
+            likely_filter = "AND 1=0"  # This will match nothing
+        elif 'ALL' in [str(v).upper() for v in likely_goahead_filter]:
             # If ALL is selected, don't filter
             likely_filter = ""
         else:
+            # Normalize filter values
+            selected_statuses = []
             for v in likely_goahead_filter:
                 v_up = str(v).upper()
                 if v_up == 'Y':
@@ -56,6 +59,12 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
                 
                 if conditions:
                     likely_filter = "AND (" + " OR ".join(conditions) + ")"
+                else:
+                    # No valid statuses - return no data
+                    likely_filter = "AND 1=0"
+            else:
+                # No valid statuses - return no data
+                likely_filter = "AND 1=0"
     
     query = f"""
     WITH base AS (
@@ -116,7 +125,55 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
         company_name AS "Company Name",
         region AS "Region",
         likely_goahead AS "Likely Go-ahead",
-        (production_value * operator_pc) / 100.0 AS value_company
+        (production_value * operator_pc) / 100.0 AS value_company,
+        CASE
+            WHEN country = 'Algeria' THEN '#a0cbe8'
+            WHEN country = 'Angola' THEN '#4e79a7'
+            WHEN country = 'Argentina' THEN '#f28e2b'
+            WHEN country = 'Australia' THEN '#ffbe7d'
+            WHEN country = 'Azerbaijan' THEN '#8cd17d'
+            WHEN country = 'Brazil' THEN '#d7b5a6'
+            WHEN country = 'Brunei' THEN '#f1ce63'
+            WHEN country = 'Cameroon' THEN '#e15759'
+            WHEN country = 'Canada' THEN '#86bcb6'
+            WHEN country = 'China' THEN '#79706e'
+            WHEN country = 'Cote d''Ivoire' THEN '#d37295'
+            WHEN country = 'Denmark' THEN '#d37295'
+            WHEN country = 'Egypt' THEN '#b07aa1'
+            WHEN country = 'Gabon' THEN '#d4a6c8'
+            WHEN country = 'Ghana' THEN '#9d7660'
+            WHEN country = 'Guyana' THEN '#76b7b2'
+            WHEN country = 'India' THEN '#76b7b2'
+            WHEN country = 'Indonesia' THEN '#4e79a7'
+            WHEN country = 'Iran' THEN '#a0cbe8'
+            WHEN country = 'Iraq' THEN '#9c755f'
+            WHEN country = 'Kazakhstan' THEN '#59a14f'
+            WHEN country = 'Kuwait' THEN '#b6992d'
+            WHEN country = 'Libya' THEN '#76b7b2'
+            WHEN country = 'Malaysia' THEN '#86bcb6'
+            WHEN country = 'Mexico' THEN '#76b7b2'
+            WHEN country = 'Namibia' THEN '#79706e'
+            WHEN country = 'Neutral Zone' THEN '#79706e'
+            WHEN country = 'Niger' THEN '#bab0ac'
+            WHEN country = 'Nigeria' THEN '#59a14f'
+            WHEN country = 'Norway' THEN '#b07aa1'
+            WHEN country = 'Oman' THEN '#9c755f'
+            WHEN country = 'Qatar' THEN '#4e79a7'
+            WHEN country = 'Russia' THEN '#4e79a7'
+            WHEN country = 'Saudi Arabia' THEN '#8cd17d'
+            WHEN country = 'Senegal' THEN '#f28e2b'
+            WHEN country = 'Suriname' THEN '#bab0ac'
+            WHEN country = 'Thailand' THEN '#f1ce63'
+            WHEN country = 'Trinidad and Tobago' THEN '#f1ce63'
+            WHEN country = 'Turkey' THEN '#8cd17d'
+            WHEN country = 'Turkmenistan' THEN '#8cd17d'
+            WHEN country = 'Uganda' THEN '#e15759'
+            WHEN country = 'United Arab Emirates' THEN '#edc948'
+            WHEN country = 'United Kingdom' THEN '#b07aa1'
+            WHEN country = 'United States' THEN '#ff9da7'
+            WHEN country = 'Vietnam' THEN '#499894'
+            ELSE NULL
+        END AS "Country Color"
     FROM unpvt
     ORDER BY
         year_of_period,
@@ -149,13 +206,16 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
         params['company_name'] = company_name
     
     # Build likely_goahead filter
-    if likely_goahead_filter and isinstance(likely_goahead_filter, list) and len(likely_goahead_filter) > 0:
-        # Normalize filter values
-        selected_statuses = []
-        if 'ALL' in [str(v).upper() for v in likely_goahead_filter]:
+    if likely_goahead_filter is not None and isinstance(likely_goahead_filter, list):
+        if len(likely_goahead_filter) == 0:
+            # Empty list means all checkboxes unchecked - return no data
+            likely_filter = "AND 1=0"  # This will match nothing
+        elif 'ALL' in [str(v).upper() for v in likely_goahead_filter]:
             # If ALL is selected, don't filter
             likely_filter = ""
         else:
+            # Normalize filter values
+            selected_statuses = []
             for v in likely_goahead_filter:
                 v_up = str(v).upper()
                 if v_up == 'Y':
@@ -182,6 +242,12 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
                 
                 if conditions:
                     likely_filter = "AND (" + " OR ".join(conditions) + ")"
+                else:
+                    # No valid statuses - return no data
+                    likely_filter = "AND 1=0"
+            else:
+                # No valid statuses - return no data
+                likely_filter = "AND 1=0"
     
     query = f"""
     WITH base AS (
@@ -592,6 +658,86 @@ def get_all_unique_countries():
         print(f"Error loading all countries: {e}")
         return []
 
+def get_all_unique_countries_with_colors():
+    """Get ALL unique countries from database with colors from query (returns dict of country -> color)
+    Same pattern as projects_by_country.py - colors come from SQL query using COUNTRY_COLORS mapping"""
+    query = """
+    SELECT DISTINCT 
+        c.country_long_name AS country,
+        CASE
+            WHEN c.country_long_name = 'Algeria' THEN '#a0cbe8'
+            WHEN c.country_long_name = 'Angola' THEN '#4e79a7'
+            WHEN c.country_long_name = 'Argentina' THEN '#f28e2b'
+            WHEN c.country_long_name = 'Australia' THEN '#ffbe7d'
+            WHEN c.country_long_name = 'Azerbaijan' THEN '#8cd17d'
+            WHEN c.country_long_name = 'Brazil' THEN '#d7b5a6'
+            WHEN c.country_long_name = 'Brunei' THEN '#f1ce63'
+            WHEN c.country_long_name = 'Cameroon' THEN '#e15759'
+            WHEN c.country_long_name = 'Canada' THEN '#86bcb6'
+            WHEN c.country_long_name = 'China' THEN '#79706e'
+            WHEN c.country_long_name = 'Cote d''Ivoire' THEN '#d37295'
+            WHEN c.country_long_name = 'Denmark' THEN '#d37295'
+            WHEN c.country_long_name = 'Egypt' THEN '#b07aa1'
+            WHEN c.country_long_name = 'Gabon' THEN '#d4a6c8'
+            WHEN c.country_long_name = 'Ghana' THEN '#9d7660'
+            WHEN c.country_long_name = 'Guyana' THEN '#76b7b2'
+            WHEN c.country_long_name = 'India' THEN '#76b7b2'
+            WHEN c.country_long_name = 'Indonesia' THEN '#4e79a7'
+            WHEN c.country_long_name = 'Iran' THEN '#a0cbe8'
+            WHEN c.country_long_name = 'Iraq' THEN '#9c755f'
+            WHEN c.country_long_name = 'Kazakhstan' THEN '#59a14f'
+            WHEN c.country_long_name = 'Kuwait' THEN '#b6992d'
+            WHEN c.country_long_name = 'Libya' THEN '#76b7b2'
+            WHEN c.country_long_name = 'Malaysia' THEN '#86bcb6'
+            WHEN c.country_long_name = 'Mexico' THEN '#76b7b2'
+            WHEN c.country_long_name = 'Namibia' THEN '#79706e'
+            WHEN c.country_long_name = 'Neutral Zone' THEN '#79706e'
+            WHEN c.country_long_name = 'Niger' THEN '#bab0ac'
+            WHEN c.country_long_name = 'Nigeria' THEN '#59a14f'
+            WHEN c.country_long_name = 'Norway' THEN '#b07aa1'
+            WHEN c.country_long_name = 'Oman' THEN '#9c755f'
+            WHEN c.country_long_name = 'Qatar' THEN '#4e79a7'
+            WHEN c.country_long_name = 'Russia' THEN '#4e79a7'
+            WHEN c.country_long_name = 'Saudi Arabia' THEN '#8cd17d'
+            WHEN c.country_long_name = 'Senegal' THEN '#f28e2b'
+            WHEN c.country_long_name = 'Suriname' THEN '#bab0ac'
+            WHEN c.country_long_name = 'Thailand' THEN '#f1ce63'
+            WHEN c.country_long_name = 'Trinidad and Tobago' THEN '#f1ce63'
+            WHEN c.country_long_name = 'Turkey' THEN '#8cd17d'
+            WHEN c.country_long_name = 'Turkmenistan' THEN '#8cd17d'
+            WHEN c.country_long_name = 'Uganda' THEN '#e15759'
+            WHEN c.country_long_name = 'United Arab Emirates' THEN '#edc948'
+            WHEN c.country_long_name = 'United Kingdom' THEN '#b07aa1'
+            WHEN c.country_long_name = 'United States' THEN '#ff9da7'
+            WHEN c.country_long_name = 'Vietnam' THEN '#499894'
+            ELSE NULL
+        END AS country_color
+    FROM fact_upstream_project_tracker a
+    LEFT JOIN dim_country c
+        ON a.country_id = c.dim_country_id
+    WHERE a.include = TRUE
+        AND c.country_long_name IS NOT NULL
+        AND TRIM(c.country_long_name) != ''
+    ORDER BY c.country_long_name;
+    """
+    
+    try:
+        results = execute_query(query)
+        if not results:
+            return {}
+        # Return dict of country -> color (same pattern as projects_by_country.py)
+        country_color_map = {}
+        for row in results:
+            country = row.get('country')
+            color = row.get('country_color')
+            if country:
+                # Use color from query if available, otherwise fallback to get_country_color
+                country_color_map[country] = color if color else get_country_color(country)
+        return country_color_map
+    except Exception as e:
+        print(f"Error loading countries with colors: {e}")
+        return {}
+
 def get_unique_quarters():
     """Get unique quarters"""
     return ['Q1', 'Q2', 'Q3', 'Q4']
@@ -779,7 +925,11 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
         # Always use the full df (which has Period column already created)
         # All countries are shown, but non-selected ones will be greyed out
         country_data = df[df['Country'] == country]
-        base_color = get_country_color(country)
+        # Get color from query result if available, otherwise fallback to get_country_color (same pattern as projects_by_country.py)
+        if not country_data.empty and 'Country Color' in country_data.columns:
+            base_color = country_data['Country Color'].iloc[0] if pd.notna(country_data['Country Color'].iloc[0]) else get_country_color(country)
+        else:
+            base_color = get_country_color(country)
         
         # Check if this country is selected (highlighted)
         # If no countries are selected (empty list), show all countries normally (not greyed out)
@@ -1030,6 +1180,23 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     country_totals = year_df.groupby('Country')['value_company'].sum().reset_index()
     country_totals.columns = ['Country', 'Value']
     
+    # Calculate centroids for country name labels (same pattern as projects_by_country.py)
+    centroids = (
+        year_df.groupby('Country')[['Latitude', 'Longitude']]
+        .mean()
+        .reset_index()
+        .dropna(subset=['Latitude', 'Longitude'])
+    )
+    # Limit label density to avoid clutter (same pattern as projects_by_country.py)
+    max_labels = len(centroids)
+    if len(centroids) > 60:
+        max_labels = 60
+    centroids_display = (
+        centroids.sort_values('Country').head(max_labels)
+        if max_labels < len(centroids)
+        else centroids
+    )
+    
     # Create choropleth map including all countries from the CSV
     fig = go.Figure(data=go.Choropleth(
         locations=country_totals['Country'],
@@ -1063,7 +1230,24 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
         showscale=False  # hide colorbar in the map; we render a custom legend beside controls
     ))
     
+    # Add country name labels on map (same pattern as projects_by_country.py)
+    if not centroids_display.empty:
+        fig.add_trace(
+            go.Scattergeo(
+                lon=centroids_display['Longitude'],
+                lat=centroids_display['Latitude'],
+                mode='text',
+                text=centroids_display['Country'],
+                textfont=dict(size=10, color='#2c3e50'),
+                textposition='top center',
+                hoverinfo='skip',
+                showlegend=False,
+            )
+        )
+    
     # Update geo settings to match Tableau design
+    center_lat = year_df['Latitude'].mean() if not year_df.empty and 'Latitude' in year_df.columns else 24.0
+    center_lon = year_df['Longitude'].mean() if not year_df.empty and 'Longitude' in year_df.columns else 45.0
     fig.update_geos(
         showframe=False,
         showcoastlines=True,
@@ -1152,11 +1336,15 @@ def create_layout():
         if all_countries_from_data
         else sorted(list(COUNTRY_COLORS.keys()))
     )
+    
+    # Get country colors from query (everything in query only) - same pattern as projects_by_country.py
+    country_colors_from_query = get_all_unique_countries_with_colors()
 
     # Build clickable legend items – these are targeted by the pattern-matching callbacks
     legend_items = []
     for country in legend_countries:
-        color = get_country_color(country)
+        # Use color from query if available, otherwise fallback to get_country_color (same pattern as projects_by_country.py)
+        color = country_colors_from_query.get(country) if country_colors_from_query.get(country) else get_country_color(country)
         legend_items.append(
             html.Div(
                 id={'type': 'country-item', 'index': country},
@@ -1197,6 +1385,7 @@ def create_layout():
         dcc.Store(id='year-period-play-store', data=False),
         dcc.Store(id='bar-highlight-year-store', data=None),
         dcc.Store(id='quarter-highlight-store', data=None),
+        dcc.Store(id='likely-filter-previous-store', data=[]),
         # Stores to keep full table data for filtering
         dcc.Store(id='projects-company-table-data-full', data=data_full if df_table is not None else []),
         dcc.Store(id='projects-company-table-tooltip-full', data=tooltip_data if df_table is not None else []),
@@ -1256,8 +1445,9 @@ def create_layout():
                         }
                     ),
                     html.Div([
-                        html.Label(
-                            "Year of Period",
+                        html.Div(id='year-of-period-container', children=[
+                            html.Label(
+                                "Year of Period",
                             style={
                                 'fontSize': '12px',
                                 'fontWeight': 'bold',
@@ -1357,16 +1547,18 @@ def create_layout():
                             value=[],
                             labelStyle={'fontSize': '12px'}
                         ),
+                        ]),
                         html.Div([
                             html.Div(
                                 "Production Additions ('000 b/d)",
-                                style={
-                                    'fontSize': '11px',
-                                    'color': '#1b365d',
-                                    'marginBottom': '4px',
-                                    'fontFamily': 'Arial, sans-serif'
-                                }
-                            ),
+                            style={
+                                'fontSize': '11px',
+                                'color': '#1b365d',
+                                'marginBottom': '4px',
+                                'fontFamily': 'Arial, sans-serif'
+                            }
+                        ),
+                        html.Div(id='production-additions-content', children=[
                             html.Div(style={
                                 'height': '14px',
                                 'width': '210px',
@@ -1383,7 +1575,8 @@ def create_layout():
                                 'width': '210px',
                                 'marginTop': '2px'
                             })
-                        ], style={'marginTop': '10px'}),
+                        ])
+                        ], id='production-additions-legend', style={'marginTop': '10px'}),
                         html.Div(
                             id='year-period-display',
                             style={'display': 'none'}
@@ -1676,26 +1869,45 @@ def register_callbacks(dash_app, server):
         years = get_unique_years(None, None)
         return str(years[0]) if years else '2025'
     
-    # Normalize Likely To Go checklist: (All) selects all; otherwise keep only the latest choice.
+    # Normalize Likely To Go checklist: (All) selects all; unchecking (All) clears all checkboxes.
     @callback(
-        Output('likely-to-go-filter', 'value'),
+        [Output('likely-to-go-filter', 'value'),
+         Output('likely-filter-previous-store', 'data')],
         Input('likely-to-go-filter', 'value'),
+        State('likely-filter-previous-store', 'data'),
         prevent_initial_call=True
     )
-    def normalize_likely_to_go(selected):
-        """Checklist behavior: (All) checks everything; otherwise allow multi-select and dedupe."""
+    def normalize_likely_to_go(selected, previous_selected):
+        """Checklist behavior: (All) checks everything; unchecking (All) clears all checkboxes."""
         options_all = ['ALL', 'EMPTY', 'N', 'UNCERTAIN', 'Y']
+        
+        # Normalize inputs
+        selected = selected or []
+        previous_selected = previous_selected or []
+        
+        # Check if ALL was in previous selection but not in current selection
+        # This means user unchecked ALL - clear all checkboxes
+        had_all_before = 'ALL' in previous_selected
+        has_all_now = 'ALL' in selected
+        
+        if had_all_before and not has_all_now:
+            # User unchecked ALL - clear all checkboxes
+            return [], []
+        
+        # Handle empty selection
         if not selected:
-            return ['Y']
-        # If All is present, force all options on
+            return [], selected
+        
+        # If ALL is present, force all options on
         if 'ALL' in selected:
-            return options_all
+            return options_all, options_all
+        
         # Otherwise keep the order and remove duplicates
         seen = []
         for v in selected:
             if v not in seen:
                 seen.append(v)
-        return seen
+        return seen, seen
     
     @callback(
         [Output('projects-company-table', 'data'),
@@ -2304,7 +2516,9 @@ def register_callbacks(dash_app, server):
     
     @callback(
         [Output('projects-company-bar-chart', 'figure'),
-         Output('projects-company-map', 'figure')],
+         Output('projects-company-map', 'figure'),
+         Output('year-of-period-container', 'style'),
+         Output('production-additions-content', 'children')],
         [Input('current-submenu', 'data'),
          Input('company-filter', 'value'),
          Input('likely-to-go-filter', 'value'),
@@ -2320,11 +2534,45 @@ def register_callbacks(dash_app, server):
         # Handle checklist value (after normalization) - keep list for filtering
         ltg_list = likely_to_go if isinstance(likely_to_go, list) else ([likely_to_go] if likely_to_go else [])
         
+        # Null content for Production Additions when no data
+        null_content = html.Div('Null', style={
+            'height': '14px',
+            'width': '210px',
+            'background': '#e8f5e9',
+            'border': '1px solid #c5c5c5',
+            'borderRadius': '2px',
+            'display': 'flex',
+            'alignItems': 'center',
+            'justifyContent': 'center',
+            'fontSize': '11px',
+            'color': '#1b365d'
+        })
+        
+        # Normal content for Production Additions when there's data
+        normal_content = [
+            html.Div(style={
+                'height': '14px',
+                'width': '210px',
+                'background': 'linear-gradient(to right, #C7E8E4, #A4DCD5, #7DC9C3, #4FB2AF, #2A94A1, #1F7A8A, #1C6C7C)',
+                'border': '1px solid #c5c5c5',
+                'borderRadius': '2px'
+            }),
+            html.Div([
+                html.Span('0.7', style={'fontSize': '10px', 'color': '#1b365d'}),
+                html.Span('135.0', style={'fontSize': '10px', 'color': '#1b365d', 'marginLeft': 'auto'})
+            ], style={
+                'display': 'flex',
+                'justifyContent': 'space-between',
+                'width': '210px',
+                'marginTop': '2px'
+            })
+        ]
+        
         # Check if this is the correct submenu (allow None on initial load)
         if submenu is not None and submenu != 'projects-company':
             empty_fig = go.Figure()
             empty_fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
-            return empty_fig, empty_fig
+            return empty_fig, empty_fig, {'display': 'none'}, null_content
         
         # If no company selected, show empty charts
         if not company:
@@ -2335,7 +2583,7 @@ def register_callbacks(dash_app, server):
                 x=0.5, y=0.5, showarrow=False
             )
             empty_fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
-            return empty_fig, empty_fig
+            return empty_fig, empty_fig, {'display': 'none'}, null_content
         
         # Use the year from dropdown or slider (whichever is more recent)
         year_to_use = selected_year if selected_year else slider_year
@@ -2356,7 +2604,8 @@ def register_callbacks(dash_app, server):
                 x=0.5, y=0.5, showarrow=False
             )
             empty_fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
-            return empty_fig, empty_fig
+            # Hide Year of Period and show Null in Production Additions when no data
+            return empty_fig, empty_fig, {'display': 'none'}, null_content
         
         # Pass selected countries to chart function for highlighting/greyout logic
         # The chart will show ALL countries, but highlight selected ones and grey out non-selected
@@ -2376,4 +2625,5 @@ def register_callbacks(dash_app, server):
         # Pass filters to load_map_data
         map_fig = create_world_map(year_to_use, company, ltg_list)
         
-        return bar_fig, map_fig
+        # Show Year of Period section and normal Production Additions gradient when there's data
+        return bar_fig, map_fig, {'display': 'block'}, normal_content
