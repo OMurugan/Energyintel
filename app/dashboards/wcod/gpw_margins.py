@@ -8,6 +8,7 @@ from dash import dcc, html, Input, Output, State, callback, dash_table, callback
 import dash.dependencies as dd
 import plotly.graph_objects as go
 import pandas as pd
+from core.data_helpers import execute_query
 
 # Data locations
 DATA_DIR = os.path.join(
@@ -31,63 +32,135 @@ def _read_csv(path: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def _load_gpw_data() -> pd.DataFrame:
-    """Load and normalize Gross Product Worth data."""
-    df = _read_csv(GPW_CSV)
-    if df.empty:
+def _load_gpw_data(region: str = None) -> pd.DataFrame:
+    """Load and normalize Gross Product Worth data from database."""
+    try:
+        query = """
+        SELECT
+            CASE tech_type
+                WHEN 'HYCRK' THEN 'Hydrocracking'
+                WHEN 'HSK'   THEN 'Hydroskimming'
+                WHEN 'Coker' THEN 'Coking'
+                WHEN 'FCC' THEN
+                    CASE delivery_to
+                        WHEN 'NWE' THEN 'Catalytic Cracking'
+                        ELSE 'Fluid Catalytic Cracking'
+                    END
+                ELSE tech_type
+            END AS "TechTypeFull",
+            TO_CHAR("date", 'Mon YY') AS "Month of Date",
+            crude_name AS "Crude",
+            delivery_to AS "Region",
+            tech_type AS "TechType",
+            price AS "DataValue"
+        FROM dev.fact_wcod_prices
+        WHERE price_type = 'GPW'
+        """
+        
+        params = {}
+        if region:
+            query += " AND delivery_to = :region"
+            params['region'] = region
+        
+        rows = execute_query(query, params)
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        
+        # Rename columns to match expected format
+        df = df.rename(columns={
+            'Month of Date': 'MonthDate',
+            'DataValue': 'Value',
+            'TechTypeFull': 'TechType',
+            'Region': 'Region',
+            'Crude': 'Crude',
+            'TechType': 'TechTypeShort'
+        })
+        
+        # Parse date - format is like "Feb 19", "Mar 19", "Sept 19"
+        # Handle "Sept" which should be "Sep"
+        if 'MonthDate' in df.columns:
+            df['MonthDate'] = df['MonthDate'].str.replace('Sept', 'Sep', regex=False)
+            # Parse date with format "%b %y" (e.g., "Feb 19" -> February 2019)
+            df['Date'] = pd.to_datetime(df['MonthDate'], format='%b %y', errors='coerce')
+        
+        # Clean and ensure proper types
+        if 'Value' in df.columns:
+            df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
+        
+        df = df.dropna(subset=['Value', 'Date'])
         return df
-    
-    # Rename columns first
-    df = df.rename(columns={
-        'Month of Date': 'MonthDate',
-        'DataValue': 'Value',
-        'TechTypeFull': 'TechType',
-        'Region': 'Region',
-        'Crude': 'Crude',
-        'TechType': 'TechTypeShort'
-    })
-    
-    # Parse date - format is like "Feb 19", "Mar 19", "Sept 19"
-    # Handle "Sept" which should be "Sep"
-    if 'MonthDate' in df.columns:
-        df['MonthDate'] = df['MonthDate'].str.replace('Sept', 'Sep', regex=False)
-        # Parse date with format "%b %y" (e.g., "Feb 19" -> February 2019)
-        df['Date'] = pd.to_datetime(df['MonthDate'], format='%b %y', errors='coerce')
-    
-    # Clean and ensure proper types
-    if 'Value' in df.columns:
-        df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
-    
-    df = df.dropna(subset=['Value', 'Date'])
-    return df
+    except Exception as e:
+        print(f"[gpw_margins] Error loading GPW data: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
 
 
-def _load_incremental_margins_data() -> pd.DataFrame:
-    """Load and normalize Incremental Margins data."""
-    df = _read_csv(INCREMENTAL_MARGINS_CSV)
-    if df.empty:
+def _load_incremental_margins_data(region: str = None) -> pd.DataFrame:
+    """Load and normalize Incremental Margins data from database."""
+    try:
+        query = """
+        SELECT
+            CASE tech_type
+                WHEN 'HYCRK' THEN 'Hydrocracking'
+                WHEN 'HSK'   THEN 'Hydroskimming'
+                WHEN 'Coker' THEN 'Coking'
+                WHEN 'FCC' THEN
+                    CASE delivery_to
+                        WHEN 'NWE' THEN 'Catalytic Cracking'
+                        ELSE 'Fluid Catalytic Cracking'
+                    END
+                ELSE tech_type
+            END AS "TechTypeFull",
+            TO_CHAR("date", 'Mon YY') AS "Month of Date",
+            crude_name AS "Crude",
+            delivery_to AS "Region",
+            tech_type AS "TechType",
+            price AS "DataValue"
+        FROM dev.fact_wcod_prices
+        WHERE price_type = 'Refining Margin'
+        """
+        
+        params = {}
+        if region:
+            query += " AND delivery_to = :region"
+            params['region'] = region
+        
+        rows = execute_query(query, params)
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        
+        # Rename columns to match expected format
+        df = df.rename(columns={
+            'Month of Date': 'MonthDate',
+            'DataValue': 'Value',
+            'TechTypeFull': 'TechType',
+            'Region': 'Region',
+            'Crude': 'Crude',
+            'TechType': 'TechTypeShort'
+        })
+        
+        # Parse date - format is like "Feb 19", "Mar 19", "Sept 19"
+        if 'MonthDate' in df.columns:
+            df['MonthDate'] = df['MonthDate'].str.replace('Sept', 'Sep', regex=False)
+            df['Date'] = pd.to_datetime(df['MonthDate'], format='%b %y', errors='coerce')
+        
+        if 'Value' in df.columns:
+            df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
+        
+        df = df.dropna(subset=['Value', 'Date'])
         return df
-    
-    # Rename columns
-    df = df.rename(columns={
-        'Month of Date': 'MonthDate',
-        'DataValue': 'Value',
-        'TechTypeFull': 'TechType',
-        'Region': 'Region',
-        'Crude': 'Crude',
-        'TechType': 'TechTypeShort'
-    })
-    
-    # Parse date - format is like "Feb 19", "Mar 19", "Sept 19"
-    if 'MonthDate' in df.columns:
-        df['MonthDate'] = df['MonthDate'].str.replace('Sept', 'Sep', regex=False)
-        df['Date'] = pd.to_datetime(df['MonthDate'], format='%b %y', errors='coerce')
-    
-    if 'Value' in df.columns:
-        df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
-    
-    df = df.dropna(subset=['Value', 'Date'])
-    return df
+    except Exception as e:
+        print(f"[gpw_margins] Error loading Incremental Margins data: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
 
 
 def _load_data_table_data() -> pd.DataFrame:
@@ -119,15 +192,84 @@ def _load_data_table_data() -> pd.DataFrame:
     return df
 
 
-# Load data on module import
-GPW_DF = _load_gpw_data()
-INCREMENTAL_MARGINS_DF = _load_incremental_margins_data()
-DATA_TABLE_DF = _load_data_table_data()
+# Load filter options from database (without region filter to get all available options)
+def _get_available_regions():
+    """Get available regions from database."""
+    try:
+        query = """
+        SELECT DISTINCT delivery_to AS "Region"
+        FROM dev.fact_wcod_prices
+        WHERE price_type IN ('GPW', 'Refining Margin')
+            AND delivery_to IS NOT NULL
+        ORDER BY delivery_to
+        """
+        rows = execute_query(query)
+        if rows:
+            return [row['Region'] for row in rows]
+        return []
+    except Exception as e:
+        print(f"[gpw_margins] Error getting regions: {e}")
+        return []
 
-# Extract unique values for filters
-REGIONS = sorted(GPW_DF['Region'].unique().tolist()) if not GPW_DF.empty else []
-CRUDES = sorted(GPW_DF['Crude'].unique().tolist()) if not GPW_DF.empty else []
-TECH_TYPES = sorted(GPW_DF['TechType'].unique().tolist()) if not GPW_DF.empty else []
+def _get_available_crudes():
+    """Get available crudes from database."""
+    try:
+        query = """
+        SELECT DISTINCT crude_name AS "Crude"
+        FROM dev.fact_wcod_prices
+        WHERE price_type IN ('GPW', 'Refining Margin')
+            AND crude_name IS NOT NULL
+        ORDER BY crude_name
+        """
+        rows = execute_query(query)
+        if rows:
+            return [row['Crude'] for row in rows]
+        return []
+    except Exception as e:
+        print(f"[gpw_margins] Error getting crudes: {e}")
+        return []
+
+def _get_available_tech_types():
+    """Get available tech types from database."""
+    try:
+        query = """
+        SELECT DISTINCT
+            CASE tech_type
+                WHEN 'HYCRK' THEN 'Hydrocracking'
+                WHEN 'HSK'   THEN 'Hydroskimming'
+                WHEN 'Coker' THEN 'Coking'
+                WHEN 'FCC' THEN
+                    CASE delivery_to
+                        WHEN 'NWE' THEN 'Catalytic Cracking'
+                        ELSE 'Fluid Catalytic Cracking'
+                    END
+                ELSE tech_type
+            END AS "TechTypeFull"
+        FROM dev.fact_wcod_prices
+        WHERE price_type IN ('GPW', 'Refining Margin')
+        ORDER BY "TechTypeFull"
+        """
+        rows = execute_query(query)
+        if rows:
+            return [row['TechTypeFull'] for row in rows]
+        return []
+    except Exception as e:
+        print(f"[gpw_margins] Error getting tech types: {e}")
+        return []
+
+# Get filter options from database
+REGIONS = _get_available_regions()
+CRUDES = _get_available_crudes()
+TECH_TYPES = _get_available_tech_types()
+
+# Load initial data with default region for date range calculation (if available)
+# This is only used for initial date range setup
+if REGIONS:
+    DEFAULT_REGION = REGIONS[0]
+    initial_gpw_df = _load_gpw_data(DEFAULT_REGION)
+else:
+    DEFAULT_REGION = None
+    initial_gpw_df = pd.DataFrame()
 
 # Color mapping for crudes (for legend)
 CRUDE_COLORS = {
@@ -178,9 +320,9 @@ def _crude_legend_options(crude_names):
         options.append({"label": label, "value": name})
     return options
 
-# Date range - create sorted list of unique dates
-if not GPW_DF.empty:
-    unique_dates = sorted(GPW_DF['Date'].unique())
+# Date range - create sorted list of unique dates from initial data
+if not initial_gpw_df.empty:
+    unique_dates = sorted(initial_gpw_df['Date'].unique())
     DATE_MIN = unique_dates[0] if unique_dates else datetime(2019, 1, 1)
     DATE_MAX = unique_dates[-1] if unique_dates else datetime(2024, 12, 31)
     # Create date index mapping (for slider)
@@ -194,7 +336,6 @@ else:
     DEFAULT_START_INDEX = 0
     DEFAULT_END_INDEX = 0
 
-DEFAULT_REGION = REGIONS[0] if REGIONS else None
 DEFAULT_START_DATE = DATE_MIN
 DEFAULT_END_DATE = DATE_MAX
 
@@ -1335,31 +1476,37 @@ def register_callbacks(dash_app, server):
             selected_tech_types = [t for t in selected_tech_types if t != 'ALL']
             # Allow empty selection - if empty, no tech types selected (charts will be empty)
         
-        # Filter GPW data
-        gpw_filtered = GPW_DF[
-            (GPW_DF['Date'] >= start_date) &
-            (GPW_DF['Date'] <= end_date) &
-            (GPW_DF['Crude'].isin(selected_crudes))
-        ].copy()
+        # Load GPW data dynamically from database based on region filter
+        gpw_df = _load_gpw_data(region)
         
-        if selected_tech_types:
-            gpw_filtered = gpw_filtered[gpw_filtered['TechType'].isin(selected_tech_types)]
+        # Filter GPW data by date range and selected crudes
+        if not gpw_df.empty:
+            gpw_filtered = gpw_df[
+                (gpw_df['Date'] >= start_date) &
+                (gpw_df['Date'] <= end_date) &
+                (gpw_df['Crude'].isin(selected_crudes))
+            ].copy()
+            
+            if selected_tech_types:
+                gpw_filtered = gpw_filtered[gpw_filtered['TechType'].isin(selected_tech_types)]
+        else:
+            gpw_filtered = pd.DataFrame()
         
-        if region:
-            gpw_filtered = gpw_filtered[gpw_filtered['Region'] == region]
+        # Load Incremental Margins data dynamically from database based on region filter
+        margins_df = _load_incremental_margins_data(region)
         
-        # Filter Incremental Margins data
-        margins_filtered = INCREMENTAL_MARGINS_DF[
-            (INCREMENTAL_MARGINS_DF['Date'] >= start_date) &
-            (INCREMENTAL_MARGINS_DF['Date'] <= end_date) &
-            (INCREMENTAL_MARGINS_DF['Crude'].isin(selected_crudes))
-        ].copy()
-        
-        if selected_tech_types:
-            margins_filtered = margins_filtered[margins_filtered['TechType'].isin(selected_tech_types)]
-        
-        if region:
-            margins_filtered = margins_filtered[margins_filtered['Region'] == region]
+        # Filter Incremental Margins data by date range and selected crudes
+        if not margins_df.empty:
+            margins_filtered = margins_df[
+                (margins_df['Date'] >= start_date) &
+                (margins_df['Date'] <= end_date) &
+                (margins_df['Crude'].isin(selected_crudes))
+            ].copy()
+            
+            if selected_tech_types:
+                margins_filtered = margins_filtered[margins_filtered['TechType'].isin(selected_tech_types)]
+        else:
+            margins_filtered = pd.DataFrame()
         
         # Build charts only if tech type is selected
         if selected_tech_types and 'Catalytic Cracking' in selected_tech_types:
@@ -1407,29 +1554,29 @@ def register_callbacks(dash_app, server):
             margins_hydro = _empty_figure("HSK not selected")
         
         # Prepare data table with multi-level headers
-        # Use Data Table CSV
+        # Combine GPW and Margins data dynamically loaded from database
         table_tooltips = []
-        if not DATA_TABLE_DF.empty:
-            # Filter Data Table by date range
-            table_filtered = DATA_TABLE_DF[
-                (DATA_TABLE_DF['Date'] >= start_date) &
-                (DATA_TABLE_DF['Date'] <= end_date)
-            ].copy()
-            
-            # Filter by region if Region column exists
-            if region and 'Region' in table_filtered.columns:
-                table_filtered = table_filtered[table_filtered['Region'] == region]
-            
-            # Filter by crude
-            if 'Crude' in table_filtered.columns:
-                table_filtered = table_filtered[table_filtered['Crude'].isin(selected_crudes)]
-            
-            # Filter by tech type
-            if 'TechType' in table_filtered.columns:
-                table_filtered = table_filtered[table_filtered['TechType'].isin(selected_tech_types)]
-            
+        combined_df = pd.DataFrame()
+        
+        if not gpw_filtered.empty:
+            gpw_copy = gpw_filtered.copy()
+            gpw_copy['DataType'] = 'GPW'
+            # Add MonthDateDisplay for table display if not present
+            if 'MonthDate' in gpw_copy.columns and 'MonthDateDisplay' not in gpw_copy.columns:
+                gpw_copy['MonthDateDisplay'] = gpw_copy['MonthDate']
+            combined_df = pd.concat([combined_df, gpw_copy], ignore_index=True)
+        
+        if not margins_filtered.empty:
+            margins_copy = margins_filtered.copy()
+            margins_copy['DataType'] = 'Refining Margin'
+            # Add MonthDateDisplay for table display if not present
+            if 'MonthDate' in margins_copy.columns and 'MonthDateDisplay' not in margins_copy.columns:
+                margins_copy['MonthDateDisplay'] = margins_copy['MonthDate']
+            combined_df = pd.concat([combined_df, margins_copy], ignore_index=True)
+        
+        if not combined_df.empty:
             table_columns, table_data, table_tooltips = _prepare_data_table(
-                table_filtered,
+                combined_df,
                 start_date,
                 end_date,
                 region,
@@ -1437,29 +1584,7 @@ def register_callbacks(dash_app, server):
                 selected_tech_types
             )
         else:
-            # Fallback: combine GPW and Margins data
-            combined_df = pd.DataFrame()
-            if not gpw_filtered.empty:
-                gpw_copy = gpw_filtered.copy()
-                gpw_copy['DataType'] = 'GPW'
-                combined_df = pd.concat([combined_df, gpw_copy], ignore_index=True)
-            
-            if not margins_filtered.empty:
-                margins_copy = margins_filtered.copy()
-                margins_copy['DataType'] = 'Refining Margin'
-                combined_df = pd.concat([combined_df, margins_copy], ignore_index=True)
-            
-            if not combined_df.empty:
-                table_columns, table_data, table_tooltips = _prepare_data_table(
-                    combined_df,
-                    start_date,
-                    end_date,
-                    region,
-                    selected_crudes,
-                    selected_tech_types
-                )
-            else:
-                table_columns, table_data, table_tooltips = [], [], []
+            table_columns, table_data, table_tooltips = [], [], []
         
         return (
             gpw_catalytic,
