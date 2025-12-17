@@ -22,13 +22,16 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
         params['company_name'] = company_name
     
     # Build likely_goahead filter
-    if likely_goahead_filter and isinstance(likely_goahead_filter, list) and len(likely_goahead_filter) > 0:
-        # Normalize filter values
-        selected_statuses = []
-        if 'ALL' in [str(v).upper() for v in likely_goahead_filter]:
+    if likely_goahead_filter is not None and isinstance(likely_goahead_filter, list):
+        if len(likely_goahead_filter) == 0:
+            # Empty list means all checkboxes unchecked - return no data
+            likely_filter = "AND 1=0"  # This will match nothing
+        elif 'ALL' in [str(v).upper() for v in likely_goahead_filter]:
             # If ALL is selected, don't filter
             likely_filter = ""
         else:
+            # Normalize filter values
+            selected_statuses = []
             for v in likely_goahead_filter:
                 v_up = str(v).upper()
                 if v_up == 'Y':
@@ -56,6 +59,12 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
                 
                 if conditions:
                     likely_filter = "AND (" + " OR ".join(conditions) + ")"
+                else:
+                    # No valid statuses - return no data
+                    likely_filter = "AND 1=0"
+            else:
+                # No valid statuses - return no data
+                likely_filter = "AND 1=0"
     
     query = f"""
     WITH base AS (
@@ -116,7 +125,55 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
         company_name AS "Company Name",
         region AS "Region",
         likely_goahead AS "Likely Go-ahead",
-        (production_value * operator_pc) / 100.0 AS value_company
+        (production_value * operator_pc) / 100.0 AS value_company,
+        CASE
+            WHEN country = 'Algeria' THEN '#a0cbe8'
+            WHEN country = 'Angola' THEN '#4e79a7'
+            WHEN country = 'Argentina' THEN '#f28e2b'
+            WHEN country = 'Australia' THEN '#ffbe7d'
+            WHEN country = 'Azerbaijan' THEN '#8cd17d'
+            WHEN country = 'Brazil' THEN '#d7b5a6'
+            WHEN country = 'Brunei' THEN '#f1ce63'
+            WHEN country = 'Cameroon' THEN '#e15759'
+            WHEN country = 'Canada' THEN '#86bcb6'
+            WHEN country = 'China' THEN '#79706e'
+            WHEN country = 'Cote d''Ivoire' THEN '#d37295'
+            WHEN country = 'Denmark' THEN '#d37295'
+            WHEN country = 'Egypt' THEN '#b07aa1'
+            WHEN country = 'Gabon' THEN '#d4a6c8'
+            WHEN country = 'Ghana' THEN '#9d7660'
+            WHEN country = 'Guyana' THEN '#76b7b2'
+            WHEN country = 'India' THEN '#76b7b2'
+            WHEN country = 'Indonesia' THEN '#4e79a7'
+            WHEN country = 'Iran' THEN '#a0cbe8'
+            WHEN country = 'Iraq' THEN '#9c755f'
+            WHEN country = 'Kazakhstan' THEN '#59a14f'
+            WHEN country = 'Kuwait' THEN '#b6992d'
+            WHEN country = 'Libya' THEN '#76b7b2'
+            WHEN country = 'Malaysia' THEN '#86bcb6'
+            WHEN country = 'Mexico' THEN '#76b7b2'
+            WHEN country = 'Namibia' THEN '#79706e'
+            WHEN country = 'Neutral Zone' THEN '#79706e'
+            WHEN country = 'Niger' THEN '#bab0ac'
+            WHEN country = 'Nigeria' THEN '#59a14f'
+            WHEN country = 'Norway' THEN '#b07aa1'
+            WHEN country = 'Oman' THEN '#9c755f'
+            WHEN country = 'Qatar' THEN '#4e79a7'
+            WHEN country = 'Russia' THEN '#4e79a7'
+            WHEN country = 'Saudi Arabia' THEN '#8cd17d'
+            WHEN country = 'Senegal' THEN '#f28e2b'
+            WHEN country = 'Suriname' THEN '#bab0ac'
+            WHEN country = 'Thailand' THEN '#f1ce63'
+            WHEN country = 'Trinidad and Tobago' THEN '#f1ce63'
+            WHEN country = 'Turkey' THEN '#8cd17d'
+            WHEN country = 'Turkmenistan' THEN '#8cd17d'
+            WHEN country = 'Uganda' THEN '#e15759'
+            WHEN country = 'United Arab Emirates' THEN '#edc948'
+            WHEN country = 'United Kingdom' THEN '#b07aa1'
+            WHEN country = 'United States' THEN '#ff9da7'
+            WHEN country = 'Vietnam' THEN '#499894'
+            ELSE NULL
+        END AS "Country Color"
     FROM unpvt
     ORDER BY
         year_of_period,
@@ -149,13 +206,16 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
         params['company_name'] = company_name
     
     # Build likely_goahead filter
-    if likely_goahead_filter and isinstance(likely_goahead_filter, list) and len(likely_goahead_filter) > 0:
-        # Normalize filter values
-        selected_statuses = []
-        if 'ALL' in [str(v).upper() for v in likely_goahead_filter]:
+    if likely_goahead_filter is not None and isinstance(likely_goahead_filter, list):
+        if len(likely_goahead_filter) == 0:
+            # Empty list means all checkboxes unchecked - return no data
+            likely_filter = "AND 1=0"  # This will match nothing
+        elif 'ALL' in [str(v).upper() for v in likely_goahead_filter]:
             # If ALL is selected, don't filter
             likely_filter = ""
         else:
+            # Normalize filter values
+            selected_statuses = []
             for v in likely_goahead_filter:
                 v_up = str(v).upper()
                 if v_up == 'Y':
@@ -182,6 +242,12 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
                 
                 if conditions:
                     likely_filter = "AND (" + " OR ".join(conditions) + ")"
+                else:
+                    # No valid statuses - return no data
+                    likely_filter = "AND 1=0"
+            else:
+                # No valid statuses - return no data
+                likely_filter = "AND 1=0"
     
     query = f"""
     WITH base AS (
@@ -592,6 +658,86 @@ def get_all_unique_countries():
         print(f"Error loading all countries: {e}")
         return []
 
+def get_all_unique_countries_with_colors():
+    """Get ALL unique countries from database with colors from query (returns dict of country -> color)
+    Same pattern as projects_by_country.py - colors come from SQL query using COUNTRY_COLORS mapping"""
+    query = """
+    SELECT DISTINCT 
+        c.country_long_name AS country,
+        CASE
+            WHEN c.country_long_name = 'Algeria' THEN '#a0cbe8'
+            WHEN c.country_long_name = 'Angola' THEN '#4e79a7'
+            WHEN c.country_long_name = 'Argentina' THEN '#f28e2b'
+            WHEN c.country_long_name = 'Australia' THEN '#ffbe7d'
+            WHEN c.country_long_name = 'Azerbaijan' THEN '#8cd17d'
+            WHEN c.country_long_name = 'Brazil' THEN '#d7b5a6'
+            WHEN c.country_long_name = 'Brunei' THEN '#f1ce63'
+            WHEN c.country_long_name = 'Cameroon' THEN '#e15759'
+            WHEN c.country_long_name = 'Canada' THEN '#86bcb6'
+            WHEN c.country_long_name = 'China' THEN '#79706e'
+            WHEN c.country_long_name = 'Cote d''Ivoire' THEN '#d37295'
+            WHEN c.country_long_name = 'Denmark' THEN '#d37295'
+            WHEN c.country_long_name = 'Egypt' THEN '#b07aa1'
+            WHEN c.country_long_name = 'Gabon' THEN '#d4a6c8'
+            WHEN c.country_long_name = 'Ghana' THEN '#9d7660'
+            WHEN c.country_long_name = 'Guyana' THEN '#76b7b2'
+            WHEN c.country_long_name = 'India' THEN '#76b7b2'
+            WHEN c.country_long_name = 'Indonesia' THEN '#4e79a7'
+            WHEN c.country_long_name = 'Iran' THEN '#a0cbe8'
+            WHEN c.country_long_name = 'Iraq' THEN '#9c755f'
+            WHEN c.country_long_name = 'Kazakhstan' THEN '#59a14f'
+            WHEN c.country_long_name = 'Kuwait' THEN '#b6992d'
+            WHEN c.country_long_name = 'Libya' THEN '#76b7b2'
+            WHEN c.country_long_name = 'Malaysia' THEN '#86bcb6'
+            WHEN c.country_long_name = 'Mexico' THEN '#76b7b2'
+            WHEN c.country_long_name = 'Namibia' THEN '#79706e'
+            WHEN c.country_long_name = 'Neutral Zone' THEN '#79706e'
+            WHEN c.country_long_name = 'Niger' THEN '#bab0ac'
+            WHEN c.country_long_name = 'Nigeria' THEN '#59a14f'
+            WHEN c.country_long_name = 'Norway' THEN '#b07aa1'
+            WHEN c.country_long_name = 'Oman' THEN '#9c755f'
+            WHEN c.country_long_name = 'Qatar' THEN '#4e79a7'
+            WHEN c.country_long_name = 'Russia' THEN '#4e79a7'
+            WHEN c.country_long_name = 'Saudi Arabia' THEN '#8cd17d'
+            WHEN c.country_long_name = 'Senegal' THEN '#f28e2b'
+            WHEN c.country_long_name = 'Suriname' THEN '#bab0ac'
+            WHEN c.country_long_name = 'Thailand' THEN '#f1ce63'
+            WHEN c.country_long_name = 'Trinidad and Tobago' THEN '#f1ce63'
+            WHEN c.country_long_name = 'Turkey' THEN '#8cd17d'
+            WHEN c.country_long_name = 'Turkmenistan' THEN '#8cd17d'
+            WHEN c.country_long_name = 'Uganda' THEN '#e15759'
+            WHEN c.country_long_name = 'United Arab Emirates' THEN '#edc948'
+            WHEN c.country_long_name = 'United Kingdom' THEN '#b07aa1'
+            WHEN c.country_long_name = 'United States' THEN '#ff9da7'
+            WHEN c.country_long_name = 'Vietnam' THEN '#499894'
+            ELSE NULL
+        END AS country_color
+    FROM fact_upstream_project_tracker a
+    LEFT JOIN dim_country c
+        ON a.country_id = c.dim_country_id
+    WHERE a.include = TRUE
+        AND c.country_long_name IS NOT NULL
+        AND TRIM(c.country_long_name) != ''
+    ORDER BY c.country_long_name;
+    """
+    
+    try:
+        results = execute_query(query)
+        if not results:
+            return {}
+        # Return dict of country -> color (same pattern as projects_by_country.py)
+        country_color_map = {}
+        for row in results:
+            country = row.get('country')
+            color = row.get('country_color')
+            if country:
+                # Use color from query if available, otherwise fallback to get_country_color
+                country_color_map[country] = color if color else get_country_color(country)
+        return country_color_map
+    except Exception as e:
+        print(f"Error loading countries with colors: {e}")
+        return {}
+
 def get_unique_quarters():
     """Get unique quarters"""
     return ['Q1', 'Q2', 'Q3', 'Q4']
@@ -715,24 +861,13 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
         original_df['SortKey'] = original_df['Year of Period'] * 10 + original_df['Quarter of Period'].map(quarter_order)
         original_df = original_df.sort_values(['SortKey'])
     
-    if selected_countries:
-        # If countries are selected, show ONLY those selected countries (even if they have zero values)
-        # This matches Tableau behavior - clicking a country filters to show only that country
-        all_countries_in_data = [c for c in selected_countries if pd.notna(c) and str(c).strip()]
-    else:
-        # If no countries selected, show ALL countries from the CSV data (including those with zeros)
-        # This ensures all countries from the CSV are displayed in the chart
-        # Countries with zero values will still appear in tooltips and chart structure
-        all_countries_in_data = [c for c in original_df['Country'].unique().tolist() if pd.notna(c) and str(c).strip()]
+    # Always show ALL countries in the chart (not just selected ones)
+    # Selected countries will be highlighted, non-selected will be greyed out but still visible
+    all_countries_in_data = [c for c in original_df['Country'].unique().tolist() if pd.notna(c) and str(c).strip()]
     
-    # Filter by selected countries if any are selected (after getting country list)
-    # Always use original_df (full DATA_DF) to ensure we have data for all countries even if they have zeros
-    if selected_countries:
-        # Filter to selected countries only
-        df = original_df[original_df['Country'].isin(selected_countries)].copy()
-    else:
-        # When showing all countries, use the full original data
-        df = original_df.copy()
+    # Always use the full original data - don't filter countries out
+    # Instead, we'll apply opacity to non-selected countries in the chart rendering
+    df = original_df.copy()
     
     # Generate all possible periods from min year to max year (to ensure all quarters are shown)
     # Use the full data range (2025-2029) to show all quarters consistently
@@ -787,11 +922,25 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
     
     # Add a trace for each country
     for country in countries:
-        # Always use the filtered df (which has Period column already created)
-        # If country is selected, df is filtered to that country
-        # If no countries selected, df has all countries
+        # Always use the full df (which has Period column already created)
+        # All countries are shown, but non-selected ones will be greyed out
         country_data = df[df['Country'] == country]
-        base_color = get_country_color(country)
+        # Get color from query result if available, otherwise fallback to get_country_color (same pattern as projects_by_country.py)
+        if not country_data.empty and 'Country Color' in country_data.columns:
+            base_color = country_data['Country Color'].iloc[0] if pd.notna(country_data['Country Color'].iloc[0]) else get_country_color(country)
+        else:
+            base_color = get_country_color(country)
+        
+        # Check if this country is selected (highlighted)
+        # If no countries are selected (empty list), show all countries normally (not greyed out)
+        # If countries are selected, only those are highlighted, others are greyed out
+        if len(selected_countries) == 0:
+            # No countries selected: show all countries normally
+            is_selected = True
+        else:
+            # Some countries selected: only those are highlighted
+            is_selected = country in selected_countries
+        
         highlight_year_int = None
         highlight_quarter_label = None
         try:
@@ -818,20 +967,36 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
                 # If no data for this period, set to 0
                 values.append(0)
             
-            # Dual highlight: keep full color if matches year and/or quarter selection; otherwise fade.
-            if highlight_year_int is not None or highlight_quarter_label is not None:
-                is_year_match = (highlight_year_int is not None and period_year == highlight_year_int)
-                is_quarter_match = (
-                    highlight_quarter_label is not None and str(period).endswith(f" {highlight_quarter_label}")
-                )
-                if (highlight_year_int is None and is_quarter_match) or \
-                   (highlight_quarter_label is None and is_year_match) or \
-                   (is_year_match and is_quarter_match):
+            # Apply year/quarter highlighting
+            # Quarter highlighting applies to ALL countries (not just selected ones)
+            # Year highlighting only applies to selected countries
+            if highlight_quarter_label is not None:
+                # Quarter highlighting: apply to all countries
+                is_quarter_match = str(period).endswith(f" {highlight_quarter_label}")
+                if is_quarter_match:
+                    marker_colors.append(base_color)
+                else:
+                    marker_colors.append(apply_opacity_to_color(base_color, 0.18))
+            elif is_selected and highlight_year_int is not None:
+                # Year highlighting: only for selected countries
+                is_year_match = (period_year == highlight_year_int)
+                if is_year_match:
                     marker_colors.append(base_color)
                 else:
                     marker_colors.append(apply_opacity_to_color(base_color, 0.18))
             else:
+                # No highlighting: use base color
                 marker_colors.append(base_color)
+        
+        # Determine overall opacity for the trace
+        # Non-selected countries should be visible but greyed out (disabled)
+        # Selected countries should be fully visible
+        if not is_selected: 
+            # Non-selected countries: greyed out but still visible (not hidden)
+            trace_opacity = 0.3
+        else:
+            # Selected countries: full opacity (or minimal for zero values to maintain hover)
+            trace_opacity = 1.0 if any(v > 0 for v in values) else 0.01
         
         # Always create a trace for all countries, even if all values are 0
         # This ensures the chart structure is maintained and tooltips work for countries with zeros
@@ -841,14 +1006,14 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
             name=country,
             x=periods,
             y=values,
-            marker_color=marker_colors if highlight_year_int is not None else base_color,
+            marker_color=marker_colors if (highlight_quarter_label is not None or (is_selected and highlight_year_int is not None)) else base_color,
             customdata=hover_periods,
             meta=country,
             hovertemplate='Country: %{meta}<br>Period: %{customdata}<br>Production Additions (\'000 b/d): %{y:,.1f}<extra></extra>',
             showlegend=False,  # Hide legend - using sidebar legend instead
             marker_line_width=0,  # No border on bars
-            # Make zero-value bars still hoverable
-            opacity=1.0 if any(v > 0 for v in values) else 0.01
+            # Apply opacity: selected countries full opacity, non-selected greyed out (disabled but visible)
+            opacity=trace_opacity
         ))
     
     # Y-axis should be exactly 0-70 to match images exactly; extend slightly to host invisible click-capture markers.
@@ -934,15 +1099,15 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
     )
     
     # Invisible traces to capture quarter and year clicks (so users can click labels/areas, not just bars).
-    # Quarter capture: points aligned with every period; year capture: single point per year centered on its quarters.
+    # Quarter capture: points aligned with every period positioned below x-axis labels for easy clicking.
     fig.add_trace(go.Scatter(
         x=periods,
         y=[-3] * len(periods),
         mode='markers',
-        marker=dict(size=18, color='rgba(0,0,0,0)'),
+        marker=dict(size=40, color='rgba(0,0,0,0)'),  # Larger invisible area for easier clicking
         hoverinfo='skip',
         showlegend=False,
-        customdata=[p.split(' ')[1] for p in periods],
+        customdata=[p.split(' ')[1] for p in periods],  # Store quarter (Q1, Q2, Q3, Q4)
         name='quarter-click-capture'
     ))
     year_click_x = []
@@ -1018,6 +1183,23 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     country_totals = year_df.groupby('Country')['value_company'].sum().reset_index()
     country_totals.columns = ['Country', 'Value']
     
+    # Calculate centroids for country name labels (same pattern as projects_by_country.py)
+    centroids = (
+        year_df.groupby('Country')[['Latitude', 'Longitude']]
+        .mean()
+        .reset_index()
+        .dropna(subset=['Latitude', 'Longitude'])
+    )
+    # Limit label density to avoid clutter (same pattern as projects_by_country.py)
+    max_labels = len(centroids)
+    if len(centroids) > 60:
+        max_labels = 60
+    centroids_display = (
+        centroids.sort_values('Country').head(max_labels)
+        if max_labels < len(centroids)
+        else centroids
+    )
+    
     # Create choropleth map including all countries from the CSV
     fig = go.Figure(data=go.Choropleth(
         locations=country_totals['Country'],
@@ -1051,7 +1233,24 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
         showscale=False  # hide colorbar in the map; we render a custom legend beside controls
     ))
     
+    # Add country name labels on map (same pattern as projects_by_country.py)
+    if not centroids_display.empty:
+        fig.add_trace(
+            go.Scattergeo(
+                lon=centroids_display['Longitude'],
+                lat=centroids_display['Latitude'],
+                mode='text',
+                text=centroids_display['Country'],
+                textfont=dict(size=10, color='#2c3e50'),
+                textposition='top center',
+                hoverinfo='skip',
+                showlegend=False,
+            )
+        )
+    
     # Update geo settings to match Tableau design
+    center_lat = year_df['Latitude'].mean() if not year_df.empty and 'Latitude' in year_df.columns else 24.0
+    center_lon = year_df['Longitude'].mean() if not year_df.empty and 'Longitude' in year_df.columns else 45.0
     fig.update_geos(
         showframe=False,
         showcoastlines=True,
@@ -1140,11 +1339,15 @@ def create_layout():
         if all_countries_from_data
         else sorted(list(COUNTRY_COLORS.keys()))
     )
+    
+    # Get country colors from query (everything in query only) - same pattern as projects_by_country.py
+    country_colors_from_query = get_all_unique_countries_with_colors()
 
     # Build clickable legend items – these are targeted by the pattern-matching callbacks
     legend_items = []
     for country in legend_countries:
-        color = get_country_color(country)
+        # Use color from query if available, otherwise fallback to get_country_color (same pattern as projects_by_country.py)
+        color = country_colors_from_query.get(country) if country_colors_from_query.get(country) else get_country_color(country)
         legend_items.append(
             html.Div(
                 id={'type': 'country-item', 'index': country},
@@ -1185,6 +1388,7 @@ def create_layout():
         dcc.Store(id='year-period-play-store', data=False),
         dcc.Store(id='bar-highlight-year-store', data=None),
         dcc.Store(id='quarter-highlight-store', data=None),
+        dcc.Store(id='likely-filter-previous-store', data=[]),
         # Stores to keep full table data for filtering
         dcc.Store(id='projects-company-table-data-full', data=data_full if df_table is not None else []),
         dcc.Store(id='projects-company-table-tooltip-full', data=tooltip_data if df_table is not None else []),
@@ -1244,8 +1448,9 @@ def create_layout():
                         }
                     ),
                     html.Div([
-                        html.Label(
-                            "Year of Period",
+                        html.Div(id='year-of-period-container', children=[
+                            html.Label(
+                                "Year of Period",
                             style={
                                 'fontSize': '12px',
                                 'fontWeight': 'bold',
@@ -1345,16 +1550,18 @@ def create_layout():
                             value=[],
                             labelStyle={'fontSize': '12px'}
                         ),
+                        ]),
                         html.Div([
                             html.Div(
                                 "Production Additions ('000 b/d)",
-                                style={
-                                    'fontSize': '11px',
-                                    'color': '#1b365d',
-                                    'marginBottom': '4px',
-                                    'fontFamily': 'Arial, sans-serif'
-                                }
-                            ),
+                            style={
+                                'fontSize': '11px',
+                                'color': '#1b365d',
+                                'marginBottom': '4px',
+                                'fontFamily': 'Arial, sans-serif'
+                            }
+                        ),
+                        html.Div(id='production-additions-content', children=[
                             html.Div(style={
                                 'height': '14px',
                                 'width': '210px',
@@ -1371,7 +1578,8 @@ def create_layout():
                                 'width': '210px',
                                 'marginTop': '2px'
                             })
-                        ], style={'marginTop': '10px'}),
+                        ])
+                        ], id='production-additions-legend', style={'marginTop': '10px'}),
                         html.Div(
                             id='year-period-display',
                             style={'display': 'none'}
@@ -1612,22 +1820,90 @@ def register_callbacks(dash_app, server):
         selected_countries = selected_countries or []
         styles = []
         for country in legend_countries:
-            is_selected = country in selected_countries
+            # If no countries are selected, show all countries normally (not greyed out)
+            # If countries are selected, only those are highlighted, others are greyed out
+            if len(selected_countries) == 0:
+                is_selected = True  # Show all normally when none selected
+            else:
+                is_selected = country in selected_countries
+            
             country_color = get_country_color(country)
-            # Match Tableau design: selected countries get a colored border matching their color
-            # and a subtle background highlight
-            styles.append({
-                'display': 'flex',
-                'alignItems': 'center',
-                'marginBottom': '4px',
-                'padding': '2px 4px',
-                'cursor': 'pointer',
-                'borderRadius': '3px',
-                'border': f'2px solid {country_color}' if is_selected else '1px solid transparent',
-                'backgroundColor': 'rgba(240, 240, 240, 0.5)' if is_selected else 'transparent',
-                'transition': 'all 0.2s ease'
-            })
+            # Selected countries get a subtle background highlight. Non-selected countries are greyed out but still visible.
+            if is_selected:
+                # Selected country: highlighted with background color, no border
+                styles.append({
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'marginBottom': '4px',
+                    'padding': '2px 4px',
+                    'cursor': 'pointer',
+                    'borderRadius': '3px',
+                    'border': '1px solid transparent',
+                    'backgroundColor': 'rgba(240, 240, 240, 0.5)',
+                    'transition': 'all 0.2s ease',
+                    'opacity': '1.0'
+                })
+            else:
+                # Non-selected country: greyed out but still visible
+                styles.append({
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'marginBottom': '4px',
+                    'padding': '2px 4px',
+                    'cursor': 'pointer',
+                    'borderRadius': '3px',
+                    'border': '1px solid transparent',
+                    'backgroundColor': 'transparent',
+                    'transition': 'all 0.2s ease',
+                    'opacity': '0.3'  # Grey out non-selected countries
+                })
         return styles
+    
+    # Callback to handle quarter clicks from chart (clicking on quarter labels Q1, Q2, Q3, Q4)
+    @callback(
+        Output('quarter-highlight-store', 'data', allow_duplicate=True),
+        Input('projects-company-bar-chart', 'clickData'),
+        State('quarter-highlight-store', 'data'),
+        prevent_initial_call=True
+    )
+    def handle_quarter_label_click(click_data, current_quarter):
+        """Handle quarter label clicks on the chart - clicking same quarter toggles it off"""
+        if not click_data or 'points' not in click_data or not click_data['points']:
+            return dash.no_update
+        
+        try:
+            point = click_data['points'][0]
+            y_pos = point.get('y', 0)
+            
+            # Get trace name from the point's curveNumber and figure data
+            # Check if this is a quarter label click (y position < 0 indicates quarter label area)
+            # The invisible scatter trace for quarter clicks is at y=-3
+            if y_pos < 0:
+                quarter_val = point.get('customdata')
+                if quarter_val in ['Q1', 'Q2', 'Q3', 'Q4']:
+                    # Toggle: if same quarter is already selected, clear it; otherwise select it
+                    if current_quarter == quarter_val:
+                        return None  # Clear selection
+                    else:
+                        return quarter_val  # Select this quarter
+            else:
+                # Check if clicked on a bar but want to extract quarter from x value
+                # This allows clicking on bars to also select quarters
+                x_val = point.get('x')
+                if isinstance(x_val, str) and ' ' in x_val:
+                    parts = x_val.split(' ')
+                    if len(parts) > 1:
+                        quarter_val = parts[1]
+                        if quarter_val in ['Q1', 'Q2', 'Q3', 'Q4']:
+                            # Toggle: if same quarter is already selected, clear it; otherwise select it
+                            if current_quarter == quarter_val:
+                                return None  # Clear selection
+                            else:
+                                return quarter_val  # Select this quarter
+        except Exception:
+            pass
+        
+        return dash.no_update
     
     # Initial callback to set year display
     @callback(
@@ -1642,26 +1918,45 @@ def register_callbacks(dash_app, server):
         years = get_unique_years(None, None)
         return str(years[0]) if years else '2025'
     
-    # Normalize Likely To Go checklist: (All) selects all; otherwise keep only the latest choice.
+    # Normalize Likely To Go checklist: (All) selects all; unchecking (All) clears all checkboxes.
     @callback(
-        Output('likely-to-go-filter', 'value'),
+        [Output('likely-to-go-filter', 'value'),
+         Output('likely-filter-previous-store', 'data')],
         Input('likely-to-go-filter', 'value'),
+        State('likely-filter-previous-store', 'data'),
         prevent_initial_call=True
     )
-    def normalize_likely_to_go(selected):
-        """Checklist behavior: (All) checks everything; otherwise allow multi-select and dedupe."""
+    def normalize_likely_to_go(selected, previous_selected):
+        """Checklist behavior: (All) checks everything; unchecking (All) clears all checkboxes."""
         options_all = ['ALL', 'EMPTY', 'N', 'UNCERTAIN', 'Y']
+        
+        # Normalize inputs
+        selected = selected or []
+        previous_selected = previous_selected or []
+        
+        # Check if ALL was in previous selection but not in current selection
+        # This means user unchecked ALL - clear all checkboxes
+        had_all_before = 'ALL' in previous_selected
+        has_all_now = 'ALL' in selected
+        
+        if had_all_before and not has_all_now:
+            # User unchecked ALL - clear all checkboxes
+            return [], []
+        
+        # Handle empty selection
         if not selected:
-            return ['Y']
-        # If All is present, force all options on
+            return [], selected
+        
+        # If ALL is present, force all options on
         if 'ALL' in selected:
-            return options_all
+            return options_all, options_all
+        
         # Otherwise keep the order and remove duplicates
         seen = []
         for v in selected:
             if v not in seen:
                 seen.append(v)
-        return seen
+        return seen, seen
     
     @callback(
         [Output('projects-company-table', 'data'),
@@ -2157,41 +2452,36 @@ def register_callbacks(dash_app, server):
         # Do not change bar highlight when year controls change; keep prior highlight (if any)
         return str(new_year), new_year, new_year, dash.no_update
 
-    # Clicking a bar (or invisible quarter/year markers) selects that year's controls and optional quarter highlight
+    # Clicking a bar (or invisible year markers) selects that year's controls and sets year highlight
     @callback(
         [Output('year-of-period-filter', 'value', allow_duplicate=True),
          Output('year-period-slider', 'value', allow_duplicate=True),
-         Output('bar-highlight-year-store', 'data', allow_duplicate=True),
-         Output('quarter-highlight-store', 'data', allow_duplicate=True)],
+         Output('bar-highlight-year-store', 'data', allow_duplicate=True)],
         Input('projects-company-bar-chart', 'clickData'),
         prevent_initial_call=True
     )
     def set_year_from_bar_click(click_data):
-        """When a bar is clicked, sync the year selection controls to that year and set highlight."""
+        """When a bar or year label is clicked, sync the year selection controls to that year and set highlight."""
         if not click_data or 'points' not in click_data or not click_data['points']:
             # Clear highlights when clicking outside/blank
-            return dash.no_update, dash.no_update, None, None
+            return dash.no_update, dash.no_update, None
         
         try:
-            x_val = click_data['points'][0].get('x')
+            point = click_data['points'][0]
+            y_pos = point.get('y', 0)
+            trace_name = point.get('data', {}).get('name', '') if hasattr(point, 'data') else ''
+            
+            # Skip quarter label clicks (y < 0 or quarter-click-capture trace) - those are handled separately
+            if y_pos < 0 or trace_name == 'quarter-click-capture':
+                return dash.no_update, dash.no_update, dash.no_update
+            
+            x_val = point.get('x')
             year_part = str(x_val).split(' ')[0]
             selected_year = int(year_part)
         except (ValueError, TypeError, AttributeError, IndexError):
-            return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+            return dash.no_update, dash.no_update, dash.no_update
         
-        # Quarter highlight comes from customdata (set on invisible quarter capture trace) or from x label.
-        quarter_val = None
-        try:
-            quarter_val = click_data['points'][0].get('customdata')
-        except Exception:
-            quarter_val = None
-        if not quarter_val and isinstance(x_val, str) and ' ' in x_val:
-            # Fallback: parse from x category text
-            parts = str(x_val).split(' ')
-            if len(parts) > 1:
-                quarter_val = parts[1]
-        
-        return selected_year, selected_year, selected_year, quarter_val
+        return selected_year, selected_year, selected_year
     
     # Callback to handle play/pause/stop buttons
     @callback(
@@ -2270,7 +2560,9 @@ def register_callbacks(dash_app, server):
     
     @callback(
         [Output('projects-company-bar-chart', 'figure'),
-         Output('projects-company-map', 'figure')],
+         Output('projects-company-map', 'figure'),
+         Output('year-of-period-container', 'style'),
+         Output('production-additions-content', 'children')],
         [Input('current-submenu', 'data'),
          Input('company-filter', 'value'),
          Input('likely-to-go-filter', 'value'),
@@ -2278,19 +2570,54 @@ def register_callbacks(dash_app, server):
          Input('year-period-slider', 'value'),
          Input('show-history-checkbox', 'value'),
          Input('selected-countries-store', 'data'),
-         Input('bar-highlight-year-store', 'data')],
+         Input('bar-highlight-year-store', 'data'),
+         Input('quarter-highlight-store', 'data')],
         prevent_initial_call=False
     )
-    def update_projects_by_company(submenu, company, likely_to_go, selected_year, slider_year, show_history, selected_countries, bar_highlight_year):
+    def update_projects_by_company(submenu, company, likely_to_go, selected_year, slider_year, show_history, selected_countries, bar_highlight_year, quarter_highlight):
         """Update projects by company chart and map"""
         # Handle checklist value (after normalization) - keep list for filtering
         ltg_list = likely_to_go if isinstance(likely_to_go, list) else ([likely_to_go] if likely_to_go else [])
+        
+        # Null content for Production Additions when no data
+        null_content = html.Div('Null', style={
+            'height': '14px',
+            'width': '210px',
+            'background': '#e8f5e9',
+            'border': '1px solid #c5c5c5',
+            'borderRadius': '2px',
+            'display': 'flex',
+            'alignItems': 'center',
+            'justifyContent': 'center',
+            'fontSize': '11px',
+            'color': '#1b365d'
+        })
+        
+        # Normal content for Production Additions when there's data
+        normal_content = [
+            html.Div(style={
+                'height': '14px',
+                'width': '210px',
+                'background': 'linear-gradient(to right, #C7E8E4, #A4DCD5, #7DC9C3, #4FB2AF, #2A94A1, #1F7A8A, #1C6C7C)',
+                'border': '1px solid #c5c5c5',
+                'borderRadius': '2px'
+            }),
+            html.Div([
+                html.Span('0.7', style={'fontSize': '10px', 'color': '#1b365d'}),
+                html.Span('135.0', style={'fontSize': '10px', 'color': '#1b365d', 'marginLeft': 'auto'})
+            ], style={
+                'display': 'flex',
+                'justifyContent': 'space-between',
+                'width': '210px',
+                'marginTop': '2px'
+            })
+        ]
         
         # Check if this is the correct submenu (allow None on initial load)
         if submenu is not None and submenu != 'projects-company':
             empty_fig = go.Figure()
             empty_fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
-            return empty_fig, empty_fig
+            return empty_fig, empty_fig, {'display': 'none'}, null_content
         
         # If no company selected, show empty charts
         if not company:
@@ -2301,7 +2628,7 @@ def register_callbacks(dash_app, server):
                 x=0.5, y=0.5, showarrow=False
             )
             empty_fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
-            return empty_fig, empty_fig
+            return empty_fig, empty_fig, {'display': 'none'}, null_content
         
         # Use the year from dropdown or slider (whichever is more recent)
         year_to_use = selected_year if selected_year else slider_year
@@ -2310,6 +2637,8 @@ def register_callbacks(dash_app, server):
             year_to_use = years[0] if years else 2025
         
         # Load chart data with filters applied (company and likely_goahead)
+        # Don't filter by countries here - we want to show ALL countries in the chart
+        # Selected countries will be highlighted, non-selected will be greyed out
         df = load_chart_data(company, ltg_list)
         
         if df.empty:
@@ -2320,13 +2649,11 @@ def register_callbacks(dash_app, server):
                 x=0.5, y=0.5, showarrow=False
             )
             empty_fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
-            return empty_fig, empty_fig
+            # Hide Year of Period and show Null in Production Additions when no data
+            return empty_fig, empty_fig, {'display': 'none'}, null_content
         
-        # Apply country filter if countries are selected
-        # If empty list, show all countries. If countries are selected, show only those.
-        if selected_countries:
-            df = df[df['Country'].isin(selected_countries)].copy()
-        
+        # Pass selected countries to chart function for highlighting/greyout logic
+        # The chart will show ALL countries, but highlight selected ones and grey out non-selected
         countries_to_show = selected_countries if selected_countries else None
         
         # Create bar chart - show all years by default (matches Tableau behavior)
@@ -2336,11 +2663,13 @@ def register_callbacks(dash_app, server):
             bar_df,
             company or "Company",
             countries_to_show,
-            highlight_year=bar_highlight_year
+            highlight_year=bar_highlight_year,
+            highlight_quarter=quarter_highlight
         )
         
         # Create map - always filtered by selected year (Year of Period filter controls the map)
         # Pass filters to load_map_data
         map_fig = create_world_map(year_to_use, company, ltg_list)
         
-        return bar_fig, map_fig
+        # Show Year of Period section and normal Production Additions gradient when there's data
+        return bar_fig, map_fig, {'display': 'block'}, normal_content

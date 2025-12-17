@@ -2,49 +2,167 @@
 Imports - Country Comparison View
 Global Crude Imports Dashboard - Based on Tableau design
 """
+import json
+from urllib.request import urlopen
 import dash
-from dash import dcc, html, Input, Output, State, callback, dash_table
+from dash import dcc, html, Input, Output, State, callback, dash_table, no_update
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
-import os
-# from app import db
-# from app.models import Country, Imports
-# from sqlalchemy import func
+from core.data_helpers import execute_query
+from config import Config
 
-# Define data path
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Trade')
-COMPARISON_MAP_CSV = os.path.join(DATA_DIR, 'comparison_map.csv')
-ANNUAL_IMPORTS_CSV = os.path.join(DATA_DIR, 'comparison_Yearly Imports_data.csv')
-IMPORT_EXPORT_MATRIX_CSV = os.path.join(DATA_DIR, 'Import-Export Matrix_data.csv')
-IMPORT_EXPORT_MATRIX_YEAR = 2023
+# Set Mapbox access token
+if Config.MAPBOX_ACCESS_TOKEN:
+    px.set_mapbox_access_token(Config.MAPBOX_ACCESS_TOKEN)
+
+# Country to ISO-3 mapping for Mapbox
+COUNTRY_TO_ISO = {
+    "United States": "USA",
+    "United Kingdom": "GBR",
+    "Saudi Arabia": "SAU",
+    "Russia": "RUS",
+    "China": "CHN",
+    "India": "IND",
+    "Brazil": "BRA",
+    "Canada": "CAN",
+    "Mexico": "MEX",
+    "Venezuela": "VEN",
+    "Nigeria": "NGA",
+    "Angola": "AGO",
+    "Algeria": "DZA",
+    "Libya": "LBY",
+    "Iraq": "IRQ",
+    "Iran": "IRN",
+    "Kuwait": "KWT",
+    "United Arab Emirates": "ARE",
+    "Qatar": "QAT",
+    "Norway": "NOR",
+    "Kazakhstan": "KAZ",
+    "Azerbaijan": "AZE",
+    "Indonesia": "IDN",
+    "Malaysia": "MYS",
+    "Thailand": "THA",
+    "Vietnam": "VNM",
+    "Australia": "AUS",
+    "Colombia": "COL",
+    "Ecuador": "ECU",
+    "Argentina": "ARG",
+    "Chile": "CHL",
+    "Peru": "PER",
+    "Egypt": "EGY",
+    "Sudan": "SDN",
+    "South Sudan": "SSD",
+    "Gabon": "GAB",
+    "Congo": "COG",
+    "Republic of the Congo": "COG",
+    "Equatorial Guinea": "GNQ",
+    "Cameroon": "CMR",
+    "Ghana": "GHA",
+    "Côte d'Ivoire": "CIV",
+    "Cote d'Ivoire": "CIV",
+    "Ivory Coast": "CIV",
+    "Tunisia": "TUN",
+    "Oman": "OMN",
+    "Yemen": "YEM",
+    "Turkmenistan": "TKM",
+    "Uzbekistan": "UZB",
+    "Georgia": "GEO",
+    "Turkey": "TUR",
+    "Greece": "GRC",
+    "Italy": "ITA",
+    "Spain": "ESP",
+    "France": "FRA",
+    "Germany": "DEU",
+    "Netherlands": "NLD",
+    "Belgium": "BEL",
+    "Denmark": "DNK",
+    "Sweden": "SWE",
+    "Finland": "FIN",
+    "Poland": "POL",
+    "Romania": "ROU",
+    "Bulgaria": "BGR",
+    "Ukraine": "UKR",
+    "Japan": "JPN",
+    "South Korea": "KOR",
+    "Philippines": "PHL",
+    "Singapore": "SGP",
+    "Brunei": "BRN"
+}
+
+try:
+    import pycountry
+except Exception:
+    pycountry = None
+
+def _iso_for_country(country):
+    """Return ISO Alpha-3 code for a country, using custom map then pycountry."""
+    if not country:
+        return None
+    country_clean = str(country).strip()
+    if not country_clean:
+        return None
+    if country_clean in COUNTRY_TO_ISO:
+        return COUNTRY_TO_ISO[country_clean]
+    if pycountry:
+        try:
+            match = pycountry.countries.search_fuzzy(country_clean)
+            if match:
+                return match[0].alpha_3
+        except Exception:
+            pass
+    return None
 
 # Styling constants to match Energy Intelligence design
+# Adjusted color scale with darker colors at lower values for better visibility
 MAP_COLOR_SCALE = [
-    (0.0, '#d9dee7'),
-    (0.2, '#c5cedd'),
-    (0.4, '#a0b9cf'),
-    (0.6, '#799dc0'),
-    (0.8, '#4f76a4'),
-    (1.0, '#1f3f70')
+    (0.0, '#9fb3d1'),  # Darker light blue - was #d9dee7
+    (0.2, '#7a95b8'),  # Darker - was #c5cedd
+    (0.4, '#5d7ba5'),  # Darker - was #a0b9cf
+    (0.6, '#4f6b96'),  # Darker - was #799dc0
+    (0.8, '#3d5580'),  # Darker - was #4f76a4
+    (1.0, '#1f3f70')   # Keep darkest the same
 ]
 MAP_BACKGROUND_COLOR = '#d6e1eb'
 MAP_LAND_COLOR = '#f4f4f4'
 
 # Load data
-def load_imports_data():
-    """Load imports comparison data from CSV"""
+def load_imports_data(selected_year=2023):
+    """Load imports comparison data from database"""
     try:
-        df = pd.read_csv(COMPARISON_MAP_CSV, encoding='utf-16', sep='\t', skiprows=2)
-        df.columns = ['Importer', 'Year', 'Import_Volume']
+        query = """
+        SELECT
+            EXTRACT(YEAR FROM yr)::INT AS "Year",
+            import_country AS "Importer",
+            SUM(vol_kbpd) AS "DataValue"
+        FROM dev.fact_wcod_imports
+        WHERE
+            (import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+            OR source <> 'OECD Imports')
+            AND EXTRACT(YEAR FROM yr) = :selected_year
+        GROUP BY
+            EXTRACT(YEAR FROM yr),
+            import_country
+        ORDER BY
+            "Year",
+            "Importer";
+        """
+        
+        rows = execute_query(query, {'selected_year': selected_year})
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        # Rename DataValue to Import_Volume for consistency
+        df = df.rename(columns={'DataValue': 'Import_Volume'})
         
         # Clean the data
         df = df[df['Importer'].notna()].copy()
-        df['Year'] = pd.to_numeric(df['Year'], errors='coerce')
+        df['Year'] = pd.to_numeric(df['Year'], errors='coerce').astype('Int64')
         df = df[df['Year'].notna()].copy()
         
-        # Clean import volume - remove commas and convert to numeric
-        df['Import_Volume'] = df['Import_Volume'].astype(str).str.replace(',', '').str.strip()
+        # Convert import volume to numeric
         df['Import_Volume'] = pd.to_numeric(df['Import_Volume'], errors='coerce')
         df = df[df['Import_Volume'].notna()].copy()
         
@@ -78,19 +196,60 @@ def denormalize_country_name(country):
     return REVERSE_COUNTRY_MAP.get(country, country)
 
 # Load annual imports data
-def load_annual_imports_data():
-    """Load annual imports data from CSV"""
+def load_annual_imports_data(selected_countries=None):
+    """Load annual imports data from database with dynamic country filtering"""
     try:
-        df = pd.read_csv(ANNUAL_IMPORTS_CSV, encoding='utf-8')
-        df.columns = df.columns.str.strip()
+        # Base query
+        base_query = """
+        SELECT
+            EXTRACT(YEAR FROM yr)::INT AS "Year",
+            import_country AS "Importer",
+            SUM(vol_kbpd) AS "DataValue"
+        FROM dev.fact_wcod_imports
+        WHERE
+            (import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+            OR source <> 'OECD Imports')
+        """
         
-        # Rename columns
-        if 'Year of Year' in df.columns:
-            df = df.rename(columns={'Year of Year': 'Year', 'DataValue': 'Import_Volume'})
+        params = {}
+        
+        # Add country filter if countries are specified (filter out 'All' if present)
+        if selected_countries:
+            # Remove 'All' from the list if present
+            countries_to_filter = [c for c in selected_countries if c != 'All']
+            
+            if countries_to_filter:
+                if len(countries_to_filter) == 1:
+                    # Single country - use = operator
+                    base_query += " AND import_country = :import_country"
+                    params['import_country'] = countries_to_filter[0]
+                else:
+                    # Multiple countries - use IN clause
+                    placeholders = ", ".join([f":country_{i}" for i in range(len(countries_to_filter))])
+                    base_query += f" AND import_country IN ({placeholders})"
+                    params = {f"country_{i}": country for i, country in enumerate(countries_to_filter)}
+        
+        base_query += """
+        GROUP BY
+            EXTRACT(YEAR FROM yr),
+            import_country
+        ORDER BY
+            "Year",
+            "Importer";
+        """
+        
+        rows = execute_query(base_query, params)
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        # Rename DataValue to Import_Volume for consistency
+        df = df.rename(columns={'DataValue': 'Import_Volume'})
         
         # Clean the data
         df = df[df['Importer'].notna()].copy()
-        df['Year'] = pd.to_numeric(df['Year'], errors='coerce')
+        df['Year'] = pd.to_numeric(df['Year'], errors='coerce').astype('Int64')
         df = df[df['Year'].notna()].copy()
         
         # Convert import volume to numeric
@@ -108,76 +267,153 @@ def load_annual_imports_data():
         return pd.DataFrame()
 
 
-def load_import_export_matrix_data():
-    """Load Import – Export Matrix data (single-year snapshot)"""
+def load_import_export_matrix_data(selected_year=2023):
+    """Load Import – Export Matrix data from database (single-year snapshot)"""
     try:
-        df = pd.read_csv(
-            IMPORT_EXPORT_MATRIX_CSV,
-            encoding='utf-16',
-            sep='\t',
-            skiprows=3
-        )
-        df.columns = df.columns.str.strip()
-        if 'Exporter' not in df.columns:
-            return pd.DataFrame()
-
-        df = df[df['Exporter'].notna()].copy()
-
-        numeric_cols = [col for col in df.columns if col != 'Exporter']
-        for col in numeric_cols:
-            df[col] = (
-                df[col]
-                .astype(str)
-                .str.replace(',', '', regex=False)
-                .str.strip()
+        query = """
+        SELECT
+            EXTRACT(YEAR FROM yr)::INT AS "Year",
+            import_country AS "Importer",
+            export_country AS "Exporter",
+            SUM(vol_kbpd) AS "DataValue"
+        FROM dev.fact_wcod_imports
+        WHERE
+            EXTRACT(YEAR FROM yr) = :selected_year
+            AND (
+                import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+                OR source <> 'OECD Imports'
             )
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-
-        df[numeric_cols] = df[numeric_cols].fillna(0)
-        return df
+        GROUP BY
+            EXTRACT(YEAR FROM yr),
+            import_country,
+            export_country
+        ORDER BY
+            "Year",
+            "Importer",
+            "Exporter";
+        """
+        
+        rows = execute_query(query, {'selected_year': selected_year})
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        
+        # Clean the data
+        df = df[df['Importer'].notna() & df['Exporter'].notna()].copy()
+        df['Year'] = pd.to_numeric(df['Year'], errors='coerce').astype('Int64')
+        df['DataValue'] = pd.to_numeric(df['DataValue'], errors='coerce')
+        df = df[df['DataValue'].notna()].copy()
+        
+        # Filter out zero values
+        df = df[df['DataValue'] > 0].copy()
+        
+        # Pivot the data: Exporter as rows, Importer as columns
+        if df.empty:
+            return pd.DataFrame()
+        
+        df_pivot = df.pivot_table(
+            index='Exporter',
+            columns='Importer',
+            values='DataValue',
+            aggfunc='sum',
+            fill_value=0
+        ).reset_index()
+        
+        # Sort exporters alphabetically
+        df_pivot = df_pivot.sort_values('Exporter').reset_index(drop=True)
+        
+        return df_pivot
     except Exception as e:
         print(f"Error loading import-export matrix data: {e}")
         import traceback
         traceback.print_exc()
         return pd.DataFrame()
 
-# Load data on module import
-IMPORTS_DF = load_imports_data()
-ANNUAL_IMPORTS_DF = load_annual_imports_data()
-IMPORT_EXPORT_MATRIX_DF = load_import_export_matrix_data()
-MATRIX_COLUMN_ORDER = [
-    col for col in IMPORT_EXPORT_MATRIX_DF.columns if col != 'Exporter'
-] if not IMPORT_EXPORT_MATRIX_DF.empty else []
-
-# Normalize country names in the dataframes
-if not IMPORTS_DF.empty:
-    IMPORTS_DF['Importer'] = IMPORTS_DF['Importer'].apply(normalize_country_name)
-if not ANNUAL_IMPORTS_DF.empty:
-    # Keep original country names for annual table (don't normalize for display)
-    pass
+# Load data on module import (all data is now loaded dynamically)
+# Matrix data is loaded dynamically based on selected year
 
 def get_available_years():
-    """Get continuous list of available years across all datasets"""
-    years = set()
-    if not IMPORTS_DF.empty:
-        years.update(IMPORTS_DF['Year'].dropna().astype(int).tolist())
-    if not ANNUAL_IMPORTS_DF.empty:
-        years.update(ANNUAL_IMPORTS_DF['Year'].dropna().astype(int).tolist())
-    if years:
-        year_min, year_max = min(years), max(years)
-        return list(range(year_min, year_max + 1))
-    return list(range(2000, 2026))
+    """Get continuous list of available years from database"""
+    try:
+        query = """
+        SELECT DISTINCT EXTRACT(YEAR FROM yr)::INT AS "Year"
+        FROM dev.fact_wcod_imports
+        WHERE (import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+            OR source <> 'OECD Imports')
+        ORDER BY "Year";
+        """
+        rows = execute_query(query)
+        if rows:
+            years = [int(row['Year']) for row in rows if row['Year'] is not None]
+            if years:
+                year_min, year_max = min(years), max(years)
+                return list(range(year_min, year_max + 1))
+        # Fallback to default range
+        return list(range(2000, 2026))
+    except Exception as e:
+        print(f"Error getting available years: {e}")
+        return list(range(2000, 2026))
 
 def get_available_countries():
-    """Get list of available countries - use original names from annual imports CSV"""
-    if not ANNUAL_IMPORTS_DF.empty:
-        countries = sorted(ANNUAL_IMPORTS_DF['Importer'].unique().tolist())
-        return countries
-    elif not IMPORTS_DF.empty:
-        # Fallback to map data countries
-        countries = sorted(IMPORTS_DF['Importer'].unique().tolist())
-        return countries
-    return []
+    """Get list of available countries from database"""
+    try:
+        query = """
+        SELECT DISTINCT import_country AS "Importer"
+        FROM dev.fact_wcod_imports
+        WHERE (import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+            OR source <> 'OECD Imports')
+        ORDER BY import_country;
+        """
+        rows = execute_query(query)
+        if rows:
+            countries = [row['Importer'] for row in rows if row['Importer'] is not None]
+            return sorted(countries)
+        return []
+    except Exception as e:
+        print(f"Error getting available countries: {e}")
+        return []
+
+# Cache for world GeoJSON
+_world_geojson = None
+
+def _load_world_geojson():
+    """Load world GeoJSON for Mapbox maps"""
+    global _world_geojson
+    if _world_geojson is not None:
+        return _world_geojson
+    url = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json"
+    try:
+        with urlopen(url, timeout=5) as resp:
+            _world_geojson = json.load(resp)
+    except Exception as e:
+        print(f"Error loading world GeoJSON: {e}")
+        _world_geojson = None
+    return _world_geojson
+
+def get_all_countries_with_coordinates():
+    """Get all countries from dim_country with their coordinates and ISO codes for labels and map"""
+    try:
+        query = """
+        SELECT DISTINCT
+            country_long_name AS "Country",
+            country_code AS "ISO_Code",
+            latitude AS "Latitude",
+            longitude AS "Longitude"
+        FROM dev.dim_country
+        WHERE country_long_name IS NOT NULL
+            AND latitude IS NOT NULL
+            AND longitude IS NOT NULL
+        ORDER BY country_long_name;
+        """
+        rows = execute_query(query)
+        if rows:
+            return pd.DataFrame(rows)
+        return pd.DataFrame(columns=['Country', 'ISO_Code', 'Latitude', 'Longitude'])
+    except Exception as e:
+        print(f"Error getting all countries with coordinates: {e}")
+        return pd.DataFrame(columns=['Country', 'ISO_Code', 'Latitude', 'Longitude'])
 
 AVAILABLE_YEARS = get_available_years()
 YEAR_MIN = AVAILABLE_YEARS[0] if AVAILABLE_YEARS else 2000
@@ -210,6 +446,7 @@ def create_layout():
         dcc.Store(id='imports-year-store', data=DEFAULT_YEAR),
         dcc.Store(id='imports-year-play-store', data=False),
         dcc.Store(id='imports-country-store', data={'all_selected': True}),
+        dcc.Store(id='imports-map-clicked-country', data=None),  # Store clicked country from map
         dcc.Interval(id='imports-year-interval', interval=2000, disabled=True),
         # Instruction text
         html.P(
@@ -334,7 +571,7 @@ def create_layout():
                     max=YEAR_MAX,
                     step=1,
                     value=DEFAULT_YEAR,
-                    marks=YEAR_SLIDER_MARKS,
+                    marks=None,  # Remove marks to prevent overlapping labels
                     tooltip={'always_visible': False, 'placement': 'bottom'},
                     included=False,
                     updatemode='mouseup',
@@ -507,7 +744,7 @@ def create_layout():
             ),
             html.P(
                 id='imports-matrix-caption',
-                children=f"Import – Export Matrix for {IMPORT_EXPORT_MATRIX_YEAR} ('000 b/d)",
+                children="Import – Export Matrix ('000 b/d)",
                 style={
                     'textAlign': 'center',
                     'fontWeight': 'bold',
@@ -551,6 +788,54 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for Imports - Country Comparison"""
     
     @dash_app.callback(
+        [Output('imports-map-clicked-country', 'data'),
+         Output('imports-country-checklist', 'value', allow_duplicate=True)],
+        Input('imports-world-map', 'clickData'),
+        State('imports-map-clicked-country', 'data'),
+        prevent_initial_call=True
+    )
+    def handle_map_click(clickData, current_clicked_country):
+        """Handle map click to store clicked country and update checklist.
+        If clicking the same country again, deselect it and return to original state.
+        For Mapbox, clickData contains ISO codes in 'location' or country names in 'customdata'."""
+        if clickData and 'points' in clickData and len(clickData['points']) > 0:
+            point = clickData['points'][0]
+            clicked_country = None
+            
+            # Try to get country from customdata first (contains original country name)
+            if 'customdata' in point and point['customdata']:
+                customdata = point['customdata']
+                if isinstance(customdata, list) and len(customdata) > 0:
+                    clicked_country = customdata[0]  # First element is country name
+                elif isinstance(customdata, str):
+                    clicked_country = customdata
+            # Fallback: try to get from location (ISO code) - need to map back to country
+            elif 'location' in point and point['location']:
+                iso_code = point['location']
+                # Use reverse mapping from COUNTRY_TO_ISO
+                iso_to_country_reverse = {v: k for k, v in COUNTRY_TO_ISO.items()}
+                clicked_country = iso_to_country_reverse.get(iso_code)
+                # If not found in mapping, try to get from all_countries_df
+                if not clicked_country:
+                    all_countries_df = get_all_countries_with_coordinates()
+                    if not all_countries_df.empty and 'ISO_Code' in all_countries_df.columns:
+                        iso_to_country = dict(zip(all_countries_df['ISO_Code'], all_countries_df['Country']))
+                        clicked_country = iso_to_country.get(iso_code)
+            
+            if clicked_country:
+                # Check if the country exists in available countries
+                if clicked_country in AVAILABLE_COUNTRIES:
+                    # If clicking the same country that's already selected, deselect it (return to original)
+                    if current_clicked_country == clicked_country:
+                        # Return to original state: clear clicked country and select all countries
+                        return None, ['All'] + AVAILABLE_COUNTRIES
+                    else:
+                        # Select only the clicked country in the checklist (deselect all others)
+                        return clicked_country, [clicked_country]
+                return clicked_country, no_update
+        return None, no_update
+    
+    @dash_app.callback(
         [Output('imports-world-map', 'figure'),
          Output('imports-annual-table-container', 'children'),
          Output('imports-matrix-table-container', 'children'),
@@ -558,11 +843,20 @@ def register_callbacks(dash_app, server):
          Output('imports-mid-value', 'children'),
          Output('imports-matrix-caption', 'children')],
         [Input('imports-year-store', 'data'),
-         Input('imports-country-checklist', 'value')]
+         Input('imports-country-checklist', 'value'),
+         Input('imports-map-clicked-country', 'data')]
     )
-    def update_imports_dashboard(selected_year, selected_countries):
+    def update_imports_dashboard(selected_year, selected_countries, clicked_country):
         """Update map and annual chart based on filters"""
-        matrix_caption = f"Import – Export Matrix for {IMPORT_EXPORT_MATRIX_YEAR} ('000 b/d)"
+        matrix_caption = f"Import – Export Matrix for {selected_year} ('000 b/d)"
+        
+        # Load imports data dynamically for the selected year
+        IMPORTS_DF = load_imports_data(selected_year)
+        
+        # Normalize country names for map compatibility
+        if not IMPORTS_DF.empty:
+            IMPORTS_DF['Importer'] = IMPORTS_DF['Importer'].apply(normalize_country_name)
+        
         if IMPORTS_DF.empty:
             empty_fig = go.Figure()
             empty_fig.add_annotation(
@@ -575,18 +869,14 @@ def register_callbacks(dash_app, server):
             return (
                 empty_fig,
                 html.Div("No data available", style={'padding': '20px', 'textAlign': 'center', 'color': '#666'}),
+                html.Div("No data available", style={'padding': '20px', 'textAlign': 'center', 'color': '#666'}),
                 '0',
                 '0',
                 matrix_caption
             )
         
-        # Filter by year
-        df_filtered = IMPORTS_DF[IMPORTS_DF['Year'] == selected_year].copy()
-        if df_filtered.empty and not ANNUAL_IMPORTS_DF.empty:
-            fallback_df = ANNUAL_IMPORTS_DF[ANNUAL_IMPORTS_DF['Year'] == selected_year].copy()
-            if not fallback_df.empty:
-                fallback_df['Importer'] = fallback_df['Importer'].apply(normalize_country_name)
-                df_filtered = fallback_df.rename(columns={'Importer': 'Importer', 'Import_Volume': 'Import_Volume'})
+        # Data is already filtered by year in the query
+        df_filtered = IMPORTS_DF.copy()
         
         # Filter by countries if not "All"
         # The checklist uses original country names, but map data uses normalized names
@@ -610,6 +900,8 @@ def register_callbacks(dash_app, server):
             # Aggregate by country (sum if multiple entries)
             df_map = df_filtered.groupby('Importer')['Import_Volume'].sum().reset_index()
             df_map.columns = ['Country', 'Import_Volume']
+            # Store original country names before normalization for matching
+            df_map['Country_Original'] = df_map['Country'].copy()
             # Ensure country names are normalized
             df_map['Country'] = df_map['Country'].apply(normalize_country_name)
             
@@ -617,114 +909,179 @@ def register_callbacks(dash_app, server):
             max_volume = df_map['Import_Volume'].max() if len(df_map) > 0 else 1
             # Add year column for hover
             df_map['Year'] = selected_year
-            map_fig = px.choropleth(
-                df_map,
-                locations='Country',
-                locationmode='country names',
-                color='Import_Volume',
-                projection='equirectangular',
-                color_continuous_scale=MAP_COLOR_SCALE,
-                labels={'Import_Volume': "Import Volume ('000 b/d)"},
-                hover_data={'Year': True, 'Import_Volume': ':,.0f'},
-                range_color=[0, max_volume]
-            )
-            # Customize hover template and styling to match Energy Intelligence design
-            map_fig.update_traces(
-                hovertemplate="<b>Importer:</b> %{location}<br>"
-                              "<b>Year:</b> %{customdata[0]}<br>"
-                              "<b>Traded Volume:</b> %{z}('000 b/d)<extra></extra>",
-                hoverlabel=dict(
-                    bgcolor='white',
-                    font_color='#1b365d',
-                    bordercolor='#99a6b8',
-                    font_size=12,
-                    font_family='Arial, sans-serif'
+            
+            # Load GeoJSON and all countries data for Mapbox
+            geojson = _load_world_geojson()
+            all_countries_df = get_all_countries_with_coordinates()
+            
+            # Create mapping from country names to ISO-3 codes using _iso_for_country function
+            # This ensures we get proper ISO-3 codes that match the GeoJSON
+            df_map['ISO_Code'] = df_map['Country_Original'].apply(_iso_for_country)
+            # Filter out any countries without valid ISO-3 codes
+            df_map = df_map.dropna(subset=['ISO_Code']).copy()
+            # Ensure ISO codes are strings and exactly 3 characters
+            if not df_map.empty:
+                df_map['ISO_Code'] = df_map['ISO_Code'].astype(str)
+                df_map = df_map[df_map['ISO_Code'].str.len() == 3].copy()
+            
+            # Handle clicked country highlighting
+            # clicked_country is the original country name from AVAILABLE_COUNTRIES
+            clicked_country_original = None
+            if clicked_country and not df_map.empty:
+                # Get ISO code for the clicked country
+                clicked_iso = _iso_for_country(clicked_country)
+                # Check if we have a valid ISO code
+                if clicked_iso and len(str(clicked_iso)) == 3:
+                    clicked_iso_str = str(clicked_iso)
+                    # Check if this ISO code exists in our filtered map data (compare as strings)
+                    matching_iso_rows = df_map[df_map['ISO_Code'].astype(str) == clicked_iso_str]
+                    if not matching_iso_rows.empty:
+                        # Found a match by ISO code - use the country name from the data
+                        clicked_country_original = matching_iso_rows.iloc[0]['Country_Original']
+                    else:
+                        # Try matching by country name (case-insensitive)
+                        matching_name_rows = df_map[df_map['Country_Original'].str.strip().str.lower() == str(clicked_country).strip().lower()]
+                        if not matching_name_rows.empty:
+                            clicked_country_original = matching_name_rows.iloc[0]['Country_Original']
+            
+            if geojson is None:
+                # Fallback to empty map if no GeoJSON
+                map_fig = go.Figure()
+                map_fig.add_annotation(
+                    text="No GeoJSON data available for map display",
+                    xref="paper", yref="paper",
+                    x=0.5, y=0.5,
+                    showarrow=False
                 )
-            )
-            map_fig.update_layout(
-                margin=dict(l=20, r=20, t=20, b=80),
-                height=550,
-                plot_bgcolor=MAP_BACKGROUND_COLOR,
-                paper_bgcolor=MAP_BACKGROUND_COLOR,
-                dragmode='zoom',
-                uirevision='imports-map',
-                geo=dict(
-                    bgcolor=MAP_BACKGROUND_COLOR,
-                    showframe=False,
-                    showcoastlines=True,
-                    projection_type='equirectangular',
-                    projection=dict(
-                        type='equirectangular',
-                        scale=1.02,
-                        rotation=dict(lon=0, lat=0)
-                    ),
-                    lonaxis=dict(range=[-180, 180], showgrid=False, dtick=30),
-                    lataxis=dict(range=[-65, 85], showgrid=False, dtick=30),
-                    center=dict(lon=0, lat=15),
-                    visible=True,
-                    domain=dict(x=[0, 1], y=[0, 1]),
-                    showland=True,
-                    showocean=True,
-                    showlakes=True,
-                    showrivers=False,
-                    coastlinewidth=0.5,
-                    countrywidth=0.5,
-                    showcountries=True,
-                    countrycolor='#9aa7bb',
-                    landcolor=MAP_LAND_COLOR,
-                    oceancolor=MAP_BACKGROUND_COLOR
-                ),
-                coloraxis_showscale=False,
-                newshape=dict(line_color='#2f4f6f')
-            )
-            map_fig.update_coloraxes(colorscale=MAP_COLOR_SCALE, cmin=0, cmax=max_volume if max_volume > 0 else 1)
-            map_fig.update_traces(marker_line_color='#ffffff', marker_line_width=0.5)
-            # Overlay country labels with density control for readability
-            labels_df = df_map.copy()
-            # Throttle label density for wide zoom; sort by volume then alphabetize for spread
-            label_cap = len(labels_df)
-            if len(labels_df) > 120:
-                label_cap = 30
-            elif len(labels_df) > 80:
-                label_cap = 45
-            labels_df = (
-                labels_df.sort_values("Import_Volume", ascending=False)
-                .head(label_cap)
-                .sort_values("Country")
-            )
-            map_fig.add_trace(
-                go.Scattergeo(
-                    locations=labels_df['Country'],
-                    locationmode='country names',
-                    mode='text',
-                    text=[denormalize_country_name(c) for c in labels_df['Country']],
-                    textfont=dict(size=8, color='#2c3e50', family='Arial'),
-                    textposition='top center',
-                    hoverinfo='skip',
-                    showlegend=False,
+                map_fig.update_layout(height=550, plot_bgcolor='white', paper_bgcolor='white')
+            elif df_map.empty:
+                # No valid countries with ISO-3 codes
+                map_fig = go.Figure()
+                map_fig.add_annotation(
+                    text="No countries with valid ISO codes for map display",
+                    xref="paper", yref="paper",
+                    x=0.5, y=0.5,
+                    showarrow=False
                 )
-            )
-            # Add copyright annotation
-            map_fig.add_annotation(
-                text="© 2025 Mapbox © OpenStreetMap",
-                xref="paper", yref="paper",
-                x=0.01, y=0.01,
-                showarrow=False,
-                font=dict(size=10, color='#666'),
-                bgcolor='rgba(255,255,255,0.8)',
-                bordercolor='rgba(255,255,255,0.8)'
-            )
+                map_fig.update_layout(height=550, plot_bgcolor='white', paper_bgcolor='white')
+            else:
+                # Create Mapbox choropleth map
+                map_fig = go.Figure()
+                
+                if clicked_country_original:
+                    # Dimmed base map for all countries - filter to only valid ISO-3 codes
+                    df_map_valid = df_map.copy()  # Already filtered to valid ISO codes
+                    if not df_map_valid.empty:
+                        map_fig.add_trace(go.Choroplethmapbox(
+                            geojson=geojson,
+                            locations=df_map_valid['ISO_Code'].tolist(),
+                            z=df_map_valid['Import_Volume'].tolist(),
+                            featureidkey="id",
+                            colorscale=MAP_COLOR_SCALE,
+                            zmin=0,
+                            zmax=max_volume,
+                            marker=dict(line=dict(color='#ffffff', width=0.5), opacity=0.3),
+                            showscale=False,
+                            hovertemplate="<b>Importer:</b> %{customdata[0]}<br>" \
+                                          "<b>Year:</b> %{customdata[1]}<br>" \
+                                          "<b>Traded Volume:</b> %{z:,.0f}('000 b/d)<extra></extra>",
+                            customdata=[[c, selected_year] for c in df_map_valid['Country_Original']],
+                            hoverlabel=dict(bgcolor='white', font_color='#1b365d', bordercolor='#99a6b8',
+                                           font_size=12, font_family='Arial, sans-serif')
+                        ))
+                    
+                    # Highlighted country - add on top with full opacity and black border
+                    df_highlighted = df_map[df_map['Country_Original'] == clicked_country_original].copy()
+                    if not df_highlighted.empty:
+                        map_fig.add_trace(go.Choroplethmapbox(
+                            geojson=geojson,
+                            locations=df_highlighted['ISO_Code'].tolist(),
+                            z=df_highlighted['Import_Volume'].tolist(),
+                            featureidkey="id",
+                            colorscale=MAP_COLOR_SCALE,
+                            zmin=0,
+                            zmax=max_volume,
+                            marker=dict(line=dict(color='#000000', width=3), opacity=1.0),
+                            showscale=False,
+                            hovertemplate="<b>Importer:</b> %{customdata[0]}<br>" \
+                                          "<b>Year:</b> %{customdata[1]}<br>" \
+                                          "<b>Traded Volume:</b> %{z:,.0f}('000 b/d)<br>" \
+                                          "<b>(Selected)</b><extra></extra>",
+                            customdata=[[c, selected_year] for c in df_highlighted['Country_Original']],
+                            hoverlabel=dict(bgcolor='white', font_color='#1b365d', bordercolor='#000000',
+                                           font_size=12, font_family='Arial, sans-serif')
+                        ))
+                else:
+                    # Normal map - already filtered to valid ISO-3 codes
+                    df_map_valid = df_map.copy()
+                    if not df_map_valid.empty:
+                        map_fig.add_trace(go.Choroplethmapbox(
+                            geojson=geojson,
+                            locations=df_map_valid['ISO_Code'].tolist(),
+                            z=df_map_valid['Import_Volume'].tolist(),
+                            featureidkey="id",
+                            colorscale=MAP_COLOR_SCALE,
+                            zmin=0,
+                            zmax=max_volume,
+                            marker=dict(line=dict(color='#ffffff', width=0.5)),
+                            showscale=False,
+                            hovertemplate="<b>Importer:</b> %{customdata[0]}<br>" \
+                                          "<b>Year:</b> %{customdata[1]}<br>" \
+                                          "<b>Traded Volume:</b> %{z:,.0f}('000 b/d)<extra></extra>",
+                            customdata=[[c, selected_year] for c in df_map_valid['Country_Original']],
+                            hoverlabel=dict(bgcolor='white', font_color='#1b365d', bordercolor='#99a6b8',
+                                           font_size=12, font_family='Arial, sans-serif')
+                        ))
+                
+                # Add ALL country labels (not just import countries)
+                if not all_countries_df.empty:
+                    map_fig.add_trace(go.Scattermapbox(
+                        lat=all_countries_df['Latitude'].tolist(),
+                        lon=all_countries_df['Longitude'].tolist(),
+                        mode='text',
+                        text=all_countries_df['Country'].tolist(),
+                        textfont=dict(size=9, color='#2c3e50', family='Arial'),
+                        textposition='top center',
+                        hoverinfo='skip',
+                        showlegend=False
+                    ))
+                
+                # Update layout with Mapbox
+                mapbox_layout = dict(
+                    style="carto-positron",
+                    center=dict(lat=24.0, lon=45.0),
+                    zoom=1.5
+                )
+                if Config.MAPBOX_ACCESS_TOKEN:
+                    mapbox_layout["accesstoken"] = Config.MAPBOX_ACCESS_TOKEN
+                
+                map_fig.update_layout(
+                    margin=dict(l=20, r=20, t=20, b=80),
+                    height=550,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    mapbox=mapbox_layout,
+                    uirevision='imports-map'
+                )
+                
+                # Add copyright annotation
+                map_fig.add_annotation(
+                    text="© 2025 Mapbox © OpenStreetMap",
+                    xref="paper", yref="paper",
+                    x=0.01, y=0.01,
+                    showarrow=False,
+                    font=dict(size=10, color='#666'),
+                    bgcolor='rgba(255,255,255,0.8)',
+                    bordercolor='rgba(255,255,255,0.8)'
+                )
         
-        # Create annual table using the annual imports CSV data
-        if ANNUAL_IMPORTS_DF.empty:
+        # Create annual table using database query with dynamic country filtering
+        # Load annual imports data based on selected countries
+        df_annual = load_annual_imports_data(selected_countries)
+        
+        if df_annual.empty:
             annual_table = html.Div("No data available", style={'padding': '20px', 'textAlign': 'center', 'color': '#666'})
         else:
-            # Filter by selected countries if not "All"
-            # The checklist uses original country names (from annual CSV)
-            if 'All' in selected_countries or not selected_countries:
-                df_annual = ANNUAL_IMPORTS_DF.copy()
-            else:
-                df_annual = ANNUAL_IMPORTS_DF[ANNUAL_IMPORTS_DF['Importer'].isin(selected_countries)].copy()
             
             if df_annual.empty:
                 annual_table = html.Div("No data available for selected countries", style={'padding': '20px', 'textAlign': 'center', 'color': '#666'})
@@ -849,16 +1206,46 @@ def register_callbacks(dash_app, server):
                     merge_duplicate_headers=True
                 )
 
+        # Load matrix data dynamically for the selected year
+        IMPORT_EXPORT_MATRIX_DF = load_import_export_matrix_data(selected_year)
+        
         if IMPORT_EXPORT_MATRIX_DF.empty:
             matrix_table = html.Div(
                 "Import – Export matrix data unavailable",
                 style={'padding': '20px', 'textAlign': 'center', 'color': '#666'}
             )
         else:
+            # Get column order (all columns except 'Exporter')
+            MATRIX_COLUMN_ORDER = [
+                col for col in IMPORT_EXPORT_MATRIX_DF.columns if col != 'Exporter'
+            ]
+            
+            # Sort importers (columns) alphabetically
+            MATRIX_COLUMN_ORDER = sorted(MATRIX_COLUMN_ORDER)
+            
+            # Add row totals (sum of all importers for each exporter)
+            IMPORT_EXPORT_MATRIX_DF = IMPORT_EXPORT_MATRIX_DF.copy()
+            IMPORT_EXPORT_MATRIX_DF['Grand Total'] = IMPORT_EXPORT_MATRIX_DF[MATRIX_COLUMN_ORDER].sum(axis=1)
+            
+            # Add column totals (sum of all exporters for each importer)
+            totals_row = {'Exporter': 'Grand Total'}
+            for col in MATRIX_COLUMN_ORDER:
+                totals_row[col] = IMPORT_EXPORT_MATRIX_DF[col].sum()
+            totals_row['Grand Total'] = IMPORT_EXPORT_MATRIX_DF[MATRIX_COLUMN_ORDER].sum().sum()
+            
+            # Append totals row to dataframe
+            IMPORT_EXPORT_MATRIX_DF = pd.concat([
+                IMPORT_EXPORT_MATRIX_DF,
+                pd.DataFrame([totals_row])
+            ], ignore_index=True)
+            
+            # Update column order to include Grand Total column
+            MATRIX_COLUMN_ORDER_WITH_TOTAL = MATRIX_COLUMN_ORDER + ['Grand Total']
+            
             matrix_data_records = []
             for record in IMPORT_EXPORT_MATRIX_DF.to_dict('records'):
                 formatted = {'Exporter': record.get('Exporter', '')}
-                for column in MATRIX_COLUMN_ORDER:
+                for column in MATRIX_COLUMN_ORDER_WITH_TOTAL:
                     value = record.get(column)
                     if value is None or pd.isna(value) or value == 0:
                         formatted[column] = ''
@@ -867,7 +1254,7 @@ def register_callbacks(dash_app, server):
                 matrix_data_records.append(formatted)
 
             matrix_columns = [{'name': 'Exporter', 'id': 'Exporter'}] + [
-                {'name': col, 'id': col} for col in MATRIX_COLUMN_ORDER
+                {'name': col, 'id': col} for col in MATRIX_COLUMN_ORDER_WITH_TOTAL
             ]
 
             matrix_table = dash_table.DataTable(
@@ -919,7 +1306,17 @@ def register_callbacks(dash_app, server):
                     'backgroundColor': 'white'
                 },
                 style_data_conditional=[
-                    {'if': {'row_index': 'odd'}, 'backgroundColor': '#f8f9fa'}
+                    {'if': {'row_index': 'odd'}, 'backgroundColor': '#f8f9fa'},
+                    {
+                        'if': {'filter_query': '{Exporter} = "Grand Total"'},
+                        'fontWeight': 'bold',
+                        'backgroundColor': '#f0f0f0'
+                    },
+                    {
+                        'if': {'column_id': 'Grand Total'},
+                        'fontWeight': 'bold',
+                        'backgroundColor': '#f0f0f0'
+                    }
                 ],
                 fixed_rows={'headers': True},
                 page_action='none',
