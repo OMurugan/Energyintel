@@ -135,7 +135,7 @@ def load_imports_data(selected_year=2023):
             EXTRACT(YEAR FROM yr)::INT AS "Year",
             import_country AS "Importer",
             SUM(vol_kbpd) AS "DataValue"
-        FROM dev.fact_wcod_imports
+        FROM fact_wcod_imports
         WHERE
             (import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
             OR source <> 'OECD Imports')
@@ -205,7 +205,7 @@ def load_annual_imports_data(selected_countries=None):
             EXTRACT(YEAR FROM yr)::INT AS "Year",
             import_country AS "Importer",
             SUM(vol_kbpd) AS "DataValue"
-        FROM dev.fact_wcod_imports
+        FROM fact_wcod_imports
         WHERE
             (import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
             OR source <> 'OECD Imports')
@@ -276,7 +276,7 @@ def load_import_export_matrix_data(selected_year=2023):
             import_country AS "Importer",
             export_country AS "Exporter",
             SUM(vol_kbpd) AS "DataValue"
-        FROM dev.fact_wcod_imports
+        FROM fact_wcod_imports
         WHERE
             EXTRACT(YEAR FROM yr) = :selected_year
             AND (
@@ -339,7 +339,7 @@ def get_available_years():
     try:
         query = """
         SELECT DISTINCT EXTRACT(YEAR FROM yr)::INT AS "Year"
-        FROM dev.fact_wcod_imports
+        FROM fact_wcod_imports
         WHERE (import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
             OR source <> 'OECD Imports')
         ORDER BY "Year";
@@ -361,7 +361,7 @@ def get_available_countries():
     try:
         query = """
         SELECT DISTINCT import_country AS "Importer"
-        FROM dev.fact_wcod_imports
+        FROM fact_wcod_imports
         WHERE (import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
             OR source <> 'OECD Imports')
         ORDER BY import_country;
@@ -401,7 +401,7 @@ def get_all_countries_with_coordinates():
             country_code AS "ISO_Code",
             latitude AS "Latitude",
             longitude AS "Longitude"
-        FROM dev.dim_country
+        FROM dim_country
         WHERE country_long_name IS NOT NULL
             AND latitude IS NOT NULL
             AND longitude IS NOT NULL

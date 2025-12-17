@@ -53,7 +53,7 @@ def _load_gpw_data(region: str = None) -> pd.DataFrame:
             delivery_to AS "Region",
             tech_type AS "TechType",
             price AS "DataValue"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type = 'GPW'
         """
         
@@ -120,7 +120,7 @@ def _load_incremental_margins_data(region: str = None) -> pd.DataFrame:
             delivery_to AS "Region",
             tech_type AS "TechType",
             price AS "DataValue"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type = 'Refining Margin'
         """
         
@@ -198,7 +198,7 @@ def _get_available_regions():
     try:
         query = """
         SELECT DISTINCT delivery_to AS "Region"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type IN ('GPW', 'Refining Margin')
             AND delivery_to IS NOT NULL
         ORDER BY delivery_to
@@ -216,7 +216,7 @@ def _get_available_crudes():
     try:
         query = """
         SELECT DISTINCT crude_name AS "Crude"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type IN ('GPW', 'Refining Margin')
             AND crude_name IS NOT NULL
         ORDER BY crude_name
@@ -245,7 +245,7 @@ def _get_available_tech_types():
                     END
                 ELSE tech_type
             END AS "TechTypeFull"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type IN ('GPW', 'Refining Margin')
         ORDER BY "TechTypeFull"
         """
