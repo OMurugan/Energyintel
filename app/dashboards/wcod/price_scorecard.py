@@ -750,7 +750,7 @@ def register_callbacks(dash_app, server):
                     }
                 ],
                 fixed_rows={'headers': True},
-                page_size=50,
+                page_action='none',
                 sort_action='native',
                 filter_action='none',
                 css=[
