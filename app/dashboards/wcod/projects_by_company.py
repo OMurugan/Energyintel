@@ -967,28 +967,31 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
                 # If no data for this period, set to 0
                 values.append(0)
             
-            # Apply year/quarter highlighting only for selected countries
-            # For non-selected countries, we'll use trace opacity to grey them out
-            if is_selected and (highlight_year_int is not None or highlight_quarter_label is not None):
-                # Selected country with year/quarter highlighting
-                is_year_match = (highlight_year_int is not None and period_year == highlight_year_int)
-                is_quarter_match = (
-                    highlight_quarter_label is not None and str(period).endswith(f" {highlight_quarter_label}")
-                )
-                if (highlight_year_int is None and is_quarter_match) or \
-                   (highlight_quarter_label is None and is_year_match) or \
-                   (is_year_match and is_quarter_match):
+            # Apply year/quarter highlighting
+            # Quarter highlighting applies to ALL countries (not just selected ones)
+            # Year highlighting only applies to selected countries
+            if highlight_quarter_label is not None:
+                # Quarter highlighting: apply to all countries
+                is_quarter_match = str(period).endswith(f" {highlight_quarter_label}")
+                if is_quarter_match:
+                    marker_colors.append(base_color)
+                else:
+                    marker_colors.append(apply_opacity_to_color(base_color, 0.18))
+            elif is_selected and highlight_year_int is not None:
+                # Year highlighting: only for selected countries
+                is_year_match = (period_year == highlight_year_int)
+                if is_year_match:
                     marker_colors.append(base_color)
                 else:
                     marker_colors.append(apply_opacity_to_color(base_color, 0.18))
             else:
-                # Selected country without highlighting, or non-selected country (opacity handled at trace level)
+                # No highlighting: use base color
                 marker_colors.append(base_color)
         
         # Determine overall opacity for the trace
         # Non-selected countries should be visible but greyed out (disabled)
         # Selected countries should be fully visible
-        if not is_selected:
+        if not is_selected: 
             # Non-selected countries: greyed out but still visible (not hidden)
             trace_opacity = 0.3
         else:
@@ -1003,7 +1006,7 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
             name=country,
             x=periods,
             y=values,
-            marker_color=marker_colors if (is_selected and (highlight_year_int is not None or highlight_quarter_label is not None)) else base_color,
+            marker_color=marker_colors if (highlight_quarter_label is not None or (is_selected and highlight_year_int is not None)) else base_color,
             customdata=hover_periods,
             meta=country,
             hovertemplate='Country: %{meta}<br>Period: %{customdata}<br>Production Additions (\'000 b/d): %{y:,.1f}<extra></extra>',
@@ -1096,15 +1099,15 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
     )
     
     # Invisible traces to capture quarter and year clicks (so users can click labels/areas, not just bars).
-    # Quarter capture: points aligned with every period; year capture: single point per year centered on its quarters.
+    # Quarter capture: points aligned with every period positioned below x-axis labels for easy clicking.
     fig.add_trace(go.Scatter(
         x=periods,
         y=[-3] * len(periods),
         mode='markers',
-        marker=dict(size=18, color='rgba(0,0,0,0)'),
+        marker=dict(size=40, color='rgba(0,0,0,0)'),  # Larger invisible area for easier clicking
         hoverinfo='skip',
         showlegend=False,
-        customdata=[p.split(' ')[1] for p in periods],
+        customdata=[p.split(' ')[1] for p in periods],  # Store quarter (Q1, Q2, Q3, Q4)
         name='quarter-click-capture'
     ))
     year_click_x = []
@@ -1856,6 +1859,52 @@ def register_callbacks(dash_app, server):
                 })
         return styles
     
+    # Callback to handle quarter clicks from chart (clicking on quarter labels Q1, Q2, Q3, Q4)
+    @callback(
+        Output('quarter-highlight-store', 'data', allow_duplicate=True),
+        Input('projects-company-bar-chart', 'clickData'),
+        State('quarter-highlight-store', 'data'),
+        prevent_initial_call=True
+    )
+    def handle_quarter_label_click(click_data, current_quarter):
+        """Handle quarter label clicks on the chart - clicking same quarter toggles it off"""
+        if not click_data or 'points' not in click_data or not click_data['points']:
+            return dash.no_update
+        
+        try:
+            point = click_data['points'][0]
+            y_pos = point.get('y', 0)
+            
+            # Get trace name from the point's curveNumber and figure data
+            # Check if this is a quarter label click (y position < 0 indicates quarter label area)
+            # The invisible scatter trace for quarter clicks is at y=-3
+            if y_pos < 0:
+                quarter_val = point.get('customdata')
+                if quarter_val in ['Q1', 'Q2', 'Q3', 'Q4']:
+                    # Toggle: if same quarter is already selected, clear it; otherwise select it
+                    if current_quarter == quarter_val:
+                        return None  # Clear selection
+                    else:
+                        return quarter_val  # Select this quarter
+            else:
+                # Check if clicked on a bar but want to extract quarter from x value
+                # This allows clicking on bars to also select quarters
+                x_val = point.get('x')
+                if isinstance(x_val, str) and ' ' in x_val:
+                    parts = x_val.split(' ')
+                    if len(parts) > 1:
+                        quarter_val = parts[1]
+                        if quarter_val in ['Q1', 'Q2', 'Q3', 'Q4']:
+                            # Toggle: if same quarter is already selected, clear it; otherwise select it
+                            if current_quarter == quarter_val:
+                                return None  # Clear selection
+                            else:
+                                return quarter_val  # Select this quarter
+        except Exception:
+            pass
+        
+        return dash.no_update
+    
     # Initial callback to set year display
     @callback(
         Output('year-period-display', 'children', allow_duplicate=True),
@@ -2403,41 +2452,36 @@ def register_callbacks(dash_app, server):
         # Do not change bar highlight when year controls change; keep prior highlight (if any)
         return str(new_year), new_year, new_year, dash.no_update
 
-    # Clicking a bar (or invisible quarter/year markers) selects that year's controls and optional quarter highlight
+    # Clicking a bar (or invisible year markers) selects that year's controls and sets year highlight
     @callback(
         [Output('year-of-period-filter', 'value', allow_duplicate=True),
          Output('year-period-slider', 'value', allow_duplicate=True),
-         Output('bar-highlight-year-store', 'data', allow_duplicate=True),
-         Output('quarter-highlight-store', 'data', allow_duplicate=True)],
+         Output('bar-highlight-year-store', 'data', allow_duplicate=True)],
         Input('projects-company-bar-chart', 'clickData'),
         prevent_initial_call=True
     )
     def set_year_from_bar_click(click_data):
-        """When a bar is clicked, sync the year selection controls to that year and set highlight."""
+        """When a bar or year label is clicked, sync the year selection controls to that year and set highlight."""
         if not click_data or 'points' not in click_data or not click_data['points']:
             # Clear highlights when clicking outside/blank
-            return dash.no_update, dash.no_update, None, None
+            return dash.no_update, dash.no_update, None
         
         try:
-            x_val = click_data['points'][0].get('x')
+            point = click_data['points'][0]
+            y_pos = point.get('y', 0)
+            trace_name = point.get('data', {}).get('name', '') if hasattr(point, 'data') else ''
+            
+            # Skip quarter label clicks (y < 0 or quarter-click-capture trace) - those are handled separately
+            if y_pos < 0 or trace_name == 'quarter-click-capture':
+                return dash.no_update, dash.no_update, dash.no_update
+            
+            x_val = point.get('x')
             year_part = str(x_val).split(' ')[0]
             selected_year = int(year_part)
         except (ValueError, TypeError, AttributeError, IndexError):
-            return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+            return dash.no_update, dash.no_update, dash.no_update
         
-        # Quarter highlight comes from customdata (set on invisible quarter capture trace) or from x label.
-        quarter_val = None
-        try:
-            quarter_val = click_data['points'][0].get('customdata')
-        except Exception:
-            quarter_val = None
-        if not quarter_val and isinstance(x_val, str) and ' ' in x_val:
-            # Fallback: parse from x category text
-            parts = str(x_val).split(' ')
-            if len(parts) > 1:
-                quarter_val = parts[1]
-        
-        return selected_year, selected_year, selected_year, quarter_val
+        return selected_year, selected_year, selected_year
     
     # Callback to handle play/pause/stop buttons
     @callback(
@@ -2526,10 +2570,11 @@ def register_callbacks(dash_app, server):
          Input('year-period-slider', 'value'),
          Input('show-history-checkbox', 'value'),
          Input('selected-countries-store', 'data'),
-         Input('bar-highlight-year-store', 'data')],
+         Input('bar-highlight-year-store', 'data'),
+         Input('quarter-highlight-store', 'data')],
         prevent_initial_call=False
     )
-    def update_projects_by_company(submenu, company, likely_to_go, selected_year, slider_year, show_history, selected_countries, bar_highlight_year):
+    def update_projects_by_company(submenu, company, likely_to_go, selected_year, slider_year, show_history, selected_countries, bar_highlight_year, quarter_highlight):
         """Update projects by company chart and map"""
         # Handle checklist value (after normalization) - keep list for filtering
         ltg_list = likely_to_go if isinstance(likely_to_go, list) else ([likely_to_go] if likely_to_go else [])
@@ -2618,7 +2663,8 @@ def register_callbacks(dash_app, server):
             bar_df,
             company or "Company",
             countries_to_show,
-            highlight_year=bar_highlight_year
+            highlight_year=bar_highlight_year,
+            highlight_quarter=quarter_highlight
         )
         
         # Create map - always filtered by selected year (Year of Period filter controls the map)
