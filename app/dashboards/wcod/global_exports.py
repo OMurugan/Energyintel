@@ -33,8 +33,7 @@ def _read_csv(path: str) -> pd.DataFrame:
         df = pd.read_csv(path)
         df.columns = df.columns.str.strip()
         return df
-    except Exception as exc:  # pragma: no cover - defensive logging
-        print(f"[global_exports] Failed to read {path}: {exc}")
+    except Exception:  # pragma: no cover - defensive logging
         return pd.DataFrame()
 
 
@@ -71,8 +70,7 @@ def _prepare_map_df() -> pd.DataFrame:
         if not results:
             return pd.DataFrame()
         df = pd.DataFrame(results)
-    except Exception as exc:  # pragma: no cover - defensive logging
-        print(f"[global_exports] Failed to execute map data query: {exc}")
+    except Exception:  # pragma: no cover - defensive logging
         return pd.DataFrame()
     
     if df.empty:
@@ -120,8 +118,7 @@ def _prepare_chart_df() -> pd.DataFrame:
         if not results:
             return pd.DataFrame()
         df = pd.DataFrame(results)
-    except Exception as exc:  # pragma: no cover - defensive logging
-        print(f"[global_exports] Failed to execute chart data query: {exc}")
+    except Exception:  # pragma: no cover - defensive logging
         return pd.DataFrame()
     
     if df.empty:
@@ -166,8 +163,7 @@ def _prepare_table_df() -> pd.DataFrame:
         if not results:
             return pd.DataFrame()
         df = pd.DataFrame(results)
-    except Exception as exc:  # pragma: no cover - defensive logging
-        print(f"[global_exports] Failed to execute table data query: {exc}")
+    except Exception:  # pragma: no cover - defensive logging
         return pd.DataFrame()
     
     if df.empty:
@@ -978,87 +974,95 @@ def create_layout():
                             #         "marginBottom": "10px",
                             #     },
                             # ),
-                            dcc.Graph(
-                                id="global-exports-map",
-                                config={
-                                    "displayModeBar": True,
-                                    "displaylogo": False,
-                                    "modeBarButtonsToAdd": [
-                                        "zoomInGeo",
-                                        "zoomOutGeo",
-                                        "resetGeo",
-                                        "resetScale2d",
-                                    ],
-                                    "scrollZoom": True,
-                                    "doubleClick": "reset",
-                                },
-                                figure=_build_map_figure(
-                                    DEFAULT_YEAR,
-                                    None,
-                                ),
-                                style={"height": "520px", "width": "100%"},
-                            ),
-                    html.Div(
-                        [
-                            html.Div(
-                                "Export Volume (‘000 b/d)",
-                                style={
-                                    "fontWeight": "bold",
-                                    "fontSize": "12px",
-                                    "color": "#1b365d",
-                                    "marginTop": "12px",
-                                },
+                            dcc.Loading(
+                                id="loading-map",
+                                type="default",
+                                color="#fe5000",
+                                children=[
+                                    dcc.Graph(
+                                        id="global-exports-map",
+                                        config={
+                                            "displayModeBar": True,
+                                            "displaylogo": False,
+                                            "modeBarButtonsToAdd": [
+                                                "zoomInGeo",
+                                                "zoomOutGeo",
+                                                "resetGeo",
+                                                "resetScale2d",
+                                            ],
+                                            "scrollZoom": True,
+                                            "doubleClick": "reset",
+                                        },
+                                        figure=_build_map_figure(
+                                            DEFAULT_YEAR,
+                                            None,
+                                        ),
+                                        style={"height": "520px", "width": "100%"},
+                                    ),
+                                ],
+                                style={"height": "520px"},
                             ),
                             html.Div(
                                 [
                                     html.Div(
+                                        "Export Volume (‘000 b/d)",
                                         style={
-                                            "backgroundColor": color,
-                                            "width": "18px",
-                                            "height": "14px",
-                                        }
-                                    )
-                                    for color in MAP_COLOR_SCALE
-                                ],
-                                style={
-                                    "display": "flex",
-                                    "gap": "1px",
-                                    "marginTop": "4px",
-                                    "border": "1px solid #cdd3dd",
-                                    "padding": "2px",
-                                    "backgroundColor": "#f2f4f8",
-                                    "width": f"{COLOR_LEGEND_WIDTH}px",
-                                },
-                            ),
-                            html.Div(
-                                [
-                                    html.Span(
-                                        "0",
-                                        style={
-                                            "fontSize": "11px",
-                                            "color": "#1b365d",
                                             "fontWeight": "bold",
+                                            "fontSize": "12px",
+                                            "color": "#1b365d",
+                                            "marginTop": "12px",
                                         },
                                     ),
-                                    html.Span(
-                                        MAP_VALUE_MAX_LABEL,
+                                    html.Div(
+                                        [
+                                            html.Div(
+                                                style={
+                                                    "backgroundColor": color,
+                                                    "width": "18px",
+                                                    "height": "14px",
+                                                }
+                                            )
+                                            for color in MAP_COLOR_SCALE
+                                        ],
                                         style={
-                                            "fontSize": "11px",
-                                            "color": "#1b365d",
-                                            "fontWeight": "bold",
+                                            "display": "flex",
+                                            "gap": "1px",
+                                            "marginTop": "4px",
+                                            "border": "1px solid #cdd3dd",
+                                            "padding": "2px",
+                                            "backgroundColor": "#f2f4f8",
+                                            "width": f"{COLOR_LEGEND_WIDTH}px",
+                                        },
+                                    ),
+                                    html.Div(
+                                        [
+                                            html.Span(
+                                                "0",
+                                                style={
+                                                    "fontSize": "11px",
+                                                    "color": "#1b365d",
+                                                    "fontWeight": "bold",
+                                                },
+                                            ),
+                                            html.Span(
+                                                MAP_VALUE_MAX_LABEL,
+                                                style={
+                                                    "fontSize": "11px",
+                                                    "color": "#1b365d",
+                                                    "fontWeight": "bold",
+                                                },
+                                            ),
+                                        ],
+                                        style={
+                                            "display": "flex",
+                                            "justifyContent": "space-between",
+                                            "marginTop": "2px",
+                                            "width": f"{COLOR_LEGEND_WIDTH}px",
                                         },
                                     ),
                                 ],
-                                style={
-                                    "display": "flex",
-                                    "justifyContent": "space-between",
-                                    "marginTop": "2px",
-                                    "width": f"{COLOR_LEGEND_WIDTH}px",
-                                },
+                                style={"marginTop": "10px"},
                             ),
-                        ],
-                        style={"marginTop": "10px"},
-                    ),
                         ],
                         className="col-md-9",
                         style={"padding": "10px 5px 10px 10px", "maxWidth": "100%", "boxSizing": "border-box"},
@@ -1330,8 +1334,15 @@ def create_layout():
                                     "fontSize": "19px",
                                 },
                             ),
-                            dcc.Graph(
-                                id="global-exports-stream-chart",
+                            dcc.Loading(
+                                id="loading-chart",
+                                type="default",
+                                color="#fe5000",
+                                children=[
+                                    dcc.Graph(
+                                        id="global-exports-stream-chart",
+                                    ),
+                                ],
                             ),
                         ],
                         className="col-md-9",
@@ -1372,7 +1383,7 @@ def create_layout():
                                 },
                             ),
                         ],
-                        className="col-md-2",
+                        className="col-md-3",
                         style={
                             "padding": "25px 10px",
                             "border": "0px solid #dfe3eb",
@@ -1404,50 +1415,55 @@ def create_layout():
                             "fontSize": "19px",
                         },
                     ),
-                    dash_table.DataTable(
-                        id="global-exports-table",
-                        columns=TABLE_COLUMNS,
-                        data=[],
-                        sort_action="native",
-                        page_action="none",
-                        style_table={
-                            "overflowX": "auto",
-                            "overflowY": "auto",
-                            "backgroundColor": "white",
-                            "maxHeight": "520px",
-                            "border": "1px solid #e6e9ef",
-                            "width": "100%",
-                            "maxWidth": "100%",
-                        },
-                        style_cell={
-                            "fontSize": "12px",
-                            "padding": "5px 8px",
-                            "fontFamily": "Lato, Arial, sans-serif",
-                            "border": "1px solid #e6e9ef",
-                        },
-                        style_cell_conditional=[
-                            {
-                                "if": {"column_id": "country"},
-                                "width": "160px",
-                                "fontWeight": "600",
-                                "color": "#1b365d",
-                                "textAlign": "left",
-                            },
-                            {
-                                "if": {"column_id": "crude"},
-                                "width": "220px",
-                                "color": "#1b365d",
-                                "textAlign": "left",
-                            },
-                        ]
-                        + [
-                            {
-                                "if": {"column_id": col_id},
-                                "textAlign": "right",
-                                "width": "70px",
-                            }
-                            for col_id in YEAR_COLUMN_IDS
-                        ],
+                    dcc.Loading(
+                        id="loading-table",
+                        type="default",
+                        color="#fe5000",
+                        children=[
+                            dash_table.DataTable(
+                                id="global-exports-table",
+                                columns=TABLE_COLUMNS,
+                                data=[],
+                                sort_action="native",
+                                page_action="none",
+                                style_table={
+                                    "overflowX": "auto",
+                                    "overflowY": "auto",
+                                    "backgroundColor": "white",
+                                    "maxHeight": "520px",
+                                    "border": "1px solid #e6e9ef",
+                                    "width": "100%",
+                                    "maxWidth": "100%",
+                                },
+                                style_cell={
+                                    "fontSize": "12px",
+                                    "padding": "5px 8px",
+                                    "fontFamily": "Lato, Arial, sans-serif",
+                                    "border": "1px solid #e6e9ef",
+                                },
+                                style_cell_conditional=[
+                                    {
+                                        "if": {"column_id": "country"},
+                                        "width": "160px",
+                                        "fontWeight": "600",
+                                        "color": "#1b365d",
+                                        "textAlign": "left",
+                                    },
+                                    {
+                                        "if": {"column_id": "crude"},
+                                        "width": "220px",
+                                        "color": "#1b365d",
+                                        "textAlign": "left",
+                                    },
+                                ]
+                                + [
+                                    {
+                                        "if": {"column_id": col_id},
+                                        "textAlign": "right",
+                                        "width": "70px",
+                                    }
+                                    for col_id in YEAR_COLUMN_IDS
+                                ],
                         style_header={
                             "backgroundColor": "#f0f2f5",
                             "fontWeight": "600",
@@ -1455,18 +1471,20 @@ def create_layout():
                             "textAlign": "center",
                             "border": "1px solid #dfe3eb",
                         },
-                        style_data_conditional=[
-                            {
-                                "if": {"row_index": "odd"},
-                                "backgroundColor": "#f9fbfd",
-                            }
-                        ]
-                        + [
-                            {
-                                "if": {"column_id": col_id},
-                                "color": "#1b365d",
-                            }
-                            for col_id in YEAR_COLUMN_IDS
+                                style_data_conditional=[
+                                    {
+                                        "if": {"row_index": "odd"},
+                                        "backgroundColor": "#f9fbfd",
+                                    }
+                                ]
+                                + [
+                                    {
+                                        "if": {"column_id": col_id},
+                                        "color": "#1b365d",
+                                    }
+                                    for col_id in YEAR_COLUMN_IDS
+                                ],
+                            ),
                         ],
                     ),
                 ],
@@ -1480,7 +1498,7 @@ def create_layout():
         ],
         className="tab-content",
         style={
-            "padding": "0px 0px",
+            "padding": "20px 10px",
             "backgroundColor": "#f8f9fa",
             "overflowX": "hidden",  # Prevent horizontal scrolling
             "width": "100%",
@@ -1572,10 +1590,25 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             year_value = _parse_year_value(year_str)
             normalized_year = _normalize_year(year_value)
             
+            # On initial load, ignore country filter - show all countries
+            # Check if country filter input triggered this callback
+            ctx = dash.callback_context
+            country_filter_triggered = False
+            if ctx.triggered:
+                for trigger in ctx.triggered:
+                    if "global-exports-country-filter" in trigger.get("prop_id", ""):
+                        country_filter_triggered = True
+                        break
+            
             # Resolve countries for filtering
             selected_countries = None
             highlight = None
-            if country_value is not None:
+            # Only apply country filter if it was explicitly changed by user
+            # On initial load, ignore country filter to show all countries
+            if not country_filter_triggered:
+                # Show all countries on initial load or when filter wasn't changed
+                selected_countries = None
+            elif country_value is not None:
                 # Handle empty list (when "(All)" is unselected)
                 if isinstance(country_value, list) and len(country_value) == 0:
                     # Empty selection - show no countries
@@ -1593,10 +1626,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                             highlight = resolved_countries[0]
             
             return _build_map_figure(normalized_year, highlight, selected_countries)
-        except Exception as e:
-            print(f"Error in update_map: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
             return _empty_figure("Error loading map")
 
     @dash_app.callback(
@@ -1787,10 +1817,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 new_value = available_streams
 
             return _stream_filter_options(available_streams), new_value
-        except Exception as e:
-            print(f"Error in sync_stream_filter_options: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
             return no_update, no_update
 
     @dash_app.callback(
@@ -1863,10 +1890,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                         else:
                             # No available countries in chart data - show empty
                             resolved_countries = []
-            except Exception as resolve_error:
-                print(f"Error resolving countries for chart: {resolve_error}")
-                import traceback
-                traceback.print_exc()
+            except Exception:
                 resolved_countries = None
             
             # Build the figure
@@ -1880,10 +1904,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                     # Validate figure
                     if not isinstance(fig, go.Figure):
                         fig = _empty_figure("Invalid chart data")
-            except Exception as fig_error:
-                print(f"Error building chart figure: {fig_error}")
-                import traceback
-                traceback.print_exc()
+            except Exception:
                 fig = _empty_figure("Error loading chart data")
             
             # Generate title
@@ -1908,18 +1929,13 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                         else:
                             country_names = ", ".join(title_countries[:3]) + f" and {len(title_countries) - 3} more"
                         title = f"{country_names} Annual Exports by Crude Stream"
-            except Exception as title_error:
-                print(f"Error generating title: {title_error}")
-                import traceback
-                traceback.print_exc()
+            except Exception:
                 title = default_title
             
             # Final validation - ensure we always return valid types
             if not isinstance(fig, go.Figure):
-                print(f"WARNING: fig is not go.Figure, type={type(fig)}")
                 fig = default_fig
             if not isinstance(title, str) or not title:
-                print(f"WARNING: title is not string, type={type(title)}, value={title}")
                 title = default_title
             
             # Double-check return values
@@ -1930,18 +1946,14 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             
             return fig, title
             
-        except Exception as e:
-            print(f"CRITICAL ERROR in update_chart callback: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
             # Always return valid values - this is critical
             try:
                 error_fig = _empty_figure("Error loading chart")
                 if not isinstance(error_fig, go.Figure):
                     error_fig = go.Figure()
                 return error_fig, "All Countries Annual Exports by Crude Stream"
-            except Exception as final_error:
-                print(f"CRITICAL: Even error handling failed: {final_error}")
+            except Exception:
                 # Last resort - return minimal valid figure
                 minimal_fig = go.Figure()
                 minimal_fig.add_annotation(text="Error loading chart", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
@@ -1977,6 +1989,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input("global-exports-year-display", "children"),
         Input("global-exports-stream-filter", "value"),
         Input("global-exports-country-filter", "value"),
+        Input({"type": "stream-isolate-button", "stream": ALL}, "n_clicks"),
         prevent_initial_call=False,
     )
     def update_table(
@@ -1984,10 +1997,15 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         year_str: Optional[str],
         stream_filter_state: Optional[Sequence[str]],
         country_filter: Optional[Sequence[str]],
+        legend_clicks,
     ):
         """
         Update table data.
-        Table is filtered by both country filter and stream filter.
+        
+        Behavior:
+        - Initial load: Show ALL data (no filters applied)
+        - Legend click: Apply both country and stream filters
+        - Other changes: Show ALL data (ignore filters)
         """
         try:
             if submenu != "global-exports":
@@ -1995,63 +2013,72 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             
             year_value = _parse_year_value(year_str)
             
-            # Resolve country filter to actual countries
-            countries_to_filter = None
+            # Check if legend button was clicked (user interaction)
+            ctx = dash.callback_context
+            
+            # Check if this is truly an initial call (no triggers at all)
+            is_initial_call = not ctx.triggered or len(ctx.triggered) == 0
+            
+            # Check for legend button clicks - must check actual n_clicks values
+            legend_clicked = False
+            if ctx.triggered and not is_initial_call and legend_clicks:
+                # Check if any legend button has n_clicks > 0 (actual click)
+                # legend_clicks is a list of n_clicks values for all legend buttons
+                for clicks in legend_clicks:
+                    if clicks is not None and clicks > 0:
+                        legend_clicked = True
+                        break
+            
+            # IMPORTANT: On initial load, show ALL data (no filters applied)
+            if is_initial_call or not legend_clicked:
+                if TABLE_DF.empty:
+                    return []
+                return _prepare_table_records(TABLE_DF.copy())
+            
+            # Legend was clicked - apply both country and stream filters
+            
+            if TABLE_DF.empty:
+                return []
+            
+            # Check if stream filter contains all streams (reset state)
+            # If all streams are selected, treat it as "no filter" and show all data
+            if stream_filter_state and not TABLE_DF.empty:
+                all_available_streams = set(TABLE_DF["crude"].unique())
+                stream_filter_set = set(stream_filter_state)
+                if stream_filter_set == all_available_streams:
+                    # All streams selected - show all data
+                    return _prepare_table_records(TABLE_DF.copy())
+            
+            # Start with all data
+            filtered = TABLE_DF.copy()
+            
+            # Apply country filter
             if country_filter is not None:
-                # Handle empty list (when "(All)" is unselected)
-                if isinstance(country_filter, list) and len(country_filter) == 0:
-                    # Empty selection - show no countries
-                    countries_to_filter = []
-                else:
-                    try:
-                        resolved = _resolve_countries(country_filter, COUNTRY_OPTIONS)
-                        # When "(All)" is selected, resolved will be a list of all countries
-                        # Pass None to _filter_table_data to show all countries (more efficient)
-                        if "(All)" in country_filter:
-                            # "(All)" selected - pass None to show all countries
-                            countries_to_filter = None
-                        elif resolved and len(resolved) > 0:
-                            # Specific countries selected - use the resolved list
-                            countries_to_filter = resolved
-                        else:
-                            # No countries matched - show empty
-                            countries_to_filter = []
-                    except Exception as e:
-                        print(f"Error resolving countries: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        countries_to_filter = None
+                try:
+                    resolved = _resolve_countries(country_filter, COUNTRY_OPTIONS)
+                    if "(All)" in country_filter:
+                        # Show all countries
+                        pass
+                    elif resolved and len(resolved) > 0:
+                        filtered = filtered[filtered["country"].isin(resolved)]
+                    else:
+                        # Empty selection - show no countries
+                        return []
+                except Exception:
+                    # Error resolving countries - show all data
+                    pass
             
-            # Filter by countries
-            try:
-                filtered = _filter_table_data(year_value, countries_to_filter)
-            except Exception as e:
-                print(f"Error filtering table data: {e}")
-                filtered = TABLE_DF.copy() if not TABLE_DF.empty else pd.DataFrame()
-            
-            # When streams are filtered (not all streams selected), filter by selected streams
+            # Apply stream filter (we know it's not all streams from the check above)
             if stream_filter_state:
                 try:
-                    # Get all available streams from the table data (not just STREAM_ORDER)
-                    # to properly detect if all streams are selected
-                    all_available_streams = set(TABLE_DF["crude"].unique()) if not TABLE_DF.empty else set()
-                    # Check if all streams are selected (default state)
-                    all_streams_selected = (
-                        set(stream_filter_state) == all_available_streams
-                        if isinstance(stream_filter_state, (list, tuple)) and all_available_streams
-                        else False
-                    )
-                    # Only filter if not all streams are selected (user has filtered)
-                    if not all_streams_selected:
-                        filtered = filtered[filtered["crude"].isin(stream_filter_state)]
-                except Exception as e:
-                    print(f"Error filtering by streams: {e}")
+                    filtered = filtered[filtered["crude"].isin(stream_filter_state)]
+                except Exception:
+                    # Error filtering by streams - continue with current filtered data
+                    pass
             
             return _prepare_table_records(filtered)
-        except Exception as e:
-            print(f"Error in update_table callback: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
+            # Return empty on any error
             return []
 
     @dash_app.callback(
