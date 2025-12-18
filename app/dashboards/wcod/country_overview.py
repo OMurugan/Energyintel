@@ -80,10 +80,10 @@ SELECT
 """
 
 METRIC_CONFIG = [
-    ('Exports', 'Exports', ',.0f'),
-    ('Production', 'Production', ',.0f'),
-    ('R/P Ratio', 'R_P_Ratio', ',.0f'),
-    ('Reserves', 'Reserves', ',.0f')
+    ('Exports (\'000 b/d)', 'Exports', ',.0f'),
+    ('Production (\'000 b/d)', 'Production', ',.0f'),
+    ('R/P Ratio (Year)', 'R_P_Ratio', ',.0f'),
+    ('Reserves (Billion bbl)', 'Reserves', ',.0f')
 ]
 
 
