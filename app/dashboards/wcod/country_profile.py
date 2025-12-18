@@ -693,6 +693,8 @@ def create_world_map(selected_country=None):
         'Iran': 'IRN',
         'Kuwait': 'KWT',
         'United Arab Emirates': 'ARE',
+        'Abu Dhabi': 'ARE',  # Abu Dhabi is part of UAE
+        'Dubai': 'ARE',  # Dubai is part of UAE
         'Qatar': 'QAT',
         'Norway': 'NOR',
         'Kazakhstan': 'KAZ',
@@ -809,7 +811,6 @@ def create_world_map(selected_country=None):
             (port_data['Port Name'].astype(str).str.strip() != '') &
             (port_data['Port Name'].astype(str).str.strip().str.lower() != 'nan')
         ].copy()
-            
         if port_data.empty:
             return create_empty_map()
         
@@ -818,6 +819,7 @@ def create_world_map(selected_country=None):
         # Get ISO code for selected country
         country_iso = country_to_iso.get(selected_country, None)
         
+        # Add Choroplethmapbox (country fill) if ISO code exists
         if country_iso:
             # Load geojson for reliable choropleth rendering
             geojson = _load_world_geojson()
@@ -851,52 +853,58 @@ def create_world_map(selected_country=None):
                     marker_line_color='rgba(0,0,0,0)'
                 ))
         
-            # Bucket ports by symbol to ensure reliable rendering per symbol type
-            ports_by_symbol = {}
-            for _, port_row in port_data.iterrows():
-                port_value = port_row['port_value']
-                # Map symbol and a modest size so markers don't overwhelm the map
-                # Use built-in Plotly symbols (no sprite) for reliability
-                if port_value == 171:
-                    symbol, marker_size, marker_color = 'circle', 14, '#fe5000'
-                elif port_value == 513:
-                    symbol, marker_size, marker_color = '+', 14, '#1f77b4'   # plus symbol
-                elif port_value == 342:
-                    symbol, marker_size, marker_color = 'square', 14, '#2ca02c'
-                else:
-                    symbol, marker_size, marker_color = 'circle', 14, '#6c757d'
+        # Bucket ports by symbol to ensure reliable rendering per symbol type
+        # Ports should be rendered regardless of whether ISO code exists
+        ports_by_symbol = {}
+        print(f"DEBUG: Processing {len(port_data)} port rows")
+        for _, port_row in port_data.iterrows():
+            port_value = port_row['port_value']
+            # Map symbol and a modest size so markers don't overwhelm the map
+            # Use built-in Plotly symbols (no sprite) for reliability
+            if port_value == 171:
+                symbol, marker_size, marker_color = 'circle', 14, '#fe5000'
+            elif port_value == 513:
+                symbol, marker_size, marker_color = '+', 14, '#1f77b4'   # plus symbol
+            elif port_value == 342:
+                symbol, marker_size, marker_color = 'square', 14, '#2ca02c'
+            else:
+                symbol, marker_size, marker_color = 'circle', 14, '#6c757d'
 
-                bucket = ports_by_symbol.setdefault(symbol, {"lat": [], "lon": [], "name": [], "size": [], "custom": [], "color": []})
-                bucket["lat"].append(port_row['latitude'])
-                bucket["lon"].append(port_row['longitude'])
-                bucket["name"].append(port_row['Port Name'])
-                bucket["size"].append(marker_size)
-                bucket["color"].append(marker_color)
-                profile_url = f"/wcod/country-profile?country={port_row['country_long_name']}"
-                bucket["custom"].append([profile_url])
+            bucket = ports_by_symbol.setdefault(symbol, {"lat": [], "lon": [], "name": [], "size": [], "custom": [], "color": []})
+            bucket["lat"].append(port_row['latitude'])
+            bucket["lon"].append(port_row['longitude'])
+            bucket["name"].append(port_row['Port Name'])
+            bucket["size"].append(marker_size)
+            bucket["color"].append(marker_color)
+            profile_url = f"/wcod/country-profile?country={port_row['country_long_name']}"
+            bucket["custom"].append([profile_url])
 
-            if ports_by_symbol:
-                # Add one trace per symbol to avoid per-point symbol issues
-                for symbol_key, data_bucket in ports_by_symbol.items():
-                    fig.add_trace(go.Scattermapbox(
-                        lat=data_bucket["lat"],
-                        lon=data_bucket["lon"],
-                        mode='markers',
-                        marker=dict(
-                            size=data_bucket["size"],
-                            color=data_bucket["color"],
-                            opacity=0.9,
-                            symbol='circle'
-                        ),
-                        text=data_bucket["name"],
-                        customdata=data_bucket["custom"],
-                        hovertemplate="""
-                            <b>Port Name:</b> %{text}
-                            <extra></extra>
-                        """,
-                        showlegend=False
-                    ))
-            # If no ports, do nothing
+        print(f"DEBUG: ports_by_symbol keys: {list(ports_by_symbol.keys())}, total ports: {sum(len(bucket['lat']) for bucket in ports_by_symbol.values())}")
+        
+        if ports_by_symbol:
+            # Add one trace per symbol to avoid per-point symbol issues
+            for symbol_key, data_bucket in ports_by_symbol.items():
+                print(f"DEBUG: Adding trace for symbol '{symbol_key}' with {len(data_bucket['lat'])} ports")
+                fig.add_trace(go.Scattermapbox(
+                    lat=data_bucket["lat"],
+                    lon=data_bucket["lon"],
+                    mode='markers',
+                    marker=dict(
+                        size=data_bucket["size"],
+                        color=data_bucket["color"],
+                        opacity=0.9,
+                        symbol='circle'
+                    ),
+                    text=data_bucket["name"],
+                    customdata=data_bucket["custom"],
+                    hovertemplate="""
+                        <b>Port Name:</b> %{text}
+                        <extra></extra>
+                    """,
+                    showlegend=False
+                ))
+        else:
+            print("DEBUG: No ports to display - ports_by_symbol is empty")
         
         # Add country name label for the selected country (if selected_country is not None)
         # Ensure this trace is only added when selected_country is present
