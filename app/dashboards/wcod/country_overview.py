@@ -647,7 +647,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None):
             tickformat=',',
             zeroline=False,
             showline=True,
-            linecolor='#000000',
+            linecolor='#e0e0e0',  # Light gray color
             linewidth=1,
             title_font=dict(size=12, family='Arial, sans-serif', color='#2c3e50'),
             tickfont=dict(size=11, family='Arial, sans-serif', color='#2c3e50')
@@ -657,7 +657,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None):
             categoryarray=country_list,
             tickfont=dict(size=11, family='Arial Black, Arial, sans-serif', color='#1b365d'),
             showline=True,
-            linecolor='#000000',
+            linecolor='#e0e0e0',  # Light gray color
             linewidth=1,
             side='left',
             type='category',
