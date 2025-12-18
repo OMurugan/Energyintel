@@ -292,199 +292,211 @@ def create_layout():
                     )
                 # ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'width': '100%', 'padding': '15px', 'background': '#f8f9fa', 'borderBottom': '1px solid #dee2e6'})
             ]),
-            html.Div([
-                # Chart with embedded time dimension expand/collapse controls
-                html.Div([
-                    # Time dimension controls inside chart area - first row with icons at top right
+            dcc.Loading(
+                id='chart-loading',
+                type='dot',
+                fullscreen=False,
+                overlay_style={'backgroundColor': 'rgba(255, 255, 255, 0.8)'},
+                children=html.Div([
+                    # Chart with embedded time dimension expand/collapse controls
                     html.Div([
+                        # Time dimension controls inside chart area - first row with icons at top right
                         html.Div([
-                            html.Span("Year of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
-                            html.Button(
-                                '−',
-                                id='toggle-year-btn',
-                                n_clicks=0,
-                                style={
-                                    'width': '20px',
-                                    'height': '20px',
-                                    'padding': '0',
-                                    'border': '1px solid #dee2e6',
-                                    'backgroundColor': '#f8f9fa',
-                                    'color': '#2c3e50',
-                                    'borderRadius': '3px',
-                                    'cursor': 'pointer',
-                                    'fontSize': '14px',
-                                    'fontWeight': 'bold',
-                                    'lineHeight': '1',
-                                    'display': 'flex',
-                                    'alignItems': 'center',
-                                    'justifyContent': 'center',
-                                    'marginLeft': '8px',
-                                    'flexShrink': '0'
-                                }
-                            )
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '120px'}),
-                        html.Div([
-                            html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
-                            html.Button(
-                                '+',
-                                id='toggle-quarter-btn',
-                                n_clicks=0,
-                                style={
-                                    'width': '20px',
-                                    'height': '20px',
-                                    'padding': '0',
-                                    'border': '1px solid #dee2e6',
-                                    'backgroundColor': '#f8f9fa',
-                                    'color': '#2c3e50',
-                                    'borderRadius': '3px',
-                                    'cursor': 'pointer',
-                                    'fontSize': '14px',
-                                    'fontWeight': 'bold',
-                                    'lineHeight': '1',
-                                    'display': 'flex',
-                                    'alignItems': 'center',
-                                    'justifyContent': 'center',
-                                    'marginLeft': '8px',
-                                    'flexShrink': '0'
-                                }
-                            )
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '130px'}),
-                        html.Div([
-                            html.Span("Month of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
-                            html.Button(
-                                '+',
-                                id='toggle-month-btn',
-                                n_clicks=0,
-                                style={
-                                    'width': '20px',
-                                    'height': '20px',
-                                    'padding': '0',
-                                    'border': '1px solid #dee2e6',
-                                    'backgroundColor': '#f8f9fa',
-                                    'color': '#2c3e50',
-                                    'borderRadius': '3px',
-                                    'cursor': 'pointer',
-                                    'fontSize': '14px',
-                                    'fontWeight': 'bold',
-                                    'lineHeight': '1',
-                                    'display': 'flex',
-                                    'alignItems': 'center',
-                                    'justifyContent': 'center',
-                                    'marginLeft': '8px',
-                                    'flexShrink': '0'
-                                }
-                            )
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '130px'}),
-                        html.Div([
-                            html.Span("Day of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
-                            html.Button(
-                                '+',
-                                id='toggle-day-btn',
-                                n_clicks=0,
-                                style={
-                                    'width': '20px',
-                                    'height': '20px',
-                                    'padding': '0',
-                                    'border': '1px solid #dee2e6',
-                                    'backgroundColor': '#f8f9fa',
-                                    'color': '#2c3e50',
-                                    'borderRadius': '3px',
-                                    'cursor': 'pointer',
-                                    'fontSize': '14px',
-                                    'fontWeight': 'bold',
-                                    'lineHeight': '1',
-                                    'display': 'flex',
-                                    'alignItems': 'center',
-                                    'justifyContent': 'center',
-                                    'marginLeft': '8px',
-                                    'flexShrink': '0'
-                                }
-                            )
-                        ], style={'display': 'flex', 'alignItems': 'center', 'width': '120px'})
-                    ], style={'padding': '10px 20px', 'borderBottom': '1px solid #dee2e6', 'background': '#f8f9fa', 'display': 'flex', 'justifyContent': 'flex-start', 'alignItems': 'center'}),
-                    dcc.Graph(
-                        id='exports-ranking-chart',
-                        figure=go.Figure(),  # Empty figure initially, will be updated by callback when data loads
-                        clickData=None,
-                        style={'height': '600px'}
-                    )
-                ], id='chart-collapse-content', style={'padding': '0', 'background': 'white', 'border': '1px solid #dee2e6', 'borderRadius': '4px', 'overflow': 'hidden'}),
-            ]),
+                            html.Div([
+                                html.Span("Year of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                                html.Button(
+                                    '−',
+                                    id='toggle-year-btn',
+                                    n_clicks=0,
+                                    style={
+                                        'width': '20px',
+                                        'height': '20px',
+                                        'padding': '0',
+                                        'border': '1px solid #dee2e6',
+                                        'backgroundColor': '#f8f9fa',
+                                        'color': '#2c3e50',
+                                        'borderRadius': '3px',
+                                        'cursor': 'pointer',
+                                        'fontSize': '14px',
+                                        'fontWeight': 'bold',
+                                        'lineHeight': '1',
+                                        'display': 'flex',
+                                        'alignItems': 'center',
+                                        'justifyContent': 'center',
+                                        'marginLeft': '8px',
+                                        'flexShrink': '0'
+                                    }
+                                )
+                            ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '120px'}),
+                            html.Div([
+                                html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                                html.Button(
+                                    '+',
+                                    id='toggle-quarter-btn',
+                                    n_clicks=0,
+                                    style={
+                                        'width': '20px',
+                                        'height': '20px',
+                                        'padding': '0',
+                                        'border': '1px solid #dee2e6',
+                                        'backgroundColor': '#f8f9fa',
+                                        'color': '#2c3e50',
+                                        'borderRadius': '3px',
+                                        'cursor': 'pointer',
+                                        'fontSize': '14px',
+                                        'fontWeight': 'bold',
+                                        'lineHeight': '1',
+                                        'display': 'flex',
+                                        'alignItems': 'center',
+                                        'justifyContent': 'center',
+                                        'marginLeft': '8px',
+                                        'flexShrink': '0'
+                                    }
+                                )
+                            ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '130px'}),
+                            html.Div([
+                                html.Span("Month of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                                html.Button(
+                                    '+',
+                                    id='toggle-month-btn',
+                                    n_clicks=0,
+                                    style={
+                                        'width': '20px',
+                                        'height': '20px',
+                                        'padding': '0',
+                                        'border': '1px solid #dee2e6',
+                                        'backgroundColor': '#f8f9fa',
+                                        'color': '#2c3e50',
+                                        'borderRadius': '3px',
+                                        'cursor': 'pointer',
+                                        'fontSize': '14px',
+                                        'fontWeight': 'bold',
+                                        'lineHeight': '1',
+                                        'display': 'flex',
+                                        'alignItems': 'center',
+                                        'justifyContent': 'center',
+                                        'marginLeft': '8px',
+                                        'flexShrink': '0'
+                                    }
+                                )
+                            ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '130px'}),
+                            html.Div([
+                                html.Span("Day of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                                html.Button(
+                                    '+',
+                                    id='toggle-day-btn',
+                                    n_clicks=0,
+                                    style={
+                                        'width': '20px',
+                                        'height': '20px',
+                                        'padding': '0',
+                                        'border': '1px solid #dee2e6',
+                                        'backgroundColor': '#f8f9fa',
+                                        'color': '#2c3e50',
+                                        'borderRadius': '3px',
+                                        'cursor': 'pointer',
+                                        'fontSize': '14px',
+                                        'fontWeight': 'bold',
+                                        'lineHeight': '1',
+                                        'display': 'flex',
+                                        'alignItems': 'center',
+                                        'justifyContent': 'center',
+                                        'marginLeft': '8px',
+                                        'flexShrink': '0'
+                                    }
+                                )
+                            ], style={'display': 'flex', 'alignItems': 'center', 'width': '120px'})
+                        ], style={'padding': '10px 20px', 'borderBottom': '1px solid #dee2e6', 'background': '#f8f9fa', 'display': 'flex', 'justifyContent': 'flex-start', 'alignItems': 'center'}),
+                        dcc.Graph(
+                            id='exports-ranking-chart',
+                            figure=go.Figure(),  # Empty figure initially, will be updated by callback when data loads
+                            clickData=None,
+                            style={'height': '600px'}
+                        )
+                    ], id='chart-collapse-content', style={'padding': '0', 'background': 'white', 'border': '1px solid #dee2e6', 'borderRadius': '4px', 'overflow': 'hidden'}),
+                ], style={'minHeight': '400px'})
+            ),
         # ], style={'background': 'white', 'border': '1px solid #dee2e6', 'borderRadius': '4px', 'marginBottom': '30px', 'overflow': 'hidden'}),
 
         # Data Table Section
-        html.Div([
-            html.H4(
-                "Leading Oil Exporting Countries",
-                style={
-                    'textAlign': 'center',
-                    'marginTop': '30px',
-                    'marginBottom': '20px',
-                    'color': '#1b365d',
-                    'fontWeight': 'bold',
-                    'fontSize': '21px',
-                    'fontFamily': 'Arial, sans-serif',
-                    'lineHeight': '23px'
-                }
-            ),
-            dash_table.DataTable(
-                id='oil-data-table',
-                data=[],
-                columns=DATA_TABLE_COLUMNS,
-                page_action='none',
-                style_cell={
-                    'textAlign': 'center',
-                    'padding': '8px',
-                    'fontSize': '12px',
-                    'fontFamily': 'Arial, sans-serif',
-                    'border': '1px solid #dee2e6',
-                    'color': '#2c3e50'
-                },
-                style_header={
-                    'backgroundColor': '#f8f9fa',
-                    'fontWeight': 'bold',
-                    'border': '1px solid #dee2e6',
-                    'textAlign': 'center',
-                    'fontSize': '12px',
-                    'fontFamily': 'Arial, sans-serif',
-                    'color': '#2c3e50'
-                },
-                style_data={
-                    'border': '1px solid #dee2e6',
-                    'backgroundColor': 'white',
-                    'color': '#2c3e50'
-                },
-                style_cell_conditional=[
-                    {
-                        'if': {'column_id': 'Country'},
-                        'textAlign': 'left',
+        dcc.Loading(
+            id='table-loading',
+            type='dot',
+            fullscreen=False,
+            overlay_style={'backgroundColor': 'rgba(255, 255, 255, 0.8)'},
+            children=html.Div([
+                html.H4(
+                    "Leading Oil Exporting Countries",
+                    style={
+                        'textAlign': 'center',
+                        'marginTop': '30px',
+                        'marginBottom': '20px',
+                        'color': '#1b365d',
                         'fontWeight': 'bold',
-                        'minWidth': '150px',
-                        'color': '#1b365d'
+                        'fontSize': '21px',
+                        'fontFamily': 'Arial, sans-serif',
+                        'lineHeight': '23px'
                     }
-                ],
-                style_data_conditional=[
-                    {
-                        'if': {'row_index': 'odd'},
-                        'backgroundColor': 'rgb(248, 248, 248)'
+                ),
+                dash_table.DataTable(
+                    id='oil-data-table',
+                    data=[],
+                    columns=DATA_TABLE_COLUMNS,
+                    page_action='none',
+                    style_cell={
+                        'textAlign': 'center',
+                        'padding': '8px',
+                        'fontSize': '12px',
+                        'fontFamily': 'Arial, sans-serif',
+                        'border': '1px solid #dee2e6',
+                        'color': '#2c3e50'
                     },
-                    {
-                        'if': {'filter_query': '{Country} contains ""'},
+                    style_header={
+                        'backgroundColor': '#f8f9fa',
+                        'fontWeight': 'bold',
+                        'border': '1px solid #dee2e6',
+                        'textAlign': 'center',
+                        'fontSize': '12px',
+                        'fontFamily': 'Arial, sans-serif',
+                        'color': '#2c3e50'
+                    },
+                    style_data={
+                        'border': '1px solid #dee2e6',
+                        'backgroundColor': 'white',
+                        'color': '#2c3e50'
+                    },
+                    style_cell_conditional=[
+                        {
+                            'if': {'column_id': 'Country'},
+                            'textAlign': 'left',
+                            'fontWeight': 'bold',
+                            'minWidth': '150px',
+                            'color': '#1b365d'
+                        }
+                    ],
+                    style_data_conditional=[
+                        {
+                            'if': {'row_index': 'odd'},
+                            'backgroundColor': 'rgb(248, 248, 248)'
+                        },
+                        {
+                            'if': {'filter_query': '{Country} contains ""'},
+                            'backgroundColor': 'white'
+                        }
+                    ],
+                    merge_duplicate_headers=True,
+                    sort_action='native',
+                    filter_action='none',
+                    style_table={
+                        'overflowX': 'auto',
+                        'border': '1px solid #dee2e6',
+                        'borderRadius': '4px',
                         'backgroundColor': 'white'
-                    }
-                ],
-                merge_duplicate_headers=True,
-                sort_action='native',
-                filter_action='none',
-                style_table={
-                    'overflowX': 'auto',
-                    'border': '1px solid #dee2e6',
-                    'borderRadius': '4px',
-                    'backgroundColor': 'white'
-                },
-                cell_selectable=True
-            )
-        ]),
+                    },
+                    cell_selectable=True
+                )
+            ], style={'minHeight': '400px'})
+        ),
 
         # Footer notes
         html.Div([
