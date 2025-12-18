@@ -3,14 +3,16 @@ Country Profile View
 World map-based country profile with detailed statistics
 Replicates Energy Intelligence WCoD Country Profile functionality
 """
-from dash import dcc, html, Input, Output, dash_table, dash
+from dash import dcc, html, Input, Output, dash_table, dash, callback_context
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 import os
+import json
 import threading
 from datetime import datetime
+from urllib.request import urlopen
 from core.data_helpers import execute_query
 from config import Config
 
@@ -35,11 +37,28 @@ _prod_lock = threading.Lock()
 _port_lock = threading.Lock()
 _key_lock = threading.Lock()
 
+# World GeoJSON cache
+_world_geojson = None
+
 # Mapbox access token (falls back to config default token if env not set)
 MAPBOX_ACCESS_TOKEN = Config.MAPBOX_ACCESS_TOKEN
 # Set Plotly-wide token for px maps
 if MAPBOX_ACCESS_TOKEN:
     px.set_mapbox_access_token(MAPBOX_ACCESS_TOKEN)
+
+def _load_world_geojson():
+    """Load world GeoJSON for Mapbox maps"""
+    global _world_geojson
+    if _world_geojson is not None:
+        return _world_geojson
+    url = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json"
+    try:
+        with urlopen(url, timeout=5) as resp:
+            _world_geojson = json.load(resp)
+    except Exception as e:
+        print(f"Error loading world GeoJSON: {e}")
+        _world_geojson = None
+    return _world_geojson
 
 def load_map_data():
     """Load map data from database - called only when needed"""
@@ -554,21 +573,30 @@ def create_layout():
             html.Div([
                 # Map container with relative positioning for controls overlay
                 html.Div([
-                    dcc.Graph(
-                        id='world-map-chart',
-                        figure=initial_map,
-                        style={
-                            'height': 'calc(100vh - 150px)',  # Full screen height minus filters only
-                            'width': '100vw',  # Full viewport width - no space
-                            'maxWidth': '100%',
-                            'background': 'white',
-                            'borderRadius': '0',
-                            'boxShadow': 'none',
-                            'margin': '0',  # No margin - full width
-                            'padding': '0',
-                            'position': 'relative',
-                            'display': 'block'
-                        }
+                    dcc.Loading(
+                        id='map-loading',
+                        type='default',
+                        color='#fe5000',
+                        fullscreen=False,
+                        overlay_style={'backgroundColor': 'rgba(255, 255, 255, 0.8)'},
+                        children=[
+                            dcc.Graph(
+                                id='world-map-chart',
+                                figure=initial_map,
+                                style={
+                                    'height': 'calc(100vh - 150px)',  # Full screen height minus filters only
+                                    'width': '100vw',  # Full viewport width - no space
+                                    'maxWidth': '100%',
+                                    'background': 'white',
+                                    'borderRadius': '0',
+                                    'boxShadow': 'none',
+                                    'margin': '0',  # No margin - full width
+                                    'padding': '0',
+                                    'position': 'relative',
+                                    'display': 'block'
+                                }
+                            )
+                        ]
                     ),
                     # Map controls (left side, always visible)
                     # html.Div([
@@ -594,8 +622,17 @@ def create_layout():
         # CSS injection div (will be handled by clientside callback)
         html.Div(id='css-injection-placeholder', style={'display': 'none'}),
         
-        # Country Details Section (shown when country is selected)
-        html.Div(id='country-profile-content', style={'padding': '24px', 'background': '#f8f9fa'})
+        # Country Details Section (shown when country is selected) with loading indicator
+        dcc.Loading(
+            id='country-content-loading',
+            type='default',
+            color='#fe5000',
+            fullscreen=False,
+            overlay_style={'backgroundColor': 'rgba(248, 249, 250, 0.8)'},
+            children=[
+                html.Div(id='country-profile-content', style={'padding': '10px 0px', 'background': '#f8f9fa'})
+            ]
+        )
     ])
 
 
@@ -782,18 +819,37 @@ def create_world_map(selected_country=None):
         country_iso = country_to_iso.get(selected_country, None)
         
         if country_iso:
+            # Load geojson for reliable choropleth rendering
+            geojson = _load_world_geojson()
+            
             # Add Choroplethmapbox (country fill) first
-            fig.add_trace(go.Choroplethmapbox(
-                locations=[country_iso],
-                z=[1],
-                colorscale=[[0, 'rgba(142, 153, 208, 1)'], [1, 'rgba(142, 153, 208, 1)']],
-                showscale=False,
-                featureidkey="properties.iso_a3",
-                hoverinfo='text',
-                text=[selected_country], 
-                marker_line_width=0,
-                marker_line_color='rgba(0,0,0,0)'
-            ))
+            if geojson:
+                # Use geojson with featureidkey="id" for reliable country matching
+                fig.add_trace(go.Choroplethmapbox(
+                    geojson=geojson,
+                    locations=[country_iso],
+                    z=[1],
+                    colorscale=[[0, 'rgba(142, 153, 208, 1)'], [1, 'rgba(142, 153, 208, 1)']],
+                    showscale=False,
+                    featureidkey="id",
+                    hoverinfo='text',
+                    text=[selected_country], 
+                    marker_line_width=0,
+                    marker_line_color='rgba(0,0,0,0)'
+                ))
+            else:
+                # Fallback to built-in country data if geojson fails to load
+                fig.add_trace(go.Choroplethmapbox(
+                    locations=[country_iso],
+                    z=[1],
+                    colorscale=[[0, 'rgba(142, 153, 208, 1)'], [1, 'rgba(142, 153, 208, 1)']],
+                    showscale=False,
+                    featureidkey="properties.iso_a3",
+                    hoverinfo='text',
+                    text=[selected_country], 
+                    marker_line_width=0,
+                    marker_line_color='rgba(0,0,0,0)'
+                ))
         
             # Bucket ports by symbol to ensure reliable rendering per symbol type
             ports_by_symbol = {}
@@ -864,13 +920,19 @@ def create_world_map(selected_country=None):
             ))
 
         title_text = f"{selected_country} Production"
-        map_zoom = 4 # Zoom in for a specific country
+        map_zoom = 1.5 # Zoom in for a specific country
         map_center_lat = filtered_map['latitude'].mean()
         map_center_lon = filtered_map['longitude'].mean()
         if pd.isna(map_center_lat) or pd.isna(map_center_lon):
-            map_center = dict(lat=24.0, lon=45.0)
+            # Fallback to default world view center if data is missing
+            map_center = dict(lat=20.0, lon=0.0)
         else:
-            map_center = dict(lat=map_center_lat, lon=map_center_lon)
+            # Adjust center latitude upward to show top area of country
+            # Adding latitude moves the center north, which shifts viewport to show more northern area
+            # This fixes the issue where top is cut off and there's extra space below
+            # Additional 25px downward adjustment: ~0.4 degrees at zoom 1.5
+            adjusted_lat = map_center_lat + 8.0  # Move center north to show top area, then down 25px
+            map_center = dict(lat=adjusted_lat, lon=map_center_lon)
     else:
         # For all countries, show a choropleth map of all countries
         # Use px.choropleth_mapbox for simpler all-country view
@@ -884,14 +946,14 @@ def create_world_map(selected_country=None):
                             color_continuous_scale="Viridis",
                             featureidkey="properties.iso_a3",
                             mapbox_style="carto-positron", # Default style for all countries
-                            zoom=1, center={"lat": 24.0, "lon": 45.0},
+                            zoom=1.5, center={"lat": 20.0, "lon": 0.0},
                             opacity=0.5,
                             hover_name="country_long_name" # Display country name on hover
                         )
         
         title_text = 'World Crude Oil Ports by Country'
-        map_zoom = 2.8 # World view zoom adjusted as per suggestion
-        map_center = dict(lat=24.0, lon=45.0)
+        map_zoom = 1.5 # World view zoom - matches original Tableau source
+        map_center = dict(lat=20.0, lon=0.0)  # Centered on equator for balanced world view
 
         # Add country name labels with density control to avoid overlap at wide zooms
         country_centroids = (
@@ -947,6 +1009,21 @@ def create_world_map(selected_country=None):
             bgcolor='white',
             font_size=12,
             font_family="Arial"
+        ),
+        # Hide X and Y axis lines
+        xaxis=dict(
+            showgrid=False,
+            showline=False,
+            showticklabels=False,
+            zeroline=False,
+            visible=False
+        ),
+        yaxis=dict(
+            showgrid=False,
+            showline=False,
+            showticklabels=False,
+            zeroline=False,
+            visible=False
         )
     )
     
@@ -969,8 +1046,8 @@ def create_empty_map():
         },
         mapbox=dict(
             style="carto-positron",
-            center=dict(lat=24.0, lon=45.0),
-            zoom=1 # Consistent zoom with world view
+            center=dict(lat=20.0, lon=0.0),
+            zoom=1.5 # Consistent zoom with world view - matches original Tableau source
         ),
         height=700,
         width=700,  # Square aspect ratio
@@ -978,6 +1055,21 @@ def create_empty_map():
         autosize=False,  # Disable autosize to maintain square
         plot_bgcolor='white',
         paper_bgcolor='white',
+        # Hide X and Y axis lines
+        xaxis=dict(
+            showgrid=False,
+            showline=False,
+            showticklabels=False,
+            zeroline=False,
+            visible=False
+        ),
+        yaxis=dict(
+            showgrid=False,
+            showline=False,
+            showticklabels=False,
+            zeroline=False,
+            visible=False
+        ),
         annotations=[
             dict(
                 text="No data available.",
@@ -1296,16 +1388,16 @@ def create_production_table(country_name, time_period='Yearly'):
             {
                 col: {
                     'value': (
-                        f"Month of Date: {col.split('_')[1]}\n"
-                        f"Stream Name: {row.get('Crude', '')}\n"
-                        f"Year of Date: {col.split('_')[0]}\n"
-                        f"Avg. Value: {row.get(col, '')}"
+                        f"Month of Date: **{col.split('_')[1]}**\n"
+                        f"Stream Name: **{row.get('Crude', '')}**\n"
+                        f"Year of Date: **{col.split('_')[0]}**\n"
+                        f"Avg. Value: **{row.get(col, '')}**"
                     ) if '_' in col else (
-                        f"Year: {col}\n"
-                        f"Stream Name: {row.get('Crude', '')}\n"
-                        f"Avg. Value: {row.get(col, '')}"
+                        f"Year: **{col}**\n"
+                        f"Stream Name: **{row.get('Crude', '')}**\n"
+                        f"Avg. Value: **{row.get(col, '')}**"
                     ),
-                    'type': 'text'
+                    'type': 'markdown'
                 }
                 for col in row.keys()
                 if col != 'Crude' and row.get(col) not in ['', None]
@@ -1891,9 +1983,11 @@ def register_callbacks(dash_app, server):
         if current_submenu != 'country-profile':
             return html.Div("Please select a country", style={'padding': '20px', 'textAlign': 'center'}), None
         
-        # Ensure data is loaded
-        load_map_data()
-        _ensure_production_data_loaded()
+        # Load data only if not already loaded (lazy loading optimization)
+        if map_df.empty:
+            load_map_data()
+        if monthly_prod_df.empty:
+            _ensure_production_data_loaded()
         
         # Determine which country is selected
         country_name = selected_country or default_country
@@ -1928,7 +2022,7 @@ def register_callbacks(dash_app, server):
                             create_key_figures_table(country_name, time_period)
                         ], style={'background': 'white', 'padding': '20px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
                     ], className='col-md-12', style={'padding': '15px'})
-                ], className='row', style={'margin': '30px 0', 'padding': '0 15px'})
+                ], className='row', style={'margin': '10px 0', 'padding': '0 15px'})
             )
         else:
             sections.append(
@@ -1945,9 +2039,9 @@ def register_callbacks(dash_app, server):
                         ),
                         html.Div([
                             create_production_table(country_name, time_period)
-                        ], style={'background': 'white', 'padding': '20px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
+                        ], style={'background': 'white', 'padding': '5px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
                     ], className='col-md-12', style={'padding': '15px'})
-                ], className='row', style={'margin': '30px 0', 'padding': '0 15px'})
+                ], className='row', style={'margin': '10px 0', 'padding': '0 0px'})
             )
         
         sections.append(
@@ -1965,13 +2059,13 @@ def register_callbacks(dash_app, server):
                     ),
             html.Div([
                         create_port_details_table(country_name)
-                    ], style={'background': 'white', 'padding': '20px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
-                ], className='col-md-12', style={'padding': '15px'})
-            ], className='row', style={'margin': '30px 0', 'padding': '0 15px'})
+                    ], style={'background': 'white', 'padding': '20px 5px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
+                ], className='col-md-12', style={'padding': '0px'})
+            ], className='row', style={'margin': '20px 0', 'padding': '0 15px'})
         )
         
         return html.Div([
-            html.Div([], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'}),
+            # html.Div([], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'}),
             *sections
         ]), country_name
     
@@ -1987,19 +2081,14 @@ def register_callbacks(dash_app, server):
             # print(f"DEBUG: update_world_map: current_submenu is {current_submenu}, returning empty map.")
             return create_empty_map()
         
-        # Ensure map data is loaded
-        load_map_data()
-        # print(f"DEBUG: update_world_map: map_df loaded with {len(map_df)} records.")
-        # print(f"DEBUG: update_world_map: map_df columns: {map_df.columns.tolist()}")
+        # Load data only if not already loaded (performance optimization)
+        if map_df.empty:
+            load_map_data()
 
         # Ensure port data is loaded (if not already in map_df)
-        # Note: port_df is now loaded within map_df query for direct use
-        # If port_df is a separate global, ensure it's loaded here if needed
         global port_df
         if port_df.empty:
-            load_port_data() # Assuming load_port_data() populates global port_df
-        # print(f"DEBUG: update_world_map: port_df loaded with {len(port_df)} records.")
-        # print(f"DEBUG: update_world_map: port_df columns: {port_df.columns.tolist()}")
+            load_port_data()
         
         # Use selected country or default
         country = selected_country or default_country
@@ -2230,16 +2319,22 @@ def register_callbacks(dash_app, server):
                 color: #1f2933 !important;
                 border: 1px solid #d5d9dd !important;
                 box-shadow: 0 4px 12px rgba(31, 45, 61, 0.15) !important;
-                padding: 10px 12px !important;
+                padding: 10px 5px 5px 10px !important;
                 border-radius: 6px !important;
                 font-family: 'Arial', 'Helvetica', sans-serif !important;
                 font-size: 12px !important;
-                line-height: 1.5 !important;
+                line-height: 1.4 !important;
                 white-space: pre-wrap !important;
                 max-width: 220px !important;
+                margin-bottom: 0 !important;
             }
             #production-table .dash-table-tooltip span {
                 display: block;
+                margin-bottom: 0 !important;
+            }
+            #production-table .dash-table-tooltip p {
+                margin: 0 !important;
+                margin-bottom: 0 !important;
             }
             #world-map-chart .plotly .choroplethlayer {
                 z-index: 10 !important;
@@ -2254,10 +2349,16 @@ def register_callbacks(dash_app, server):
                 stroke: none !important;
                 stroke-width: 0 !important;
                 transition: stroke 0.15s ease-in-out, stroke-width 0.15s ease-in-out;
+                cursor: pointer !important;
             }
             #world-map-chart .plotly .choroplethlayer path:hover {
-                stroke: black !important;
-                stroke-width: 1px !important;
+                stroke: #1a1a1a !important;
+                stroke-width: 2.5px !important;
+            }
+            /* Additional selector for Mapbox choropleth paths */
+            #world-map-chart .plotly svg path[fill]:not(.scattergeo path):not(.scatterlayer path):hover {
+                stroke: #1a1a1a !important;
+                stroke-width: 2.5px !important;
             }
             /* Hide country border when port is being hovered */
             #world-map-chart.port-hovering .plotly .choroplethlayer path:hover {
@@ -2271,6 +2372,21 @@ def register_callbacks(dash_app, server):
             }
             #world-map-chart .plotly .scattergeo .points path:hover {
                 stroke: none !important;
+            }
+            /* Hide X and Y axis lines on map */
+            #world-map-chart .plotly .xaxis,
+            #world-map-chart .plotly .yaxis,
+            #world-map-chart .plotly .xaxis line,
+            #world-map-chart .plotly .yaxis line,
+            #world-map-chart .plotly .xaxis .grid,
+            #world-map-chart .plotly .yaxis .grid {
+                display: none !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+            }
+            #world-map-chart .plotly .xaxislayer-above,
+            #world-map-chart .plotly .yaxislayer-above {
+                display: none !important;
             }
             `;
             document.head.appendChild(style);
@@ -2341,6 +2457,132 @@ def register_callbacks(dash_app, server):
                 mapElement.addEventListener('mouseleave', function() {
                     mapElement.classList.remove('port-hovering');
                 });
+            }
+            
+            function setupCountryHoverEffects() {
+                const mapElement = document.getElementById('world-map-chart');
+                if (!mapElement) {
+                    setTimeout(setupCountryHoverEffects, 500);
+                    return;
+                }
+                const plotlyDiv = mapElement.querySelector('.plotly');
+                if (!plotlyDiv) {
+                    setTimeout(setupCountryHoverEffects, 500);
+                    return;
+                }
+                
+                // Use Plotly's hover events for better performance and reliability
+                function setupPlotlyHover() {
+                    if (!window.Plotly || !plotlyDiv._fullData) {
+                        setTimeout(setupPlotlyHover, 500);
+                        return;
+                    }
+                    
+                    // Find choropleth trace
+                    const choroplethTrace = plotlyDiv._fullData.find(function(trace) {
+                        return trace.type === 'choroplethmapbox';
+                    });
+                    
+                    if (!choroplethTrace) {
+                        setTimeout(setupPlotlyHover, 1000);
+                        return;
+                    }
+                    
+                    // Use Plotly's hover event
+                    plotlyDiv.on('plotly_hover', function(data) {
+                        if (data.points && data.points.length > 0) {
+                            const point = data.points[0];
+                            if (point.data && point.data.type === 'choroplethmapbox') {
+                                // Find the path element for this point
+                                const paths = plotlyDiv.querySelectorAll('.choroplethlayer path');
+                                paths.forEach(function(path) {
+                                    path.style.stroke = '#1a1a1a';
+                                    path.style.strokeWidth = '2.5px';
+                                    path.style.transition = 'stroke 0.15s ease-in-out, stroke-width 0.15s ease-in-out';
+                                });
+                            }
+                        }
+                    });
+                    
+                    plotlyDiv.on('plotly_unhover', function(data) {
+                        const paths = plotlyDiv.querySelectorAll('.choroplethlayer path');
+                        paths.forEach(function(path) {
+                            path.style.stroke = 'none';
+                            path.style.strokeWidth = '0';
+                        });
+                    });
+                }
+                
+                // Also use DOM-based approach as fallback
+                function bindCountryListeners() {
+                    let countryPaths = plotlyDiv.querySelectorAll('.choroplethlayer path');
+                    
+                    if (!countryPaths || !countryPaths.length) {
+                        countryPaths = plotlyDiv.querySelectorAll('svg path[fill]');
+                    }
+                    
+                    const validPaths = Array.from(countryPaths).filter(function(path) {
+                        if (path.dataset.countryHoverBound === 'true') {
+                            return false;
+                        }
+                        if (path.closest('.scattergeo') || path.closest('.scatterlayer')) {
+                            return false;
+                        }
+                        const fill = path.getAttribute('fill') || path.style.fill;
+                        return fill && fill !== 'none' && fill !== 'transparent';
+                    });
+                    
+                    if (!validPaths || !validPaths.length) {
+                        return;
+                    }
+                    
+                    validPaths.forEach(function(path) {
+                        path.dataset.countryHoverBound = 'true';
+                        path.style.pointerEvents = 'auto';
+                        path.style.cursor = 'pointer';
+                        
+                        const addHoverStyle = function(e) {
+                            e.stopPropagation();
+                            path.style.stroke = '#1a1a1a';
+                            path.style.strokeWidth = '2.5px';
+                            path.style.transition = 'stroke 0.15s ease-in-out, stroke-width 0.15s ease-in-out';
+                        };
+                        
+                        const removeHoverStyle = function(e) {
+                            e.stopPropagation();
+                            path.style.stroke = 'none';
+                            path.style.strokeWidth = '0';
+                        };
+                        
+                        path.addEventListener('mouseenter', addHoverStyle, true);
+                        path.addEventListener('mouseleave', removeHoverStyle, true);
+                    });
+                }
+                
+                // Setup both approaches
+                setupPlotlyHover();
+                bindCountryListeners();
+                
+                // Re-bind after map updates
+                if (mapElement._countryHoverObserver) {
+                    mapElement._countryHoverObserver.disconnect();
+                }
+                
+                const observer = new MutationObserver(function() {
+                    bindCountryListeners();
+                });
+                observer.observe(plotlyDiv, { childList: true, subtree: true, attributes: true });
+                mapElement._countryHoverObserver = observer;
+                
+                // Retry after delays
+                setTimeout(function() {
+                    setupPlotlyHover();
+                    bindCountryListeners();
+                }, 1000);
+                setTimeout(function() {
+                    setupPlotlyHover();
+                    bindCountryListeners();
+                }, 2000);
             }
             
             // Limit zoom in and zoom out on map
@@ -2864,6 +3106,7 @@ def register_callbacks(dash_app, server):
             setupZoomLimits();
             initProductionTableEnhancements();
             setupPortHoverEffects();
+            setupCountryHoverEffects();
             
             return window.dash_clientside.no_update;
         }
