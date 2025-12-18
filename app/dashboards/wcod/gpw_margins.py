@@ -415,18 +415,18 @@ else:
 
 # Set default start date to Jan 19 (find in date list)
 # Set default start date to Apr 19 (find in date list)
-DEFAULT_START_DATE = DATE_MIN
+DEFAULT_START_DATE = datetime(2019, 1, 1)
 if DATE_LIST:
-    # Try to find Apr 19 in the date list
-    apr_19_dates = [d for d in DATE_LIST if d.month == 4 and d.year == 2019]
-    if apr_19_dates:
-        DEFAULT_START_DATE = apr_19_dates[0]
+    # Try to find Jan 19 in the date list
+    jan_19_dates = [d for d in DATE_LIST if d.month == 1 and d.year == 2019]
+    if jan_19_dates:
+        DEFAULT_START_DATE = jan_19_dates[0]
         DEFAULT_START_INDEX = DATE_LIST.index(DEFAULT_START_DATE)
     else:
-        # If Apr 19 not found, use the first date that's Apr 2019 or later
-        apr_2019_or_later = [d for d in DATE_LIST if d >= datetime(2019, 4, 1)]
-        if apr_2019_or_later:
-            DEFAULT_START_DATE = apr_2019_or_later[0]
+        # If Jan 19 not found, use the first date that's Jan 2019 or later
+        jan_2019_or_later = [d for d in DATE_LIST if d >= datetime(2019, 1, 1)]
+        if jan_2019_or_later:
+            DEFAULT_START_DATE = jan_2019_or_later[0]
             DEFAULT_START_INDEX = DATE_LIST.index(DEFAULT_START_DATE)
 
 DEFAULT_END_DATE = DATE_MAX
@@ -564,8 +564,9 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
             title="Date",
             showgrid=True,
             gridcolor="#e0e0e0",
+            linecolor="#cccccc", # Added x-axis line color
             tickangle=-45,
-            dtick="M7",  # Show ticks every 7 months
+            dtick="M6",  # Show ticks every 6 months
             tickformat="%b %y" # Format as "Jan 19"
         ),
         yaxis=dict(
@@ -590,10 +591,10 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
         ),
         legend=dict(
             orientation="h",
-            yanchor="bottom",
-            y=1.02,
+            yanchor="top",
+            y=1.01,
             xanchor="right",
-            x=1,
+            x=0.98,
             bgcolor="rgba(255,255,255,0.8)",
             bordercolor="#dee2e6",
             borderwidth=1
@@ -673,14 +674,16 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
             title="Date",
             showgrid=True,
             gridcolor="#e0e0e0",
+            linecolor="#cccccc", # Added x-axis line color
             tickangle=-45,
-            dtick="M7",  # Show ticks every 7 months
+            dtick="M6",  # Show ticks every 6 months
             tickformat="%b %y" # Format as "Jan 19"
         ),
         yaxis=dict(
             title="Incremental Margins ($/bbl)",
             showgrid=True,
-            gridcolor="#e0e0e0"
+            gridcolor="#e0e0e0",
+            zeroline=False # Hide the zero line
         ),
         hovermode='closest',
         height=400,
@@ -699,10 +702,10 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
         ),
         legend=dict(
             orientation="h",
-            yanchor="bottom",
-            y=1.02,
+            yanchor="top",
+            y=1.01,
             xanchor="right",
-            x=1,
+            x=0.98,
             bgcolor="rgba(255,255,255,0.8)",
             bordercolor="#dee2e6",
             borderwidth=1
