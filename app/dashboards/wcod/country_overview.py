@@ -82,8 +82,8 @@ SELECT
 METRIC_CONFIG = [
     ('Exports', 'Exports', ',.0f'),
     ('Production', 'Production', ',.0f'),
-    ('R/P Ratio', 'R_P_Ratio', ',.1f'),
-    ('Reserves', 'Reserves', ',.1f')
+    ('R/P Ratio', 'R_P_Ratio', ',.0f'),
+    ('Reserves', 'Reserves', ',.0f')
 ]
 
 
