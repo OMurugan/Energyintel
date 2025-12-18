@@ -567,7 +567,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None):
             ),
             text=sorted_df['Production_Value'].apply(lambda x: f'{x:,.0f}' if pd.notna(x) and x else '').tolist(),
             textposition='outside',
-            name='Production',
+            name="Production ('000 b/d)",
             hovertemplate=f'<b>%{{y}}</b><br>Production: %{{x:,.0f}} (\'000 b/d)<br>Year: {LATEST_YEAR}<extra></extra>',
             showlegend=True,
             legendgroup='production',
@@ -586,7 +586,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None):
         ),
         text=sorted_df['Exports_Value'].apply(lambda x: f'{x:,.0f}' if pd.notna(x) else '').tolist(),
         textposition='outside',
-        name='Exports',
+        name="Exports ('000 b/d)",
         hovertemplate=f'<b>%{{y}}</b><br>Exports: %{{x:,.0f}} (\'000 b/d)<br>Year: {LATEST_YEAR}<extra></extra>',
         showlegend=True,
         legendgroup='exports',
@@ -686,8 +686,8 @@ def create_ranking_chart(selected_country=None, time_visibility=None):
     if shapes:
         fig.update_layout(shapes=shapes)
 
-    fig.update_traces(selector=dict(name='Exports'), legendrank=1)
-    fig.update_traces(selector=dict(name='Production'), legendrank=2)
+    fig.update_traces(selector=dict(name="Exports ('000 b/d)"), legendrank=1)
+    fig.update_traces(selector=dict(name="Production ('000 b/d)"), legendrank=2)
 
     return fig
 
