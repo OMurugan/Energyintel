@@ -53,7 +53,7 @@ def _load_gpw_data(region: str = None) -> pd.DataFrame:
             delivery_to AS "Region",
             tech_type AS "TechType",
             price AS "DataValue"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type = 'GPW'
         """
         
@@ -120,7 +120,7 @@ def _load_incremental_margins_data(region: str = None) -> pd.DataFrame:
             delivery_to AS "Region",
             tech_type AS "TechType",
             price AS "DataValue"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type = 'Refining Margin'
         """
         
@@ -213,7 +213,7 @@ def _load_data_table_data_from_db(region: str = None) -> pd.DataFrame:
             crude_name AS "Crude",
             price AS "DataValue",
             date AS "Date"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type IN ('GPW', 'Refining Margin')
         """
         
@@ -275,7 +275,7 @@ def _get_available_regions():
     try:
         query = """
         SELECT DISTINCT delivery_to AS "Region"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type IN ('GPW', 'Refining Margin')
             AND delivery_to IS NOT NULL
         ORDER BY delivery_to
@@ -293,7 +293,7 @@ def _get_available_crudes():
     try:
         query = """
         SELECT DISTINCT crude_name AS "Crude"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type IN ('GPW', 'Refining Margin')
             AND crude_name IS NOT NULL
         ORDER BY crude_name
@@ -322,7 +322,7 @@ def _get_available_tech_types():
                     END
                 ELSE tech_type
             END AS "TechTypeFull"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type IN ('GPW', 'Refining Margin')
         ORDER BY "TechTypeFull"
         """
@@ -592,7 +592,7 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
         legend=dict(
             orientation="h",
             yanchor="top",
-            y=1.01,
+            y=3.01,
             xanchor="right",
             x=0.98,
             bgcolor="rgba(255,255,255,0.8)",
@@ -703,7 +703,7 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
         legend=dict(
             orientation="h",
             yanchor="top",
-            y=1.01,
+            y=3.01,
             xanchor="right",
             x=0.98,
             bgcolor="rgba(255,255,255,0.8)",
