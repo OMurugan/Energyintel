@@ -267,7 +267,7 @@ def create_layout():
                             'textAlign': 'center',
                             'marginTop': '30px',
                             'marginBottom': '20px',
-                            'color': '#1b365d',
+                            'color': '#fe5000',
                             'fontWeight': 'bold',
                             'fontSize': '21px',
                             'fontFamily': 'Arial, sans-serif',
@@ -431,7 +431,7 @@ def create_layout():
                         'textAlign': 'center',
                         'marginTop': '30px',
                         'marginBottom': '20px',
-                        'color': '#1b365d',
+                        'color': '#fe5000',
                         'fontWeight': 'bold',
                         'fontSize': '21px',
                         'fontFamily': 'Arial, sans-serif',
@@ -580,7 +580,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None):
             text=sorted_df['Production_Value'].apply(lambda x: f'{x:,.0f}' if pd.notna(x) and x else '').tolist(),
             textposition='outside',
             name="Production ('000 b/d)",
-            hovertemplate=f'<b>%{{y}}</b><br>Production: %{{x:,.0f}} (\'000 b/d)<br>Year: {LATEST_YEAR}<extra></extra>',
+            hovertemplate='<span style="color:#999999;">Country:</span> <span style="color:#0075A8;">%{customdata}</span><br><span style="color:#999999;">Production (\'000 b/d):</span> <span style="color:#0075A8;">%{x:,.0f}</span><br><span style="color:#999999;">Year:</span> <span style="color:#0075A8;">' + str(LATEST_YEAR) + '</span><extra></extra>',
             showlegend=True,
             legendgroup='production',
             offsetgroup='production',
@@ -599,7 +599,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None):
         text=sorted_df['Exports_Value'].apply(lambda x: f'{x:,.0f}' if pd.notna(x) else '').tolist(),
         textposition='outside',
         name="Exports ('000 b/d)",
-        hovertemplate=f'<b>%{{y}}</b><br>Exports: %{{x:,.0f}} (\'000 b/d)<br>Year: {LATEST_YEAR}<extra></extra>',
+        hovertemplate='<span style="color:#999999;">Country:</span> <span style="color:#0075A8;">%{customdata}</span><br><span style="color:#999999;">Exports (\'000 b/d):</span> <span style="color:#0075A8;">%{x:,.0f}</span><br><span style="color:#999999;">Year:</span> <span style="color:#0075A8;">' + str(LATEST_YEAR) + '</span><extra></extra>',
         showlegend=True,
         legendgroup='exports',
         offsetgroup='exports',
@@ -670,7 +670,16 @@ def create_ranking_chart(selected_country=None, time_visibility=None):
         hovermode='closest',
         barmode='group',
         bargap=0.1,
-        bargroupgap=0.8
+        bargroupgap=0.8,
+        hoverlabel=dict(
+            bgcolor='white',
+            bordercolor='#0075A8',
+            font=dict(
+                size=14,
+                family='Arial, sans-serif',
+                color='#333333'
+            )
+        )
     )
 
     # Add horizontal lines after each country
