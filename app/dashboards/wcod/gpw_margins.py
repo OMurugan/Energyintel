@@ -44,6 +44,7 @@ def _load_gpw_data(region: str = None) -> pd.DataFrame:
                 WHEN 'FCC' THEN
                     CASE delivery_to
                         WHEN 'NWE' THEN 'Catalytic Cracking'
+                        WHEN 'Singapore' THEN 'Catalytic Cracking'
                         ELSE 'Fluid Catalytic Cracking'
                     END
                 ELSE tech_type
@@ -288,17 +289,23 @@ def _get_available_regions():
         print(f"[gpw_margins] Error getting regions: {e}")
         return []
 
-def _get_available_crudes():
-    """Get available crudes from database."""
+def _get_available_crudes(region: str = None):
+    """Get available crudes from database, optionally filtered by region."""
     try:
         query = """
         SELECT DISTINCT crude_name AS "Crude"
         FROM fact_wcod_prices
         WHERE price_type IN ('GPW', 'Refining Margin')
             AND crude_name IS NOT NULL
+        """
+        params = {}
+        if region:
+            query += " AND delivery_to = :region"
+            params['region'] = region
+        query += """
         ORDER BY crude_name
         """
-        rows = execute_query(query)
+        rows = execute_query(query, params)
         if rows:
             return [row['Crude'] for row in rows]
         return []
@@ -306,8 +313,8 @@ def _get_available_crudes():
         print(f"[gpw_margins] Error getting crudes: {e}")
         return []
 
-def _get_available_tech_types():
-    """Get available tech types from database."""
+def _get_available_tech_types(region: str = None):
+    """Get available tech types from database, optionally filtered by region."""
     try:
         query = """
         SELECT DISTINCT
@@ -324,9 +331,15 @@ def _get_available_tech_types():
             END AS "TechTypeFull"
         FROM fact_wcod_prices
         WHERE price_type IN ('GPW', 'Refining Margin')
+        """
+        params = {}
+        if region:
+            query += " AND delivery_to = :region"
+            params['region'] = region
+        query += """
         ORDER BY "TechTypeFull"
         """
-        rows = execute_query(query)
+        rows = execute_query(query, params)
         if rows:
             return [row['TechTypeFull'] for row in rows]
         return []
@@ -336,8 +349,8 @@ def _get_available_tech_types():
 
 # Get filter options from database
 REGIONS = _get_available_regions()
-CRUDES = _get_available_crudes()
-TECH_TYPES = _get_available_tech_types()
+CRUDES = _get_available_crudes(None) # Load all crudes initially
+TECH_TYPES = _get_available_tech_types(None) # Load all tech types initially
 
 # Load initial data with default region for date range calculation (if available)
 # This is only used for initial date range setup
@@ -415,7 +428,7 @@ else:
 
 # Set default start date to Jan 19 (find in date list)
 # Set default start date to Apr 19 (find in date list)
-DEFAULT_START_DATE = datetime(2019, 1, 1)
+DEFAULT_START_DATE = DATE_MIN
 if DATE_LIST:
     # Try to find Jan 19 in the date list
     jan_19_dates = [d for d in DATE_LIST if d.month == 1 and d.year == 2019]
@@ -430,6 +443,18 @@ if DATE_LIST:
             DEFAULT_START_INDEX = DATE_LIST.index(DEFAULT_START_DATE)
 
 DEFAULT_END_DATE = DATE_MAX
+
+
+def _map_tech_type_to_display(tech_type: str) -> str:
+    """Map tech type technical names to display names."""
+    mapping = {
+        'Catalytic Cracking': 'FCC',
+        'Fluid Catalytic Cracking': 'FCC',
+        'Hydroskimming': 'HSK',
+        'Hydrocracking': 'HYCRK',
+        'Coking': 'Coker'
+    }
+    return mapping.get(tech_type, tech_type)
 
 
 def _format_date_for_display(date):
@@ -493,18 +518,18 @@ def _empty_figure(message: str, height: int = 400) -> go.Figure:
     return fig
 
 
-def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crudes: list = None, region: str = None) -> go.Figure:
+def _build_gpw_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_display: str, selected_crudes: list = None, region: str = None) -> go.Figure:
     """Build a Gross Product Worth chart for a specific technology type."""
     if df.empty:
-        return _empty_figure(f"No data available for {tech_type}")
+        return _empty_figure(f"No data available for {tech_type_display}")
     
     fig = go.Figure()
     
     # Filter by tech type
-    tech_df = df[df['TechType'] == tech_type].copy()
+    tech_df = df[df['TechType'] == tech_type_internal].copy()
     
     if tech_df.empty:
-        return _empty_figure(f"No data available for {tech_type}")
+        return _empty_figure(f"No data available for {tech_type_display}")
     
     # Get unique crudes for this tech type
     available_crudes = sorted(tech_df['Crude'].unique())
@@ -514,10 +539,7 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
         available_crudes = [c for c in available_crudes if c in selected_crudes]
     
     if not available_crudes:
-        return _empty_figure(f"No crudes selected for {tech_type}")
-    
-    # Map tech type to display name
-    tech_display = "FCC" if tech_type == "Catalytic Cracking" else "HSK" if tech_type == "Hydroskimming" else tech_type
+        return _empty_figure(f"No crudes selected for {tech_type_display}")
     
     # Get region (use first available if not specified)
     if region is None and 'Region' in tech_df.columns and not tech_df.empty:
@@ -542,7 +564,7 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
                 hover_text = (
                     f"Region: {region_display}<br>"
                     f"Crude: {crude}<br>"
-                    f"Refining Complexity: {tech_display}<br>"
+                    f"Refining Complexity: {tech_type_display}<br>"
                     f"Date: {date_str}<br>"
                     f"Gross Product Worth: {row['Value']:.1f} ($/bbl)"
                 )
@@ -566,7 +588,7 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
             gridcolor="#e0e0e0",
             linecolor="#cccccc", # Added x-axis line color
             tickangle=-45,
-            dtick="M6",  # Show ticks every 6 months
+            dtick="M7",  # Show ticks every 7 months
             tickformat="%b %y" # Format as "Jan 19"
         ),
         yaxis=dict(
@@ -603,18 +625,18 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
     return fig
 
 
-def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crudes: list = None, region: str = None) -> go.Figure:
+def _build_incremental_margins_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_display: str, selected_crudes: list = None, region: str = None) -> go.Figure:
     """Build an Incremental Margins chart for a specific technology type."""
     if df.empty:
-        return _empty_figure(f"No data available for {tech_type}")
+        return _empty_figure(f"No data available for {tech_type_display}")
     
     fig = go.Figure()
     
     # Filter by tech type
-    tech_df = df[df['TechType'] == tech_type].copy()
+    tech_df = df[df['TechType'] == tech_type_internal].copy()
     
     if tech_df.empty:
-        return _empty_figure(f"No data available for {tech_type}")
+        return _empty_figure(f"No data available for {tech_type_display}")
     
     # Get unique crudes for this tech type
     available_crudes = sorted(tech_df['Crude'].unique())
@@ -624,10 +646,7 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
         available_crudes = [c for c in available_crudes if c in selected_crudes]
     
     if not available_crudes:
-        return _empty_figure(f"No crudes selected for {tech_type}")
-    
-    # Map tech type to display name
-    tech_display = "FCC" if tech_type == "Catalytic Cracking" else "HSK" if tech_type == "Hydroskimming" else tech_type
+        return _empty_figure(f"No crudes selected for {tech_type_display}")
     
     # Get region (use first available if not specified)
     if region is None and 'Region' in tech_df.columns and not tech_df.empty:
@@ -652,7 +671,7 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
                 hover_text = (
                     f"Region: {region_display}<br>"
                     f"Crude: {crude}<br>"
-                    f"Refining Complexity: {tech_display}<br>"
+                    f"Refining Complexity: {tech_type_display}<br>"
                     f"Date: {date_str}<br>"
                     f"Incremental Margins: {row['Value']:.1f} ($/bbl)"
                 )
@@ -676,7 +695,7 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
             gridcolor="#e0e0e0",
             linecolor="#cccccc", # Added x-axis line color
             tickangle=-45,
-            dtick="M6",  # Show ticks every 6 months
+            dtick="M7",  # Show ticks every 7 months
             tickformat="%b %y" # Format as "Jan 19"
         ),
         yaxis=dict(
@@ -745,16 +764,9 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
     if filtered_df.empty:
         return [], []
     
-    # Define the order of crudes
-    CRUDE_ORDER = ['Arab Light', 'Bonny Light', 'Brent Blend', 'Urals']
+    CRUDE_ORDER = selected_crudes
     DATA_TYPES = ['GPW', 'Refining Margin']
-    TECH_TYPES = ['Catalytic Cracking', 'Hydroskimming']
-    
-    # Filter by selected crudes and tech types
-    if selected_crudes:
-        CRUDE_ORDER = [c for c in CRUDE_ORDER if c in selected_crudes]
-    if selected_tech_types:
-        TECH_TYPES = [t for t in TECH_TYPES if t in selected_tech_types]
+    TECH_TYPES = selected_tech_types
     
     # Use MonthDateDisplay if available, otherwise format from Date
     if 'MonthDateDisplay' in filtered_df.columns:
@@ -858,7 +870,35 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
         data.append(record)
         tooltip_data.append(tooltip_row)
     
-    return columns, data, tooltip_data
+    # Identify columns that are entirely empty (all None)
+    # Exclude 'DateStr' from this check as it always has data
+    all_column_ids = [col['id'] for col in columns if col['id'] != 'DateStr']
+    
+    # Create a mapping from col_id to a list of its values across all rows
+    column_values = {col_id: [] for col_id in all_column_ids}
+    for row_data in data:
+        for col_id in all_column_ids:
+            column_values[col_id].append(row_data.get(col_id))
+            
+    # Determine which columns are empty
+    empty_column_ids = [col_id for col_id, values in column_values.items() if all(v is None for v in values)]
+    
+    # Filter out empty columns from the columns definition
+    filtered_columns = [col for col in columns if col['id'] not in empty_column_ids]
+    
+    # Filter out empty columns from the data
+    filtered_data = []
+    for row_data in data:
+        filtered_row = {k: v for k, v in row_data.items() if k not in empty_column_ids}
+        filtered_data.append(filtered_row)
+        
+    # Filter out empty columns from the tooltip data
+    filtered_tooltip_data = []
+    for row_tooltip in tooltip_data:
+        filtered_tooltip_row = {k: v for k, v in row_tooltip.items() if k not in empty_column_ids}
+        filtered_tooltip_data.append(filtered_tooltip_row)
+    
+    return filtered_columns, filtered_data, filtered_tooltip_data
 
 
 def create_layout():
@@ -868,6 +908,7 @@ def create_layout():
         dcc.Store(id='gpw-initial-load', data=True),
         dcc.Store(id='gpw-crude-filter-previous', data=None),
         dcc.Store(id='gpw-refining-complexity-filter-previous', data=None),
+        dcc.Store(id='gpw-available-tech-types', data=[]),
         # CSS styling for rc-slider using dcc.Markdown
         html.Div(
             dcc.Markdown(
@@ -1131,7 +1172,8 @@ def create_layout():
             html.Div([
                 html.Div([
                     html.H3(
-                        "NWE - Gross Product Worth ($/bbl)",
+                        id='gpw-gpw-title',
+                        children="NWE - Gross Product Worth ($/bbl)",
                         style={
                             'color': '#fe5000',
                             'textAlign': 'center',
@@ -1147,7 +1189,8 @@ def create_layout():
                     html.Div([
                         html.Div([
                             html.H4(
-                                "Catalytic Cracking",
+                                id='gpw-catalytic-cracking-chart-title',
+                                children="Catalytic Cracking",
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
@@ -1161,7 +1204,8 @@ def create_layout():
                         
                         html.Div([
                             html.H4(
-                                "Hydroskimming",
+                                id='gpw-hydroskimming-chart-title',
+                                children="Hydroskimming",
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
@@ -1232,12 +1276,8 @@ def create_layout():
                     ),
                     dcc.Checklist(
                         id='gpw-refining-complexity-filter',
-                        options=[
-                            {'label': 'ALL', 'value': 'ALL'},
-                            {'label': 'FCC', 'value': 'Catalytic Cracking'},
-                            {'label': 'HSK', 'value': 'Hydroskimming'}
-                        ],
-                        value=['ALL'] + TECH_TYPES.copy() if TECH_TYPES else ['ALL'],
+                        options=[],
+                        value=[],
                         style={
                             'display': 'flex',
                             'flexDirection': 'column',
@@ -1347,7 +1387,8 @@ def create_layout():
             html.Div([
                 html.Div([
                     html.H3(
-                        "NWE - Incremental Margins ($/bbl)",
+                        id='gpw-margins-title',
+                        children="NWE - Incremental Margins ($/bbl)",
                         style={
                             'color': '#fe5000',
                             'textAlign': 'center',
@@ -1363,7 +1404,8 @@ def create_layout():
                     html.Div([
                         html.Div([
                             html.H4(
-                                "Catalytic Cracking",
+                                id='gpw-incremental-catalytic-cracking-chart-title',
+                                children="Catalytic Cracking",
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
@@ -1377,7 +1419,8 @@ def create_layout():
                         
                         html.Div([
                             html.H4(
-                                "Hydroskimming",
+                                id='gpw-incremental-hydroskimming-chart-title',
+                                children="Hydroskimming",
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
@@ -1401,22 +1444,22 @@ def create_layout():
         html.Div([
             html.Div([
                 html.Div([
-                    html.H3(
-                        "NWE - Data Table ($/bbl)",
-                        style={
-                            'color': '#fe5000',
-                            'textAlign': 'center',
-                            'marginBottom': '20px',
-                            'fontSize': '20px',
-                            'fontWeight': 'bold'
-                        }
-                    ),
-                    
                     html.Div(
                         id='gpw-data-table-container',
                         children=[
-                        dash_table.DataTable(
-                            id='gpw-data-table',
+                            html.H3(
+                                id='gpw-data-table-title',
+                                children="NWE - Data Table ($/bbl)",  # Initial title, will be updated by callback
+                                style={
+                                    'color': '#fe5000',
+                                    'textAlign': 'center',
+                                    'marginBottom': '20px',
+                                    'fontSize': '20px',
+                                    'fontWeight': 'bold'
+                                }
+                            ),
+                            dash_table.DataTable(
+                                id='gpw-data-table',
                             columns=[],  # Will be populated by callback
                             data=[],     # Will be populated by callback
                             style_table={
@@ -1601,6 +1644,16 @@ def register_callbacks(dash_app, server):
         Output('gpw-hydroskimming-chart', 'figure'),
         Output('gpw-incremental-catalytic-chart', 'figure'),
         Output('gpw-incremental-hydroskimming-chart', 'figure'),
+        Output('gpw-catalytic-cracking-chart-title', 'children'),
+        Output('gpw-hydroskimming-chart-title', 'children'),
+        Output('gpw-incremental-catalytic-cracking-chart-title', 'children'),
+        Output('gpw-incremental-hydroskimming-chart-title', 'children'),
+        Output('gpw-data-table-title', 'children'),
+        Output('gpw-gpw-title', 'children'),
+        Output('gpw-margins-title', 'children'),
+        Output('gpw-refining-complexity-filter', 'options'),
+        Output('gpw-refining-complexity-filter', 'value'),
+        Output('gpw-available-tech-types', 'data'),
         Output('gpw-data-table', 'columns'),
         Output('gpw-data-table', 'data'),
         Output('gpw-data-table', 'tooltip_data'),
@@ -1619,11 +1672,30 @@ def register_callbacks(dash_app, server):
                 _empty_figure(""),
                 _empty_figure(""),
                 _empty_figure(""),
+                "", # gpw-catalytic-cracking-chart-title
+                "", # gpw-hydroskimming-chart-title
+                "", # gpw-incremental-catalytic-cracking-chart-title
+                "", # gpw-incremental-hydroskimming-chart-title
+                "", # gpw-data-table-title
+                "", # gpw-gpw-title
+                "", # gpw-margins-title
+                [], # options for gpw-refining-complexity-filter
+                [], # value for gpw-refining-complexity-filter
+                [], # gpw-available-tech-types
                 [],
                 [],
                 []
             )
         
+        table_title = f"{region} - Data Table ($/bbl)"
+        gpw_title = f"{region} - Gross Product Worth ($/bbl)"
+        margins_title = f"{region} - Incremental Margins ($/bbl)"
+
+        gpw_catalytic_title = "Not selected"
+        gpw_hydro_title = "Not selected"
+        margins_catalytic_title = "Not selected"
+        margins_hydro_title = "Not selected"
+
         # Initialize table tooltips
         table_tooltips = []
         
@@ -1635,6 +1707,31 @@ def register_callbacks(dash_app, server):
         # End date is always fixed
         end_date = DEFAULT_END_DATE
         
+        # Load available crudes and tech types for the current region
+        available_crudes_for_region = _get_available_crudes(region)
+        available_tech_types_for_region = _get_available_tech_types(region)
+
+        # Prepare dynamic options for Refining Complexity filter
+        tech_type_options = [{'label': 'ALL', 'value': 'ALL'}] + [{'label': _map_tech_type_to_display(t), 'value': t} for t in available_tech_types_for_region]
+        
+        # Determine default selected tech types: all available for the region
+        # If the user has already selected some tech types, try to preserve them
+        if tech_type_filter and 'ALL' not in tech_type_filter:
+            # Filter current selection to only include what's available for the new region
+            tech_type_value = [t for t in tech_type_filter if t in available_tech_types_for_region]
+            if not tech_type_value and available_tech_types_for_region:
+                # If existing selection is now empty, default to all available for region
+                tech_type_value = ['ALL'] + available_tech_types_for_region
+            elif 'ALL' in tech_type_filter and available_tech_types_for_region:
+                tech_type_value = ['ALL'] + available_tech_types_for_region
+            elif not tech_type_filter and available_tech_types_for_region:
+                tech_type_value = ['ALL'] + available_tech_types_for_region
+        elif available_tech_types_for_region:
+            tech_type_value = ['ALL'] + available_tech_types_for_region
+        else:
+            tech_type_value = [] # No tech types available
+
+
         # Determine selected crudes (use filter if available, otherwise use legend)
         # Filter takes priority since it's the user's direct input
         # Check if filter is explicitly set (not None and not empty list if it was intentionally cleared)
@@ -1645,12 +1742,12 @@ def register_callbacks(dash_app, server):
             # Fall back to legend if filter is None
             selected_crudes = crude_legend if isinstance(crude_legend, list) else [crude_legend]
         else:
-            # If both are empty/None, default to all crudes for initial load
-            selected_crudes = CRUDES.copy()
+            # If both are empty/None, default to all crudes for the *current region*
+            selected_crudes = available_crudes_for_region.copy()
         
         # Handle ALL option for crudes
         if selected_crudes and 'ALL' in selected_crudes:
-            selected_crudes = CRUDES.copy()
+            selected_crudes = available_crudes_for_region.copy()
         else:
             # Remove ALL from list if present
             selected_crudes = [c for c in selected_crudes if c != 'ALL'] if selected_crudes else []
@@ -1661,11 +1758,12 @@ def register_callbacks(dash_app, server):
         if tech_type_filter:
             selected_tech_types = tech_type_filter if isinstance(tech_type_filter, list) else [tech_type_filter]
         else:
-            selected_tech_types = []
+            # If filter is empty/None, default to all tech types for the *current region*
+            selected_tech_types = available_tech_types_for_region.copy()
         
         # Handle ALL option for tech types
         if 'ALL' in selected_tech_types:
-            selected_tech_types = TECH_TYPES.copy()
+            selected_tech_types = available_tech_types_for_region.copy()
         else:
             selected_tech_types = [t for t in selected_tech_types if t != 'ALL']
             # Allow empty selection - if empty, no tech types selected (charts will be empty)
@@ -1703,49 +1801,100 @@ def register_callbacks(dash_app, server):
             margins_filtered = pd.DataFrame()
         
         # Build charts only if tech type is selected
-        if selected_tech_types and 'Catalytic Cracking' in selected_tech_types:
+        gpw_catalytic = _empty_figure("FCC not selected")
+        gpw_hydro = _empty_figure("HSK not selected")
+        margins_catalytic = _empty_figure("FCC not selected")
+        margins_hydro = _empty_figure("HSK not selected")
+
+        # Build charts only if tech type is selected
+        gpw_catalytic = _empty_figure("Not selected")
+        gpw_hydro = _empty_figure("Not selected")
+        margins_catalytic = _empty_figure("Not selected")
+        margins_hydro = _empty_figure("Not selected")
+
+        gpw_catalytic_title = "Not selected"
+        gpw_hydro_title = "Not selected"
+        margins_catalytic_title = "Not selected"
+        margins_hydro_title = "Not selected"
+
+        # Prepare a list of selected tech types with their internal and display names
+        charts_to_display = []
+        
+        # Define region-specific display name mappings
+        region_tech_map = {
+            'NWE': {
+                'Catalytic Cracking': 'Catalytic Cracking',
+                'Fluid Catalytic Cracking': 'Fluid Catalytic Cracking',
+                'Hydroskimming': 'Hydroskimming',
+                'Hydrocracking': 'Hydrocracking',
+                'Coking': 'Coking'
+            },
+            'USGC': {
+                'Catalytic Cracking': 'Catalytic Cracking',
+                'Fluid Catalytic Cracking': 'Fluid Catalytic Cracking',
+                'Hydroskimming': 'Hydroskimming',
+                'Hydrocracking': 'Hydrocracking',
+                'Coking': 'Coking'
+            },
+            'Singapore': {
+                'Catalytic Cracking': 'Catalytic Cracking',
+                'Fluid Catalytic Cracking': 'Fluid Catalytic Cracking',
+                'Hydroskimming': 'Hydroskimming',
+                'Hydrocracking': 'Hydrocracking',
+                'Coking': 'Coking'
+            }
+        }
+
+        # Get the mapping for the current region, default to generic if not found
+        current_region_map = region_tech_map.get(region, {})
+
+        for tech_type_internal in selected_tech_types:
+            # Include all valid tech types for chart display
+            if tech_type_internal in ['Catalytic Cracking', 'Fluid Catalytic Cracking', 'Hydroskimming', 'Hydrocracking', 'Coking']:
+                # Use region-specific mapping, otherwise use generic display mapping
+                tech_type_display = current_region_map.get(tech_type_internal, _map_tech_type_to_display(tech_type_internal))
+                charts_to_display.append((tech_type_internal, tech_type_display))
+        
+        # Only display up to two charts at a time for the main two slots
+        if len(charts_to_display) > 0:
+            # First chart slot
+            tech_internal_1, tech_display_1 = charts_to_display[0]
             gpw_catalytic = _build_gpw_chart(
                 gpw_filtered,
-                'Catalytic Cracking',
-                'Catalytic Cracking',
+                tech_internal_1,
+                tech_display_1,
                 selected_crudes,
                 region
             )
-        else:
-            gpw_catalytic = _empty_figure("FCC not selected")
-        
-        if selected_tech_types and 'Hydroskimming' in selected_tech_types:
-            gpw_hydro = _build_gpw_chart(
-                gpw_filtered,
-                'Hydroskimming',
-                'Hydroskimming',
-                selected_crudes,
-                region
-            )
-        else:
-            gpw_hydro = _empty_figure("HSK not selected")
-        
-        if selected_tech_types and 'Catalytic Cracking' in selected_tech_types:
+            gpw_catalytic_title = tech_display_1
             margins_catalytic = _build_incremental_margins_chart(
                 margins_filtered,
-                'Catalytic Cracking',
-                'Catalytic Cracking',
+                tech_internal_1,
+                tech_display_1,
                 selected_crudes,
                 region
             )
-        else:
-            margins_catalytic = _empty_figure("FCC not selected")
-        
-        if selected_tech_types and 'Hydroskimming' in selected_tech_types:
-            margins_hydro = _build_incremental_margins_chart(
-                margins_filtered,
-                'Hydroskimming',
-                'Hydroskimming',
-                selected_crudes,
-                region
-            )
-        else:
-            margins_hydro = _empty_figure("HSK not selected")
+            margins_catalytic_title = tech_display_1
+
+            if len(charts_to_display) > 1:
+                # Second chart slot
+                tech_internal_2, tech_display_2 = charts_to_display[1]
+                gpw_hydro = _build_gpw_chart(
+                    gpw_filtered,
+                    tech_internal_2,
+                    tech_display_2,
+                    selected_crudes,
+                    region
+                )
+                gpw_hydro_title = tech_display_2
+                margins_hydro = _build_incremental_margins_chart(
+                    margins_filtered,
+                    tech_internal_2,
+                    tech_display_2,
+                    selected_crudes,
+                    region
+                )
+                margins_hydro_title = tech_display_2
         
         # Prepare data table with multi-level headers
         # Load data table data directly from database using the provided query
@@ -1783,6 +1932,16 @@ def register_callbacks(dash_app, server):
             gpw_hydro,
             margins_catalytic,
             margins_hydro,
+            gpw_catalytic_title,
+            gpw_hydro_title,
+            margins_catalytic_title,
+            margins_hydro_title,
+            table_title,
+            gpw_title,
+            margins_title,
+            tech_type_options,
+            tech_type_value,
+            available_tech_types_for_region,
             table_columns,
             table_data,
             table_tooltips
@@ -2107,9 +2266,10 @@ def register_callbacks(dash_app, server):
         Input('gpw-refining-complexity-filter', 'value'),
         State('gpw-initial-load', 'data'),
         State('gpw-refining-complexity-filter-previous', 'data'),
+        State('gpw-available-tech-types', 'data'),
         prevent_initial_call=True
     )
-    def normalize_tech_type_filter(value, is_initial_load, previous_value):
+    def normalize_tech_type_filter(value, is_initial_load, previous_value, available_tech_types):
         """Handle ALL option behavior (like Crude Legend):
         - When ALL is checked: select all individual items
         - When ALL is unchecked: uncheck all individual items
@@ -2136,7 +2296,7 @@ def register_callbacks(dash_app, server):
         has_all = 'ALL' in value_list
         had_all = 'ALL' in previous_list
         non_all_items = [v for v in value_list if v != 'ALL']
-        all_items_set = set(TECH_TYPES)
+        all_items_set = set(available_tech_types)
         non_all_set = set(non_all_items)
         previous_non_all_set = set([v for v in previous_list if v != 'ALL'])
         
@@ -2144,11 +2304,11 @@ def register_callbacks(dash_app, server):
         # This allows independent item selection without interference
         if not had_all and not has_all:
             # Clean items to ensure only valid tech types
-            cleaned_items = [v for v in non_all_items if v in TECH_TYPES]
+            cleaned_items = [v for v in non_all_items if v in available_tech_types]
             
             # Only normalize if all items are now selected (auto-check ALL)
             if set(cleaned_items) == all_items_set:
-                result = ['ALL'] + TECH_TYPES.copy()
+                result = ['ALL'] + available_tech_types.copy()
                 return result, result
             
             # For individual item selection without ALL, pass through exactly as user selected
@@ -2164,20 +2324,20 @@ def register_callbacks(dash_app, server):
         # Case 1: ALL is being checked (transition: didn't have ALL, now has ALL)
         if not had_all and has_all:
             # User just checked ALL checkbox - select all items automatically
-            result = ['ALL'] + TECH_TYPES.copy()
+            result = ['ALL'] + available_tech_types.copy()
             return result, result
         
         # Case 2: ALL is checked - detect if item was unclicked or if ALL was just checked
         if has_all:
             if non_all_set == all_items_set:
                 # ALL + all items - keep as is
-                result = ['ALL'] + TECH_TYPES.copy()
+                result = ['ALL'] + available_tech_types.copy()
                 return result, result
             else:
                 # ALL is checked but not all items are present
                 # This means user unclicked an item while ALL was checked
                 # Remove ALL and keep only the selected items
-                cleaned_items = [v for v in non_all_items if v in TECH_TYPES]
+                cleaned_items = [v for v in non_all_items if v in available_tech_types]
                 return cleaned_items, cleaned_items
         
         # Case 3: ALL was unchecked (had ALL before, don't have ALL now)
@@ -2185,7 +2345,7 @@ def register_callbacks(dash_app, server):
             # Check if items decreased (user unclicked an item) or stayed same (ALL unclicked)
             if previous_non_all_set == all_items_set and len(non_all_set) < len(all_items_set):
                 # User unclicked an item from ALL+all - keep remaining items
-                cleaned_items = [v for v in non_all_items if v in TECH_TYPES]
+                cleaned_items = [v for v in non_all_items if v in available_tech_types]
                 return cleaned_items, cleaned_items
             else:
                 # User unchecked ALL checkbox - uncheck all items
