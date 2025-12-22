@@ -1336,7 +1336,7 @@ def register_callbacks(dash_app, server):
                     // If signature changed or not enhanced, proceed with enhancement
                     
                     spreadsheet.dataset.priceScorecardEnhanced = 'true';
-                    
+
                     // Add style tag to ensure toggle icons are hidden by default and show on hover
                     const styleId = 'price-scorecard-toggle-icons-style';
                     if (!document.getElementById(styleId)) {
@@ -1347,19 +1347,131 @@ def register_callbacks(dash_app, server):
                             #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Quarter"] .quarter-header-toggle,
                             #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Month"] .month-header-toggle,
                             #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Day"] .day-header-toggle {
-                                display: none !important;
+                                display: none;
+                                margin-left: 6px;
+                                width: 16px;
+                                height: 16px;
+                                line-height: 14px;
+                                text-align: center;
+                                font-size: 12px;
+                                font-weight: normal;
+                                color: #505050;
+                                border: 1px solid #d0d0d0;
+                                border-radius: 2px;
+                                background-color: #ffffff;
+                                user-select: none;
+                                cursor: pointer;
+                                vertical-align: middle;
+                                flex-shrink: 0;
+                                box-sizing: border-box;
+                                transition: all 0.15s ease;
+                                font-family: Arial, sans-serif;
                             }
-                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Year"]:hover .year-header-toggle {
-                                display: inline-block !important;
-                            }
-                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Quarter"]:hover .quarter-header-toggle {
-                                display: inline-block !important;
-                            }
-                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Month"]:hover .month-header-toggle {
-                                display: inline-block !important;
-                            }
+                            /* Show toggle buttons on header hover */
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Year"]:hover .year-header-toggle,
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Month"]:hover .month-header-toggle,
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Quarter"]:hover .quarter-header-toggle,
                             #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Day"]:hover .day-header-toggle {
                                 display: inline-block !important;
+                            }
+                            /* Ensure toggle parent headers have relative positioning */
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Year"],
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Month"],
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Day"] {
+                                position: relative;
+                                white-space: nowrap;
+                            }
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Year"] .year-header-toggle:hover,
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Month"] .month-header-toggle:hover,
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Quarter"] .quarter-header-toggle:hover,
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Day"] .day-header-toggle:hover {
+                                color: #333333;
+                                border-color: #a0a0a0;
+                                background-color: #f0f0f0;
+                            }
+                            /* Sticky column positions and z-index for fixed date columns */
+                            /* Year: always fixed at left 0 */
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Year"],
+                            #price-scorecard-table .dash-spreadsheet-container td[data-dash-column="Year"] {
+                                position: sticky !important;
+                                left: 0 !important;
+                                z-index: 10 !important;
+                                box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+                            }
+                            /* Quarter: positioned after Year (80px) when visible */
+                            #price-scorecard-table .dash-spreadsheet-container.year-expanded th[data-dash-column="Quarter"],
+                            #price-scorecard-table .dash-spreadsheet-container.year-expanded td[data-dash-column="Quarter"] {
+                                position: sticky !important;
+                                left: 80px !important;
+                                z-index: 10 !important;
+                                box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+                            }
+                            /* Month: positioned at 80px when Quarter is hidden, 140px when Quarter is visible */
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Month"],
+                            #price-scorecard-table .dash-spreadsheet-container td[data-dash-column="Month"] {
+                                position: sticky !important;
+                                left: 80px !important;
+                                z-index: 10 !important;
+                                box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+                            }
+                            #price-scorecard-table .dash-spreadsheet-container.year-expanded th[data-dash-column="Month"],
+                            #price-scorecard-table .dash-spreadsheet-container.year-expanded td[data-dash-column="Month"] {
+                                left: 140px !important;
+                            }
+                            /* Day: positioned after Month (180px when Quarter hidden, 240px when Quarter visible) */
+                            #price-scorecard-table .dash-spreadsheet-container.month-expanded:not(.year-expanded) th[data-dash-column="Day"],
+                            #price-scorecard-table .dash-spreadsheet-container.month-expanded:not(.year-expanded) td[data-dash-column="Day"] {
+                                position: sticky !important;
+                                left: 180px !important;
+                                z-index: 10 !important;
+                                box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+                            }
+                            #price-scorecard-table .dash-spreadsheet-container.month-expanded.year-expanded:not(.quarter-collapsed) th[data-dash-column="Day"],
+                            #price-scorecard-table .dash-spreadsheet-container.month-expanded.year-expanded:not(.quarter-collapsed) td[data-dash-column="Day"] {
+                                position: sticky !important;
+                                left: 240px !important;
+                                z-index: 10 !important;
+                                box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+                            }
+                            /* Ensure header cells have higher z-index and background color */
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Year"],
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Month"],
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Day"] {
+                                z-index: 11 !important;
+                                background-color: #f8f9fa !important;
+                            }
+                            /* Ensure middle-level header cells for Year/Quarter/Month/Day are properly aligned */
+                            /* The zero-width character in middle level creates proper cell structure without visual content */
+                            /* Dash DataTable's merge_duplicate_headers=True automatically creates colspan:
+                               - Default (Year + Month): colspan 2
+                               - With Quarter: colspan 3 (Year, Quarter, Month)
+                               - With Day: colspan 4 (Year, Quarter, Month, Day)
+                               This ensures the middle-level header spans all visible date columns and aligns with country headers */
+                            /* Default: Quarter and Day columns hidden (Year and Month visible by default) */
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
+                            #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Day"],
+                            #price-scorecard-table .dash-spreadsheet-container td[data-dash-column="Quarter"],
+                            #price-scorecard-table .dash-spreadsheet-container td[data-dash-column="Day"] {
+                                display: none !important;
+                            }
+                            /* Show Quarter when year is expanded */
+                            #price-scorecard-table .dash-spreadsheet-container.year-expanded th[data-dash-column="Quarter"],
+                            #price-scorecard-table .dash-spreadsheet-container.year-expanded td[data-dash-column="Quarter"] {
+                                display: table-cell !important;
+                            }
+                            /* Hide Month and Day when quarter is collapsed (only when Quarter is visible) */
+                            #price-scorecard-table .dash-spreadsheet-container.year-expanded.quarter-collapsed th[data-dash-column="Month"],
+                            #price-scorecard-table .dash-spreadsheet-container.year-expanded.quarter-collapsed th[data-dash-column="Day"],
+                            #price-scorecard-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Month"],
+                            #price-scorecard-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Day"] {
+                                display: none !important;
+                            }
+                            /* Show Day when month is expanded (hide if quarter is collapsed) */
+                            #price-scorecard-table .dash-spreadsheet-container.month-expanded:not(.quarter-collapsed) th[data-dash-column="Day"],
+                            #price-scorecard-table .dash-spreadsheet-container.month-expanded:not(.quarter-collapsed) td[data-dash-column="Day"] {
+                                display: table-cell !important;
                             }
                         `;
                         document.head.appendChild(style);
@@ -1368,7 +1480,14 @@ def register_callbacks(dash_app, server):
                     // Initialize expand/collapse state
                     let isYearExpanded = false; // Default: hide Quarter
                     let isMonthExpanded = false; // Default: hide Day
-                    let isQuarterCollapsed = false; // Default: Month and Day visible when Quarter is shown
+                    let isQuarterCollapsed = false; // Default: Quarter is not collapsed (Month and Day visible initially)
+
+                    // Ensure initial state of year-expanded class based on isYearExpanded
+                    if (!isYearExpanded) {
+                        spreadsheet.classList.remove('year-expanded');
+                    } else {
+                        spreadsheet.classList.add('year-expanded');
+                    }
                     
                     // Helper function to get cell text without icons
                     function getCellTextWithoutIcons(cell, iconClass) {
@@ -1476,7 +1595,13 @@ def register_callbacks(dash_app, server):
                     function initializeQuarterHeaderToggle() {
                         // Find the header cell that contains "Quarter" text (the visible one in hierarchical headers)
                         const allQuarterHeaders = Array.from(spreadsheet.querySelectorAll('th[data-dash-column="Quarter"]'));
-                        if (!allQuarterHeaders.length) return;
+                        if (!allQuarterHeaders.length) {
+                            // Try again after a short delay if headers aren't found yet
+                            setTimeout(function() {
+                                initializeQuarterHeaderToggle();
+                            }, 100);
+                            return;
+                        }
                         
                         // Find the header in the last header row (the visible one in multi-level headers)
                         const headerRows = Array.from(spreadsheet.querySelectorAll('thead tr'));
@@ -1521,7 +1646,13 @@ def register_callbacks(dash_app, server):
                     function initializeMonthHeaderToggle() {
                         // Find the header cell that contains "Month" text (the visible one in hierarchical headers)
                         const allMonthHeaders = Array.from(spreadsheet.querySelectorAll('th[data-dash-column="Month"]'));
-                        if (!allMonthHeaders.length) return;
+                        if (!allMonthHeaders.length) {
+                            // Try again after a short delay if headers aren't found yet
+                            setTimeout(function() {
+                                initializeMonthHeaderToggle();
+                            }, 100);
+                            return;
+                        }
                         
                         // Find the header in the last header row (the visible one in multi-level headers)
                         const headerRows = Array.from(spreadsheet.querySelectorAll('thead tr'));
@@ -1610,14 +1741,12 @@ def register_callbacks(dash_app, server):
                             existingToggle.remove();
                         }
                         
-                        // Day column doesn't need a functional toggle since it's controlled by Month toggle
-                        // But add a visual icon for consistency (non-functional)
-                        addToggleIcon(dayHeader, 'day-header-toggle', false, function() {
-                            // No action - Day visibility is controlled by Month toggle
+                        addToggleIcon(dayHeader, 'day-header-toggle', isMonthExpanded, function() {
+                            toggleMonthExpand();
                         });
                     }
                     
-                    // Toggle Year expand (icon only - columns always visible)
+                    // Toggle Year expand (shows/hides Quarter)
                     function toggleYearExpand() {
                         isYearExpanded = !isYearExpanded;
                         
@@ -1627,12 +1756,57 @@ def register_callbacks(dash_app, server):
                             yearHeaderToggle.setAttribute('aria-label', isYearExpanded ? 'Collapse Quarter' : 'Expand Quarter');
                         }
                         
-                        // Columns are always visible - just update icon state
+                        // Toggle Quarter column visibility
+                        if (isYearExpanded) {
+                            spreadsheet.classList.add('year-expanded');
+                            // When Year is expanded, Quarter is shown, and Month/Day should be visible by default (not collapsed)
+                            isQuarterCollapsed = false;
+                            spreadsheet.classList.remove('quarter-collapsed');
+                            
+                            // Re-initialize Month and Day toggles to ensure their states are correct
+                            console.log('toggleYearExpand: Calling initializeMonthHeaderToggle()...');
+                            initializeMonthHeaderToggle();
+                            console.log('toggleYearExpand: Calling initializeDayHeaderToggle()...');
+                            initializeDayHeaderToggle();
+
+                            // Initialize Quarter header toggle when Quarter becomes visible
+                            initializeQuarterHeaderToggle();
+                        } else {
+                            spreadsheet.classList.remove('year-expanded');
+                            // Reset quarter collapse state when Quarter is hidden
+                            isQuarterCollapsed = true; // Quarter is hidden, so Month and Day should be effectively collapsed
+                            spreadsheet.classList.add('quarter-collapsed'); // Add class to hide Month/Day if Quarter isn't shown
+                            
+                            // Also remove month-expanded class and reset isMonthExpanded
+                            spreadsheet.classList.remove('month-expanded');
+                            isMonthExpanded = false;
+                            // Remove Month toggle if it exists
+                            const monthHeader = spreadsheet.querySelector('th[data-dash-column="Month"]');
+                            if (monthHeader) {
+                                const toggle = monthHeader.querySelector('.month-header-toggle');
+                                if (toggle) toggle.remove();
+                            }
+                            // Remove Day toggle if it exists
+                            const dayHeader = spreadsheet.querySelector('th[data-dash-column="Day"]');
+                            if (dayHeader) {
+                                const toggle = dayHeader.querySelector('.day-header-toggle');
+                                if (toggle) toggle.remove();
+                            }
+                            
+                            // Remove Quarter toggle if it exists
+                            const quarterHeader = spreadsheet.querySelector('th[data-dash-column="Quarter"]');
+                            if (quarterHeader) {
+                                const toggle = quarterHeader.querySelector('.quarter-header-toggle');
+                                if (toggle) toggle.remove();
+                            }
+                        }
+                        
+                        // Clear selections
                         clearAllColumnSelections(spreadsheet);
                         clearAllRowSelections(spreadsheet);
                     }
                     
-                    // Toggle Quarter collapse (icon only - columns always visible)
+                    // Toggle Quarter collapse (shows/hides Month and Day)
                     function toggleQuarterCollapse() {
                         isQuarterCollapsed = !isQuarterCollapsed;
                         
@@ -1642,12 +1816,42 @@ def register_callbacks(dash_app, server):
                             quarterHeaderToggle.setAttribute('aria-label', isQuarterCollapsed ? 'Show Month & Day' : 'Hide Month & Day');
                         }
                         
-                        // Columns are always visible - just update icon state
+                        // Toggle Month and Day column visibility
+                        if (isQuarterCollapsed) {
+                            spreadsheet.classList.add('quarter-collapsed');
+                            // When Quarter is collapsed, Month and Day should be collapsed too
+                            spreadsheet.classList.remove('month-expanded');
+                            isMonthExpanded = false;
+                            // Remove Month toggle if it exists
+                            const monthHeader = spreadsheet.querySelector('th[data-dash-column="Month"]');
+                            if (monthHeader) {
+                                const toggle = monthHeader.querySelector('.month-header-toggle');
+                                if (toggle) toggle.remove();
+                            }
+                            // Remove Day toggle if it exists
+                            const dayHeader = spreadsheet.querySelector('th[data-dash-column="Day"]');
+                            if (dayHeader) {
+                                const toggle = dayHeader.querySelector('.day-header-toggle');
+                                if (toggle) toggle.remove();
+                            }
+                        } else {
+                            spreadsheet.classList.remove('quarter-collapsed');
+                            // When Quarter is expanded, Month and Day should be in their default (collapsed) state
+                            spreadsheet.classList.remove('month-expanded');
+                            isMonthExpanded = false;
+                            // Re-initialize Month and Day toggles to ensure their states are correct
+                            console.log('toggleQuarterCollapse: Calling initializeMonthHeaderToggle()...');
+                            initializeMonthHeaderToggle();
+                            console.log('toggleQuarterCollapse: Calling initializeDayHeaderToggle()...');
+                            initializeDayHeaderToggle();
+                        }
+                        
+                        // Clear selections
                         clearAllColumnSelections(spreadsheet);
                         clearAllRowSelections(spreadsheet);
                     }
                     
-                    // Toggle Month expand (icon only - columns always visible)
+                    // Toggle Month expand (shows/hides Day)
                     function toggleMonthExpand() {
                         isMonthExpanded = !isMonthExpanded;
                         
@@ -1657,7 +1861,22 @@ def register_callbacks(dash_app, server):
                             monthHeaderToggle.setAttribute('aria-label', isMonthExpanded ? 'Collapse Day' : 'Expand Day');
                         }
                         
-                        // Columns are always visible - just update icon state
+                        // Toggle Day column visibility
+                        if (isMonthExpanded) {
+                            spreadsheet.classList.add('month-expanded');
+                            // Initialize Day header toggle when Day becomes visible
+                            initializeDayHeaderToggle();
+                        } else {
+                            spreadsheet.classList.remove('month-expanded');
+                            // Remove Day toggle if it exists
+                            const dayHeader = spreadsheet.querySelector('th[data-dash-column="Day"]');
+                            if (dayHeader) {
+                                const toggle = dayHeader.querySelector('.day-header-toggle');
+                                if (toggle) toggle.remove();
+                            }
+                        }
+                        
+                        // Clear selections
                         clearAllColumnSelections(spreadsheet);
                         clearAllRowSelections(spreadsheet);
                     }
@@ -1672,12 +1891,6 @@ def register_callbacks(dash_app, server):
                         // querySelector works on hidden elements (display:none)
                         initializeQuarterHeaderToggle();
                         initializeDayHeaderToggle();
-                        
-                        // Also try again after a delay to ensure they're properly initialized
-                        setTimeout(function() {
-                            initializeQuarterHeaderToggle();
-                            initializeDayHeaderToggle();
-                        }, 200);
                     }
                     
                     // Try multiple times to catch table rendering
@@ -1724,8 +1937,41 @@ def register_callbacks(dash_app, server):
                             // Get header text for debugging
                             const headerText = header.textContent.trim();
                             
-                            // Skip Year, Quarter, Month, and Day columns
-                            if (columnId === 'Year' || columnId === 'Quarter' || columnId === 'Month' || columnId === 'Day') {
+                                                        // Handle Year header toggle
+                            if (columnId === 'Year') {
+                                const toggleBtn = event.target.closest('.year-header-toggle');
+                                if (toggleBtn || event.target === header || header.contains(event.target)) {
+                                    toggleYearExpand();
+                                    return;
+                                }
+                            }
+                            
+                            // Handle Quarter header toggle
+                            if (columnId === 'Quarter') {
+                                const toggleBtn = event.target.closest('.quarter-header-toggle');
+                                if (toggleBtn || event.target === header || header.contains(event.target)) {
+                                    toggleQuarterCollapse();
+                                    return;
+                                }
+                            }
+                            
+                            // Handle Month header toggle
+                            if (columnId === 'Month') {
+                                const toggleBtn = event.target.closest('.month-header-toggle');
+                                if (toggleBtn || event.target === header || header.contains(event.target)) {
+                                    toggleMonthExpand();
+                                    return;
+                                }
+                            }
+                            
+                            // Clear selection if clicking Day header (no toggle functionality)
+                            if (columnId === 'Day') {
+                                clearAllColumnSelections(clickedSpreadsheet);
+                                clearAllRowSelections(clickedSpreadsheet);
+                                if (window.priceScorecardState) {
+                                    window.priceScorecardState.selectedColumnId = null;
+                                    window.priceScorecardState.selectedRowIndex = null;
+                                }
                                 return;
                             }
                             
