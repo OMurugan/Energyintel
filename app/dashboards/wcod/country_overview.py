@@ -706,6 +706,10 @@ def create_layout():
                     },
                     style_cell_conditional=[
                         {
+                            'if': {'column_id': '.+', 'column_type': 'numeric'},
+                            'textAlign': 'right'
+                        },
+                        {
                             'if': {'column_id': 'Country'},
                             'textAlign': 'left',
                             'fontWeight': 'bold',
@@ -1249,7 +1253,7 @@ def register_callbacks(dash_app, server):
     )
     def update_selected_country_from_chart(clickData, click_counter):
         # Load data to get the latest country_url_map
-        _, _, _country_url_map, _, _, _ = get_country_overview_data()
+        _, _, _country_url_map, _, _, _, _, _, _ = get_country_overview_data()
         
         if clickData and 'points' in clickData and len(clickData['points']) > 0:
             point = clickData['points'][0]
@@ -1276,7 +1280,7 @@ def register_callbacks(dash_app, server):
     )
     def update_selected_country_from_table(active_cell, selected_rows, table_data, click_counter):
         # Load data to get the latest country_url_map
-        _, _, _country_url_map, _, _, _ = get_country_overview_data()
+        _, _, _country_url_map, _, _, _, _, _, _ = get_country_overview_data()
 
         if not table_data:
             return dash.no_update, dash.no_update, click_counter
