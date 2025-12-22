@@ -456,28 +456,30 @@ def create_layout():
                             # dcc.Download(id="download-chart-svg"),
                             # html.Button('Export Chart PDF', id='btn-export-chart-pdf', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
                             # dcc.Download(id="download-chart-pdf"),
-                            html.Button('Export Dashboard PNG', id='btn-export-dashboard-png', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            dcc.Download(id="download-dashboard-png"),
-                            # html.Button('Export Dashboard JPEG', id='btn-export-dashboard-jpeg', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            # dcc.Download(id="download-dashboard-jpeg"),
-                            html.Button('Export Dashboard PDF', id='btn-export-dashboard-pdf', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            dcc.Download(id="download-dashboard-pdf"),
-                            html.Button(
-                                'Export Data CSV',
-                                id='btn-export-raw-chart-csv',
-                                n_clicks=0,
+                            html.Div([ ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': '100%', 'padding': '0 15px'}),
+                        html.Div(
+                            dcc.Dropdown(
+                                id='dashboard-export-dropdown',
+                                options=[
+                                    {'label': 'Download Report PDF', 'value': 'pdf'},
+                                    {'label': 'Download Report PNG', 'value': 'png'},
+                                    {'label': 'Download Raw Chart Data CSV', 'value': 'raw_chart_csv'}
+                                ],
+                        placeholder='Download Report',
                                 style={
+                                    'width': '200px',
                                     'marginRight': '10px',
-                                    'backgroundColor': '#007bff',
-                                    'color': 'white',
-                                    'border': 'none',
-                                    'padding': '8px 15px',
-                                    'borderRadius': '4px',
-                                    'cursor': 'pointer',
-                                    'fontSize': '13px'
-                                }
+                                    'fontSize': '13px',
+                                    'color': '#2c3e50',
+                                    'display': 'inline-block'
+                                },
+                                clearable=False
                             ),
-                            dcc.Download(id="download-raw-chart-csv"),
+                            style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': '100%', 'padding': '0 15px'}
+                        ),
+                        dcc.Download(id="download-dashboard-content"),
+                        dcc.Download(id="download-raw-chart-csv"),
+                        dcc.Download(id="download-raw-table-csv"),
                         ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': '100%', 'padding': '0 15px'}),
                         html.Button(
                             '−',
@@ -656,7 +658,7 @@ def create_layout():
                 ),
                 html.Div([
                     html.Button(
-                        'Export Data CSV',
+                        'Export Raw Table Query to CSV',
                         id='btn-export-raw-table-csv',
                         n_clicks=0,
                         style={
@@ -978,111 +980,29 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for Country Overview"""
 
     @callback(
-        Output('download-raw-chart-csv', 'data'),
-        Input('btn-export-raw-chart-csv', 'n_clicks'),
-        prevent_initial_call=True
-    )
-    def export_raw_chart_data_to_csv(n_clicks):
-        if n_clicks > 0:
-            raw_chart_data = pd.DataFrame(execute_query(CHART_OVERVIEW_QUERY))
-            return dcc.send_data_frame(raw_chart_data.to_csv, "raw_chart_query_data.csv")
-        return dash.no_update
-
-    @callback(
-        Output('download-raw-table-csv', 'data'),
-        Input('btn-export-raw-table-csv', 'n_clicks'),
-        prevent_initial_call=True
-    )
-    def export_raw_table_data_to_csv(n_clicks):
-        if n_clicks > 0:
-            raw_table_data = pd.DataFrame(execute_query(TABLE_OVERVIEW_QUERY))
-            return dcc.send_data_frame(raw_table_data.to_csv, "raw_table_query_data.csv")
-        return dash.no_update
-
-    @callback(
-        Output('download-chart-png', 'data'),
-        Input('btn-export-chart-png', 'n_clicks'),
-        State('exports-ranking-chart', 'figure'),
-        prevent_initial_call=True
-    )
-    def export_chart_png(n_clicks, figure_data):
-        if n_clicks > 0 and figure_data:
-            fig = go.Figure(figure_data)
-            img_bytes = pio.to_image(fig, format="png", height=720, width=1280, scale=2)
-            return dcc.send_bytes(img_bytes, "country_overview_chart.png")
-        return dash.no_update
-
-    @callback(
-        Output('download-chart-jpeg', 'data'),
-        Input('btn-export-chart-jpeg', 'n_clicks'),
-        State('exports-ranking-chart', 'figure'),
-        prevent_initial_call=True
-    )
-    def export_chart_jpeg(n_clicks, figure_data):
-        if n_clicks > 0 and figure_data:
-            fig = go.Figure(figure_data)
-            img_bytes = pio.to_image(fig, format="jpeg", height=720, width=1280, scale=2)
-            return dcc.send_bytes(img_bytes, "country_overview_chart.jpeg")
-        return dash.no_update
-
-    @callback(
-        Output('download-chart-svg', 'data'),
-        Input('btn-export-chart-svg', 'n_clicks'),
-        State('exports-ranking-chart', 'figure'),
-        prevent_initial_call=True
-    )
-    def export_chart_svg(n_clicks, figure_data):
-        if n_clicks > 0 and figure_data:
-            fig = go.Figure(figure_data)
-            img_bytes = pio.to_image(fig, format="svg", height=720, width=1280, scale=2)
-            return dcc.send_bytes(img_bytes, "country_overview_chart.svg")
-        return dash.no_update
-
-    @callback(
-        Output('download-chart-pdf', 'data'),
-        Input('btn-export-chart-pdf', 'n_clicks'),
-        State('exports-ranking-chart', 'figure'),
-        prevent_initial_call=True
-    )
-    def export_chart_pdf(n_clicks, figure_data):
-        if n_clicks > 0 and figure_data:
-            fig = go.Figure(figure_data)
-            img_bytes = pio.to_image(fig, format="pdf", height=720, width=1280, scale=2)
-            return dcc.send_bytes(img_bytes, "country_overview_chart.pdf")
-        return dash.no_update
-
-    @callback(
-        [Output('download-dashboard-pdf', 'data'),
-         Output('download-dashboard-png', 'data'),
-         Output('download-dashboard-jpeg', 'data')],
-        [Input('btn-export-dashboard-pdf', 'n_clicks'),
-         Input('btn-export-dashboard-png', 'n_clicks'),
-         Input('btn-export-dashboard-jpeg', 'n_clicks')],
+        [Output('download-dashboard-content', 'data'),
+         Output('download-raw-chart-csv', 'data')],
+        [Input('dashboard-export-dropdown', 'value')],
         [State('exports-ranking-chart', 'figure'),
          State('oil-data-table', 'data'),
          State('oil-data-table', 'columns')],
         prevent_initial_call=True
     )
-    def export_dashboard_content(pdf_clicks, png_clicks, jpeg_clicks, chart_figure, table_data, table_columns):
-        ctx = callback_context
-        if not ctx.triggered_id:
+    def export_dashboard_content_and_data(selected_value, chart_figure, table_data, table_columns):
+        if not selected_value:
             return dash.no_update, dash.no_update, dash.no_update
 
-        output_type = None
-        if ctx.triggered_id == 'btn-export-dashboard-pdf':
-            output_type = 'pdf'
-        elif ctx.triggered_id == 'btn-export-dashboard-png':
-            output_type = 'png'
-        elif ctx.triggered_id == 'btn-export-dashboard-jpeg':
-            output_type = 'jpeg'
+        # Initialize all download variables to dash.no_update
+        download_dashboard_report = dash.no_update
+        download_raw_chart_csv = dash.no_update
+        download_raw_table_csv = dash.no_update
 
-        if output_type:
-            # 1. Export chart as PNG for embedding in HTML
+        if selected_value == 'pdf':
+            # Logic for PDF export
             fig = go.Figure(chart_figure)
             img_bytes = pio.to_image(fig, format="png", height=720, width=1280, scale=2)
             img_base64 = base64.b64encode(img_bytes).decode('utf-8')
 
-            # 2. Prepare table HTML
             df_table = pd.DataFrame(table_data)
             display_columns = [col['id'] for col in table_columns if col['id'] != 'Country_Original' and col['id'] != 'Profile_URL']
             if 'Country' in df_table.columns:
@@ -1116,7 +1036,6 @@ def register_callbacks(dash_app, server):
 
             html_table_content = f"<table border=\"1\" style=\"width:100%; border-collapse: collapse; text-align: center;\">{html_table_headers}{html_table_body}</table>"
 
-            # 3. Combine into a single HTML document
             html_content = f"""
                 <html>
                 <head>
@@ -1144,27 +1063,39 @@ def register_callbacks(dash_app, server):
                 </html>
             """
 
-            # 4. Convert HTML to PDF
             pdf_bytes = HTML(string=html_content).write_pdf()
+            download_dashboard_report = dcc.send_bytes(pdf_bytes, "country_overview_report.pdf")
 
-            if output_type == 'pdf':
-                return dcc.send_bytes(pdf_bytes, "country_overview_report.pdf"), dash.no_update, dash.no_update
-            elif output_type == 'png':
-                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-                page = doc[0]
-                pix = page.get_pixmap(matrix=fitz.Matrix(4, 4))
-                png_image_bytes = pix.tobytes("png")
-                doc.close()
-                return dash.no_update, dcc.send_bytes(png_image_bytes, "country_overview_report.png"), dash.no_update
-            elif output_type == 'jpeg':
-                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-                page = doc[0]
-                pix = page.get_pixmap(matrix=fitz.Matrix(4, 4))
-                jpeg_image_bytes = pix.tobytes("jpeg")
-                doc.close()
-                return dash.no_update, dash.no_update, dcc.send_bytes(jpeg_image_bytes, "country_overview_report.jpeg")
-        
-        return dash.no_update, dash.no_update, dash.no_update
+        elif selected_value == 'png':
+            # Logic for PNG export
+            try:
+                fig = go.Figure(chart_figure)
+                png_image_bytes = pio.to_image(fig, format="png", height=720, width=1280, scale=2)
+                download_dashboard_report = dcc.send_bytes(png_image_bytes, "country_overview_report.png")
+                logger.info("PNG export successful.")
+            except Exception as e:
+                logger.error(f"Error during PNG export: {e}")
+                download_png = dash.no_update
+
+        elif selected_value == 'raw_chart_csv':
+            raw_chart_data = pd.DataFrame(execute_query(CHART_OVERVIEW_QUERY))
+            download_raw_chart_csv = dcc.send_data_frame(raw_chart_data.to_csv, "raw_chart_query_data.csv")
+
+
+        return download_dashboard_report, download_raw_chart_csv
+
+    @callback(
+        Output('download-raw-table-csv', 'data'),
+        Input('btn-export-raw-table-csv', 'n_clicks'),
+        prevent_initial_call=True
+    )
+    def export_raw_table_data_to_csv(n_clicks):
+        if n_clicks > 0:
+            raw_table_data = pd.DataFrame(execute_query(TABLE_OVERVIEW_QUERY))
+            return dcc.send_data_frame(raw_table_data.to_csv, "raw_table_query_data.csv")
+        return dash.no_update
+
+
 
     @callback(
         Output('exports-ranking-chart', 'figure', allow_duplicate=True),
