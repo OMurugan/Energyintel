@@ -11,6 +11,8 @@ import logging
 import base64
 from weasyprint import HTML, CSS
 import fitz # PyMuPDF
+import io
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -431,73 +433,64 @@ def create_layout():
 
         # Ranking Chart Card
         # html.Div([
-            html.Div([
-                # html.Div([                   
-                    html.H4(
-                        "Ranking the world's crude oil exporters",
-                        style={
-                            'textAlign': 'center',
-                            'marginTop': '30px',
-                            'marginBottom': '20px',
-                            'color': '#fe5000',
-                            'fontWeight': 'bold',
-                            'fontSize': '21px',
-                            'fontFamily': 'Arial, sans-serif',
-                            'lineHeight': '23px'
-                        }
-                    ),
-                    html.Div([
-                        html.Div([
-                            # html.Button('Export Chart PNG', id='btn-export-chart-png', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            # dcc.Download(id="download-chart-png"),
-                            # html.Button('Export Chart JPEG', id='btn-export-chart-jpeg', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            # dcc.Download(id="download-chart-jpeg"),
-                            # html.Button('Export Chart SVG', id='btn-export-chart-svg', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            # dcc.Download(id="download-chart-svg"),
-                            # html.Button('Export Chart PDF', id='btn-export-chart-pdf', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            # dcc.Download(id="download-chart-pdf"),
-                            html.Button('Export Dashboard PNG', id='btn-export-dashboard-png', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            dcc.Download(id="download-dashboard-png"),
-                            # html.Button('Export Dashboard JPEG', id='btn-export-dashboard-jpeg', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            # dcc.Download(id="download-dashboard-jpeg"),
-                            html.Button('Export Dashboard PDF', id='btn-export-dashboard-pdf', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            dcc.Download(id="download-dashboard-pdf"),
-                            html.Button(
-                                'Export Data CSV',
-                                id='btn-export-raw-chart-csv',
-                                n_clicks=0,
-                                style={
-                                    'marginRight': '10px',
-                                    'backgroundColor': '#007bff',
-                                    'color': 'white',
-                                    'border': 'none',
-                                    'padding': '8px 15px',
-                                    'borderRadius': '4px',
-                                    'cursor': 'pointer',
-                                    'fontSize': '13px'
-                                }
-                            ),
-                            dcc.Download(id="download-raw-chart-csv"),
-                        ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': '100%', 'padding': '0 15px'}),
-                        html.Button(
-                            '−',
-                            id='chart-collapse-button',
-                            n_clicks=0,
+                     html.Div([ # New flex container for title and export controls
+                html.H4(
+                    "Ranking the world's crude oil exporters",
+                    style={
+                        'textAlign': 'center',
+                        'marginTop': '0px',
+                        'marginBottom': '0px',
+                        'color': '#fe5000',
+                        'fontWeight': 'bold',
+                        'fontSize': '21px',
+                        'fontFamily': 'Arial, sans-serif',
+                        'lineHeight': '23px',
+                        'flexGrow': 1 # Allow title to take available space
+                    }
+                ),
+                html.Div([ # Container for dropdown and collapse button
+                    html.Div(
+                        dcc.Dropdown(
+                            id='dashboard-export-dropdown',
+                            options=[
+                                {'label': 'Export Data PDF', 'value': 'pdf'},
+                                {'label': 'Export Data PNG', 'value': 'png'},
+                                {'label': 'Export Data CSV', 'value': 'raw_chart_csv'}
+                            ],
+                    placeholder='Export Data',
                             style={
-                                'float': 'right',
-                                'fontSize': '20px',
-                                'fontWeight': 'bold',
+                                'width': '200px',
+                                'marginRight': '10px',
+                                'fontSize': '13px',
                                 'color': '#2c3e50',
-                                'textDecoration': 'none',
-                                'padding': '0 10px',
-                                'border': 'none',
-                                'background': 'transparent',
-                                'cursor': 'pointer'
-                            }
-                        )
-                    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': '100%', 'padding': '0 15px'})
-                # ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'width': '100%', 'padding': '15px', 'background': '#f8f9fa', 'borderBottom': '1px solid #dee2e6'})
-            ]),
+                                'display': 'inline-block'
+                            },
+                            clearable=False
+                        ),
+                        style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': 'auto', 'padding': '0 0px'}
+                    ),
+                    dcc.Download(id="download-dashboard-content"),
+                    dcc.Download(id="download-raw-chart-csv"),
+                    dcc.Download(id="download-raw-table-csv"),
+                    dcc.Download(id="download-png-report"),
+                    html.Button(
+                        '−',
+                        id='chart-collapse-button',
+                        n_clicks=0,
+                        style={
+                            'fontSize': '20px',
+                            'fontWeight': 'bold',
+                            'color': '#2c3e50',
+                            'textDecoration': 'none',
+                            'padding': '0 10px',
+                            'border': 'none',
+                            'background': 'transparent',
+                            'cursor': 'pointer',
+                            'marginLeft': '10px' # Added margin for separation
+                        }
+                    )
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'padding': '0'})
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '15px', 'background': '#f8f9fa', 'borderBottom': '1px solid #dee2e6'}),
             dcc.Loading(
                 id='chart-loading',
                 type='dot',
@@ -632,53 +625,59 @@ def create_layout():
                     ], id='chart-collapse-content', style={'padding': '0', 'background': 'white', 'border': '1px solid #dee2e6', 'borderRadius': '4px', 'overflow': 'hidden'}),
                 ], style={'minHeight': '400px'})
             ),
+            html.Br(), #
+            html.Br(), 
         # ], style={'background': 'white', 'border': '1px solid #dee2e6', 'borderRadius': '4px', 'marginBottom': '30px', 'overflow': 'hidden'}),
 
         # Data Table Section
-        dcc.Loading(
-            id='table-loading',
-            type='dot',
-            fullscreen=False,
-            overlay_style={'backgroundColor': 'rgba(255, 255, 255, 0.8)'},
-            children=html.Div([
-                html.H4(
-                    "Leading Oil Exporting Countries",
-                    style={
-                        'textAlign': 'center',
-                        'marginTop': '30px',
-                        'marginBottom': '20px',
-                        'color': '#fe5000',
-                        'fontWeight': 'bold',
-                        'fontSize': '21px',
-                        'fontFamily': 'Arial, sans-serif',
-                        'lineHeight': '23px'
-                    }
-                ),
-                html.Div([
-                    html.Button(
-                        'Export Data CSV',
-                        id='btn-export-raw-table-csv',
-                        n_clicks=0,
+                html.Div([ # New parent div for title and button
+                    html.H4(
+                        "Leading Oil Exporting Countries",
                         style={
-                            'marginBottom': '20px',
-                            'backgroundColor': '#007bff',
-                            'color': 'white',
-                            'border': 'none',
-                            'padding': '8px 15px',
-                            'borderRadius': '4px',
-                            'cursor': 'pointer',
-                            'fontSize': '13px'
+                            'textAlign': 'center',
+                            'marginTop': '0px',
+                            'marginBottom': '0px',
+                            'color': '#fe5000',
+                            'fontWeight': 'bold',
+                            'fontSize': '21px',
+                            'fontFamily': 'Arial, sans-serif',
+                            'lineHeight': '23px',
+                            'flexGrow': 1 # Allow title to take available space
                         }
                     ),
-                ], style={'display': 'flex', 'justifyContent': 'flex-end', 'width': '100%', 'marginBottom': '20px'}),
-                dcc.Download(id="download-raw-table-csv"),
-                dash_table.DataTable(
+                    html.Div([ # Existing div for button
+                        html.Button(
+                            'Export Data to CSV',
+                            id='btn-export-raw-table-csv',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '8px 15px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '13px',
+                                'marginRight': '10px',
+                                'display': 'inline-block'
+                            }
+                        ),
+                    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end'}),
+                    dcc.Download(id="download-raw-table-csv"),
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'padding': '0 15px'}),
+                dcc.Loading(
+                    id='table-loading',
+                    type='dot',
+                    fullscreen=False,
+                    overlay_style={'backgroundColor': 'rgba(255, 255, 255, 0.8)'},
+                    children=html.Div([
+                        dash_table.DataTable(
                     id='oil-data-table',
                     data= [],
                     columns=DATA_TABLE_COLUMNS,
                     page_action='none',
                     style_cell={
-                        'textAlign': 'center',
+                        'textAlign': 'right',
                         'padding': '8px',
                         'fontSize': '12px',
                         'fontFamily': 'Arial, sans-serif',
@@ -689,11 +688,24 @@ def create_layout():
                         'backgroundColor': '#f8f9fa',
                         'fontWeight': 'bold',
                         'border': '1px solid #dee2e6',
-                        'textAlign': 'center',
                         'fontSize': '12px',
                         'fontFamily': 'Arial, sans-serif',
                         'color': '#2c3e50'
                     },
+                    style_header_conditional=[
+                        # Country header (first row, left-aligned)
+                        {
+                            'if': {'column_id': 'Country', 'header_index': 0},
+                            'textAlign': 'left',
+                            'justifyContent': 'flex-start'
+                        },
+                        # Top-level metric headers (first row, center-aligned)
+                        {
+                            'if': {'header_index': 0, 'column_id': '.*'}, # Target all columns in the first row
+                            'textAlign': 'center'
+                        },
+                        # Removed explicit right-alignment for year headers, they will inherit center from style_header
+                    ],
                     style_data={
                         'border': '1px solid #dee2e6',
                         'backgroundColor': 'white',
@@ -978,111 +990,30 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for Country Overview"""
 
     @callback(
-        Output('download-raw-chart-csv', 'data'),
-        Input('btn-export-raw-chart-csv', 'n_clicks'),
-        prevent_initial_call=True
-    )
-    def export_raw_chart_data_to_csv(n_clicks):
-        if n_clicks > 0:
-            raw_chart_data = pd.DataFrame(execute_query(CHART_OVERVIEW_QUERY))
-            return dcc.send_data_frame(raw_chart_data.to_csv, "raw_chart_query_data.csv")
-        return dash.no_update
-
-    @callback(
-        Output('download-raw-table-csv', 'data'),
-        Input('btn-export-raw-table-csv', 'n_clicks'),
-        prevent_initial_call=True
-    )
-    def export_raw_table_data_to_csv(n_clicks):
-        if n_clicks > 0:
-            raw_table_data = pd.DataFrame(execute_query(TABLE_OVERVIEW_QUERY))
-            return dcc.send_data_frame(raw_table_data.to_csv, "raw_table_query_data.csv")
-        return dash.no_update
-
-    @callback(
-        Output('download-chart-png', 'data'),
-        Input('btn-export-chart-png', 'n_clicks'),
-        State('exports-ranking-chart', 'figure'),
-        prevent_initial_call=True
-    )
-    def export_chart_png(n_clicks, figure_data):
-        if n_clicks > 0 and figure_data:
-            fig = go.Figure(figure_data)
-            img_bytes = pio.to_image(fig, format="png", height=720, width=1280, scale=2)
-            return dcc.send_bytes(img_bytes, "country_overview_chart.png")
-        return dash.no_update
-
-    @callback(
-        Output('download-chart-jpeg', 'data'),
-        Input('btn-export-chart-jpeg', 'n_clicks'),
-        State('exports-ranking-chart', 'figure'),
-        prevent_initial_call=True
-    )
-    def export_chart_jpeg(n_clicks, figure_data):
-        if n_clicks > 0 and figure_data:
-            fig = go.Figure(figure_data)
-            img_bytes = pio.to_image(fig, format="jpeg", height=720, width=1280, scale=2)
-            return dcc.send_bytes(img_bytes, "country_overview_chart.jpeg")
-        return dash.no_update
-
-    @callback(
-        Output('download-chart-svg', 'data'),
-        Input('btn-export-chart-svg', 'n_clicks'),
-        State('exports-ranking-chart', 'figure'),
-        prevent_initial_call=True
-    )
-    def export_chart_svg(n_clicks, figure_data):
-        if n_clicks > 0 and figure_data:
-            fig = go.Figure(figure_data)
-            img_bytes = pio.to_image(fig, format="svg", height=720, width=1280, scale=2)
-            return dcc.send_bytes(img_bytes, "country_overview_chart.svg")
-        return dash.no_update
-
-    @callback(
-        Output('download-chart-pdf', 'data'),
-        Input('btn-export-chart-pdf', 'n_clicks'),
-        State('exports-ranking-chart', 'figure'),
-        prevent_initial_call=True
-    )
-    def export_chart_pdf(n_clicks, figure_data):
-        if n_clicks > 0 and figure_data:
-            fig = go.Figure(figure_data)
-            img_bytes = pio.to_image(fig, format="pdf", height=720, width=1280, scale=2)
-            return dcc.send_bytes(img_bytes, "country_overview_chart.pdf")
-        return dash.no_update
-
-    @callback(
-        [Output('download-dashboard-pdf', 'data'),
-         Output('download-dashboard-png', 'data'),
-         Output('download-dashboard-jpeg', 'data')],
-        [Input('btn-export-dashboard-pdf', 'n_clicks'),
-         Input('btn-export-dashboard-png', 'n_clicks'),
-         Input('btn-export-dashboard-jpeg', 'n_clicks')],
+        [Output('download-dashboard-content', 'data'),
+         Output('download-raw-chart-csv', 'data'),
+         Output('download-png-report', 'data')],
+        [Input('dashboard-export-dropdown', 'value')],
         [State('exports-ranking-chart', 'figure'),
          State('oil-data-table', 'data'),
          State('oil-data-table', 'columns')],
         prevent_initial_call=True
     )
-    def export_dashboard_content(pdf_clicks, png_clicks, jpeg_clicks, chart_figure, table_data, table_columns):
-        ctx = callback_context
-        if not ctx.triggered_id:
+    def export_dashboard_content_and_data(selected_value, chart_figure, table_data, table_columns):
+        if not selected_value:
             return dash.no_update, dash.no_update, dash.no_update
 
-        output_type = None
-        if ctx.triggered_id == 'btn-export-dashboard-pdf':
-            output_type = 'pdf'
-        elif ctx.triggered_id == 'btn-export-dashboard-png':
-            output_type = 'png'
-        elif ctx.triggered_id == 'btn-export-dashboard-jpeg':
-            output_type = 'jpeg'
+        # Initialize all download triggers to no_update
+        download_pdf = dash.no_update
+        download_png = dash.no_update
+        download_raw_chart_csv = dash.no_update
 
-        if output_type:
-            # 1. Export chart as PNG for embedding in HTML
+        if selected_value == 'pdf':
+            # Logic for PDF export
             fig = go.Figure(chart_figure)
             img_bytes = pio.to_image(fig, format="png", height=720, width=1280, scale=2)
             img_base64 = base64.b64encode(img_bytes).decode('utf-8')
 
-            # 2. Prepare table HTML
             df_table = pd.DataFrame(table_data)
             display_columns = [col['id'] for col in table_columns if col['id'] != 'Country_Original' and col['id'] != 'Profile_URL']
             if 'Country' in df_table.columns:
@@ -1116,7 +1047,6 @@ def register_callbacks(dash_app, server):
 
             html_table_content = f"<table border=\"1\" style=\"width:100%; border-collapse: collapse; text-align: center;\">{html_table_headers}{html_table_body}</table>"
 
-            # 3. Combine into a single HTML document
             html_content = f"""
                 <html>
                 <head>
@@ -1144,27 +1074,110 @@ def register_callbacks(dash_app, server):
                 </html>
             """
 
-            # 4. Convert HTML to PDF
             pdf_bytes = HTML(string=html_content).write_pdf()
+            download_pdf = dcc.send_bytes(pdf_bytes, "country_overview_report.pdf")
 
-            if output_type == 'pdf':
-                return dcc.send_bytes(pdf_bytes, "country_overview_report.pdf"), dash.no_update, dash.no_update
-            elif output_type == 'png':
-                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-                page = doc[0]
-                pix = page.get_pixmap(matrix=fitz.Matrix(4, 4))
-                png_image_bytes = pix.tobytes("png")
-                doc.close()
-                return dash.no_update, dcc.send_bytes(png_image_bytes, "country_overview_report.png"), dash.no_update
-            elif output_type == 'jpeg':
-                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-                page = doc[0]
-                pix = page.get_pixmap(matrix=fitz.Matrix(4, 4))
-                jpeg_image_bytes = pix.tobytes("jpeg")
-                doc.close()
-                return dash.no_update, dash.no_update, dcc.send_bytes(jpeg_image_bytes, "country_overview_report.jpeg")
-        
-        return dash.no_update, dash.no_update, dash.no_update
+        elif selected_value == 'png':
+            # Logic for PNG export (chart + table)
+            fig = go.Figure(chart_figure)
+            chart_png_bytes = pio.to_image(fig, format="png", height=720, width=1280, scale=2)
+            chart_img_base64 = base64.b64encode(chart_png_bytes).decode('utf-8')
+
+            df_table = pd.DataFrame(table_data)
+            display_columns = [col['id'] for col in table_columns if col['id'] != 'Country_Original' and col['id'] != 'Profile_URL']
+            if 'Country' in df_table.columns:
+                df_table['Country'] = df_table['Country'].apply(lambda x: x.split('](')[0][1:] if x and x.startswith('[') else x)
+            
+            html_table_headers = "<thead><tr>"
+            current_metric_header = ""
+            for col in table_columns:
+                if col['id'] == 'Country':
+                    html_table_headers += f"<th rowspan=\"2\">{col['name'][1]}</th>"
+                elif col['id'].startswith(('Exports_', 'Production_', 'R_P_Ratio_', 'Reserves_')):
+                    metric_name = col['name'][0]
+                    if metric_name != current_metric_header:
+                        years_for_metric = len([c for c in table_columns if c['name'][0] == metric_name])
+                        html_table_headers += f"<th colspan=\"{years_for_metric}\">{metric_name}</th>"
+                        current_metric_header = metric_name
+            html_table_headers += "</tr><tr>"
+            for col in table_columns:
+                if col['id'] != 'Country':
+                    html_table_headers += f"<th>{col['name'][1]}</th>"
+            html_table_headers += "</tr></thead>"
+
+            html_table_body = "<tbody>"
+            for index, row in df_table.iterrows():
+                html_table_body += "<tr>"
+                for col_id in display_columns:
+                    value = row.get(col_id, '')
+                    html_table_body += f"<td>{value}</td>"
+                html_table_body += "</tr>"
+            html_table_body += "</tbody>"
+
+            html_table_content = f"<table border=\"1\" style=\"width:100%; border-collapse: collapse; text-align: center;\">{html_table_headers}{html_table_body}</table>"
+
+            # Combine chart and table into a single HTML for WeasyPrint
+            combined_html_content = f"""
+                <html>
+                <head>
+                    <title>Country Overview Report</title>
+                    <style>
+                        @page {{
+                            size: 1200px 5000px;
+                            margin: 20px;
+                        }}
+                        body {{ font-family: Arial, sans-serif; margin: 0; }}
+                        h1, h4 {{ color: #fe5000; text-align: center; }}
+                        img {{ max-width: 100%; height: auto; display: block; margin: 0 auto; }}
+                        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+                        th, td {{ border: 1px solid #dee2e6; padding: 8px; text-align: center; font-size: 10px; }}
+                        th {{ background-color: #f8f9fa; font-weight: bold; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>Country Overview Report</h1>
+                    <h4>Ranking the world's crude oil exporters</h4>
+                    <img src="data:image/png;base64,{chart_img_base64}" />
+                    <h4>Leading Oil Exporting Countries</h4>
+                    {html_table_content}
+                </body>
+                </html>
+            """
+            
+            # Use WeasyPrint to render the combined HTML to a single PNG image
+            # WeasyPrint directly renders to PDF, so we need to render to PDF first, then convert to PNG
+            pdf_for_png_bytes = HTML(string=combined_html_content).write_pdf()
+            
+            # Convert PDF to PNG using PyMuPDF
+            doc = fitz.open("pdf", pdf_for_png_bytes)
+            pix = doc[0].get_pixmap()
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format="PNG")
+            png_combined_bytes = img_byte_arr.getvalue()
+            doc.close()
+
+            download_png = dcc.send_bytes(png_combined_bytes, "country_overview_report.png")
+
+        elif selected_value == 'raw_chart_csv':
+            raw_chart_data = pd.DataFrame(execute_query(CHART_OVERVIEW_QUERY))
+            download_raw_chart_csv = dcc.send_data_frame(raw_chart_data.to_csv, "raw_chart_query_data.csv")
+
+
+        return download_pdf, download_raw_chart_csv, download_png
+
+    @callback(
+        Output('download-raw-table-csv', 'data'),
+        Input('btn-export-raw-table-csv', 'n_clicks'),
+        prevent_initial_call=True
+    )
+    def export_raw_table_data_to_csv(n_clicks):
+        if n_clicks > 0:
+            raw_table_data = pd.DataFrame(execute_query(TABLE_OVERVIEW_QUERY))
+            return dcc.send_data_frame(raw_table_data.to_csv, "raw_table_query_data.csv")
+        return dash.no_update
+
+
 
     @callback(
         Output('exports-ranking-chart', 'figure', allow_duplicate=True),
@@ -1243,7 +1256,7 @@ def register_callbacks(dash_app, server):
     )
     def update_selected_country_from_chart(clickData, click_counter):
         # Load data to get the latest country_url_map
-        _, _, _country_url_map, _, _, _ = get_country_overview_data()
+        _, _, _country_url_map, _, _, _, _, _, _ = get_country_overview_data()
         
         if clickData and 'points' in clickData and len(clickData['points']) > 0:
             point = clickData['points'][0]
@@ -1270,7 +1283,7 @@ def register_callbacks(dash_app, server):
     )
     def update_selected_country_from_table(active_cell, selected_rows, table_data, click_counter):
         # Load data to get the latest country_url_map
-        _, _, _country_url_map, _, _, _ = get_country_overview_data()
+        _, _, _country_url_map, _, _, _, _, _, _ = get_country_overview_data()
 
         if not table_data:
             return dash.no_update, dash.no_update, click_counter
