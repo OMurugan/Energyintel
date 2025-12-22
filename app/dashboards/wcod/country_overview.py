@@ -433,77 +433,64 @@ def create_layout():
 
         # Ranking Chart Card
         # html.Div([
-            html.Div([
-                # html.Div([                   
-                    html.H4(
-                        "Ranking the world's crude oil exporters",
-                        style={
-                            'textAlign': 'center',
-                            'marginTop': '30px',
-                            'marginBottom': '20px',
-                            'color': '#fe5000',
-                            'fontWeight': 'bold',
-                            'fontSize': '21px',
-                            'fontFamily': 'Arial, sans-serif',
-                            'lineHeight': '23px'
-                        }
-                    ),
-                    html.Div([
-                        html.Div([
-                            # html.Button('Export Chart PNG', id='btn-export-chart-png', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            # dcc.Download(id="download-chart-png"),
-                            # html.Button('Export Chart JPEG', id='btn-export-chart-jpeg', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            # dcc.Download(id="download-chart-jpeg"),
-                            # html.Button('Export Chart SVG', id='btn-export-chart-svg', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            # dcc.Download(id="download-chart-svg"),
-                            # html.Button('Export Chart PDF', id='btn-export-chart-pdf', n_clicks=0, style={'marginRight': '10px', 'backgroundColor': '#007bff', 'color': 'white', 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'}),
-                            # dcc.Download(id="download-chart-pdf"),
-                            html.Div([ ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': '100%', 'padding': '0 15px'}),
-                        html.Div(
-                            dcc.Dropdown(
-                                id='dashboard-export-dropdown',
-                                options=[
-                                    {'label': 'Export Data PDF', 'value': 'pdf'},
-                                    {'label': 'Export Data PNG', 'value': 'png'},
-                                    {'label': 'Export Data CSV', 'value': 'raw_chart_csv'}
-                                ],
-                        placeholder='Export Data',
-                                style={
-                                    'align': 'center',
-                                    'width': '200px',
-                                    'marginRight': '10px',
-                                    'fontSize': '13px',
-                                    'color': '#2c3e50',
-                                    'display': 'inline-block'
-                                },
-                                clearable=False
-                            ),
-                            style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': '100%', 'padding': '0 15px'}
-                        ),
-                        dcc.Download(id="download-dashboard-content"),
-                        dcc.Download(id="download-raw-chart-csv"),
-                        dcc.Download(id="download-raw-table-csv"),
-                        dcc.Download(id="download-png-report"),
-                        ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': '100%', 'padding': '0 15px'}),
-                        html.Button(
-                            '−',
-                            id='chart-collapse-button',
-                            n_clicks=0,
+                     html.Div([ # New flex container for title and export controls
+                html.H4(
+                    "Ranking the world's crude oil exporters",
+                    style={
+                        'textAlign': 'center',
+                        'marginTop': '0px',
+                        'marginBottom': '0px',
+                        'color': '#fe5000',
+                        'fontWeight': 'bold',
+                        'fontSize': '21px',
+                        'fontFamily': 'Arial, sans-serif',
+                        'lineHeight': '23px',
+                        'flexGrow': 1 # Allow title to take available space
+                    }
+                ),
+                html.Div([ # Container for dropdown and collapse button
+                    html.Div(
+                        dcc.Dropdown(
+                            id='dashboard-export-dropdown',
+                            options=[
+                                {'label': 'Export Data PDF', 'value': 'pdf'},
+                                {'label': 'Export Data PNG', 'value': 'png'},
+                                {'label': 'Export Data CSV', 'value': 'raw_chart_csv'}
+                            ],
+                    placeholder='Export Data',
                             style={
-                                'float': 'right',
-                                'fontSize': '20px',
-                                'fontWeight': 'bold',
+                                'width': '200px',
+                                'marginRight': '10px',
+                                'fontSize': '13px',
                                 'color': '#2c3e50',
-                                'textDecoration': 'none',
-                                'padding': '0 10px',
-                                'border': 'none',
-                                'background': 'transparent',
-                                'cursor': 'pointer'
-                            }
-                        )
-                    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': '100%', 'padding': '0 15px'})
-                # ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'width': '100%', 'padding': '15px', 'background': '#f8f9fa', 'borderBottom': '1px solid #dee2e6'})
-            ]),
+                                'display': 'inline-block'
+                            },
+                            clearable=False
+                        ),
+                        style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': 'auto', 'padding': '0 0px'}
+                    ),
+                    dcc.Download(id="download-dashboard-content"),
+                    dcc.Download(id="download-raw-chart-csv"),
+                    dcc.Download(id="download-raw-table-csv"),
+                    dcc.Download(id="download-png-report"),
+                    html.Button(
+                        '−',
+                        id='chart-collapse-button',
+                        n_clicks=0,
+                        style={
+                            'fontSize': '20px',
+                            'fontWeight': 'bold',
+                            'color': '#2c3e50',
+                            'textDecoration': 'none',
+                            'padding': '0 10px',
+                            'border': 'none',
+                            'background': 'transparent',
+                            'cursor': 'pointer',
+                            'marginLeft': '10px' # Added margin for separation
+                        }
+                    )
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'padding': '0'})
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '15px', 'background': '#f8f9fa', 'borderBottom': '1px solid #dee2e6'}),
             dcc.Loading(
                 id='chart-loading',
                 type='dot',
