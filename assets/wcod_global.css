@@ -222,27 +222,32 @@ div[class*="rc-slider-track"] {
 /* Dropdown Styling */
 .Select-control {
     font-size: 12px !important;
-    height: 22px !important;
-    min-height: 22px !important;
+    height: 32px !important;
+    min-height: 32px !important;
     border-radius: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    position: relative !important;
 }
 
 .Select-value-label {
     font-size: 12px !important;
-    line-height: 20px !important;
+    line-height: 22px !important;
+    padding-top: 10px !important;
+    padding-bottom: 0px !important;
     color: rgb(27, 54, 93) !important;
 }
 
 .Select-input {
     font-size: 12px !important;
-    height: 20px !important;
-    line-height: 20px !important;
+    height: 32px !important;
+    line-height: 32px !important;
     color: rgb(27, 54, 93) !important;
 }
 
 .Select-input > input {
     font-size: 12px !important;
-    line-height: 20px !important;
+    line-height: 32px !important;
     color: rgb(27, 54, 93) !important;
 }
 
@@ -264,13 +269,17 @@ div[class*="rc-slider-track"] {
 
 .Select--single > .Select-control .Select-value {
     font-size: 12px !important;
-    line-height: 20px !important;
+    line-height: 22px !important;
+    padding-top: 5px !important;
+    padding-bottom: 0px !important;
     color: rgb(27, 54, 93) !important;
 }
 
 .Select--single > .Select-control .Select-value .Select-value-label {
     font-size: 12px !important;
-    line-height: 20px !important;
+    line-height: 22px !important;
+    padding-top: 10px !important;
+    padding-bottom: 0px !important;
     color: rgb(27, 54, 93) !important;
 }
 
@@ -278,16 +287,21 @@ div[class*="rc-slider-track"] {
 #y-axis-dropdown .Select-control,
 #bubble-size-dropdown .Select-control {
     font-size: 12px !important;
-    height: 22px !important;
-    min-height: 22px !important;
+    height: 32px !important;
+    min-height: 32px !important;
     border-radius: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    position: relative !important;
 }
 
 #x-axis-dropdown .Select-value-label,
 #y-axis-dropdown .Select-value-label,
 #bubble-size-dropdown .Select-value-label {
     font-size: 12px !important;
-    line-height: 20px !important;
+    line-height: 22px !important;
+    padding-top: 10px !important;
+    padding-bottom: 0px !important;
     color: rgb(27, 54, 93) !important;
 }
 
@@ -501,4 +515,20 @@ div[id*="range-slider"] {
     padding: 0px 0px 25px !important;
 }
 
+.Select-arrow-zone {
+    position: absolute !important;
+    right: 0px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    width: 25px !important;
+    text-align: center !important;
+    padding-right: 5px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
 
+.Select-arrow {
+    border-color: #999 transparent transparent !important;
+    border-width: 5px 5px 2.5px !important;
+}
