@@ -11,6 +11,8 @@ import logging
 import base64
 from weasyprint import HTML, CSS
 import fitz # PyMuPDF
+import io
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -480,6 +482,7 @@ def create_layout():
                         dcc.Download(id="download-dashboard-content"),
                         dcc.Download(id="download-raw-chart-csv"),
                         dcc.Download(id="download-raw-table-csv"),
+                        dcc.Download(id="download-png-report"),
                         ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': '100%', 'padding': '0 15px'}),
                         html.Button(
                             '−',
@@ -981,7 +984,8 @@ def register_callbacks(dash_app, server):
 
     @callback(
         [Output('download-dashboard-content', 'data'),
-         Output('download-raw-chart-csv', 'data')],
+         Output('download-raw-chart-csv', 'data'),
+         Output('download-png-report', 'data')],
         [Input('dashboard-export-dropdown', 'value')],
         [State('exports-ranking-chart', 'figure'),
          State('oil-data-table', 'data'),
@@ -992,10 +996,10 @@ def register_callbacks(dash_app, server):
         if not selected_value:
             return dash.no_update, dash.no_update, dash.no_update
 
-        # Initialize all download variables to dash.no_update
-        download_dashboard_report = dash.no_update
+        # Initialize all download triggers to no_update
+        download_pdf = dash.no_update
+        download_png = dash.no_update
         download_raw_chart_csv = dash.no_update
-        download_raw_table_csv = dash.no_update
 
         if selected_value == 'pdf':
             # Logic for PDF export
@@ -1064,25 +1068,96 @@ def register_callbacks(dash_app, server):
             """
 
             pdf_bytes = HTML(string=html_content).write_pdf()
-            download_dashboard_report = dcc.send_bytes(pdf_bytes, "country_overview_report.pdf")
+            download_pdf = dcc.send_bytes(pdf_bytes, "country_overview_report.pdf")
 
         elif selected_value == 'png':
-            # Logic for PNG export
-            try:
-                fig = go.Figure(chart_figure)
-                png_image_bytes = pio.to_image(fig, format="png", height=720, width=1280, scale=2)
-                download_dashboard_report = dcc.send_bytes(png_image_bytes, "country_overview_report.png")
-                logger.info("PNG export successful.")
-            except Exception as e:
-                logger.error(f"Error during PNG export: {e}")
-                download_png = dash.no_update
+            # Logic for PNG export (chart + table)
+            fig = go.Figure(chart_figure)
+            chart_png_bytes = pio.to_image(fig, format="png", height=720, width=1280, scale=2)
+            chart_img_base64 = base64.b64encode(chart_png_bytes).decode('utf-8')
+
+            df_table = pd.DataFrame(table_data)
+            display_columns = [col['id'] for col in table_columns if col['id'] != 'Country_Original' and col['id'] != 'Profile_URL']
+            if 'Country' in df_table.columns:
+                df_table['Country'] = df_table['Country'].apply(lambda x: x.split('](')[0][1:] if x and x.startswith('[') else x)
+            
+            html_table_headers = "<thead><tr>"
+            current_metric_header = ""
+            for col in table_columns:
+                if col['id'] == 'Country':
+                    html_table_headers += f"<th rowspan=\"2\">{col['name'][1]}</th>"
+                elif col['id'].startswith(('Exports_', 'Production_', 'R_P_Ratio_', 'Reserves_')):
+                    metric_name = col['name'][0]
+                    if metric_name != current_metric_header:
+                        years_for_metric = len([c for c in table_columns if c['name'][0] == metric_name])
+                        html_table_headers += f"<th colspan=\"{years_for_metric}\">{metric_name}</th>"
+                        current_metric_header = metric_name
+            html_table_headers += "</tr><tr>"
+            for col in table_columns:
+                if col['id'] != 'Country':
+                    html_table_headers += f"<th>{col['name'][1]}</th>"
+            html_table_headers += "</tr></thead>"
+
+            html_table_body = "<tbody>"
+            for index, row in df_table.iterrows():
+                html_table_body += "<tr>"
+                for col_id in display_columns:
+                    value = row.get(col_id, '')
+                    html_table_body += f"<td>{value}</td>"
+                html_table_body += "</tr>"
+            html_table_body += "</tbody>"
+
+            html_table_content = f"<table border=\"1\" style=\"width:100%; border-collapse: collapse; text-align: center;\">{html_table_headers}{html_table_body}</table>"
+
+            # Combine chart and table into a single HTML for WeasyPrint
+            combined_html_content = f"""
+                <html>
+                <head>
+                    <title>Country Overview Report</title>
+                    <style>
+                        @page {{
+                            size: 1200px 5000px;
+                            margin: 20px;
+                        }}
+                        body {{ font-family: Arial, sans-serif; margin: 0; }}
+                        h1, h4 {{ color: #fe5000; text-align: center; }}
+                        img {{ max-width: 100%; height: auto; display: block; margin: 0 auto; }}
+                        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+                        th, td {{ border: 1px solid #dee2e6; padding: 8px; text-align: center; font-size: 10px; }}
+                        th {{ background-color: #f8f9fa; font-weight: bold; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>Country Overview Report</h1>
+                    <h4>Ranking the world's crude oil exporters</h4>
+                    <img src="data:image/png;base64,{chart_img_base64}" />
+                    <h4>Leading Oil Exporting Countries</h4>
+                    {html_table_content}
+                </body>
+                </html>
+            """
+            
+            # Use WeasyPrint to render the combined HTML to a single PNG image
+            # WeasyPrint directly renders to PDF, so we need to render to PDF first, then convert to PNG
+            pdf_for_png_bytes = HTML(string=combined_html_content).write_pdf()
+            
+            # Convert PDF to PNG using PyMuPDF
+            doc = fitz.open("pdf", pdf_for_png_bytes)
+            pix = doc[0].get_pixmap()
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format="PNG")
+            png_combined_bytes = img_byte_arr.getvalue()
+            doc.close()
+
+            download_png = dcc.send_bytes(png_combined_bytes, "country_overview_report.png")
 
         elif selected_value == 'raw_chart_csv':
             raw_chart_data = pd.DataFrame(execute_query(CHART_OVERVIEW_QUERY))
             download_raw_chart_csv = dcc.send_data_frame(raw_chart_data.to_csv, "raw_chart_query_data.csv")
 
 
-        return download_dashboard_report, download_raw_chart_csv
+        return download_pdf, download_raw_chart_csv, download_png
 
     @callback(
         Output('download-raw-table-csv', 'data'),
