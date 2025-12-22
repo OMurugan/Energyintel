@@ -683,7 +683,7 @@ def create_layout():
                     columns=DATA_TABLE_COLUMNS,
                     page_action='none',
                     style_cell={
-                        'textAlign': 'center',
+                        'textAlign': 'right',
                         'padding': '8px',
                         'fontSize': '12px',
                         'fontFamily': 'Arial, sans-serif',
@@ -694,21 +694,42 @@ def create_layout():
                         'backgroundColor': '#f8f9fa',
                         'fontWeight': 'bold',
                         'border': '1px solid #dee2e6',
-                        'textAlign': 'center',
                         'fontSize': '12px',
                         'fontFamily': 'Arial, sans-serif',
                         'color': '#2c3e50'
                     },
+                    style_header_conditional=[
+                        # Country header (first row, left-aligned)
+                        {
+                            'if': {'column_id': 'Country', 'header_index': 0},
+                            'textAlign': 'left',
+                            'justifyContent': 'flex-start'
+                        },
+                        # Top-level metric headers (first row, center-aligned)
+                        {
+                            'if': {'header_index': 0, 'column_id': 'Exports'},
+                            'textAlign': 'center'
+                        },
+                        {
+                            'if': {'header_index': 0, 'column_id': 'Production'},
+                            'textAlign': 'center'
+                        },
+                        {
+                            'if': {'header_index': 0, 'column_id': 'R_P_Ratio'},
+                            'textAlign': 'center'
+                        },
+                        {
+                            'if': {'header_index': 0, 'column_id': 'Reserves'},
+                            'textAlign': 'center'
+                        }
+                        # Removed explicit right-alignment for year headers, they will inherit center from style_header
+                    ],
                     style_data={
                         'border': '1px solid #dee2e6',
                         'backgroundColor': 'white',
                         'color': '#2c3e50'
                     },
                     style_cell_conditional=[
-                        {
-                            'if': {'column_id': '.+', 'column_type': 'numeric'},
-                            'textAlign': 'right'
-                        },
                         {
                             'if': {'column_id': 'Country'},
                             'textAlign': 'left',
