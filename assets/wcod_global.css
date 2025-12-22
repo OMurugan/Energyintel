@@ -233,7 +233,7 @@ div[class*="rc-slider-track"] {
 .Select-value-label {
     font-size: 12px !important;
     line-height: 22px !important;
-    padding-top: 10px !important;
+    padding-top: 5px !important;
     padding-bottom: 0px !important;
     color: rgb(27, 54, 93) !important;
 }
@@ -278,7 +278,7 @@ div[class*="rc-slider-track"] {
 .Select--single > .Select-control .Select-value .Select-value-label {
     font-size: 12px !important;
     line-height: 22px !important;
-    padding-top: 10px !important;
+    padding-top: 5px !important;
     padding-bottom: 0px !important;
     color: rgb(27, 54, 93) !important;
 }
@@ -300,7 +300,7 @@ div[class*="rc-slider-track"] {
 #bubble-size-dropdown .Select-value-label {
     font-size: 12px !important;
     line-height: 22px !important;
-    padding-top: 10px !important;
+    padding-top: 5px !important;
     padding-bottom: 0px !important;
     color: rgb(27, 54, 93) !important;
 }
@@ -522,7 +522,6 @@ div[id*="range-slider"] {
     transform: translateY(-50%) !important;
     width: 25px !important;
     text-align: center !important;
-    padding-right: 5px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
