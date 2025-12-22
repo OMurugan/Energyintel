@@ -463,12 +463,13 @@ def create_layout():
                             dcc.Dropdown(
                                 id='dashboard-export-dropdown',
                                 options=[
-                                    {'label': 'Download Report PDF', 'value': 'pdf'},
-                                    {'label': 'Download Report PNG', 'value': 'png'},
-                                    {'label': 'Download Raw Chart Data CSV', 'value': 'raw_chart_csv'}
+                                    {'label': 'Export Data PDF', 'value': 'pdf'},
+                                    {'label': 'Export Data PNG', 'value': 'png'},
+                                    {'label': 'Export Data CSV', 'value': 'raw_chart_csv'}
                                 ],
-                        placeholder='Download Report',
+                        placeholder='Export Data',
                                 style={
+                                    'align': 'center',
                                     'width': '200px',
                                     'marginRight': '10px',
                                     'fontSize': '13px',
@@ -637,47 +638,53 @@ def create_layout():
                     ], id='chart-collapse-content', style={'padding': '0', 'background': 'white', 'border': '1px solid #dee2e6', 'borderRadius': '4px', 'overflow': 'hidden'}),
                 ], style={'minHeight': '400px'})
             ),
+            html.Br(), #
+            html.Br(), 
         # ], style={'background': 'white', 'border': '1px solid #dee2e6', 'borderRadius': '4px', 'marginBottom': '30px', 'overflow': 'hidden'}),
 
         # Data Table Section
-        dcc.Loading(
-            id='table-loading',
-            type='dot',
-            fullscreen=False,
-            overlay_style={'backgroundColor': 'rgba(255, 255, 255, 0.8)'},
-            children=html.Div([
-                html.H4(
-                    "Leading Oil Exporting Countries",
-                    style={
-                        'textAlign': 'center',
-                        'marginTop': '30px',
-                        'marginBottom': '20px',
-                        'color': '#fe5000',
-                        'fontWeight': 'bold',
-                        'fontSize': '21px',
-                        'fontFamily': 'Arial, sans-serif',
-                        'lineHeight': '23px'
-                    }
-                ),
-                html.Div([
-                    html.Button(
-                        'Export Raw Table Query to CSV',
-                        id='btn-export-raw-table-csv',
-                        n_clicks=0,
+                html.Div([ # New parent div for title and button
+                    html.H4(
+                        "Leading Oil Exporting Countries",
                         style={
-                            'marginBottom': '20px',
-                            'backgroundColor': '#007bff',
-                            'color': 'white',
-                            'border': 'none',
-                            'padding': '8px 15px',
-                            'borderRadius': '4px',
-                            'cursor': 'pointer',
-                            'fontSize': '13px'
+                            'textAlign': 'center',
+                            'marginTop': '0px',
+                            'marginBottom': '0px',
+                            'color': '#fe5000',
+                            'fontWeight': 'bold',
+                            'fontSize': '21px',
+                            'fontFamily': 'Arial, sans-serif',
+                            'lineHeight': '23px',
+                            'flexGrow': 1 # Allow title to take available space
                         }
                     ),
-                ], style={'display': 'flex', 'justifyContent': 'flex-end', 'width': '100%', 'marginBottom': '20px'}),
-                dcc.Download(id="download-raw-table-csv"),
-                dash_table.DataTable(
+                    html.Div([ # Existing div for button
+                        html.Button(
+                            'Export Data to CSV',
+                            id='btn-export-raw-table-csv',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '8px 15px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '13px',
+                                'marginRight': '10px',
+                                'display': 'inline-block'
+                            }
+                        ),
+                    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end'}),
+                    dcc.Download(id="download-raw-table-csv"),
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'padding': '0 15px'}),
+                dcc.Loading(
+                    id='table-loading',
+                    type='dot',
+                    fullscreen=False,
+                    overlay_style={'backgroundColor': 'rgba(255, 255, 255, 0.8)'},
+                    children=html.Div([
+                        dash_table.DataTable(
                     id='oil-data-table',
                     data= [],
                     columns=DATA_TABLE_COLUMNS,
@@ -707,21 +714,9 @@ def create_layout():
                         },
                         # Top-level metric headers (first row, center-aligned)
                         {
-                            'if': {'header_index': 0, 'column_id': 'Exports'},
+                            'if': {'header_index': 0, 'column_id': '.*'}, # Target all columns in the first row
                             'textAlign': 'center'
                         },
-                        {
-                            'if': {'header_index': 0, 'column_id': 'Production'},
-                            'textAlign': 'center'
-                        },
-                        {
-                            'if': {'header_index': 0, 'column_id': 'R_P_Ratio'},
-                            'textAlign': 'center'
-                        },
-                        {
-                            'if': {'header_index': 0, 'column_id': 'Reserves'},
-                            'textAlign': 'center'
-                        }
                         # Removed explicit right-alignment for year headers, they will inherit center from style_header
                     ],
                     style_data={
