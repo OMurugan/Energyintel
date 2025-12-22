@@ -543,24 +543,24 @@ div[id*="range-slider"] {
 
 /* Override Dash DataTable default selection styles for production table */
 #production-table .dash-spreadsheet-container table td.dash-cell-selected {
-    border: none !important; /* Remove pink border */
-    background-color: #81c4d4 !important; /* Ensure our highlight color */
-    color: inherit !important; /* Ensure text remains visible */
-    opacity: 1 !important; /* Ensure cell is not dimmed */
+    border: none !important;
+    background-color: #81c4d4 !important;
+    color: inherit !important;
+    opacity: 1 !important;
 }
 
 #production-table .dash-spreadsheet-container table th.dash-header-selected {
-    border: none !important; /* Remove pink border */
-    background-color: #81c4d4 !important; /* Ensure our highlight color */
-    color: inherit !important; /* Ensure text remains visible */
-    opacity: 1 !important; /* Ensure cell is not dimmed */
+    border: none !important;
+    background-color: #81c4d4 !important;
+    color: inherit !important;
+    opacity: 1 !important;
     font-weight: bold !important;
 }
 
 /* Ensure text color is preserved for highlighted cells */
 #production-table .production-table-year-highlight {
     background-color: #81c4d4 !important;
-    color: inherit !important; /* Preserve text color */
+    color: inherit !important;
     font-weight: bold !important;
 }
 
