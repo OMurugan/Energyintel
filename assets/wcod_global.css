@@ -110,6 +110,8 @@ body {
 #yield-volume-table .dash-table-container .dash-spreadsheet-container {
     overflow-x: auto !important;
     overflow-y: auto !important;
+    position: relative !important;
+    width: 100% !important;
 }
 
 #crude-quality-table table,
@@ -233,7 +235,7 @@ div[class*="rc-slider-track"] {
 .Select-value-label {
     font-size: 12px !important;
     line-height: 22px !important;
-    padding-top: 5px !important;
+    padding-top: 10px !important;
     padding-bottom: 0px !important;
     color: rgb(27, 54, 93) !important;
 }
@@ -278,7 +280,7 @@ div[class*="rc-slider-track"] {
 .Select--single > .Select-control .Select-value .Select-value-label {
     font-size: 12px !important;
     line-height: 22px !important;
-    padding-top: 5px !important;
+    padding-top: 10px !important;
     padding-bottom: 0px !important;
     color: rgb(27, 54, 93) !important;
 }
@@ -300,7 +302,7 @@ div[class*="rc-slider-track"] {
 #bubble-size-dropdown .Select-value-label {
     font-size: 12px !important;
     line-height: 22px !important;
-    padding-top: 5px !important;
+    padding-top: 10px !important;
     padding-bottom: 0px !important;
     color: rgb(27, 54, 93) !important;
 }
@@ -500,11 +502,6 @@ div[id*="range-slider"] {
 }
 
 /* Clip scrollable columns that extend beyond viewport */
-#russian-exports-table .dash-spreadsheet-container table {
-    table-layout: auto !important;
-}
-
-/* Ensure scrollable column cells (3rd column onwards) are clipped */
 #russian-exports-table .dash-spreadsheet-container table thead tr th:nth-child(n+3),
 #russian-exports-table .dash-spreadsheet-container table tbody tr td:nth-child(n+3) {
     overflow: hidden !important;
@@ -522,6 +519,7 @@ div[id*="range-slider"] {
     transform: translateY(-50%) !important;
     width: 25px !important;
     text-align: center !important;
+    padding-right: 5px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -530,4 +528,53 @@ div[id*="range-slider"] {
 .Select-arrow {
     border-color: #999 transparent transparent !important;
     border-width: 5px 5px 2.5px !important;
+}
+
+/* Highlight style for production table year-wise data */
+.production-table-year-highlight {
+    background-color: #81c4d4 !important;
+}
+
+/* Override Dash DataTable default CSS variables for selection */
+.dash-spreadsheet-container .dash-spreadsheet-inner table {
+    --selected-background: transparent !important;
+    --selected-border: transparent !important;
+}
+
+/* Override Dash DataTable default selection styles for production table */
+#production-table .dash-spreadsheet-container table td.dash-cell-selected {
+    border: none !important; /* Remove pink border */
+    background-color: #81c4d4 !important; /* Ensure our highlight color */
+    color: inherit !important; /* Ensure text remains visible */
+    opacity: 1 !important; /* Ensure cell is not dimmed */
+}
+
+#production-table .dash-spreadsheet-container table th.dash-header-selected {
+    border: none !important; /* Remove pink border */
+    background-color: #81c4d4 !important; /* Ensure our highlight color */
+    color: inherit !important; /* Ensure text remains visible */
+    opacity: 1 !important; /* Ensure cell is not dimmed */
+    font-weight: bold !important;
+}
+
+/* Ensure text color is preserved for highlighted cells */
+#production-table .production-table-year-highlight {
+    background-color: #81c4d4 !important;
+    color: inherit !important; /* Preserve text color */
+    font-weight: bold !important;
+}
+
+/* Ensure default hover/active states don't interfere */
+#production-table .dash-spreadsheet-container table td.cell-hover,
+#production-table .dash-spreadsheet-container table td.cell-active {
+    background-color: transparent !important;
+    border: none !important;
+    color: inherit !important;
+}
+
+#production-table .dash-spreadsheet-container table th.header-hover,
+#production-table .dash-spreadsheet-container table th.header-active {
+    background-color: transparent !important;
+    border: none !important;
+    color: inherit !important;
 }
