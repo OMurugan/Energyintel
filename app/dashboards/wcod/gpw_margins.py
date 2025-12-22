@@ -366,8 +366,17 @@ CRUDE_COLORS = {
     'Arab Light': '#1f77b4',
     'Bonny Light': '#ff7f0e',
     'Brent Blend': '#2ca02c',
-    'Urals': '#d62728'
+    'Minas': '#9467bd',
+    'Oman': '#8c564b',
+    'Tapis': '#e377c2',
+    'Urals': '#d62728',
+    'Forties Blend': '#7f7f7f',
+    'Mars Blend': '#bcbd22',
+    'Maya': '#17becf',
 }
+
+# Highlight color for selected crude in table
+HIGHLIGHT_COLOR = '#fff8dc'
 
 # Fallback colors
 FALLBACK_COLORS = ['#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
@@ -510,6 +519,7 @@ def _empty_figure(message: str, height: int = 400) -> go.Figure:
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
     fig.update_layout(
+        showlegend=False,
         paper_bgcolor="white",
         plot_bgcolor="white",
         height=height,
@@ -518,7 +528,7 @@ def _empty_figure(message: str, height: int = 400) -> go.Figure:
     return fig
 
 
-def _build_gpw_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_display: str, selected_crudes: list = None, region: str = None) -> go.Figure:
+def _build_gpw_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_display: str, selected_crudes: list = None, region: str = None, highlight_crude: str = None) -> go.Figure:
     """Build a Gross Product Worth chart for a specific technology type."""
     if df.empty:
         return _empty_figure(f"No data available for {tech_type_display}")
@@ -570,18 +580,28 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_displa
                 )
                 hover_texts.append(hover_text)
             
+            line_width = 2
+            line_color = color
+            marker_size = 4
+
+            if highlight_crude and crude == highlight_crude:
+                line_width = 4  # Thicker line for highlight
+                # Can also change color here if desired, e.g., line_color = 'black'
+                marker_size = 8 # Larger marker for highlight
+
             fig.add_trace(go.Scatter(
                 x=crude_df['Date'],
                 y=crude_df['Value'],
                 mode='lines+markers',
                 name=crude,
-                line=dict(color=color, width=2),
-                marker=dict(size=4),
+                line=dict(color=line_color, width=line_width),
+                marker=dict(size=marker_size, color=line_color), # Ensure marker color matches line
                 customdata=hover_texts,
                 hovertemplate="%{customdata}<extra></extra>"
             ))
     
     fig.update_layout(
+        showlegend=False,
         xaxis=dict(
             title="Date",
             showgrid=True,
@@ -625,7 +645,7 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_displa
     return fig
 
 
-def _build_incremental_margins_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_display: str, selected_crudes: list = None, region: str = None) -> go.Figure:
+def _build_incremental_margins_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_display: str, selected_crudes: list = None, region: str = None, highlight_crude: str = None) -> go.Figure:
     """Build an Incremental Margins chart for a specific technology type."""
     if df.empty:
         return _empty_figure(f"No data available for {tech_type_display}")
@@ -677,18 +697,28 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type_internal: str, 
                 )
                 hover_texts.append(hover_text)
             
+            line_width = 2
+            line_color = color
+            marker_size = 4
+
+            if highlight_crude and crude == highlight_crude:
+                line_width = 4  # Thicker line for highlight
+                # Can also change color here if desired, e.g., line_color = 'black'
+                marker_size = 8 # Larger marker for highlight
+
             fig.add_trace(go.Scatter(
                 x=crude_df['Date'],
                 y=crude_df['Value'],
                 mode='lines+markers',
                 name=crude,
-                line=dict(color=color, width=2),
-                marker=dict(size=4),
+                line=dict(color=line_color, width=line_width),
+                marker=dict(size=marker_size, color=line_color), # Ensure marker color matches line
                 customdata=hover_texts,
                 hovertemplate="%{customdata}<extra></extra>"
             ))
     
     fig.update_layout(
+        showlegend=False,
         xaxis=dict(
             title="Date",
             showgrid=True,
@@ -733,7 +763,7 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type_internal: str, 
     return fig
 
 
-def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected_crudes=None, selected_tech_types=None) -> tuple:
+def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected_crudes=None, selected_tech_types=None, highlight_crude: str = None) -> tuple:
     """Prepare data for the complex data table with multi-level headers.
     
     Args:
@@ -749,7 +779,7 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
                data is list of records, and tooltip_data is list of tooltip records for hover
     """
     if df.empty:
-        return [], [], []
+        return [], [], [], []
     
     # Filter by date range
     filtered_df = df[
@@ -762,7 +792,7 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
         filtered_df = filtered_df[filtered_df['Region'] == region]
     
     if filtered_df.empty:
-        return [], []
+        return [], [], [], []
     
     CRUDE_ORDER = selected_crudes
     DATA_TYPES = ['GPW', 'Refining Margin']
@@ -898,7 +928,19 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
         filtered_tooltip_row = {k: v for k, v in row_tooltip.items() if k not in empty_column_ids}
         filtered_tooltip_data.append(filtered_tooltip_row)
     
-    return filtered_columns, filtered_data, filtered_tooltip_data
+    styles_data_conditional = []
+    if highlight_crude:
+        for data_type in DATA_TYPES:
+            for tech_type in TECH_TYPES:
+                # Construct the column ID for the highlighted crude
+                col_id = f"{data_type}_{tech_type}_{highlight_crude}".replace(' ', '_').replace('/', '_')
+                styles_data_conditional.append({
+                    'if': {'column_id': col_id},
+                    'backgroundColor': HIGHLIGHT_COLOR,
+                    'border': '1px solid #cccccc'
+                })
+    
+    return filtered_columns, filtered_data, filtered_tooltip_data, styles_data_conditional
 
 
 def create_layout():
@@ -909,6 +951,8 @@ def create_layout():
         dcc.Store(id='gpw-crude-filter-previous', data=None),
         dcc.Store(id='gpw-refining-complexity-filter-previous', data=None),
         dcc.Store(id='gpw-available-tech-types', data=[]),
+        dcc.Store(id='gpw-available-crudes-for-region', data=[]),
+        dcc.Store(id='gpw-highlight-crude-store', data=None), # New store for highlighting
         # CSS styling for rc-slider using dcc.Markdown
         html.Div(
             dcc.Markdown(
@@ -1199,7 +1243,8 @@ def create_layout():
                                     'fontWeight': 'bold'
                                 }
                             ),
-                            dcc.Graph(id='gpw-catalytic-cracking-chart')
+                            dcc.Graph(id='gpw-catalytic-cracking-chart',
+                                config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False}),
                         ], className='col-md-6', style={'padding': '15px'}),
                         
                         html.Div([
@@ -1214,7 +1259,8 @@ def create_layout():
                                     'fontWeight': 'bold'
                                 }
                             ),
-                            dcc.Graph(id='gpw-hydroskimming-chart')
+                            dcc.Graph(id='gpw-hydroskimming-chart',
+                                config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False}),
                         ], className='col-md-6', style={'padding': '15px'})
                     ], className='row')
                 ], className='col-md-10', style={'padding': '15px'}),
@@ -1414,7 +1460,8 @@ def create_layout():
                                     'fontWeight': 'bold'
                                 }
                             ),
-                            dcc.Graph(id='gpw-incremental-catalytic-chart')
+                            dcc.Graph(id='gpw-incremental-catalytic-chart',
+                                config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False}),
                         ], className='col-md-6', style={'padding': '15px'}),
                         
                         html.Div([
@@ -1429,7 +1476,8 @@ def create_layout():
                                     'fontWeight': 'bold'
                                 }
                             ),
-                            dcc.Graph(id='gpw-incremental-hydroskimming-chart')
+                            dcc.Graph(id='gpw-incremental-hydroskimming-chart',
+                                config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False}),
                         ], className='col-md-6', style={'padding': '15px'})
                     ], className='row')
                 ], className='col-md-10', style={'padding': '15px'}),
@@ -1470,7 +1518,7 @@ def create_layout():
                                 'border': '1px solid #dee2e6'
                             },
                             style_cell={
-                                'textAlign': 'center',
+                                'textAlign': 'right',
                                 'padding': '8px',
                                 'fontSize': '11px',
                                 'fontFamily': 'Arial, sans-serif',
@@ -1654,9 +1702,11 @@ def register_callbacks(dash_app, server):
         Output('gpw-refining-complexity-filter', 'options'),
         Output('gpw-refining-complexity-filter', 'value'),
         Output('gpw-available-tech-types', 'data'),
+        Output('gpw-available-crudes-for-region', 'data'),
         Output('gpw-data-table', 'columns'),
         Output('gpw-data-table', 'data'),
         Output('gpw-data-table', 'tooltip_data'),
+        Output('gpw-data-table', 'style_data_conditional'),
         Input('current-submenu', 'data'),
         Input('gpw-date-range-slider', 'value'),
         Input('gpw-region-filter', 'value'),
@@ -1666,6 +1716,7 @@ def register_callbacks(dash_app, server):
     )
     def update_all_charts(submenu, date_slider_value, region, crude_filter, tech_type_filter, crude_legend):
         """Update all charts and table based on filters."""
+        highlight_crude = crude_legend[0] if crude_legend else None
         if submenu != 'gpw-margins':
             return (
                 _empty_figure(""),
@@ -1735,12 +1786,12 @@ def register_callbacks(dash_app, server):
         # Determine selected crudes (use filter if available, otherwise use legend)
         # Filter takes priority since it's the user's direct input
         # Check if filter is explicitly set (not None and not empty list if it was intentionally cleared)
-        if crude_filter is not None:
-            # Filter has a value (could be empty list if all unchecked)
-            selected_crudes = crude_filter if isinstance(crude_filter, list) else [crude_filter]
-        elif crude_legend:
-            # Fall back to legend if filter is None
+        if crude_legend:
+            # If a crude is selected from the legend, it takes precedence
             selected_crudes = crude_legend if isinstance(crude_legend, list) else [crude_legend]
+        elif crude_filter is not None:
+            # If legend is empty, use the crude filter (checkboxes)
+            selected_crudes = crude_filter if isinstance(crude_filter, list) else [crude_filter]
         else:
             # If both are empty/None, default to all crudes for the *current region*
             selected_crudes = available_crudes_for_region.copy()
@@ -1864,7 +1915,8 @@ def register_callbacks(dash_app, server):
                 tech_internal_1,
                 tech_display_1,
                 selected_crudes,
-                region
+                region,
+                highlight_crude
             )
             gpw_catalytic_title = tech_display_1
             margins_catalytic = _build_incremental_margins_chart(
@@ -1872,7 +1924,8 @@ def register_callbacks(dash_app, server):
                 tech_internal_1,
                 tech_display_1,
                 selected_crudes,
-                region
+                region,
+                highlight_crude
             )
             margins_catalytic_title = tech_display_1
 
@@ -1884,7 +1937,8 @@ def register_callbacks(dash_app, server):
                     tech_internal_2,
                     tech_display_2,
                     selected_crudes,
-                    region
+                    region,
+                    highlight_crude
                 )
                 gpw_hydro_title = tech_display_2
                 margins_hydro = _build_incremental_margins_chart(
@@ -1892,7 +1946,8 @@ def register_callbacks(dash_app, server):
                     tech_internal_2,
                     tech_display_2,
                     selected_crudes,
-                    region
+                    region,
+                    highlight_crude
                 )
                 margins_hydro_title = tech_display_2
         
@@ -1914,16 +1969,17 @@ def register_callbacks(dash_app, server):
             table_filtered = table_filtered[table_filtered['TechType'].isin(selected_tech_types)]
             
             if not table_filtered.empty:
-                table_columns, table_data, table_tooltips = _prepare_data_table(
+                table_columns, table_data, table_tooltips, styles_data_conditional = _prepare_data_table(
                     table_filtered,
                     start_date,
                     end_date,
                     region,
                     selected_crudes,
-                    selected_tech_types
+                    selected_tech_types,
+                    highlight_crude
                 )
             else:
-                table_columns, table_data, table_tooltips = [], [], []
+                table_columns, table_data, table_tooltips, styles_data_conditional = [], [], [], []
         else:
             table_columns, table_data, table_tooltips = [], [], []
         
@@ -1942,9 +1998,11 @@ def register_callbacks(dash_app, server):
             tech_type_options,
             tech_type_value,
             available_tech_types_for_region,
+            available_crudes_for_region,
             table_columns,
             table_data,
-            table_tooltips
+            table_tooltips,
+            styles_data_conditional
         )
     
     # Handle ALL option normalization for crude filter
@@ -2089,6 +2147,13 @@ def register_callbacks(dash_app, server):
         
         if not clicked_crude or clicked_crude not in CRUDES:
             return dash.no_update
+
+        # Check if the clicked crude is currently the ONLY selected crude.
+        # If so, clicking it again should revert to showing all crudes.
+        if current_values == [clicked_crude]:
+            return CRUDES.copy()  # Revert to all crudes selected
+        else:
+            return [clicked_crude] # Select only the clicked crude
         
         # Toggle the clicked crude in the selection
         current_values = current_values or []
@@ -2105,94 +2170,60 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         Output({'type': 'gpw-crude-legend-item', 'crude': dd.ALL}, 'style'),
         Input('gpw-crude-legend', 'value'),
+        Input('gpw-region-filter', 'value'), # Add region filter as input
+        Input('gpw-available-crudes-for-region', 'data'), # Add available crudes for region as input
         prevent_initial_call=False
     )
-    def update_crude_legend_visual_state(selected_crudes):
-        """Update visual state of legend items based on selection."""
+    def update_crude_legend_visual_state(selected_crudes, region, available_crudes_from_store):
+        """Update visual state of legend items based on selection and active region."""
         selected_crudes = selected_crudes or []
         selected_set = set(selected_crudes) if isinstance(selected_crudes, list) else set([selected_crudes])
         
+        # Use available_crudes_from_store to filter which crudes are shown in the legend
+        available_crudes_for_region = available_crudes_from_store if available_crudes_from_store is not None else []
+        available_crudes_set = set(available_crudes_for_region)
+
         styles = []
-        for crude in CRUDES:
-            if crude in selected_set:
-                # Selected state
-                style = {
-                    'display': 'flex',
-                    'alignItems': 'center',
-                    'padding': '6px 8px',
-                    'marginBottom': '2px',
-                    'borderRadius': '4px',
-                    'cursor': 'pointer',
-                    'transition': 'background-color 0.2s ease',
-                    'userSelect': 'none',
-                    'backgroundColor': '#e6f1ff',
-                    'border': '1px solid #0075A8'
-                }
+        for crude in CRUDES: # Iterate through all crudes, but only apply style if in available_crudes_for_region
+            if crude in available_crudes_set:
+                if crude in selected_set:
+                    # Selected state: color with name, no border
+                    style = {
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '6px 8px',
+                        'marginBottom': '2px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'transition': 'background-color 0.2s ease',
+                        'userSelect': 'none',
+                        'backgroundColor': '#e6f1ff',
+                        'border': '1px solid transparent' # Changed to transparent border
+                    }
+                else:
+                    # Unselected state: white background, transparent border
+                    style = {
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '6px 8px',
+                        'marginBottom': '2px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'transition': 'background-color 0.2s ease',
+                        'userSelect': 'none',
+                        'backgroundColor': '#ffffff',
+                        'border': '1px solid transparent'
+                    }
             else:
-                # Unselected state
-                style = {
-                    'display': 'flex',
-                    'alignItems': 'center',
-                    'padding': '6px 8px',
-                    'marginBottom': '2px',
-                    'borderRadius': '4px',
-                    'cursor': 'pointer',
-                    'transition': 'background-color 0.2s ease',
-                    'userSelect': 'none',
-                    'backgroundColor': '#ffffff',
-                    'border': '1px solid transparent'
-                }
+                # Crude not available for the selected region, hide it.
+                style = {'display': 'none'}
+            
             styles.append(style)
         
         return styles
     
     # Sync crude filter checkbox with crude legend checklist (one-way: legend -> filter)
     # This sync happens when legend changes
-    @dash_app.callback(
-        Output('gpw-crude-filter', 'value', allow_duplicate=True),
-        Input('gpw-crude-legend', 'value'),
-        State('gpw-crude-filter', 'value'),
-        prevent_initial_call=True
-    )
-    def sync_crude_filter_from_legend(crude_legend_values, current_filter_value):
-        """Sync crude filter checkbox when legend checklist changes.
-        When legend changes, update filter to reflect the same selection.
-        If all items are selected in legend, set filter to ALL + all items.
-        Otherwise, pass through individual legend values."""
-        ctx = callback_context
-        if not ctx.triggered:
-            return dash.no_update
-        
-        if not crude_legend_values:
-            # Legend is empty - clear filter (if not already empty)
-            if not current_filter_value or (isinstance(current_filter_value, list) and len(current_filter_value) == 0):
-                return dash.no_update
-            return []
-        
-        legend_list = crude_legend_values if isinstance(crude_legend_values, list) else [crude_legend_values]
-        legend_set = set(legend_list)
-        all_items_set = set(CRUDES)
-        
-        # If all items are selected in legend, set filter to ALL + all items
-        if legend_set == all_items_set:
-            expected_filter = ['ALL'] + CRUDES.copy()
-            # Check if filter already matches
-            if current_filter_value and isinstance(current_filter_value, list):
-                current_set = set(current_filter_value)
-                expected_set = set(expected_filter)
-                if current_set == expected_set:
-                    return dash.no_update
-            return expected_filter
-        
-        # Otherwise, pass through the legend values directly to filter (no ALL)
-        # Check if filter already matches
-        if current_filter_value and isinstance(current_filter_value, list):
-            current_set = set([c for c in current_filter_value if c != 'ALL'])
-            if current_set == legend_set:
-                return dash.no_update
-        return legend_list
-    
-    # Sync crude legend from crude filter (two-way sync)
     @dash_app.callback(
         Output('gpw-crude-legend', 'value', allow_duplicate=True),
         Input('gpw-crude-filter', 'value'),
