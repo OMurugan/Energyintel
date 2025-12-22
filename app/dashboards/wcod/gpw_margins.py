@@ -44,6 +44,7 @@ def _load_gpw_data(region: str = None) -> pd.DataFrame:
                 WHEN 'FCC' THEN
                     CASE delivery_to
                         WHEN 'NWE' THEN 'Catalytic Cracking'
+                        WHEN 'Singapore' THEN 'Catalytic Cracking'
                         ELSE 'Fluid Catalytic Cracking'
                     END
                 ELSE tech_type
@@ -53,7 +54,7 @@ def _load_gpw_data(region: str = None) -> pd.DataFrame:
             delivery_to AS "Region",
             tech_type AS "TechType",
             price AS "DataValue"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type = 'GPW'
         """
         
@@ -120,7 +121,7 @@ def _load_incremental_margins_data(region: str = None) -> pd.DataFrame:
             delivery_to AS "Region",
             tech_type AS "TechType",
             price AS "DataValue"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type = 'Refining Margin'
         """
         
@@ -192,13 +193,90 @@ def _load_data_table_data() -> pd.DataFrame:
     return df
 
 
+def _load_data_table_data_from_db(region: str = None) -> pd.DataFrame:
+    """Load and normalize Data Table data from database using the provided query."""
+    try:
+        query = """
+        SELECT
+            TO_CHAR(date, 'Mon YY') AS "Month of Date",
+            price_type AS "DataType",
+            CASE tech_type
+                WHEN 'HYCRK' THEN 'Hydrocracking'
+                WHEN 'HSK' THEN 'Hydroskimming'
+                WHEN 'Coker' THEN 'Coking'
+                WHEN 'FCC' THEN
+                    CASE delivery_to
+                        WHEN 'NWE' THEN 'Catalytic Cracking'
+                        ELSE 'Fluid Catalytic Cracking'
+                    END
+                ELSE tech_type
+            END AS "TechTypeFull",
+            crude_name AS "Crude",
+            price AS "DataValue",
+            date AS "Date"
+        FROM fact_wcod_prices
+        WHERE price_type IN ('GPW', 'Refining Margin')
+        """
+        
+        params = {}
+        if region:
+            query += " AND delivery_to = :region"
+            params['region'] = region
+        
+        query += """
+        ORDER BY
+            date DESC, 
+            price_type,
+            "TechTypeFull",
+            crude_name
+        """
+        
+        rows = execute_query(query, params)
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        
+        # Rename columns to match expected format
+        df = df.rename(columns={
+            'Month of Date': 'MonthDate',
+            'DataValue': 'Value',
+            'TechTypeFull': 'TechType',
+            'Crude': 'Crude',
+            'DataType': 'DataType'
+        })
+        
+        # Preserve original date format for display (e.g., "Aug 07")
+        if 'MonthDate' in df.columns:
+            df['MonthDateDisplay'] = df['MonthDate'].copy()  # Keep original format
+            # Parse date for filtering/sorting (handle "Sept" -> "Sep")
+            df['MonthDateParsed'] = df['MonthDate'].str.replace('Sept', 'Sep', regex=False)
+            # Use the Date column from database if available, otherwise parse from MonthDate
+            if 'Date' in df.columns:
+                df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+            else:
+                df['Date'] = pd.to_datetime(df['MonthDateParsed'], format='%b %y', errors='coerce')
+        
+        if 'Value' in df.columns:
+            df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
+        
+        df = df.dropna(subset=['Value', 'Date'])
+        return df
+    except Exception as e:
+        print(f"[gpw_margins] Error loading Data Table data from database: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
+
+
 # Load filter options from database (without region filter to get all available options)
 def _get_available_regions():
     """Get available regions from database."""
     try:
         query = """
         SELECT DISTINCT delivery_to AS "Region"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type IN ('GPW', 'Refining Margin')
             AND delivery_to IS NOT NULL
         ORDER BY delivery_to
@@ -211,17 +289,23 @@ def _get_available_regions():
         print(f"[gpw_margins] Error getting regions: {e}")
         return []
 
-def _get_available_crudes():
-    """Get available crudes from database."""
+def _get_available_crudes(region: str = None):
+    """Get available crudes from database, optionally filtered by region."""
     try:
         query = """
         SELECT DISTINCT crude_name AS "Crude"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type IN ('GPW', 'Refining Margin')
             AND crude_name IS NOT NULL
+        """
+        params = {}
+        if region:
+            query += " AND delivery_to = :region"
+            params['region'] = region
+        query += """
         ORDER BY crude_name
         """
-        rows = execute_query(query)
+        rows = execute_query(query, params)
         if rows:
             return [row['Crude'] for row in rows]
         return []
@@ -229,8 +313,8 @@ def _get_available_crudes():
         print(f"[gpw_margins] Error getting crudes: {e}")
         return []
 
-def _get_available_tech_types():
-    """Get available tech types from database."""
+def _get_available_tech_types(region: str = None):
+    """Get available tech types from database, optionally filtered by region."""
     try:
         query = """
         SELECT DISTINCT
@@ -245,11 +329,17 @@ def _get_available_tech_types():
                     END
                 ELSE tech_type
             END AS "TechTypeFull"
-        FROM dev.fact_wcod_prices
+        FROM fact_wcod_prices
         WHERE price_type IN ('GPW', 'Refining Margin')
+        """
+        params = {}
+        if region:
+            query += " AND delivery_to = :region"
+            params['region'] = region
+        query += """
         ORDER BY "TechTypeFull"
         """
-        rows = execute_query(query)
+        rows = execute_query(query, params)
         if rows:
             return [row['TechTypeFull'] for row in rows]
         return []
@@ -259,8 +349,8 @@ def _get_available_tech_types():
 
 # Get filter options from database
 REGIONS = _get_available_regions()
-CRUDES = _get_available_crudes()
-TECH_TYPES = _get_available_tech_types()
+CRUDES = _get_available_crudes(None) # Load all crudes initially
+TECH_TYPES = _get_available_tech_types(None) # Load all tech types initially
 
 # Load initial data with default region for date range calculation (if available)
 # This is only used for initial date range setup
@@ -336,8 +426,35 @@ else:
     DEFAULT_START_INDEX = 0
     DEFAULT_END_INDEX = 0
 
+# Set default start date to Jan 19 (find in date list)
+# Set default start date to Apr 19 (find in date list)
 DEFAULT_START_DATE = DATE_MIN
+if DATE_LIST:
+    # Try to find Jan 19 in the date list
+    jan_19_dates = [d for d in DATE_LIST if d.month == 1 and d.year == 2019]
+    if jan_19_dates:
+        DEFAULT_START_DATE = jan_19_dates[0]
+        DEFAULT_START_INDEX = DATE_LIST.index(DEFAULT_START_DATE)
+    else:
+        # If Jan 19 not found, use the first date that's Jan 2019 or later
+        jan_2019_or_later = [d for d in DATE_LIST if d >= datetime(2019, 1, 1)]
+        if jan_2019_or_later:
+            DEFAULT_START_DATE = jan_2019_or_later[0]
+            DEFAULT_START_INDEX = DATE_LIST.index(DEFAULT_START_DATE)
+
 DEFAULT_END_DATE = DATE_MAX
+
+
+def _map_tech_type_to_display(tech_type: str) -> str:
+    """Map tech type technical names to display names."""
+    mapping = {
+        'Catalytic Cracking': 'FCC',
+        'Fluid Catalytic Cracking': 'FCC',
+        'Hydroskimming': 'HSK',
+        'Hydrocracking': 'HYCRK',
+        'Coking': 'Coker'
+    }
+    return mapping.get(tech_type, tech_type)
 
 
 def _format_date_for_display(date):
@@ -401,18 +518,18 @@ def _empty_figure(message: str, height: int = 400) -> go.Figure:
     return fig
 
 
-def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crudes: list = None, region: str = None) -> go.Figure:
+def _build_gpw_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_display: str, selected_crudes: list = None, region: str = None) -> go.Figure:
     """Build a Gross Product Worth chart for a specific technology type."""
     if df.empty:
-        return _empty_figure(f"No data available for {tech_type}")
+        return _empty_figure(f"No data available for {tech_type_display}")
     
     fig = go.Figure()
     
     # Filter by tech type
-    tech_df = df[df['TechType'] == tech_type].copy()
+    tech_df = df[df['TechType'] == tech_type_internal].copy()
     
     if tech_df.empty:
-        return _empty_figure(f"No data available for {tech_type}")
+        return _empty_figure(f"No data available for {tech_type_display}")
     
     # Get unique crudes for this tech type
     available_crudes = sorted(tech_df['Crude'].unique())
@@ -422,10 +539,7 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
         available_crudes = [c for c in available_crudes if c in selected_crudes]
     
     if not available_crudes:
-        return _empty_figure(f"No crudes selected for {tech_type}")
-    
-    # Map tech type to display name
-    tech_display = "FCC" if tech_type == "Catalytic Cracking" else "HSK" if tech_type == "Hydroskimming" else tech_type
+        return _empty_figure(f"No crudes selected for {tech_type_display}")
     
     # Get region (use first available if not specified)
     if region is None and 'Region' in tech_df.columns and not tech_df.empty:
@@ -450,7 +564,7 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
                 hover_text = (
                     f"Region: {region_display}<br>"
                     f"Crude: {crude}<br>"
-                    f"Refining Complexity: {tech_display}<br>"
+                    f"Refining Complexity: {tech_type_display}<br>"
                     f"Date: {date_str}<br>"
                     f"Gross Product Worth: {row['Value']:.1f} ($/bbl)"
                 )
@@ -471,7 +585,11 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
         xaxis=dict(
             title="Date",
             showgrid=True,
-            gridcolor="#e0e0e0"
+            gridcolor="#e0e0e0",
+            linecolor="#cccccc", # Added x-axis line color
+            tickangle=-45,
+            dtick="M7",  # Show ticks every 7 months
+            tickformat="%b %y" # Format as "Jan 19"
         ),
         yaxis=dict(
             title="Gross Product Worth ($/bbl)",
@@ -495,10 +613,10 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
         ),
         legend=dict(
             orientation="h",
-            yanchor="bottom",
-            y=1.02,
+            yanchor="top",
+            y=3.01,
             xanchor="right",
-            x=1,
+            x=0.98,
             bgcolor="rgba(255,255,255,0.8)",
             bordercolor="#dee2e6",
             borderwidth=1
@@ -507,18 +625,18 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crud
     return fig
 
 
-def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: str, selected_crudes: list = None, region: str = None) -> go.Figure:
+def _build_incremental_margins_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_display: str, selected_crudes: list = None, region: str = None) -> go.Figure:
     """Build an Incremental Margins chart for a specific technology type."""
     if df.empty:
-        return _empty_figure(f"No data available for {tech_type}")
+        return _empty_figure(f"No data available for {tech_type_display}")
     
     fig = go.Figure()
     
     # Filter by tech type
-    tech_df = df[df['TechType'] == tech_type].copy()
+    tech_df = df[df['TechType'] == tech_type_internal].copy()
     
     if tech_df.empty:
-        return _empty_figure(f"No data available for {tech_type}")
+        return _empty_figure(f"No data available for {tech_type_display}")
     
     # Get unique crudes for this tech type
     available_crudes = sorted(tech_df['Crude'].unique())
@@ -528,10 +646,7 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
         available_crudes = [c for c in available_crudes if c in selected_crudes]
     
     if not available_crudes:
-        return _empty_figure(f"No crudes selected for {tech_type}")
-    
-    # Map tech type to display name
-    tech_display = "FCC" if tech_type == "Catalytic Cracking" else "HSK" if tech_type == "Hydroskimming" else tech_type
+        return _empty_figure(f"No crudes selected for {tech_type_display}")
     
     # Get region (use first available if not specified)
     if region is None and 'Region' in tech_df.columns and not tech_df.empty:
@@ -556,7 +671,7 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
                 hover_text = (
                     f"Region: {region_display}<br>"
                     f"Crude: {crude}<br>"
-                    f"Refining Complexity: {tech_display}<br>"
+                    f"Refining Complexity: {tech_type_display}<br>"
                     f"Date: {date_str}<br>"
                     f"Incremental Margins: {row['Value']:.1f} ($/bbl)"
                 )
@@ -577,12 +692,17 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
         xaxis=dict(
             title="Date",
             showgrid=True,
-            gridcolor="#e0e0e0"
+            gridcolor="#e0e0e0",
+            linecolor="#cccccc", # Added x-axis line color
+            tickangle=-45,
+            dtick="M7",  # Show ticks every 7 months
+            tickformat="%b %y" # Format as "Jan 19"
         ),
         yaxis=dict(
             title="Incremental Margins ($/bbl)",
             showgrid=True,
-            gridcolor="#e0e0e0"
+            gridcolor="#e0e0e0",
+            zeroline=False # Hide the zero line
         ),
         hovermode='closest',
         height=400,
@@ -601,10 +721,10 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type: str, title: st
         ),
         legend=dict(
             orientation="h",
-            yanchor="bottom",
-            y=1.02,
+            yanchor="top",
+            y=3.01,
             xanchor="right",
-            x=1,
+            x=0.98,
             bgcolor="rgba(255,255,255,0.8)",
             bordercolor="#dee2e6",
             borderwidth=1
@@ -644,16 +764,9 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
     if filtered_df.empty:
         return [], []
     
-    # Define the order of crudes
-    CRUDE_ORDER = ['Arab Light', 'Bonny Light', 'Brent Blend', 'Urals']
+    CRUDE_ORDER = selected_crudes
     DATA_TYPES = ['GPW', 'Refining Margin']
-    TECH_TYPES = ['Catalytic Cracking', 'Hydroskimming']
-    
-    # Filter by selected crudes and tech types
-    if selected_crudes:
-        CRUDE_ORDER = [c for c in CRUDE_ORDER if c in selected_crudes]
-    if selected_tech_types:
-        TECH_TYPES = [t for t in TECH_TYPES if t in selected_tech_types]
+    TECH_TYPES = selected_tech_types
     
     # Use MonthDateDisplay if available, otherwise format from Date
     if 'MonthDateDisplay' in filtered_df.columns:
@@ -757,7 +870,35 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
         data.append(record)
         tooltip_data.append(tooltip_row)
     
-    return columns, data, tooltip_data
+    # Identify columns that are entirely empty (all None)
+    # Exclude 'DateStr' from this check as it always has data
+    all_column_ids = [col['id'] for col in columns if col['id'] != 'DateStr']
+    
+    # Create a mapping from col_id to a list of its values across all rows
+    column_values = {col_id: [] for col_id in all_column_ids}
+    for row_data in data:
+        for col_id in all_column_ids:
+            column_values[col_id].append(row_data.get(col_id))
+            
+    # Determine which columns are empty
+    empty_column_ids = [col_id for col_id, values in column_values.items() if all(v is None for v in values)]
+    
+    # Filter out empty columns from the columns definition
+    filtered_columns = [col for col in columns if col['id'] not in empty_column_ids]
+    
+    # Filter out empty columns from the data
+    filtered_data = []
+    for row_data in data:
+        filtered_row = {k: v for k, v in row_data.items() if k not in empty_column_ids}
+        filtered_data.append(filtered_row)
+        
+    # Filter out empty columns from the tooltip data
+    filtered_tooltip_data = []
+    for row_tooltip in tooltip_data:
+        filtered_tooltip_row = {k: v for k, v in row_tooltip.items() if k not in empty_column_ids}
+        filtered_tooltip_data.append(filtered_tooltip_row)
+    
+    return filtered_columns, filtered_data, filtered_tooltip_data
 
 
 def create_layout():
@@ -767,6 +908,7 @@ def create_layout():
         dcc.Store(id='gpw-initial-load', data=True),
         dcc.Store(id='gpw-crude-filter-previous', data=None),
         dcc.Store(id='gpw-refining-complexity-filter-previous', data=None),
+        dcc.Store(id='gpw-available-tech-types', data=[]),
         # CSS styling for rc-slider using dcc.Markdown
         html.Div(
             dcc.Markdown(
@@ -845,18 +987,24 @@ def create_layout():
                     float: right !important;
                     margin-right: 0 !important;
                     padding-right: 0 !important;
+                    cursor: default !important;
+                    pointer-events: none !important;
                 }
-                #gpw-date-range-min-input:hover,
-                #gpw-date-range-max-input:hover {
+                #gpw-date-range-min-input:hover {
                     border: 1px solid #ccc !important;
                     background: #ffffff !important;
                     padding: 1px 3px !important;
                 }
-                #gpw-date-range-min-input:focus,
-                #gpw-date-range-max-input:focus {
+                #gpw-date-range-min-input:focus {
                     border: 1px solid #999 !important;
                     background: #ffffff !important;
                     padding: 1px 3px !important;
+                }
+                #gpw-date-range-max-input:hover,
+                #gpw-date-range-max-input:focus {
+                    border: 0px solid #dee2e6 !important;
+                    background: unset !important;
+                    padding: 0 !important;
                 }
                 div[id*="date-range-slider"] {
                     margin-left: 0 !important;
@@ -878,11 +1026,56 @@ def create_layout():
                     width: 100% !important;
                     box-sizing: border-box !important;
                 }
+                /* Single slider handle styling */
+                div[id*="date-range-slider"] .rc-slider-handle {
+                    cursor: grab !important;
+                }
+                div[id*="date-range-slider"] .rc-slider-handle:active {
+                    cursor: grabbing !important;
+                }
                 
                 /* DataTable Tooltip Font Size */
                 #gpw-data-table .dash-table-tooltip,
                 .dash-table-tooltip {
                     font-size: 12px !important;
+                }
+                
+                /* DataTable Column and Row Selection Styling */
+                #gpw-data-table .dash-spreadsheet-container {
+                    cursor: pointer;
+                    transition: background-color 0.2s ease;
+                }
+                #gpw-data-table .dash-spreadsheet-container th.column-selected {
+                    background-color: #b3d9ff !important;
+                    color: #1b365d !important;
+                    font-weight: bold !important;
+                }
+                #gpw-data-table .dash-spreadsheet-container td.column-cell-selected {
+                    background-color: #b3d9ff !important;
+                    border: none !important;
+                    font-weight: 600 !important;
+                    color: #1b365d !important;
+                    opacity: 1 !important;
+                }
+                #gpw-data-table .dash-spreadsheet-container td.row-cell-selected {
+                    background-color: #b3d9ff !important;
+                    border: none !important;
+                    font-weight: 600 !important;
+                    color: #1b365d !important;
+                    opacity: 1 !important;
+                }
+                #gpw-data-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="DateStr"]):not(.column-cell-selected) {
+                    opacity: 0.3 !important;
+                }
+                #gpw-data-table .dash-spreadsheet-container.row-selection-active tbody tr:not(.row-selected) td:not([data-dash-column="DateStr"]) {
+                    opacity: 0.3 !important;
+                }
+                #gpw-data-table .dash-spreadsheet-container.row-selection-active tbody tr.row-selected td.row-cell-selected {
+                    opacity: 1 !important;
+                    background-color: #b3d9ff !important;
+                    color: #1b365d !important;
+                    font-weight: 600 !important;
+                    border: none !important;
                 }
                 </style>
                 """,
@@ -930,16 +1123,18 @@ def create_layout():
                                 id="gpw-date-range-max-input",
                                 type="text",
                                 value=_format_date_for_display(DEFAULT_END_DATE),
-                                style={'width': '15%', 'display': 'inline-block', 'float': 'right', 'border': '0px solid #dee2e6', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '12px', 'fontWeight': 'bold', 'backgroundColor': 'unset'}
+                                disabled=True,
+                                readOnly=True,
+                                style={'width': '15%', 'display': 'inline-block', 'float': 'right', 'border': '0px solid #dee2e6', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '12px', 'fontWeight': 'bold', 'backgroundColor': 'unset', 'cursor': 'default', 'pointer-events': 'none'}
                             ),
                         ], style={'width': '100%', 'marginBottom': '10px', 'position': 'relative'}),
                         html.Div([
-                            dcc.RangeSlider(
+                            dcc.Slider(
                                 id="gpw-date-range-slider",
                                 min=0,
                                 max=max(len(DATE_LIST) - 1, 0) if DATE_LIST else 0,
                                 step=1,
-                                value=[DEFAULT_START_INDEX, DEFAULT_END_INDEX],
+                                value=DEFAULT_START_INDEX,
                                 marks=None,
                             ),
                         ], style={'width': '100%', 'margin': '0', 'padding': '0'}),
@@ -977,7 +1172,8 @@ def create_layout():
             html.Div([
                 html.Div([
                     html.H3(
-                        "NWE - Gross Product Worth ($/bbl)",
+                        id='gpw-gpw-title',
+                        children="NWE - Gross Product Worth ($/bbl)",
                         style={
                             'color': '#fe5000',
                             'textAlign': 'center',
@@ -993,7 +1189,8 @@ def create_layout():
                     html.Div([
                         html.Div([
                             html.H4(
-                                "Catalytic Cracking",
+                                id='gpw-catalytic-cracking-chart-title',
+                                children="Catalytic Cracking",
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
@@ -1007,7 +1204,8 @@ def create_layout():
                         
                         html.Div([
                             html.H4(
-                                "Hydroskimming",
+                                id='gpw-hydroskimming-chart-title',
+                                children="Hydroskimming",
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
@@ -1078,12 +1276,8 @@ def create_layout():
                     ),
                     dcc.Checklist(
                         id='gpw-refining-complexity-filter',
-                        options=[
-                            {'label': 'ALL', 'value': 'ALL'},
-                            {'label': 'FCC', 'value': 'Catalytic Cracking'},
-                            {'label': 'HSK', 'value': 'Hydroskimming'}
-                        ],
-                        value=['ALL'] + TECH_TYPES.copy() if TECH_TYPES else ['ALL'],
+                        options=[],
+                        value=[],
                         style={
                             'display': 'flex',
                             'flexDirection': 'column',
@@ -1193,7 +1387,8 @@ def create_layout():
             html.Div([
                 html.Div([
                     html.H3(
-                        "NWE - Incremental Margins ($/bbl)",
+                        id='gpw-margins-title',
+                        children="NWE - Incremental Margins ($/bbl)",
                         style={
                             'color': '#fe5000',
                             'textAlign': 'center',
@@ -1209,7 +1404,8 @@ def create_layout():
                     html.Div([
                         html.Div([
                             html.H4(
-                                "Catalytic Cracking",
+                                id='gpw-incremental-catalytic-cracking-chart-title',
+                                children="Catalytic Cracking",
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
@@ -1223,7 +1419,8 @@ def create_layout():
                         
                         html.Div([
                             html.H4(
-                                "Hydroskimming",
+                                id='gpw-incremental-hydroskimming-chart-title',
+                                children="Hydroskimming",
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
@@ -1247,20 +1444,22 @@ def create_layout():
         html.Div([
             html.Div([
                 html.Div([
-                    html.H3(
-                        "NWE - Data Table ($/bbl)",
-                        style={
-                            'color': '#fe5000',
-                            'textAlign': 'center',
-                            'marginBottom': '20px',
-                            'fontSize': '20px',
-                            'fontWeight': 'bold'
-                        }
-                    ),
-                    
-                    html.Div([
-                        dash_table.DataTable(
-                            id='gpw-data-table',
+                    html.Div(
+                        id='gpw-data-table-container',
+                        children=[
+                            html.H3(
+                                id='gpw-data-table-title',
+                                children="NWE - Data Table ($/bbl)",  # Initial title, will be updated by callback
+                                style={
+                                    'color': '#fe5000',
+                                    'textAlign': 'center',
+                                    'marginBottom': '20px',
+                                    'fontSize': '20px',
+                                    'fontWeight': 'bold'
+                                }
+                            ),
+                            dash_table.DataTable(
+                                id='gpw-data-table',
                             columns=[],  # Will be populated by callback
                             data=[],     # Will be populated by callback
                             style_table={
@@ -1320,17 +1519,55 @@ def create_layout():
                                 {
                                     'selector': '.dash-table-tooltip',
                                     'rule': 'font-size: 12px !important;'
-                                }
-                            ]
-                        )
-                    ])
+                                    },
+                                    {
+                                        'selector': '#gpw-data-table .dash-spreadsheet-container',
+                                        'rule': 'cursor: pointer; transition: background-color 0.2s ease;'
+                                    },
+                                    {
+                                        'selector': '#gpw-data-table .dash-spreadsheet-container th.column-selected',
+                                        'rule': 'background-color: #b3d9ff !important; color: #1b365d !important; font-weight: bold !important;'
+                                    },
+                                    {
+                                        'selector': '#gpw-data-table .dash-spreadsheet-container td.column-cell-selected',
+                                        'rule': 'background-color: #b3d9ff !important; border: none !important; font-weight: 600 !important; color: #1b365d !important; opacity: 1 !important;'
+                                    },
+                                    {
+                                        'selector': '#gpw-data-table .dash-spreadsheet-container td.row-cell-selected',
+                                        'rule': 'background-color: #b3d9ff !important; border: none !important; font-weight: 600 !important; color: #1b365d !important; opacity: 1 !important;'
+                                    },
+                                    {
+                                        'selector': '#gpw-data-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="DateStr"]):not(.column-cell-selected)',
+                                        'rule': 'opacity: 0.3 !important;'
+                                    },
+                                    {
+                                        'selector': '#gpw-data-table .dash-spreadsheet-container.row-selection-active tbody tr:not(.row-selected) td',
+                                        'rule': 'opacity: 0.3 !important;'
+                                    },
+                                    {
+                                        'selector': '#gpw-data-table .dash-spreadsheet-container.row-selection-active tbody tr.row-selected td.row-cell-selected',
+                                        'rule': 'opacity: 1 !important; background-color: #b3d9ff !important; color: #1b365d !important; font-weight: 600 !important; border: none !important;'
+                                    }
+                                ]
+                            )
+                        ]
+                    )
                 ], className='col-md-10', style={'padding': '15px'}),
                 
                 # Empty column to maintain layout (filters already shown above)
                 html.Div([
                 ], className='col-md-2', style={'padding': '15px'}),
             ], className='row')
-        ], style={'padding': '20px', 'marginBottom': '30px'})
+        ], style={'padding': '20px', 'marginBottom': '30px'}),
+        
+        # Store selected column for highlighting
+        dcc.Store(id='gpw-selected-column', data=None),
+        
+        # Dummy output for client-side callback
+        html.Div(id='gpw-table-dummy-output', style={'display': 'none'}),
+        
+        # Hidden anchor for clientside callback to enhance data table
+        html.Div(id='gpw-table-enhancer-anchor', style={'display': 'none'})
     ], className='tab-content', style={'backgroundColor': '#f8f9fa', 'minHeight': '100vh'})
 
 
@@ -1369,44 +1606,54 @@ def register_callbacks(dash_app, server):
         prevent_initial_call=True
     )
     def sync_date_range(min_input, max_input, slider_value):
-        """Sync date range inputs with slider."""
+        """Sync date range inputs with slider. Single slider for start date only."""
         ctx = callback_context
         
         if not ctx.triggered:
-            return [DEFAULT_START_INDEX, DEFAULT_END_INDEX], _format_date_for_display(DEFAULT_START_DATE), _format_date_for_display(DEFAULT_END_DATE)
+            return DEFAULT_START_INDEX, _format_date_for_display(DEFAULT_START_DATE), _format_date_for_display(DEFAULT_END_DATE)
         
         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
         
-        if trigger_id in ['gpw-date-range-min-input', 'gpw-date-range-max-input']:
-            # Input changed, update slider
-            if min_input and max_input:
-                # Parse date strings like "Aug 07" back to dates
+        if trigger_id == 'gpw-date-range-min-input':
+            # Start date input changed, update slider (end date stays fixed)
+            if min_input:
+                # Parse date string like "Jan 19" back to date
                 try:
                     min_date = pd.to_datetime(min_input, format='%b %y', errors='coerce')
-                    max_date = pd.to_datetime(max_input, format='%b %y', errors='coerce')
-                    if pd.notna(min_date) and pd.notna(max_date):
+                    if pd.notna(min_date):
                         min_idx = _date_to_index(min_date)
-                        max_idx = _date_to_index(max_date)
-                        # Ensure min <= max
-                        if min_idx > max_idx:
-                            min_idx, max_idx = max_idx, min_idx
-                        return [min_idx, max_idx], min_input, max_input
+                        # Ensure min doesn't exceed max
+                        if min_idx > DEFAULT_END_INDEX:
+                            min_idx = DEFAULT_END_INDEX
+                        return min_idx, min_input, _format_date_for_display(DEFAULT_END_DATE)
                 except Exception:
                     pass
         elif trigger_id == 'gpw-date-range-slider':
-            # Slider changed, update inputs
-            if slider_value and len(slider_value) == 2:
-                min_date = _index_to_date(slider_value[0])
-                max_date = _index_to_date(slider_value[1])
-                return slider_value, _format_date_for_display(min_date), _format_date_for_display(max_date)
+            # Slider changed, update start date input (end date stays fixed)
+            if slider_value is not None:
+                # Ensure slider value doesn't exceed max
+                if slider_value > DEFAULT_END_INDEX:
+                    slider_value = DEFAULT_END_INDEX
+                min_date = _index_to_date(slider_value)
+                return slider_value, _format_date_for_display(min_date), _format_date_for_display(DEFAULT_END_DATE)
         
-        return [DEFAULT_START_INDEX, DEFAULT_END_INDEX], _format_date_for_display(DEFAULT_START_DATE), _format_date_for_display(DEFAULT_END_DATE)
+        return DEFAULT_START_INDEX, _format_date_for_display(DEFAULT_START_DATE), _format_date_for_display(DEFAULT_END_DATE)
     
     @dash_app.callback(
         Output('gpw-catalytic-cracking-chart', 'figure'),
         Output('gpw-hydroskimming-chart', 'figure'),
         Output('gpw-incremental-catalytic-chart', 'figure'),
         Output('gpw-incremental-hydroskimming-chart', 'figure'),
+        Output('gpw-catalytic-cracking-chart-title', 'children'),
+        Output('gpw-hydroskimming-chart-title', 'children'),
+        Output('gpw-incremental-catalytic-cracking-chart-title', 'children'),
+        Output('gpw-incremental-hydroskimming-chart-title', 'children'),
+        Output('gpw-data-table-title', 'children'),
+        Output('gpw-gpw-title', 'children'),
+        Output('gpw-margins-title', 'children'),
+        Output('gpw-refining-complexity-filter', 'options'),
+        Output('gpw-refining-complexity-filter', 'value'),
+        Output('gpw-available-tech-types', 'data'),
         Output('gpw-data-table', 'columns'),
         Output('gpw-data-table', 'data'),
         Output('gpw-data-table', 'tooltip_data'),
@@ -1425,22 +1672,66 @@ def register_callbacks(dash_app, server):
                 _empty_figure(""),
                 _empty_figure(""),
                 _empty_figure(""),
+                "", # gpw-catalytic-cracking-chart-title
+                "", # gpw-hydroskimming-chart-title
+                "", # gpw-incremental-catalytic-cracking-chart-title
+                "", # gpw-incremental-hydroskimming-chart-title
+                "", # gpw-data-table-title
+                "", # gpw-gpw-title
+                "", # gpw-margins-title
+                [], # options for gpw-refining-complexity-filter
+                [], # value for gpw-refining-complexity-filter
+                [], # gpw-available-tech-types
                 [],
                 [],
                 []
             )
         
+        table_title = f"{region} - Data Table ($/bbl)"
+        gpw_title = f"{region} - Gross Product Worth ($/bbl)"
+        margins_title = f"{region} - Incremental Margins ($/bbl)"
+
+        gpw_catalytic_title = "Not selected"
+        gpw_hydro_title = "Not selected"
+        margins_catalytic_title = "Not selected"
+        margins_hydro_title = "Not selected"
+
         # Initialize table tooltips
         table_tooltips = []
         
-        # Parse dates from slider
-        if date_slider_value and len(date_slider_value) == 2:
-            start_date = _index_to_date(date_slider_value[0])
-            end_date = _index_to_date(date_slider_value[1])
+        # Parse dates from slider (single value for start date, end date is fixed)
+        if date_slider_value is not None:
+            start_date = _index_to_date(date_slider_value)
         else:
             start_date = DEFAULT_START_DATE
-            end_date = DEFAULT_END_DATE
+        # End date is always fixed
+        end_date = DEFAULT_END_DATE
         
+        # Load available crudes and tech types for the current region
+        available_crudes_for_region = _get_available_crudes(region)
+        available_tech_types_for_region = _get_available_tech_types(region)
+
+        # Prepare dynamic options for Refining Complexity filter
+        tech_type_options = [{'label': 'ALL', 'value': 'ALL'}] + [{'label': _map_tech_type_to_display(t), 'value': t} for t in available_tech_types_for_region]
+        
+        # Determine default selected tech types: all available for the region
+        # If the user has already selected some tech types, try to preserve them
+        if tech_type_filter and 'ALL' not in tech_type_filter:
+            # Filter current selection to only include what's available for the new region
+            tech_type_value = [t for t in tech_type_filter if t in available_tech_types_for_region]
+            if not tech_type_value and available_tech_types_for_region:
+                # If existing selection is now empty, default to all available for region
+                tech_type_value = ['ALL'] + available_tech_types_for_region
+            elif 'ALL' in tech_type_filter and available_tech_types_for_region:
+                tech_type_value = ['ALL'] + available_tech_types_for_region
+            elif not tech_type_filter and available_tech_types_for_region:
+                tech_type_value = ['ALL'] + available_tech_types_for_region
+        elif available_tech_types_for_region:
+            tech_type_value = ['ALL'] + available_tech_types_for_region
+        else:
+            tech_type_value = [] # No tech types available
+
+
         # Determine selected crudes (use filter if available, otherwise use legend)
         # Filter takes priority since it's the user's direct input
         # Check if filter is explicitly set (not None and not empty list if it was intentionally cleared)
@@ -1451,12 +1742,12 @@ def register_callbacks(dash_app, server):
             # Fall back to legend if filter is None
             selected_crudes = crude_legend if isinstance(crude_legend, list) else [crude_legend]
         else:
-            # If both are empty/None, default to all crudes for initial load
-            selected_crudes = CRUDES.copy()
+            # If both are empty/None, default to all crudes for the *current region*
+            selected_crudes = available_crudes_for_region.copy()
         
         # Handle ALL option for crudes
         if selected_crudes and 'ALL' in selected_crudes:
-            selected_crudes = CRUDES.copy()
+            selected_crudes = available_crudes_for_region.copy()
         else:
             # Remove ALL from list if present
             selected_crudes = [c for c in selected_crudes if c != 'ALL'] if selected_crudes else []
@@ -1467,11 +1758,12 @@ def register_callbacks(dash_app, server):
         if tech_type_filter:
             selected_tech_types = tech_type_filter if isinstance(tech_type_filter, list) else [tech_type_filter]
         else:
-            selected_tech_types = []
+            # If filter is empty/None, default to all tech types for the *current region*
+            selected_tech_types = available_tech_types_for_region.copy()
         
         # Handle ALL option for tech types
         if 'ALL' in selected_tech_types:
-            selected_tech_types = TECH_TYPES.copy()
+            selected_tech_types = available_tech_types_for_region.copy()
         else:
             selected_tech_types = [t for t in selected_tech_types if t != 'ALL']
             # Allow empty selection - if empty, no tech types selected (charts will be empty)
@@ -1509,80 +1801,129 @@ def register_callbacks(dash_app, server):
             margins_filtered = pd.DataFrame()
         
         # Build charts only if tech type is selected
-        if selected_tech_types and 'Catalytic Cracking' in selected_tech_types:
+        gpw_catalytic = _empty_figure("FCC not selected")
+        gpw_hydro = _empty_figure("HSK not selected")
+        margins_catalytic = _empty_figure("FCC not selected")
+        margins_hydro = _empty_figure("HSK not selected")
+
+        # Build charts only if tech type is selected
+        gpw_catalytic = _empty_figure("Not selected")
+        gpw_hydro = _empty_figure("Not selected")
+        margins_catalytic = _empty_figure("Not selected")
+        margins_hydro = _empty_figure("Not selected")
+
+        gpw_catalytic_title = "Not selected"
+        gpw_hydro_title = "Not selected"
+        margins_catalytic_title = "Not selected"
+        margins_hydro_title = "Not selected"
+
+        # Prepare a list of selected tech types with their internal and display names
+        charts_to_display = []
+        
+        # Define region-specific display name mappings
+        region_tech_map = {
+            'NWE': {
+                'Catalytic Cracking': 'Catalytic Cracking',
+                'Fluid Catalytic Cracking': 'Fluid Catalytic Cracking',
+                'Hydroskimming': 'Hydroskimming',
+                'Hydrocracking': 'Hydrocracking',
+                'Coking': 'Coking'
+            },
+            'USGC': {
+                'Catalytic Cracking': 'Catalytic Cracking',
+                'Fluid Catalytic Cracking': 'Fluid Catalytic Cracking',
+                'Hydroskimming': 'Hydroskimming',
+                'Hydrocracking': 'Hydrocracking',
+                'Coking': 'Coking'
+            },
+            'Singapore': {
+                'Catalytic Cracking': 'Catalytic Cracking',
+                'Fluid Catalytic Cracking': 'Fluid Catalytic Cracking',
+                'Hydroskimming': 'Hydroskimming',
+                'Hydrocracking': 'Hydrocracking',
+                'Coking': 'Coking'
+            }
+        }
+
+        # Get the mapping for the current region, default to generic if not found
+        current_region_map = region_tech_map.get(region, {})
+
+        for tech_type_internal in selected_tech_types:
+            # Include all valid tech types for chart display
+            if tech_type_internal in ['Catalytic Cracking', 'Fluid Catalytic Cracking', 'Hydroskimming', 'Hydrocracking', 'Coking']:
+                # Use region-specific mapping, otherwise use generic display mapping
+                tech_type_display = current_region_map.get(tech_type_internal, _map_tech_type_to_display(tech_type_internal))
+                charts_to_display.append((tech_type_internal, tech_type_display))
+        
+        # Only display up to two charts at a time for the main two slots
+        if len(charts_to_display) > 0:
+            # First chart slot
+            tech_internal_1, tech_display_1 = charts_to_display[0]
             gpw_catalytic = _build_gpw_chart(
                 gpw_filtered,
-                'Catalytic Cracking',
-                'Catalytic Cracking',
+                tech_internal_1,
+                tech_display_1,
                 selected_crudes,
                 region
             )
-        else:
-            gpw_catalytic = _empty_figure("FCC not selected")
-        
-        if selected_tech_types and 'Hydroskimming' in selected_tech_types:
-            gpw_hydro = _build_gpw_chart(
-                gpw_filtered,
-                'Hydroskimming',
-                'Hydroskimming',
-                selected_crudes,
-                region
-            )
-        else:
-            gpw_hydro = _empty_figure("HSK not selected")
-        
-        if selected_tech_types and 'Catalytic Cracking' in selected_tech_types:
+            gpw_catalytic_title = tech_display_1
             margins_catalytic = _build_incremental_margins_chart(
                 margins_filtered,
-                'Catalytic Cracking',
-                'Catalytic Cracking',
+                tech_internal_1,
+                tech_display_1,
                 selected_crudes,
                 region
             )
-        else:
-            margins_catalytic = _empty_figure("FCC not selected")
-        
-        if selected_tech_types and 'Hydroskimming' in selected_tech_types:
-            margins_hydro = _build_incremental_margins_chart(
-                margins_filtered,
-                'Hydroskimming',
-                'Hydroskimming',
-                selected_crudes,
-                region
-            )
-        else:
-            margins_hydro = _empty_figure("HSK not selected")
+            margins_catalytic_title = tech_display_1
+
+            if len(charts_to_display) > 1:
+                # Second chart slot
+                tech_internal_2, tech_display_2 = charts_to_display[1]
+                gpw_hydro = _build_gpw_chart(
+                    gpw_filtered,
+                    tech_internal_2,
+                    tech_display_2,
+                    selected_crudes,
+                    region
+                )
+                gpw_hydro_title = tech_display_2
+                margins_hydro = _build_incremental_margins_chart(
+                    margins_filtered,
+                    tech_internal_2,
+                    tech_display_2,
+                    selected_crudes,
+                    region
+                )
+                margins_hydro_title = tech_display_2
         
         # Prepare data table with multi-level headers
-        # Combine GPW and Margins data dynamically loaded from database
-        table_tooltips = []
-        combined_df = pd.DataFrame()
+        # Load data table data directly from database using the provided query
+        table_df = _load_data_table_data_from_db(region)
         
-        if not gpw_filtered.empty:
-            gpw_copy = gpw_filtered.copy()
-            gpw_copy['DataType'] = 'GPW'
-            # Add MonthDateDisplay for table display if not present
-            if 'MonthDate' in gpw_copy.columns and 'MonthDateDisplay' not in gpw_copy.columns:
-                gpw_copy['MonthDateDisplay'] = gpw_copy['MonthDate']
-            combined_df = pd.concat([combined_df, gpw_copy], ignore_index=True)
-        
-        if not margins_filtered.empty:
-            margins_copy = margins_filtered.copy()
-            margins_copy['DataType'] = 'Refining Margin'
-            # Add MonthDateDisplay for table display if not present
-            if 'MonthDate' in margins_copy.columns and 'MonthDateDisplay' not in margins_copy.columns:
-                margins_copy['MonthDateDisplay'] = margins_copy['MonthDate']
-            combined_df = pd.concat([combined_df, margins_copy], ignore_index=True)
-        
-        if not combined_df.empty:
-            table_columns, table_data, table_tooltips = _prepare_data_table(
-                combined_df,
-                start_date,
-                end_date,
-                region,
-                selected_crudes,
-                selected_tech_types
-            )
+        if not table_df.empty:
+            # Filter by date range, selected crudes, and selected tech types
+            table_filtered = table_df[
+                (table_df['Date'] >= start_date) &
+                (table_df['Date'] <= end_date)
+            ].copy()
+            
+            # Filter by selected crudes (empty list means show nothing)
+            table_filtered = table_filtered[table_filtered['Crude'].isin(selected_crudes)]
+            
+            # Filter by selected tech types (empty list means show nothing)
+            table_filtered = table_filtered[table_filtered['TechType'].isin(selected_tech_types)]
+            
+            if not table_filtered.empty:
+                table_columns, table_data, table_tooltips = _prepare_data_table(
+                    table_filtered,
+                    start_date,
+                    end_date,
+                    region,
+                    selected_crudes,
+                    selected_tech_types
+                )
+            else:
+                table_columns, table_data, table_tooltips = [], [], []
         else:
             table_columns, table_data, table_tooltips = [], [], []
         
@@ -1591,6 +1932,16 @@ def register_callbacks(dash_app, server):
             gpw_hydro,
             margins_catalytic,
             margins_hydro,
+            gpw_catalytic_title,
+            gpw_hydro_title,
+            margins_catalytic_title,
+            margins_hydro_title,
+            table_title,
+            gpw_title,
+            margins_title,
+            tech_type_options,
+            tech_type_value,
+            available_tech_types_for_region,
             table_columns,
             table_data,
             table_tooltips
@@ -1915,9 +2266,10 @@ def register_callbacks(dash_app, server):
         Input('gpw-refining-complexity-filter', 'value'),
         State('gpw-initial-load', 'data'),
         State('gpw-refining-complexity-filter-previous', 'data'),
+        State('gpw-available-tech-types', 'data'),
         prevent_initial_call=True
     )
-    def normalize_tech_type_filter(value, is_initial_load, previous_value):
+    def normalize_tech_type_filter(value, is_initial_load, previous_value, available_tech_types):
         """Handle ALL option behavior (like Crude Legend):
         - When ALL is checked: select all individual items
         - When ALL is unchecked: uncheck all individual items
@@ -1944,7 +2296,7 @@ def register_callbacks(dash_app, server):
         has_all = 'ALL' in value_list
         had_all = 'ALL' in previous_list
         non_all_items = [v for v in value_list if v != 'ALL']
-        all_items_set = set(TECH_TYPES)
+        all_items_set = set(available_tech_types)
         non_all_set = set(non_all_items)
         previous_non_all_set = set([v for v in previous_list if v != 'ALL'])
         
@@ -1952,11 +2304,11 @@ def register_callbacks(dash_app, server):
         # This allows independent item selection without interference
         if not had_all and not has_all:
             # Clean items to ensure only valid tech types
-            cleaned_items = [v for v in non_all_items if v in TECH_TYPES]
+            cleaned_items = [v for v in non_all_items if v in available_tech_types]
             
             # Only normalize if all items are now selected (auto-check ALL)
             if set(cleaned_items) == all_items_set:
-                result = ['ALL'] + TECH_TYPES.copy()
+                result = ['ALL'] + available_tech_types.copy()
                 return result, result
             
             # For individual item selection without ALL, pass through exactly as user selected
@@ -1972,20 +2324,20 @@ def register_callbacks(dash_app, server):
         # Case 1: ALL is being checked (transition: didn't have ALL, now has ALL)
         if not had_all and has_all:
             # User just checked ALL checkbox - select all items automatically
-            result = ['ALL'] + TECH_TYPES.copy()
+            result = ['ALL'] + available_tech_types.copy()
             return result, result
         
         # Case 2: ALL is checked - detect if item was unclicked or if ALL was just checked
         if has_all:
             if non_all_set == all_items_set:
                 # ALL + all items - keep as is
-                result = ['ALL'] + TECH_TYPES.copy()
+                result = ['ALL'] + available_tech_types.copy()
                 return result, result
             else:
                 # ALL is checked but not all items are present
                 # This means user unclicked an item while ALL was checked
                 # Remove ALL and keep only the selected items
-                cleaned_items = [v for v in non_all_items if v in TECH_TYPES]
+                cleaned_items = [v for v in non_all_items if v in available_tech_types]
                 return cleaned_items, cleaned_items
         
         # Case 3: ALL was unchecked (had ALL before, don't have ALL now)
@@ -1993,7 +2345,7 @@ def register_callbacks(dash_app, server):
             # Check if items decreased (user unclicked an item) or stayed same (ALL unclicked)
             if previous_non_all_set == all_items_set and len(non_all_set) < len(all_items_set):
                 # User unclicked an item from ALL+all - keep remaining items
-                cleaned_items = [v for v in non_all_items if v in TECH_TYPES]
+                cleaned_items = [v for v in non_all_items if v in available_tech_types]
                 return cleaned_items, cleaned_items
             else:
                 # User unchecked ALL checkbox - uncheck all items
@@ -2001,3 +2353,879 @@ def register_callbacks(dash_app, server):
         
         # Allow empty selection
         return [], []
+    
+    # Client-side callback to handle header clicks and column/row highlighting
+    dash_app.clientside_callback(
+        """
+        function(container, data) {
+            try {
+                // Initialize global state if not exists
+                if (!window.gpwTableState) {
+                    window.gpwTableState = {
+                        selectedColumnId: null,
+                        selectedRowIndex: null,
+                        selectedDate: null,
+                        lastTableSignature: null
+                    };
+                }
+                
+                function clearAllColumnSelections(spreadsheet) {
+                    if (!spreadsheet) return;
+                    // Clear all column headers
+                    const allHeaders = spreadsheet.querySelectorAll('th.column-selected');
+                    allHeaders.forEach(header => {
+                        header.classList.remove('column-selected');
+                        header.style.backgroundColor = '';
+                        header.style.color = '';
+                        header.style.fontWeight = '';
+                    });
+                    
+                    // Clear all column cells
+                    const allColumnCells = spreadsheet.querySelectorAll('td.column-cell-selected');
+                    allColumnCells.forEach(cell => {
+                        cell.classList.remove('column-cell-selected');
+                        cell.style.backgroundColor = '';
+                        cell.style.border = '';
+                        cell.style.fontWeight = '';
+                        cell.style.opacity = '';
+                    });
+                    
+                    // Remove column selection active class and reset opacity for all cells
+                    spreadsheet.classList.remove('column-selection-active');
+                    const allDataCells = spreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="DateStr"])');
+                    allDataCells.forEach(cell => {
+                        cell.style.opacity = '';
+                    });
+                }
+                
+                function clearAllRowSelections(spreadsheet) {
+                    if (!spreadsheet) return;
+                    
+                    // Clear all row cells - remove classes and all inline styles
+                    const allRowCells = spreadsheet.querySelectorAll('td.row-cell-selected');
+                    allRowCells.forEach(cell => {
+                        cell.classList.remove('row-cell-selected');
+                        cell.style.removeProperty('background-color');
+                        cell.style.removeProperty('border');
+                        cell.style.removeProperty('font-weight');
+                        cell.style.removeProperty('color');
+                        cell.style.removeProperty('opacity');
+                    });
+                    
+                    // Reset all rows to normal state
+                    const allDataRows = spreadsheet.querySelectorAll('tbody tr');
+                    allDataRows.forEach(r => {
+                        const rowCells = r.querySelectorAll('td');
+                        rowCells.forEach(c => {
+                            c.classList.remove('row-cell-selected');
+                            c.style.removeProperty('background-color');
+                            c.style.removeProperty('border');
+                            c.style.removeProperty('font-weight');
+                            c.style.removeProperty('color');
+                            c.style.removeProperty('opacity');
+                        });
+                    });
+                    
+                    // Clear row-selected class from row elements
+                    const allSelectedRows = spreadsheet.querySelectorAll('tr.row-selected');
+                    allSelectedRows.forEach(r => {
+                        r.classList.remove('row-selected');
+                    });
+                    
+                    // Remove row selection active class
+                    spreadsheet.classList.remove('row-selection-active');
+                }
+                
+                function getCellValue(cell) {
+                    const text = cell.textContent || cell.innerText || '';
+                    return text.trim();
+                }
+                
+                function enhanceTable() {
+                    const tableEl = document.getElementById('gpw-data-table');
+                    if (!tableEl) {
+                        return;
+                    }
+                    
+                    const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet) {
+                        return;
+                }
+
+                    // Check if headers exist
+                    const headers = spreadsheet.querySelectorAll('th[data-dash-column]');
+                    if (headers.length === 0) {
+                        return;
+                    }
+                    
+                    // Create a hash of the table structure to detect changes
+                    let tableSignature = '';
+                    const topRow = spreadsheet.querySelector('thead tr');
+                    if (topRow) {
+                        const topHeaders = Array.from(topRow.querySelectorAll('th')).slice(0, 5);
+                        tableSignature = topHeaders.map(h => h.textContent.trim()).join('|') + '|' + headers.length;
+                    } else {
+                        tableSignature = headers.length.toString();
+                    }
+                    
+                    // Check if table structure has changed (new table rendered)
+                    const signatureChanged = window.gpwTableState.lastTableSignature !== tableSignature;
+                    if (signatureChanged) {
+                        // Table was re-rendered, reset enhanced flag and clear handlers
+                        spreadsheet.dataset.gpwEnhanced = 'false';
+                        
+                        // Remove old click handler
+                        if (spreadsheet._gpwClickHandler) {
+                            spreadsheet.removeEventListener('click', spreadsheet._gpwClickHandler, true);
+                            spreadsheet._gpwClickHandler = null;
+                        }
+                        
+                        // Clear selections
+                        clearAllColumnSelections(spreadsheet);
+                        clearAllRowSelections(spreadsheet);
+                        
+                        window.gpwTableState.lastTableSignature = tableSignature;
+                        window.gpwTableState.selectedColumnId = null;
+                        window.gpwTableState.selectedRowIndex = null;
+                        window.gpwTableState.selectedDate = null;
+                    }
+                    
+                    // Skip if already enhanced (but only if signature hasn't changed)
+                    if (spreadsheet.dataset.gpwEnhanced === 'true' && !signatureChanged) {
+                        return;
+                    }
+
+                    spreadsheet.dataset.gpwEnhanced = 'true';
+                    
+                    // Remove any existing click handler to avoid duplicates
+                    if (spreadsheet._gpwClickHandler) {
+                        spreadsheet.removeEventListener('click', spreadsheet._gpwClickHandler, true);
+                    }
+                    
+                    // Create click handler
+                    const clickHandler = function(event) {
+                        const clickedSpreadsheet = event.target.closest('.dash-spreadsheet-container') || spreadsheet;
+                        if (!clickedSpreadsheet) return;
+                        
+                        // Try to find header
+                        let header = event.target.closest('th[data-dash-column]');
+                        
+                        if (!header) {
+                            const thead = event.target.closest('thead');
+                            if (thead) {
+                                const allHeaders = thead.querySelectorAll('th[data-dash-column]');
+                                for (let h of allHeaders) {
+                                    if (h.contains(event.target) || h === event.target) {
+                                        header = h;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (header) {
+                            event.stopPropagation();
+                            
+                            const columnId = header.getAttribute('data-dash-column');
+                            if (!columnId) return;
+                            
+                            // Skip DateStr column
+                    if (columnId === 'DateStr') {
+                        return;
+                    }
+
+                            // Clear all previous selections
+                            clearAllColumnSelections(clickedSpreadsheet);
+                            clearAllRowSelections(clickedSpreadsheet);
+                            if (window.gpwTableState) {
+                                window.gpwTableState.selectedRowIndex = null;
+                                window.gpwTableState.selectedDate = null;
+                            }
+                            
+                            // Find which header row this header belongs to
+                            const headerRow = header.closest('tr');
+                            const thead = header.closest('thead');
+                            
+                            let headerIndex = -1;
+                            let totalHeaderRows = 0;
+                            let headerRows = [];
+                            
+                            if (thead) {
+                                headerRows = Array.from(thead.querySelectorAll('tr'));
+                            }
+                            
+                            if (headerRows.length === 0 && clickedSpreadsheet) {
+                                headerRows = Array.from(clickedSpreadsheet.querySelectorAll('thead tr'));
+                            }
+                            
+                            // Filter out rows that only contain DateStr headers
+                            headerRows = headerRows.filter(tr => {
+                                const dataHeaders = tr.querySelectorAll('th[data-dash-column]:not([data-dash-column="DateStr"])');
+                                return dataHeaders.length > 0;
+                            });
+                            
+                            totalHeaderRows = headerRows.length;
+                            
+                            if (headerRow && headerRows.length > 0) {
+                                headerIndex = headerRows.indexOf(headerRow);
+                            }
+                            
+                            // Create a unique key for this selection
+                            const selectionKey = columnId + '_' + headerIndex;
+                            
+                            // Check if this exact header level is already selected
+                            if (window.gpwTableState && window.gpwTableState.selectedColumnId === selectionKey) {
+                                // Deselect column
+                                clearAllColumnSelections(clickedSpreadsheet);
+                                if (window.gpwTableState) {
+                                    window.gpwTableState.selectedColumnId = null;
+                                }
+                            } else {
+                                // Select new column
+                                clearAllColumnSelections(clickedSpreadsheet);
+                                clearAllRowSelections(clickedSpreadsheet);
+                                
+                                if (window.gpwTableState) {
+                                    window.gpwTableState.selectedColumnId = selectionKey;
+                                    window.gpwTableState.selectedRowIndex = null;
+                                    window.gpwTableState.selectedDate = null;
+                                }
+                                
+                                // Check if this is the bottom-most header level
+                                const isBottomHeader = (headerIndex >= 0 && totalHeaderRows > 0 && headerIndex === totalHeaderRows - 1);
+                                const isTopHeader = (headerIndex === 0);
+                                
+                                if (isBottomHeader || isTopHeader) {
+                                    if (isTopHeader) {
+                                        // Top header clicked - find all columns under this spanning header
+                                        const topHeaderText = header.textContent.trim();
+                                        const colspan = header.getAttribute('colspan') || header.colSpan;
+                                        
+                                        const topRow = headerRows[0];
+                                        if (topRow) {
+                                            const columnIds = new Set();
+                                            
+                                            if (colspan && parseInt(colspan) > 1) {
+                                                // Header spans multiple columns
+                                                const spanCount = parseInt(colspan);
+                                                const allTopRowCells = Array.from(topRow.querySelectorAll('th'));
+                                                
+                                                let clickedCellIndex = -1;
+                                                for (let i = 0; i < allTopRowCells.length; i++) {
+                                                    if (allTopRowCells[i] === header || allTopRowCells[i].contains(header)) {
+                                                        clickedCellIndex = i;
+                                                        break;
+                                                    }
+                                                }
+                                                
+                                                // Get bottom row headers to find actual column IDs
+                                                const bottomRow = headerRows[headerRows.length - 1];
+                                                if (bottomRow) {
+                                                    const allBottomRowCells = Array.from(bottomRow.querySelectorAll('th'));
+                                                    
+                                                    let topRowDataStart = 0;
+                                                    for (let i = 0; i < clickedCellIndex; i++) {
+                                                        const cell = allTopRowCells[i];
+                                                        const cellColId = cell.getAttribute('data-dash-column');
+                                                        if (cellColId === 'DateStr') continue;
+                                                        const cellColspan = parseInt(cell.getAttribute('colspan') || cell.colSpan || '1');
+                                                        topRowDataStart += cellColspan;
+                                                    }
+                                                    
+                                                    // Build column position map from data rows
+                                                    const allDataRows = clickedSpreadsheet.querySelectorAll('tbody tr, tr[data-dash-row]');
+                                                    const columnPositionMap = new Map();
+                                                    
+                                                    allDataRows.forEach((row, rowIndex) => {
+                                                        if (row.querySelector('th')) return;
+                                                        
+                                                        const rowCells = Array.from(row.querySelectorAll('td'));
+                                                        let dataColIndex = 0;
+                                                        
+                                                        rowCells.forEach(cell => {
+                                                            const colId = cell.getAttribute('data-dash-column');
+                                                            if (colId === 'DateStr') return;
+                                                            
+                                                            if (dataColIndex >= topRowDataStart && dataColIndex < topRowDataStart + spanCount) {
+                                                                if (!columnPositionMap.has(dataColIndex) && colId && colId !== 'DateStr') {
+                                                                    columnPositionMap.set(dataColIndex, colId);
+                                                                }
+                                                            }
+                                                            
+                                                            if (colId && colId !== 'DateStr') {
+                                                                dataColIndex++;
+                                                            }
+                                                        });
+                                                    });
+                                                    
+                                                    for (let i = topRowDataStart; i < topRowDataStart + spanCount; i++) {
+                                                        if (columnPositionMap.has(i)) {
+                                                            columnIds.add(columnPositionMap.get(i));
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                // Single column or find by text
+                                                const allTopHeaders = Array.from(topRow.querySelectorAll('th[data-dash-column]:not([data-dash-column="DateStr"])'));
+                                                const matchingTopHeaders = allTopHeaders.filter(h => {
+                                                    const hText = h.textContent.trim();
+                                                    return hText === topHeaderText || h === header || h.contains(header);
+                                                });
+                                                
+                                                matchingTopHeaders.forEach(topH => {
+                                                    const colId = topH.getAttribute('data-dash-column');
+                                                    if (colId) columnIds.add(colId);
+                                                });
+                                                
+                                                if (columnIds.size === 0 && columnId) {
+                                                    columnIds.add(columnId);
+                                                }
+                                            }
+                                            
+                                            // Highlight the clicked top header
+                                            header.classList.add('column-selected');
+                                            header.style.backgroundColor = '#b3d9ff';
+                                            header.style.color = '#1b365d';
+                                            header.style.fontWeight = 'bold';
+                                            
+                                            // Highlight data cells for all columns under this top header
+                                            columnIds.forEach(colId => {
+                                                const colCells = clickedSpreadsheet.querySelectorAll(`td[data-dash-column="${colId}"]`);
+                                                colCells.forEach(cell => {
+                                                    cell.classList.add('column-cell-selected');
+                                                    cell.style.backgroundColor = '#b3d9ff';
+                                                    cell.style.border = '';
+                                                    cell.style.fontWeight = '600';
+                                                    cell.style.color = '#1b365d';
+                                                    cell.style.opacity = '1';
+                                                });
+                                            });
+                                            
+                                            clickedSpreadsheet.classList.add('column-selection-active');
+                                            
+                                            // Dim other columns
+                                            const allDataCells = clickedSpreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="DateStr"])');
+                                            allDataCells.forEach(cell => {
+                                                const cellColId = cell.getAttribute('data-dash-column');
+                                                if (!columnIds.has(cellColId)) {
+                                                    cell.style.opacity = '0.3';
+                                                }
+                                            });
+                                        }
+                                    } else {
+                                        // Bottom header clicked
+                                        const bottomRow = headerRows[headerRows.length - 1];
+                                        if (bottomRow) {
+                                            const bottomRowHeaders = bottomRow.querySelectorAll(`th[data-dash-column="${columnId}"]`);
+                                            bottomRowHeaders.forEach(h => {
+                                                h.classList.add('column-selected');
+                                                h.style.backgroundColor = '#b3d9ff';
+                                                h.style.color = '#1b365d';
+                                                h.style.fontWeight = 'bold';
+                                            });
+                                        }
+                                        
+                                        // Highlight all data cells for this column
+                                        const columnCells = clickedSpreadsheet.querySelectorAll(`td[data-dash-column="${columnId}"]`);
+                                        columnCells.forEach(cell => {
+                                            cell.classList.add('column-cell-selected');
+                                            cell.style.backgroundColor = '#b3d9ff';
+                                            cell.style.border = '';
+                                            cell.style.fontWeight = '600';
+                                            cell.style.color = '#1b365d';
+                                            cell.style.opacity = '1';
+                                        });
+                                        
+                                        clickedSpreadsheet.classList.add('column-selection-active');
+                                        
+                                        // Dim other columns
+                                        const allDataCells = clickedSpreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="DateStr"])');
+                                        allDataCells.forEach(cell => {
+                                            if (!cell.classList.contains('column-cell-selected')) {
+                                                cell.style.opacity = '0.3';
+                                            }
+                                        });
+                                    }
+                                } else {
+                                    // Middle header - highlight the clicked header and find columns under it
+                                    const headerColspan = header.getAttribute('colspan') || header.colSpan;
+                                    const spanCount = headerColspan ? parseInt(headerColspan) : 1;
+                                    
+                                    const columnIds = new Set();
+                                    
+                                    if (spanCount > 1) {
+                                        // Header spans multiple columns
+                                        const currentRow = headerRows[headerIndex];
+                                        if (currentRow) {
+                                            const allRowCells = Array.from(currentRow.querySelectorAll('th'));
+                                            let clickedCellIndex = -1;
+                                            
+                                            for (let i = 0; i < allRowCells.length; i++) {
+                                                if (allRowCells[i] === header || allRowCells[i].contains(header)) {
+                                                    clickedCellIndex = i;
+                                                    break;
+                                                }
+                                            }
+                                            
+                                            let columnsBefore = 0;
+                                            for (let i = 0; i < clickedCellIndex; i++) {
+                                                const cell = allRowCells[i];
+                                                const cellColId = cell.getAttribute('data-dash-column');
+                                                if (cellColId === 'DateStr') continue;
+                                                const cellColspan = parseInt(cell.getAttribute('colspan') || cell.colSpan || '1');
+                                                columnsBefore += cellColspan;
+                                            }
+                                            
+                                            // Build column position map
+                                            const allDataRows = clickedSpreadsheet.querySelectorAll('tbody tr, tr[data-dash-row]');
+                                            const columnPositionMap = new Map();
+                                            
+                                            allDataRows.forEach(row => {
+                                                if (row.querySelector('th')) return;
+                                                
+                                                const rowCells = Array.from(row.querySelectorAll('td'));
+                                                let dataColIndex = 0;
+                                                
+                                                rowCells.forEach(cell => {
+                                                    const colId = cell.getAttribute('data-dash-column');
+                                                    if (colId === 'DateStr') return;
+                                                    
+                                                    if (dataColIndex >= columnsBefore && dataColIndex < columnsBefore + spanCount) {
+                                                        if (!columnPositionMap.has(dataColIndex) && colId) {
+                                                            columnPositionMap.set(dataColIndex, colId);
+                                                        }
+                                                    }
+                                                    
+                                                    if (colId) {
+                                                        dataColIndex++;
+                                                    }
+                                                });
+                                            });
+                                            
+                                            for (let i = columnsBefore; i < columnsBefore + spanCount; i++) {
+                                                if (columnPositionMap.has(i)) {
+                                                    columnIds.add(columnPositionMap.get(i));
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // Single column
+                                        columnIds.add(columnId);
+                                    }
+                                    
+                                    // Highlight the clicked header
+                                    if (headerIndex >= 0 && headerRows.length > 0) {
+                                        header.classList.add('column-selected');
+                                        header.style.backgroundColor = '#b3d9ff';
+                                        header.style.color = '#1b365d';
+                                        header.style.fontWeight = 'bold';
+                                    }
+                                    
+                                    // Highlight data cells for all columns under this middle header
+                                    columnIds.forEach(colId => {
+                                        const colCells = clickedSpreadsheet.querySelectorAll(`td[data-dash-column="${colId}"]`);
+                                        colCells.forEach(cell => {
+                                            cell.classList.add('column-cell-selected');
+                                            cell.style.backgroundColor = '#b3d9ff';
+                                            cell.style.border = '';
+                                            cell.style.fontWeight = '600';
+                                            cell.style.color = '#1b365d';
+                                            cell.style.opacity = '1';
+                                        });
+                                    });
+                                    
+                                    clickedSpreadsheet.classList.add('column-selection-active');
+                                    
+                                    // Dim other columns
+                                    const allDataCells = clickedSpreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="DateStr"])');
+                                    allDataCells.forEach(cell => {
+                                        const cellColId = cell.getAttribute('data-dash-column');
+                                        if (!columnIds.has(cellColId)) {
+                                            cell.style.opacity = '0.3';
+                                        }
+                                    });
+                                }
+                            }
+                            return false;
+                        }
+                        
+                        // Handle row highlighting when clicking on DateStr cell
+                        const dateCell = event.target.closest('td[data-dash-column="DateStr"]');
+                        if (dateCell) {
+                            event.stopPropagation();
+                            
+                            // Clear column selections first
+                            clearAllColumnSelections(clickedSpreadsheet);
+                            clearAllRowSelections(clickedSpreadsheet);
+                            if (window.gpwTableState) {
+                                window.gpwTableState.selectedColumnId = null;
+                            }
+                            
+                            // Get the date value
+                            const dateValue = getCellValue(dateCell);
+                            
+                            if (dateValue) {
+                                // Check if this date is already selected
+                                if (window.gpwTableState && window.gpwTableState.selectedDate === dateValue) {
+                                    // Deselect date - clear all row selections
+                                    clearAllRowSelections(clickedSpreadsheet);
+                                    if (window.gpwTableState) {
+                                        window.gpwTableState.selectedDate = null;
+                                        window.gpwTableState.selectedRowIndex = null;
+                                    }
+                                } else {
+                                    // Clear any previous selection
+                                    clearAllRowSelections(clickedSpreadsheet);
+                                    
+                                    // Find all rows with this date and highlight them
+                                    const allDataRows = Array.from(clickedSpreadsheet.querySelectorAll('tbody tr'));
+                                    let currentDate = null;
+                                    
+                                    allDataRows.forEach((row) => {
+                                        const rowDateCell = row.querySelector('td[data-dash-column="DateStr"]');
+                                        let rowDateValue = null;
+                                        
+                                        if (rowDateCell) {
+                                            const cellValue = getCellValue(rowDateCell);
+                                            if (cellValue && cellValue.trim() !== '') {
+                                                rowDateValue = cellValue;
+                                                currentDate = cellValue;
+                                            } else {
+                                                rowDateValue = currentDate;
+                                            }
+                                        } else {
+                                            rowDateValue = currentDate;
+                                        }
+                                        
+                                        // Check if this row matches the selected date
+                                        if (rowDateValue === dateValue) {
+                                            // Highlight all cells in this row except DateStr
+                                            const allRowCells = Array.from(row.querySelectorAll('td'));
+                                            allRowCells.forEach(c => {
+                                                const colId = c.getAttribute('data-dash-column');
+                                                if (colId !== 'DateStr') {
+                                                    c.classList.add('row-cell-selected');
+                                                    c.style.backgroundColor = '#b3d9ff';
+                                                    c.style.border = 'none';
+                                                    c.style.fontWeight = '600';
+                                                    c.style.color = '#1b365d';
+                                                    c.style.opacity = '1';
+                                                } else {
+                                                    // DateStr cells: keep at normal state
+                                                    c.classList.remove('row-cell-selected');
+                                                    c.style.backgroundColor = '';
+                                                    c.style.border = '';
+                                                    c.style.fontWeight = '';
+                                                    c.style.color = '';
+                                                    c.style.opacity = '1';
+                                                }
+                                            });
+                                            row.classList.add('row-selected');
+                                        }
+                                    });
+                                    
+                                    if (window.gpwTableState) {
+                                        window.gpwTableState.selectedDate = dateValue;
+                                        window.gpwTableState.selectedRowIndex = null;
+                                    }
+                                    
+                                    // Add row-selection-active class to dim other rows
+                                    clickedSpreadsheet.classList.add('row-selection-active');
+                                    clickedSpreadsheet.classList.remove('column-selection-active');
+                                    
+                                    // Explicitly dim non-selected rows (both via CSS class and inline style as fallback)
+                                    // Exclude DateStr column from dimming
+                                    allDataRows.forEach((row) => {
+                                        if (!row.classList.contains('row-selected')) {
+                                            const rowCells = row.querySelectorAll('td');
+                                            rowCells.forEach(c => {
+                                                const colId = c.getAttribute('data-dash-column');
+                                                // Don't dim DateStr column
+                                                if (colId !== 'DateStr') {
+                                                    // Remove any inline opacity first, then let CSS handle it
+                                                    // But also set it explicitly as fallback
+                                                    c.style.opacity = '0.3';
+                                                } else {
+                                                    // Keep DateStr at full opacity
+                                                    c.style.opacity = '1';
+                                                }
+                                            });
+                                        }
+                                    });
+                                }
+                            }
+                            return false;
+                        }
+                        
+                        // If clicking on a data cell (not DateStr), highlight the row and dim others
+                        const cell = event.target.closest('td[data-dash-column]');
+                        if (cell) {
+                            const columnId = cell.getAttribute('data-dash-column');
+                            if (columnId && columnId !== 'DateStr') {
+                                // Clear column selections first
+                                clearAllColumnSelections(clickedSpreadsheet);
+                                
+                                // Get the row containing this cell
+                                const row = cell.closest('tbody tr');
+                                if (row) {
+                                    // Check if this row is already selected
+                                    const isRowSelected = row.classList.contains('row-selected');
+                                    
+                                    if (isRowSelected) {
+                                        // Deselect row - clear all row selections
+                                        clearAllRowSelections(clickedSpreadsheet);
+                                        clickedSpreadsheet.classList.remove('row-selection-active');
+                                        if (window.gpwTableState) {
+                                            window.gpwTableState.selectedRowIndex = null;
+                                            window.gpwTableState.selectedDate = null;
+                                        }
+                                    } else {
+                                        // Clear any previous row selection
+                                        clearAllRowSelections(clickedSpreadsheet);
+                                        
+                                        // Get the date value from this row
+                                        const rowDateCell = row.querySelector('td[data-dash-column="DateStr"]');
+                                        let dateValue = null;
+                                        
+                                        if (rowDateCell) {
+                                            dateValue = getCellValue(rowDateCell);
+                                        }
+                                        
+                                        // Find all rows with the same date and highlight them
+                                        const allDataRows = Array.from(clickedSpreadsheet.querySelectorAll('tbody tr'));
+                                        let currentDate = null;
+                                        
+                                        allDataRows.forEach((dataRow) => {
+                                            const dataRowDateCell = dataRow.querySelector('td[data-dash-column="DateStr"]');
+                                            let rowDateValue = null;
+                                            
+                                            if (dataRowDateCell) {
+                                                const cellValue = getCellValue(dataRowDateCell);
+                                                if (cellValue && cellValue.trim() !== '') {
+                                                    rowDateValue = cellValue;
+                                                    currentDate = cellValue;
+                                                } else {
+                                                    rowDateValue = currentDate;
+                                                }
+                                            } else {
+                                                rowDateValue = currentDate;
+                                            }
+                                            
+                                            // Check if this row matches the selected date
+                                            if (dateValue && rowDateValue === dateValue) {
+                                                // Highlight all cells in this row except DateStr
+                                                const allRowCells = Array.from(dataRow.querySelectorAll('td'));
+                                                allRowCells.forEach(c => {
+                                                    const colId = c.getAttribute('data-dash-column');
+                                                    if (colId !== 'DateStr') {
+                                                        c.classList.add('row-cell-selected');
+                                                        c.style.backgroundColor = '#b3d9ff';
+                                                        c.style.border = 'none';
+                                                        c.style.fontWeight = '600';
+                                                        c.style.color = '#1b365d';
+                                                        c.style.opacity = '1';
+                                                    } else {
+                                                        // DateStr cells: keep at normal state
+                                                        c.classList.remove('row-cell-selected');
+                                                        c.style.backgroundColor = '';
+                                                        c.style.border = '';
+                                                        c.style.fontWeight = '';
+                                                        c.style.color = '';
+                                                        c.style.opacity = '1';
+                                                    }
+                                                });
+                                                dataRow.classList.add('row-selected');
+                                            }
+                                        });
+                                        
+                                        // Add row-selection-active class to dim other rows
+                                        clickedSpreadsheet.classList.add('row-selection-active');
+                                        clickedSpreadsheet.classList.remove('column-selection-active');
+                                        
+                                        // Explicitly dim non-selected rows (both via CSS class and inline style as fallback)
+                                        // Exclude DateStr column from dimming
+                                        allDataRows.forEach((row) => {
+                                            if (!row.classList.contains('row-selected')) {
+                                                const rowCells = row.querySelectorAll('td');
+                                                rowCells.forEach(c => {
+                                                    const colId = c.getAttribute('data-dash-column');
+                                                    // Don't dim DateStr column
+                                                    if (colId !== 'DateStr') {
+                                                        // Remove any inline opacity first, then let CSS handle it
+                                                        // But also set it explicitly as fallback
+                                                        c.style.opacity = '0.3';
+                                                    } else {
+                                                        // Keep DateStr at full opacity
+                                                        c.style.opacity = '1';
+                                                    }
+                                                });
+                                            }
+                                        });
+                                        
+                                        if (window.gpwTableState) {
+                                            window.gpwTableState.selectedDate = dateValue;
+                                            window.gpwTableState.selectedRowIndex = null;
+                                            window.gpwTableState.selectedColumnId = null;
+                                        }
+                                    }
+                                } else {
+                                    // No row found, clear selections
+                                    clearAllRowSelections(clickedSpreadsheet);
+                                    clickedSpreadsheet.classList.remove('row-selection-active');
+                                    
+                                    if (window.gpwTableState) {
+                                        window.gpwTableState.selectedColumnId = null;
+                                        window.gpwTableState.selectedRowIndex = null;
+                                        window.gpwTableState.selectedDate = null;
+                                    }
+                                }
+                            }
+                        }
+                    };
+                    
+                    spreadsheet._gpwClickHandler = clickHandler;
+                    
+                    // Add click handler with capture phase
+                    spreadsheet.addEventListener('click', spreadsheet._gpwClickHandler, true);
+                }
+                
+                // Clear selection on outside click
+                if (!window.gpwTableOutsideClickHandler) {
+                    window.gpwTableOutsideClickHandler = function(event) {
+                        const tableEl = document.getElementById('gpw-data-table');
+                        if (!tableEl) return;
+                        const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                        if (!spreadsheet) return;
+                        
+                        if (!spreadsheet.contains(event.target)) {
+                            clearAllColumnSelections(spreadsheet);
+                            clearAllRowSelections(spreadsheet);
+                            if (window.gpwTableState) {
+                                window.gpwTableState.selectedColumnId = null;
+                                window.gpwTableState.selectedRowIndex = null;
+                                window.gpwTableState.selectedDate = null;
+                            }
+                        }
+                    };
+                    document.addEventListener('click', window.gpwTableOutsideClickHandler);
+                }
+
+                // Reset enhanced flag when container updates
+                const tableEl = document.getElementById('gpw-data-table');
+                if (tableEl) {
+                    const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                    if (spreadsheet) {
+                        spreadsheet.dataset.gpwEnhanced = 'false';
+                        
+                        if (spreadsheet._gpwClickHandler) {
+                            spreadsheet.removeEventListener('click', spreadsheet._gpwClickHandler, true);
+                            spreadsheet._gpwClickHandler = null;
+                        }
+                        
+                        clearAllColumnSelections(spreadsheet);
+                        clearAllRowSelections(spreadsheet);
+                        
+                        if (window.gpwTableState) {
+                            window.gpwTableState.selectedColumnId = null;
+                            window.gpwTableState.selectedRowIndex = null;
+                            window.gpwTableState.selectedDate = null;
+                            window.gpwTableState.lastTableSignature = null;
+                        }
+                        
+                setTimeout(function() {
+                            enhanceTable();
+                        }, 200);
+                    }
+                }
+                
+                // Apply enhancements with multiple attempts
+                function tryEnhance() {
+                    const tableEl = document.getElementById('gpw-data-table');
+                    if (!tableEl) {
+                        return false;
+                    }
+                    
+                    const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet) {
+                        return false;
+                    }
+                    
+                    const headers = spreadsheet.querySelectorAll('th[data-dash-column]');
+                    if (headers.length === 0) {
+                        return false;
+                    }
+                    
+                    const isEnhanced = spreadsheet.dataset.gpwEnhanced === 'true';
+                    
+                    if (!isEnhanced) {
+                        enhanceTable();
+                        return true;
+                    }
+                    
+                    return true;
+                }
+                
+                // Try immediately
+                if (!tryEnhance()) {
+                    setTimeout(function() {
+                        if (!tryEnhance()) {
+                            setTimeout(function() {
+                                if (!tryEnhance()) {
+                                    setTimeout(function() {
+                                        tryEnhance();
+                                    }, 1000);
+                                }
+                            }, 300);
+                        }
+                }, 100);
+                }
+                
+                // Use MutationObserver to re-enhance when table structure changes
+                if (!window.gpwTableMutationObserver) {
+                    window.gpwTableMutationObserver = new MutationObserver(function(mutations) {
+                        const tableEl = document.getElementById('gpw-data-table');
+                        if (tableEl) {
+                            const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                            if (spreadsheet) {
+                                const headers = spreadsheet.querySelectorAll('th[data-dash-column]');
+                                
+                                let tableSignature = '';
+                                const topRow = spreadsheet.querySelector('thead tr');
+                                if (topRow && headers.length > 0) {
+                                    const topHeaders = Array.from(topRow.querySelectorAll('th')).slice(0, 5);
+                                    tableSignature = topHeaders.map(h => h.textContent.trim()).join('|') + '|' + headers.length;
+                                } else if (headers.length > 0) {
+                                    tableSignature = headers.length.toString();
+                                }
+                                
+                                if (headers.length > 0 && 
+                                    (spreadsheet.dataset.gpwEnhanced !== 'true' || 
+                                     window.gpwTableState.lastTableSignature !== tableSignature)) {
+                                    setTimeout(function() {
+                                        enhanceTable();
+                                    }, 100);
+                                }
+                            }
+                        }
+                    });
+                    window.gpwTableMutationObserver.observe(document.body, { 
+                        childList: true, 
+                        subtree: true 
+                    });
+                }
+                
+                setTimeout(function() {
+                    tryEnhance();
+                }, 50);
+                
+            } catch (error) {
+                // Error handled silently
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('gpw-table-dummy-output', 'children'),
+        [Input('gpw-data-table-container', 'children'),
+         Input('gpw-data-table', 'data')],
+        prevent_initial_call=False
+    )

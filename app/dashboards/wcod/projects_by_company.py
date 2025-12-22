@@ -17,9 +17,20 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
     likely_filter = ""
     params = {}
     
+    # Get company_id from company_name if provided
+    company_id = None
     if company_name:
-        company_filter = "AND op.company_name = :company_name"
-        params['company_name'] = company_name
+        try:
+            company_id_query = "SELECT company_id FROM dim_company WHERE company_name = :company_name LIMIT 1"
+            company_result = execute_query(company_id_query, {'company_name': company_name})
+            if company_result and len(company_result) > 0:
+                company_id = company_result[0]['company_id']
+        except Exception as e:
+            print(f"Error getting company_id: {e}")
+    
+    if company_id:
+        company_filter = "AND :company_id IN (a.operator_id, a.partner1_id, a.partner2_id, a.partner3_id, a.partner4_id, a.partner5_id)"
+        params['company_id'] = company_id
     
     # Build likely_goahead filter
     if likely_goahead_filter is not None and isinstance(likely_goahead_filter, list):
@@ -66,15 +77,30 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
                 # No valid statuses - return no data
                 likely_filter = "AND 1=0"
     
+    # Build company_pc calculation based on company_id
+    company_pc_case = ""
+    if company_id:
+        company_pc_case = f"""
+            CASE
+                WHEN a.operator_id = {company_id} THEN a.operator_pc
+                WHEN a.partner1_id = {company_id} THEN a.partner1_pc
+                WHEN a.partner2_id = {company_id} THEN a.partner2_pc
+                WHEN a.partner3_id = {company_id} THEN a.partner3_pc
+                WHEN a.partner4_id = {company_id} THEN a.partner4_pc
+                WHEN a.partner5_id = {company_id} THEN a.partner5_pc
+                ELSE 0
+            END AS company_pc"""
+    else:
+        company_pc_case = "a.operator_pc AS company_pc"
+    
     query = f"""
     WITH base AS (
         SELECT
             a.project_id,
             c.country_long_name AS country,
             c.region,
-            op.company_name AS company_name,
             COALESCE(TRIM(a.likely_goahead), '') AS likely_goahead,
-            a.operator_pc,
+            {company_pc_case},
             est."2024_Q1", est."2024_Q2", est."2024_Q3", est."2024_Q4",
             est."2025_Q1", est."2025_Q2", est."2025_Q3", est."2025_Q4",
             est."2026_Q1", est."2026_Q2", est."2026_Q3", est."2026_Q4",
@@ -86,8 +112,6 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
             ON a.project_id = est.project_id
         LEFT JOIN dim_country c
             ON a.country_id = c.dim_country_id
-        LEFT JOIN dim_company op
-            ON a.operator_id = op.company_id
         WHERE a.include = TRUE
             {company_filter}
             {likely_filter}
@@ -96,9 +120,8 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
         SELECT
             country,
             region,
-            company_name,
             likely_goahead,
-            operator_pc,
+            company_pc,
             SPLIT_PART(qtr, '_', 1)::INT AS year_of_period,
             SPLIT_PART(qtr, '_', 2) AS quarter_of_period,
             value AS production_value
@@ -122,10 +145,9 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
         year_of_period AS "Year of Period",
         quarter_of_period AS "Quarter of Period",
         country AS "Country",
-        company_name AS "Company Name",
         region AS "Region",
         likely_goahead AS "Likely Go-ahead",
-        (production_value * operator_pc) / 100.0 AS value_company,
+        (production_value * company_pc) / 100.0 AS value_company,
         CASE
             WHEN country = 'Algeria' THEN '#a0cbe8'
             WHEN country = 'Angola' THEN '#4e79a7'
@@ -201,9 +223,20 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
     likely_filter = ""
     params = {}
     
+    # Get company_id from company_name if provided
+    company_id = None
     if company_name:
-        company_filter = "AND op.company_name = :company_name"
-        params['company_name'] = company_name
+        try:
+            company_id_query = "SELECT company_id FROM dim_company WHERE company_name = :company_name LIMIT 1"
+            company_result = execute_query(company_id_query, {'company_name': company_name})
+            if company_result and len(company_result) > 0:
+                company_id = company_result[0]['company_id']
+        except Exception as e:
+            print(f"Error getting company_id: {e}")
+    
+    if company_id:
+        company_filter = "AND :company_id IN (a.operator_id, a.partner1_id, a.partner2_id, a.partner3_id, a.partner4_id, a.partner5_id)"
+        params['company_id'] = company_id
     
     # Build likely_goahead filter
     if likely_goahead_filter is not None and isinstance(likely_goahead_filter, list):
@@ -249,17 +282,32 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
                 # No valid statuses - return no data
                 likely_filter = "AND 1=0"
     
+    # Build company_pc calculation based on company_id
+    company_pc_case = ""
+    if company_id:
+        company_pc_case = f"""
+            CASE
+                WHEN a.operator_id = {company_id} THEN a.operator_pc
+                WHEN a.partner1_id = {company_id} THEN a.partner1_pc
+                WHEN a.partner2_id = {company_id} THEN a.partner2_pc
+                WHEN a.partner3_id = {company_id} THEN a.partner3_pc
+                WHEN a.partner4_id = {company_id} THEN a.partner4_pc
+                WHEN a.partner5_id = {company_id} THEN a.partner5_pc
+                ELSE 0
+            END AS company_pc"""
+    else:
+        company_pc_case = "a.operator_pc AS company_pc"
+    
     query = f"""
     WITH base AS (
         SELECT
             a.project_id,
             c.country_long_name AS country,
             c.region,
-            op.company_name AS company_name,
             c.latitude,
             c.longitude,
             COALESCE(TRIM(a.likely_goahead), '') AS likely_goahead,
-            a.operator_pc,
+            {company_pc_case},
             est."2024_Q1", est."2024_Q2", est."2024_Q3", est."2024_Q4",
             est."2025_Q1", est."2025_Q2", est."2025_Q3", est."2025_Q4",
             est."2026_Q1", est."2026_Q2", est."2026_Q3", est."2026_Q4",
@@ -271,8 +319,6 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
             ON a.project_id = est.project_id
         LEFT JOIN dim_country c
             ON a.country_id = c.dim_country_id 
-        LEFT JOIN dim_company op
-            ON a.operator_id = op.company_id
         WHERE a.include = TRUE
             {company_filter}
             {likely_filter}
@@ -281,11 +327,10 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
         SELECT
             country,
             region,
-            company_name,
             latitude,
             longitude,
             likely_goahead,
-            operator_pc,
+            company_pc,
             SPLIT_PART(qtr, '_', 1)::INT AS year_of_period,
             value AS production_value
         FROM base
@@ -307,17 +352,15 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
     SELECT
         year_of_period AS "Year of Period",
         country AS "Country",
-        company_name AS "Company Name",
         region AS "Region",
         latitude AS "Latitude",
         longitude AS "Longitude",
         likely_goahead AS "Likely Go-ahead",
-        SUM((production_value * operator_pc) / 100.0) AS value_company
+        SUM((production_value * company_pc) / 100.0) AS value_company
     FROM unpvt
     GROUP BY
         year_of_period,
         country,
-        company_name,
         region,
         latitude,
         longitude,
@@ -341,16 +384,53 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
 
 
 def get_unique_companies():
-    """Get unique companies from database for dropdown filter."""
+    """Get unique companies from database for dropdown filter (includes operators and partners)."""
     query = """
-    SELECT DISTINCT op.company_name AS company_name
-    FROM fact_upstream_project_tracker a
-    LEFT JOIN dim_company op
-        ON a.operator_id = op.company_id
-    WHERE a.include = TRUE
-        AND op.company_name IS NOT NULL
-        AND TRIM(op.company_name) != ''
-    ORDER BY op.company_name;
+    SELECT DISTINCT company_name
+    FROM (
+        SELECT op.company_name AS company_name
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN dim_company op ON a.operator_id = op.company_id
+        WHERE a.include = TRUE
+            AND op.company_name IS NOT NULL
+            AND TRIM(op.company_name) != ''
+        UNION
+        SELECT p1.company_name AS company_name
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN dim_company p1 ON a.partner1_id = p1.company_id
+        WHERE a.include = TRUE
+            AND p1.company_name IS NOT NULL
+            AND TRIM(p1.company_name) != ''
+        UNION
+        SELECT p2.company_name AS company_name
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN dim_company p2 ON a.partner2_id = p2.company_id
+        WHERE a.include = TRUE
+            AND p2.company_name IS NOT NULL
+            AND TRIM(p2.company_name) != ''
+        UNION
+        SELECT p3.company_name AS company_name
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN dim_company p3 ON a.partner3_id = p3.company_id
+        WHERE a.include = TRUE
+            AND p3.company_name IS NOT NULL
+            AND TRIM(p3.company_name) != ''
+        UNION
+        SELECT p4.company_name AS company_name
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN dim_company p4 ON a.partner4_id = p4.company_id
+        WHERE a.include = TRUE
+            AND p4.company_name IS NOT NULL
+            AND TRIM(p4.company_name) != ''
+        UNION
+        SELECT p5.company_name AS company_name
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN dim_company p5 ON a.partner5_id = p5.company_id
+        WHERE a.include = TRUE
+            AND p5.company_name IS NOT NULL
+            AND TRIM(p5.company_name) != ''
+    ) all_companies
+    ORDER BY company_name;
     """
     
     try:
@@ -381,9 +461,82 @@ def load_projects_data(company_name=None):
     # Build query conditionally based on whether company_name is provided
     company_filter = ""
     params = {}
+    
+    # Get company_id from company_name if provided
+    company_id = None
     if company_name:
-        company_filter = "AND op.company_name = :company_name"
-        params = {'company_name': company_name}
+        try:
+            company_id_query = "SELECT company_id FROM dim_company WHERE company_name = :company_name LIMIT 1"
+            company_result = execute_query(company_id_query, {'company_name': company_name})
+            if company_result and len(company_result) > 0:
+                company_id = company_result[0]['company_id']
+        except Exception as e:
+            print(f"Error getting company_id: {e}")
+    
+    if company_id:
+        company_filter = "AND :company_id IN (a.operator_id, a.partner1_id, a.partner2_id, a.partner3_id, a.partner4_id, a.partner5_id)"
+        params = {'company_id': company_id}
+    
+    # Build company_pc calculation based on company_id
+    company_pc_case = ""
+    if company_id:
+        company_pc_case = f"CASE WHEN a.operator_id = {company_id} THEN a.operator_pc WHEN a.partner1_id = {company_id} THEN a.partner1_pc WHEN a.partner2_id = {company_id} THEN a.partner2_pc WHEN a.partner3_id = {company_id} THEN a.partner3_pc WHEN a.partner4_id = {company_id} THEN a.partner4_pc WHEN a.partner5_id = {company_id} THEN a.partner5_pc ELSE 0 END"
+    else:
+        company_pc_case = "a.operator_pc"
+    
+    # Build quarterly columns - multiply by company_pc/100.0 when company is selected
+    if company_id:
+        quarterly_cols = f"""
+            (est."2024_Q1" * ({company_pc_case}) / 100.0) AS "2024_Q1",
+            (est."2024_Q2" * ({company_pc_case}) / 100.0) AS "2024_Q2",
+            (est."2024_Q3" * ({company_pc_case}) / 100.0) AS "2024_Q3",
+            (est."2024_Q4" * ({company_pc_case}) / 100.0) AS "2024_Q4",
+            (est."2025_Q1" * ({company_pc_case}) / 100.0) AS "2025_Q1",
+            (est."2025_Q2" * ({company_pc_case}) / 100.0) AS "2025_Q2",
+            (est."2025_Q3" * ({company_pc_case}) / 100.0) AS "2025_Q3",
+            (est."2025_Q4" * ({company_pc_case}) / 100.0) AS "2025_Q4",
+            (est."2026_Q1" * ({company_pc_case}) / 100.0) AS "2026_Q1",
+            (est."2026_Q2" * ({company_pc_case}) / 100.0) AS "2026_Q2",
+            (est."2026_Q3" * ({company_pc_case}) / 100.0) AS "2026_Q3",
+            (est."2026_Q4" * ({company_pc_case}) / 100.0) AS "2026_Q4",
+            (est."2027_Q1" * ({company_pc_case}) / 100.0) AS "2027_Q1",
+            (est."2027_Q2" * ({company_pc_case}) / 100.0) AS "2027_Q2",
+            (est."2027_Q3" * ({company_pc_case}) / 100.0) AS "2027_Q3",
+            (est."2027_Q4" * ({company_pc_case}) / 100.0) AS "2027_Q4",
+            (est."2028_Q1" * ({company_pc_case}) / 100.0) AS "2028_Q1",
+            (est."2028_Q2" * ({company_pc_case}) / 100.0) AS "2028_Q2",
+            (est."2028_Q3" * ({company_pc_case}) / 100.0) AS "2028_Q3",
+            (est."2028_Q4" * ({company_pc_case}) / 100.0) AS "2028_Q4",
+            (est."2029_Q1" * ({company_pc_case}) / 100.0) AS "2029_Q1",
+            (est."2029_Q2" * ({company_pc_case}) / 100.0) AS "2029_Q2",
+            (est."2029_Q3" * ({company_pc_case}) / 100.0) AS "2029_Q3",
+            (est."2029_Q4" * ({company_pc_case}) / 100.0) AS "2029_Q4" """
+    else:
+        quarterly_cols = """
+            est."2024_Q1",
+            est."2024_Q2",
+            est."2024_Q3",
+            est."2024_Q4",
+            est."2025_Q1",
+            est."2025_Q2",
+            est."2025_Q3",
+            est."2025_Q4",
+            est."2026_Q1",
+            est."2026_Q2",
+            est."2026_Q3",
+            est."2026_Q4",
+            est."2027_Q1",
+            est."2027_Q2",
+            est."2027_Q3",
+            est."2027_Q4",
+            est."2028_Q1",
+            est."2028_Q2",
+            est."2028_Q3",
+            est."2028_Q4",
+            est."2029_Q1",
+            est."2029_Q2",
+            est."2029_Q3",
+            est."2029_Q4" """
     
     query = f"""
         SELECT
@@ -432,30 +585,7 @@ def load_projects_data(company_name=None):
             a.partner3_pc AS "Partner3 Share %",
             a.partner4_pc AS "Partner4 Share %",
             a.partner5_pc AS "Partner5 Share %",
-            est."2024_Q1",
-            est."2024_Q2",
-            est."2024_Q3",
-            est."2024_Q4",
-            est."2025_Q1",
-            est."2025_Q2",
-            est."2025_Q3",
-            est."2025_Q4",
-            est."2026_Q1",
-            est."2026_Q2",
-            est."2026_Q3",
-            est."2026_Q4",
-            est."2027_Q1",
-            est."2027_Q2",
-            est."2027_Q3",
-            est."2027_Q4",
-            est."2028_Q1",
-            est."2028_Q2",
-            est."2028_Q3",
-            est."2028_Q4",
-            est."2029_Q1",
-            est."2029_Q2",
-            est."2029_Q3",
-            est."2029_Q4"
+            {quarterly_cols}
         FROM fact_upstream_project_tracker a
         LEFT JOIN fact_upstream_tracker_prod_estimates est 
             ON a.project_id = est.project_id
