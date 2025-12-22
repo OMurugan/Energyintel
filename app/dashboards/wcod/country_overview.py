@@ -510,7 +510,7 @@ def create_layout():
                                     style={
                                         'width': '20px',
                                         'height': '20px',
-                                        'padding': '0',
+                                        'padding': '0 10px',
                                         'border': '1px solid #dee2e6',
                                         'backgroundColor': '#f8f9fa',
                                         'color': '#2c3e50',
@@ -536,7 +536,7 @@ def create_layout():
                                     style={
                                         'width': '20px',
                                         'height': '20px',
-                                        'padding': '0',
+                                        'padding': '0 10px',
                                         'border': '1px solid #dee2e6',
                                         'backgroundColor': '#f8f9fa',
                                         'color': '#2c3e50',
@@ -562,7 +562,7 @@ def create_layout():
                                     style={
                                         'width': '20px',
                                         'height': '20px',
-                                        'padding': '0',
+                                        'padding': '0 10px',
                                         'border': '1px solid #dee2e6',
                                         'backgroundColor': '#f8f9fa',
                                         'color': '#2c3e50',
@@ -588,7 +588,7 @@ def create_layout():
                                     style={
                                         'width': '20px',
                                         'height': '20px',
-                                        'padding': '0',
+                                        'padding': '0 10px',
                                         'border': '1px solid #dee2e6',
                                         'backgroundColor': '#f8f9fa',
                                         'color': '#2c3e50',
@@ -658,13 +658,13 @@ def create_layout():
                                 'borderRadius': '4px',
                                 'cursor': 'pointer',
                                 'fontSize': '13px',
-                                'marginRight': '10px',
+                                'margin': '0',
                                 'display': 'inline-block'
                             }
                         ),
-                    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end'}),
+                    ], style={'display': 'flex', 'alignItems': 'right', 'justifyContent': 'flex-end'}),
                     dcc.Download(id="download-raw-table-csv"),
-                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'padding': '0 15px'}),
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'padding': '0 0 15px 0px'}),
                 dcc.Loading(
                     id='table-loading',
                     type='dot',
@@ -911,7 +911,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
             borderwidth=1
         ),
         height=600,
-        margin=dict(l=200, r=150, t=90, b=40),
+        margin=dict(l=300, r=0, t=90, b=40),
         xaxis=dict(
             range=[0, max_val * 1.2] if max_val > 0 else [0, 1000],
             showgrid=True,

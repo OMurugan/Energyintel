@@ -582,13 +582,13 @@ def create_layout():
                         id='world-map-chart',
                         figure=initial_map,
                         style={
-                            'height': 'calc(90vh - 180px)',  # Full screen height minus filters only
-                            'width': '100vw',  # Full viewport width - no space
+                            'height': 'calc(100vh - 180px)',  # Full screen height minus filters only
+                            'width': '100%',  # Full viewport width - no space
                             'maxWidth': '100%',
                             'background': 'white',
                             'borderRadius': '0',
                             'boxShadow': 'none',
-                            'margin': '0',  # No margin - full width
+                            'margin': '0 auto',  # No margin - full width
                             'padding': '0',
                             'position': 'relative',
                             'display': 'block'
@@ -613,7 +613,7 @@ def create_layout():
             #     'opacity': '1',
             #     'zIndex': '1000'
             # })
-        ], style={'position': 'relative', 'maxWidth': '100%', 'height': 'calc(85vh - 180px)', 'margin': '20px 20px 0 20px', 'padding': '0', 'overflow': 'hidden', 'border': '1px solid #dee2e6'}, className='map-container'),           
+         ], style={'position': 'relative', 'maxWidth': '100%', 'height': 'calc(100vh - 180px)', 'margin': '0', 'padding': '0', 'overflow': 'hidden', 'border': '1px solid #dee2e6'}, className='map-container'),
         
         # CSS injection div (will be handled by clientside callback)
         html.Div(id='css-injection-placeholder', style={'display': 'none'}),
