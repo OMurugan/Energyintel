@@ -568,56 +568,52 @@ def create_layout():
             ], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'})
         ]),
         
-        # World Map Section with hover controls (full screen)
+        # World Map Section with hover controls (full screen)        
+        # Map container with relative positioning for controls overlay
         html.Div([
-            html.Div([
-                # Map container with relative positioning for controls overlay
-                html.Div([
-                    dcc.Loading(
-                        id='map-loading',
-                        type='default',
-                        color='#fe5000',
-                        fullscreen=False,
-                        overlay_style={'backgroundColor': 'rgba(255, 255, 255, 0.8)'},
-                        children=[
-                            dcc.Graph(
-                                id='world-map-chart',
-                                figure=initial_map,
-                                style={
-                                    'height': 'calc(100vh - 150px)',  # Full screen height minus filters only
-                                    'width': '100vw',  # Full viewport width - no space
-                                    'maxWidth': '100%',
-                                    'background': 'white',
-                                    'borderRadius': '0',
-                                    'boxShadow': 'none',
-                                    'margin': '0',  # No margin - full width
-                                    'padding': '0',
-                                    'position': 'relative',
-                                    'display': 'block'
-                                }
-                            )
-                        ]
-                    ),
-                    # Map controls (left side, always visible)
-                    # html.Div([
-                    #     html.Div([
-                    #         html.Button('🔍', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '14px'}),
-                    #         html.Button('📋', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '14px'}),
-                    #         html.Button('+', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'fontSize': '18px', 'fontWeight': 'bold', 'lineHeight': '1'}),
-                    #         html.Button('−', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'fontSize': '18px', 'fontWeight': 'bold', 'lineHeight': '1'}),
-                    #         html.Button('⌂', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '14px'}),
-                    #         html.Button('▶', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '12px'})
-                    #     ], style={'display': 'flex', 'flexDirection': 'column', 'padding': '4px', 'background': 'white', 'border': '1px solid #d0d0d0', 'borderRadius': '4px', 'boxShadow': '0 1px 3px rgba(0,0,0,0.1)'})
-                    # ], className='map-controls', style={
-                    #     'position': 'absolute',
-                    #     'left': '10px',
-                    #     'top': '10px',
-                    #     'opacity': '1',
-                    #     'zIndex': '1000'
-                    # })
-                ], style={'position': 'relative', 'width': '100vw', 'maxWidth': '100%', 'height': 'calc(100vh - 150px)', 'margin': '0', 'padding': '0', 'overflow': 'hidden'}, className='map-container')
-            ], style={'padding': '0', 'background': '#f8f9fa', 'width': '100vw', 'maxWidth': '100%', 'height': 'calc(100vh - 150px)', 'margin': '0', 'overflow': 'hidden', 'position': 'relative'})
-        ], style={'width': '100vw', 'maxWidth': '100%', 'height': 'calc(100vh - 150px)', 'margin': '0', 'padding': '0', 'overflow': 'hidden', 'position': 'relative', 'display': 'block'}),
+            dcc.Loading(
+                id='map-loading',
+                type='default',
+                color='#fe5000',
+                fullscreen=False,
+                overlay_style={'backgroundColor': 'rgba(255, 255, 255, 0.8)'},
+                children=[
+                    dcc.Graph(
+                        id='world-map-chart',
+                        figure=initial_map,
+                        style={
+                            'height': 'calc(90vh - 180px)',  # Full screen height minus filters only
+                            'width': '100vw',  # Full viewport width - no space
+                            'maxWidth': '100%',
+                            'background': 'white',
+                            'borderRadius': '0',
+                            'boxShadow': 'none',
+                            'margin': '0',  # No margin - full width
+                            'padding': '0',
+                            'position': 'relative',
+                            'display': 'block'
+                        }
+                    )
+                ]
+            ),
+            # Map controls (left side, always visible)
+            # html.Div([
+            #     html.Div([
+            #         html.Button('🔍', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '14px'}),
+            #         html.Button('📋', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '14px'}),
+            #         html.Button('+', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'fontSize': '18px', 'fontWeight': 'bold', 'lineHeight': '1'}),
+            #         html.Button('−', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'fontSize': '18px', 'fontWeight': 'bold', 'lineHeight': '1'}),
+            #         html.Button('⌂', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '14px'}),
+            #         html.Button('▶', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '12px'})
+            #     ], style={'display': 'flex', 'flexDirection': 'column', 'padding': '4px', 'background': 'white', 'border': '1px solid #d0d0d0', 'borderRadius': '4px', 'boxShadow': '0 1px 3px rgba(0,0,0,0.1)'})
+            # ], className='map-controls', style={
+            #     'position': 'absolute',
+            #     'left': '10px',
+            #     'top': '10px',
+            #     'opacity': '1',
+            #     'zIndex': '1000'
+            # })
+        ], style={'position': 'relative', 'maxWidth': '100%', 'height': 'calc(85vh - 180px)', 'margin': '20px 20px 0 20px', 'padding': '0', 'overflow': 'hidden', 'border': '1px solid #dee2e6'}, className='map-container'),           
         
         # CSS injection div (will be handled by clientside callback)
         html.Div(id='css-injection-placeholder', style={'display': 'none'}),
@@ -630,7 +626,7 @@ def create_layout():
             fullscreen=False,
             overlay_style={'backgroundColor': 'rgba(248, 249, 250, 0.8)'},
             children=[
-                html.Div(id='country-profile-content', style={'padding': '10px 0px', 'background': '#f8f9fa'})
+                html.Div(id='country-profile-content', style={'padding': '0px 0px', 'background': '#f8f9fa'})
             ]
         )
     ])
@@ -928,12 +924,12 @@ def create_world_map(selected_country=None):
             ))
 
         title_text = f"{selected_country} Production"
-        map_zoom = 1.5 # Zoom in for a specific country
+        map_zoom = 1.2 # Zoom in for a specific country
         map_center_lat = filtered_map['latitude'].mean()
         map_center_lon = filtered_map['longitude'].mean()
         if pd.isna(map_center_lat) or pd.isna(map_center_lon):
             # Fallback to default world view center if data is missing
-            map_center = dict(lat=20.0, lon=0.0)
+            map_center = dict(lat=22.0, lon=0.0)
         else:
             # Adjust center latitude upward to show top area of country
             # Adding latitude moves the center north, which shifts viewport to show more northern area
@@ -954,14 +950,14 @@ def create_world_map(selected_country=None):
                             color_continuous_scale="Viridis",
                             featureidkey="properties.iso_a3",
                             mapbox_style="carto-positron", # Default style for all countries
-                            zoom=1.5, center={"lat": 20.0, "lon": 0.0},
+                            zoom=1.2, center={"lat": 22.0, "lon": 0.0},
                             opacity=0.5,
                             hover_name="country_long_name" # Display country name on hover
                         )
         
         title_text = 'World Crude Oil Ports by Country'
-        map_zoom = 1.5 # World view zoom - matches original Tableau source
-        map_center = dict(lat=20.0, lon=0.0)  # Centered on equator for balanced world view
+        map_zoom = 1.2 # World view zoom - matches original Tableau source
+        map_center = dict(lat=22.0, lon=0.0)  # Centered on equator for balanced world view
 
         # Add country name labels with density control to avoid overlap at wide zooms
         country_centroids = (
@@ -1326,10 +1322,10 @@ def create_production_table(country_name, time_period='Yearly'):
         sort_mode='single',
         sort_by=[{'column_id': 'Crude', 'direction': 'asc'}],
         style_cell={
-            'textAlign': 'center',
+            'textAlign': 'right',
             'fontFamily': 'Arial, sans-serif',
             'fontSize': '13px',
-            'padding': '8px',
+            'padding': '2px',
             'border': '1px solid #dee2e6',
             'color': '#2c3e50',
             'whiteSpace': 'normal'

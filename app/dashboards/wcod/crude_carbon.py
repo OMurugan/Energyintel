@@ -448,7 +448,7 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
                     continue
                 if entry not in unique_entries:
                     unique_entries.append(entry)
-            return "; ".join(unique_entries)
+            return ", ".join(unique_entries)
 
         if "Year" in intensity_df.columns and not intensity_df["Year"].isna().all():
             try:
@@ -507,8 +507,8 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
             )
             text_body = f"<b>{country_name}</b>"
             if crudes_str:
-                text_body += f"<br>{crudes_str}"
-            text_body += f"<br>{intensity}"
+                text_body += "<br>" + "<br>".join([c.strip() for c in crudes_str.split(',')])
+                text_body += f"<br>{intensity}"
             text_entries.append(text_body)
             colors.append(color_map[intensity])
 
