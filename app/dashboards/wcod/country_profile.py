@@ -651,8 +651,28 @@ def create_layout():
                             children="Click here to see the Country's Profile",
                             style=profile_link_style,
                             className='profile-link-hover'
+                        ),
+                        html.Div(
+                            dcc.Dropdown(
+                                id='dashboard-export-dropdown',
+                                options=[
+                                    {'label': 'Export Dashboard PDF', 'value': 'pdf'},
+                                    {'label': 'Export Dashboard PNG', 'value': 'png'},
+                                    {'label': 'Export Map Chart CSV', 'value': 'raw_chart_csv'}
+                                ],
+                                placeholder='Export Data',
+                                style={
+                                    'width': '200px',
+                                    'marginRight': '10px',
+                                    'fontSize': '13px',
+                                    'color': '#2c3e50',
+                                    'display': 'inline-block'
+                                },
+                                clearable=False
+                            ),
+                            style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': 'auto', 'padding': '0 0px', 'marginLeft': '10px'}
                         )
-                    ], style={'flex': '1', 'textAlign': 'right', 'display': 'flex', 'alignItems': 'flex-end', 'justifyContent': 'flex-end'})
+                    ], style={'flex': '1', 'textAlign': 'left', 'display': 'flex', 'alignItems': 'flex-end', 'justifyContent': 'flex-end'})
                 ], style={
                     'display': 'flex',
                     'alignItems': 'flex-end',
@@ -662,53 +682,6 @@ def create_layout():
             ], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'})
         ]),
         
-        # Dashboard-level Export Dropdown and Buttons
-        dcc.Loading(
-            id='export-loading',
-            type='default',
-            color='#fe5000',
-            children=[
-                html.Div([ # Container for dropdown and collapse button
-                    html.Div(
-                        dcc.Dropdown(
-                            id='dashboard-export-dropdown',
-                            options=[
-                                {'label': 'Export Dashboard PDF', 'value': 'pdf'},
-                                {'label': 'Export Dashboard PNG', 'value': 'png'},
-                                {'label': 'Export Map Chart CSV', 'value': 'raw_chart_csv'}
-                            ],
-                            placeholder='Export Data',
-                            style={
-                                'width': '200px',
-                                'marginRight': '10px',
-                                'fontSize': '13px',
-                                'color': '#2c3e50',
-                                'display': 'inline-block'
-                            },
-                            clearable=False
-                        ),
-                        style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': 'auto', 'padding': '0 0px'}
-                    ),
-                    html.Button(
-                        '−',
-                        id='chart-collapse-button',
-                        n_clicks=0,
-                        style={
-                            'fontSize': '20px',
-                            'fontWeight': 'bold',
-                            'color': '#2c3e50',
-                            'textDecoration': 'none',
-                            'padding': '0 10px',
-                            'border': 'none',
-                            'background': 'transparent',
-                            'cursor': 'pointer',
-                            'marginLeft': '10px'
-                        }
-                    )
-                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'padding': '0'})
-            ]
-        ),
-
         # Add Download components for dashboard exports
         dcc.Download(id="download-dashboard-content"),
         dcc.Download(id="download-raw-chart-csv"),
@@ -2180,7 +2153,7 @@ def register_callbacks(dash_app, server):
                                     'color': '#fe5000',
                                     'fontWeight': '600',
                                     'fontSize': '18px',
-                                    'marginBottom': '20px'
+                                    'margin': '20px 0px'
                                 }
                             ),
                              # Export buttons on the right side
@@ -2209,7 +2182,7 @@ def register_callbacks(dash_app, server):
                                     'color': '#fe5000',
                                     'fontWeight': '600',
                                     'fontSize': '18px',
-                                    'marginBottom': '20px'
+                                    'margin': '20px 0px'
                                 }
                             ),
                             # Export buttons on the right side
@@ -2474,6 +2447,23 @@ def register_callbacks(dash_app, server):
 
     # Helper to generate full HTML content for PDF/PNG
     def generate_full_dashboard_html(country_name, time_period, map_figure_b64, key_figures_data, production_data, port_details_data):
+        # Dynamically build sections based on time_period
+        dynamic_sections = ""
+        if time_period == 'Yearly':
+            dynamic_sections += """
+                <div class="section no-break">
+                    <h2>Key Figures</h2>
+                    {key_figures_html}
+                </div>
+            """.format(key_figures_html=generate_html_table(key_figures_data, 'Key Figures'))
+        else: # Monthly
+            dynamic_sections += """
+                <div class="section no-break">
+                    <h2>Production Data</h2>
+                    {production_html}
+                </div>
+            """.format(production_html=generate_html_table(production_data, 'Production Data'))
+
         # Base HTML structure
         html_content = """
         <!DOCTYPE html>
@@ -2507,14 +2497,7 @@ def register_callbacks(dash_app, server):
                     <h2>World Map</h2>
                     <img src="data:image/png;base64,{map_figure_b64}" style="width:100%; height:auto; display:block;" alt="World Map Chart">
                 </div>
-                <div class="section no-break">
-                    <h2>Key Figures</h2>
-                    {key_figures_html}
-                </div>
-                <div class="section no-break">
-                    <h2>Production Data</h2>
-                    {production_html}
-                </div>
+                {dynamic_sections}
                 <div class="section no-break">
                     <h2>Port Details</h2>
                     {port_details_html}
@@ -2525,9 +2508,8 @@ def register_callbacks(dash_app, server):
         """.format(
             country_name=country_name,
             time_period=time_period,
-            map_figure_b64=map_figure_b64, # Placeholder, will be filled later
-            key_figures_html=generate_html_table(key_figures_data, 'Key Figures'),
-            production_html=generate_html_table(production_data, 'Production Data'),
+            map_figure_b64=map_figure_b64, 
+            dynamic_sections=dynamic_sections,
             port_details_html=generate_html_table(port_details_data, 'Port Details')
         )
         return html_content
