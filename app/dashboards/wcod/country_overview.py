@@ -238,12 +238,25 @@ TIME_DIMENSION_COLUMNS_CONFIG = [
 ]
 
 
-def build_data_columns(years):
+def build_data_columns(years, time_visibility, latest_quarter_value, latest_month_value, latest_day_value):
     columns = []
     for metric_name, prefix, spec in METRIC_CONFIG:
         for year in years:
+            column_name_parts = [str(year)]
+            
+            if time_visibility.get('Quarter', False) and latest_quarter_value is not None:
+                column_name_parts.append(f"Q{latest_quarter_value}")
+            
+            if time_visibility.get('Month', False) and latest_month_value is not None:
+                column_name_parts.append(latest_month_value)
+            
+            if time_visibility.get('Day', False) and latest_day_value is not None:
+                column_name_parts.append(str(latest_day_value))
+
+            combined_year_name = " ".join(column_name_parts)
+            
             columns.append({
-                "name": [metric_name, str(year)],
+                "name": [metric_name, combined_year_name],
                 "id": f"{prefix}_{year}",
                 "type": "numeric",
                 "format": {"specifier": spec}
@@ -262,7 +275,7 @@ def load_country_overview_data():
     empty_bar = pd.DataFrame(columns=['Country', 'Profile_URL'])
     empty_map = {}
     empty_years = []
-    empty_columns = build_data_columns(empty_years)
+    empty_columns = build_data_columns(empty_years, {}, None, None, None)
 
     chart_df = pd.DataFrame()
     table_df = pd.DataFrame()
@@ -353,7 +366,7 @@ def load_country_overview_data():
                 print("No years found in table data.")
                 return empty_df, empty_bar, empty_map, empty_years, empty_columns, None, None, None, None
 
-            data_columns = build_data_columns(years)
+            data_columns = build_data_columns(years, {}, None, None, None)
 
             # Create a combined metric-year column for pivoting
             table_df['Metric_Year'] = table_df.apply(lambda row: f'{get_metric_prefix(row["Metric"], METRIC_CONFIG)}_{row["Year"]}' if get_metric_prefix(row["Metric"], METRIC_CONFIG) else None, axis=1)
@@ -427,6 +440,7 @@ def create_layout():
         dcc.Store(id='click-counter-store', data=0),
         # Store for time dimension visibility (Year, Quarter, Month, Day)
         dcc.Store(id='time-dimension-visibility', data={'Year': True, 'Quarter': False, 'Month': False, 'Day': False}),
+        dcc.Store(id='time-dimension-table-visibility', data={'Year': True, 'Quarter': False, 'Month': False, 'Day': False}),
         # Hidden div to trigger URL opening via clientside callback
         html.Div(id='open-url-trigger', children=0, style={'display': 'none'}),
 
@@ -671,6 +685,112 @@ def create_layout():
                     ], style={'display': 'flex', 'alignItems': 'right', 'justifyContent': 'flex-end'}),
                     dcc.Download(id="download-raw-table-csv"),
                 ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'padding': '0 0 15px 0px'}),
+                html.Div([ # Time dimension controls inside table area - first row with icons at top right
+                    html.Div([
+                        html.Span("Year of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                        html.Button(
+                            '−',
+                            id='toggle-table-year-btn',
+                            n_clicks=0,
+                            style={
+                                'width': '20px',
+                                'height': '20px',
+                                'padding': '0',
+                                'border': '1px solid #dee2e6',
+                                'backgroundColor': '#f8f9fa',
+                                'color': '#2c3e50',
+                                'borderRadius': '3px',
+                                'cursor': 'pointer',
+                                'fontSize': '14px',
+                                'fontWeight': 'bold',
+                                'lineHeight': '1',
+                                'display': 'flex',
+                                'alignItems': 'center',
+                                'justifyContent': 'center',
+                                'marginLeft': '8px',
+                                'flexShrink': '0'
+                            }
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '120px'}),
+                    html.Div([
+                        html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                        html.Button(
+                            '+',
+                            id='toggle-table-quarter-btn',
+                            n_clicks=0,
+                            style={
+                                'width': '20px',
+                                'height': '20px',
+                                'padding': '0',
+                                'border': '1px solid #dee2e6',
+                                'backgroundColor': '#f8f9fa',
+                                'color': '#2c3e50',
+                                'borderRadius': '3px',
+                                'cursor': 'pointer',
+                                'fontSize': '14px',
+                                'fontWeight': 'bold',
+                                'lineHeight': '1',
+                                'display': 'flex',
+                                'alignItems': 'center',
+                                'justifyContent': 'center',
+                                'marginLeft': '8px',
+                                'flexShrink': '0'
+                            }
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '130px'}),
+                    html.Div([
+                        html.Span("Month of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                        html.Button(
+                            '+',
+                            id='toggle-table-month-btn',
+                            n_clicks=0,
+                            style={
+                                'width': '20px',
+                                'height': '20px',
+                                'padding': '0',
+                                'border': '1px solid #dee2e6',
+                                'backgroundColor': '#f8f9fa',
+                                'color': '#2c3e50',
+                                'borderRadius': '3px',
+                                'cursor': 'pointer',
+                                'fontSize': '14px',
+                                'fontWeight': 'bold',
+                                'lineHeight': '1',
+                                'display': 'flex',
+                                'alignItems': 'center',
+                                'justifyContent': 'center',
+                                'marginLeft': '8px',
+                                'flexShrink': '0'
+                            }
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '130px'}),
+                    html.Div([
+                        html.Span("Day of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                        html.Button(
+                            '+',
+                            id='toggle-table-day-btn',
+                            n_clicks=0,
+                            style={
+                                'width': '20px',
+                                'height': '20px',
+                                'padding': '0',
+                                'border': '1px solid #dee2e6',
+                                'backgroundColor': '#f8f9fa',
+                                'color': '#2c3e50',
+                                'borderRadius': '3px',
+                                'cursor': 'pointer',
+                                'fontSize': '14px',
+                                'fontWeight': 'bold',
+                                'lineHeight': '1',
+                                'display': 'flex',
+                                'alignItems': 'center',
+                                'justifyContent': 'center',
+                                'marginLeft': '8px',
+                                'flexShrink': '0'
+                            }
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center', 'width': '120px'})
+                ], style={'padding': '10px 20px', 'borderBottom': '1px solid #dee2e6', 'background': '#f8f9fa', 'display': 'flex', 'justifyContent': 'flex-start', 'alignItems': 'center'}),
                 dcc.Loading(
                     id='table-loading',
                     type='dot',
@@ -1205,20 +1325,25 @@ def register_callbacks(dash_app, server):
     @callback(
         [Output('oil-data-table', 'data'),
          Output('oil-data-table', 'columns')],
-        Input('current-submenu', 'data'),
+        [Input('current-submenu', 'data'),
+         Input('time-dimension-table-visibility', 'data')],
         prevent_initial_call=False
     )
-    def update_oil_data_table(submenu):
+    def update_oil_data_table(submenu, time_dimension_table_visibility):
         """Update oil data table with country statistics"""
         if submenu != 'country-overview':
             return [], []
 
         # Load data when page is active
-        _pivot_df, _bar_chart_data, _country_url_map, _YEARS_TO_DISPLAY, _DATA_COLUMNS, _LATEST_YEAR, _LATEST_QUARTER, _LATEST_MONTH, _LATEST_DAY = get_country_overview_data()      
-        # Update DATA_TABLE_COLUMNS with loaded data columns
+        _pivot_df, _bar_chart_data, _country_url_map, _YEARS_TO_DISPLAY, _DATA_COLUMNS, _LATEST_YEAR, _LATEST_QUARTER, _LATEST_MONTH, _LATEST_DAY = get_country_overview_data()
+
+        # Dynamically build data columns including time dimensions
+        table_columns_config = build_data_columns(_YEARS_TO_DISPLAY, time_dimension_table_visibility, _LATEST_QUARTER, _LATEST_MONTH, _LATEST_DAY)
+
+        # Base columns always present
         table_columns = [
             {"name": ["", "Country"], "id": "Country", "type": "text", "presentation": "markdown"},
-        ] + _DATA_COLUMNS
+        ] + table_columns_config
 
         if _pivot_df.empty:
             return [], table_columns
@@ -1238,18 +1363,22 @@ def register_callbacks(dash_app, server):
                 'Profile_URL': profile_url
             }
 
-            for year in _YEARS_TO_DISPLAY:
-                for _, prefix, _ in METRIC_CONFIG:
+            for metric_name, prefix, _ in METRIC_CONFIG:
+                for year in _YEARS_TO_DISPLAY:
+                    # Add main metric-year value
                     column_id = f'{prefix}_{year}'
                     row_data[column_id] = row.get(column_id, 0)
 
+                    # Add time dimension values if visible
+                    if time_dimension_table_visibility.get('Quarter', False) and _LATEST_QUARTER is not None:
+                        row_data[f'{prefix}_{year}_Quarter'] = _LATEST_QUARTER
+                    if time_dimension_table_visibility.get('Month', False) and _LATEST_MONTH is not None:
+                        row_data[f'{prefix}_{year}_Month'] = _LATEST_MONTH
+                    if time_dimension_table_visibility.get('Day', False) and _LATEST_DAY is not None:
+                        row_data[f'{prefix}_{year}_Day'] = _LATEST_DAY
+
             table_data.append(row_data)
 
-        # Update DATA_TABLE_COLUMNS with loaded data columns
-        table_columns = [
-            {"name": ["", "Country"], "id": "Country", "type": "text", "presentation": "markdown"},
-        ] + _DATA_COLUMNS
-        
         return table_data, table_columns
 
     @callback(
@@ -1386,12 +1515,21 @@ def register_callbacks(dash_app, server):
          Output('toggle-month-btn', 'children'),
          Output('toggle-month-btn', 'style'),
          Output('toggle-day-btn', 'children'),
-         Output('toggle-day-btn', 'style')],
-        Input('time-dimension-visibility', 'data'),
+         Output('toggle-day-btn', 'style'),
+         Output('toggle-table-year-btn', 'children'),
+         Output('toggle-table-year-btn', 'style'),
+         Output('toggle-table-quarter-btn', 'children'),
+         Output('toggle-table-quarter-btn', 'style'),
+         Output('toggle-table-month-btn', 'children'),
+         Output('toggle-table-month-btn', 'style'),
+         Output('toggle-table-day-btn', 'children'),
+         Output('toggle-table-day-btn', 'style')],
+        [Input('time-dimension-visibility', 'data'),
+         Input('time-dimension-table-visibility', 'data')],
         prevent_initial_call=False
     )
-    def update_button_icons(visibility):
-        """Update button icons (+/-) and styles based on visibility state"""
+    def update_button_icons(visibility, table_visibility):
+        """Update button icons (+/-) and styles based on visibility state for both chart and table"""
         base_style = {
             'width': '20px',
             'height': '20px',
@@ -1407,6 +1545,7 @@ def register_callbacks(dash_app, server):
             'justifyContent': 'center'
         }
         
+        # Chart buttons
         year_expanded = visibility.get('Year', True)
         quarter_expanded = visibility.get('Quarter', False)
         month_expanded = visibility.get('Month', False)
@@ -1432,12 +1571,43 @@ def register_callbacks(dash_app, server):
             'color': '#007bff' if day_expanded else '#2c3e50',
             'borderColor': '#007bff' if day_expanded else '#dee2e6'
         }
+
+        # Table buttons
+        table_year_expanded = table_visibility.get('Year', True)
+        table_quarter_expanded = table_visibility.get('Quarter', False)
+        table_month_expanded = table_visibility.get('Month', False)
+        table_day_expanded = table_visibility.get('Day', False)
+
+        table_year_style = {**base_style,
+            'backgroundColor': '#e7f3ff' if table_year_expanded else '#f8f9fa',
+            'color': '#007bff' if table_year_expanded else '#2c3e50',
+            'borderColor': '#007bff' if table_year_expanded else '#dee2e6'
+        }
+        table_quarter_style = {**base_style,
+            'backgroundColor': '#e7f3ff' if table_quarter_expanded else '#f8f9fa',
+            'color': '#007bff' if table_quarter_expanded else '#2c3e50',
+            'borderColor': '#007bff' if table_quarter_expanded else '#dee2e6'
+        }
+        table_month_style = {**base_style,
+            'backgroundColor': '#e7f3ff' if table_month_expanded else '#f8f9fa',
+            'color': '#007bff' if table_month_expanded else '#2c3e50',
+            'borderColor': '#007bff' if table_month_expanded else '#dee2e6'
+        }
+        table_day_style = {**base_style,
+            'backgroundColor': '#e7f3ff' if table_day_expanded else '#f8f9fa',
+            'color': '#007bff' if table_day_expanded else '#2c3e50',
+            'borderColor': '#007bff' if table_day_expanded else '#dee2e6'
+        }
         
         return (
             '−' if year_expanded else '+', year_style,
             '−' if quarter_expanded else '+', quarter_style,
             '−' if month_expanded else '+', month_style,
-            '−' if day_expanded else '+', day_style
+            '−' if day_expanded else '+', day_style,
+            '−' if table_year_expanded else '+', table_year_style,
+            '−' if table_quarter_expanded else '+', table_quarter_style,
+            '−' if table_month_expanded else '+', table_month_style,
+            '−' if table_day_expanded else '+', table_day_style
         )
 
     # Callbacks for time dimension toggles
@@ -1550,6 +1720,138 @@ def register_callbacks(dash_app, server):
     )
     def toggle_day(n_clicks, visibility):
         """Toggle Day column visibility"""
+        if n_clicks:
+            new_visibility = visibility.copy()
+            new_visibility['Day'] = not new_visibility.get('Day', False)
+            is_expanded = new_visibility['Day']
+            button_style = {
+                'width': '20px',
+                'height': '20px',
+                'padding': '0',
+                'border': '1px solid #007bff' if is_expanded else '#dee2e6',
+                'backgroundColor': '#e7f3ff' if is_expanded else '#f8f9fa',
+                'color': '#007bff' if is_expanded else '#2c3e50',
+                'borderRadius': '3px',
+                'cursor': 'pointer',
+                'fontSize': '14px',
+                'fontWeight': 'bold',
+                'lineHeight': '1',
+                'display': 'inline-flex',
+                'alignItems': 'center',
+                'justifyContent': 'center'
+            }
+            return new_visibility, '−' if is_expanded else '+', button_style
+        return visibility, dash.no_update, dash.no_update
+
+    @callback(
+        [Output('time-dimension-table-visibility', 'data', allow_duplicate=True),
+         Output('toggle-table-year-btn', 'children', allow_duplicate=True),
+         Output('toggle-table-year-btn', 'style', allow_duplicate=True)],
+        Input('toggle-table-year-btn', 'n_clicks'),
+        State('time-dimension-table-visibility', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_table_year(n_clicks, visibility):
+        """Toggle Year column visibility for table"""
+        if n_clicks:
+            new_visibility = visibility.copy()
+            new_visibility['Year'] = not new_visibility.get('Year', True)
+            is_expanded = new_visibility['Year']
+            button_style = {
+                'width': '20px',
+                'height': '20px',
+                'padding': '0',
+                'border': '1px solid #007bff' if is_expanded else '#dee2e6',
+                'backgroundColor': '#e7f3ff' if is_expanded else '#f8f9fa',
+                'color': '#007bff' if is_expanded else '#2c3e50',
+                'borderRadius': '3px',
+                'cursor': 'pointer',
+                'fontSize': '14px',
+                'fontWeight': 'bold',
+                'lineHeight': '1',
+                'display': 'inline-flex',
+                'alignItems': 'center',
+                'justifyContent': 'center'
+            }
+            return new_visibility, '−' if is_expanded else '+', button_style
+        return visibility, dash.no_update, dash.no_update
+
+    @callback(
+        [Output('time-dimension-table-visibility', 'data', allow_duplicate=True),
+         Output('toggle-table-quarter-btn', 'children', allow_duplicate=True),
+         Output('toggle-table-quarter-btn', 'style', allow_duplicate=True)],
+        Input('toggle-table-quarter-btn', 'n_clicks'),
+        State('time-dimension-table-visibility', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_table_quarter(n_clicks, visibility):
+        """Toggle Quarter column visibility for table"""
+        if n_clicks:
+            new_visibility = visibility.copy()
+            new_visibility['Quarter'] = not new_visibility.get('Quarter', False)
+            is_expanded = new_visibility['Quarter']
+            button_style = {
+                'width': '20px',
+                'height': '20px',
+                'padding': '0',
+                'border': '1px solid #007bff' if is_expanded else '#dee2e6',
+                'backgroundColor': '#e7f3ff' if is_expanded else '#f8f9fa',
+                'color': '#007bff' if is_expanded else '#2c3e50',
+                'borderRadius': '3px',
+                'cursor': 'pointer',
+                'fontSize': '14px',
+                'fontWeight': 'bold',
+                'lineHeight': '1',
+                'display': 'inline-flex',
+                'alignItems': 'center',
+                'justifyContent': 'center'
+            }
+            return new_visibility, '−' if is_expanded else '+', button_style
+        return visibility, dash.no_update, dash.no_update
+
+    @callback(
+        [Output('time-dimension-table-visibility', 'data', allow_duplicate=True),
+         Output('toggle-table-month-btn', 'children', allow_duplicate=True),
+         Output('toggle-table-month-btn', 'style', allow_duplicate=True)],
+        Input('toggle-table-month-btn', 'n_clicks'),
+        State('time-dimension-table-visibility', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_table_month(n_clicks, visibility):
+        """Toggle Month column visibility for table"""
+        if n_clicks:
+            new_visibility = visibility.copy()
+            new_visibility['Month'] = not new_visibility.get('Month', False)
+            is_expanded = new_visibility['Month']
+            button_style = {
+                'width': '20px',
+                'height': '20px',
+                'padding': '0',
+                'border': '1px solid #007bff' if is_expanded else '#dee2e6',
+                'backgroundColor': '#e7f3ff' if is_expanded else '#f8f9fa',
+                'color': '#007bff' if is_expanded else '#2c3e50',
+                'borderRadius': '3px',
+                'cursor': 'pointer',
+                'fontSize': '14px',
+                'fontWeight': 'bold',
+                'lineHeight': '1',
+                'display': 'inline-flex',
+                'alignItems': 'center',
+                'justifyContent': 'center'
+            }
+            return new_visibility, '−' if is_expanded else '+', button_style
+        return visibility, dash.no_update, dash.no_update
+
+    @callback(
+        [Output('time-dimension-table-visibility', 'data', allow_duplicate=True),
+         Output('toggle-table-day-btn', 'children', allow_duplicate=True),
+         Output('toggle-table-day-btn', 'style', allow_duplicate=True)],
+        Input('toggle-table-day-btn', 'n_clicks'),
+        State('time-dimension-table-visibility', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_table_day(n_clicks, visibility):
+        """Toggle Day column visibility for table"""
         if n_clicks:
             new_visibility = visibility.copy()
             new_visibility['Day'] = not new_visibility.get('Day', False)
