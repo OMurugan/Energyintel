@@ -170,6 +170,9 @@ WITH base AS (
         END AS profile_url,
         'Source: Energy Intelligence' AS "Source",
         EXTRACT(YEAR FROM A."yr")::INT AS "Year of Year",
+        'Q' || EXTRACT(QUARTER FROM A."yr")         AS "Quarter of Year",
+        TRIM(TO_CHAR(A."yr", 'Month'))              AS "Month of Year",
+        EXTRACT(DAY FROM A."yr")::INT               AS "Day of Year",
         A."output",
         A."exports",
         A."reserves"
@@ -185,6 +188,9 @@ SELECT
     b.profile_url,
     b."Source",
     b."Year of Year",
+    b."Quarter of Year",
+    b."Month of Year",
+    b."Day of Year",
 
     m.measure_name       AS "Measure Names",
 
@@ -1263,9 +1269,9 @@ def register_callbacks(dash_app, server):
             custom_country = point.get('customdata')
             if isinstance(custom_country, list) and custom_country:
                 custom_country = custom_country[0]
-            country_name = custom_country or point.get('y')
-            if country_name and isinstance(country_name, str):
-                country_name = country_name.split('   ')[0]
+            country_name = custom_country
+            if not country_name and point.get('y') and isinstance(point.get('y'), str):
+                country_name = point.get('y').split('   ')[0]
             profile_url = _country_url_map.get(country_name)
             new_counter = (click_counter or 0) + 1
             return country_name, profile_url, new_counter
