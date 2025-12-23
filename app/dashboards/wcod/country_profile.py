@@ -3,7 +3,7 @@ Country Profile View
 World map-based country profile with detailed statistics
 Replicates Energy Intelligence WCoD Country Profile functionality
 """
-from dash import dcc, html, Input, Output, dash_table, dash, callback_context
+from dash import dcc, html, Input, Output, State, dash_table, dash, callback_context
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -12,6 +12,8 @@ import os
 import json
 import threading
 from datetime import datetime
+import base64
+import io
 from urllib.request import urlopen
 from core.data_helpers import execute_query
 from config import Config
@@ -582,7 +584,7 @@ def create_layout():
                         id='world-map-chart',
                         figure=initial_map,
                         style={
-                            'height': 'calc(100vh - 180px)',  # Full screen height minus filters only
+                            'height': 'calc(90vh - 180px)',  # Full screen height minus filters only
                             'width': '100%',  # Full viewport width - no space
                             'maxWidth': '100%',
                             'background': 'white',
@@ -613,7 +615,7 @@ def create_layout():
             #     'opacity': '1',
             #     'zIndex': '1000'
             # })
-         ], style={'position': 'relative', 'maxWidth': '100%', 'height': 'calc(100vh - 180px)', 'margin': '0', 'padding': '0', 'overflow': 'hidden', 'border': '1px solid #dee2e6'}, className='map-container'),
+         ]),
         
         # CSS injection div (will be handled by clientside callback)
         html.Div(id='css-injection-placeholder', style={'display': 'none'}),
@@ -1004,7 +1006,7 @@ def create_world_map(selected_country=None):
         height=None,  # Auto height to fill container
         width=None,   # Auto width to fill container
         autosize=True,  # Auto-size to fill container width and height
-        margin=dict(l=0, r=0, t=0, b=30),
+        margin=dict(l=0, r=0, t=0, b=0),
         plot_bgcolor='white',
         paper_bgcolor='white',
         showlegend=False,
@@ -1053,9 +1055,9 @@ def create_empty_map():
             center=dict(lat=20.0, lon=0.0),
             zoom=1.5 # Consistent zoom with world view - matches original Tableau source
         ),
-        height=700,
+        height=500,
         width=700,  # Square aspect ratio
-        margin=dict(l=0, r=0, t=60, b=30),
+        margin=dict(l=0, r=0, t=60, b=0),
         autosize=False,  # Disable autosize to maintain square
         plot_bgcolor='white',
         paper_bgcolor='white',
