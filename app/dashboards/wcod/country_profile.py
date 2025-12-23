@@ -409,6 +409,7 @@ def load_key_figures_data():
         FROM fact_wcod_key_figures K
         LEFT JOIN dim_wcod_country C ON K."country_id" = C."country_id"
         """
+        print(f"DEBUG: Executing key figures query:\n{key_figures_query}") # Added debug print for query
         
         # Execute query and convert to DataFrame
         key_figures_results = execute_query(key_figures_query)
@@ -430,10 +431,97 @@ def load_key_figures_data():
             print("Warning: No key figures data loaded from database")
             
     except Exception as e:
-        # Silently handle missing database tables
+        # Log the actual exception for debugging
         key_figures_df = pd.DataFrame()
+        print(f"ERROR: Failed to load key figures data: {e}") # Modified to print actual error
     
     return key_figures_df
+
+def get_key_figures_data(country_name, time_period='Yearly'):
+    """Helper to filter key figures data by country and time period."""
+    print(f"DEBUG: get_key_figures_data called with country={country_name}, time_period={time_period}")
+
+    if time_period == 'Yearly':
+        load_map_data()
+        if map_df.empty:
+            print("DEBUG: map_df is empty for Yearly key figures.")
+            return pd.DataFrame()
+
+        if 'country_long_name' not in map_df.columns:
+            print(f"DEBUG: 'country_long_name' column not found in map_df. Available columns: {list(map_df.columns)}")
+            return pd.DataFrame()
+
+        # Filter by country name (case-insensitive, handle whitespace)
+        country_data = map_df[
+            map_df['country_long_name'].astype(str).str.strip().str.lower() == str(country_name).strip().lower()
+        ].copy()
+
+        if country_data.empty:
+            print(f"DEBUG: No data found for country '{country_name}' in map_df for Yearly key figures.")
+            return pd.DataFrame()
+
+        # Extract year and ensure numeric values
+        country_data['year'] = pd.to_datetime(country_data['yr'], errors='coerce').dt.year
+        country_data = country_data.dropna(subset=['year'])
+        
+        # Remove duplicates for each year (similar to create_key_figures_table logic)
+        yearly_data = []
+        for year_val in country_data['year'].unique():
+            year_rows = country_data[country_data['year'] == year_val]
+            first_row = year_rows.iloc[0]
+            yearly_data.append({
+                'year': int(year_val),
+                'Output': first_row['output'] if pd.notna(first_row['output']) else None,
+                'Exports': first_row['exports'] if pd.notna(first_row['exports']) else None,
+                'Reserves': first_row['reserves'] if pd.notna(first_row['reserves']) else None
+            })
+        
+        if not yearly_data:
+            print(f"DEBUG: No processed yearly data for country '{country_name}'.")
+            return pd.DataFrame()
+
+        # Convert to DataFrame and sort by year
+        yearly_df = pd.DataFrame(yearly_data)
+        yearly_df = yearly_df.sort_values('year', ascending=False)
+
+        # Calculate R/P Ratio (Year)
+        # Reserves (Billion bbl) / Production ('000 b/d) * 365
+        # Need to ensure units are consistent. 1 Billion bbl = 1,000,000,000 bbl
+        # 1 '000 b/d = 1,000 bbl/day
+        # So Reserves in bbl = yearly_df['Reserves'] * 1,000,000,000
+        # Annual Production in bbl = yearly_df['Output'] * 1,000 * 365
+        # R/P Ratio = (yearly_df['Reserves'] * 1_000_000_000) / (yearly_df['Output'] * 1_000 * 365)
+        # R/P Ratio = (yearly_df['Reserves'] * 1_000_000) / (yearly_df['Output'] * 365) -- simplified
+        # Check for division by zero before calculating
+        yearly_df['R/P Ratio (Year)'] = yearly_df.apply(
+            lambda row: round((row['Reserves'] * 1_000_000) / (row['Output'] * 365)) 
+            if pd.notna(row['Reserves']) and pd.notna(row['Output']) and row['Output'] != 0 
+            else None,
+            axis=1
+        )
+
+        print(f"DEBUG: Returning {yearly_df.shape[0]} rows from map_df for Yearly key figures.")
+        return yearly_df
+
+    else:
+        # For other time periods, try to use key_figures_df as before
+        df = load_key_figures_data()
+        if df.empty:
+            print("DEBUG: load_key_figures_data returned an empty DataFrame for non-Yearly time period.")
+            return pd.DataFrame()
+
+        filtered_df = df[df['country_long_name'] == country_name]
+        print(f"DEBUG: After country filter for non-Yearly, filtered_df shape: {filtered_df.shape}")
+
+        if 'Quarter of Year' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['Quarter of Year'] == time_period]
+            print(f"DEBUG: After time_period filter ({time_period}), filtered_df shape: {filtered_df.shape}")
+        else:
+            print("DEBUG: 'Quarter of Year' column not found in key_figures_df for non-Yearly time period.")
+
+        print(f"DEBUG: Final filtered_df shape before return for non-Yearly: {filtered_df.shape}")
+        return filtered_df
+
 
 def _ensure_production_data_loaded():
     """Ensure production data is loaded - wrapper for load_production_data()"""
@@ -569,6 +657,11 @@ def create_layout():
                 })
             ], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'})
         ]),
+        
+        # Add Download components (hidden UI elements used by callbacks)
+        dcc.Download(id='download-production-csv'),
+        dcc.Download(id='download-ports-csv'),
+        dcc.Download(id='download-key-figures-csv'),
         
         # World Map Section with hover controls (full screen)        
         # Map container with relative positioning for controls overlay
@@ -2017,16 +2110,25 @@ def register_callbacks(dash_app, server):
             sections.append(
                 html.Div([
                     html.Div([
-                        html.H5(
-                            f"{country_name} - Key Figures",
-                            style={
-                                'color': '#fe5000',
-                                'fontWeight': '600',
-                                'fontSize': '18px',
-                                'marginBottom': '20px'
-                            }
-                        ),
-                html.Div([
+                        html.Div([
+                            html.H5(
+                                f"{country_name} - Key Figures",
+                                style={
+                                    'color': '#fe5000',
+                                    'fontWeight': '600',
+                                    'fontSize': '18px',
+                                    'marginBottom': '20px'
+                                }
+                            ),
+                             # Export buttons on the right side
+                            html.Div([
+                                html.Button("Export Key Figures CSV", id='export-key-figures-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                            ], style={'display': 'inline-block', 'float': 'right'})
+                        ], style={'display': 'flex', 'justifyContent': 'space-between', 'width': '100%'}),
+                        html.Div([], style={'clear': 'both'}),  # Clear float
+                        html.Div([
                             create_key_figures_table(country_name, time_period)
                         ], style={'background': 'white', 'padding': '20px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
                     ], className='col-md-12', style={'padding': '15px'})
@@ -2036,15 +2138,24 @@ def register_callbacks(dash_app, server):
             sections.append(
                 html.Div([
                     html.Div([
-                        html.H5(
-                            f"{country_name} Production",
-                            style={
-                                'color': '#fe5000',
-                                'fontWeight': '600',
-                                'fontSize': '18px',
-                                'marginBottom': '20px'
-                            }
-                        ),
+                        html.Div([
+                            html.H5(
+                                f"{country_name} Production",
+                                style={
+                                    'color': '#fe5000',
+                                    'fontWeight': '600',
+                                    'fontSize': '18px',
+                                    'marginBottom': '20px'
+                                }
+                            ),
+                            # Export buttons on the right side
+                            html.Div([
+                                html.Button("Export production CSV", id='export-production-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                            ], style={'display': 'inline-block', 'float': 'right'})
+                        ], style={'display': 'flex', 'justifyContent': 'space-between', 'width': '100%'}),
+                        html.Div([], style={'clear': 'both'}),  # Clear float
                         html.Div([
                             create_production_table(country_name, time_period)
                         ], style={'background': 'white', 'padding': '5px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
@@ -2055,17 +2166,26 @@ def register_callbacks(dash_app, server):
         sections.append(
             html.Div([
                 html.Div([
-                    html.H5(
-                        f"{country_name} - Loading Port Details",
-                        style={
-                            'color': '#fe5000',
-                            'fontWeight': '600',
-                            'fontSize': '18px',
-                            'marginBottom': '20px',
-                            'textAlign': 'center'
-                        }
-                    ),
-            html.Div([
+                    html.Div([
+                        html.H5(
+                            f"{country_name} - Loading Port Details",
+                            style={
+                                'color': '#fe5000',
+                                'fontWeight': '600',
+                                'fontSize': '18px',
+                                'marginBottom': '20px',
+                                'textAlign': 'center'
+                            }
+                        ),
+                        # Export buttons on the right side
+                        html.Div([
+                            html.Button("Export ports CSV", id='export-ports-btn', n_clicks=0, style={'marginLeft': '8px', 'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                        ], style={'display': 'inline-block', 'float': 'right'})
+                    ], style={'display': 'flex', 'justifyContent': 'space-between', 'width': '100%'}),
+                    html.Div([], style={'clear': 'both'}),  # Clear float
+                    html.Div([
                         create_port_details_table(country_name)
                     ], style={'background': 'white', 'padding': '20px 5px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
                 ], className='col-md-12', style={'padding': '0px'})
@@ -2162,6 +2282,99 @@ def register_callbacks(dash_app, server):
         default_val = default_country if default_country else (country_list[0] if country_list else None)
         
         return country_options, default_val
+    
+    # Export production CSV (uses get_production_data)
+    @dash_app.callback(
+        Output('download-production-csv', 'data'),
+        Input('export-production-btn', 'n_clicks'),
+        State('country-select-profile', 'value'),
+        State('time-period-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_production_csv(n_clicks, country, time_period):
+        """Export production data for selected country/time-period as CSV"""
+        ctx = callback_context
+        # Only proceed when the export-production-btn actually triggered the callback
+        if not ctx.triggered or ctx.triggered[0].get('prop_id', '').split('.')[0] != 'export-production-btn':
+            return dash.no_update
+        if not n_clicks or n_clicks == 0:
+            return dash.no_update
+
+        if not country:
+            # nothing selected — do not trigger download
+            return dash.no_update
+        # obtain production DataFrame using existing helper
+        df = get_production_data(country, time_period or 'Monthly')
+        # If the function returns pivoted table or empty, handle gracefully
+        if df is None or (hasattr(df, 'empty') and df.empty):
+            empty = pd.DataFrame()
+            filename = f"{str(country).strip().lower().replace(' ', '_')}_production_{(time_period or 'monthly').lower()}.csv"
+            return dcc.send_data_frame(empty.to_csv, filename, index=False)
+        # Ensure filename is safe
+        safe_country = str(country).strip().lower().replace(' ', '_')
+        filename = f"{safe_country}_production_{(time_period or 'monthly').lower()}.csv"
+        # Use dash helper to stream pandas dataframe as CSV
+        return dcc.send_data_frame(df.to_csv, filename, index=False)
+
+    # Export key figures CSV (uses get_key_figures_data)
+    @dash_app.callback(
+        Output('download-key-figures-csv', 'data'),
+        Input('export-key-figures-btn', 'n_clicks'),
+        State('country-select-profile', 'value'),
+        State('time-period-store', 'data'), # Add time_period as State
+        prevent_initial_call=True
+    )
+    def export_key_figures_csv(n_clicks, country, time_period):
+        """Export key figures data for selected country as CSV"""
+        ctx = callback_context
+        # Only proceed when the export-key-figures-btn actually triggered the callback
+        if not ctx.triggered or ctx.triggered[0].get('prop_id', '').split('.')[0] != 'export-key-figures-btn':
+            return dash.no_update
+        if not n_clicks or n_clicks == 0:
+            return dash.no_update
+
+        if not country:
+            # nothing selected — do not trigger download
+            return dash.no_update
+        # obtain key figures DataFrame using existing helper
+        df = get_key_figures_data(country, time_period or 'Yearly')
+        # If the function returns pivoted table or empty, handle gracefully
+        if df is None or (hasattr(df, 'empty') and df.empty):
+            empty = pd.DataFrame()
+            filename = f"{str(country).strip().lower().replace(' ', '_')}_key_figures_{(time_period or 'yearly').lower()}.csv"
+            return dcc.send_data_frame(empty.to_csv, filename, index=False)
+        # Ensure filename is safe
+        safe_country = str(country).strip().lower().replace(' ', '_')
+        filename = f"{safe_country}_key_figures_{(time_period or 'yearly').lower()}.csv"
+        # Use dash helper to stream pandas dataframe as CSV
+        return dcc.send_data_frame(df.to_csv, filename, index=False)  
+
+    # Export ports CSV (uses get_port_details)
+    @dash_app.callback(
+        Output('download-ports-csv', 'data'),
+        Input('export-ports-btn', 'n_clicks'),
+        State('country-select-profile', 'value'),
+        prevent_initial_call=True
+    )
+    def export_ports_csv(n_clicks, country):
+        """Export ports details for selected country as CSV"""
+        ctx = callback_context
+        # Only proceed when the export-ports-btn actually triggered the callback
+        if not ctx.triggered or ctx.triggered[0].get('prop_id', '').split('.')[0] != 'export-ports-btn':
+            return dash.no_update
+        if not n_clicks or n_clicks == 0:
+            return dash.no_update
+
+        if not country:
+            return dash.no_update
+        df = get_port_details(country)
+        if df is None or (hasattr(df, 'empty') and df.empty):
+            empty = pd.DataFrame()
+            filename = f"{str(country).strip().lower().replace(' ', '_')}_ports.csv"
+            return dcc.send_data_frame(empty.to_csv, filename, index=False)
+        safe_country = str(country).strip().lower().replace(' ', '_')
+        filename = f"{safe_country}_ports.csv"
+        return dcc.send_data_frame(df.to_csv, filename, index=False)
     
     # Clientside callback to inject CSS for hover effects and limit zoom
     dash_app.clientside_callback(
