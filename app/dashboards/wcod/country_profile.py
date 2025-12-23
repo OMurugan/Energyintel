@@ -3,11 +3,15 @@ Country Profile View
 World map-based country profile with detailed statistics
 Replicates Energy Intelligence WCoD Country Profile functionality
 """
-from dash import dcc, html, Input, Output, State, dash_table, dash, callback_context
+from dash import dcc, html, Input, Output, State, callback, dash_table, dash, callback_context
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
+from PIL import Image
+import plotly.io as pio
+from weasyprint import HTML, CSS
+import fitz # Import PyMuPDF for PDF to PNG conversion
 import os
 import json
 import threading
@@ -658,6 +662,58 @@ def create_layout():
             ], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'})
         ]),
         
+        # Dashboard-level Export Dropdown and Buttons
+        dcc.Loading(
+            id='export-loading',
+            type='default',
+            color='#fe5000',
+            children=[
+                html.Div([ # Container for dropdown and collapse button
+                    html.Div(
+                        dcc.Dropdown(
+                            id='dashboard-export-dropdown',
+                            options=[
+                                {'label': 'Export Dashboard PDF', 'value': 'pdf'},
+                                {'label': 'Export Dashboard PNG', 'value': 'png'},
+                                {'label': 'Export Map Chart CSV', 'value': 'raw_chart_csv'}
+                            ],
+                            placeholder='Export Data',
+                            style={
+                                'width': '200px',
+                                'marginRight': '10px',
+                                'fontSize': '13px',
+                                'color': '#2c3e50',
+                                'display': 'inline-block'
+                            },
+                            clearable=False
+                        ),
+                        style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': 'auto', 'padding': '0 0px'}
+                    ),
+                    html.Button(
+                        '−',
+                        id='chart-collapse-button',
+                        n_clicks=0,
+                        style={
+                            'fontSize': '20px',
+                            'fontWeight': 'bold',
+                            'color': '#2c3e50',
+                            'textDecoration': 'none',
+                            'padding': '0 10px',
+                            'border': 'none',
+                            'background': 'transparent',
+                            'cursor': 'pointer',
+                            'marginLeft': '10px'
+                        }
+                    )
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'padding': '0'})
+            ]
+        ),
+
+        # Add Download components for dashboard exports
+        dcc.Download(id="download-dashboard-content"),
+        dcc.Download(id="download-raw-chart-csv"),
+        dcc.Download(id="download-png-report"),
+
         # Add Download components (hidden UI elements used by callbacks)
         dcc.Download(id='download-production-csv'),
         dcc.Download(id='download-ports-csv'),
@@ -1270,6 +1326,7 @@ def create_production_table(country_name, time_period='Yearly'):
     
     if prod_data.empty:
         return dash_table.DataTable(
+            id='production-table', # Added ID
             data=[],
             columns=[],
             style_cell={'textAlign': 'left', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'},
@@ -1539,6 +1596,7 @@ def create_port_details_table(country_name):
     
     if port_data.empty:
         return dash_table.DataTable(
+            id='port-details-table',
             data=[],
             columns=[],
             style_cell={'textAlign': 'left', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'},
@@ -1653,6 +1711,7 @@ def create_port_details_table(country_name):
     ]
     
     return dash_table.DataTable(
+        id='port-details-table', # Added ID
         data=table_data,
         columns=columns,
         style_cell={
@@ -1748,6 +1807,7 @@ def create_key_figures_table(country_name, time_period='Monthly'):
         load_map_data()
         if map_df.empty:
             return dash_table.DataTable(
+                id='key-figures-table', # Added ID
                 data=[],
                 columns=[],
                 style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
@@ -1902,6 +1962,7 @@ def create_key_figures_table(country_name, time_period='Monthly'):
         
         if not table_data:
             return dash_table.DataTable(
+                id='key-figures-table', # Added ID
                 data=[],
                 columns=[],
                 style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
@@ -1924,6 +1985,7 @@ def create_key_figures_table(country_name, time_period='Monthly'):
         load_key_figures_data()
         if key_figures_df.empty:
             return dash_table.DataTable(
+                id='key-figures-table', # Added ID
                 data=[],
                 columns=[],
                 style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
@@ -1970,6 +2032,7 @@ def create_key_figures_table(country_name, time_period='Monthly'):
             })
     
     return dash_table.DataTable(
+        id='key-figures-table', # Added ID
         data=table_data,
         columns=columns,
         style_cell={
@@ -2104,11 +2167,11 @@ def register_callbacks(dash_app, server):
         # Create profile URL
         profile_url = get_profile_url_for_country(country_name)
         
-        sections = []
-        
-        if time_period == 'Yearly':
-            sections.append(
-                html.Div([
+        sections = [
+            # Key Figures Table (always present, conditionally hidden)
+            html.Div(
+                id='key-figures-table-container',
+                children=[
                     html.Div([
                         html.Div([
                             html.H5(
@@ -2129,14 +2192,15 @@ def register_callbacks(dash_app, server):
                         ], style={'display': 'flex', 'justifyContent': 'space-between', 'width': '100%'}),
                         html.Div([], style={'clear': 'both'}),  # Clear float
                         html.Div([
-                            create_key_figures_table(country_name, time_period)
+                            create_key_figures_table(country_name, 'Yearly') # Always create with Yearly data
                         ], style={'background': 'white', 'padding': '20px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
                     ], className='col-md-12', style={'padding': '15px'})
-                ], className='row', style={'margin': '10px 0', 'padding': '0 15px'})
-            )
-        else:
-            sections.append(
-                html.Div([
+                ], className='row', style={'margin': '10px 0', 'padding': '0 15px'}),
+            
+            # Production Table (always present, conditionally hidden)
+            html.Div(
+                id='production-table-container',
+                children=[
                     html.Div([
                         html.Div([
                             html.H5(
@@ -2157,15 +2221,16 @@ def register_callbacks(dash_app, server):
                         ], style={'display': 'flex', 'justifyContent': 'space-between', 'width': '100%'}),
                         html.Div([], style={'clear': 'both'}),  # Clear float
                         html.Div([
-                            create_production_table(country_name, time_period)
+                            create_production_table(country_name, 'Monthly') # Always create with Monthly data
                         ], style={'background': 'white', 'padding': '5px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
                     ], className='col-md-12', style={'padding': '15px'})
-                ], className='row', style={'margin': '10px 0', 'padding': '0 0px'})
-            )
+                ], className='row', style={'margin': '10px 0', 'padding': '0 0px'}
+            ),
         
-        sections.append(
-            html.Div([
-                html.Div([
+            # Port Details Table (always present)
+            html.Div(
+                id='port-details-table-container',
+                children=[
                     html.Div([
                         html.H5(
                             f"{country_name} - Loading Port Details",
@@ -2188,14 +2253,42 @@ def register_callbacks(dash_app, server):
                     html.Div([
                         create_port_details_table(country_name)
                     ], style={'background': 'white', 'padding': '20px 5px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
-                ], className='col-md-12', style={'padding': '0px'})
-            ], className='row', style={'margin': '20px 0', 'padding': '0 15px'})
-        )
+                ], className='col-md-12', style={'padding': '0px'}
+            )
+        ]
         
+        # Conditional display handled by a separate callback
+        # return html.Div([
+        #     # html.Div([], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'}),
+        #     *sections
+        # ]), country_name
         return html.Div([
-            # html.Div([], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'}),
-            *sections
+            sections[0], # Key Figures
+            sections[1], # Production
+            sections[2]  # Port Details
         ]), country_name
+    
+    @dash_app.callback(
+        [Output('key-figures-table-container', 'style'),
+         Output('production-table-container', 'style')],
+        [Input('time-period-select', 'value'),
+         Input('current-submenu', 'data')], # Ensure this only runs when on country-profile page
+        prevent_initial_call=False
+    )
+    def toggle_table_visibility(time_period, current_submenu):
+        if current_submenu != 'country-profile':
+            # Hide both if not on the country-profile page
+            return {'display': 'none'}, {'display': 'none'}
+
+        key_figures_style = {'display': 'block'}
+        production_style = {'display': 'block'}
+
+        if time_period == 'Yearly':
+            production_style['display'] = 'none'
+        else:
+            key_figures_style['display'] = 'none'
+
+        return key_figures_style, production_style
     
     @dash_app.callback(
         Output('world-map-chart', 'figure'),
@@ -2349,6 +2442,97 @@ def register_callbacks(dash_app, server):
         # Use dash helper to stream pandas dataframe as CSV
         return dcc.send_data_frame(df.to_csv, filename, index=False)  
 
+    def generate_html_table(data, title=""): # New helper function
+        if not data:
+            return f"<p>No {title} data available.</p>"
+
+        # Assume data is a list of dictionaries (from Dash DataTable)
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            return f"<p>No {title} data available.</p>"
+
+        html_string = f"<div class=\"dash-table-container\">\n<h3>{title}</h3>\n<table>\n<thead>\n<tr>"
+        
+        # Generate headers dynamically
+        for col in df.columns:
+            html_string += f"<th>{col}</th>"
+        html_string += "</tr>\n</thead>\n<tbody>"
+
+        # Generate rows
+        for index, row in df.iterrows():
+            html_string += "<tr>"
+            for col in df.columns:
+                cell_value = row[col]
+                if pd.isna(cell_value):
+                    cell_value = ''
+                html_string += f"<td>{cell_value}</td>"
+            html_string += "</tr>"
+        
+        html_string += "</tbody>\n</table>\n</div>"
+        return html_string
+
+    # Helper to generate full HTML content for PDF/PNG
+    def generate_full_dashboard_html(country_name, time_period, map_figure_b64, key_figures_data, production_data, port_details_data):
+        # Base HTML structure
+        html_content = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>WCOD Country Profile Report - {country_name}</title>
+            <style>
+                body {{ margin: 0; padding: 0; font-family: 'Arial', sans-serif; background-color: #f8f9fa; }}
+                .container {{ width: 100%; max-width: 1200px; margin: 0 auto; padding: 20px; box-sizing: border-box; background-color: white; }}
+                .header {{ text-align: center; margin-bottom: 20px; }}
+                .header h1 {{ color: #2c3e50; font-size: 24px; margin: 0; }}
+                .section {{ margin-bottom: 30px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: white; }}
+                .section h2 {{ color: #2c3e50; font-size: 18px; margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }}
+                .plotly-graph-div {{ width: 100% !important; height: auto !important; margin: 0 auto; min-height: 400px; }}
+                .dash-table-container table {{ width: 100% !important; border-collapse: collapse; margin-top: 10px; }}
+                .dash-table-container th, .dash-table-container td {{ border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }}
+                .dash-table-container th {{ background-color: #f2f2f2; font-weight: bold; }}
+                .no-break {{ page-break-inside: avoid; }}
+                @page {{ size: A4; margin: 10mm; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>WCOD Country Profile Report</h1>
+                    <p>Country: {country_name} | Time Period: {time_period}</p>
+                </div>
+                <div class="section no-break">
+                    <h2>World Map</h2>
+                    <img src="data:image/png;base64,{map_figure_b64}" style="width:100%; height:auto; display:block;" alt="World Map Chart">
+                </div>
+                <div class="section no-break">
+                    <h2>Key Figures</h2>
+                    {key_figures_html}
+                </div>
+                <div class="section no-break">
+                    <h2>Production Data</h2>
+                    {production_html}
+                </div>
+                <div class="section no-break">
+                    <h2>Port Details</h2>
+                    {port_details_html}
+                </div>
+            </div>
+        </body>
+        </html>
+        """.format(
+            country_name=country_name,
+            time_period=time_period,
+            map_figure_b64=map_figure_b64, # Placeholder, will be filled later
+            key_figures_html=generate_html_table(key_figures_data, 'Key Figures'),
+            production_html=generate_html_table(production_data, 'Production Data'),
+            port_details_html=generate_html_table(port_details_data, 'Port Details')
+        )
+        return html_content
+
+
     # Export ports CSV (uses get_port_details)
     @dash_app.callback(
         Output('download-ports-csv', 'data'),
@@ -2376,6 +2560,136 @@ def register_callbacks(dash_app, server):
         filename = f"{safe_country}_ports.csv"
         return dcc.send_data_frame(df.to_csv, filename, index=False)
     
+    # Dashboard-level export callback (PDF, PNG, Map CSV)
+    @dash_app.callback(
+        Output('download-dashboard-content', 'data'),
+        Output('download-raw-chart-csv', 'data'),
+        Output('download-png-report', 'data'),
+        Input('dashboard-export-dropdown', 'value'),
+        State('country-select-profile', 'value'),
+        State('time-period-select', 'value'),
+        State('world-map-chart', 'figure'),
+        State('key-figures-table', 'data'), # Assuming this ID exists for the table
+        State('production-table', 'data'), # Assuming this ID exists for the table
+        State('port-details-table', 'data'), # Assuming this ID exists for the table
+        prevent_initial_call=True
+    )
+    def export_dashboard_data(selected_export_type, country, time_period, map_figure, key_figures_data, production_data, port_details_data):
+        # Return no_update for all outputs if no export type is selected
+        if selected_export_type is None:
+            return dash.no_update, dash.no_update, dash.no_update
+
+        # Initialize all outputs to no_update
+        output_pdf = dash.no_update
+        output_csv = dash.no_update
+        output_png = dash.no_update
+
+        if selected_export_type == 'raw_chart_csv':
+            # Extract data from map_figure for CSV
+            all_map_data_frames = []
+            if map_figure and 'data' in map_figure:
+                for trace in map_figure['data']:
+                    if trace['type'] == 'choroplethmapbox' and 'text' in trace:
+                        # For countries, take the text and locations
+                        df_countries = pd.DataFrame({'Country': trace['text'], 'ISO': trace['locations']})
+                        all_map_data_frames.append(df_countries)
+                    elif trace['type'] == 'scattermapbox' and 'lat' in trace and 'lon' in trace:
+                        # For ports, extract lat, lon, name, and profile URL from customdata
+                        df_ports = pd.DataFrame({
+                            'Port Name': trace['text'],
+                            'Latitude': trace['lat'],
+                            'Longitude': trace['lon'],
+                            # Assuming customdata has profile URL as the first element
+                            'Profile URL': [item[0] if item else '' for item in trace['customdata']] if 'customdata' in trace else [''] * len(trace['lat'])
+                        })
+                        all_map_data_frames.append(df_ports)
+            
+            if all_map_data_frames:
+                map_data_for_csv = pd.concat(all_map_data_frames, ignore_index=True)
+                # Drop duplicates across all columns to ensure unique rows
+                map_data_for_csv = map_data_for_csv.drop_duplicates().reset_index(drop=True)
+            else:
+                map_data_for_csv = pd.DataFrame(columns=['Country', 'ISO', 'Port Name', 'Latitude', 'Longitude', 'Profile URL'])
+            
+            if map_data_for_csv.empty:
+                print("Warning: No map data available for CSV export.")
+                # Create an empty DataFrame to prevent errors during dcc.send_data_frame
+                map_data_for_csv = pd.DataFrame(columns=['Country', 'ISO', 'Port Name', 'Latitude', 'Longitude', 'Profile URL'])
+            
+            filename = f"{str(country).strip().lower().replace(' ', '_')}_map_data.csv"
+            output_csv = dcc.send_data_frame(map_data_for_csv.to_csv, filename=filename, index=False)
+
+        elif selected_export_type in ['pdf', 'png']:
+            # Generate map image first
+            map_image_b64 = ""
+            if map_figure:
+                try:
+                    map_image_bytes = pio.to_image(map_figure, format='png', width=1200, height=600, scale=2) # Higher resolution
+                    map_image_b64 = base64.b64encode(map_image_bytes).decode('utf-8')
+                except Exception as e:
+                    print(f"ERROR: Failed to convert map figure to image: {e}")
+                    map_image_b64 = ""
+
+            # Generate full HTML content
+            full_html = generate_full_dashboard_html(country, time_period, map_image_b64, key_figures_data, production_data, port_details_data)
+
+            if selected_export_type == 'pdf':
+                try:
+                    # Use WeasyPrint to convert HTML to PDF
+                    pdf = HTML(string=full_html).write_pdf(stylesheets=[CSS(string='body { margin: 0; padding: 0; }')])
+                    output_pdf = dcc.send_bytes(pdf, filename=f"country_profile_{country.replace(' ', '_')}.pdf")
+                except Exception as e:
+                    print(f"ERROR: Failed to generate PDF: {e}")
+                    output_pdf = dash.no_update
+
+            elif selected_export_type == 'png':
+                try:
+                    # First, generate PDF in memory using WeasyPrint
+                    pdf_bytes = HTML(string=full_html).write_pdf(stylesheets=[CSS(string='body { margin: 0; padding: 0; }')])
+                    
+                    # Use PyMuPDF (fitz) to convert PDF to PNG, handling multiple pages
+                    doc = fitz.open("pdf", pdf_bytes)  # Open PDF from memory
+                    
+                    # List to hold images of each page
+                    page_images = []
+                    
+                    for page_num in range(len(doc)):
+                        page = doc[page_num] # Get each page
+                        
+                        # Render page to PNG. Increase DPI for higher resolution.
+                        pix = page.get_pixmap(matrix=fitz.Matrix(300 / 72, 300 / 72)) # 300 DPI
+                        page_images.append(Image.open(io.BytesIO(pix.tobytes("png"))))
+                    
+                    doc.close()
+
+                    if not page_images:
+                        raise ValueError("No pages rendered for PNG export.")
+
+                    # Combine images vertically
+                    widths, heights = zip(*(i.size for i in page_images))
+                    total_height = sum(heights)
+                    max_width = max(widths)
+                    
+                    combined_image = Image.new('RGB', (max_width, total_height))
+                    
+                    y_offset = 0
+                    for img in page_images:
+                        combined_image.paste(img, (0, y_offset))
+                        y_offset += img.size[1]
+                    
+                    img_byte_arr = io.BytesIO()
+                    combined_image.save(img_byte_arr, format='PNG')
+                    
+                    output_png = dcc.send_bytes(img_byte_arr.getvalue(), filename=f"country_profile_{country.replace(' ', '_')}.png")
+
+                except Exception as e:
+                    print(f"ERROR: Failed to generate multi-page PNG report using PyMuPDF: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    output_png = dash.no_update
+        
+        return output_pdf, output_csv, output_png
+
     # Clientside callback to inject CSS for hover effects and limit zoom
     dash_app.clientside_callback(
         """
