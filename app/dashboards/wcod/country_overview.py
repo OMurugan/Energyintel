@@ -79,7 +79,7 @@ WITH base AS (
         EXTRACT(DAY FROM A."yr")::INT               AS "Day of Year",
         A."output",
         A."exports"
-    FROM dev.fact_wcod_country A
+    FROM fact_wcod_country A
     WHERE
         EXTRACT(YEAR FROM A."yr") = 2024
         AND A."to_be_deleted" IS NULL
