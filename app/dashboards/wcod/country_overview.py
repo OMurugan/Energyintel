@@ -494,22 +494,22 @@ def create_layout():
                     dcc.Download(id="download-raw-chart-csv"),
                     dcc.Download(id="download-raw-table-csv"),
                     dcc.Download(id="download-png-report"),
-                    html.Button(
-                        '−',
-                        id='chart-collapse-button',
-                        n_clicks=1,
-                        style={
-                            'fontSize': '20px',
-                            'fontWeight': 'bold',
-                            'color': '#2c3e50',
-                            'textDecoration': 'none',
-                            'padding': '0 10px',
-                            'border': 'none',
-                            'background': 'transparent',
-                            'cursor': 'pointer',
-                            'marginLeft': '10px' # Added margin for separation
-                        }
-                    )
+                    # html.Button(
+                    #     '−',
+                    #     id='chart-collapse-button',
+                    #     n_clicks=1,
+                    #     style={
+                    #         'fontSize': '20px',
+                    #         'fontWeight': 'bold',
+                    #         'color': '#2c3e50',
+                    #         'textDecoration': 'none',
+                    #         'padding': '0 10px',
+                    #         'border': 'none',
+                    #         'background': 'transparent',
+                    #         'cursor': 'pointer',
+                    #         'marginLeft': '10px' # Added margin for separation
+                    #     }
+                    # )
                 ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'padding': '0'})
             ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '15px', 'background': '#f8f9fa', 'borderBottom': '1px solid #dee2e6'}),
             dcc.Loading(
@@ -640,7 +640,14 @@ def create_layout():
                                     "width": 1280,
                                     "scale": 2
                                 },
-                                'modeBarButtonsToRemove': ['lasso2d', 'select2d', 'hoverClosestCartesian', 'hoverCompareCartesian']
+                                "displaylogo": False,
+                                "displayModeBar": True,
+                                'modeBarButtonsToRemove': [
+                                    'zoom2d', 'pan2d', 'select2d', 'lasso2d', 
+                                    'zoomIn2d', 'zoomOut2d', 'autoScale2d', 
+                                    'hoverClosestCartesian', 'hoverCompareCartesian', 
+                                    'toggleSpikelines', 'toggleSpikeLines', 'spikelines'
+                                ]
                             }
                         )
                     ], id='chart-collapse-content', style={'padding': '0', 'background': 'white', 'border': '1px solid #dee2e6', 'borderRadius': '4px', 'overflow': 'hidden'}),
@@ -779,7 +786,7 @@ def create_layout():
                     page_action='none',
                     style_cell={
                         'textAlign': 'right',
-                        'padding': '8px',
+                        'padding': '0px 2px',
                         'fontSize': '12px',
                         'fontFamily': 'Arial, sans-serif',
                         'border': '1px solid #dee2e6',
@@ -944,7 +951,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
             showlegend=True,
             legendgroup='production',
             offsetgroup='production',
-            width=0.4
+            width=0.3
         ))
 
     hovertemplate_exports = (
@@ -977,7 +984,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
         showlegend=True,
         legendgroup='exports',
         offsetgroup='exports',
-        width=0.4
+        width=0.3
     ))
 
     max_export = sorted_df['Exports_Value'].max() if len(sorted_df) else 0
@@ -1024,7 +1031,9 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
             linecolor='#e0e0e0',  # Light gray color
             linewidth=1,
             title_font=dict(size=12, family='Arial, sans-serif', color='#2c3e50'),
-            tickfont=dict(size=11, family='Arial, sans-serif', color='#2c3e50')
+            tickfont=dict(size=11, family='Arial, sans-serif', color='#2c3e50'),
+            showspikes=False,
+            spikethickness=0
         ),
         yaxis=dict(
             categoryorder='array',

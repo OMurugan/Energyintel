@@ -1938,10 +1938,10 @@ def register_callbacks(dash_app, server):
                     opt["profile_url"] = stream_to_url[s]
                 options.append(opt)
             
-            # Select all streams by default so charts display complete totals
+            # Default: select all streams (default mode - no filtering)
             default_value = available_streams[:]
             
-            print(f"DEBUG: Returning {len(options)} options and {len(default_value)} default values")
+            print(f"DEBUG: Returning {len(options)} options and {len(default_value)} default values (all selected by default)")
             return options, default_value
             
         except Exception as e:
@@ -1981,7 +1981,7 @@ def register_callbacks(dash_app, server):
         prevent_initial_call=False
     )
     def update_profiled_streams_with_colors(selected_streams, stream_options, chart_figure, active_tab):
-        """Create combined checklist with checkbox and color badge for each stream - single list with both"""
+        """Create clickable stream buttons with highlight/dimmed selection - no checkboxes"""
         _ensure_color_maps()
         if not stream_options:
             return html.Div("No streams available")
@@ -2035,9 +2035,23 @@ def register_callbacks(dash_app, server):
                     color_map[stream_name] = stream_color
             print(f"DEBUG COLOR: After populating, color_map has {len(color_map)} entries, normalized_color_map has {len(normalized_color_map)} entries")
         
-        # Create combined checklist items with checkbox and color badge
-        checklist_items = []
+        # Create clickable stream buttons with highlight/dimmed states
+        stream_items = []
         selected_set = set(selected_streams) if selected_streams else set()
+        
+        # Helper function to dim a color (reduce opacity/brightness)
+        def dim_color(color_hex, opacity=0.3):
+            """Convert color to a dimmed version with reduced opacity"""
+            if isinstance(color_hex, str) and color_hex.startswith('#'):
+                try:
+                    r = int(color_hex[1:3], 16)
+                    g = int(color_hex[3:5], 16)
+                    b = int(color_hex[5:7], 16)
+                    # Create rgba with reduced opacity
+                    return f"rgba({r}, {g}, {b}, {opacity})"
+                except:
+                    return color_hex
+            return color_hex
         
         for opt in stream_options:
             stream = opt["value"]
@@ -2046,7 +2060,7 @@ def register_callbacks(dash_app, server):
                 stream = str(stream).strip()
             else:
                 stream = ""
-            is_checked = stream in selected_set
+            is_selected = stream in selected_set
             profile_url = opt.get("profile_url")  # Get profile_url from options
             
             # Get color for this stream - check multiple sources
@@ -2094,95 +2108,128 @@ def register_callbacks(dash_app, server):
             elif isinstance(color, tuple):
                 color_hex = f"rgb({color[0]}, {color[1]}, {color[2]})"
             
-            if tab_value == "monthly" and stream in ["Agbami", "Akpo Blend", "Alaska North Slope", "Algerian Condensate", "Al-shaheen", "Alvheim"]:
-                print(f"DEBUG COLOR: Final color_hex for '{stream}': '{color_hex}' (type: {type(color_hex)})")
+            # Apply highlight/dimmed styling based on selection
+            if is_selected:
+                # Highlighted: use full color, solid background with white text
+                bg_color = color_hex
+                text_color = "#ffffff"  # Always white text for highlighted items
+                border_color = "#000000"  # Black border for highlighted
+                border_width = "1px"
+            else:
+                # Dimmed: use lighter/muted background
+                # Convert to lighter version by mixing with white
+                if isinstance(color_hex, str) and color_hex.startswith('#'):
+                    try:
+                        r = int(color_hex[1:3], 16)
+                        g = int(color_hex[3:5], 16)
+                        b = int(color_hex[5:7], 16)
+                        # Mix with white (80% white, 20% original color) for dimmed effect
+                        r_dimmed = int(r * 0.2 + 255 * 0.8)
+                        g_dimmed = int(g * 0.2 + 255 * 0.8)
+                        b_dimmed = int(b * 0.2 + 255 * 0.8)
+                        bg_color = f"rgb({r_dimmed}, {g_dimmed}, {b_dimmed})"
+                    except:
+                        bg_color = "#e0e0e0"  # Fallback light gray
+                else:
+                    bg_color = "#e0e0e0"  # Fallback light gray
+                text_color = "#ffffff"  # White text for dimmed items too
+                border_color = "#ccc"  # Light border for dimmed
+                border_width = "1px"
             
-            # Check if color is dark for text contrast
-            is_dark = False
-            if isinstance(color_hex, str) and color_hex.startswith('#'):
-                try:
-                    r = int(color_hex[1:3], 16)
-                    g = int(color_hex[3:5], 16)
-                    b = int(color_hex[5:7], 16)
-                    brightness = (r * 299 + g * 587 + b * 114) / 1000
-                    is_dark = brightness < 128
-                except Exception as e:
-                    if tab_value == "monthly":
-                        print(f"DEBUG COLOR: Error parsing color '{color_hex}' for '{stream}': {e}")
-                    pass
-            
-            # Create stream name element - with link if profile_url is available
-            stream_name_style = {
-                "fontSize": "10px",
+            # Create stream button style - highlighted or dimmed
+            stream_button_style = {
+                "fontSize": "12px",
                 "verticalAlign": "middle",
-                "backgroundColor": color_hex,
-                "padding": "1px 4px",
-                "borderRadius": "3px",
-                "display": "inline-block",
-                "minWidth": "100px",
-                "textAlign": "center",
-                "color": "#ffffff" if is_dark else "#2c3e50",
-                "fontWeight": "500"
+                "backgroundColor": bg_color,
+                "padding": "8px 12px",
+                "borderRadius": "0px",  # No border radius to match fig2
+                "display": "block",
+                "width": "100%",
+                "textAlign": "left",
+                "color": text_color,
+                "fontWeight": "500",
+                "cursor": "pointer",
+                "border": f"{border_width} solid {border_color}",
+                "marginBottom": "0px",
+                "transition": "all 0.2s ease",
+                "outline": "none"  # Remove focus outline
             }
             
-            if profile_url:
-                # Create clickable link
-                stream_name_element = html.A(
-                    stream,
-                    href=profile_url,
-                    target="_blank",
-                    style={
-                        **stream_name_style,
-                        "textDecoration": "none",
-                        "cursor": "pointer"
-                    }
-                )
-            else:
-                # Create non-clickable span
-                stream_name_element = html.Span(stream, style=stream_name_style)
-            
-            # Create combined checkbox and color badge in one item using dcc.Checklist
-            checklist_items.append(
-                html.Div([
-                    dcc.Checklist(
-                        id={"type": "stream-checkbox", "stream": stream},
-                        options=[{"label": "", "value": stream}],
-                        value=[stream] if is_checked else [],
-                        style={"display": "inline-block", "marginRight": "8px", "verticalAlign": "middle"},
-                        inputStyle={"marginRight": "5px", "cursor": "pointer", "width": "16px", "height": "16px"},
-                        labelStyle={"margin": "0", "display": "flex", "alignItems": "center"}
-                    ),
-                    stream_name_element
-                ], style={
-                    "display": "flex",
-                    "alignItems": "center",
-                    "marginBottom": "2px",  # Reduced from 6px
-                    "padding": "0"  # Reduced from 2px 0
-                })
+            # Create clickable button (don't use profile_url for selection - handle clicks separately)
+            stream_button = html.Button(
+                stream,
+                id={"type": "stream-button", "stream": stream},
+                n_clicks=0,
+                style=stream_button_style
             )
+            
+            stream_items.append(stream_button)
         
-        return checklist_items
+        return stream_items
     
     @dash_app.callback(
         Output("profiled-streams", "value", allow_duplicate=True),
-        [Input({"type": "stream-checkbox", "stream": ALL}, "value")],
-        [State({"type": "stream-checkbox", "stream": ALL}, "id")],
+        [Input({"type": "stream-button", "stream": ALL}, "n_clicks")],
+        [State({"type": "stream-button", "stream": ALL}, "id"),
+         State("profiled-streams", "value")],
         prevent_initial_call=True
     )
-    def update_profiled_streams_from_checkboxes(checkbox_values, checkbox_ids):
-        """Update main profiled-streams checklist when individual checkboxes change"""
-        if not checkbox_values or not checkbox_ids:
+    def update_profiled_streams_from_buttons(button_clicks, button_ids, current_selected):
+        """Update profiled-streams selection when stream buttons are clicked - toggle behavior"""
+        from dash import ctx
+        
+        if not ctx.triggered:
             return no_update
         
-        # Collect all checked streams
-        checked_streams = []
-        for idx, value in enumerate(checkbox_values):
-            if value and len(value) > 0:
-                stream_id = checkbox_ids[idx]
-                if isinstance(stream_id, dict) and "stream" in stream_id:
-                    checked_streams.append(stream_id["stream"])
+        # Find which button was clicked using ctx.triggered
+        clicked_stream = None
+        triggered_id = ctx.triggered[0]["prop_id"]
         
-        return checked_streams
+        # Parse the triggered_id to get the stream name
+        # Format: '{"type":"stream-button","stream":"Arco"}.n_clicks'
+        if 'stream-button' in triggered_id:
+            try:
+                import json
+                # Extract the JSON part
+                start_idx = triggered_id.find('{')
+                end_idx = triggered_id.find('}', start_idx) + 1
+                if start_idx >= 0 and end_idx > start_idx:
+                    id_dict = json.loads(triggered_id[start_idx:end_idx])
+                    if isinstance(id_dict, dict) and "stream" in id_dict:
+                        clicked_stream = id_dict["stream"]
+            except Exception as e:
+                print(f"Error parsing triggered_id: {e}")
+        
+        if not clicked_stream:
+            return no_update
+        
+        # Get all available streams from button_ids
+        all_streams = []
+        if button_ids:
+            for button_id in button_ids:
+                if isinstance(button_id, dict) and "stream" in button_id:
+                    all_streams.append(button_id["stream"])
+        
+        # Get current selection
+        current_selected = current_selected if current_selected else []
+        current_set = set(current_selected)
+        all_set = set(all_streams)
+        
+        # Determine if we're in default mode (all streams selected)
+        is_default_mode = (current_set == all_set and len(all_set) > 0) or len(current_set) == 0
+        
+        # Toggle behavior:
+        # - If in default mode (all selected): clicking a stream selects only that stream
+        # - If one stream is selected: clicking the same stream returns to default (all selected)
+        if is_default_mode:
+            # Default mode: clicking any stream selects only that stream
+            return [clicked_stream]
+        elif len(current_set) == 1 and clicked_stream in current_set:
+            # One stream selected and clicking the same stream: return to default (all selected)
+            return sorted(all_streams) if all_streams else []
+        else:
+            # Clicking a different stream when one is already selected: select the clicked stream
+            return [clicked_stream]
     
     @dash_app.callback(
         [Output("year-controls", "style"),
@@ -2564,17 +2611,40 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                # Apply profiled streams filter ONLY if streams are selected
-                # If no streams selected (profiled is None or empty), show ALL available streams
+                # Apply profiled streams filter - check if all streams are selected (default mode)
+                # If all streams selected, don't filter (show all streams)
+                # If a specific stream is selected, filter to show only that stream
+                is_single_stream_selected = False
+                selected_stream = None
                 if profiled and len(profiled) > 0:
-                    profiled_in_data = [s for s in profiled if s in df["Stream"].values]
-                    if profiled_in_data:
-                        df = df[df["Stream"].isin(profiled_in_data)].copy()
-                        print(f"DEBUG BREAKDOWN YEARLY: After profiled filter ({len(profiled_in_data)} streams), df length={len(df)}")
+                    # Check if all available streams are selected (default mode)
+                    profiled_set = set(profiled)
+                    available_set = set(available_streams) if available_streams else set()
+                    
+                    # If all streams are selected, don't filter (show all)
+                    if profiled_set == available_set and len(available_set) > 0:
+                        print(f"DEBUG BREAKDOWN YEARLY: All streams selected (default mode), showing all streams")
+                        # Don't filter - show all streams
+                        is_single_stream_selected = False
+                    elif len(profiled) == 1:
+                        # Single stream selected: filter to show only that stream
+                        selected_stream = profiled[0]
+                        is_single_stream_selected = True
+                        if selected_stream in df["Stream"].values:
+                            df = df[df["Stream"] == selected_stream].copy()
+                            print(f"DEBUG BREAKDOWN YEARLY: After profiled filter (selected: {selected_stream}), df length={len(df)}")
+                        else:
+                            print(f"DEBUG BREAKDOWN YEARLY: Selected stream '{selected_stream}' not found in data")
+                            is_single_stream_selected = False
                     else:
-                        print(f"DEBUG BREAKDOWN YEARLY: No profiled streams found in data, showing all available streams")
+                        # Multiple streams selected (shouldn't happen in single selection mode, but handle it)
+                        df = df[df["Stream"].isin(profiled)].copy()
+                        print(f"DEBUG BREAKDOWN YEARLY: After profiled filter ({len(profiled)} streams), df length={len(df)}")
+                        is_single_stream_selected = False
                 else:
-                    print(f"DEBUG BREAKDOWN YEARLY: No profiled streams selected, showing all available streams")
+                    # If no stream selected, show all streams (default mode)
+                    print(f"DEBUG BREAKDOWN YEARLY: No stream selected, showing all streams (default mode)")
+                    is_single_stream_selected = False
                 
                 # Group by year and stream, sum values
                 # Include Country in aggregation if available for hover template
@@ -2641,91 +2711,127 @@ def register_callbacks(dash_app, server):
                 
                 print(f"DEBUG BREAKDOWN YEARLY: Color map: {color_map}")
                 
-                # Ensure we have data for all years (even if empty) for proper X-axis display
-                # Create a complete year-stream combination dataframe
+                # Handle years based on selection mode
                 all_years_list = [str(y) for y in range(2006, 2025)]
                 all_streams_list = order_streams_list(agg["Stream"].unique().tolist(), tab="yearly")
                 
-                print(f"DEBUG BREAKDOWN YEARLY: Creating complete combo - years: {len(all_years_list)}, streams: {len(all_streams_list)}")
-                
-                # Create complete combination
-                complete_combos = pd.DataFrame(list(itertools.product(all_years_list, all_streams_list)), 
-                                               columns=["year", "Stream"])
-                
-                # Merge with actual data
-                agg_complete = complete_combos.merge(agg, on=["year", "Stream"], how="left")
-                agg_complete["value"] = agg_complete["value"].fillna(0)
-                
-                print(f"DEBUG BREAKDOWN YEARLY: Complete data shape: {agg_complete.shape}")
-                print(f"DEBUG BREAKDOWN YEARLY: Years in complete data: {sorted(agg_complete['year'].unique())}")
-                print(f"DEBUG BREAKDOWN YEARLY: Streams in complete data: {agg_complete['Stream'].unique().tolist()}")
-                print(f"DEBUG BREAKDOWN YEARLY: Non-zero records: {len(agg_complete[agg_complete['value'] > 0])}")
-                
-                # IMPORTANT: For X-axis to show all years, we need to ensure each year appears in the data
-                # Plotly will only show categories that exist in the data, so we need to include all years
-                # We'll filter out zero values for individual stream-year combos, but ensure each year
-                # has at least one entry (even if it's a tiny value) so it appears on the X-axis
-                
-                agg_nonzero = agg_complete.copy()
-                
-                years_in_data = set(agg_nonzero["year"].unique())
-                missing_years = [y for y in all_years_list if y not in years_in_data]
-                
-                print(f"DEBUG BREAKDOWN YEARLY: Years with non-zero data: {sorted(years_in_data)}")
-                print(f"DEBUG BREAKDOWN YEARLY: Missing years (will add placeholder): {missing_years}")
-                
-                # For years that have no data at all, add a placeholder entry so they appear on X-axis
-                # Use a very small value (0.0001) that won't be visible but ensures the year appears
-                if missing_years and len(all_streams_list) > 0:
-                    placeholder_data = pd.DataFrame({
-                        "year": missing_years,
-                        "Stream": [all_streams_list[0]] * len(missing_years),
-                        "value": [0.0001] * len(missing_years)  # Tiny invisible value
-                    })
-                    # Add Country column to placeholder if Country exists in agg_complete
-                    if "Country" in agg_complete.columns:
-                        # Get Country from the first non-null value in agg_complete, or use empty string
-                        default_country = agg_complete["Country"].dropna().iloc[0] if not agg_complete["Country"].dropna().empty else ""
-                        placeholder_data["Country"] = default_country
-                    agg_for_chart = pd.concat([agg_nonzero, placeholder_data], ignore_index=True)
-                    print(f"DEBUG BREAKDOWN YEARLY: Added placeholder entries for {len(missing_years)} years")
+                if is_single_stream_selected:
+                    # Single stream selected: Only show years that have data for this stream
+                    # Filter out years with zero or no data
+                    agg_with_data = agg[agg["value"] > 0].copy()
+                    years_with_data = sorted(agg_with_data["year"].unique().tolist())
+                    
+                    print(f"DEBUG BREAKDOWN YEARLY: Single stream selected ({selected_stream})")
+                    print(f"DEBUG BREAKDOWN YEARLY: Years with data: {years_with_data}")
+                    
+                    # Only include years that have actual data
+                    agg_for_chart = agg_with_data.copy()
+                    
+                    # Update years_sorted to only include years with data
+                    years_sorted = years_with_data
+                    
+                    print(f"DEBUG BREAKDOWN YEARLY: Filtered to years with data: {years_sorted} ({len(years_sorted)} years)")
                 else:
-                    agg_for_chart = agg_nonzero
+                    # Default mode (all streams): Show all years from 2006-2024
+                    print(f"DEBUG BREAKDOWN YEARLY: Creating complete combo - years: {len(all_years_list)}, streams: {len(all_streams_list)}")
+                    
+                    # Create complete combination
+                    complete_combos = pd.DataFrame(list(itertools.product(all_years_list, all_streams_list)), 
+                                                   columns=["year", "Stream"])
+                    
+                    # Merge with actual data
+                    agg_complete = complete_combos.merge(agg, on=["year", "Stream"], how="left")
+                    agg_complete["value"] = agg_complete["value"].fillna(0)
+                    
+                    print(f"DEBUG BREAKDOWN YEARLY: Complete data shape: {agg_complete.shape}")
+                    print(f"DEBUG BREAKDOWN YEARLY: Years in complete data: {sorted(agg_complete['year'].unique())}")
+                    print(f"DEBUG BREAKDOWN YEARLY: Streams in complete data: {agg_complete['Stream'].unique().tolist()}")
+                    print(f"DEBUG BREAKDOWN YEARLY: Non-zero records: {len(agg_complete[agg_complete['value'] > 0])}")
+                    
+                    # IMPORTANT: For X-axis to show all years, we need to ensure each year appears in the data
+                    # Plotly will only show categories that exist in the data, so we need to include all years
+                    # We'll filter out zero values for individual stream-year combos, but ensure each year
+                    # has at least one entry (even if it's a tiny value) so it appears on the X-axis
+                    
+                    agg_nonzero = agg_complete.copy()
+                    
+                    years_in_data = set(agg_nonzero["year"].unique())
+                    missing_years = [y for y in all_years_list if y not in years_in_data]
+                    
+                    print(f"DEBUG BREAKDOWN YEARLY: Years with non-zero data: {sorted(years_in_data)}")
+                    print(f"DEBUG BREAKDOWN YEARLY: Missing years (will add placeholder): {missing_years}")
+                    
+                    # For years that have no data at all, add a placeholder entry so they appear on X-axis
+                    # Use a very small value (0.0001) that won't be visible but ensures the year appears
+                    if missing_years and len(all_streams_list) > 0:
+                        placeholder_data = pd.DataFrame({
+                            "year": missing_years,
+                            "Stream": [all_streams_list[0]] * len(missing_years),
+                            "value": [0.0001] * len(missing_years)  # Tiny invisible value
+                        })
+                        # Add Country column to placeholder if Country exists in agg_complete
+                        if "Country" in agg_complete.columns:
+                            # Get Country from the first non-null value in agg_complete, or use empty string
+                            default_country = agg_complete["Country"].dropna().iloc[0] if not agg_complete["Country"].dropna().empty else ""
+                            placeholder_data["Country"] = default_country
+                        agg_for_chart = pd.concat([agg_nonzero, placeholder_data], ignore_index=True)
+                        print(f"DEBUG BREAKDOWN YEARLY: Added placeholder entries for {len(missing_years)} years")
+                    else:
+                        agg_for_chart = agg_nonzero
+                    
+                    years_sorted = sorted(all_years_list)  # 2006 to 2024 (ascending order)
                 
                 print(f"DEBUG BREAKDOWN YEARLY: Final chart data shape: {agg_for_chart.shape}")
                 print(f"DEBUG BREAKDOWN YEARLY: Years in chart data: {sorted(agg_for_chart['year'].unique())}")
-                print(f"DEBUG BREAKDOWN YEARLY: All years should be: {all_years_list}")
+                print(f"DEBUG BREAKDOWN YEARLY: Years for X-axis: {years_sorted}")
                 if len(agg_for_chart) > 0:
                     print(f"DEBUG BREAKDOWN YEARLY: Sample of chart data:\n{agg_for_chart.head(20)}")
                 
                 if len(agg_for_chart) == 0:
-                    print("DEBUG BREAKDOWN YEARLY: No data, creating empty chart with all years on X-axis")
-                    # Create empty chart but with all years on X-axis - use first stream with tiny values
-                    first_stream = all_streams_list[0] if all_streams_list else "None"
-                    empty_df = pd.DataFrame({
-                        "year": all_years_list,
-                        "value": [0.0001] * len(all_years_list),
-                        "Stream": [first_stream] * len(all_years_list)
-                    })
-                    fig = px.bar(empty_df, x="year", y="value", color="Stream", 
-                                labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
-                    fig.update_layout(
-                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
-                        xaxis_title="Year",
-                        yaxis_title="Production Volume ('000 b/d)",
-                        barmode="stack",
-                        plot_bgcolor="white",
-                        paper_bgcolor="white",
-                        xaxis=dict(
-                            type="category",
-                            categoryorder="array",
-                            categoryarray=years_sorted,
-                            tickmode='array',
-                            tickvals=years_sorted,
-                            ticktext=years_sorted
-                        ),
-                        yaxis=dict(range=[0, 100])  # Small range for invisible bars
-                    )
+                    print("DEBUG BREAKDOWN YEARLY: No data, creating empty chart")
+                    # Create empty chart - use years_sorted which is already set based on selection mode
+                    if is_single_stream_selected:
+                        # For single stream with no data, show empty chart with no years
+                        fig = go.Figure()
+                        fig.add_annotation(text=f"No data available for {selected_stream}", 
+                                         xref="paper", yref="paper",
+                                         x=0.5, y=0.5, showarrow=False,
+                                         font=dict(size=14, color='#7f8c8d'))
+                        fig.update_layout(
+                            title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
+                            xaxis_title="Year",
+                            yaxis_title="Production Volume ('000 b/d)",
+                            plot_bgcolor="white",
+                            paper_bgcolor="white",
+                            height=360
+                        )
+                    else:
+                        # Default mode: show all years on X-axis
+                        first_stream = all_streams_list[0] if all_streams_list else "None"
+                        empty_df = pd.DataFrame({
+                            "year": all_years_list,
+                            "value": [0.0001] * len(all_years_list),
+                            "Stream": [first_stream] * len(all_years_list)
+                        })
+                        fig = px.bar(empty_df, x="year", y="value", color="Stream", 
+                                    labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
+                        fig.update_layout(
+                            title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
+                            xaxis_title="Year",
+                            yaxis_title="Production Volume ('000 b/d)",
+                            barmode="stack",
+                            plot_bgcolor="white",
+                            paper_bgcolor="white",
+                            xaxis=dict(
+                                type="category",
+                                categoryorder="array",
+                                categoryarray=years_sorted,
+                                tickmode='array',
+                                tickvals=years_sorted,
+                                ticktext=years_sorted
+                            ),
+                            yaxis=dict(range=[0, 100])  # Small range for invisible bars
+                        )
                     return fig, title_text
                 
                 stream_categories = all_streams_list if all_streams_list else get_stream_order("yearly")
@@ -3057,11 +3163,34 @@ def register_callbacks(dash_app, server):
                 
                 print(f"DEBUG BREAKDOWN MONTHLY: Aggregated rows={len(agg)}, years={agg['year'].unique().tolist() if not agg.empty else []}")
                 
-                # Apply profiled streams filter if provided
-                if profiled:
-                    profiled_list = [str(s).strip() for s in profiled] if isinstance(profiled, (list, tuple)) else [str(profiled)]
-                    agg = agg[agg["Stream"].isin(profiled_list)]
-                    print(f"DEBUG BREAKDOWN MONTHLY: After profiled filter rows={len(agg)}")
+                # Get available streams from the data
+                available_monthly_streams = sorted(agg["Stream"].dropna().unique().tolist()) if not agg.empty else []
+                
+                # For monthly view: Always show all streams in the chart
+                # Use visual styling (opacity) to highlight selected stream and dim others
+                # Don't filter the data - keep all streams visible
+                selected_stream_for_highlight = None
+                if profiled and len(profiled) > 0:
+                    # Check if all available streams are selected (default mode)
+                    profiled_set = set(profiled)
+                    available_set = set(available_monthly_streams)
+                    
+                    # If all streams are selected, no highlighting needed (all at full opacity)
+                    if profiled_set == available_set and len(available_set) > 0:
+                        print(f"DEBUG BREAKDOWN MONTHLY: All streams selected (default mode), showing all streams at full opacity")
+                        selected_stream_for_highlight = None
+                    elif len(profiled) == 1:
+                        # Single stream selected: highlight this stream, dim others
+                        selected_stream_for_highlight = str(profiled[0]).strip()
+                        print(f"DEBUG BREAKDOWN MONTHLY: Single stream selected ({selected_stream_for_highlight}), will highlight this stream and dim others")
+                    else:
+                        # Multiple streams selected (shouldn't happen, but handle it)
+                        print(f"DEBUG BREAKDOWN MONTHLY: Multiple streams selected ({len(profiled)}), showing all at full opacity")
+                        selected_stream_for_highlight = None
+                else:
+                    # If no stream selected, show all streams at full opacity (default mode)
+                    print(f"DEBUG BREAKDOWN MONTHLY: No stream selected, showing all streams at full opacity (default mode)")
+                    selected_stream_for_highlight = None
                 
                 # If no rows or all values are zero, show a friendly message
                 if agg.empty or (agg["value"].fillna(0).sum() <= 0):
@@ -3083,6 +3212,7 @@ def register_callbacks(dash_app, server):
                     hover_data_dict["Country"] = True
                 hover_data_dict["year"] = True
                 
+                # Create chart with original color_map (opacity will be applied to traces afterward)
                 fig = px.bar(
                     agg,
                     x="month",
@@ -3195,6 +3325,40 @@ def register_callbacks(dash_app, server):
                         "<b>Year of Date:</b> %{customdata[1]}<br>"
                         "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
                     )
+                    
+                    # Apply highlight/dimmed styling for monthly view
+                    # If a stream is selected, highlight it (full opacity) and dim others (reduced opacity)
+                    try:
+                        if selected_stream_for_highlight:
+                            if stream_name == selected_stream_for_highlight:
+                                # Selected stream: full opacity (highlighted)
+                                target_opacity = 1.0
+                            else:
+                                # Other streams: reduced opacity (dimmed)
+                                target_opacity = 0.3
+                        else:
+                            # Default mode: all streams at full opacity
+                            target_opacity = 1.0
+                        
+                        # Apply opacity to trace
+                        trace.opacity = target_opacity
+                        
+                        # Also apply to marker if it exists
+                        if not hasattr(trace, 'marker') or trace.marker is None:
+                            trace.marker = {}
+                        if isinstance(trace.marker, dict):
+                            trace.marker['opacity'] = target_opacity
+                        else:
+                            # Plotly marker object
+                            try:
+                                trace.marker.opacity = target_opacity
+                            except:
+                                # Fallback: create new marker dict
+                                trace.marker = {'opacity': target_opacity}
+                    except Exception as e:
+                        print(f"Error applying opacity to trace {stream_name}: {e}")
+                        # Continue without opacity modification
+                        pass
                 
                 # Update Y-axis for all subplots (yaxis, yaxis2, yaxis3, etc.) with 5 evenly spaced ticks
                 for i in range(len(unique_years)):
@@ -3276,10 +3440,12 @@ def register_callbacks(dash_app, server):
          Input("crude-year-month-dropdown", "value"),
          Input("crude-country-dropdown", "value"),
          Input("crude-main-tabs", "value"),
+         Input("profiled-streams", "value"),
          Input("current-submenu", "data")],
+        [State("profiled-streams", "options")],
         prevent_initial_call=False
     )
-    def filter_table(stream, ci, api, sulfur, year, year_month, country, tab, current_submenu):
+    def filter_table(stream, ci, api, sulfur, year, year_month, country, tab, profiled_streams, current_submenu, profiled_streams_options):
         """Filter and update data table - only loads data when page is active"""
         # Only load data if page is active
         if current_submenu != 'crude-overview':
@@ -3302,12 +3468,75 @@ def register_callbacks(dash_app, server):
         if df.empty:
             return [], []
         
-        # Filter by country (only applied to yearly list; monthly table shows all crudes like the Tableau source)
-        if country and len(country) > 0 and tab == "yearly":
-            if not BAR_LONG_YEARLY.empty and "Country" in BAR_LONG_YEARLY.columns and "Stream" in BAR_LONG_YEARLY.columns:
-                country_crudes = BAR_LONG_YEARLY[BAR_LONG_YEARLY["Country"].isin(country)]["Stream"].dropna().unique().tolist()
+        # Filter by selected profiled stream - only filter if exactly ONE stream is selected
+        # If all streams are selected (default mode) or no streams selected, don't apply ANY filter to table
+        # This ensures the table shows ALL crude oils from the database query in default mode
+        # Also handle case where profiled_streams might be None or improperly initialized on initial load
+        
+        # For monthly tab: NEVER filter the table - always show all records
+        # Only apply filtering for yearly tab
+        if tab == "monthly":
+            print(f"DEBUG TABLE: Monthly tab - skipping profiled stream filter, showing ALL crude oils from database (df has {len(df)} rows)")
+            should_filter = False
+            selected_stream = None
+        else:
+            # Get available streams from options to determine if we're in default mode
+            available_streams_from_options = []
+            if profiled_streams_options:
+                available_streams_from_options = [opt.get("value") for opt in profiled_streams_options if opt.get("value")]
+            
+            # Determine if we should filter: only filter if exactly ONE stream is selected AND it's not default mode (all selected)
+            should_filter = False
+            selected_stream = None
+            
+            if profiled_streams is None:
+                # Not initialized: default mode - show all
+                should_filter = False
+                print(f"DEBUG TABLE: profiled_streams is None - default mode, showing ALL crude oils from database (df has {len(df)} rows)")
+            elif len(profiled_streams) == 0:
+                # Empty: default mode - show all
+                should_filter = False
+                print(f"DEBUG TABLE: profiled_streams is empty - default mode, showing ALL crude oils from database (df has {len(df)} rows)")
+            elif available_streams_from_options and len(profiled_streams) == len(available_streams_from_options):
+                # All available streams are selected (default mode): don't filter
+                # Compare sets to ensure they match exactly
+                profiled_set = set(profiled_streams)
+                available_set = set(available_streams_from_options)
+                if profiled_set == available_set:
+                    should_filter = False
+                    print(f"DEBUG TABLE: All streams selected (default mode) - {len(profiled_streams)} streams match {len(available_streams_from_options)} available, showing ALL crude oils from database (df has {len(df)} rows)")
+                else:
+                    # Counts match but sets don't - this is unusual, but treat as default mode
+                    should_filter = False
+                    print(f"DEBUG TABLE: Stream count matches but sets differ - default mode, showing ALL crude oils from database (df has {len(df)} rows)")
+            elif len(profiled_streams) == 1:
+                # Exactly one stream selected: check if options are initialized
+                if not available_streams_from_options or len(available_streams_from_options) <= 1:
+                    # Options not initialized or only one stream available: default mode - show all
+                    should_filter = False
+                    print(f"DEBUG TABLE: Only one stream in profiled_streams but options not initialized or only one available - default mode, showing ALL crude oils from database (df has {len(df)} rows)")
+                else:
+                    # Options are initialized and user has selected exactly one stream (not all): apply filter
+                    should_filter = True
+                    selected_stream = profiled_streams[0]
+                    print(f"DEBUG TABLE: Exactly one stream selected ({selected_stream}) out of {len(available_streams_from_options)} available - will filter table")
+            else:
+                # Multiple streams selected but not all (shouldn't happen in single selection mode, but handle it): don't filter
+                should_filter = False
+                print(f"DEBUG TABLE: Multiple streams selected ({len(profiled_streams)}) but not all - default mode, showing ALL crude oils from database (df has {len(df)} rows)")
+        
+        # Apply filter only if exactly one stream is selected
+        if should_filter and selected_stream:
+            if tab == "yearly":
                 if "CrudeOil" in df.columns:
-                    df = df[df["CrudeOil"].isin(country_crudes)]
+                    df_before = len(df)
+                    df = df[df["CrudeOil"] == selected_stream]
+                    print(f"DEBUG TABLE: Filtered by selected stream: {selected_stream} (before: {df_before} rows, after: {len(df)} rows)")
+            else:
+                if "Crude" in df.columns:
+                    df_before = len(df)
+                    df = df[df["Crude"] == selected_stream]
+                    print(f"DEBUG TABLE: Filtered by selected stream: {selected_stream} (before: {df_before} rows, after: {len(df)} rows)")
         
         def sanitize(values):
             if not values:
@@ -3318,7 +3547,7 @@ def register_callbacks(dash_app, server):
         api = sanitize(api)
         sulfur = sanitize(sulfur)
         
-        # Filter by stream name
+        # Filter by stream name (text search - secondary filter)
         if stream:
             col_name = "CrudeOil" if tab == "yearly" else "Crude"
             if col_name in df.columns:
