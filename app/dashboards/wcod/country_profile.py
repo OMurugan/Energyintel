@@ -3,15 +3,21 @@ Country Profile View
 World map-based country profile with detailed statistics
 Replicates Energy Intelligence WCoD Country Profile functionality
 """
-from dash import dcc, html, Input, Output, dash_table, dash, callback_context
+from dash import dcc, html, Input, Output, State, callback, dash_table, dash, callback_context
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
+from PIL import Image
+import plotly.io as pio
+from weasyprint import HTML, CSS
+import fitz # Import PyMuPDF for PDF to PNG conversion
 import os
 import json
 import threading
 from datetime import datetime
+import base64
+import io
 from urllib.request import urlopen
 from core.data_helpers import execute_query
 from config import Config
@@ -407,6 +413,7 @@ def load_key_figures_data():
         FROM fact_wcod_key_figures K
         LEFT JOIN dim_wcod_country C ON K."country_id" = C."country_id"
         """
+        print(f"DEBUG: Executing key figures query:\n{key_figures_query}") # Added debug print for query
         
         # Execute query and convert to DataFrame
         key_figures_results = execute_query(key_figures_query)
@@ -428,10 +435,97 @@ def load_key_figures_data():
             print("Warning: No key figures data loaded from database")
             
     except Exception as e:
-        # Silently handle missing database tables
+        # Log the actual exception for debugging
         key_figures_df = pd.DataFrame()
+        print(f"ERROR: Failed to load key figures data: {e}") # Modified to print actual error
     
     return key_figures_df
+
+def get_key_figures_data(country_name, time_period='Yearly'):
+    """Helper to filter key figures data by country and time period."""
+    print(f"DEBUG: get_key_figures_data called with country={country_name}, time_period={time_period}")
+
+    if time_period == 'Yearly':
+        load_map_data()
+        if map_df.empty:
+            print("DEBUG: map_df is empty for Yearly key figures.")
+            return pd.DataFrame()
+
+        if 'country_long_name' not in map_df.columns:
+            print(f"DEBUG: 'country_long_name' column not found in map_df. Available columns: {list(map_df.columns)}")
+            return pd.DataFrame()
+
+        # Filter by country name (case-insensitive, handle whitespace)
+        country_data = map_df[
+            map_df['country_long_name'].astype(str).str.strip().str.lower() == str(country_name).strip().lower()
+        ].copy()
+
+        if country_data.empty:
+            print(f"DEBUG: No data found for country '{country_name}' in map_df for Yearly key figures.")
+            return pd.DataFrame()
+
+        # Extract year and ensure numeric values
+        country_data['year'] = pd.to_datetime(country_data['yr'], errors='coerce').dt.year
+        country_data = country_data.dropna(subset=['year'])
+        
+        # Remove duplicates for each year (similar to create_key_figures_table logic)
+        yearly_data = []
+        for year_val in country_data['year'].unique():
+            year_rows = country_data[country_data['year'] == year_val]
+            first_row = year_rows.iloc[0]
+            yearly_data.append({
+                'year': int(year_val),
+                'Output': first_row['output'] if pd.notna(first_row['output']) else None,
+                'Exports': first_row['exports'] if pd.notna(first_row['exports']) else None,
+                'Reserves': first_row['reserves'] if pd.notna(first_row['reserves']) else None
+            })
+        
+        if not yearly_data:
+            print(f"DEBUG: No processed yearly data for country '{country_name}'.")
+            return pd.DataFrame()
+
+        # Convert to DataFrame and sort by year
+        yearly_df = pd.DataFrame(yearly_data)
+        yearly_df = yearly_df.sort_values('year', ascending=False)
+
+        # Calculate R/P Ratio (Year)
+        # Reserves (Billion bbl) / Production ('000 b/d) * 365
+        # Need to ensure units are consistent. 1 Billion bbl = 1,000,000,000 bbl
+        # 1 '000 b/d = 1,000 bbl/day
+        # So Reserves in bbl = yearly_df['Reserves'] * 1,000,000,000
+        # Annual Production in bbl = yearly_df['Output'] * 1,000 * 365
+        # R/P Ratio = (yearly_df['Reserves'] * 1_000_000_000) / (yearly_df['Output'] * 1_000 * 365)
+        # R/P Ratio = (yearly_df['Reserves'] * 1_000_000) / (yearly_df['Output'] * 365) -- simplified
+        # Check for division by zero before calculating
+        yearly_df['R/P Ratio (Year)'] = yearly_df.apply(
+            lambda row: round((row['Reserves'] * 1_000_000) / (row['Output'] * 365)) 
+            if pd.notna(row['Reserves']) and pd.notna(row['Output']) and row['Output'] != 0 
+            else None,
+            axis=1
+        )
+
+        print(f"DEBUG: Returning {yearly_df.shape[0]} rows from map_df for Yearly key figures.")
+        return yearly_df
+
+    else:
+        # For other time periods, try to use key_figures_df as before
+        df = load_key_figures_data()
+        if df.empty:
+            print("DEBUG: load_key_figures_data returned an empty DataFrame for non-Yearly time period.")
+            return pd.DataFrame()
+
+        filtered_df = df[df['country_long_name'] == country_name]
+        print(f"DEBUG: After country filter for non-Yearly, filtered_df shape: {filtered_df.shape}")
+
+        if 'Quarter of Year' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['Quarter of Year'] == time_period]
+            print(f"DEBUG: After time_period filter ({time_period}), filtered_df shape: {filtered_df.shape}")
+        else:
+            print("DEBUG: 'Quarter of Year' column not found in key_figures_df for non-Yearly time period.")
+
+        print(f"DEBUG: Final filtered_df shape before return for non-Yearly: {filtered_df.shape}")
+        return filtered_df
+
 
 def _ensure_production_data_loaded():
     """Ensure production data is loaded - wrapper for load_production_data()"""
@@ -557,8 +651,28 @@ def create_layout():
                             children="Click here to see the Country's Profile",
                             style=profile_link_style,
                             className='profile-link-hover'
+                        ),
+                        html.Div(
+                            dcc.Dropdown(
+                                id='dashboard-export-dropdown',
+                                options=[
+                                    {'label': 'Export Dashboard PDF', 'value': 'pdf'},
+                                    {'label': 'Export Dashboard PNG', 'value': 'png'},
+                                    {'label': 'Export Map Chart CSV', 'value': 'raw_chart_csv'}
+                                ],
+                                placeholder='Export Data',
+                                style={
+                                    'width': '200px',
+                                    'marginRight': '10px',
+                                    'fontSize': '13px',
+                                    'color': '#2c3e50',
+                                    'display': 'inline-block'
+                                },
+                                clearable=False
+                            ),
+                            style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': 'auto', 'padding': '0 0px', 'marginLeft': '10px'}
                         )
-                    ], style={'flex': '1', 'textAlign': 'right', 'display': 'flex', 'alignItems': 'flex-end', 'justifyContent': 'flex-end'})
+                    ], style={'flex': '1', 'textAlign': 'left', 'display': 'flex', 'alignItems': 'flex-end', 'justifyContent': 'flex-end'})
                 ], style={
                     'display': 'flex',
                     'alignItems': 'flex-end',
@@ -567,6 +681,16 @@ def create_layout():
                 })
             ], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'})
         ]),
+        
+        # Add Download components for dashboard exports
+        dcc.Download(id="download-dashboard-content"),
+        dcc.Download(id="download-raw-chart-csv"),
+        dcc.Download(id="download-png-report"),
+
+        # Add Download components (hidden UI elements used by callbacks)
+        dcc.Download(id='download-production-csv'),
+        dcc.Download(id='download-ports-csv'),
+        dcc.Download(id='download-key-figures-csv'),
         
         # World Map Section with hover controls (full screen)        
         # Map container with relative positioning for controls overlay
@@ -582,7 +706,7 @@ def create_layout():
                         id='world-map-chart',
                         figure=initial_map,
                         style={
-                            'height': 'calc(100vh - 180px)',  # Full screen height minus filters only
+                            'height': 'calc(90vh - 180px)',  # Full screen height minus filters only
                             'width': '100%',  # Full viewport width - no space
                             'maxWidth': '100%',
                             'background': 'white',
@@ -613,7 +737,7 @@ def create_layout():
             #     'opacity': '1',
             #     'zIndex': '1000'
             # })
-         ], style={'position': 'relative', 'maxWidth': '100%', 'height': 'calc(100vh - 180px)', 'margin': '0', 'padding': '0', 'overflow': 'hidden', 'border': '1px solid #dee2e6'}, className='map-container'),
+         ]),
         
         # CSS injection div (will be handled by clientside callback)
         html.Div(id='css-injection-placeholder', style={'display': 'none'}),
@@ -1004,7 +1128,7 @@ def create_world_map(selected_country=None):
         height=None,  # Auto height to fill container
         width=None,   # Auto width to fill container
         autosize=True,  # Auto-size to fill container width and height
-        margin=dict(l=0, r=0, t=0, b=30),
+        margin=dict(l=0, r=0, t=0, b=0),
         plot_bgcolor='white',
         paper_bgcolor='white',
         showlegend=False,
@@ -1053,9 +1177,9 @@ def create_empty_map():
             center=dict(lat=20.0, lon=0.0),
             zoom=1.5 # Consistent zoom with world view - matches original Tableau source
         ),
-        height=700,
+        height=500,
         width=700,  # Square aspect ratio
-        margin=dict(l=0, r=0, t=60, b=30),
+        margin=dict(l=0, r=0, t=60, b=0),
         autosize=False,  # Disable autosize to maintain square
         plot_bgcolor='white',
         paper_bgcolor='white',
@@ -1175,6 +1299,7 @@ def create_production_table(country_name, time_period='Yearly'):
     
     if prod_data.empty:
         return dash_table.DataTable(
+            id='production-table', # Added ID
             data=[],
             columns=[],
             style_cell={'textAlign': 'left', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'},
@@ -1444,6 +1569,7 @@ def create_port_details_table(country_name):
     
     if port_data.empty:
         return dash_table.DataTable(
+            id='port-details-table',
             data=[],
             columns=[],
             style_cell={'textAlign': 'left', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'},
@@ -1558,6 +1684,7 @@ def create_port_details_table(country_name):
     ]
     
     return dash_table.DataTable(
+        id='port-details-table', # Added ID
         data=table_data,
         columns=columns,
         style_cell={
@@ -1653,6 +1780,7 @@ def create_key_figures_table(country_name, time_period='Monthly'):
         load_map_data()
         if map_df.empty:
             return dash_table.DataTable(
+                id='key-figures-table', # Added ID
                 data=[],
                 columns=[],
                 style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
@@ -1807,6 +1935,7 @@ def create_key_figures_table(country_name, time_period='Monthly'):
         
         if not table_data:
             return dash_table.DataTable(
+                id='key-figures-table', # Added ID
                 data=[],
                 columns=[],
                 style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
@@ -1829,6 +1958,7 @@ def create_key_figures_table(country_name, time_period='Monthly'):
         load_key_figures_data()
         if key_figures_df.empty:
             return dash_table.DataTable(
+                id='key-figures-table', # Added ID
                 data=[],
                 columns=[],
                 style_cell={'textAlign': 'center', 'fontFamily': 'Arial, sans-serif', 'fontSize': '13px'}
@@ -1875,6 +2005,7 @@ def create_key_figures_table(country_name, time_period='Monthly'):
             })
     
     return dash_table.DataTable(
+        id='key-figures-table', # Added ID
         data=table_data,
         columns=columns,
         style_cell={
@@ -2009,71 +2140,128 @@ def register_callbacks(dash_app, server):
         # Create profile URL
         profile_url = get_profile_url_for_country(country_name)
         
-        sections = []
-        
-        if time_period == 'Yearly':
-            sections.append(
-                html.Div([
+        sections = [
+            # Key Figures Table (always present, conditionally hidden)
+            html.Div(
+                id='key-figures-table-container',
+                children=[
                     html.Div([
-                        html.H5(
-                            f"{country_name} - Key Figures",
-                            style={
-                                'color': '#fe5000',
-                                'fontWeight': '600',
-                                'fontSize': '18px',
-                                'marginBottom': '20px'
-                            }
-                        ),
-                html.Div([
-                            create_key_figures_table(country_name, time_period)
+                        html.Div([
+                            html.H5(
+                                f"{country_name} - Key Figures",
+                                style={
+                                    'color': '#fe5000',
+                                    'fontWeight': '600',
+                                    'fontSize': '18px',
+                                    'margin': '20px 0px'
+                                }
+                            ),
+                             # Export buttons on the right side
+                            html.Div([
+                                html.Button("Export Key Figures CSV", id='export-key-figures-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                            ], style={'display': 'inline-block', 'float': 'right'})
+                        ], style={'display': 'flex', 'justifyContent': 'space-between', 'width': '100%'}),
+                        html.Div([], style={'clear': 'both'}),  # Clear float
+                        html.Div([
+                            create_key_figures_table(country_name, 'Yearly') # Always create with Yearly data
                         ], style={'background': 'white', 'padding': '20px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
                     ], className='col-md-12', style={'padding': '15px'})
-                ], className='row', style={'margin': '10px 0', 'padding': '0 15px'})
-            )
-        else:
-            sections.append(
-                html.Div([
+                ], className='row', style={'margin': '10px 0', 'padding': '0 15px'}),
+            
+            # Production Table (always present, conditionally hidden)
+            html.Div(
+                id='production-table-container',
+                children=[
+                    html.Div([
+                        html.Div([
+                            html.H5(
+                                f"{country_name} Production",
+                                style={
+                                    'color': '#fe5000',
+                                    'fontWeight': '600',
+                                    'fontSize': '18px',
+                                    'margin': '20px 0px'
+                                }
+                            ),
+                            # Export buttons on the right side
+                            html.Div([
+                                html.Button("Export production CSV", id='export-production-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                            ], style={'display': 'inline-block', 'float': 'right'})
+                        ], style={'display': 'flex', 'justifyContent': 'space-between', 'width': '100%'}),
+                        html.Div([], style={'clear': 'both'}),  # Clear float
+                        html.Div([
+                            create_production_table(country_name, 'Monthly') # Always create with Monthly data
+                        ], style={'background': 'white', 'padding': '5px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
+                    ], className='col-md-12', style={'padding': '15px'})
+                ], className='row', style={'margin': '10px 0', 'padding': '0 0px'}
+            ),
+        
+            # Port Details Table (always present)
+            html.Div(
+                id='port-details-table-container',
+                children=[
                     html.Div([
                         html.H5(
-                            f"{country_name} Production",
+                            f"{country_name} - Loading Port Details",
                             style={
                                 'color': '#fe5000',
                                 'fontWeight': '600',
                                 'fontSize': '18px',
-                                'marginBottom': '20px'
+                                'marginBottom': '20px',
+                                'textAlign': 'center'
                             }
                         ),
+                        # Export buttons on the right side
                         html.Div([
-                            create_production_table(country_name, time_period)
-                        ], style={'background': 'white', 'padding': '5px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
-                    ], className='col-md-12', style={'padding': '15px'})
-                ], className='row', style={'margin': '10px 0', 'padding': '0 0px'})
-            )
-        
-        sections.append(
-            html.Div([
-                html.Div([
-                    html.H5(
-                        f"{country_name} - Loading Port Details",
-                        style={
-                            'color': '#fe5000',
-                            'fontWeight': '600',
-                            'fontSize': '18px',
-                            'marginBottom': '20px',
-                            'textAlign': 'center'
-                        }
-                    ),
-            html.Div([
+                            html.Button("Export ports CSV", id='export-ports-btn', n_clicks=0, style={'marginLeft': '8px', 'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                        ], style={'display': 'inline-block', 'float': 'right'})
+                    ], style={'display': 'flex', 'justifyContent': 'space-between', 'width': '100%'}),
+                    html.Div([], style={'clear': 'both'}),  # Clear float
+                    html.Div([
                         create_port_details_table(country_name)
                     ], style={'background': 'white', 'padding': '20px 5px', 'borderRadius': '8px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
-                ], className='col-md-12', style={'padding': '0px'})
-            ], className='row', style={'margin': '20px 0', 'padding': '0 15px'})
-        )
+                ], className='col-md-12', style={'padding': '0px'}
+            )
+        ]
         
+        # Conditional display handled by a separate callback
+        # return html.Div([
+        #     # html.Div([], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'}),
+        #     *sections
+        # ]), country_name
         return html.Div([
-            # html.Div([], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'}),
-            *sections
+            sections[0], # Key Figures
+            sections[1], # Production
+            sections[2]  # Port Details
         ]), country_name
+    
+    @dash_app.callback(
+        [Output('key-figures-table-container', 'style'),
+         Output('production-table-container', 'style')],
+        [Input('time-period-select', 'value'),
+         Input('current-submenu', 'data')], # Ensure this only runs when on country-profile page
+        prevent_initial_call=False
+    )
+    def toggle_table_visibility(time_period, current_submenu):
+        if current_submenu != 'country-profile':
+            # Hide both if not on the country-profile page
+            return {'display': 'none'}, {'display': 'none'}
+
+        key_figures_style = {'display': 'block'}
+        production_style = {'display': 'block'}
+
+        if time_period == 'Yearly':
+            production_style['display'] = 'none'
+        else:
+            key_figures_style['display'] = 'none'
+
+        return key_figures_style, production_style
     
     @dash_app.callback(
         Output('world-map-chart', 'figure'),
@@ -2161,6 +2349,329 @@ def register_callbacks(dash_app, server):
         
         return country_options, default_val
     
+    # Export production CSV (uses get_production_data)
+    @dash_app.callback(
+        Output('download-production-csv', 'data'),
+        Input('export-production-btn', 'n_clicks'),
+        State('country-select-profile', 'value'),
+        State('time-period-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_production_csv(n_clicks, country, time_period):
+        """Export production data for selected country/time-period as CSV"""
+        ctx = callback_context
+        # Only proceed when the export-production-btn actually triggered the callback
+        if not ctx.triggered or ctx.triggered[0].get('prop_id', '').split('.')[0] != 'export-production-btn':
+            return dash.no_update
+        if not n_clicks or n_clicks == 0:
+            return dash.no_update
+
+        if not country:
+            # nothing selected — do not trigger download
+            return dash.no_update
+        # obtain production DataFrame using existing helper
+        df = get_production_data(country, time_period or 'Monthly')
+        # If the function returns pivoted table or empty, handle gracefully
+        if df is None or (hasattr(df, 'empty') and df.empty):
+            empty = pd.DataFrame()
+            filename = f"{str(country).strip().lower().replace(' ', '_')}_production_{(time_period or 'monthly').lower()}.csv"
+            return dcc.send_data_frame(empty.to_csv, filename, index=False)
+        # Ensure filename is safe
+        safe_country = str(country).strip().lower().replace(' ', '_')
+        filename = f"{safe_country}_production_{(time_period or 'monthly').lower()}.csv"
+        # Use dash helper to stream pandas dataframe as CSV
+        return dcc.send_data_frame(df.to_csv, filename, index=False)
+
+    # Export key figures CSV (uses get_key_figures_data)
+    @dash_app.callback(
+        Output('download-key-figures-csv', 'data'),
+        Input('export-key-figures-btn', 'n_clicks'),
+        State('country-select-profile', 'value'),
+        State('time-period-store', 'data'), # Add time_period as State
+        prevent_initial_call=True
+    )
+    def export_key_figures_csv(n_clicks, country, time_period):
+        """Export key figures data for selected country as CSV"""
+        ctx = callback_context
+        # Only proceed when the export-key-figures-btn actually triggered the callback
+        if not ctx.triggered or ctx.triggered[0].get('prop_id', '').split('.')[0] != 'export-key-figures-btn':
+            return dash.no_update
+        if not n_clicks or n_clicks == 0:
+            return dash.no_update
+
+        if not country:
+            # nothing selected — do not trigger download
+            return dash.no_update
+        # obtain key figures DataFrame using existing helper
+        df = get_key_figures_data(country, time_period or 'Yearly')
+        # If the function returns pivoted table or empty, handle gracefully
+        if df is None or (hasattr(df, 'empty') and df.empty):
+            empty = pd.DataFrame()
+            filename = f"{str(country).strip().lower().replace(' ', '_')}_key_figures_{(time_period or 'yearly').lower()}.csv"
+            return dcc.send_data_frame(empty.to_csv, filename, index=False)
+        # Ensure filename is safe
+        safe_country = str(country).strip().lower().replace(' ', '_')
+        filename = f"{safe_country}_key_figures_{(time_period or 'yearly').lower()}.csv"
+        # Use dash helper to stream pandas dataframe as CSV
+        return dcc.send_data_frame(df.to_csv, filename, index=False)  
+
+    def generate_html_table(data, title=""): # New helper function
+        if not data:
+            return f"<p>No {title} data available.</p>"
+
+        # Assume data is a list of dictionaries (from Dash DataTable)
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            return f"<p>No {title} data available.</p>"
+
+        html_string = f"<div class=\"dash-table-container\">\n<h3>{title}</h3>\n<table>\n<thead>\n<tr>"
+        
+        # Generate headers dynamically
+        for col in df.columns:
+            html_string += f"<th>{col}</th>"
+        html_string += "</tr>\n</thead>\n<tbody>"
+
+        # Generate rows
+        for index, row in df.iterrows():
+            html_string += "<tr>"
+            for col in df.columns:
+                cell_value = row[col]
+                if pd.isna(cell_value):
+                    cell_value = ''
+                html_string += f"<td>{cell_value}</td>"
+            html_string += "</tr>"
+        
+        html_string += "</tbody>\n</table>\n</div>"
+        return html_string
+
+    # Helper to generate full HTML content for PDF/PNG
+    def generate_full_dashboard_html(country_name, time_period, map_figure_b64, key_figures_data, production_data, port_details_data):
+        # Dynamically build sections based on time_period
+        dynamic_sections = ""
+        if time_period == 'Yearly':
+            dynamic_sections += """
+                <div class="section no-break">
+                    <h2>Key Figures</h2>
+                    {key_figures_html}
+                </div>
+            """.format(key_figures_html=generate_html_table(key_figures_data, 'Key Figures'))
+        else: # Monthly
+            dynamic_sections += """
+                <div class="section no-break">
+                    <h2>Production Data</h2>
+                    {production_html}
+                </div>
+            """.format(production_html=generate_html_table(production_data, 'Production Data'))
+
+        # Base HTML structure
+        html_content = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>WCOD Country Profile Report - {country_name}</title>
+            <style>
+                body {{ margin: 0; padding: 0; font-family: 'Arial', sans-serif; background-color: #f8f9fa; }}
+                .container {{ width: 100%; max-width: 1200px; margin: 0 auto; padding: 20px; box-sizing: border-box; background-color: white; }}
+                .header {{ text-align: center; margin-bottom: 20px; }}
+                .header h1 {{ color: #2c3e50; font-size: 24px; margin: 0; }}
+                .section {{ margin-bottom: 30px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: white; }}
+                .section h2 {{ color: #2c3e50; font-size: 18px; margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }}
+                .plotly-graph-div {{ width: 100% !important; height: auto !important; margin: 0 auto; min-height: 400px; }}
+                .dash-table-container table {{ width: 100% !important; border-collapse: collapse; margin-top: 10px; }}
+                .dash-table-container th, .dash-table-container td {{ border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }}
+                .dash-table-container th {{ background-color: #f2f2f2; font-weight: bold; }}
+                .no-break {{ page-break-inside: avoid; }}
+                @page {{ size: A4; margin: 10mm; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>WCOD Country Profile Report</h1>
+                    <p>Country: {country_name} | Time Period: {time_period}</p>
+                </div>
+                <div class="section no-break">
+                    <h2>World Map</h2>
+                    <img src="data:image/png;base64,{map_figure_b64}" style="width:100%; height:auto; display:block;" alt="World Map Chart">
+                </div>
+                {dynamic_sections}
+                <div class="section no-break">
+                    <h2>Port Details</h2>
+                    {port_details_html}
+                </div>
+            </div>
+        </body>
+        </html>
+        """.format(
+            country_name=country_name,
+            time_period=time_period,
+            map_figure_b64=map_figure_b64, 
+            dynamic_sections=dynamic_sections,
+            port_details_html=generate_html_table(port_details_data, 'Port Details')
+        )
+        return html_content
+
+
+    # Export ports CSV (uses get_port_details)
+    @dash_app.callback(
+        Output('download-ports-csv', 'data'),
+        Input('export-ports-btn', 'n_clicks'),
+        State('country-select-profile', 'value'),
+        prevent_initial_call=True
+    )
+    def export_ports_csv(n_clicks, country):
+        """Export ports details for selected country as CSV"""
+        ctx = callback_context
+        # Only proceed when the export-ports-btn actually triggered the callback
+        if not ctx.triggered or ctx.triggered[0].get('prop_id', '').split('.')[0] != 'export-ports-btn':
+            return dash.no_update
+        if not n_clicks or n_clicks == 0:
+            return dash.no_update
+
+        if not country:
+            return dash.no_update
+        df = get_port_details(country)
+        if df is None or (hasattr(df, 'empty') and df.empty):
+            empty = pd.DataFrame()
+            filename = f"{str(country).strip().lower().replace(' ', '_')}_ports.csv"
+            return dcc.send_data_frame(empty.to_csv, filename, index=False)
+        safe_country = str(country).strip().lower().replace(' ', '_')
+        filename = f"{safe_country}_ports.csv"
+        return dcc.send_data_frame(df.to_csv, filename, index=False)
+    
+    # Dashboard-level export callback (PDF, PNG, Map CSV)
+    @dash_app.callback(
+        Output('download-dashboard-content', 'data'),
+        Output('download-raw-chart-csv', 'data'),
+        Output('download-png-report', 'data'),
+        Input('dashboard-export-dropdown', 'value'),
+        State('country-select-profile', 'value'),
+        State('time-period-select', 'value'),
+        State('world-map-chart', 'figure'),
+        State('key-figures-table', 'data'), # Assuming this ID exists for the table
+        State('production-table', 'data'), # Assuming this ID exists for the table
+        State('port-details-table', 'data'), # Assuming this ID exists for the table
+        prevent_initial_call=True
+    )
+    def export_dashboard_data(selected_export_type, country, time_period, map_figure, key_figures_data, production_data, port_details_data):
+        # Return no_update for all outputs if no export type is selected
+        if selected_export_type is None:
+            return dash.no_update, dash.no_update, dash.no_update
+
+        # Initialize all outputs to no_update
+        output_pdf = dash.no_update
+        output_csv = dash.no_update
+        output_png = dash.no_update
+
+        if selected_export_type == 'raw_chart_csv':
+            # Extract data from map_figure for CSV
+            all_map_data_frames = []
+            if map_figure and 'data' in map_figure:
+                for trace in map_figure['data']:
+                    if trace['type'] == 'choroplethmapbox' and 'text' in trace:
+                        # For countries, take the text and locations
+                        df_countries = pd.DataFrame({'Country': trace['text'], 'ISO': trace['locations']})
+                        all_map_data_frames.append(df_countries)
+                    elif trace['type'] == 'scattermapbox' and 'lat' in trace and 'lon' in trace:
+                        # For ports, extract lat, lon, name, and profile URL from customdata
+                        df_ports = pd.DataFrame({
+                            'Port Name': trace['text'],
+                            'Latitude': trace['lat'],
+                            'Longitude': trace['lon'],
+                            # Assuming customdata has profile URL as the first element
+                            'Profile URL': [item[0] if item else '' for item in trace['customdata']] if 'customdata' in trace else [''] * len(trace['lat'])
+                        })
+                        all_map_data_frames.append(df_ports)
+            
+            if all_map_data_frames:
+                map_data_for_csv = pd.concat(all_map_data_frames, ignore_index=True)
+                # Drop duplicates across all columns to ensure unique rows
+                map_data_for_csv = map_data_for_csv.drop_duplicates().reset_index(drop=True)
+            else:
+                map_data_for_csv = pd.DataFrame(columns=['Country', 'ISO', 'Port Name', 'Latitude', 'Longitude', 'Profile URL'])
+            
+            if map_data_for_csv.empty:
+                print("Warning: No map data available for CSV export.")
+                # Create an empty DataFrame to prevent errors during dcc.send_data_frame
+                map_data_for_csv = pd.DataFrame(columns=['Country', 'ISO', 'Port Name', 'Latitude', 'Longitude', 'Profile URL'])
+            
+            filename = f"{str(country).strip().lower().replace(' ', '_')}_map_data.csv"
+            output_csv = dcc.send_data_frame(map_data_for_csv.to_csv, filename=filename, index=False)
+
+        elif selected_export_type in ['pdf', 'png']:
+            # Generate map image first
+            map_image_b64 = ""
+            if map_figure:
+                try:
+                    map_image_bytes = pio.to_image(map_figure, format='png', width=1200, height=600, scale=2) # Higher resolution
+                    map_image_b64 = base64.b64encode(map_image_bytes).decode('utf-8')
+                except Exception as e:
+                    print(f"ERROR: Failed to convert map figure to image: {e}")
+                    map_image_b64 = ""
+
+            # Generate full HTML content
+            full_html = generate_full_dashboard_html(country, time_period, map_image_b64, key_figures_data, production_data, port_details_data)
+
+            if selected_export_type == 'pdf':
+                try:
+                    # Use WeasyPrint to convert HTML to PDF
+                    pdf = HTML(string=full_html).write_pdf(stylesheets=[CSS(string='body { margin: 0; padding: 0; }')])
+                    output_pdf = dcc.send_bytes(pdf, filename=f"country_profile_{country.replace(' ', '_')}.pdf")
+                except Exception as e:
+                    print(f"ERROR: Failed to generate PDF: {e}")
+                    output_pdf = dash.no_update
+
+            elif selected_export_type == 'png':
+                try:
+                    # First, generate PDF in memory using WeasyPrint
+                    pdf_bytes = HTML(string=full_html).write_pdf(stylesheets=[CSS(string='body { margin: 0; padding: 0; }')])
+                    
+                    # Use PyMuPDF (fitz) to convert PDF to PNG, handling multiple pages
+                    doc = fitz.open("pdf", pdf_bytes)  # Open PDF from memory
+                    
+                    # List to hold images of each page
+                    page_images = []
+                    
+                    for page_num in range(len(doc)):
+                        page = doc[page_num] # Get each page
+                        
+                        # Render page to PNG. Increase DPI for higher resolution.
+                        pix = page.get_pixmap(matrix=fitz.Matrix(300 / 72, 300 / 72)) # 300 DPI
+                        page_images.append(Image.open(io.BytesIO(pix.tobytes("png"))))
+                    
+                    doc.close()
+
+                    if not page_images:
+                        raise ValueError("No pages rendered for PNG export.")
+
+                    # Combine images vertically
+                    widths, heights = zip(*(i.size for i in page_images))
+                    total_height = sum(heights)
+                    max_width = max(widths)
+                    
+                    combined_image = Image.new('RGB', (max_width, total_height))
+                    
+                    y_offset = 0
+                    for img in page_images:
+                        combined_image.paste(img, (0, y_offset))
+                        y_offset += img.size[1]
+                    
+                    img_byte_arr = io.BytesIO()
+                    combined_image.save(img_byte_arr, format='PNG')
+                    
+                    output_png = dcc.send_bytes(img_byte_arr.getvalue(), filename=f"country_profile_{country.replace(' ', '_')}.png")
+
+                except Exception as e:
+                    print(f"ERROR: Failed to generate multi-page PNG report using PyMuPDF: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    output_png = dash.no_update
+        
+        return output_pdf, output_csv, output_png
+
     # Clientside callback to inject CSS for hover effects and limit zoom
     dash_app.clientside_callback(
         """
