@@ -660,9 +660,9 @@ def create_layout():
                                         dcc.Dropdown(
                                             id='country-profile-export-dropdown',
                                             options=[
-                                                {'label': 'Export Dashboard PDF', 'value': 'pdf'},
-                                                {'label': 'Export Dashboard PNG', 'value': 'png'},
-                                                {'label': 'Export Map Chart CSV', 'value': 'raw_chart_csv'}
+                                                {'label': 'Export Data PDF', 'value': 'pdf'},
+                                                {'label': 'Export Data PNG', 'value': 'png'},
+                                                {'label': 'Export Data CSV', 'value': 'raw_chart_csv'}
                                             ],
                                             placeholder='Export Data',
                                             style={
