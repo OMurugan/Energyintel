@@ -79,7 +79,7 @@ WITH base AS (
         EXTRACT(DAY FROM A."yr")::INT               AS "Day of Year",
         A."output",
         A."exports"
-    FROM dev.fact_wcod_country A
+    FROM fact_wcod_country A
     WHERE
         EXTRACT(YEAR FROM A."yr") = 2024
         AND A."to_be_deleted" IS NULL
@@ -245,13 +245,14 @@ def build_data_columns(years, time_visibility, latest_quarter_value, latest_mont
             column_name_parts = [str(year)]
             
             if time_visibility.get('Quarter', False) and latest_quarter_value is not None:
-                column_name_parts.append(f"Q{latest_quarter_value}")
+               
+                column_name_parts.append(f"{latest_quarter_value}")
             
             if time_visibility.get('Month', False) and latest_month_value is not None:
-                column_name_parts.append(latest_month_value)
+                column_name_parts.append(f"\n{latest_month_value}")
             
             if time_visibility.get('Day', False) and latest_day_value is not None:
-                column_name_parts.append(str(latest_day_value))
+                column_name_parts.append(f"{latest_day_value}")
 
             combined_year_name = " ".join(column_name_parts)
             
@@ -493,22 +494,22 @@ def create_layout():
                     dcc.Download(id="download-raw-chart-csv"),
                     dcc.Download(id="download-raw-table-csv"),
                     dcc.Download(id="download-png-report"),
-                    html.Button(
-                        '−',
-                        id='chart-collapse-button',
-                        n_clicks=0,
-                        style={
-                            'fontSize': '20px',
-                            'fontWeight': 'bold',
-                            'color': '#2c3e50',
-                            'textDecoration': 'none',
-                            'padding': '0 10px',
-                            'border': 'none',
-                            'background': 'transparent',
-                            'cursor': 'pointer',
-                            'marginLeft': '10px' # Added margin for separation
-                        }
-                    )
+                    # html.Button(
+                    #     '−',
+                    #     id='chart-collapse-button',
+                    #     n_clicks=1,
+                    #     style={
+                    #         'fontSize': '20px',
+                    #         'fontWeight': 'bold',
+                    #         'color': '#2c3e50',
+                    #         'textDecoration': 'none',
+                    #         'padding': '0 10px',
+                    #         'border': 'none',
+                    #         'background': 'transparent',
+                    #         'cursor': 'pointer',
+                    #         'marginLeft': '10px' # Added margin for separation
+                    #     }
+                    # )
                 ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'padding': '0'})
             ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '15px', 'background': '#f8f9fa', 'borderBottom': '1px solid #dee2e6'}),
             dcc.Loading(
@@ -639,7 +640,14 @@ def create_layout():
                                     "width": 1280,
                                     "scale": 2
                                 },
-                                'modeBarButtonsToRemove': ['lasso2d', 'select2d', 'hoverClosestCartesian', 'hoverCompareCartesian']
+                                "displaylogo": False,
+                                "displayModeBar": True,
+                                'modeBarButtonsToRemove': [
+                                    'zoom2d', 'pan2d', 'select2d', 'lasso2d', 
+                                    'zoomIn2d', 'zoomOut2d', 'autoScale2d', 
+                                    'hoverClosestCartesian', 'hoverCompareCartesian', 
+                                    'toggleSpikelines', 'toggleSpikeLines', 'spikelines'
+                                ]
                             }
                         )
                     ], id='chart-collapse-content', style={'padding': '0', 'background': 'white', 'border': '1px solid #dee2e6', 'borderRadius': '4px', 'overflow': 'hidden'}),
@@ -686,32 +694,6 @@ def create_layout():
                     dcc.Download(id="download-raw-table-csv"),
                 ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'padding': '0 0 15px 0px'}),
                 html.Div([ # Time dimension controls inside table area - first row with icons at top right
-                    html.Div([
-                        html.Span("Year of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
-                        html.Button(
-                            '−',
-                            id='toggle-table-year-btn',
-                            n_clicks=0,
-                            style={
-                                'width': '20px',
-                                'height': '20px',
-                                'padding': '0',
-                                'border': '1px solid #dee2e6',
-                                'backgroundColor': '#f8f9fa',
-                                'color': '#2c3e50',
-                                'borderRadius': '3px',
-                                'cursor': 'pointer',
-                                'fontSize': '14px',
-                                'fontWeight': 'bold',
-                                'lineHeight': '1',
-                                'display': 'flex',
-                                'alignItems': 'center',
-                                'justifyContent': 'center',
-                                'marginLeft': '8px',
-                                'flexShrink': '0'
-                            }
-                        )
-                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '120px'}),
                     html.Div([
                         html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
                         html.Button(
@@ -804,7 +786,7 @@ def create_layout():
                     page_action='none',
                     style_cell={
                         'textAlign': 'right',
-                        'padding': '8px',
+                        'padding': '0px 2px',
                         'fontSize': '12px',
                         'fontFamily': 'Arial, sans-serif',
                         'border': '1px solid #dee2e6',
@@ -969,7 +951,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
             showlegend=True,
             legendgroup='production',
             offsetgroup='production',
-            width=0.4
+            width=0.3
         ))
 
     hovertemplate_exports = (
@@ -1002,7 +984,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
         showlegend=True,
         legendgroup='exports',
         offsetgroup='exports',
-        width=0.4
+        width=0.3
     ))
 
     max_export = sorted_df['Exports_Value'].max() if len(sorted_df) else 0
@@ -1049,7 +1031,9 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
             linecolor='#e0e0e0',  # Light gray color
             linewidth=1,
             title_font=dict(size=12, family='Arial, sans-serif', color='#2c3e50'),
-            tickfont=dict(size=11, family='Arial, sans-serif', color='#2c3e50')
+            tickfont=dict(size=11, family='Arial, sans-serif', color='#2c3e50'),
+            showspikes=False,
+            spikethickness=0
         ),
         yaxis=dict(
             categoryorder='array',
@@ -1516,8 +1500,6 @@ def register_callbacks(dash_app, server):
          Output('toggle-month-btn', 'style'),
          Output('toggle-day-btn', 'children'),
          Output('toggle-day-btn', 'style'),
-         Output('toggle-table-year-btn', 'children'),
-         Output('toggle-table-year-btn', 'style'),
          Output('toggle-table-quarter-btn', 'children'),
          Output('toggle-table-quarter-btn', 'style'),
          Output('toggle-table-month-btn', 'children'),
@@ -1573,16 +1555,10 @@ def register_callbacks(dash_app, server):
         }
 
         # Table buttons
-        table_year_expanded = table_visibility.get('Year', True)
         table_quarter_expanded = table_visibility.get('Quarter', False)
         table_month_expanded = table_visibility.get('Month', False)
         table_day_expanded = table_visibility.get('Day', False)
 
-        table_year_style = {**base_style,
-            'backgroundColor': '#e7f3ff' if table_year_expanded else '#f8f9fa',
-            'color': '#007bff' if table_year_expanded else '#2c3e50',
-            'borderColor': '#007bff' if table_year_expanded else '#dee2e6'
-        }
         table_quarter_style = {**base_style,
             'backgroundColor': '#e7f3ff' if table_quarter_expanded else '#f8f9fa',
             'color': '#007bff' if table_quarter_expanded else '#2c3e50',
@@ -1604,8 +1580,7 @@ def register_callbacks(dash_app, server):
             '−' if quarter_expanded else '+', quarter_style,
             '−' if month_expanded else '+', month_style,
             '−' if day_expanded else '+', day_style,
-            '−' if table_year_expanded else '+', table_year_style,
-            '−' if table_quarter_expanded else '+', table_quarter_style,
+            dash.no_update, table_quarter_style,
             '−' if table_month_expanded else '+', table_month_style,
             '−' if table_day_expanded else '+', table_day_style
         )
@@ -1724,39 +1699,6 @@ def register_callbacks(dash_app, server):
             new_visibility = visibility.copy()
             new_visibility['Day'] = not new_visibility.get('Day', False)
             is_expanded = new_visibility['Day']
-            button_style = {
-                'width': '20px',
-                'height': '20px',
-                'padding': '0',
-                'border': '1px solid #007bff' if is_expanded else '#dee2e6',
-                'backgroundColor': '#e7f3ff' if is_expanded else '#f8f9fa',
-                'color': '#007bff' if is_expanded else '#2c3e50',
-                'borderRadius': '3px',
-                'cursor': 'pointer',
-                'fontSize': '14px',
-                'fontWeight': 'bold',
-                'lineHeight': '1',
-                'display': 'inline-flex',
-                'alignItems': 'center',
-                'justifyContent': 'center'
-            }
-            return new_visibility, '−' if is_expanded else '+', button_style
-        return visibility, dash.no_update, dash.no_update
-
-    @callback(
-        [Output('time-dimension-table-visibility', 'data', allow_duplicate=True),
-         Output('toggle-table-year-btn', 'children', allow_duplicate=True),
-         Output('toggle-table-year-btn', 'style', allow_duplicate=True)],
-        Input('toggle-table-year-btn', 'n_clicks'),
-        State('time-dimension-table-visibility', 'data'),
-        prevent_initial_call=True
-    )
-    def toggle_table_year(n_clicks, visibility):
-        """Toggle Year column visibility for table"""
-        if n_clicks:
-            new_visibility = visibility.copy()
-            new_visibility['Year'] = not new_visibility.get('Year', True)
-            is_expanded = new_visibility['Year']
             button_style = {
                 'width': '20px',
                 'height': '20px',
