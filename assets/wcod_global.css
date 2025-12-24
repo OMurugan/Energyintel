@@ -256,6 +256,7 @@ div[class*="rc-slider-track"] {
 .Select-menu-outer {
     font-size: 12px !important;
     border-radius: 0 !important;
+    z-index: 9999 !important; /* Ensure dropdown is on top */
 }
 
 .Select-option {
@@ -578,7 +579,7 @@ div[id*="range-slider"] {
     color: inherit !important;
 }
 
-* Tooltip specific styles for dash-table-datatable */
+/* Tooltip specific styles for dash-table-datatable */
 .dash-tooltip {
     position: absolute !important;
     max-width: 300px;
@@ -587,4 +588,11 @@ div[id*="range-slider"] {
     z-index: 9999 !important; /* Ensure tooltip is on top */
     opacity: 0.9;
     overflow: visible !important; /* Allow tooltip content to escape bounds */
+    background-color: #333;
+    color: #fff;
+}
+
+/* Prevent parent elements from hiding tooltips */
+.dash-table-container, .dash-spreadsheet-container {
+    overflow: visible !important;
 }
