@@ -610,82 +610,90 @@ def create_layout():
         # Filters Section
         html.Div([
             html.Div([
-                # Flex container for alignment
                 html.Div([
-                    # Country selector (smaller width)
+                    # Flex container for alignment
                     html.Div([
-                        html.Label("Select Country:", style=label_style),
-            dcc.Dropdown(
-                id='country-select-profile',
-                options=country_options,
-                            value=default_country,
-                            clearable=False,
-                            placeholder="Select a country...",
-                            style=dropdown_style
-                        )
-                    ], style={'width': '220px', 'marginRight': '20px'}),
-                    
-
-
-                    # Time period selector (smaller width)
-                    html.Div([
-                        html.Label("Yearly or Monthly:", style=label_style),
-                        dcc.Dropdown(
-                            id='time-period-select',
-                            options=[
-                                {'label': 'Yearly', 'value': 'Yearly'},
-                                {'label': 'Monthly', 'value': 'Monthly'}
-                            ],
-                            value='Monthly',
-                clearable=False,
-                            style=dropdown_style
-                        )
-                    ], style={'width': '220px', 'marginRight': '20px'}),
-                    
-                    # Profile link container (border only, hover orange)
-                    html.Div([
-                        html.A(
-                            id='profile-link',
-                            href=initial_profile_url,
-                            target='_blank',
-                            children="Click here to see the Country's Profile",
-                            style=profile_link_style,
-                            className='profile-link-hover'
-                        ),
-                        html.Div(
+                        # Country selector (smaller width)
+                        html.Div([
+                            html.Label("Select Country:", style=label_style),
                             dcc.Dropdown(
-                                id='dashboard-export-dropdown',
+                                id='country-select-profile',
+                                options=country_options,
+                                value=default_country,
+                                clearable=False,
+                                placeholder="Select a country...",
+                                style=dropdown_style
+                            )
+                        ], style={'minWidth': '200px', 'marginRight': '20px'}),
+                        
+                        # Time period selector (smaller width)
+                        html.Div([
+                            html.Label("Yearly or Monthly:", style=label_style),
+                            dcc.Dropdown(
+                                id='time-period-select',
                                 options=[
-                                    {'label': 'Export Dashboard PDF', 'value': 'pdf'},
-                                    {'label': 'Export Dashboard PNG', 'value': 'png'},
-                                    {'label': 'Export Map Chart CSV', 'value': 'raw_chart_csv'}
+                                    {'label': 'Yearly', 'value': 'Yearly'},
+                                    {'label': 'Monthly', 'value': 'Monthly'}
                                 ],
-                                placeholder='Export Data',
-                                style={
-                                    'width': '200px',
-                                    'marginRight': '10px',
-                                    'fontSize': '13px',
-                                    'color': '#2c3e50',
-                                    'display': 'inline-block'
-                                },
-                                clearable=False
+                                value='Monthly',
+                                clearable=False,
+                                style=dropdown_style
+                            )
+                        ], style={'minWidth': '200px', 'marginRight': '20px'}),
+                        
+                        # Profile link and Export Dropdown container - make this responsive
+                        html.Div([
+                            html.A(
+                                id='profile-link',
+                                href=initial_profile_url,
+                                target='_blank',
+                                children="Click here to see the Country's Profile",
+                                style=profile_link_style,
+                                className='profile-link-hover'
                             ),
-                            style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': 'auto', 'padding': '0 0px', 'marginLeft': '10px'}
-                        )
-                    ], style={'flex': '1', 'textAlign': 'left', 'display': 'flex', 'alignItems': 'flex-end', 'justifyContent': 'flex-end'})
-                ], style={
-                    'display': 'flex',
-                    'alignItems': 'flex-end',
-                    'gap': '20px',
-                    'width': '100%'
-                })
-            ], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'})
+                            dcc.Loading(
+                                id='export-loading',
+                                type='default',
+                                color='#fe5000',
+                                children=[
+                                    html.Div([
+                                        dcc.Dropdown(
+                                            id='country-profile-export-dropdown',
+                                            options=[
+                                                {'label': 'Export Dashboard PDF', 'value': 'pdf'},
+                                                {'label': 'Export Dashboard PNG', 'value': 'png'},
+                                                {'label': 'Export Map Chart CSV', 'value': 'raw_chart_csv'}
+                                            ],
+                                            placeholder='Export Data',
+                                            style={
+                                                'maxWidth': '200px',
+                                                'minWidth': '150px',
+                                                'marginRight': '10px',
+                                                'fontSize': '13px',
+                                                'color': '#2c3e50',
+                                                'display': 'inline-block'
+                                            },
+                                            clearable=False
+                                        )
+                                    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'padding': '0 0px'})
+                                ]
+                            )
+                        ], style={'flex': '1', 'display': 'flex', 'alignItems': 'flex-end', 'justifyContent': 'flex-end', 'gap': '20px', 'flexWrap': 'wrap'})
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'flex-end',
+                        'gap': '20px',
+                        'width': '100%',
+                        'flexWrap': 'wrap'  # Added to wrap on small screens
+                    })
+                ], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'})
+            ])
         ]),
         
         # Add Download components for dashboard exports
-        dcc.Download(id="download-dashboard-content"),
-        dcc.Download(id="download-raw-chart-csv"),
-        dcc.Download(id="download-png-report"),
+        dcc.Download(id="country-profile-dashboard-content"),
+        dcc.Download(id="country-profile-raw-chart-csv"),
+        dcc.Download(id="country-profile-png-report"),
 
         # Add Download components (hidden UI elements used by callbacks)
         dcc.Download(id='download-production-csv'),
@@ -706,39 +714,24 @@ def create_layout():
                         id='world-map-chart',
                         figure=initial_map,
                         style={
-                            'height': 'calc(90vh - 180px)',  # Full screen height minus filters only
-                            'width': '100%',  # Full viewport width - no space
+                            'height': 'calc(90vh - 180px)',
+                            'width': '100vw',  # Changed to viewport width
                             'maxWidth': '100%',
                             'background': 'white',
                             'borderRadius': '0',
                             'boxShadow': 'none',
-                            'margin': '0 auto',  # No margin - full width
+                            'margin': '0',
                             'padding': '0',
                             'position': 'relative',
-                            'display': 'block'
-                        }
+                            'display': 'block',
+                            'overflow': 'hidden',
+                            'border': '1px solid #dee2e6'
+                        }, className='map-container'
                     )
                 ]
             ),
-            # Map controls (left side, always visible)
-            # html.Div([
-            #     html.Div([
-            #         html.Button('🔍', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '14px'}),
-            #         html.Button('📋', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '14px'}),
-            #         html.Button('+', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'fontSize': '18px', 'fontWeight': 'bold', 'lineHeight': '1'}),
-            #         html.Button('−', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'fontSize': '18px', 'fontWeight': 'bold', 'lineHeight': '1'}),
-            #         html.Button('⌂', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '14px'}),
-            #         html.Button('▶', style={'width': '32px', 'height': '32px', 'border': '1px solid #d0d0d0', 'background': 'white', 'cursor': 'pointer', 'borderRadius': '2px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'fontSize': '12px'})
-            #     ], style={'display': 'flex', 'flexDirection': 'column', 'padding': '4px', 'background': 'white', 'border': '1px solid #d0d0d0', 'borderRadius': '4px', 'boxShadow': '0 1px 3px rgba(0,0,0,0.1)'})
-            # ], className='map-controls', style={
-            #     'position': 'absolute',
-            #     'left': '10px',
-            #     'top': '10px',
-            #     'opacity': '1',
-            #     'zIndex': '1000'
-            # })
-         ]),
-        
+        ], style={'width': '100%', 'overflow': 'hidden'}),  # Added this wrapper div
+                
         # CSS injection div (will be handled by clientside callback)
         html.Div(id='css-injection-placeholder', style={'display': 'none'}),
         
@@ -1511,7 +1504,8 @@ def create_production_table(country_name, time_period='Yearly'):
             'border': '1px solid #dee2e6',
             'borderRadius': '4px',
             'backgroundColor': 'white',
-            'width': '100%'
+            'width': '100%',
+            'maxWidth': '100%'  # Added this line
         },
         tooltip_data=[
             {
@@ -1730,7 +1724,8 @@ def create_port_details_table(country_name):
         style_table={
             'overflowX': 'auto',
             'maxHeight': '220px',
-            'overflowY': 'auto'
+            'overflowY': 'auto',
+            'maxWidth': '100%'  # Added this line
         },
         fixed_rows={'headers': True}
     )
@@ -2055,7 +2050,8 @@ def create_key_figures_table(country_name, time_period='Monthly'):
             'overflowX': 'auto',
             'border': 'none',
             'backgroundColor': 'white',
-            'width': '100%'
+            'width': '100%',
+            'maxWidth': '100%'  # Added this line
         },
         merge_duplicate_headers=True,
         tooltip_data=[
@@ -2544,10 +2540,10 @@ def register_callbacks(dash_app, server):
     
     # Dashboard-level export callback (PDF, PNG, Map CSV)
     @dash_app.callback(
-        Output('download-dashboard-content', 'data'),
-        Output('download-raw-chart-csv', 'data'),
-        Output('download-png-report', 'data'),
-        Input('dashboard-export-dropdown', 'value'),
+        Output('country-profile-dashboard-content', 'data'),
+        Output('country-profile-raw-chart-csv', 'data'),
+        Output('country-profile-png-report', 'data'),
+        Input('country-profile-export-dropdown', 'value'),
         State('country-select-profile', 'value'),
         State('time-period-select', 'value'),
         State('world-map-chart', 'figure'),
@@ -2686,6 +2682,11 @@ def register_callbacks(dash_app, server):
             style.id = 'country-profile-custom-css';
             style.type = 'text/css';
             style.innerHTML = `
+            /* Global overflow control */
+            body {
+                overflow-x: hidden !important;
+                max-width: 100vw !important;
+            }
             .map-controls {
                 opacity: 1 !important;
             }
@@ -2904,6 +2905,39 @@ def register_callbacks(dash_app, server):
             #world-map-chart .plotly .xaxislayer-above,
             #world-map-chart .plotly .yaxislayer-above {
                 display: none !important;
+            }
+            /* Container overflow fixes */
+            #country-profile-content {
+                overflow-x: hidden;
+                max-width: 100%;
+            }
+
+            /* Map container fixes */
+            .map-container {
+                max-width: 100% !important;
+                overflow: hidden !important;
+            }
+
+            /* Table container fixes */
+            .dash-table-container {
+                max-width: 100% !important;
+                overflow-x: auto !important;
+            }
+
+            /* Responsive tables */
+            @media screen and (max-width: 768px) {
+                .dash-table-container table {
+                    font-size: 11px !important;
+                }
+                
+                .dash-table-container th,
+                .dash-table-container td {
+                    padding: 4px !important;
+                }
+            }
+            /* Prevent parent elements from hiding tooltips */
+            .dash-table-container, .dash-spreadsheet-container {
+                overflow: visible !important;
             }
             `;
             document.head.appendChild(style);
