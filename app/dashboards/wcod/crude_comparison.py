@@ -263,17 +263,45 @@ def load_crude_data(mode):
 
 
 def _columns_from_records(records):
-    """Derive DataTable columns from cached data without re-querying the DB."""
     if not records:
         return []
-    first = records[0]
+
+    # Extract keys
+    keys = list(records[0].keys())
+
+    # Separate CrudeOil and year columns
+    year_cols = []
+    for k in keys:
+        if k != "CrudeOil":
+            try:
+                year_cols.append(int(k))
+            except ValueError:
+                pass
+
+    # Sort years descending
+    year_cols = sorted(year_cols, reverse=True)
+    year_cols = [str(y) for y in year_cols]
+
+    # Final column order
+    ordered_cols = ["CrudeOil"] + year_cols
+
+    # Build Dash columns
     columns = []
-    for key in first.keys():
-        if key == "CrudeOil":
-            columns.append({"name": key, "id": key, "presentation": "markdown"})
+    for col in ordered_cols:
+        if col == "CrudeOil":
+            columns.append({
+                "name": col,
+                "id": col,
+                "presentation": "markdown"
+            })
         else:
-            columns.append({"name": str(key), "id": str(key)})
+            columns.append({
+                "name": col,
+                "id": col
+            })
+
     return columns
+
 
 # ------------------------------------------------------------------------------
 # SAMPLE DATA IF DATABASE QUERY FAILS
