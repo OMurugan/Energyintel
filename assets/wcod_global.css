@@ -582,17 +582,7 @@ div[id*="range-slider"] {
 /* Tooltip specific styles for dash-table-datatable */
 .dash-tooltip {
     position: absolute !important;
-    max-width: 300px;
-    padding: 10px;   
-    border-radius: 4px;
     z-index: 9999 !important; /* Ensure tooltip is on top */
-    opacity: 0.9;
-    overflow: visible !important; /* Allow tooltip content to escape bounds */
-    background-color: #333;
-    color: #fff;
+    overflow: visible !important; /* Allow tooltip content to escape bounds */    
 }
 
-/* Prevent parent elements from hiding tooltips */
-.dash-table-container, .dash-spreadsheet-container {
-    overflow: visible !important;
-}
