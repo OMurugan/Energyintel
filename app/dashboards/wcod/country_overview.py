@@ -640,7 +640,14 @@ def create_layout():
                                     "width": 1280,
                                     "scale": 2
                                 },
-                                'modeBarButtonsToRemove': ['lasso2d', 'select2d', 'hoverClosestCartesian', 'hoverCompareCartesian']
+                                "displaylogo": False,
+                                "displayModeBar": True,
+                                'modeBarButtonsToRemove': [
+                                    'zoom2d', 'pan2d', 'select2d', 'lasso2d', 
+                                    'zoomIn2d', 'zoomOut2d', 'autoScale2d', 
+                                    'hoverClosestCartesian', 'hoverCompareCartesian', 
+                                    'toggleSpikelines', 'toggleSpikeLines', 'spikelines'
+                                ]
                             }
                         )
                     ], id='chart-collapse-content', style={'padding': '0', 'background': 'white', 'border': '1px solid #dee2e6', 'borderRadius': '4px', 'overflow': 'hidden'}),
@@ -1024,7 +1031,9 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
             linecolor='#e0e0e0',  # Light gray color
             linewidth=1,
             title_font=dict(size=12, family='Arial, sans-serif', color='#2c3e50'),
-            tickfont=dict(size=11, family='Arial, sans-serif', color='#2c3e50')
+            tickfont=dict(size=11, family='Arial, sans-serif', color='#2c3e50'),
+            showspikes=False,
+            spikethickness=0
         ),
         yaxis=dict(
             categoryorder='array',
