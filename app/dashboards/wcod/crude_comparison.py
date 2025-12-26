@@ -47,11 +47,12 @@ def _load_crude_data_cached(mode):
         A.to_be_deleted
     FROM fact_wcod_crude A
     LEFT JOIN dim_country GRP 
-           ON A.country_id = GRP.dim_country_id
+        ON A.country_id = GRP.dim_country_id
     LEFT JOIN fact_wcod_crude_bsp_links B 
-           ON A.crude_id = B.crude_id
+        ON A.crude_id = B.crude_id
     WHERE A.to_be_deleted IS NULL
-      AND A.crude_name IS NOT NULL
+    AND A.crude_name IS NOT NULL
+    AND A.crude_name NOT LIKE 'Other Crudes%'
     """
     
     try:
@@ -204,7 +205,7 @@ def _load_crude_data_cached(mode):
         for col in year_cols_sorted:
             if col in pivot_df.columns:
                 pivot_df[col] = pivot_df[col].apply(
-                    lambda x: f"{float(x):,.0f}" if pd.notna(x) and float(x) > 0 else ""
+                    lambda x: (f"{float(x):,.0f}" if float(x) != 0 else "0") if pd.notna(x) else ""
                 )
         
         # Convert CrudeOil to clickable URLs
@@ -345,12 +346,13 @@ def _calculate_combined_sums_cached():
         A.to_be_deleted
     FROM fact_wcod_crude A
     LEFT JOIN dim_country GRP 
-           ON A.country_id = GRP.dim_country_id
+        ON A.country_id = GRP.dim_country_id
     LEFT JOIN fact_wcod_crude_bsp_links B 
-           ON A.crude_id = B.crude_id
+        ON A.crude_id = B.crude_id
     WHERE A.to_be_deleted IS NULL
-      AND A.crude_name IS NOT NULL
-      AND (A.production_kbpd IS NOT NULL OR A.exports_kbpd IS NOT NULL)
+    AND A.crude_name IS NOT NULL
+    AND (A.production_kbpd IS NOT NULL OR A.exports_kbpd IS NOT NULL)
+    AND A.crude_name NOT LIKE 'Other Crudes%';
     """
     
     try:
@@ -518,7 +520,7 @@ def _calculate_combined_sums_cached():
         for col in year_cols_sorted:
             if col in pivot_df.columns:
                 pivot_df[col] = pivot_df[col].apply(
-                    lambda x: f"{float(x):,.0f}" if pd.notna(x) and float(x) > 0 else ""
+                    lambda x: (f"{float(x):,.0f}" if float(x) != 0 else "0") if pd.notna(x) else ""
                 )
         
         # Convert CrudeOil to clickable URLs
@@ -875,7 +877,8 @@ def create_layout(server):
                 style_table={
                     "overflowX": "auto",
                     "overflowY": "auto",
-                    "maxHeight": "500px",
+                    "height": "1000px",
+                    "maxHeight": "1000px",
                     "border": "1px solid #d9d9d9",
                     "backgroundColor": "white",
                     "position": "relative",
@@ -1168,6 +1171,8 @@ def create_layout(server):
             ]),
         ],
         style={
+            "height": "auto",
+            "overflowY": "auto",
             "padding": "25px",
             "backgroundColor": "white",
             "maxWidth": "1500px",
