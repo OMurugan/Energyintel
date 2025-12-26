@@ -602,29 +602,23 @@ def load_production_exports(crude_value: str | None = None):
         prod = row.get("CrudeProduction")
         exp = row.get("CrudeExport")
         
-        # Only append if at least one of production or export data is present and non-negligible
-        if pd.notna(year) and ((pd.notna(prod) and abs(prod) >= 1.0) or (pd.notna(exp) and abs(exp) >= 1.0)):
+        # Convert to float for numeric comparison, coerce errors to NaN
+        prod_numeric = float(prod) if pd.notna(prod) else None
+        exp_numeric = float(exp) if pd.notna(exp) else None
+
+        # Only append if year is valid and at least one of production or export data
+        # is present and its absolute value is >= 1.0 (to exclude negligible values)
+        if pd.notna(year) and (\
+           (prod_numeric is not None and abs(prod_numeric) >= 1.0) or \
+           (exp_numeric is not None and abs(exp_numeric) >= 1.0)
+        ):
             chart_data['years'].append(str(int(year)))
-            chart_data['production'].append(prod if pd.notna(prod) else None)
-            chart_data['exports'].append(exp if pd.notna(exp) else None)
+            chart_data['production'].append(prod_numeric)
+            chart_data['exports'].append(exp_numeric)
 
-    # Ensure data lists are aligned and remove years with no significant production or export data
-    filtered_years = []
-    filtered_production = []
-    filtered_exports = []
-    for i in range(len(chart_data['years'])):
-        if (chart_data['production'][i] is not None and abs(chart_data['production'][i]) >= 1.0) or \
-           (chart_data['exports'][i] is not None and abs(chart_data['exports'][i]) >= 1.0):
-            filtered_years.append(chart_data['years'][i])
-            filtered_production.append(chart_data['production'][i])
-            filtered_exports.append(chart_data['exports'][i])
-
-    chart_data['years'] = filtered_years
-    chart_data['production'] = filtered_production
-    chart_data['exports'] = filtered_exports
-
-    if not chart_data['years'] or not chart_data['production'] or not chart_data['exports']:
-        return fallback
+    if not chart_data['years']:
+        # If no valid years after filtering, return empty chart data
+        return {'years': [], 'production': [], 'exports': []}
 
     return chart_data
 
@@ -1165,7 +1159,7 @@ def create_production_chart(crude_value: str | None = None):
             xanchor="right",
             x=1
         ),
-        xaxis=dict(title="Year", showgrid=False, tickangle=-90, dtick=1),
+        xaxis=dict(title="Year", showgrid=False, tickangle=-90, dtick=1, tickvals=years),
         yaxis=dict(title="Volume ('000 b/d)", range=[0, y_max], showgrid=True),
         plot_bgcolor='white',
         paper_bgcolor='white'
@@ -1263,6 +1257,7 @@ def create_map_chart(crude_value: str | None = None):
         fig.update_geos(
             projection_type="natural earth",
             center=dict(lat=center_lat, lon=center_lon),
+            scope="world",
             showland=True,
             landcolor="rgb(243, 243, 243)",
             showocean=True,
@@ -1271,8 +1266,8 @@ def create_map_chart(crude_value: str | None = None):
             countrycolor="rgb(200, 200, 200)",
             showlakes=True,
             lakecolor="white",
-            lataxis=dict(range=[lat_min, lat_max]),
-            lonaxis=dict(range=[lon_min, lon_max]),
+            lataxis=dict(range=[lat_min - 10, lat_max + 10]),  # Increased padding
+            lonaxis=dict(range=[lon_min - 20, lon_max + 20]),  # Increased padding
             subunitcolor="rgb(200, 200, 200)",
             bgcolor="white"
         )
