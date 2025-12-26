@@ -312,7 +312,27 @@ def create_layout():
         
         # Table
         html.Div([
-            dash_table.DataTable(
+            html.Button("Export Data Table to CSV", id="btn-export-global-prices-data-table-csv", n_clicks=0,
+                        style={
+                            'margin': '10px 0',
+                            'padding': '10px 20px',
+                            'fontSize': '14px',
+                            'fontWeight': 'bold',
+                            'color': '#1b365d',
+                            'backgroundColor': '#f8f9fa',
+                            'border': '1px solid #dee2e6',
+                            'borderRadius': '5px',
+                            'cursor': 'pointer',
+                            'float': 'right'
+                        }),
+            dcc.Download(id="download-global-prices-data-table-csv"),
+        ], style={'display': 'inline-block', 'width': '100%', 'textAlign': 'right'}),
+        html.Div([
+            dcc.Loading(
+                id="loading-global-prices-table",
+                type="default", # You can choose 'graph', 'cube', 'circle', 'dot', or 'default'
+                children=html.Div([
+                    dash_table.DataTable(
                 id='global-prices-table',
                 data=table_data,
                 columns=table_columns,
@@ -331,7 +351,7 @@ def create_layout():
                     'marginTop': '0px'
                 },
                 style_cell={
-                    'textAlign': 'center',
+                    'textAlign': 'right',
                     'padding': '6px 10px',
                     'border': '1px solid #e6e6e6',
                     'backgroundColor': 'white',
@@ -435,15 +455,72 @@ def create_layout():
                         'textAlign': 'center'
                     }
                 ],
-                page_action='none',
-                filter_action='none',
-                sort_action='none',
-                editable=False,
-                row_selectable=False,
-                cell_selectable=True,
-                selected_cells=[]
-            )
-        ], style={'margin': '0 auto', 'maxWidth': '100%'}),
+                 page_action='none',
+                 filter_action='none',
+                 sort_action='none',
+                 editable=False,
+                 row_selectable=False,
+                 cell_selectable=True,
+                 selected_cells=[],
+                 style_header_conditional=[
+                     {
+                         'if': {'header_index': 0}, # For Region headers
+                         'backgroundColor': '#f8f9fa',
+                         'fontWeight': 'bold',
+                         'textAlign': 'center',
+                         'color': '#1b365d'  # Default color for Level 1 header
+                     },
+                     {
+                         'if': {'header_index': 1}, # For Country headers
+                         'backgroundColor': '#f8f9fa',
+                         'fontWeight': 'bold',
+                         'textAlign': 'center',
+                         'color': '#1b365d'
+                     },
+                     {
+                         'if': {'header_index': 2}, # For Blend headers
+                         'backgroundColor': '#f8f9fa',
+                         'fontWeight': 'normal',
+                         'textAlign': 'center',
+                         'color': '#1b365d'
+                     }
+                 ],
+                 css=[
+                     {
+                         'selector': '.dash-table-tooltip',
+                         'rule': 'display: none'
+                     },
+                     {
+                         'selector': '#global-prices-table .dash-spreadsheet-container th',
+                         'rule': 'cursor: pointer; transition: background-color 0.2s ease;'
+                     },
+                     {
+                         'selector': '#global-prices-table .dash-spreadsheet-container th.column-selected',
+                         'rule': 'background-color: #b3d9ff !important; color: #1b365d !important; font-weight: bold !important;'
+                     },
+                     {
+                         'selector': '#global-prices-table .dash-spreadsheet-container td.column-cell-selected',
+                         'rule': 'background-color: #b3d9ff !important; border: none !important; font-weight: 600 !important; color: #1b365d !important; opacity: 1 !important;'
+                     },
+                     {
+                         'selector': '#global-prices-table .dash-spreadsheet-container td.row-cell-selected',
+                         'rule': 'background-color: #b3d9ff !important; border: none !important; font-weight: 600 !important; color: #1b365d !important; opacity: 1 !important;'
+                     },
+                     {
+                         'selector': '#global-prices-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"]):not(.column-cell-selected)',
+                         'rule': 'opacity: 0.3 !important;'
+                     },
+                     {
+                         'selector': '#global-prices-table .dash-spreadsheet-container.row-selection-active tbody tr:not(.row-selected) td',
+                         'rule': 'opacity: 0.3 !important;'
+                     },
+                     {
+                         'selector': '#global-prices-table .dash-spreadsheet-container.row-selection-active tbody tr.row-selected td.row-cell-selected',
+                         'rule': 'opacity: 1 !important; background-color: #b3d9ff !important; color: #1b365d !important; font-weight: 600 !important; border: none !important;'
+                     }
+                 ]
+             )], style={'width': '100%', 'overflowX': 'hidden'})
+         )], style={'margin': '0 auto', 'maxWidth': '100%', 'position': 'relative'}),
         
         # Hidden div for clientside callback anchor
         html.Div(id='global-prices-enhancer-anchor', style={'display': 'none'}),
@@ -452,8 +529,21 @@ def create_layout():
         html.Script(
             id='global-prices-clientside-script',
             children=''
+        ),
+        # Footnote
+        html.Div(
+            "Countries: Select jurisdictions are included under countries for data presentation purposes.",
+            style={
+                'fontSize': '10px', # Smaller font size for footnotes
+                'color': '#6c757d', # Grayish color for footnotes
+                'textAlign': 'left',
+                'marginTop': '20px',
+                'marginBottom': '10px',
+                'paddingLeft': '20px',
+                'fontFamily': 'Arial, sans-serif'
+            }
         )
-    ], style={'padding': '10px 20px 0 20px', 'backgroundColor': '#ffffff'})
+    ], style={'backgroundColor': '#ffffff'})
 
 
 def register_callbacks(dash_app, server):
@@ -722,26 +812,27 @@ def register_callbacks(dash_app, server):
                     const allHeaders = spreadsheet.querySelectorAll('th.column-selected');
                     allHeaders.forEach(header => {
                         header.classList.remove('column-selected');
-                        header.style.backgroundColor = '';
-                        header.style.color = '';
-                        header.style.fontWeight = '';
+                        header.style.removeProperty('background-color');
+                        header.style.removeProperty('color');
+                        header.style.removeProperty('font-weight');
                     });
                     
                     // Clear all column cells
                     const allColumnCells = spreadsheet.querySelectorAll('td.column-cell-selected');
                     allColumnCells.forEach(cell => {
                         cell.classList.remove('column-cell-selected');
-                        cell.style.backgroundColor = '';
-                        cell.style.border = '';
-                        cell.style.fontWeight = '';
-                        cell.style.opacity = '';
+                        cell.style.removeProperty('background-color');
+                        cell.style.removeProperty('border');
+                        cell.style.removeProperty('font-weight');
+                        cell.style.removeProperty('color');
+                        cell.style.removeProperty('opacity');
                     });
                     
                     // Remove column selection active class and reset opacity for all cells
                     spreadsheet.classList.remove('column-selection-active');
                     const allDataCells = spreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"])');
                     allDataCells.forEach(cell => {
-                        cell.style.opacity = '';
+                        cell.style.removeProperty('opacity');
                     });
                 }
                 
@@ -1264,7 +1355,16 @@ def register_callbacks(dash_app, server):
                                 headerRows = Array.from(clickedSpreadsheet.querySelectorAll('thead tr'));
                             }
                             
+                            // If still no rows, try finding any tr containing headers
+                            if (headerRows.length === 0 && clickedSpreadsheet) {
+                                const allTrs = clickedSpreadsheet.querySelectorAll('tr');
+                                headerRows = Array.from(allTrs).filter(tr => {
+                                    return tr.querySelector('th[data-dash-column]') !== null;
+                                });
+                            }
+                            
                             // Filter out rows that only contain Year/Quarter/Month/Day headers - we only want data column header rows
+                            // A data column header row should have at least one header with columnId not in the fixed list
                             headerRows = headerRows.filter(tr => {
                                 const dataHeaders = tr.querySelectorAll('th[data-dash-column]:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"])');
                                 return dataHeaders.length > 0;
@@ -1276,17 +1376,19 @@ def register_callbacks(dash_app, server):
                                 headerIndex = headerRows.indexOf(headerRow);
                             } else if (headerRow) {
                                 // If headerRow is not in the filtered list, it might be a Year/Quarter/Month/Day row
+                                // Try to find it in the original thead rows
                                 const theadRows = thead ? Array.from(thead.querySelectorAll('tr')) : [];
-                                const allDataRows = theadRows.filter(tr => {
+                                const allDataHeadersRows = theadRows.filter(tr => {
                                     const dataHeaders = tr.querySelectorAll('th[data-dash-column]:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"])');
                                     return dataHeaders.length > 0;
                                 });
-                                if (allDataRows.length > 0) {
-                                    headerIndex = allDataRows.indexOf(headerRow);
-                                    headerRows = allDataRows;
+                                if (allDataHeadersRows.length > 0) {
+                                    headerIndex = allDataHeadersRows.indexOf(headerRow);
+                                    headerRows = allDataHeadersRows;
                                     totalHeaderRows = headerRows.length;
                                 }
                             }
+                            
                             
                             // Create a unique key for this selection (columnId + headerIndex)
                             const selectionKey = columnId + '_' + headerIndex;
@@ -1318,7 +1420,7 @@ def register_callbacks(dash_app, server):
                                     // Bottom or top header clicked - highlight ALL header levels and data cells
                                     if (isTopHeader) {
                                         // For top header, find all columns that share the same top-level header text
-                                        const topHeaderText = header.textContent.trim();
+                                        const topHeaderText = getCellTextWithoutIcons(header, 'year-header-toggle');
                                         
                                         // Check if header has colspan (spans multiple columns)
                                         const colspan = header.getAttribute('colspan') || header.colSpan;
@@ -1479,9 +1581,9 @@ def register_callbacks(dash_app, server):
                                                 // If this header matches the clicked header's text or is the clicked header
                                                 if (hText === topHeaderText || h === header || h.contains(header)) {
                                                     h.classList.add('column-selected');
-                                                    h.style.backgroundColor = '#b3d9ff';
-                                                    h.style.color = '#1b365d';
-                                                    h.style.fontWeight = 'bold';
+                                                    h.style.setProperty('background-color', '#b3d9ff', 'important');
+                                                    h.style.setProperty('color', '#1b365d', 'important');
+                                                    h.style.setProperty('font-weight', 'bold', 'important');
                                                 }
                                             });
                                             
@@ -1490,11 +1592,11 @@ def register_callbacks(dash_app, server):
                                                 const colCells = clickedSpreadsheet.querySelectorAll(`td[data-dash-column="${colId}"]`);
                                                 colCells.forEach(cell => {
                                                     cell.classList.add('column-cell-selected');
-                                                    cell.style.backgroundColor = '#b3d9ff';
-                                                    cell.style.border = '';
-                                                    cell.style.fontWeight = '600';
-                                                    cell.style.color = '#1b365d';
-                                                    cell.style.opacity = '1';
+                                                    cell.style.setProperty('background-color', '#b3d9ff', 'important');
+                                                    cell.style.setProperty('border', 'none', 'important');
+                                                    cell.style.setProperty('font-weight', '600', 'important');
+                                                    cell.style.setProperty('color', '#1b365d', 'important');
+                                                    cell.style.setProperty('opacity', '1', 'important');
                                                 });
                                             });
                                             
@@ -1505,7 +1607,7 @@ def register_callbacks(dash_app, server):
                                             allDataCells.forEach(cell => {
                                                 const cellColId = cell.getAttribute('data-dash-column');
                                                 if (!columnIds.has(cellColId)) {
-                                                    cell.style.opacity = '0.3';
+                                                    cell.style.setProperty('opacity', '0.3', 'important');
                                                 }
                                             });
                                         }
@@ -1528,11 +1630,11 @@ def register_callbacks(dash_app, server):
                                             const cellValue = getCellValue(cell);
                                             if (cellValue && cellValue !== '' && cellValue !== 'NaN' && !isNaN(parseFloat(cellValue))) {
                                                 cell.classList.add('column-cell-selected');
-                                                cell.style.backgroundColor = '#b3d9ff';
-                                                cell.style.border = '';
-                                                cell.style.fontWeight = '600';
-                                                cell.style.color = '#1b365d';
-                                                cell.style.opacity = '1';
+                                                    cell.style.setProperty('background-color', '#b3d9ff', 'important');
+                                                    cell.style.setProperty('border', 'none', 'important');
+                                                    cell.style.setProperty('font-weight', '600', 'important');
+                                                    cell.style.setProperty('color', '#1b365d', 'important');
+                                                    cell.style.setProperty('opacity', '1', 'important');
                                             }
                                         });
                                         
@@ -1550,7 +1652,7 @@ def register_callbacks(dash_app, server):
                                     // Middle header (Level 1 or Level 2) - highlight the clicked header and all sub-columns
                                     const headerColspan = header.getAttribute('colspan') || header.colSpan;
                                     const spanCount = headerColspan ? parseInt(headerColspan) : 1;
-                                    const headerText = header.textContent.trim();
+                                    const headerText = getCellTextWithoutIcons(header, 'year-header-toggle');
                                     
                                     // Get all columns under this header (all bottom-level columns)
                                     const columnIds = new Set();
@@ -1710,9 +1812,9 @@ def register_callbacks(dash_app, server):
                                                 // If this header matches the clicked header's text or is the clicked header
                                                 if (hText === headerText || h === header || h.contains(header)) {
                                                     h.classList.add('column-selected');
-                                                    h.style.backgroundColor = '#b3d9ff';
-                                                    h.style.color = '#1b365d';
-                                                    h.style.fontWeight = 'bold';
+                                                    h.style.setProperty('background-color', '#b3d9ff', 'important');
+                                                    h.style.setProperty('color', '#1b365d', 'important');
+                                                    h.style.setProperty('font-weight', 'bold', 'important');
                                                 }
                                             });
                                         }
@@ -1722,14 +1824,14 @@ def register_callbacks(dash_app, server):
                                     if (columnIds.size > 0) {
                                         columnIds.forEach(colId => {
                                             const colCells = clickedSpreadsheet.querySelectorAll(`td[data-dash-column="${colId}"]`);
-                                            colCells.forEach(cell => {
-                                                cell.classList.add('column-cell-selected');
-                                                cell.style.backgroundColor = '#b3d9ff';
-                                                cell.style.border = '';
-                                                cell.style.fontWeight = '600';
-                                                cell.style.color = '#1b365d';
-                                                cell.style.opacity = '1';
-                                            });
+                                                colCells.forEach(cell => {
+                                                    cell.classList.add('column-cell-selected');
+                                                    cell.style.setProperty('background-color', '#b3d9ff', 'important');
+                                                    cell.style.setProperty('border', 'none', 'important');
+                                                    cell.style.setProperty('font-weight', '600', 'important');
+                                                    cell.style.setProperty('color', '#1b365d', 'important');
+                                                    cell.style.setProperty('opacity', '1', 'important');
+                                                });
                                         });
                                         
                                         clickedSpreadsheet.classList.add('column-selection-active');
@@ -1738,9 +1840,9 @@ def register_callbacks(dash_app, server):
                                         const allDataCells = clickedSpreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"])');
                                         allDataCells.forEach(cell => {
                                             const cellColId = cell.getAttribute('data-dash-column');
-                                            if (!columnIds.has(cellColId)) {
-                                                cell.style.opacity = '0.3';
-                                            }
+                                                if (!columnIds.has(cellColId)) {
+                                                    cell.style.setProperty('opacity', '0.3', 'important');
+                                                }
                                         });
                                     } else {
                                         clickedSpreadsheet.classList.remove('column-selection-active');
@@ -2115,3 +2217,23 @@ def register_callbacks(dash_app, server):
         Input('global-prices-table', 'id'),
         prevent_initial_call=False
     )
+    
+    @dash_app.callback(
+        Output('download-global-prices-data-table-csv', 'data'),
+        Input('btn-export-global-prices-data-table-csv', 'n_clicks'),
+        prevent_initial_call=True
+    )
+    def export_global_prices_table_data_to_csv(n_clicks):
+        if n_clicks:
+            # Load the original wide-format DataFrame and column metadata directly from the database
+            df, _ = load_crude_prices_data()
+            
+            # Since the data is already in a wide format suitable for export,
+            # we can directly send it as a CSV.
+            # No need to filter columns or reconstruct from table_data/table_columns.
+            
+            # Fill None values with empty string for better CSV representation
+            export_df = df.fillna('')
+            
+            return dcc.send_data_frame(export_df.to_csv, "global_crude_prices.csv", index=False)
+        return None
