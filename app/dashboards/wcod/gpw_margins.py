@@ -1699,7 +1699,8 @@ def create_layout():
                                     'textAlign': 'left',
                                     'fontWeight': 'bold',
                                     'minWidth': '80px',
-                                    'backgroundColor': '#f8f9fa'
+                                    'backgroundColor': '#f8f9fa',
+                                    'fontSize': '13px' # Adjusted font size for DateStr column
                                 }
                             ],
                             style_data_conditional=[
@@ -2091,9 +2092,11 @@ def register_callbacks(dash_app, server):
     )
     def export_incremental_margins_to_csv(n_clicks, region, date_range, crudes, tech_types):
         if n_clicks > 0:
-            print(f"[DEBUG] n_clicks: {n_clicks}, region: {region}, date_range: {date_range}, crudes: {crudes}, tech_types: {tech_types}")
-            start_date = datetime.fromtimestamp(date_range[0] / 1000).strftime('%Y-%m-%d') if date_range else None
-            end_date = datetime.fromtimestamp(date_range[1] / 1000).strftime('%Y-%m-%d') if date_range else None
+            print(f"[DEBUG] n_clicks: {n_clicks}, region: {region}, date_slider_value: {date_range}, crudes: {crudes}, tech_types: {tech_types}")
+            
+            # The date_range here is actually the single slider value (index)
+            start_date = _index_to_date(date_range).strftime('%Y-%m-%d') if date_range is not None else DEFAULT_START_DATE.strftime('%Y-%m-%d')
+            end_date = DEFAULT_END_DATE.strftime('%Y-%m-%d')
 
             filtered_crudes = [c for c in crudes if c != 'ALL'] if crudes else None
             filtered_tech_types = [t for t in tech_types if t != 'ALL'] if tech_types else None
@@ -2114,8 +2117,8 @@ def register_callbacks(dash_app, server):
     )
     def export_gpw_table_data_to_csv(n_clicks, region, date_range, crudes, tech_types):
         if n_clicks > 0:
-            start_date = datetime.fromtimestamp(date_range[0] / 1000).strftime('%Y-%m-%d') if date_range else None
-            end_date = datetime.fromtimestamp(date_range[1] / 1000).strftime('%Y-%m-%d') if date_range else None
+            start_date = _index_to_date(date_range).strftime('%Y-%m-%d') if date_range is not None else DEFAULT_START_DATE.strftime('%Y-%m-%d')
+            end_date = DEFAULT_END_DATE.strftime('%Y-%m-%d')
             
             # Exclude 'ALL' from crudes and tech_types before passing to DB
             filtered_crudes = [c for c in crudes if c != 'ALL'] if crudes else None
