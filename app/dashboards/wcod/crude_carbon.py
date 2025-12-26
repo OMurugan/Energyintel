@@ -69,15 +69,28 @@ def create_layout():
     max_year = 2024
     
     return html.Div([
+        dcc.Download(id="download-carbon-intensity-csv"), # Added Download component
         html.Div([
             # Main visualization area (75% width)
-            html.Div([
+            html.Div(style={'width': '75%', 'float': 'left', 'paddingRight': '20px'}, children=[ # This div wraps the title/button and chart
+                html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                    html.Div("Upstream Crude Oil Production by Carbon Intensity", style={
+                        "color": "#E75224", # Use title color from create_carbon_treemap_figure
+                        "fontWeight": "bold",
+                        "fontSize": "20px",
+                        "fontFamily": "Arial, sans-serif",
+                        "marginBottom": "5px"
+                    }),
+                    html.Button("Export CSV", id='export-carbon-intensity-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                ]),
                 dcc.Graph(
                     id='crude-carbon-chart', 
                     style={'height': '700px'},
                     config={'displayModeBar': False}
                 )
-            ], style={'width': '75%', 'float': 'left', 'paddingRight': '20px'}),
+            ]), # Closing for the main visualization area div
             
             # Control panel (25% width)
             html.Div([
@@ -536,15 +549,15 @@ def create_carbon_treemap_figure(df=None, country_filter=None, crude_filter=None
         )
 
     fig.update_layout(
-        title=dict(
-            text="Upstream Crude Oil Production by Carbon Intensity",
-            x=0.5,
-            xanchor="center",
-            y=0.98,
-            font=dict(size=20, color="#E75224", family="Arial, sans-serif")
-        ),
+        # title=dict(
+        #     text="Upstream Crude Oil Production by Carbon Intensity",
+        #     x=0.5,
+        #     xanchor="center",
+        #     y=0.98,
+        #     font=dict(size=20, color="#E75224", family="Arial, sans-serif")
+        # ),
         height=700,
-        margin=dict(l=10, r=10, t=60, b=10),
+        margin=dict(l=10, r=10, t=10, b=10),
         paper_bgcolor="white",
         plot_bgcolor="white",
         showlegend=False,
@@ -782,6 +795,84 @@ def register_callbacks(dash_app, server):
         
         return new_year, new_year, str(new_year)
     
+    # Callback for CSV export
+    @dash_app.callback(
+        Output('download-carbon-intensity-csv', 'data'),
+        Input('export-carbon-intensity-btn', 'n_clicks'),
+        State('carbon-year-display', 'children'),
+        State('carbon-country-select', 'value'),
+        State('carbon-crude-filter', 'value'),
+        State('carbon-intensity-filter', 'value'),
+        prevent_initial_call=True
+    )
+    def export_carbon_intensity_csv(n_clicks, year_str, country_filter, crude_filter, intensity_filter):
+        if not n_clicks:
+            raise dash.exceptions.PreventUpdate
+
+        # Convert year string to int
+        try:
+            year = int(year_str) if year_str else 2022
+        except:
+            year = 2022
+
+        # Handle None inputs for filters
+        if country_filter is None:
+            country_filter = ['(All)']
+        if crude_filter is None:
+            crude_filter = ''
+        if intensity_filter is None or len(intensity_filter) == 0:
+            intensity_filter = ['Very High', 'High', 'Medium', 'Low', 'Very Low']
+
+        df = load_carbon_data()
+        if df.empty:
+            raise dash.exceptions.PreventUpdate
+
+        # Apply filters to data (similar to create_carbon_treemap_figure)
+        filtered_df = df.copy()
+        if year is not None and "Year" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["Year"] == year]
+        if country_filter and isinstance(country_filter, list) and "(All)" not in country_filter:
+            filtered_df = filtered_df[filtered_df["Country"].isin(country_filter)]
+        if crude_filter:
+            filtered_df = filtered_df[filtered_df["Crude list"].str.contains(crude_filter, case=False, na=False)]
+        if intensity_filter:
+            filtered_df = filtered_df[filtered_df["Carbon Intensity"].isin(intensity_filter)]
+
+        if filtered_df.empty:
+            raise dash.exceptions.PreventUpdate
+
+        # Prepare data for CSV export - simplify crude list for CSV
+        def _format_crude_list_for_csv(rows):
+            unique_entries = []
+            for raw in rows:
+                entry = str(raw).strip()
+                if not entry or entry.lower() == "nan":
+                    continue
+                if entry not in unique_entries:
+                    unique_entries.append(entry)
+            return ", ".join(unique_entries)
+
+        # Group by Country, Carbon Intensity, and Year and aggregate
+        grouped_for_csv = (
+            filtered_df.groupby(["Country", "Carbon Intensity", "Year"])
+            .agg({
+                "Crude list": _format_crude_list_for_csv,
+                "Production": "sum"
+            })
+            .reset_index()
+        )
+
+        # Rename columns for clarity in CSV
+        grouped_for_csv = grouped_for_csv.rename(columns={
+            "Country": "Country",
+            "Carbon Intensity": "Carbon Intensity",
+            "Year": "Year",
+            "Crude list": "Crude List",
+            "Production": "Production (000 b/d)"
+        })
+
+        return dcc.send_data_frame(grouped_for_csv.to_csv, filename=f"Crude_Carbon_Intensity_Data_{year}.csv")
+
     # Callback for proper (All) multi-select logic on the country dropdown
     @dash_app.callback(
         Output('carbon-country-select', 'value', allow_duplicate=True),
