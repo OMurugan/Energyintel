@@ -1530,7 +1530,7 @@ def create_layout(server=None):
                     ],
                     style={"height":"520px"}
                 ), 
-                className='col-md-9',
+                className='col-md-10',
                 style={'padding': '15px'}
             ),
             html.Div([
@@ -1581,7 +1581,7 @@ def create_layout(server=None):
                     "maxHeight": "400px",
                     "overflowY": "auto"
                 })
-            ], className='col-md-3', style={'padding': '15px'})
+            ], className='col-md-2', style={'padding': '15px'})
         ], className='row'),
         html.Br(),
         html.H4(
@@ -1621,7 +1621,7 @@ def create_layout(server=None):
                     ],
                     style={"minHeight": "400px"}
                 )
-            ], className='col-md-9', style={'padding': '15px', 'minHeight': '400px'}),
+            ], className='col-md-10', style={'padding': '15px', 'minHeight': '400px'}),
             html.Div([
                 html.Label("Stream Name"),
                 dcc.Input(id="filter-stream", type="text", placeholder="Stream Name"),
@@ -1646,7 +1646,7 @@ def create_layout(server=None):
                     options=[{"label":"(All)", "value":"(All)"}] + [{"label":v, "value":v} for v in SULFUR_FILTER_CHOICES],
                     multi=True
                 ),
-            ], className='col-md-3', style={'padding': '15px'})
+            ], className='col-md-2', style={'padding': '15px'})
         ], className='row')
     ], style={'padding': '20px', 'background': '#f8f9fa'})
 
@@ -2141,10 +2141,10 @@ def register_callbacks(dash_app, server):
                 "fontSize": "12px",
                 "verticalAlign": "middle",
                 "backgroundColor": bg_color,
-                "padding": "8px 12px",
+                "padding": "6px 10px",  # Reduced padding to make bars thinner
                 "borderRadius": "0px",  # No border radius to match fig2
                 "display": "block",
-                "width": "100%",
+                "width": "100%",  # Reduced width from 100% to make bars thinner
                 "textAlign": "left",
                 "color": text_color,
                 "fontWeight": "500",
