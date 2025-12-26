@@ -47,11 +47,12 @@ def _load_crude_data_cached(mode):
         A.to_be_deleted
     FROM fact_wcod_crude A
     LEFT JOIN dim_country GRP 
-           ON A.country_id = GRP.dim_country_id
+        ON A.country_id = GRP.dim_country_id
     LEFT JOIN fact_wcod_crude_bsp_links B 
-           ON A.crude_id = B.crude_id
+        ON A.crude_id = B.crude_id
     WHERE A.to_be_deleted IS NULL
-      AND A.crude_name IS NOT NULL
+    AND A.crude_name IS NOT NULL
+    AND A.crude_name NOT LIKE 'Other Crudes%'
     """
     
     try:
@@ -204,7 +205,7 @@ def _load_crude_data_cached(mode):
         for col in year_cols_sorted:
             if col in pivot_df.columns:
                 pivot_df[col] = pivot_df[col].apply(
-                    lambda x: f"{float(x):,.0f}" if pd.notna(x) and float(x) > 0 else ""
+                    lambda x: (f"{float(x):,.0f}" if float(x) != 0 else "0") if pd.notna(x) else ""
                 )
         
         # Convert CrudeOil to clickable URLs
@@ -263,17 +264,45 @@ def load_crude_data(mode):
 
 
 def _columns_from_records(records):
-    """Derive DataTable columns from cached data without re-querying the DB."""
     if not records:
         return []
-    first = records[0]
+
+    # Extract keys
+    keys = list(records[0].keys())
+
+    # Separate CrudeOil and year columns
+    year_cols = []
+    for k in keys:
+        if k != "CrudeOil":
+            try:
+                year_cols.append(int(k))
+            except ValueError:
+                pass
+
+    # Sort years descending
+    year_cols = sorted(year_cols, reverse=True)
+    year_cols = [str(y) for y in year_cols]
+
+    # Final column order
+    ordered_cols = ["CrudeOil"] + year_cols
+
+    # Build Dash columns
     columns = []
-    for key in first.keys():
-        if key == "CrudeOil":
-            columns.append({"name": key, "id": key, "presentation": "markdown"})
+    for col in ordered_cols:
+        if col == "CrudeOil":
+            columns.append({
+                "name": col,
+                "id": col,
+                "presentation": "markdown"
+            })
         else:
-            columns.append({"name": str(key), "id": str(key)})
+            columns.append({
+                "name": col,
+                "id": col
+            })
+
     return columns
+
 
 # ------------------------------------------------------------------------------
 # SAMPLE DATA IF DATABASE QUERY FAILS
@@ -317,12 +346,13 @@ def _calculate_combined_sums_cached():
         A.to_be_deleted
     FROM fact_wcod_crude A
     LEFT JOIN dim_country GRP 
-           ON A.country_id = GRP.dim_country_id
+        ON A.country_id = GRP.dim_country_id
     LEFT JOIN fact_wcod_crude_bsp_links B 
-           ON A.crude_id = B.crude_id
+        ON A.crude_id = B.crude_id
     WHERE A.to_be_deleted IS NULL
-      AND A.crude_name IS NOT NULL
-      AND (A.production_kbpd IS NOT NULL OR A.exports_kbpd IS NOT NULL)
+    AND A.crude_name IS NOT NULL
+    AND (A.production_kbpd IS NOT NULL OR A.exports_kbpd IS NOT NULL)
+    AND A.crude_name NOT LIKE 'Other Crudes%';
     """
     
     try:
@@ -490,7 +520,7 @@ def _calculate_combined_sums_cached():
         for col in year_cols_sorted:
             if col in pivot_df.columns:
                 pivot_df[col] = pivot_df[col].apply(
-                    lambda x: f"{float(x):,.0f}" if pd.notna(x) and float(x) > 0 else ""
+                    lambda x: (f"{float(x):,.0f}" if float(x) != 0 else "0") if pd.notna(x) else ""
                 )
         
         # Convert CrudeOil to clickable URLs
@@ -847,7 +877,8 @@ def create_layout(server):
                 style_table={
                     "overflowX": "auto",
                     "overflowY": "auto",
-                    "maxHeight": "500px",
+                    "height": "1000px",
+                    "maxHeight": "1000px",
                     "border": "1px solid #d9d9d9",
                     "backgroundColor": "white",
                     "position": "relative",
@@ -1140,6 +1171,8 @@ def create_layout(server):
             ]),
         ],
         style={
+            "height": "auto",
+            "overflowY": "auto",
             "padding": "25px",
             "backgroundColor": "white",
             "maxWidth": "1500px",

@@ -6,6 +6,7 @@ from core.data_helpers import execute_query
 import os
 import numpy as np
 import dash
+import time
 
 
 def _set_df_metadata(df, **metadata):
@@ -1411,31 +1412,9 @@ def create_layout(dash_app=None):
     yield_df = pd.DataFrame()
     
     # Find column IDs for Country and CrudeOil for Yield table (for sticky positioning and styling)
-    # These will be determined in the callback when data loads
-    yield_country_col_id = None
-    yield_crudeoil_col_id = None
-    if not yield_df.empty:
-        yield_column_info = _get_df_metadata(yield_df, "column_info")
-        if yield_column_info:
-            for info in yield_column_info:
-                if info.get('sub') == 'Country':
-                    yield_country_col_id = info.get('id')
-                elif info.get('sub') == 'CrudeOil':
-                    yield_crudeoil_col_id = info.get('id')
-        # Fallback: check column names directly
-        if not yield_country_col_id:
-            for col in yield_df.columns:
-                if col == 'Country' or (isinstance(col, str) and 'Country' in col):
-                    yield_country_col_id = col
-                    break
-        if not yield_crudeoil_col_id:
-            for col in yield_df.columns:
-                if col == 'CrudeOil' or (isinstance(col, str) and 'CrudeOil' in col):
-                    yield_crudeoil_col_id = col
-                    break
-        
-    # Static dropdown options for X-axis, Y-axis, and Bubble Size
-    # Based on the Property - Unit format from the crossplot query
+    # These will be determined in the callback when data loads, but set defaults for initial render
+    yield_country_col_id = "Country"
+    yield_crudeoil_col_id = "CrudeOil"
     all_property_options = [
         {"label": "Gravity-API at 60 F", "value": "Gravity-API at 60 F"},
         {"label": "Barrels-Per Metric Ton", "value": "Barrels-Per Metric Ton"},
@@ -1487,21 +1466,21 @@ def create_layout(dash_app=None):
                         dcc.Input(
                             id="x-range-min-input",
                             type="text",
-                            value=0,
+                            value=10.7,
                             style={'display': 'inline-block'}
                         ),
                         dcc.Input(
                             id="x-range-max-input",
                             type="text",
-                            value=100,
+                            value=68.6,
                             style={'display': 'inline-block', 'float': 'right'}
                         ),
                     ], style={'width': '386px', 'marginBottom': '10px', 'position': 'relative'}),
                     html.Div([
                         dcc.RangeSlider(
                             id="x-range-slider",
-                            min=0,
-                            max=100, step=0.1, value=[0, 100],
+                            min=10.7,
+                            max=68.6, step=0.1, value=[10.7, 68.6],
                             marks=None,
                         ),
                     ], style={'width': '386px', 'margin': '0', 'padding': '0'}),
@@ -1534,7 +1513,7 @@ def create_layout(dash_app=None):
                         dcc.Input(
                             id="y-range-max-input",
                             type="text",
-                            value=100,
+                            value=5.98,
                             style={'display': 'inline-block', 'float': 'right'}
                         ),
                     ], style={'width': '386px', 'marginBottom': '10px', 'position': 'relative'}),
@@ -1542,7 +1521,7 @@ def create_layout(dash_app=None):
                 dcc.RangeSlider(
                     id="y-range-slider",
                             min=0,
-                            max=100, step=0.01, value=[0, 100],
+                            max=5.98, step=0.01, value=[0, 5.98],
                             marks=None,
                         ),
                     ], style={'width': '386px', 'margin': '0', 'padding': '0'}),
@@ -1575,7 +1554,7 @@ def create_layout(dash_app=None):
                         dcc.Input(
                             id="bubble-range-max-input",
                             type="text",
-                            value=100,
+                            value=5.98,
                             style={'display': 'inline-block', 'float': 'right'}
                         ),
                     ], style={'width': '386px', 'marginBottom': '10px', 'position': 'relative'}),
@@ -1583,9 +1562,9 @@ def create_layout(dash_app=None):
                 dcc.RangeSlider(
                     id="bubble-range-slider",
                             min=0,
-                            max=100,
-                    step=1,
-                            value=[0, 100],
+                            max=5.98,
+                    step=0.01,
+                            value=[0, 5.98],
                             marks=None,
                         ),
                     ], style={'width': '386px', 'margin': '0', 'padding': '0'}),
@@ -1601,18 +1580,22 @@ def create_layout(dash_app=None):
         html.Div([
             # Chart
             html.Div([
-                dcc.Graph(
-                    id='crude-quality-chart',
-                    config={
-                        'displayModeBar': False,
-                        'displaylogo': False,
-                        'modeBarButtonsToRemove': [
-                            'pan2d', 'zoom2d', 'select2d', 'lasso2d',
-                            'autoScale2d', 'resetScale2d',
-                            'hoverClosestCartesian', 'hoverCompareCartesian',
-                            'zoomIn2d', 'zoomOut2d'
-                        ]
-                    }
+                dcc.Loading(
+                    id="loading-crude-quality-chart",
+                    type="circle",
+                    children=dcc.Graph(
+                        id='crude-quality-chart',
+                        config={
+                            'displayModeBar': False,
+                            'displaylogo': False,
+                            'modeBarButtonsToRemove': [
+                                'pan2d', 'zoom2d', 'select2d', 'lasso2d',
+                                'autoScale2d', 'resetScale2d',
+                                'hoverClosestCartesian', 'hoverCompareCartesian',
+                                'zoomIn2d', 'zoomOut2d'
+                            ]
+                        }
+                    )
                 )
             ], style={'width': '80%', 'display': 'inline-block', 'verticalAlign': 'top'}),
 
@@ -1800,12 +1783,13 @@ def create_layout(dash_app=None):
                             },
                         ],
                         style_data_conditional=[
-                            # Apply gray background to entire row when country is not empty
                             {
-                                'if': {
-                                    'filter_query': f'{{{country_col_id}}} != ""'
-                                },
-                                'backgroundColor': '#F5F5F5'
+                                'if': {'row_index': 'odd'},
+                                'backgroundColor': '#f9f9f9'
+                            },
+                            {
+                                'if': {'row_index': 'even'},
+                                'backgroundColor': '#ffffff'
                             },
                             # Country column styling - header rows (non-empty)
                             {
@@ -1968,92 +1952,41 @@ def create_layout(dash_app=None):
                         },
                     ] if yield_country_col_id and yield_crudeoil_col_id else []),
                     style_data_conditional=([
-                        # Apply gray background to entire row when country is not empty (country header rows)
                         {
-                            'if': {
-                                'filter_query': f'{{{yield_country_col_id}}} != ""'
-                            },
-                            'backgroundColor': '#F5F5F5',
-                            'borderTop': '2px solid #CFCFCF'
+                            'if': {'row_index': 'odd'},
+                            'backgroundColor': '#f9f9f9'
                         },
-                        # Country column styling - header rows (non-empty)
                         {
-                            'if': {
-                                'filter_query': f'{{{yield_country_col_id}}} != ""',
-                                'column_id': yield_country_col_id
-                            },
+                            'if': {'row_index': 'even'},
+                            'backgroundColor': '#ffffff'
+                        },
+                        # Retain existing conditional styles for specific columns if needed
+                        {
+                            'if': {'column_id': yield_country_col_id},
                             'fontWeight': 'bold',
                             'borderTop': '2px solid #CFCFCF',
                             'borderBottom': '1px solid #E6E6E6',
                             'verticalAlign': 'middle',
                             'padding': '8px 8px',
-                            'backgroundColor': '#F5F5F5'
+                            'textAlign': 'left',
                         },
-                        # Country column - child rows (empty country cell) - remove top border
                         {
-                            'if': {
-                                'filter_query': f'{{{yield_country_col_id}}} = ""',
-                                'column_id': yield_country_col_id
-                            },
-                            'borderTop': 'none',
-                            'borderBottom': '1px solid #E6E6E6',
-                            'backgroundColor': 'white',
-                            'padding': '8px 8px'
-                        },
-                        # All cells in child rows (when country is empty) - ensure white background
-                        {
-                            'if': {
-                                'filter_query': f'{{{yield_country_col_id}}} = ""'
-                            },
-                            'backgroundColor': 'white',
-                            'borderTop': 'none'
-                        },
-                        # CrudeOil column - child rows (indented, when country is empty)
-                        {
-                            'if': {
-                                'filter_query': f'{{{yield_country_col_id}}} = ""',
-                                'column_id': yield_crudeoil_col_id
-                            },
+                            'if': {'column_id': yield_crudeoil_col_id},
                             'paddingLeft': '24px',
                             'fontWeight': 'normal',
-                            'backgroundColor': 'white',
                             'paddingTop': '8px',
                             'paddingBottom': '8px',
-                            'paddingRight': '8px'
+                            'paddingRight': '8px',
+                            'textAlign': 'left',
                         },
-                        # CrudeOil column - header rows (when country is not empty)
-                        {
-                            'if': {
-                                'filter_query': f'{{{yield_country_col_id}}} != ""',
-                                'column_id': yield_crudeoil_col_id
-                            },
-                            'paddingLeft': '8px',
-                            'fontWeight': 'normal',
-                            'backgroundColor': '#F5F5F5',
-                            'paddingTop': '8px',
-                            'paddingBottom': '8px',
-                            'paddingRight': '8px'
-                        },
-                        # Text alignment - Country column always left
-                        {
-                            'if': {
-                                'column_id': yield_country_col_id
-                            },
-                            'textAlign': 'left'
-                        },
-                        # Text alignment - CrudeOil column always left
-                        {
-                            'if': {
-                                'column_id': yield_crudeoil_col_id
-                            },
-                            'textAlign': 'left'
-                        }
                     ] if yield_country_col_id and yield_crudeoil_col_id else []),
                     merge_duplicate_headers=True,
                     filter_action="none",
                     page_action="none",
                     sort_action="native"
-                )
+                ),
+                html.P("Countries: Select jurisdictions are included under countries for data presentation purposes.",
+                    style={'fontSize': '11px', 'fontStyle': 'italic', 'color': '#777', 'textAlign': 'left', 'marginTop': '10px', 'fontFamily': 'Arial'})
             ], style={'marginTop': '30px', 'marginBottom': '30px'})
         ])
 
@@ -2688,23 +2621,23 @@ def register_callbacks(dash_app, server=None):
     )
     def update_x_slider(x_prop):
         if not x_prop:
-            return 0, 100, [0, 100], 0.1, 0, 100
+            return 10.7, 68.6, [10.7, 68.6], 0.1, 10.7, 68.6
         
         # Load quality table data
         try:
             quality_df = load_crude_quality_table()
         except Exception as e:
             print(f"Error loading quality table for x slider: {e}")
-            return 0, 100, [0, 100], 0.1, 0, 100
+            return 10.7, 68.6, [10.7, 68.6], 0.1, 10.7, 68.6
         
         if quality_df.empty or x_prop not in quality_df.columns:
-            return 0, 100, [0, 100], 0.1, 0, 100
+            return 10.7, 68.6, [10.7, 68.6], 0.1, 10.7, 68.6
         
         quality_df[x_prop] = pd.to_numeric(quality_df[x_prop], errors="coerce")
         quality_df = quality_df.dropna(subset=[x_prop])
         
         if len(quality_df) == 0:
-            return 0, 100, [0, 100], 0.1, 0, 100
+            return 10.7, 68.6, [10.7, 68.6], 0.1, 10.7, 68.6
         
         min_val = float(quality_df[x_prop].min())
         max_val = float(quality_df[x_prop].max())
@@ -2811,7 +2744,7 @@ def register_callbacks(dash_app, server=None):
     def sync_x_range(min_input, max_input, slider_value):
         ctx = callback_context
         if not ctx.triggered:
-            return [0, 100], 0, 100
+            return [10.7, 68.6], 10.7, 68.6
         
         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
         
@@ -2843,7 +2776,7 @@ def register_callbacks(dash_app, server=None):
     def sync_y_range(min_input, max_input, slider_value):
         ctx = callback_context
         if not ctx.triggered:
-            return [0, 100], 0, 100
+            return [10.7, 68.6], 10.7, 68.6
         
         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
         
@@ -2875,7 +2808,7 @@ def register_callbacks(dash_app, server=None):
     def sync_bubble_range(min_input, max_input, slider_value):
         ctx = callback_context
         if not ctx.triggered:
-            return [0, 100], 0, 100
+            return [10.7, 68.6], 10.7, 68.6
         
         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
         
@@ -2905,10 +2838,11 @@ def register_callbacks(dash_app, server=None):
     def update_crude_quality(x_col, y_col, size_col, x_range, y_range, size_range, selected_crudes):
 
         if not x_col or not y_col or not size_col:
+            time.sleep(2) # Added for debugging loading state
             fig = go.Figure()
             fig.update_layout(
                 title=dict(text="Crude Oils Compared by Quality", x=0.5, font=dict(color="#FF6600", size=20)),
-                height=500, plot_bgcolor="white"
+ plot_bgcolor="white"
             )
             return fig
 
@@ -2925,7 +2859,7 @@ def register_callbacks(dash_app, server=None):
             fig = go.Figure()
             fig.update_layout(
                 title=dict(text="Crude Oils Compared by Quality", x=0.5, font=dict(color="#FF6600", size=20)),
-                height=500, plot_bgcolor="white"
+ plot_bgcolor="white"
             )
             return fig
         
@@ -2974,7 +2908,7 @@ def register_callbacks(dash_app, server=None):
             fig = go.Figure()
             fig.update_layout(
                 title=dict(text="Crude Oils Compared by Quality", x=0.5, font=dict(color="#FF6600", size=20)),
-                height=500, plot_bgcolor="white"
+ plot_bgcolor="white"
             )
             return fig
         
@@ -3006,7 +2940,7 @@ def register_callbacks(dash_app, server=None):
                 title=dict(text="Crude Oils Compared by Quality", x=0.5, font=dict(color="#FF6600", size=20)),
                 xaxis=dict(title=x_col, range=x_range, showgrid=False),
                 yaxis=dict(title=y_col, range=y_range, showgrid=False),
-                height=500, plot_bgcolor="white"
+ plot_bgcolor="white"
             )
             return fig
         
@@ -3045,7 +2979,7 @@ def register_callbacks(dash_app, server=None):
                 text=grp["CrudeOil"],
                 customdata=custom,
                 marker=dict(
-                    size=np.sqrt(grp['size_value']) * 0.8,
+                    size=np.sqrt(grp['size_value']) * 0.5,
                     color=color_map.get(region, "#444"),
                     opacity=0.8,
                     line=dict(width=1, color="white")
@@ -3095,7 +3029,7 @@ def register_callbacks(dash_app, server=None):
                 linecolor="black",
                 mirror=True
             ),
-            height=500,
+            height=700,
             width=1000,
             autosize=False,
             plot_bgcolor="white",
