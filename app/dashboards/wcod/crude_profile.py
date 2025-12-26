@@ -701,7 +701,7 @@ def load_loading_ports(crude_value: str | None = None):
                ON a.crude_id = b.dim_crude_id
         LEFT JOIN dim_country c 
                ON a.country_id = c.dim_country_id
-        WHERE b.crude_name = :crude_name
+        WHERE b.crude_name LIKE '%' || :crude_name || '%'
     """
     try:
         results = execute_query(query, {"crude_name": crude_name})
