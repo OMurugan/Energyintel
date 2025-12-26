@@ -5,12 +5,12 @@ Crude Profile Dashboard - Complete Implementation with Grouped Tables for Refine
 from dash import dcc, html, Dash, Input, Output, State, callback_context, ctx, dash_table, no_update
 import dash
 import plotly.graph_objects as go
-import plotly.express as px
 import pandas as pd
 import re
 import numpy as np
 from datetime import datetime, date, timedelta
 from core.data_helpers import execute_query
+import dash.exceptions
 
 def load_assay_details(crude_value: str | None = None):
     """Load assay details data from DB for the selected crude (first row)."""
@@ -1329,6 +1329,13 @@ def create_layout(server=None):
         "color": "#333",
         "overflowX": "hidden"
     }, children=[
+        # Download components for CSV exports
+        dcc.Download(id="download-mars-assay-csv"),
+        dcc.Download(id="download-refined-products-csv"),
+        dcc.Download(id="download-production-exports-csv"),
+        dcc.Download(id="download-loading-ports-csv"),
+        dcc.Download(id="download-port-details-csv"),
+        dcc.Download(id="download-sellers-producers-csv"),
         # CSS Styles for merged cells
         html.Div(style={"display": "none"}, children=[
             dcc.Markdown("""
@@ -1701,40 +1708,55 @@ def create_layout(server=None):
         }, children=[
             # Column 1: Mars Blend Assay
             html.Div(style={"gridColumn": "1 / 2"}, children=[
-                html.Div("Mars Blend Assay", style={
-                    "color": "#fe5000",
-                    "fontWeight": "bold",
-                    "fontSize": "16px",
-                    "margin": "20px 0 10px 0",                   
-                    "paddingBottom": "5px",
-                    "textAlign": "center"
-                }),
+                html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                    html.Div("Mars Blend Assay", style={
+                        "color": "#fe5000",
+                        "fontWeight": "bold",
+                        "fontSize": "16px",
+                        "margin": "20px 0 10px 0",                   
+                        "paddingBottom": "5px",
+                        "textAlign": "center"
+                    }),
+                    html.Button("Export CSV", id='export-mars-assay-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                ]),
                 create_grouped_assay_table(default_crude)
             ]),
             
             # Column 2: Refined Products Breakdown & Properties
             html.Div(style={"gridColumn": "2 / 2"}, children=[
-                html.Div("Refined Products Breakdown & Properties", style={
-                    "color": "#fe5000",
-                    "fontWeight": "bold",
-                    "fontSize": "16px",
-                    "margin": "20px 0 10px 0",                   
-                    "paddingBottom": "5px",
-                    "textAlign": "center"
-                }),
+                html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                    html.Div("Refined Products Breakdown & Properties", style={
+                        "color": "#fe5000",
+                        "fontWeight": "bold",
+                        "fontSize": "16px",
+                        "margin": "20px 0 10px 0",                   
+                        "paddingBottom": "5px",
+                        "textAlign": "center"
+                    }),
+                    html.Button("Export CSV", id='export-refined-products-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                ]),
                 create_grouped_refined_products_table(default_crude)
             ]),
             
             # Column 3: Right-side stack
             html.Div(style={"gridColumn": "3 / 4", "display": "flex", "flexDirection": "column"}, children=[
-                html.Div("Production and Exports", style={
-                    "color": "#fe5000",
-                    "fontWeight": "bold",
-                    "fontSize": "16px", 
-                    "margin": "20px 0 10px 0",                    
-                    "paddingBottom": "5px",
-                    "textAlign": "center"
-                }),
+                html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                    html.Div("Production and Exports", style={
+                        "color": "#fe5000",
+                        "fontWeight": "bold",
+                        "fontSize": "16px", 
+                        "margin": "20px 0 10px 0",                    
+                        "paddingBottom": "5px",
+                        "textAlign": "center"
+                    }),
+                    html.Button("Export CSV", id='export-production-exports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                ]),
                 html.Div(style={
                     "border": "1px solid #ddd",
                     "padding": "15px",
@@ -1744,14 +1766,19 @@ def create_layout(server=None):
                 }, children=[
                     dcc.Graph(id="production-exports-graph", figure=production_fig, config={"displayModeBar": False})
                 ]),
-                html.Div("Loading Ports", style={
-                    "color": "#fe5000",
-                    "fontWeight": "bold",
-                    "fontSize": "16px",
-                    "margin": "25px 0 10px 0",                   
-                    "paddingBottom": "5px",
-                    "textAlign": "center"
-                }),
+                html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                    html.Div("Loading Ports", style={
+                        "color": "#fe5000",
+                        "fontWeight": "bold",
+                        "fontSize": "16px",
+                        "margin": "25px 0 10px 0",                   
+                        "paddingBottom": "5px",
+                        "textAlign": "center"
+                    }),
+                    html.Button("Export CSV", id='export-loading-ports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                ]),
                 html.Div(style={
                     "border": "1px solid #ddd",
                     "padding": "15px",
@@ -1783,14 +1810,19 @@ def create_layout(server=None):
                     "marginTop": "5px",
                     "textAlign": "left"
                 }),
-                html.Div("Port Details", style={
-                    "color": "#fe5000",
-                    "fontWeight": "bold",
-                    "fontSize": "16px",
-                    "margin": "25px 0 10px 0",                  
-                    "paddingBottom": "5px",
-                    "textAlign": "center"
-                }),
+                html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                    html.Div("Port Details", style={
+                        "color": "#fe5000",
+                        "fontWeight": "bold",
+                        "fontSize": "16px",
+                        "margin": "25px 0 10px 0",                  
+                        "paddingBottom": "5px",
+                        "textAlign": "center"
+                    }),
+                    html.Button("Export CSV", id='export-port-details-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                ]),
                 dash_table.DataTable(
                     id="port-details-table",
                     data=port_details_table_data,
@@ -1865,16 +1897,20 @@ def create_layout(server=None):
                 )
             ]),
             
-            # Bottom Row: Sellers and Producers
-            html.Div(style={"gridColumn": "1 / 3"}, children=[
-                html.Div("Sellers and Producers", style={
-                    "color": "#fe5000",
-                    "fontWeight": "bold", 
-                    "fontSize": "16px",
-                    "margin": "20px 0 10px 0",
-                    "paddingBottom": "5px",
-                    "textAlign": "center"
-                }),
+            html.Div(style={"gridColumn": "1 / 3", "marginBottom": "20px"}, children=[ # Wrapper for the entire section
+                html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                    html.Div("Sellers and Producers", style={
+                        "color": "#fe5000",
+                        "fontWeight": "bold",
+                        "fontSize": "16px",
+                        "margin": "20px 0 10px 0",
+                        "paddingBottom": "5px",
+                        "textAlign": "center"
+                    }),
+                    html.Button("Export CSV", id='export-sellers-producers-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                ]),
                 html.Table(style={
                     "width": "100%",
                     "borderCollapse": "collapse",
@@ -2037,8 +2073,111 @@ def register_callbacks(app):
             "2025",
             "https://www.energyintel.com/wcod/crude-profile/Mars-Blend",
         )
-    
-    # Handle popup menu interactions
+
+    # Callbacks for CSV exports
+    @app.callback(
+        Output('download-mars-assay-csv', 'data'),
+        Input('export-mars-assay-btn', 'n_clicks'),
+        State('crude-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_mars_assay_csv(n_clicks, selected_crude):
+        if n_clicks and selected_crude:
+            df = pd.DataFrame(load_mars_assay(selected_crude))
+            return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Mars_Blend_Assay.csv")
+        raise dash.exceptions.PreventUpdate
+
+    @app.callback(
+        Output('download-refined-products-csv', 'data'),
+        Input('export-refined-products-btn', 'n_clicks'),
+        State('crude-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_refined_products_csv(n_clicks, selected_crude):
+        if n_clicks and selected_crude:
+            grouped_data = load_refined_products(selected_crude)
+            table_data = []
+            for product_group in grouped_data:
+                product = product_group["Product"]
+                cut_points = product_group["Cut Points (°C)"]
+                properties = product_group["properties"]
+                for i, prop in enumerate(properties):
+                    table_data.append({
+                        "Product": product if i == 0 else "",
+                        "Cut Points (°C)": cut_points if i == 0 else "",
+                        "Property": prop["Property"],
+                        "Unit": prop["Unit"],
+                        "Value": prop["Value"]
+                    })
+            df = pd.DataFrame(table_data)
+            return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Refined_Products_Breakdown_Properties.csv")
+        raise dash.exceptions.PreventUpdate
+
+    @app.callback(
+        Output('download-production-exports-csv', 'data'),
+        Input('export-production-exports-btn', 'n_clicks'),
+        State('crude-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_production_exports_csv(n_clicks, selected_crude):
+        if n_clicks and selected_crude:
+            df = pd.DataFrame(load_production_exports(selected_crude))
+            return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Production_Exports.csv")
+        raise dash.exceptions.PreventUpdate
+
+    @app.callback(
+        Output('download-loading-ports-csv', 'data'),
+        Input('export-loading-ports-btn', 'n_clicks'),
+        State('crude-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_loading_ports_csv(n_clicks, selected_crude):
+        if n_clicks and selected_crude:
+            ports_data = load_loading_ports(selected_crude)
+            df = pd.DataFrame([
+                {
+                    "Latitude": port.get('latitude'),
+                    "Longitude": port.get('longitude'),
+                    "Country": port.get('country'),
+                    "Crude": port.get('crude'),
+                        "Port Name": port.get('port'),
+                    }
+                    for port in ports_data
+            ])
+            df.drop_duplicates(subset=["Latitude", "Longitude", "Country", "Crude", "Port Name"], inplace=True)
+            return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Loading_Ports_Map_Data.csv")
+        raise dash.exceptions.PreventUpdate
+
+    @app.callback(
+        Output('download-port-details-csv', 'data'),
+        Input('export-port-details-btn', 'n_clicks'),
+        State('crude-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_port_details_csv(n_clicks, selected_crude):
+        if n_clicks and selected_crude:
+            port_details_data = load_port_details(selected_crude)
+            rows = port_details_data.get("rows", [])
+            formatted_rows = []
+            for r in rows:
+                measure_name = " ".join([word.capitalize() for word in r[0].split('_')])
+                formatted_rows.append({"Measure": measure_name, port_details_data.get("label", "Value"): r[1]})
+            df = pd.DataFrame(formatted_rows)
+            return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Port_Details.csv")
+        raise dash.exceptions.PreventUpdate
+
+    @app.callback(
+        Output('download-sellers-producers-csv', 'data'),
+        Input('export-sellers-producers-btn', 'n_clicks'),
+        State('crude-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_sellers_producers_csv(n_clicks, selected_crude):
+        if n_clicks and selected_crude:
+            producers_sellers = load_producers_sellers(selected_crude)
+            df = pd.DataFrame(producers_sellers, columns=["Producers", "Sellers"])
+            return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Sellers_Producers.csv")
+        raise dash.exceptions.PreventUpdate
     @app.callback(
         [Output('crude-profile-sorting-controls', 'style'),
          Output('crude-profile-avg-text-box', 'style')],
