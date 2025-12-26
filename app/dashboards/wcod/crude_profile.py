@@ -601,10 +601,27 @@ def load_production_exports(crude_value: str | None = None):
         year = row.get("YearReported")
         prod = row.get("CrudeProduction")
         exp = row.get("CrudeExport")
-        if pd.notna(year):
+        
+        # Only append if at least one of production or export data is present and non-negligible
+        if pd.notna(year) and ((pd.notna(prod) and abs(prod) >= 1.0) or (pd.notna(exp) and abs(exp) >= 1.0)):
             chart_data['years'].append(str(int(year)))
             chart_data['production'].append(prod if pd.notna(prod) else None)
             chart_data['exports'].append(exp if pd.notna(exp) else None)
+
+    # Ensure data lists are aligned and remove years with no significant production or export data
+    filtered_years = []
+    filtered_production = []
+    filtered_exports = []
+    for i in range(len(chart_data['years'])):
+        if (chart_data['production'][i] is not None and abs(chart_data['production'][i]) >= 1.0) or \
+           (chart_data['exports'][i] is not None and abs(chart_data['exports'][i]) >= 1.0):
+            filtered_years.append(chart_data['years'][i])
+            filtered_production.append(chart_data['production'][i])
+            filtered_exports.append(chart_data['exports'][i])
+
+    chart_data['years'] = filtered_years
+    chart_data['production'] = filtered_production
+    chart_data['exports'] = filtered_exports
 
     if not chart_data['years'] or not chart_data['production'] or not chart_data['exports']:
         return fallback
@@ -645,6 +662,8 @@ def load_port_details(crude_value: str | None = None):
 
     df = pd.DataFrame(results)
     df["measure_name"] = df.get("measure_name", "").fillna("").astype(str).str.strip()
+    # Format measure_name from snake_case to Title Case
+    df["measure_name"] = df["measure_name"].apply(lambda x: ' '.join([word.capitalize() for word in x.split('_')]))
     df["value"] = df.get("value", "").fillna("").astype(str).str.strip()
     df["PortName"] = df.get("PortName", "").fillna("").astype(str).str.strip()
 
@@ -835,23 +854,24 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
         },
         style_cell={
             "border": "1px solid #ddd",
-            "padding": "8px 10px",
-            "fontSize": "11px",
+            "paddingLeft": "6px",
+            "paddingRight": "0px",
+            "marginTop": "4px",
+            "fontSize": "8pt",
             "textAlign": "left",
             "backgroundColor": "white",
             "fontFamily": "Arial, sans-serif",
             "whiteSpace": "normal",
             "height": "auto",
             "minHeight": "35px",
-            "verticalAlign": "middle",
-             "maxWidth": "150px",
+            "verticalAlign": "middle",            
         },
         style_header={
             "backgroundColor": "#f5f5f5",
             "fontWeight": "bold",
-            "fontSize": "12px",
+            "fontSize": "9pt",
             "border": "1px solid #ddd",
-            "padding": "10px",
+            "padding": "6px",
             "textAlign": "left",
             "position": "static", # Make header sticky
             "top": "0",
@@ -869,36 +889,41 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
             # Product column styling
             {
                 "if": {"column_id": "Product", "filter_query": '{Product} != ""'},
-                "fontWeight": "bold",
+                "fontWeight": "normal",
                 "color": "#1f3263",
-                "borderRight": "2px solid #ccc"
+                "borderRight": "2px solid #ccc",
+                "maxWidth": "84px",
             },
             {
                 "if": {"column_id": "Product", "filter_query": '{Product} = ""'},
                 "borderTop": "none",
                 "borderBottom": "none",
                 "backgroundColor": "inherit",
+                "maxWidth": "80px",
             },
             
             # Cut Points column styling
             {
                 "if": {"column_id": "Cut Points (°C)", "filter_query": '{Cut Points (°C)} != ""'},
-                "fontWeight": "bold",
+                "fontWeight": "normal",
                 "color": "#1f3263",
-                "borderRight": "1px solid #ddd"
+                "borderRight": "1px solid #ddd",
+                "maxWidth": "60px",
             },
             {
                 "if": {"column_id": "Cut Points (°C)", "filter_query": '{Cut Points (°C)} = ""'},
                 "borderTop": "none",
                 "borderBottom": "none",
                 "backgroundColor": "inherit",
+                "maxWidth": "92px",
             },
             
             # Property column styling
             {
                 "if": {"column_id": "Property", "filter_query": '{Property} != ""'},
-                "fontWeight": "600",
+                "fontWeight": "normal",
                 "color": "#1f3263",
+                "maxWidth": "56px",
             },
         ],
         css=[
@@ -978,15 +1003,17 @@ def create_grouped_assay_table(crude_value: str | None = None):
         style_table={
             "overflowX": "auto",
             "overflowY": "auto",
-            "maxHeight": "500px",
+            "maxHeight": "750px",
             "border": "1px solid #d9d9d9",
             "backgroundColor": "white",
             "position": "relative",
         },
         style_cell={
             "textAlign": "left",
-            "padding": "8px 12px",
-            "fontSize": "11px",
+            "paddingLeft": "6px",
+            "paddingRight": "0px",
+            "marginTop": "4px",
+            "fontSize": "8pt",
             "fontFamily": "Arial, sans-serif",
             "border": "1px solid #e0e0e0",
             "whiteSpace": "normal",
@@ -998,37 +1025,41 @@ def create_grouped_assay_table(crude_value: str | None = None):
         style_header={
             "backgroundColor": "#f2f2f2",
             "fontWeight": "bold",
-            "fontSize": "14px",
+            "fontSize": "9pt",
             "fontFamily": "Arial, sans-serif",
             "border": "1px solid #d0d0d0",
-            "color": "#1f3263",
+            "color": "#1b365d",
             "textAlign": "left",
-            "padding": "10px 12px",
+            "padding": "6px",
             "position": "relative",
         },
         style_cell_conditional=[
             {
                 "if": {"column_id": "Property"},
                 "textAlign": "left",
-                "fontWeight": "600",
-                "minWidth": "180px",
+                "fontWeight": "normal",
+                "minWidth": "80px",
+                "maxWidth": "120px",
                 "backgroundColor": "#FFFFFF",
                 "borderRight": "2px solid #ccc",
-                "paddingLeft": "12px",
-                "paddingRight": "12px",
-                "color": "#1f3263",
+                "paddingLeft": "6px",
+                "paddingRight": "0px",
+                "marginTop": "4px",
+                "color": "#1b365d",
             },
             {
                 "if": {"column_id": "Unit"},
                 "textAlign": "left",
-                "minWidth": "120px",
+                "minWidth": "50px",
+                "maxWidth": "80px",
                 "backgroundColor": "#FFFFFF",
                 "borderRight": "1px solid #ddd",
             },
             {
                 "if": {"column_id": "Value"},
                 "textAlign": "left",
-                "minWidth": "80px",
+                "minWidth": "50px",
+                "maxWidth": "70px",
                 "backgroundColor": "#FFFFFF",
             },
         ],
@@ -1039,7 +1070,7 @@ def create_grouped_assay_table(crude_value: str | None = None):
             {
                 "if": {"column_id": "Property", "filter_query": '{Property} != ""'},
                 "color": "#1f3263",
-                "fontWeight": "600",
+                "fontWeight": "normal",
             },
             # Property column - hide empty cells (for merged Viscosity rows)
             {
@@ -1050,6 +1081,11 @@ def create_grouped_assay_table(crude_value: str | None = None):
             },
         ],
         css=[
+            # Set width to auto for flexible columns
+            {
+                'selector': '#assay-table .dash-cell',
+                'rule': 'width: auto !important;'
+            },
             {
                 'selector': '.dash-cell[data-dash-column="Property"]:empty',
                 'rule': '''
@@ -1097,7 +1133,9 @@ def create_production_chart(crude_value: str | None = None):
         y=production,
         marker_color='#1f3263',
         marker_line_color='#1f3263',
-        marker_line_width=0
+        marker_line_width=0,
+        width=0.5,
+        hovertemplate='Year: <span style="color:#1b365d;"><b>%{x}</b></span><br>Production: <span style="color:#1b365d;"><b>%{y:.2f} (000 b/d)</b></span><extra></extra>'
     ))
     
     # Crude Exports as orange circular data points (scatter)
@@ -1107,16 +1145,19 @@ def create_production_chart(crude_value: str | None = None):
         y=exports,
         mode='markers',
         marker=dict(
-            color='#d65a00',
+            color='#fe5000',
             size=8,
             symbol='circle',
             line=dict(width=0)
-        )
+        ),
+        hovertemplate='Year: <span style="color:#1b365d;"><b>%{x}</b></span><br>Exports: <span style="color:#1b365d;"><b>%{y:.2f} (000 b/d)</b></span><extra></extra>'
     ))
     
     fig.update_layout(
         height=300,
-        margin=dict(l=50, r=20, t=20, b=50),
+        margin=dict(l=40, r=0, t=20, b=50),
+        bargap=0.1,
+        hoverlabel=dict(bgcolor='#ffffff'), # Set hover background color
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -1124,8 +1165,8 @@ def create_production_chart(crude_value: str | None = None):
             xanchor="right",
             x=1
         ),
-        xaxis=dict(title="Year", showgrid=False),
-        yaxis=dict(title="Thousand Barrels per Day", range=[0, y_max], showgrid=True),
+        xaxis=dict(title="Year", showgrid=False, tickangle=-90, dtick=1),
+        yaxis=dict(title="Volume ('000 b/d)", range=[0, y_max], showgrid=True),
         plot_bgcolor='white',
         paper_bgcolor='white'
     )
@@ -1141,6 +1182,7 @@ def create_map_chart(crude_value: str | None = None):
         # Return empty figure focused on North America
         fig.update_layout(
             height=500,
+            # width=600, # Increased map width
             margin=dict(l=0, r=0, t=0, b=0),
             geo=dict(
                 projection_type="natural earth",
@@ -1193,7 +1235,7 @@ def create_map_chart(crude_value: str | None = None):
             mode='markers',
             marker=dict(
                 size=15,
-                color='#d65a00',
+                color='#fe5000',
                 symbol='triangle-up',
                 line=dict(width=1, color='white'),
                 opacity=0.9
@@ -1252,6 +1294,7 @@ def create_map_chart(crude_value: str | None = None):
     
     fig.update_layout(
         height=500,
+        # width=600, # Increased map width
         margin=dict(l=0, r=0, t=0, b=0),
         showlegend=False,
         geo_bgcolor="white",
@@ -1288,7 +1331,8 @@ def create_layout(server=None):
         "margin": "0 auto",
         "padding": "20px",
         "backgroundColor": "white",
-        "color": "#333"
+        "color": "#333",
+        "overflowX": "hidden"
     }, children=[
         # CSS Styles for merged cells
         html.Div(style={"display": "none"}, children=[
@@ -1455,7 +1499,7 @@ def create_layout(server=None):
         }, children=[
             html.Div(style={"display": "block"}, children=[
                 html.Div("Select Crude:", style={
-                    "color": "#d65a00",
+                    "color": "#fe5000",
                     "fontWeight": "bold",
                     "fontSize": "14px",
                     "display": "block",
@@ -1479,7 +1523,7 @@ def create_layout(server=None):
                 target="_blank",
                 id="crude-profile-link",
                 style={
-                    "color": "#d65a00",
+                    "color": "#fe5000",
                     "textDecoration": "underline",
                     "fontStyle": "italic",
                     "fontSize": "13px",
@@ -1510,7 +1554,7 @@ def create_layout(server=None):
                 html.Table(style={
                     "width": "100%",
                     "borderCollapse": "collapse",
-                    "fontSize": "13px",
+                    "fontSize": "9pt",
                     "color": "#333"
                 }, children=[
                     html.Thead(html.Tr([
@@ -1536,7 +1580,7 @@ def create_layout(server=None):
                             "backgroundColor": "#eef3f8",
                             "color": "#1f3263",
                             "fontWeight": "bold",
-                            "textAlign": "left"
+                            "textAlign": "right"
                         })
                     ])),
                     html.Tbody(html.Tr([
@@ -1550,7 +1594,8 @@ def create_layout(server=None):
                         }),
                         html.Td(assay_details["assay_date"], id="assay-date", style={
                             "border": "1px solid #e6e6e6",
-                            "padding": "8px"
+                            "padding": "8px",
+                            "textAlign": "right"
                         })
                     ]))
                 ])
@@ -1560,22 +1605,22 @@ def create_layout(server=None):
             html.Div(style={
                 "background": "linear-gradient(135deg, #fff9e6, #ffedcc)",
                 "border": "1px solid #e6b800",
-                "padding": "20px 30px",
+                "padding": "20px 10px",
                 "borderRadius": "5px",
                 "textAlign": "center",
                 "minWidth": "150px",
                 "flexShrink": "0"
             }, children=[
                 html.Div("Carbon Intensity", style={
-                    "color": "#1f3263",
+                    "color": "#1b365d",
                     "fontWeight": "bold",
-                    "fontSize": "14px",
+                    "fontSize": "9pt",
                     "marginBottom": "8px"
                 }),
                 html.Div("Low", id="carbon-intensity-value", style={
-                    "color": "#1f3263",
-                    "fontWeight": "bold",
-                    "fontSize": "16px"
+                    "color": "#1b365d",
+                    "fontWeight": "normal",
+                    "fontSize": "9pt"
                 })
             ]),
             
@@ -1584,17 +1629,17 @@ def create_layout(server=None):
                 "flex": "1",
                 "minWidth": "350px",
                 "background": "#f8fafc",
-                "padding": "12px",
+                "padding": "9pt",
                 "borderRadius": "5px",
                 "border": "1px solid #e6e6e6"
             }, children=[
                 html.Div("Latest Quality Specs", style={
-                    "color": "#d65a00",
+                    "color": "#fe5000",
                     "fontWeight": "bold",
-                    "fontSize": "15px",
-                    "marginBottom": "12px",
-                    "borderBottom": "2px solid #d65a00",
-                    "paddingBottom": "6px"
+                    "fontSize": "16px",
+                    "marginBottom": "12px",                    
+                    "paddingBottom": "6px",
+                    "textAlign": "center"
                 }),
                 html.Table(style={
                     "width": "100%",
@@ -1654,33 +1699,33 @@ def create_layout(server=None):
         # Main Grid Layout
         html.Div(style={
             "display": "grid",
-            "gridTemplateColumns": "1fr 5fr 6fr",
-            "gap": "20px",
+            "gridTemplateColumns": "minmax(0, 2fr) minmax(0, 4fr) minmax(0, 4fr)",
+            "gap": "15px",
             "marginBottom": "20px",
             "alignItems": "start"
         }, children=[
             # Column 1: Mars Blend Assay
             html.Div(style={"gridColumn": "1 / 2"}, children=[
                 html.Div("Mars Blend Assay", style={
-                    "color": "#d65a00",
+                    "color": "#fe5000",
                     "fontWeight": "bold",
                     "fontSize": "16px",
-                    "margin": "20px 0 10px 0",
-                    "borderBottom": "2px solid #d65a00",
-                    "paddingBottom": "5px"
+                    "margin": "20px 0 10px 0",                   
+                    "paddingBottom": "5px",
+                    "textAlign": "center"
                 }),
                 create_grouped_assay_table(default_crude)
             ]),
             
             # Column 2: Refined Products Breakdown & Properties
-            html.Div(style={"gridColumn": "2 / 3"}, children=[
+            html.Div(style={"gridColumn": "2 / 2"}, children=[
                 html.Div("Refined Products Breakdown & Properties", style={
-                    "color": "#d65a00",
+                    "color": "#fe5000",
                     "fontWeight": "bold",
                     "fontSize": "16px",
-                    "margin": "20px 0 10px 0",
-                    "borderBottom": "2px solid #d65a00",
-                    "paddingBottom": "5px"
+                    "margin": "20px 0 10px 0",                   
+                    "paddingBottom": "5px",
+                    "textAlign": "center"
                 }),
                 create_grouped_refined_products_table(default_crude)
             ]),
@@ -1688,12 +1733,12 @@ def create_layout(server=None):
             # Column 3: Right-side stack
             html.Div(style={"gridColumn": "3 / 4", "display": "flex", "flexDirection": "column"}, children=[
                 html.Div("Production and Exports", style={
-                    "color": "#d65a00",
+                    "color": "#fe5000",
                     "fontWeight": "bold",
                     "fontSize": "16px", 
-                    "margin": "20px 0 10px 0",
-                    "borderBottom": "2px solid #d65a00",
-                    "paddingBottom": "5px"
+                    "margin": "20px 0 10px 0",                    
+                    "paddingBottom": "5px",
+                    "textAlign": "center"
                 }),
                 html.Div(style={
                     "border": "1px solid #ddd",
@@ -1705,12 +1750,12 @@ def create_layout(server=None):
                     dcc.Graph(id="production-exports-graph", figure=production_fig, config={"displayModeBar": False})
                 ]),
                 html.Div("Loading Ports", style={
-                    "color": "#d65a00",
+                    "color": "#fe5000",
                     "fontWeight": "bold",
                     "fontSize": "16px",
-                    "margin": "25px 0 10px 0",
-                    "borderBottom": "2px solid #d65a00",
-                    "paddingBottom": "5px"
+                    "margin": "25px 0 10px 0",                   
+                    "paddingBottom": "5px",
+                    "textAlign": "center"
                 }),
                 html.Div(style={
                     "border": "1px solid #ddd",
@@ -1744,12 +1789,12 @@ def create_layout(server=None):
                     "textAlign": "left"
                 }),
                 html.Div("Port Details", style={
-                    "color": "#d65a00",
+                    "color": "#fe5000",
                     "fontWeight": "bold",
                     "fontSize": "16px",
-                    "margin": "25px 0 10px 0",
-                    "borderBottom": "2px solid #d65a00",
-                    "paddingBottom": "5px"
+                    "margin": "25px 0 10px 0",                  
+                    "paddingBottom": "5px",
+                    "textAlign": "center"
                 }),
                 dash_table.DataTable(
                     id="port-details-table",
@@ -1761,24 +1806,63 @@ def create_layout(server=None):
                     style_table={
                         "width": "100%",
                         "marginBottom": "15px",
-                        "fontFamily": "Arial, sans-serif"
+                        "fontFamily": "Arial, sans-serif",
+                        "position": "relative",
+                        "maxHeight": "500px",  # Consistent with assay table
+                        "overflowY": "auto",
+                        "overflowX": "auto",
+                        "border": "1px solid #ddd",
                     },
                     style_cell={
                         "border": "1px solid #ddd",
-                        "padding": "10px",
-                        "fontSize": "12px",
+                        "paddingLeft": "6px",
+                        "paddingRight": "0px",
+                        "marginTop": "4px",
+                        "fontSize": "8pt", # Consistent with other tables
                         "textAlign": "left",
-                        "backgroundColor": "white"
+                        "backgroundColor": "white",
+                        "fontFamily": "Arial, sans-serif",
+                        "whiteSpace": "normal",
+                        "height": "auto",
+                        "minHeight": "35px", # Consistent with other tables
+                        "verticalAlign": "middle",
                     },
                     style_header={
                         "backgroundColor": "#f5f5f5",
                         "fontWeight": "bold",
+                        "fontSize": "9pt", # Consistent with other tables
                         "border": "1px solid #ddd",
-                        "padding": "10px"
+                        "padding": "6px",
+                        "textAlign": "left",
+                        "position": "static", # Make header sticky
+                        "top": "0",
+                        "zIndex": "10",
                     },
                     style_data={
-                        "border": "1px solid #ddd"
+                        "border": "1px solid #ddd",
+                        "whiteSpace": "normal",
+                        "height": "auto"
                     },
+                    style_data_conditional=[
+                        # Alternate row colors for better readability
+                        {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"},
+                        {"if": {"row_index": "even"}, "backgroundColor": "#FFFFFF"},
+                        # Measure column styling
+                        {
+                            "if": {"column_id": "Measure"},
+                            "fontWeight": "normal",
+                            "color": "#1f3263",
+                            "borderRight": "2px solid #ccc",
+                            "maxWidth": "150px", # Example max-width, adjust as needed
+                        },
+                    ],
+                    css=[
+                        # Stronger border for Measure column
+                        {
+                            'selector': '.dash-cell[data-dash-column="Measure"]',
+                            'rule': 'border-right: 2px solid #ccc !important;'
+                        },
+                    ],
                     editable=False,
                     sort_action="native",
                     filter_action="none",
@@ -1789,12 +1873,12 @@ def create_layout(server=None):
             # Bottom Row: Sellers and Producers
             html.Div(style={"gridColumn": "1 / 3"}, children=[
                 html.Div("Sellers and Producers", style={
-                    "color": "#d65a00",
+                    "color": "#fe5000",
                     "fontWeight": "bold", 
                     "fontSize": "16px",
                     "margin": "20px 0 10px 0",
-                    "borderBottom": "2px solid #d65a00",
-                    "paddingBottom": "5px"
+                    "paddingBottom": "5px",
+                    "textAlign": "center"
                 }),
                 html.Table(style={
                     "width": "100%",
@@ -2380,6 +2464,10 @@ def register_callbacks(app):
                     position: relative;
                 }
                 
+                #assay-table .dash-spreadsheet-inner {
+                    max-height: 750px !important;
+                }
+                                
                 /* Popup menu item hover */
                 .popup-menu-item:hover {
                     background-color: #f5f5f5 !important;
@@ -2405,6 +2493,10 @@ def register_callbacks(app):
                 #crude-profile-avg-text-box:hover {
                     background-color: #f5f5f5 !important;
                     border-color: #999 !important;
+                }
+                p {
+                    margin-top: 0;
+                    margin-bottom: 0;
                 }
             `;
                 document.head.appendChild(style);

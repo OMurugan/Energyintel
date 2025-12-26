@@ -8,6 +8,12 @@ from dash import dcc, html, Input, Output, State, callback, dash_table, callback
 import dash.dependencies as dd
 import plotly.graph_objects as go
 import pandas as pd
+import plotly.io as pio
+import base64
+from weasyprint import HTML, CSS
+import fitz # PyMuPDF
+import io
+from PIL import Image
 from core.data_helpers import execute_query
 
 # Data locations
@@ -16,9 +22,8 @@ DATA_DIR = os.path.join(
     "data",
     "Gross_Product_Worth_and_Margins"
 )
-GPW_CSV = os.path.join(DATA_DIR, "Gross Product Worth_data.csv")
-INCREMENTAL_MARGINS_CSV = os.path.join(DATA_DIR, "Incremental Margins_data.csv")
-DATA_TABLE_CSV = os.path.join(DATA_DIR, "Data Table_data.csv")
+# GPW_CSV = os.path.join(DATA_DIR, "Gross Product Worth_data.csv")
+# INCREMENTAL_MARGINS_CSV = os.path.join(DATA_DIR, "Incremental Margins_data.csv")
 
 
 def _read_csv(path: str) -> pd.DataFrame:
@@ -164,36 +169,9 @@ def _load_incremental_margins_data(region: str = None) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def _load_data_table_data() -> pd.DataFrame:
-    """Load and normalize Data Table data."""
-    df = _read_csv(DATA_TABLE_CSV)
-    if df.empty:
-        return df
-    
-    # Normalize column names
-    df = df.rename(columns={
-        'Month of Date': 'MonthDate',
-        'DataValue': 'Value',
-        'TechTypeFull': 'TechType',
-        'Crude': 'Crude',
-        'DataType': 'DataType'
-    })
-    
-    # Preserve original date format for display (e.g., "Aug 07")
-    if 'MonthDate' in df.columns:
-        df['MonthDateDisplay'] = df['MonthDate'].copy()  # Keep original format
-        # Parse date for filtering/sorting (handle "Sept" -> "Sep")
-        df['MonthDateParsed'] = df['MonthDate'].str.replace('Sept', 'Sep', regex=False)
-        df['Date'] = pd.to_datetime(df['MonthDateParsed'], format='%b %y', errors='coerce')
-    
-    if 'Value' in df.columns:
-        df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
-    
-    df = df.dropna(subset=['Value', 'Date'])
-    return df
 
 
-def _load_data_table_data_from_db(region: str = None) -> pd.DataFrame:
+def _load_data_table_data_from_db(region: str = None, start_date: str = None, end_date: str = None, crudes: list = None, tech_types: list = None) -> pd.DataFrame:
     """Load and normalize Data Table data from database using the provided query."""
     try:
         query = """
@@ -222,6 +200,18 @@ def _load_data_table_data_from_db(region: str = None) -> pd.DataFrame:
         if region:
             query += " AND delivery_to = :region"
             params['region'] = region
+        if start_date:
+            query += " AND date >= :start_date"
+            params['start_date'] = start_date
+        if end_date:
+            query += " AND date <= :end_date"
+            params['end_date'] = end_date
+        if crudes:
+            query += " AND crude_name = ANY(:crudes)"
+            params['crudes'] = crudes
+        if tech_types:
+            query += " AND tech_type = ANY(:tech_types)"
+            params['tech_types'] = tech_types
         
         query += """
         ORDER BY
@@ -271,6 +261,95 @@ def _load_data_table_data_from_db(region: str = None) -> pd.DataFrame:
 
 
 # Load filter options from database (without region filter to get all available options)
+def _load_incremental_margins_data_from_db(region: str = None, start_date: str = None, end_date: str = None, crudes: list = None, tech_types: list = None) -> pd.DataFrame:
+    """Load Incremental Margins data from database."""
+    try:
+        query = """
+        SELECT
+            TO_CHAR(date, 'Mon YY') AS "Month of Date",
+            price_type AS "DataType",
+            CASE tech_type
+                WHEN 'HYCRK' THEN 'Hydrocracking'
+                WHEN 'HSK' THEN 'Hydroskimming'
+                WHEN 'Coker' THEN 'Coking'
+                WHEN 'FCC' THEN
+                    CASE delivery_to
+                        WHEN 'NWE' THEN 'Catalytic Cracking'
+                        ELSE 'Fluid Catalytic Cracking'
+                    END
+                ELSE tech_type
+            END AS "TechTypeFull",
+            crude_name AS "Crude",
+            price AS "DataValue",
+            date AS "Date"
+        FROM fact_wcod_prices
+        WHERE price_type = 'Refining Margin'
+        """
+        
+        params = {}
+        if region:
+            query += " AND delivery_to = :region"
+            params['region'] = region
+        if start_date:
+            query += " AND date >= :start_date"
+            params['start_date'] = start_date
+        if end_date:
+            query += " AND date <= :end_date"
+            params['end_date'] = end_date
+        if crudes:
+            query += " AND crude_name = ANY(:crudes)"
+            params['crudes'] = crudes
+        if tech_types:
+            query += " AND tech_type = ANY(:tech_types)"
+            params['tech_types'] = tech_types
+        
+        query += """
+        ORDER BY
+            date DESC, 
+            price_type,
+            "TechTypeFull",
+            crude_name
+        """
+        
+        rows = execute_query(query, params)
+        print(f"[gpw_margins] Incremental Margins query rows: {len(rows) if rows else 0}")
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        
+        # Rename columns to match expected format
+        df = df.rename(columns={
+            'Month of Date': 'MonthDate',
+            'DataValue': 'Value',
+            'TechTypeFull': 'TechType',
+            'Crude': 'Crude',
+            'DataType': 'DataType'
+        })
+        
+        # Preserve original date format for display (e.g., "Aug 07")
+        if 'MonthDate' in df.columns:
+            df['MonthDateDisplay'] = df['MonthDate'].copy()  # Keep original format
+            # Parse date for filtering/sorting (handle "Sept" -> "Sep")
+            df['MonthDateParsed'] = df['MonthDate'].str.replace('Sept', 'Sep', regex=False)
+            # Use the Date column from database if available, otherwise parse from MonthDate
+            if 'Date' in df.columns:
+                df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+            else:
+                df['Date'] = pd.to_datetime(df['MonthDateParsed'], format='%b %y', errors='coerce')
+        
+        if 'Value' in df.columns:
+            df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
+        
+        df = df.dropna(subset=['Value', 'Date'])
+        return df
+    except Exception as e:
+        print(f"[gpw_margins] Error loading Incremental Margins data from database: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
+
 def _get_available_regions():
     """Get available regions from database."""
     try:
@@ -585,9 +664,9 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_displa
             marker_size = 4
 
             if highlight_crude and crude == highlight_crude:
-                line_width = 4  # Thicker line for highlight
+                line_width = 2  # Thicker line for highlight
                 # Can also change color here if desired, e.g., line_color = 'black'
-                marker_size = 8 # Larger marker for highlight
+                marker_size = 4 # Larger marker for highlight
 
             fig.add_trace(go.Scatter(
                 x=crude_df['Date'],
@@ -702,9 +781,9 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type_internal: str, 
             marker_size = 4
 
             if highlight_crude and crude == highlight_crude:
-                line_width = 4  # Thicker line for highlight
+                line_width = 2  # Thicker line for highlight
                 # Can also change color here if desired, e.g., line_color = 'black'
-                marker_size = 8 # Larger marker for highlight
+                marker_size = 4 # Larger marker for highlight
 
             fig.add_trace(go.Scatter(
                 x=crude_df['Date'],
@@ -815,7 +894,8 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
         {
             'name': ['', '', 'Date'],
             'id': 'DateStr',
-            'type': 'text'
+            'type': 'text',
+            'style_cell': {'fontWeight': 'bold'}
         }
     ]
     
@@ -952,7 +1032,8 @@ def create_layout():
         dcc.Store(id='gpw-refining-complexity-filter-previous', data=None),
         dcc.Store(id='gpw-available-tech-types', data=[]),
         dcc.Store(id='gpw-available-crudes-for-region', data=[]),
-        dcc.Store(id='gpw-highlight-crude-store', data=None), # New store for highlighting
+        dcc.Store(id='gpw-highlight-crude-store', data=None),
+
         # CSS styling for rc-slider using dcc.Markdown
         html.Div(
             dcc.Markdown(
@@ -1215,51 +1296,85 @@ def create_layout():
         html.Div([
             html.Div([
                 html.Div([
-                    html.H3(
-                        id='gpw-gpw-title',
-                        children="NWE - Gross Product Worth ($/bbl)",
-                        style={
-                            'color': '#fe5000',
-                            'textAlign': 'center',
-                            'marginBottom': '30px',
-                            'marginTop': '20px',
-                            'fontSize': '20px',
-                            'fontWeight': 'bold',
-                            'paddingBottom': '10px',
-                            'borderBottom': '0px solid #fe5000'
-                        }
-                    ),
+                    html.Div([
+                        html.H3(
+                            id='gpw-gpw-title',
+                            children="NWE - Gross Product Worth ($/bbl)",
+                            style={
+                                'color': '#fe5000',
+                                'textAlign': 'center',
+                                'marginBottom': '15px',
+                                'fontSize': '16px',
+                                'fontWeight': 'bold',
+                                'flexGrow': 1 # Allow title to take available space
+                            }
+                        ),
+                        html.Div(
+                            dcc.Dropdown(
+                                id='gpw-dashboard-export-dropdown',
+                                options=[
+                                    {'label': 'Export Dashboard PDF', 'value': 'pdf'},
+                                    {'label': 'Export Dashboard PNG', 'value': 'png'},
+                                    {'label': 'Gross Product Worth Raw Data CSV', 'value': 'raw_data_csv'}
+                                ],
+                                placeholder='Export Data',
+                                style={
+                                    'width': '250px',
+                                    'marginRight': '10px',
+                                    'fontSize': '13px',
+                                    'color': '#2c3e50',
+                                    'display': 'inline-block'
+                                },
+                                clearable=False
+                            ),
+                            style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'paddingRight': '15px'}
+                        ),
+                    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '0 15px'}),
+                    dcc.Download(id="gpw-download-dashboard-content"),
+                    dcc.Download(id="gpw-download-chart-png"),
+                    dcc.Download(id="gpw-download-raw-data-csv"),
                     
                     html.Div([
                         html.Div([
-                            html.H4(
-                                id='gpw-catalytic-cracking-chart-title',
-                                children="Catalytic Cracking",
-                                style={
-                                    'color': '#1b365d',
-                                    'textAlign': 'center',
-                                    'marginBottom': '15px',
-                                    'fontSize': '16px',
-                                    'fontWeight': 'bold'
-                                }
-                            ),
+                            html.Div([
+                                html.H4(
+                                    id='gpw-catalytic-cracking-chart-title',
+                                    children="Catalytic Cracking",
+                                    style={
+                                        'color': '#1b365d',
+                                        'textAlign': 'center',
+                                        'marginBottom': '15px',
+                                        'fontSize': '16px',
+                                        'fontWeight': 'bold',
+                                        'flexGrow': 1
+                                    }
+                                ),
+                                dcc.Download(id={'type': 'download-chart-content', 'index': 'gpw-catalytic-cracking-pdf'}),
+                                dcc.Download(id={'type': 'download-chart-content', 'index': 'gpw-catalytic-cracking-png'}),
+                                dcc.Download(id={'type': 'download-chart-content', 'index': 'gpw-catalytic-cracking-csv'}),
+                            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '0 15px'}),
                             dcc.Graph(id='gpw-catalytic-cracking-chart',
+
                                 config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False}),
                         ], className='col-md-6', style={'padding': '15px'}),
                         
                         html.Div([
-                            html.H4(
-                                id='gpw-hydroskimming-chart-title',
-                                children="Hydroskimming",
-                                style={
-                                    'color': '#1b365d',
-                                    'textAlign': 'center',
-                                    'marginBottom': '15px',
-                                    'fontSize': '16px',
-                                    'fontWeight': 'bold'
-                                }
-                            ),
+                            html.Div([
+                                html.H4(
+                                    id='gpw-hydroskimming-chart-title',
+                                    children="Hydroskimming",
+                                    style={
+                                        'color': '#1b365d',
+                                        'textAlign': 'center',
+                                        'marginBottom': '15px',
+                                        'fontSize': '16px',
+                                        'fontWeight': 'bold',
+                                        'flexGrow': 1
+                                    }
+                                ),
+                            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '0 15px'}),
                             dcc.Graph(id='gpw-hydroskimming-chart',
+
                                 config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False}),
                         ], className='col-md-6', style={'padding': '15px'})
                     ], className='row')
@@ -1420,8 +1535,6 @@ def create_layout():
                     'borderRadius': '6px',
                     'backgroundColor': '#f8f9fb',
                     'height': '100%',
-                    'maxHeight': '600px',
-                    'overflowY': 'auto',
                     'boxShadow': '0 2px 6px rgba(0,0,0,0.05)',
                     'marginLeft': '0',
                 }),
@@ -1432,20 +1545,40 @@ def create_layout():
         html.Div([
             html.Div([
                 html.Div([
-                    html.H3(
-                        id='gpw-margins-title',
-                        children="NWE - Incremental Margins ($/bbl)",
-                        style={
-                            'color': '#fe5000',
-                            'textAlign': 'center',
-                            'marginBottom': '30px',
-                            'marginTop': '20px',
-                            'fontSize': '20px',
-                            'fontWeight': 'bold',
-                            'paddingBottom': '10px',
-                            'borderBottom': '0px solid #fe5000'
-                        }
-                    ),
+                    html.Div([
+                        html.H3(
+                            id='gpw-margins-title',
+                            children="NWE - Incremental Margins ($/bbl)",
+                            style={
+                                'color': '#fe5000',
+                                'textAlign': 'left',
+                                'marginBottom': '15px',
+                                'fontSize': '16px',
+                                'fontWeight': 'bold',
+                                'flexGrow': 1
+                            }
+                        ),
+                        html.Div(
+                            html.Button(
+                                'Download Incremental Margins CSV',
+                                id='gpw-incremental-margins-export-button',
+                                n_clicks=0,
+                                style={
+                                    'backgroundColor': 'white',
+                                    'color': '#2c3e50',
+                                    'border': '1px solid #dee2e6',
+                                    'padding': '8px 15px',
+                                    'borderRadius': '5px',
+                                    'cursor': 'pointer',
+                                    'fontSize': '13px',
+                                    'marginRight': '10px',
+                                    'display': 'inline-block'
+                                }
+                            ),
+                            style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'paddingRight': '15px'}
+                        ),
+                        dcc.Download(id="gpw-download-incremental-margins-csv"),
+                    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '0 15px'}),
                     
                     html.Div([
                         html.Div([
@@ -1460,22 +1593,27 @@ def create_layout():
                                     'fontWeight': 'bold'
                                 }
                             ),
+                            html.Div([
+                            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '0 15px'}),
                             dcc.Graph(id='gpw-incremental-catalytic-chart',
                                 config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False}),
                         ], className='col-md-6', style={'padding': '15px'}),
                         
                         html.Div([
-                            html.H4(
-                                id='gpw-incremental-hydroskimming-chart-title',
-                                children="Hydroskimming",
-                                style={
-                                    'color': '#1b365d',
-                                    'textAlign': 'center',
-                                    'marginBottom': '15px',
-                                    'fontSize': '16px',
-                                    'fontWeight': 'bold'
-                                }
-                            ),
+                            html.Div([
+                                html.H4(
+                                    id='gpw-incremental-hydroskimming-chart-title',
+                                    children="Incremental Hydroskimming",
+                                    style={
+                                        'color': '#1b365d',
+                                        'textAlign': 'center',
+                                        'marginBottom': '15px',
+                                        'fontSize': '16px',
+                                        'fontWeight': 'bold',
+                                        'flexGrow': 1
+                                    }
+                                ),
+                            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '0 15px'}),
                             dcc.Graph(id='gpw-incremental-hydroskimming-chart',
                                 config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False}),
                         ], className='col-md-6', style={'padding': '15px'})
@@ -1495,17 +1633,37 @@ def create_layout():
                     html.Div(
                         id='gpw-data-table-container',
                         children=[
-                            html.H3(
+                            html.H4(
                                 id='gpw-data-table-title',
-                                children="NWE - Data Table ($/bbl)",  # Initial title, will be updated by callback
+                                children="Data Table",
                                 style={
-                                    'color': '#fe5000',
+                                    'color': '#1b365d',
                                     'textAlign': 'center',
-                                    'marginBottom': '20px',
-                                    'fontSize': '20px',
-                                    'fontWeight': 'bold'
+                                    'marginBottom': '15px',
+                                    'fontSize': '16px',
+                                    'fontWeight': 'bold',
+                                    'flexGrow': 1 # Allow title to take available space
                                 }
                             ),
+                            html.Div([ # Existing div for button
+                                html.Button(
+                                    'Export Data Table to CSV',
+                                    id='btn-export-gpw-data-table-csv',
+                                    n_clicks=0,
+                                    style={
+                                        'backgroundColor': 'white',
+                                        'color': '#2c3e50',
+                                        'border': '1px solid #dee2e6',
+                                        'padding': '8px 15px',
+                                        'borderRadius': '4px',
+                                        'cursor': 'pointer',
+                                        'fontSize': '13px',
+                                        'marginRight': '10px',
+                                        'display': 'inline-block'
+                                    }
+                                ),
+                                dcc.Download(id="download-gpw-data-table-csv"),
+                            ], style={'display': 'flex', 'justifyContent': 'flex-end', 'padding': '0 15px 15px 0'}),
                             dash_table.DataTable(
                                 id='gpw-data-table',
                             columns=[],  # Will be populated by callback
@@ -1663,29 +1821,371 @@ def register_callbacks(dash_app, server):
         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
         
         if trigger_id == 'gpw-date-range-min-input':
-            # Start date input changed, update slider (end date stays fixed)
             if min_input:
-                # Parse date string like "Jan 19" back to date
                 try:
                     min_date = pd.to_datetime(min_input, format='%b %y', errors='coerce')
                     if pd.notna(min_date):
                         min_idx = _date_to_index(min_date)
-                        # Ensure min doesn't exceed max
                         if min_idx > DEFAULT_END_INDEX:
                             min_idx = DEFAULT_END_INDEX
                         return min_idx, min_input, _format_date_for_display(DEFAULT_END_DATE)
                 except Exception:
                     pass
         elif trigger_id == 'gpw-date-range-slider':
-            # Slider changed, update start date input (end date stays fixed)
             if slider_value is not None:
-                # Ensure slider value doesn't exceed max
                 if slider_value > DEFAULT_END_INDEX:
                     slider_value = DEFAULT_END_INDEX
                 min_date = _index_to_date(slider_value)
                 return slider_value, _format_date_for_display(min_date), _format_date_for_display(DEFAULT_END_DATE)
         
         return DEFAULT_START_INDEX, _format_date_for_display(DEFAULT_START_DATE), _format_date_for_display(DEFAULT_END_DATE)
+
+    @dash_app.callback(
+        [Output('gpw-download-dashboard-content', 'data'),
+         Output('gpw-download-chart-png', 'data'),
+         Output('gpw-download-raw-data-csv', 'data')],
+        [Input('gpw-dashboard-export-dropdown', 'value')],
+        [State('gpw-catalytic-cracking-chart', 'figure'),
+         State('gpw-hydroskimming-chart', 'figure'),
+         State('gpw-incremental-catalytic-chart', 'figure'),
+         State('gpw-incremental-hydroskimming-chart', 'figure'),
+         State('gpw-data-table', 'data'),
+         State('gpw-data-table', 'columns'),
+         State('gpw-region-filter', 'value')],
+        prevent_initial_call=True
+    )
+    def export_gpw_dashboard_content_and_data(selected_value, cat_cracking_figure, hydroskimming_figure, inc_cat_figure, inc_hydro_figure, table_data, table_columns, region):
+        if not selected_value:
+            return dash.no_update, dash.no_update, dash.no_update
+
+        download_pdf = dash.no_update
+        download_png = dash.no_update
+        download_raw_data_csv = dash.no_update
+
+        df_table = pd.DataFrame(table_data)
+        
+        if selected_value == 'pdf':
+            chart_figures = {
+                "Catalytic Cracking": go.Figure(cat_cracking_figure),
+                "Hydroskimming": go.Figure(hydroskimming_figure),
+                "Incremental Catalytic Cracking": go.Figure(inc_cat_figure),
+                "Incremental Hydroskimming": go.Figure(inc_hydro_figure)
+            }
+            
+            chart_html_parts = []
+            for title, fig in chart_figures.items():
+                if fig.data: # Only include if chart has data
+                    img_bytes = pio.to_image(fig, format="png", height=720, width=1280, scale=2)
+                    img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                    chart_html_parts.append(f"<h4>{title}</h4><img src=\"data:image/png;base64,{img_base64}\" />")
+            
+            html_table_content = ""
+            if not df_table.empty:
+                html_table_headers = "<thead><tr class=\"header-row-1\">"
+                
+                # Track unique top-level (DataType) and mid-level (TechType) headers
+                data_type_headers = {}
+                tech_type_headers = {}
+
+                # First pass: Determine colspans for Data Type and Tech Type
+                for col in table_columns:
+                    if col['id'] == 'DateStr':
+                        continue
+                    
+                    data_type = col['name'][0]
+                    tech_type = col['name'][1]
+                    
+                    if data_type not in data_type_headers:
+                        data_type_headers[data_type] = {'colspan': 0, 'tech_types': {}}
+                    if tech_type not in data_type_headers[data_type]['tech_types']:
+                        data_type_headers[data_type]['tech_types'][tech_type] = {'colspan': 0}
+                    
+                    data_type_headers[data_type]['colspan'] += 1
+                    data_type_headers[data_type]['tech_types'][tech_type]['colspan'] += 1
+
+                # Row 1: Date and Data Type headers
+                html_table_headers += f"<th rowspan=\"3\" style=\"vertical-align:top;\">Date</th>"
+                for data_type, data_type_info in data_type_headers.items():
+                    html_table_headers += f"<th colspan=\"{data_type_info['colspan']}\">{data_type}</th>"
+                html_table_headers += "</tr><tr class=\"header-row-2\">"
+                
+                # Row 2: Tech Type headers
+                for data_type, data_type_info in data_type_headers.items():
+                    for tech_type, tech_type_info in data_type_info['tech_types'].items():
+                        html_table_headers += f"<th colspan=\"{tech_type_info['colspan']}\">{tech_type}</th>"
+                html_table_headers += "</tr><tr class=\"header-row-3\">"
+
+                # Row 3: Crude headers
+                for col in table_columns:
+                    if col['id'] == 'DateStr':
+                        continue
+                    html_table_headers += f"<th>{col['name'][2]}</th>"
+                html_table_headers += "</tr></thead>"
+
+                html_table_body = "<tbody>"
+                for index, row in df_table.iterrows():
+                    html_table_body += "<tr>"
+                    for col_id in [c['id'] for c in table_columns]:
+                        value = row.get(col_id, '')
+                        html_table_body += f"<td>{value}</td>"
+                    html_table_body += "</tr>"
+                html_table_body += "</tbody>"
+
+                html_table_content = f"<h4>Data Table</h4><table border=\"1\" style=\"width:100%; border-collapse: collapse; text-align: center;\">{html_table_headers}{html_table_body}</table>"
+            
+            chart_html_content_str = "\n".join(chart_html_parts)
+            html_content = f"""
+                <html>
+                <head>
+                    <title>GPW Margins Report</title>
+                    <style>
+                        @page {{
+                            size: 1200px 5000px;
+                            margin: 20px;
+                        }}
+                        body {{ font-family: Arial, sans-serif; margin: 0; }}
+                        h1, h4 {{ color: #fe5000; text-align: center; }}
+                        img {{ max-width: 100%; height: auto; display: block; margin: 0 auto; }}
+                        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+                        th, td {{ border: 1px solid #dee2e6; padding: 8px; text-align: center; font-size: 10px; }}
+                        th {{ background-color: #f8f9fa; font-weight: bold; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>GPW Margins Report</h1>
+                    {chart_html_content_str}
+                    {html_table_content}
+                </body>
+                </html>
+            """
+            
+            pdf_bytes = HTML(string=html_content).write_pdf()
+            download_pdf = dcc.send_bytes(pdf_bytes, "gpw_margins_report.pdf")
+
+        elif selected_value == 'png':
+            chart_figures = {
+                "Catalytic Cracking": go.Figure(cat_cracking_figure),
+                "Hydroskimming": go.Figure(hydroskimming_figure),
+                "Incremental Catalytic Cracking": go.Figure(inc_cat_figure),
+                "Incremental Hydroskimming": go.Figure(inc_hydro_figure)
+            }
+            
+            chart_html_parts = []
+            for title, fig in chart_figures.items():
+                if fig.data: 
+                    img_bytes = pio.to_image(fig, format="png", height=720, width=1280, scale=2)
+                    img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                    chart_html_parts.append(f"<h4>{title}</h4><img src=\"data:image/png;base64,{img_base64}\" />")
+            
+            html_table_content = ""
+            if not df_table.empty:
+                html_table_headers = "<thead><tr class=\"header-row-1\">"
+                
+                # Track unique top-level (DataType) and mid-level (TechType) headers
+                data_type_headers = {}
+                tech_type_headers = {}
+
+                # First pass: Determine colspans for Data Type and Tech Type
+                for col in table_columns:
+                    if col['id'] == 'DateStr':
+                        continue
+                    
+                    data_type = col['name'][0]
+                    tech_type = col['name'][1]
+                    
+                    if data_type not in data_type_headers:
+                        data_type_headers[data_type] = {'colspan': 0, 'tech_types': {}}
+                    if tech_type not in data_type_headers[data_type]['tech_types']:
+                        data_type_headers[data_type]['tech_types'][tech_type] = {'colspan': 0}
+                    
+                    data_type_headers[data_type]['colspan'] += 1
+                    data_type_headers[data_type]['tech_types'][tech_type]['colspan'] += 1
+
+                # Row 1: Date and Data Type headers
+                html_table_headers += f"<th rowspan=\"3\" style=\"vertical-align:top;\">Date</th>"
+                for data_type, data_type_info in data_type_headers.items():
+                    html_table_headers += f"<th colspan=\"{data_type_info['colspan']}\">{data_type}</th>"
+                html_table_headers += "</tr><tr class=\"header-row-2\">"
+                
+                # Row 2: Tech Type headers
+                for data_type, data_type_info in data_type_headers.items():
+                    for tech_type, tech_type_info in data_type_info['tech_types'].items():
+                        html_table_headers += f"<th colspan=\"{tech_type_info['colspan']}\">{tech_type}</th>"
+                html_table_headers += "</tr><tr class=\"header-row-3\">"
+
+                # Row 3: Crude headers
+                for col in table_columns:
+                    if col['id'] == 'DateStr':
+                        continue
+                    html_table_headers += f"<th>{col['name'][2]}</th>"
+                html_table_headers += "</tr></thead>"
+
+                html_table_body = "<tbody>"
+                for index, row in df_table.iterrows():
+                    html_table_body += "<tr>"
+                    for col_id in [c['id'] for c in table_columns]:
+                        value = row.get(col_id, '')
+                        html_table_body += f"<td>{value}</td>"
+                    html_table_body += "</tr>"
+                html_table_body += "</tbody>"
+
+                html_table_content = f"<h4>Data Table</h4><table border=\"1\" style=\"width:100%; border-collapse: collapse; text-align: center;\">{html_table_headers}{html_table_body}</table>"
+            
+            chart_html_content_str = "\n".join(chart_html_parts)
+            combined_html_content = f"""
+                <html>
+                <head>
+                    <title>GPW Margins Report</title>
+                    <style>
+                        @page {{
+                            size: 1200px 5000px;
+                            margin: 20px;
+                        }}
+                        body {{ font-family: Arial, sans-serif; margin: 0; }}
+                        h1, h4 {{ color: #fe5000; text-align: center; }}
+                        img {{ max-width: 100%; height: auto; display: block; margin: 0 auto; }}
+                        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+                        th, td {{ border: 1px solid #dee2e6; padding: 8px; text-align: center; font-size: 10px; }}
+                        th {{ background-color: #f8f9fa; font-weight: bold; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>GPW Margins Report</h1>
+                    {chart_html_content_str}
+                    {html_table_content}
+                </body>
+                </html>
+            """
+            
+            pdf_for_png_bytes = HTML(string=combined_html_content).write_pdf()
+            
+            doc = fitz.open("pdf", pdf_for_png_bytes)
+            pix = doc[0].get_pixmap()
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format="PNG")
+            png_combined_bytes = img_byte_arr.getvalue()
+            doc.close()
+
+            download_png = dcc.send_bytes(png_combined_bytes, "gpw_margins_report.png")
+
+                
+                
+        elif selected_value == 'raw_data_csv':
+            gpw_df = _load_gpw_data(region=region)
+            incremental_margins_df = _load_incremental_margins_data(region=region)
+            
+            combined_df = pd.concat([gpw_df, incremental_margins_df], ignore_index=True)
+            download_raw_data_csv = dcc.send_data_frame(combined_df.to_csv, "gpw_all_raw_data.csv")
+
+        return download_pdf, download_png, download_raw_data_csv
+
+    @dash_app.callback(
+        Output('gpw-download-incremental-margins-csv', 'data'),
+        Input('gpw-incremental-margins-export-button', 'n_clicks'),
+        State('gpw-region-filter', 'value'),
+        State('gpw-date-range-slider', 'value'),
+        State('gpw-crude-filter', 'value'),
+        State('gpw-refining-complexity-filter', 'value'),
+        prevent_initial_call=True
+    )
+    def export_incremental_margins_to_csv(n_clicks, region, date_range, crudes, tech_types):
+        if n_clicks > 0:
+            print(f"[DEBUG] n_clicks: {n_clicks}, region: {region}, date_range: {date_range}, crudes: {crudes}, tech_types: {tech_types}")
+            start_date = datetime.fromtimestamp(date_range[0] / 1000).strftime('%Y-%m-%d') if date_range else None
+            end_date = datetime.fromtimestamp(date_range[1] / 1000).strftime('%Y-%m-%d') if date_range else None
+
+            filtered_crudes = [c for c in crudes if c != 'ALL'] if crudes else None
+            filtered_tech_types = [t for t in tech_types if t != 'ALL'] if tech_types else None
+
+            incremental_margins_data = _load_incremental_margins_data_from_db(region=region, start_date=start_date, end_date=end_date, crudes=filtered_crudes, tech_types=filtered_tech_types)
+            return dcc.send_data_frame(incremental_margins_data.to_csv, "incremental_margins_data.csv")
+        return dash.no_update
+        return dash.no_update
+
+    @dash_app.callback(
+        Output('download-gpw-data-table-csv', 'data'),
+        Input('btn-export-gpw-data-table-csv', 'n_clicks'),
+        State('gpw-region-filter', 'value'),
+        State('gpw-date-range-slider', 'value'),
+        State('gpw-crude-filter', 'value'),
+        State('gpw-refining-complexity-filter', 'value'),
+        prevent_initial_call=True
+    )
+    def export_gpw_table_data_to_csv(n_clicks, region, date_range, crudes, tech_types):
+        if n_clicks > 0:
+            start_date = datetime.fromtimestamp(date_range[0] / 1000).strftime('%Y-%m-%d') if date_range else None
+            end_date = datetime.fromtimestamp(date_range[1] / 1000).strftime('%Y-%m-%d') if date_range else None
+            
+            # Exclude 'ALL' from crudes and tech_types before passing to DB
+            filtered_crudes = [c for c in crudes if c != 'ALL'] if crudes else None
+            filtered_tech_types = [t for t in tech_types if t != 'ALL'] if tech_types else None
+
+            raw_table_data = _load_data_table_data_from_db(region=region, start_date=start_date, end_date=end_date, crudes=filtered_crudes, tech_types=filtered_tech_types)
+            return dcc.send_data_frame(raw_table_data.to_csv, "gpw_data_table_raw_data.csv")
+        return dash.no_update
+
+    @dash_app.callback(
+        [Output({'type': 'download-chart-content', 'index': dd.MATCH}, 'data')],
+        [Input({'type': 'chart-export-dropdown', 'index': dd.MATCH}, 'value')],
+        [State({'type': 'chart-export-dropdown', 'index': dd.MATCH}, 'id'),
+         State('gpw-catalytic-cracking-chart', 'figure'),
+         State('gpw-hydroskimming-chart', 'figure'),
+         State('gpw-incremental-catalytic-chart', 'figure'),
+         State('gpw-incremental-hydroskimming-chart', 'figure'),
+         State('gpw-region-filter', 'value')],
+        prevent_initial_call=True
+    )
+    def export_individual_chart(selected_value, chart_id, cat_cracking_figure, hydroskimming_figure, inc_cat_figure, inc_hydro_figure, region):
+        if not selected_value:
+            return [dash.no_update]
+
+        download_data = dash.no_update
+        chart_index = chart_id['index']
+        figure_to_export = go.Figure()
+        filename_prefix = chart_index.replace('gpw-', '').replace('-', '_')
+
+        if chart_index == 'gpw-catalytic-cracking':
+            figure_to_export = go.Figure(cat_cracking_figure)
+        elif chart_index == 'gpw-hydroskimming':
+            figure_to_export = go.Figure(hydroskimming_figure)
+        elif chart_index == 'gpw-incremental-catalytic':
+            figure_to_export = go.Figure(inc_cat_figure)
+        elif chart_index == 'gpw-incremental-hydroskimming':
+            figure_to_export = go.Figure(inc_hydro_figure)
+
+        if figure_to_export.data:
+            if selected_value == 'pdf':
+                img_bytes = pio.to_image(figure_to_export, format="png", height=720, width=1280, scale=2)
+                img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                html_content = f"""
+                    <html>
+                    <head><title>{chart_index.replace('-', ' ').title()} Chart</title></head>
+                    <body>
+                        <h1>{chart_index.replace('-', ' ').title()} Chart</h1>
+                        <img src="data:image/png;base64,{img_base64}" />
+                    </body>
+                    </html>
+                """
+                pdf_bytes = HTML(string=html_content).write_pdf()
+                download_data = dcc.send_bytes(pdf_bytes, f"{filename_prefix}_chart.pdf")
+            
+            elif selected_value == 'png':
+                chart_png_bytes = pio.to_image(figure_to_export, format="png", height=720, width=1280, scale=2)
+                download_data = dcc.send_bytes(chart_png_bytes, f"{filename_prefix}_chart.png")
+            
+            elif selected_value == 'csv':
+                if 'gpw' in chart_index:
+                    raw_chart_data = _load_gpw_data(region=region)
+                else:
+                    raw_chart_data = _load_incremental_margins_data(region=region)
+                
+                download_data = dcc.send_data_frame(raw_chart_data.to_csv, f"{filename_prefix}_chart_data.csv")
+        
+        return [download_data]
+
+
+    
     
     @dash_app.callback(
         Output('gpw-catalytic-cracking-chart', 'figure'),
@@ -1992,7 +2492,7 @@ def register_callbacks(dash_app, server):
             gpw_hydro_title,
             margins_catalytic_title,
             margins_hydro_title,
-            table_title,
+            html.H3(table_title, style={'color': '#fe5000', 'fontSize': 20}),
             gpw_title,
             margins_title,
             tech_type_options,
@@ -2019,8 +2519,10 @@ def register_callbacks(dash_app, server):
         """Handle ALL option behavior (like Refining Complexity Filter):
         - When ALL is checked: select all individual items
         - When ALL is unchecked: uncheck all individual items
-        - Individual items work independently
         """
+        all_crudes_option = [c['value'] for c in _crude_filter_options(CRUDES)]
+        all_crudes_value = ['ALL'] + all_crudes_option
+
         ctx = callback_context
         if not ctx.triggered:
             return dash.no_update, dash.no_update, dash.no_update
@@ -2028,20 +2530,8 @@ def register_callbacks(dash_app, server):
         # Process all triggers - normalization should handle all value changes
         # The sync callback will handle legend->filter sync separately
         
-        # Skip normalization on initial load
-        if is_initial_load:
-            return dash.no_update, False, value
         
-        # Handle empty value - check if this is from unchecking ALL or initial state
-        if not value:
-            # If we had ALL before and now value is empty, user unchecked ALL - clear everything
-            if had_all:
-                return [], False, []
-            # Otherwise, empty value is valid (user unchecked all items)
-            return [], False, []
         
-        if not isinstance(value, (list, tuple)):
-            return dash.no_update, False, previous_value
         
         value_list = list(value) if value else []
         previous_list = list(previous_value) if previous_value and isinstance(previous_value, (list, tuple)) else []
@@ -2187,7 +2677,7 @@ def register_callbacks(dash_app, server):
         for crude in CRUDES: # Iterate through all crudes, but only apply style if in available_crudes_for_region
             if crude in available_crudes_set:
                 if crude in selected_set:
-                    # Selected state: color with name, no border
+                    # Selected state: color with name and border
                     style = {
                         'display': 'flex',
                         'alignItems': 'center',
@@ -2198,10 +2688,11 @@ def register_callbacks(dash_app, server):
                         'transition': 'background-color 0.2s ease',
                         'userSelect': 'none',
                         'backgroundColor': '#e6f1ff',
-                        'border': '1px solid transparent' # Changed to transparent border
+                        'border': '1px solid #3498db', # Added a blue border for selected state
+                        'boxShadow': '0 2px 8px rgba(52, 152, 219, 0.2)' # Added a subtle shadow
                     }
                 else:
-                    # Unselected state: white background, transparent border
+                    # Unselected state: muted background, dashed border, and reduced opacity
                     style = {
                         'display': 'flex',
                         'alignItems': 'center',
@@ -2209,10 +2700,11 @@ def register_callbacks(dash_app, server):
                         'marginBottom': '2px',
                         'borderRadius': '4px',
                         'cursor': 'pointer',
-                        'transition': 'background-color 0.2s ease',
+                        'transition': 'background-color 0.2s ease, opacity 0.2s ease', # Added opacity transition
                         'userSelect': 'none',
-                        'backgroundColor': '#ffffff',
-                        'border': '1px solid transparent'
+                        'backgroundColor': '#f8f9fa', # Lighter background for unselected
+                        'border': '1px dashed #cccccc', # Dashed border for unselected
+                        'opacity': 0.6 # Reduced opacity for unselected
                     }
             else:
                 # Crude not available for the selected region, hide it.

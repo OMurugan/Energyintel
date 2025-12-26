@@ -660,9 +660,9 @@ def create_layout():
                                         dcc.Dropdown(
                                             id='country-profile-export-dropdown',
                                             options=[
-                                                {'label': 'Export Dashboard PDF', 'value': 'pdf'},
-                                                {'label': 'Export Dashboard PNG', 'value': 'png'},
-                                                {'label': 'Export Map Chart CSV', 'value': 'raw_chart_csv'}
+                                                {'label': 'Export Data PDF', 'value': 'pdf'},
+                                                {'label': 'Export Data PNG', 'value': 'png'},
+                                                {'label': 'Export Data CSV', 'value': 'raw_chart_csv'}
                                             ],
                                             placeholder='Export Data',
                                             style={
@@ -714,7 +714,7 @@ def create_layout():
                         id='world-map-chart',
                         figure=initial_map,
                         style={
-                            'height': 'calc(90vh - 180px)',
+                            'height': 'calc(80vh - 180px)',
                             'width': '100vw',  # Changed to viewport width
                             'maxWidth': '100%',
                             'background': 'white',
@@ -1170,7 +1170,7 @@ def create_empty_map():
             center=dict(lat=20.0, lon=0.0),
             zoom=1.5 # Consistent zoom with world view - matches original Tableau source
         ),
-        height=500,
+        height=400,
         width=700,  # Square aspect ratio
         margin=dict(l=0, r=0, t=60, b=0),
         autosize=False,  # Disable autosize to maintain square
