@@ -293,24 +293,25 @@ def create_layout():
         
         # Table: Detailed Imports Data
         html.Div([
+            html.H4(id='imports-table-title', children="Japan Crude Oil Imports by Region and Country", className='imports-table-title', style={'color': '#fe5000', 'textAlign': 'center','fontSize': '21px', 'fontWeight': 'bold'}),
             # Time dimension toggle row (Year / Quarter / Month / Day)
-            html.Div([
-            # Year toggle hidden (Year always on)
-            html.Div([
-                html.Span("Year of Year"),
-                html.Button('−', id='imports-toggle-year-btn', n_clicks=0)
-            ], style={'display': 'none'}),
+            html.Div([            
+                # Year toggle hidden (Year always on)
                 html.Div([
-                    html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
-                    html.Button('+', id='imports-toggle-quarter-btn', n_clicks=0, style={
-                        'width': '20px', 'height': '20px', 'padding': '0',
-                        'border': '1px solid #dee2e6', 'backgroundColor': '#f8f9fa',
-                        'color': '#2c3e50', 'borderRadius': '3px', 'cursor': 'pointer',
-                        'fontSize': '14px', 'fontWeight': 'bold', 'lineHeight': '1',
-                        'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
-                        'marginLeft': '8px', 'flexShrink': '0'
-                    })
-                ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '150px'}),
+                    html.Span("Year of Year"),
+                    html.Button('−', id='imports-toggle-year-btn', n_clicks=0)
+                ], style={'display': 'none'}),
+                    html.Div([
+                        html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                        html.Button('+', id='imports-toggle-quarter-btn', n_clicks=0, style={
+                            'width': '20px', 'height': '20px', 'padding': '0',
+                            'border': '1px solid #dee2e6', 'backgroundColor': '#f8f9fa',
+                            'color': '#2c3e50', 'borderRadius': '3px', 'cursor': 'pointer',
+                            'fontSize': '14px', 'fontWeight': 'bold', 'lineHeight': '1',
+                            'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+                            'marginLeft': '8px', 'flexShrink': '0'
+                        })
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '150px'}),
                 html.Div([
                     html.Span("Month of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
                     html.Button('+', id='imports-toggle-month-btn', n_clicks=0, style={
@@ -340,8 +341,7 @@ def create_layout():
                 'justifyContent': 'flex-start',
                 'alignItems': 'center',
                 'gap': '10px'
-            }),
-            html.H4(id='imports-table-title', children="Japan Crude Oil Imports by Region and Country", className='imports-table-title'),
+            }),            
             dash_table.DataTable(
                 id='imports-detail-table',
                 data=[],
@@ -562,17 +562,17 @@ def create_imports_by_region_chart(selected_country='Japan'):
     # Update layout to match Figure 1 exactly
     fig.update_layout(
         title={
-            'text': f"{selected_country}'s Crude Imports by Exporting Region",
+            'text': f"<b>{selected_country}'s Crude Imports by Exporting Region</b>",
             'x': 0.5,
             'xanchor': 'center',
             'font': {
                 'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
-                'size': 16,
-                'color': '#ff7f0e'  # Orange color matching Figure 1
+                'size': 21,                
+                'color': '#fe5000'  # Orange color matching Figure 1
             }
         },
         xaxis=dict(
-            title="Year",
+            title="",
             tickmode='linear',
             tick0=2006,
             dtick=1,  # Show every year
@@ -636,7 +636,7 @@ def create_imports_by_region_chart(selected_country='Japan'):
             bgcolor='rgba(255,255,255,0.8)',
             bordercolor='#d3d3d3',
             borderwidth=1,
-            traceorder='normal' # Ensure legend order matches trace order
+            traceorder='reversed' # Ensure legend order is reversed from trace order for ascending display
         ),
         hovermode='closest',
         hoverlabel=dict(
@@ -749,7 +749,8 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
     # Get unique crudes from data
     available_crudes = df_grouped['Crude'].unique().tolist()
 
-    # Separate 'Other' and sort the rest alphabetically
+    # Separate 'Other' crude and sort the rest alphabetically
+    other_crude = 'Other'
     crudes = sorted(available_crudes)
     
     print(f"Crudes order for chart: {crudes}")
@@ -799,19 +800,19 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
     # Update layout
     fig.update_layout(
         title={
-            'text': f"{selected_country} Crude Imports by Country - {actual_year}",
+            'text': f"<b>{selected_country} Crude Imports by Country - {actual_year}</b>",
             'x': 0.5,
             'xanchor': 'center',
             'font': {
                 'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
-                'size': 16,
-                'color': '#333333'
+                'size': 21,
+                'color': '#fe5000'
             },
             'pad': {'t': 10, 'b': 20}
         },
         xaxis=dict(
             title={
-                'text': "Country",
+                'text': "",
                 'font': {
                     'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
                     'size': 13,
@@ -823,7 +824,7 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
                 'size': 10,
                 'color': '#666666'
             },
-            tickangle=90,  # Vertical labels (straight up)
+            tickangle=-90,  # Horizontal labels
             showgrid=False,  # Remove vertical grid lines to avoid square boxes
             showline=True,  # Show the axis line
             linecolor='#d3d3d3',
@@ -832,7 +833,7 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
         ),
         yaxis=dict(
             title={
-                'text': "Volume ('000 b/d)",
+                'text': "",
                 'font': {
                     'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
                     'size': 13,
@@ -877,7 +878,7 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
             bgcolor='rgba(255,255,255,0.8)',
             bordercolor='#d3d3d3',
             borderwidth=1,
-            traceorder='normal' # Ensure legend order matches trace order
+            traceorder='reversed' # Ensure legend order matches trace order
         ),
         hovermode='closest',  # Show only the hovered segment
         hoverlabel=dict(
@@ -972,7 +973,9 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
             'id': col_id,
             'type': 'numeric',
             'format': {'specifier': ',.1f'},
-            'presentation': 'input'
+            'presentation': 'input',
+            'header_styles': {'textAlign': 'center'},
+            'cell_styles': {'textAlign': 'right'}
         })
     columns.extend(dynamic_columns)
     
