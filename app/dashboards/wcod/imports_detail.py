@@ -260,6 +260,8 @@ def create_layout():
                 id='importing-country-select',
                 options=[{'label': country, 'value': country} for country in available_countries],
                 value=default_country,
+                clearable=False,
+                searchable=True,
                 style={
                     'width': '1200px',
                     'fontSize': '13px',
@@ -469,19 +471,16 @@ def create_imports_by_region_chart(selected_country='Japan'):
     # Get all years from 2006 to 2025 (matching Figure 1)
     years = sorted([y for y in df_grouped['Year'].unique() if 2006 <= y <= 2025])
     
-    # Define stacking order to match Figure 1: Middle East at bottom, then others
-    # Order: Middle East (bottom), Africa, Asia-Pacific, Europe, FSU, Latin America, North America, Others (top)
-    region_order = ['Middle East', 'Africa', 'Asia-Pacific', 'Europe', 'FSU', 'Latin America', 'North America', 'Others']
-    
     # Get available regions from data
     available_regions = df_grouped['Region'].unique().tolist()
     
-    # Sort regions according to the stacking order (only include regions that exist in data)
-    regions = [r for r in region_order if r in available_regions]
-    # Add any remaining regions not in the predefined order
-    for r in sorted(available_regions):
-        if r not in regions:
-            regions.append(r)
+    # Separate 'Others' and sort the rest alphabetically
+    regions = sorted(available_regions)
+    
+    print(f"Regions order for chart: {regions}")
+    
+    # Reverse the regions list to change stacking order (bottom to top: Others -> ... -> Africa)
+    regions.reverse()
     
     fig = go.Figure()
     
@@ -636,7 +635,8 @@ def create_imports_by_region_chart(selected_country='Japan'):
             },
             bgcolor='rgba(255,255,255,0.8)',
             bordercolor='#d3d3d3',
-            borderwidth=1
+            borderwidth=1,
+            traceorder='normal' # Ensure legend order matches trace order
         ),
         hovermode='closest',
         hoverlabel=dict(
@@ -648,7 +648,8 @@ def create_imports_by_region_chart(selected_country='Japan'):
                 color='#000000'
             ),
             align='left'
-        )
+        ),
+        legend_traceorder='reversed' # Ensure legend order is reversed from trace order for ascending display
     )
     
     return fig
@@ -746,7 +747,15 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
     }
     
     # Get unique crudes from data
-    crudes = sorted(df_grouped['Crude'].unique())
+    available_crudes = df_grouped['Crude'].unique().tolist()
+
+    # Separate 'Other' and sort the rest alphabetically
+    crudes = sorted(available_crudes)
+    
+    print(f"Crudes order for chart: {crudes}")
+    
+    # Reverse the crudes list to change stacking order (bottom to top: Other -> ... -> Al-Shaheen)
+    crudes.reverse()
     
     fig = go.Figure()
     
@@ -867,7 +876,8 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
             },
             bgcolor='rgba(255,255,255,0.8)',
             bordercolor='#d3d3d3',
-            borderwidth=1
+            borderwidth=1,
+            traceorder='normal' # Ensure legend order matches trace order
         ),
         hovermode='closest',  # Show only the hovered segment
         hoverlabel=dict(
