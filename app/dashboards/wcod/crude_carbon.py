@@ -129,7 +129,7 @@ def create_layout():
                                 'textAlign': 'center',
                                 'border': '1px solid #b3b3b3',
                                 'fontSize': '13px',
-                                'padding': '2px 5px',
+                                'padding': '0px 5px',
                                 'fontWeight': '500',
                                 'color': '#333333'
                             }
@@ -887,18 +887,23 @@ def register_callbacks(dash_app, server):
         selected = selected or []
         selected_set = set(selected)
         has_all = '(All)' in selected_set
-        # Only (All) selected: select everything
+
+        # If (All) is selected and it's the only selection, keep only (All)
         if has_all and len(selected_set) == 1:
-            return ['(All)'] + all_countries
-        # (All) just deselected: deselect everything
-        if not has_all and set(all_countries).issubset(selected_set):
-            return []
-        # All individual selected but not (All): add (All)
-        if set(all_countries) == selected_set:
-            return ['(All)'] + all_countries
-        # Deselecting a country while (All) is present should drop (All)
+            return ['(All)']
+
+        # If all individual countries are selected but (All) is not, add (All)
+        if set(all_countries) == selected_set and not has_all:
+            return ['(All)']
+
+        # If (All) is selected and some individual countries are deselected, remove (All)
         if has_all and not set(all_countries).issubset(selected_set):
             return [v for v in selected if v != '(All)']
+
+        # If (All) is deselected and some individual countries are selected, keep them
+        if not has_all and any(c in all_countries for c in selected_set):
+            return [v for v in selected if v != '(All)']
+
         return selected
 
     # Main callback to update the chart

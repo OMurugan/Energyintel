@@ -235,7 +235,7 @@ div[class*="rc-slider-track"] {
 .Select-value-label {
     font-size: 12px !important;
     line-height: 22px !important;
-    padding-top: 10px !important;
+    /* padding-top: 10px !important; */
     padding-bottom: 0px !important;
     color: rgb(27, 54, 93) !important;
 }
