@@ -990,9 +990,9 @@ def create_grouped_assay_table(crude_value: str | None = None):
         id="assay-table",
         data=assay_data,
         columns=[
-            {"name": "Property", "id": "Property", "presentation": "markdown"},
-            {"name": "Unit", "id": "Unit", "presentation": "markdown"}, 
-            {"name": "Value", "id": "Value", "presentation": "markdown"}
+            {"name": "Property", "id": "Property", "presentation": "markdown", "minWidth": "80px", "maxWidth": "120px"},
+            {"name": "Unit", "id": "Unit", "presentation": "markdown", "minWidth": "50px", "maxWidth": "80px"}, 
+            {"name": "Value", "id": "Value", "presentation": "markdown", "minWidth": "50px", "maxWidth": "70px"}
         ],
         style_table={
             "overflowX": "auto",
@@ -1266,8 +1266,8 @@ def create_map_chart(crude_value: str | None = None):
             countrycolor="rgb(200, 200, 200)",
             showlakes=True,
             lakecolor="white",
-            lataxis=dict(range=[lat_min - 10, lat_max + 10]),  # Increased padding
-            lonaxis=dict(range=[lon_min - 20, lon_max + 20]),  # Increased padding
+            lataxis=dict(range=[lat_min - 50, lat_max + 50]),  # Increased padding
+            lonaxis=dict(range=[lon_min - 100, lon_max + 60]),  # Increased padding
             subunitcolor="rgb(200, 200, 200)",
             bgcolor="white"
         )
