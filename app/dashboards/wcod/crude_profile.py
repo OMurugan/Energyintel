@@ -453,7 +453,7 @@ def load_refined_products(crude_value: str | None = None):
     
     # Handle Property column - allow null/empty values (for Yield Volume/Weight entries)
     df_ref["Property"] = df_ref["Property"].fillna("").astype(str).str.strip()
-    df_ref["Unit"] = df_ref.get("Unit", "").fillna("").astype(str).str.strip()
+    df_ref["Unit"] = df_ref.get("Unit", "").fillna("").astype(str).str.strip().apply(lambda x: x + " (%)" if x in ["Yield Volume", "Yield Weight"] else x)
     df_ref["Value"] = df_ref.get("Value", "").astype(str).str.strip()
 
     # Filter: Keep rows that have Product AND (Property OR Unit OR Value)
@@ -658,6 +658,17 @@ def load_port_details(crude_value: str | None = None):
     df["measure_name"] = df.get("measure_name", "").fillna("").astype(str).str.strip()
     # Format measure_name from snake_case to Title Case
     df["measure_name"] = df["measure_name"].apply(lambda x: ' '.join([word.capitalize() for word in x.split('_')]))
+
+    # Append units to specific measure names
+    unit_mapping = {
+        "Max Draft": " (meters)",
+        "Max Length": " (meters)",
+        "Max Loading Rate": " (bbl/hour)",
+        "Max Tonnage": " (dwt)",
+        "Storage Capacity": " (million bbl)",
+    }
+    df["measure_name"] = df.apply(lambda row: row["measure_name"] + unit_mapping.get(row["measure_name"], ""), axis=1)
+
     df["value"] = df.get("value", "").fillna("").astype(str).str.strip()
     df["PortName"] = df.get("PortName", "").fillna("").astype(str).str.strip()
 
@@ -735,7 +746,8 @@ def load_producers_sellers(crude_value: str | None = None):
     query = """
         SELECT
             a.sellers,
-            a.producers
+            a.producers,
+            a.crude_name
         FROM fact_wcod_crude a
         WHERE a.ci_rank IS NOT NULL 
           AND a.crude_name = :crude_name
@@ -758,8 +770,9 @@ def load_producers_sellers(crude_value: str | None = None):
     for _, row in df.iterrows():
         prod = row.get("producers", "")
         sell = row.get("sellers", "")
-        if prod or sell:
-            return [(prod, sell)]
+        crude = row.get("crude_name", "")
+        if prod or sell or crude:
+            return [(prod, sell, crude)]
 
     return fallback
 
@@ -1180,7 +1193,7 @@ def create_map_chart(crude_value: str | None = None):
             margin=dict(l=0, r=0, t=0, b=0),
             geo=dict(
                 projection_type="natural earth",
-                center=dict(lat=40, lon=-95),
+                center=dict(lat=40, lon=-85),
                 scope="north america",
                 showland=True,
                 landcolor="rgb(243, 243, 243)",
@@ -1275,7 +1288,7 @@ def create_map_chart(crude_value: str | None = None):
         # Default North America view if no valid coordinates
         fig.update_geos(
             projection_type="natural earth",
-            center=dict(lat=40, lon=-95),
+            center=dict(lat=40, lon=-85),
             scope="north america",
             showland=True,
             landcolor="rgb(243, 243, 243)",
@@ -1830,15 +1843,15 @@ def create_layout(server=None):
                 id="loading-ports-map-loading-spinner",
                 type="default",
                 color="#fe5000",
-                children=[
-                    html.Div(style={
-                        "border": "1px solid #ddd",
-                        "padding": "15px",
-                        "borderRadius": "4px",
-                        "margin": "10px 0",
-                        "backgroundColor": "white"
-                    }, children=[
-                        dcc.Graph(id="loading-ports-map", figure=map_fig, config={"displayModeBar": False}),
+                    children=[
+                html.Div(id="loading-ports-map-container", style={
+                    "border": "1px solid #ddd",
+                    "padding": "15px",
+                    "borderRadius": "4px",
+                    "margin": "10px 0",
+                    "backgroundColor": "white"
+                }, children=[
+                    dcc.Graph(id="loading-ports-map", figure=map_fig, config={"displayModeBar": False}),
                         html.Div([
                             html.A("© 2025 Mapbox", href="https://www.mapbox.com/about/maps", target="_blank", style={
                                 "color": "#666",
@@ -1884,6 +1897,7 @@ def create_layout(server=None):
                 type="default",
                 color="#fe5000",
                 children=[
+                html.Div(id="port-details-table-container", children=[
                     dash_table.DataTable(
                         id="port-details-table",
                         data=port_details_table_data,
@@ -1971,6 +1985,7 @@ def create_layout(server=None):
                         filter_action="none",
                         page_action="none",
                     )
+                ]), # Closing for html.Div (port-details-table-container)
                 ]), # Closing for dcc.Loading (port-details-table-loading-spinner)
             ]), # Closing for dcc.Loading (loading-ports-map-loading-spinner),   
             html.Div(style={"gridColumn": "1 / 3", "marginBottom": "20px"}, 
@@ -2015,6 +2030,14 @@ def create_layout(server=None):
                                 "fontWeight": "bold",
                                 "textAlign": "left",
                                 "fontSize": "12px"
+                            }),
+                            html.Th("Crude Name", style={
+                                "border": "1px solid #ddd",
+                                "padding": "10px",
+                                "backgroundColor": "#f5f5f5",
+                                "fontWeight": "bold",
+                                "textAlign": "left",
+                                "fontSize": "12px"
                             })
                         ])),
                         html.Tbody(html.Tr([
@@ -2024,6 +2047,11 @@ def create_layout(server=None):
                                 "fontSize": "12px"
                             }),
                             html.Td(producers_sellers[0][1] if producers_sellers else "", id="sellers-cell", style={
+                                "border": "1px solid #ddd",
+                                "padding": "10px",
+                                "fontSize": "12px"
+                            }),
+                            html.Td(producers_sellers[0][2] if producers_sellers else "", id="crude-name-cell", style={
                                 "border": "1px solid #ddd",
                                 "padding": "10px",
                                 "fontSize": "12px"
@@ -2060,11 +2088,14 @@ def register_callbacks(app):
         Output('quality-spec-tan', 'children'),
         Output('carbon-intensity-value', 'children'),
         Output('loading-ports-map', 'figure'),
+        Output('loading-ports-map-container', 'style'), # Added for conditional visibility
         Output('port-details-table', 'data'),
         Output('port-details-table', 'columns'),
+        Output('port-details-table-container', 'style'), # Added for conditional visibility
         Output('production-exports-graph', 'figure'),
         Output('producers-cell', 'children'),
         Output('sellers-cell', 'children'),
+        Output('crude-name-cell', 'children'), # Added output for Crude Name
         Output('assay-alt-names', 'children'),
         Output('assay-country', 'children'),
         Output('assay-date', 'children'),
@@ -2079,11 +2110,19 @@ def register_callbacks(app):
             grouped_data = load_refined_products(selected_crude)
             quality_specs = load_quality_specs(selected_crude)
             carbon_intensity = load_carbon_intensity(selected_crude)
+            ports_data = load_loading_ports(selected_crude) # Load ports data here
             port_details_data = load_port_details(selected_crude)
             map_fig = create_map_chart(selected_crude)
             production_fig = create_production_chart(selected_crude)
             producers_sellers = load_producers_sellers(selected_crude)
             assay_details = load_assay_details(selected_crude)
+
+            # Determine map visibility
+            map_display_style = {'display': 'block'} if ports_data else {'display': 'none'}
+
+            # Determine port details table visibility
+            port_details_rows_data = port_details_data.get("rows", [])
+            port_details_display_style = {'display': 'block'} if port_details_rows_data else {'display': 'none'}
 
             # Convert grouped data to flat rows for DataTable
             table_data = []
@@ -2106,7 +2145,7 @@ def register_callbacks(app):
             tan_val = quality_specs[2][1] if len(quality_specs) > 2 else "0.48"
 
             port_label = port_details_data.get("label", "Port Details")
-            port_rows = [{"Measure": r[0], port_label: r[1]} for r in port_details_data.get("rows", [])]
+            port_rows = [{"Measure": r[0], port_label: r[1]} for r in port_details_rows_data]
             port_columns = [
                 {"name": "Measure", "id": "Measure", "header_style": {"textAlign": "left"}, "style": {"textAlign": "left"}},
                 {"name": port_label, "id": port_label, "header_style": {"textAlign": "center"}, "style": {"textAlign": "center"}}
@@ -2114,6 +2153,7 @@ def register_callbacks(app):
 
             prod_text = producers_sellers[0][0] if producers_sellers else ""
             sell_text = producers_sellers[0][1] if producers_sellers else ""
+            crude_text = producers_sellers[0][2] if producers_sellers else ""
 
             return (
                 assay_data,
@@ -2123,11 +2163,14 @@ def register_callbacks(app):
                 tan_val,
                 carbon_intensity,
                 map_fig,
+                map_display_style, # Added map_display_style
                 port_rows,
                 port_columns,
+                port_details_display_style, # Added port_details_display_style
                 production_fig,
                 prod_text,
                 sell_text,
+                crude_text, # Added crude_text to the return tuple
                 assay_details.get("alternate_names", ""),
                 assay_details.get("country", ""),
                 assay_details.get("assay_date", ""),
@@ -2260,7 +2303,7 @@ def register_callbacks(app):
     def export_sellers_producers_csv(n_clicks, selected_crude):
         if n_clicks and selected_crude:
             producers_sellers = load_producers_sellers(selected_crude)
-            df = pd.DataFrame(producers_sellers, columns=["Producers", "Sellers"])
+            df = pd.DataFrame(producers_sellers, columns=["Producers", "Sellers", "Crude Name"])
             return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Sellers_Producers.csv")
         raise dash.exceptions.PreventUpdate
     @app.callback(
