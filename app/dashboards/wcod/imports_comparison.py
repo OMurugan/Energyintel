@@ -19,6 +19,7 @@ if Config.MAPBOX_ACCESS_TOKEN:
 # Country to ISO-3 mapping for Mapbox
 COUNTRY_TO_ISO = {
     "United States": "USA",
+    "United States of America": "USA",  # Add normalized name
     "United Kingdom": "GBR",
     "Saudi Arabia": "SAU",
     "Russia": "RUS",
@@ -87,7 +88,9 @@ COUNTRY_TO_ISO = {
     "South Korea": "KOR",
     "Philippines": "PHL",
     "Singapore": "SGP",
-    "Brunei": "BRN"
+    "Brunei": "BRN",
+    "Czechia": "CZE",  # Add normalized name
+    "Czech Republic": "CZE"
 }
 
 try:
@@ -102,8 +105,17 @@ def _iso_for_country(country):
     country_clean = str(country).strip()
     if not country_clean:
         return None
+    
+    # First try the original country name
     if country_clean in COUNTRY_TO_ISO:
         return COUNTRY_TO_ISO[country_clean]
+    
+    # If not found, try the denormalized version (in case we received a normalized name)
+    denormalized = denormalize_country_name(country_clean)
+    if denormalized != country_clean and denormalized in COUNTRY_TO_ISO:
+        return COUNTRY_TO_ISO[denormalized]
+    
+    # Try pycountry as fallback
     if pycountry:
         try:
             match = pycountry.countries.search_fuzzy(country_clean)
@@ -218,16 +230,22 @@ def load_annual_imports_data(selected_countries=None):
             # Remove 'All' from the list if present
             countries_to_filter = [c for c in selected_countries if c != 'All']
             
-            if countries_to_filter:
-                if len(countries_to_filter) == 1:
-                    # Single country - use = operator
-                    base_query += " AND import_country = :import_country"
-                    params['import_country'] = countries_to_filter[0]
-                else:
-                    # Multiple countries - use IN clause
-                    placeholders = ", ".join([f":country_{i}" for i in range(len(countries_to_filter))])
-                    base_query += f" AND import_country IN ({placeholders})"
-                    params = {f"country_{i}": country for i, country in enumerate(countries_to_filter)}
+            # If no countries are selected after removing 'All', return empty DataFrame
+            if not countries_to_filter:
+                return pd.DataFrame()
+            
+            if len(countries_to_filter) == 1:
+                # Single country - use = operator
+                base_query += " AND import_country = :import_country"
+                params['import_country'] = countries_to_filter[0]
+            else:
+                # Multiple countries - use IN clause
+                placeholders = ", ".join([f":country_{i}" for i in range(len(countries_to_filter))])
+                base_query += f" AND import_country IN ({placeholders})"
+                params = {f"country_{i}": country for i, country in enumerate(countries_to_filter)}
+        else:
+            # If selected_countries is None or empty, return empty DataFrame
+            return pd.DataFrame()
         
         base_query += """
         GROUP BY
@@ -448,6 +466,10 @@ def create_layout():
         dcc.Store(id='imports-country-store', data={'all_selected': True}),
         dcc.Store(id='imports-map-clicked-country', data=None),  # Store clicked country from map
         dcc.Interval(id='imports-year-interval', interval=2000, disabled=True),
+        # Download components
+        dcc.Download(id="download-global-imports-csv"),
+        dcc.Download(id="download-annual-imports-csv"),
+        dcc.Download(id="download-matrix-imports-csv"),
         # Instruction text
         html.P(
             "Select Countries from Map or List (right) to filter the tables below:",
@@ -460,19 +482,37 @@ def create_layout():
                 'marginTop': '10px'
             }
         ),
-        # Main title
-        html.H2(
-            "Global Crude Imports",
-            style={
-                'color': '#d35400',  # Orange color
-                'textAlign': 'center',
-                'marginBottom': '25px',
-                'fontSize': '20px',
-                'fontWeight': 'bold',
-                'letterSpacing': '0.5px',
-                'textTransform': 'uppercase'
-            }
-        ),
+        # Main title with export button
+        html.Div([
+            html.H2(
+                "Global Crude Imports",
+                style={
+                    'color': '#d35400',  # Orange color
+                    'textAlign': 'center',
+                    'marginBottom': '25px',
+                    'fontSize': '20px',
+                    'fontWeight': 'bold',
+                    'letterSpacing': '0.5px',
+                    'textTransform': 'uppercase',
+                    'flex': '1'
+                }
+            ),
+            html.Button(
+                "Export CSV",
+                id='export-global-imports-btn',
+                n_clicks=0,
+                style={
+                    'backgroundColor': 'white',
+                    'color': '#2c3e50',
+                    'border': '1px solid #dee2e6',
+                    'padding': '6px 12px',
+                    'borderRadius': '4px',
+                    'cursor': 'pointer',
+                    'fontSize': '12px',
+                    'fontWeight': 'normal'
+                }
+            )
+        ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'gap': '20px', 'marginBottom': '25px'}),
         # Main content area
         html.Div([
             # Map area (left, larger)
@@ -727,32 +767,68 @@ def create_layout():
         ], style={'width': '100%', 'display': 'flex'}),
         # Annual Imports Volume section
         html.Div([
-            html.H3(
-                "Annual Imports Volume ('000 b/d)",
-                style={
-                    'color': '#d35400',
-                    'textAlign': 'center',
-                    'marginTop': '30px',
-                    'marginBottom': '15px',
-                    'fontSize': '20px',
-                    'fontWeight': 'bold'
-                }
-            ),
+            html.Div([
+                html.H3(
+                    "Annual Imports Volume ('000 b/d)",
+                    style={
+                        'color': '#d35400',
+                        'textAlign': 'center',
+                        'marginTop': '30px',
+                        'marginBottom': '15px',
+                        'fontSize': '20px',
+                        'fontWeight': 'bold',
+                        'flex': '1'
+                    }
+                ),
+                html.Button(
+                    "Export CSV",
+                    id='export-annual-imports-btn',
+                    n_clicks=0,
+                    style={
+                        'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6',
+                        'padding': '6px 12px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'fontSize': '12px',
+                        'marginTop': '30px'
+                    }
+                )
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'gap': '20px'}),
             html.Div(
                 id='imports-annual-table-container',
                 children=[]
             ),
-            html.P(
-                id='imports-matrix-caption',
-                children="Import – Export Matrix ('000 b/d)",
-                style={
-                    'textAlign': 'center',
-                    'fontWeight': 'bold',
-                    'color': '#d35400',
-                    'marginTop': '15px',
-                    'marginBottom': '0'
-                }
-            ),
+            html.Div([
+                html.P(
+                    id='imports-matrix-caption',
+                    children="Import – Export Matrix ('000 b/d)",
+                    style={
+                        'textAlign': 'center',
+                        'fontWeight': 'bold',
+                        'color': '#d35400',
+                        'marginTop': '15px',
+                        'marginBottom': '0',
+                        'flex': '1'
+                    }
+                ),
+                html.Button(
+                    "Export CSV",
+                    id='export-matrix-imports-btn',
+                    n_clicks=0,
+                    style={
+                        'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6',
+                        'padding': '6px 12px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'fontSize': '12px',
+                        'marginTop': '15px'
+                    }
+                )
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'gap': '20px'}),
             html.Div(
                 id='imports-matrix-table-container',
                 children=[],
@@ -900,9 +976,14 @@ def register_callbacks(dash_app, server):
             # Aggregate by country (sum if multiple entries)
             df_map = df_filtered.groupby('Importer')['Import_Volume'].sum().reset_index()
             df_map.columns = ['Country', 'Import_Volume']
-            # Store original country names before normalization for matching
-            df_map['Country_Original'] = df_map['Country'].copy()
-            # Ensure country names are normalized
+            
+            # Store original country names BEFORE normalization for ISO code lookup
+            df_map['Country_DB_Original'] = df_map['Country'].copy()
+            
+            # Store normalized country names for display
+            df_map['Country_Original'] = df_map['Country'].apply(normalize_country_name)
+            
+            # Ensure country names are normalized for map compatibility
             df_map['Country'] = df_map['Country'].apply(normalize_country_name)
             
             # Create choropleth map
@@ -916,7 +997,7 @@ def register_callbacks(dash_app, server):
             
             # Create mapping from country names to ISO-3 codes using _iso_for_country function
             # This ensures we get proper ISO-3 codes that match the GeoJSON
-            df_map['ISO_Code'] = df_map['Country_Original'].apply(_iso_for_country)
+            df_map['ISO_Code'] = df_map['Country_DB_Original'].apply(_iso_for_country)
             # Filter out any countries without valid ISO-3 codes
             df_map = df_map.dropna(subset=['ISO_Code']).copy()
             # Ensure ISO codes are strings and exactly 3 characters
@@ -928,7 +1009,7 @@ def register_callbacks(dash_app, server):
             # clicked_country is the original country name from AVAILABLE_COUNTRIES
             clicked_country_original = None
             if clicked_country and not df_map.empty:
-                # Get ISO code for the clicked country
+                # Get ISO code for the clicked country (use original database name)
                 clicked_iso = _iso_for_country(clicked_country)
                 # Check if we have a valid ISO code
                 if clicked_iso and len(str(clicked_iso)) == 3:
@@ -936,11 +1017,11 @@ def register_callbacks(dash_app, server):
                     # Check if this ISO code exists in our filtered map data (compare as strings)
                     matching_iso_rows = df_map[df_map['ISO_Code'].astype(str) == clicked_iso_str]
                     if not matching_iso_rows.empty:
-                        # Found a match by ISO code - use the country name from the data
+                        # Found a match by ISO code - use the normalized country name for display
                         clicked_country_original = matching_iso_rows.iloc[0]['Country_Original']
                     else:
-                        # Try matching by country name (case-insensitive)
-                        matching_name_rows = df_map[df_map['Country_Original'].str.strip().str.lower() == str(clicked_country).strip().lower()]
+                        # Try matching by original database country name (case-insensitive)
+                        matching_name_rows = df_map[df_map['Country_DB_Original'].str.strip().str.lower() == str(clicked_country).strip().lower()]
                         if not matching_name_rows.empty:
                             clicked_country_original = matching_name_rows.iloc[0]['Country_Original']
             
@@ -1692,3 +1773,149 @@ def register_callbacks(dash_app, server):
         Input('imports-table-enhancer-anchor', 'id'),
         prevent_initial_call=False
     )
+
+    # CSV Export Callbacks
+    @dash_app.callback(
+        Output('download-global-imports-csv', 'data'),
+        Input('export-global-imports-btn', 'n_clicks'),
+        State('imports-year-store', 'data'),
+        State('imports-country-checklist', 'value'),
+        prevent_initial_call=True
+    )
+    def export_global_imports_csv(n_clicks, selected_year, selected_countries):
+        """Export Global Crude Imports data to CSV"""
+        if n_clicks and selected_year:
+            # Load the same data used for the map
+            df = load_imports_data(selected_year)
+            
+            if df.empty:
+                # Return empty CSV if no data
+                empty_df = pd.DataFrame(columns=['Year', 'Importer', 'Import_Volume'])
+                filename = f"Global_Crude_Imports_{selected_year}.csv"
+                return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+            
+            # Filter by countries if not "All"
+            if 'All' not in selected_countries and selected_countries:
+                # Convert original country names to normalized names for filtering
+                normalized_countries = [normalize_country_name(country) for country in selected_countries]
+                df = df[df['Importer'].isin(normalized_countries)].copy()
+            
+            # Denormalize country names back to original for export
+            df['Importer'] = df['Importer'].apply(denormalize_country_name)
+            
+            # Sort by import volume descending
+            df = df.sort_values('Import_Volume', ascending=False)
+            
+            # Rename columns for export
+            df_export = df.rename(columns={
+                'Import_Volume': f"Import Volume {selected_year} ('000 b/d)"
+            })
+            
+            filename = f"Global_Crude_Imports_{selected_year}.csv"
+            return dcc.send_data_frame(df_export.to_csv, filename=filename, index=False)
+        raise dash.exceptions.PreventUpdate
+
+    @dash_app.callback(
+        Output('download-annual-imports-csv', 'data'),
+        Input('export-annual-imports-btn', 'n_clicks'),
+        State('imports-country-checklist', 'value'),
+        prevent_initial_call=True
+    )
+    def export_annual_imports_csv(n_clicks, selected_countries):
+        """Export Annual Imports Volume data to CSV"""
+        if n_clicks:
+            # Load the same data used for the annual table
+            df = load_annual_imports_data(selected_countries)
+            
+            if df.empty:
+                # Return empty CSV if no data
+                empty_df = pd.DataFrame(columns=['Importer', 'Year', 'Import_Volume'])
+                filename = "Annual_Imports_Volume.csv"
+                return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+            
+            # Get available years (sorted descending)
+            available_years = sorted(df['Year'].unique().tolist(), reverse=True)
+            target_years = [y for y in range(2025, 2018, -1) if y in available_years]
+            if not target_years:
+                target_years = available_years
+            
+            # Create pivot table: countries as rows, years as columns
+            df_pivot = df[df['Year'].isin(target_years)].pivot(
+                index='Importer', 
+                columns='Year', 
+                values='Import_Volume'
+            ).fillna(0)
+            
+            # Reorder columns to match year order (newest first)
+            df_pivot = df_pivot.reindex(columns=target_years, fill_value=0)
+            
+            # Sort countries alphabetically
+            df_pivot = df_pivot.sort_index()
+            
+            # Reset index to make Importer a column
+            df_pivot = df_pivot.reset_index()
+            df_pivot.columns.name = None
+            
+            # Add grand total row
+            totals_row = {'Importer': 'Grand Total'}
+            for year in target_years:
+                totals_row[year] = df[df['Year'] == year]['Import_Volume'].sum()
+            df_pivot = pd.concat([df_pivot, pd.DataFrame([totals_row])], ignore_index=True)
+            
+            # Rename year columns to include units
+            rename_dict = {year: f"{year} ('000 b/d)" for year in target_years}
+            df_pivot = df_pivot.rename(columns=rename_dict)
+            
+            filename = "Annual_Imports_Volume.csv"
+            return dcc.send_data_frame(df_pivot.to_csv, filename=filename, index=False)
+        raise dash.exceptions.PreventUpdate
+
+    @dash_app.callback(
+        Output('download-matrix-imports-csv', 'data'),
+        Input('export-matrix-imports-btn', 'n_clicks'),
+        State('imports-year-store', 'data'),
+        prevent_initial_call=True
+    )
+    def export_matrix_imports_csv(n_clicks, selected_year):
+        """Export Import-Export Matrix data to CSV"""
+        if n_clicks and selected_year:
+            # Load the same data used for the matrix table
+            df = load_import_export_matrix_data(selected_year)
+            
+            if df.empty:
+                # Return empty CSV if no data
+                empty_df = pd.DataFrame(columns=['Exporter'])
+                filename = f"Import_Export_Matrix_{selected_year}.csv"
+                return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+            
+            # Get column order (all columns except 'Exporter')
+            column_order = [col for col in df.columns if col != 'Exporter']
+            column_order = sorted(column_order)
+            
+            # Add row totals (sum of all importers for each exporter)
+            df = df.copy()
+            df['Grand Total'] = df[column_order].sum(axis=1)
+            
+            # Add column totals (sum of all exporters for each importer)
+            totals_row = {'Exporter': 'Grand Total'}
+            for col in column_order:
+                totals_row[col] = df[col].sum()
+            totals_row['Grand Total'] = df[column_order].sum().sum()
+            
+            # Append totals row to dataframe
+            df = pd.concat([df, pd.DataFrame([totals_row])], ignore_index=True)
+            
+            # Update column order to include Grand Total
+            column_order_with_total = column_order + ['Grand Total']
+            
+            # Reorder columns: Exporter first, then importers, then Grand Total
+            df = df[['Exporter'] + column_order_with_total]
+            
+            # Rename columns to include units and year
+            rename_dict = {col: f"{col} {selected_year} ('000 b/d)" for col in column_order_with_total if col != 'Grand Total'}
+            rename_dict['Grand Total'] = f"Grand Total {selected_year} ('000 b/d)"
+            df = df.rename(columns=rename_dict)
+            
+            filename = f"Import_Export_Matrix_{selected_year}.csv"
+            return dcc.send_data_frame(df.to_csv, filename=filename, index=False)
+        raise dash.exceptions.PreventUpdate
