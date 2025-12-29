@@ -412,7 +412,7 @@ def create_layout():
                     'borderRadius': '4px'
                 },
                 style_cell={
-                    'textAlign': 'left',
+                    
                     'padding': '10px 12px',
                     'fontSize': '12px',
                     'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif',
@@ -457,30 +457,23 @@ def create_layout():
                         'fontWeight': '600',
                         'backgroundColor': '#f0f0f0'
                     },
+                    # Ensure first four columns are left-aligned
                     {
                         'if': {'column_id': 'Exporting Region'},
-                        'minWidth': '150px',
-                        'width': '150px',
-                        'maxWidth': '150px'
+                        'textAlign': 'left', 'minWidth': '150px', 'width': '150px', 'maxWidth': '150px'
                     },
                     {
                         'if': {'column_id': 'Exporter'},
-                        'minWidth': '150px',
-                        'width': '150px',
-                        'maxWidth': '150px'
+                        'textAlign': 'left', 'minWidth': '150px', 'width': '150px', 'maxWidth': '150px'
                     },
                     {
                         'if': {'column_id': 'Company'},
-                        'minWidth': '120px',
-                        'width': '120px',
-                        'maxWidth': '120px'
+                        'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '120px'
                     },
                     {
                         'if': {'column_id': 'Crude'},
-                        'minWidth': '150px',
-                        'width': '150px',
-                        'maxWidth': '150px'
-                    }
+                        'textAlign': 'left', 'minWidth': '150px', 'width': '150px', 'maxWidth': '150px'
+                    },
                 ],
                 page_action='none',
                 filter_action='none',
