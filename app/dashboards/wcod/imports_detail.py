@@ -413,7 +413,7 @@ def create_layout():
                 },
                 style_cell={
                     
-                    'padding': '10px 12px',
+                    'padding': '10px 5px',
                     'fontSize': '12px',
                     'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif',
                     'border': '1px solid #e0e0e0',
