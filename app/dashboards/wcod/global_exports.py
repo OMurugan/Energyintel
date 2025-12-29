@@ -939,6 +939,10 @@ def create_layout():
     )
     return html.Div(
         [
+            # Download components
+            dcc.Download(id="download-global-exports-map-csv"),
+            dcc.Download(id="download-russia-exports-csv"),
+            dcc.Download(id="download-annual-exports-csv"),
             html.Div(
                 [
                     html.P(
@@ -949,16 +953,34 @@ def create_layout():
                             "marginBottom": "10px",
                         },
                     ),
-                    html.H3(
-                        "Crude Exports",
-                        style={
-                            "marginBottom": "20px",
-                            "color": "#fe5000",
-                            "textAlign": "center",
-                            "fontSize": "21px",
-                            "fontWeight": "bold",
-                        },
-                    ),
+                    html.Div([
+                        html.H3(
+                            "Crude Exports",
+                            style={
+                                "marginBottom": "20px",
+                                "color": "#fe5000",
+                                "textAlign": "center",
+                                "fontSize": "21px",
+                                "fontWeight": "bold",
+                                "flex": "1"
+                            },
+                        ),
+                        html.Button(
+                            "Export CSV",
+                            id='export-global-exports-map-btn',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '6px 12px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '12px',
+                                'fontWeight': 'normal'
+                            }
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'gap': '20px'}),
                 ]
             ),
             html.Div(
@@ -1324,16 +1346,34 @@ def create_layout():
                 [
                     html.Div(
                         [
-                            html.H4(
-                                id="global-exports-chart-title",
-                                children="All Countries Annual Exports by Crude Stream",
-                                style={
-                                    "color": "#fe5000",
-                                    "textAlign": "center",
-                                    "fontWeight": "bold",
-                                    "fontSize": "19px",
-                                },
-                            ),
+                            html.Div([
+                                html.H4(
+                                    id="global-exports-chart-title",
+                                    children="All Countries Annual Exports by Crude Stream",
+                                    style={
+                                        "color": "#fe5000",
+                                        "textAlign": "center",
+                                        "fontWeight": "bold",
+                                        "fontSize": "19px",
+                                        "flex": "1"
+                                    },
+                                ),
+                                html.Button(
+                                    "Export CSV",
+                                    id='export-russia-exports-btn',
+                                    n_clicks=0,
+                                    style={
+                                        'backgroundColor': 'white',
+                                        'color': '#2c3e50',
+                                        'border': '1px solid #dee2e6',
+                                        'padding': '6px 12px',
+                                        'borderRadius': '4px',
+                                        'cursor': 'pointer',
+                                        'fontSize': '12px',
+                                        'fontWeight': 'normal'
+                                    }
+                                )
+                            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'gap': '20px'}),
                             dcc.Loading(
                                 id="loading-chart",
                                 type="default",
@@ -1404,17 +1444,39 @@ def create_layout():
             ),
             html.Div(
                 [
-                    html.H4(
-                        "Annual Exports Volume (‘000 b/d)",
-                        style={
-                            "marginTop": "30px",
-                            "marginBottom": "10px",
-                            "color": "#fe5000",
-                            "textAlign": "center",
-                            "fontWeight": "bold",
-                            "fontSize": "19px",
-                        },
-                    ),
+                    html.Div([
+                        html.H4(
+                            "Annual Exports Volume (‘000 b/d)",
+                            style={
+                                "color": "#fe5000",
+                                "fontWeight": "bold",
+                                "fontSize": "19px",
+                                "margin": "0"
+                            },
+                        ),                    
+                        html.Button(
+                            "Export CSV",
+                            id='export-annual-exports-btn',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '6px 12px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '12px',
+                                'fontWeight': 'normal'
+                            }
+                        )
+                    ], style={
+                        'display': 'flex', 
+                        'justifyContent': 'space-between', 
+                        'alignItems': 'center', 
+                        'width': '100%',
+                        'marginTop': '30px',
+                        'marginBottom': '10px'
+                    }),
                     dcc.Loading(
                         id="loading-table",
                         type="default",
@@ -2145,4 +2207,201 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             if new_year < min_year:
                 new_year = max_year
         return new_year, new_year, str(new_year)
+
+    # CSV Export Callbacks
+    @dash_app.callback(
+        Output('download-global-exports-map-csv', 'data'),
+        Input('export-global-exports-map-btn', 'n_clicks'),
+        State('global-exports-year-display', 'children'),
+        State('global-exports-country-filter', 'value'),
+        prevent_initial_call=True
+    )
+    def export_global_exports_map_csv(n_clicks, year_str, selected_countries):
+        """Export Global Crude Exports map data to CSV"""
+        if n_clicks and year_str:
+            try:
+                year_value = _parse_year_value(year_str)
+                normalized_year = _normalize_year(year_value)
+                
+                # Get map data for the selected year
+                if MAP_DF.empty:
+                    # Return empty CSV if no data
+                    empty_df = pd.DataFrame(columns=['Country', 'Year', 'Export_Volume'])
+                    filename = f"Global_Crude_Exports_{normalized_year}.csv"
+                    return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+                
+                df = MAP_DF[MAP_DF["year"] == normalized_year].copy()
+                
+                # Filter by selected countries if specified
+                if selected_countries is not None:
+                    resolved_countries = _resolve_countries(selected_countries, COUNTRY_OPTIONS)
+                    if len(resolved_countries) > 0 and "(All)" not in selected_countries:
+                        # Filter df by matching countries (case-insensitive)
+                        df_countries_normalized = df["country"].str.strip().str.lower()
+                        target_countries_normalized = {c.lower().strip(): c for c in resolved_countries}
+                        mask = df_countries_normalized.isin(target_countries_normalized.keys())
+                        df = df[mask].copy()
+                
+                if df.empty:
+                    # Return empty CSV if no data after filtering
+                    empty_df = pd.DataFrame(columns=['Country', 'Year', 'Export_Volume'])
+                    filename = f"Global_Crude_Exports_{normalized_year}.csv"
+                    return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+                
+                # Prepare export data
+                df_export = df[['country', 'year', 'value']].copy()
+                df_export = df_export.rename(columns={
+                    'country': 'Country',
+                    'year': 'Year',
+                    'value': f"Export Volume {normalized_year} ('000 b/d)"
+                })
+                
+                # Sort by export volume descending
+                df_export = df_export.sort_values(f"Export Volume {normalized_year} ('000 b/d)", ascending=False)
+                
+                filename = f"Global_Crude_Exports_{normalized_year}.csv"
+                return dcc.send_data_frame(df_export.to_csv, filename=filename, index=False)
+            except Exception:
+                # Return empty CSV on error
+                empty_df = pd.DataFrame(columns=['Country', 'Year', 'Export_Volume'])
+                filename = f"Global_Crude_Exports_{year_str or 'Unknown'}.csv"
+                return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+        raise dash.exceptions.PreventUpdate
+
+    @dash_app.callback(
+        Output('download-russia-exports-csv', 'data'),
+        Input('export-russia-exports-btn', 'n_clicks'),
+        State('global-exports-stream-filter', 'value'),
+        State('global-exports-country-filter', 'value'),
+        prevent_initial_call=True
+    )
+    def export_russia_exports_csv(n_clicks, selected_streams, selected_countries):
+        """Export Russia Annual Exports by Crude Stream data to CSV"""
+        if n_clicks:
+            try:
+                # Get chart data
+                if CHART_DF.empty:
+                    # Return empty CSV if no data
+                    empty_df = pd.DataFrame(columns=['Country', 'Year', 'Crude_Stream', 'Export_Volume'])
+                    filename = "Russia_Annual_Exports_by_Crude_Stream.csv"
+                    return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+                
+                # Apply filters
+                df = CHART_DF.copy()
+                
+                # Filter by streams
+                if selected_streams:
+                    df = df[df["stream"].isin(selected_streams)]
+                
+                # Filter by countries
+                if selected_countries is not None:
+                    resolved_countries = _resolve_countries(selected_countries, COUNTRY_OPTIONS)
+                    if len(resolved_countries) > 0 and "(All)" not in selected_countries:
+                        # Filter df by matching countries (case-insensitive)
+                        if "country" in df.columns:
+                            df_countries_normalized = df["country"].str.strip().str.lower()
+                            target_countries_normalized = {c.lower().strip(): c for c in resolved_countries}
+                            mask = df_countries_normalized.isin(target_countries_normalized.keys())
+                            df = df[mask].copy()
+                
+                if df.empty:
+                    # Return empty CSV if no data after filtering
+                    empty_df = pd.DataFrame(columns=['Country', 'Year', 'Crude_Stream', 'Export_Volume'])
+                    filename = "Russia_Annual_Exports_by_Crude_Stream.csv"
+                    return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+                
+                # Prepare export data
+                df_export = df[['country', 'year', 'stream', 'value']].copy()
+                df_export = df_export.rename(columns={
+                    'country': 'Country',
+                    'year': 'Year',
+                    'stream': 'Crude_Stream',
+                    'value': "Export Volume ('000 b/d)"
+                })
+                
+                # Sort by country, year, and export volume
+                df_export = df_export.sort_values(['Country', 'Year', "Export Volume ('000 b/d)"], ascending=[True, True, False])
+                
+                filename = "Russia_Annual_Exports_by_Crude_Stream.csv"
+                return dcc.send_data_frame(df_export.to_csv, filename=filename, index=False)
+            except Exception:
+                # Return empty CSV on error
+                empty_df = pd.DataFrame(columns=['Country', 'Year', 'Crude_Stream', 'Export_Volume'])
+                filename = "Russia_Annual_Exports_by_Crude_Stream.csv"
+                return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+        raise dash.exceptions.PreventUpdate
+
+    @dash_app.callback(
+        Output('download-annual-exports-csv', 'data'),
+        Input('export-annual-exports-btn', 'n_clicks'),
+        State('global-exports-country-filter', 'value'),
+        State('global-exports-stream-filter', 'value'),
+        prevent_initial_call=True
+    )
+    def export_annual_exports_csv(n_clicks, selected_countries, selected_streams):
+        """Export Annual Exports Volume table data to CSV"""
+        if n_clicks:
+            try:
+                # Get table data
+                if TABLE_DF.empty:
+                    # Return empty CSV if no data
+                    empty_df = pd.DataFrame(columns=['Country', 'Crude'])
+                    filename = "Annual_Exports_Volume.csv"
+                    return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+                
+                # Apply filters
+                df = TABLE_DF.copy()
+                
+                # Filter by countries
+                if selected_countries is not None:
+                    resolved_countries = _resolve_countries(selected_countries, COUNTRY_OPTIONS)
+                    if len(resolved_countries) > 0 and "(All)" not in selected_countries:
+                        df = df[df["country"].isin(resolved_countries)]
+                
+                # Filter by streams (crude types)
+                if selected_streams:
+                    df = df[df["crude"].isin(selected_streams)]
+                
+                if df.empty:
+                    # Return empty CSV if no data after filtering
+                    empty_df = pd.DataFrame(columns=['Country', 'Crude'])
+                    filename = "Annual_Exports_Volume.csv"
+                    return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+                
+                # Create pivot table: countries and crudes as rows, years as columns
+                years = sorted(df["year"].unique(), reverse=True)
+                
+                # Pivot the data
+                df_pivot = df.pivot_table(
+                    index=["country", "crude"], 
+                    columns="year", 
+                    values="value", 
+                    aggfunc="sum"
+                ).fillna(0)
+                
+                # Reorder columns to match year order (newest first)
+                df_pivot = df_pivot.reindex(columns=years, fill_value=0)
+                
+                # Reset index to make country and crude columns
+                df_pivot = df_pivot.reset_index()
+                df_pivot.columns.name = None
+                
+                # Rename columns
+                df_pivot = df_pivot.rename(columns={'country': 'Country', 'crude': 'Crude'})
+                
+                # Rename year columns to include units
+                rename_dict = {year: f"{year} ('000 b/d)" for year in years}
+                df_pivot = df_pivot.rename(columns=rename_dict)
+                
+                # Sort by country and crude
+                df_pivot = df_pivot.sort_values(['Country', 'Crude'])
+                
+                filename = "Annual_Exports_Volume.csv"
+                return dcc.send_data_frame(df_pivot.to_csv, filename=filename, index=False)
+            except Exception:
+                # Return empty CSV on error
+                empty_df = pd.DataFrame(columns=['Country', 'Crude'])
+                filename = "Annual_Exports_Volume.csv"
+                return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+        raise dash.exceptions.PreventUpdate
 
