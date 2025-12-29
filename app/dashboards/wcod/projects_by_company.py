@@ -1521,6 +1521,11 @@ def create_layout():
         dcc.Store(id='likely-filter-previous-store', data=[]),
         # Stores to keep full table data for filtering
         dcc.Store(id='projects-company-table-data-full', data=data_full if df_table is not None else []),
+        
+        # Download Components
+        dcc.Download(id='projects-company-download-chart-csv'),
+        dcc.Download(id='projects-company-download-map-csv'),
+        dcc.Download(id='projects-company-download-table-csv'),
         dcc.Store(id='projects-company-table-tooltip-full', data=tooltip_data if df_table is not None else []),
         # Dummy target for clientside sort UI (adds A/Z hover like projects_latest)
         dcc.Store(id='projects-company-dummy-sort', data='', storage_type='memory'),
@@ -1565,11 +1570,49 @@ def create_layout():
         html.Div([
             # LEFT COLUMN: bar chart and map
             html.Div([
+                html.Div([
+                     html.Button(
+                        'Download Chart CSV',
+                        id='projects-company-btn-download-chart',
+                        n_clicks=0,
+                        style={
+                            'backgroundColor': 'white',
+                            'color': '#2c3e50',
+                            'border': '1px solid #dee2e6',
+                            'padding': '4px 10px',
+                            'borderRadius': '4px',
+                            'cursor': 'pointer',
+                            'fontSize': '11px',
+                            'marginBottom': '5px',
+                            'float': 'right'
+                        }
+                    )
+                ], style={'width': '100%', 'display': 'block', 'height': '25px'}),
                 dcc.Graph(
                     id='projects-company-bar-chart',
                     style={'height': '500px', 'marginBottom': '20px'}
                 ),
                 html.Div([
+                    html.Div([
+                         html.Button(
+                            'Download Map CSV',
+                            id='projects-company-btn-download-map',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '4px 10px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '11px',
+                                'marginBottom': '5px',
+                                'float': 'right',
+                                'zIndex': '10',
+                                'position': 'relative'
+                            }
+                        )
+                    ], style={'width': '100%', 'display': 'block', 'height': '25px'}),
                     dcc.Graph(
                         id='projects-company-map',
                         style={
@@ -1801,17 +1844,34 @@ def create_layout():
         
         # Projects table – match design from projects_by_time
         html.Div([
-            html.H4(
-                "Project Details",
-                style={
-                    'marginBottom': '15px',
-                    'fontSize': '16px',
-                    'fontWeight': 'bold',
-                    'fontFamily': 'Lato, sans-serif',
-                    'color': '#fe5000',
-                    'textAlign': 'left'
-                }
-            ),
+            html.Div([
+                html.H4(
+                    "Project Details",
+                    style={
+                        'marginBottom': '0',
+                        'fontSize': '16px',
+                        'fontWeight': 'bold',
+                        'fontFamily': 'Lato, sans-serif',
+                        'color': '#fe5000',
+                        'textAlign': 'left'
+                    }
+                ),
+                html.Button(
+                    'Download Table CSV',
+                    id='projects-company-btn-download-table',
+                    n_clicks=0,
+                    style={
+                        'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6',
+                        'padding': '4px 10px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'fontSize': '11px',
+                        'marginLeft': 'auto'
+                    }
+                )
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginBottom': '15px'}),
             dcc.Loading(
                 id="loading-projects-company-table",
                 type="default",
@@ -2797,9 +2857,70 @@ def register_callbacks(dash_app, server):
             highlight_quarter=quarter_highlight
         )
         
+        
         # Create map - always filtered by selected year (Year of Period filter controls the map)
-        # Pass filters to load_map_data
         map_fig = create_world_map(year_to_use, company, ltg_list)
         
         # Show Year of Period section and normal Production Additions gradient when there's data
         return bar_fig, map_fig, {'display': 'block'}, normal_content
+
+    # Download Callbacks
+    
+    # Download Chart Data
+    @callback(
+        Output('projects-company-download-chart-csv', 'data'),
+        Input('projects-company-btn-download-chart', 'n_clicks'),
+        [State('company-filter', 'value'),
+         State('likely-to-go-filter', 'value')],
+        prevent_initial_call=True
+    )
+    def download_chart_data(n_clicks, company, likely_to_go):
+        if not n_clicks:
+            return dash.no_update
+        ltg_list = likely_to_go if isinstance(likely_to_go, list) else ([likely_to_go] if likely_to_go else [])
+        df = load_chart_data(company, ltg_list)
+        if df.empty:
+            return dash.no_update
+        return dcc.send_data_frame(df.to_csv, "projects_capacity_chart_data.csv")
+
+    # Download Map Data
+    @callback(
+        Output('projects-company-download-map-csv', 'data'),
+        Input('projects-company-btn-download-map', 'n_clicks'),
+        [State('company-filter', 'value'),
+         State('likely-to-go-filter', 'value'),
+         State('year-of-period-filter', 'value'),
+         State('year-period-slider', 'value')],
+        prevent_initial_call=True
+    )
+    def download_map_data(n_clicks, company, likely_to_go, year_dropdown, year_slider):
+        if not n_clicks:
+            return dash.no_update
+        ltg_list = likely_to_go if isinstance(likely_to_go, list) else ([likely_to_go] if likely_to_go else [])
+        df = load_map_data(company, ltg_list)
+        
+        if df.empty:
+             return dash.no_update
+        
+        # Filter by selected year
+        year_to_use = year_dropdown if year_dropdown else year_slider
+        if year_to_use:
+             try:
+                 df = df[df['Year of Period'] == int(year_to_use)]
+             except:
+                 pass
+             
+        return dcc.send_data_frame(df.to_csv, "projects_map_data.csv")
+    
+    # Download Table Data
+    @callback(
+        Output('projects-company-download-table-csv', 'data'),
+        Input('projects-company-btn-download-table', 'n_clicks'),
+        State('projects-company-table', 'derived_virtual_data'),
+        prevent_initial_call=True
+    )
+    def download_table_data(n_clicks, table_data):
+        if not n_clicks or not table_data:
+            return dash.no_update
+        
+        return dcc.send_data_frame(pd.DataFrame(table_data).to_csv, "projects_details.csv")
