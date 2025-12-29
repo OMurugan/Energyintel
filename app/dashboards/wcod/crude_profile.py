@@ -5,12 +5,12 @@ Crude Profile Dashboard - Complete Implementation with Grouped Tables for Refine
 from dash import dcc, html, Dash, Input, Output, State, callback_context, ctx, dash_table, no_update
 import dash
 import plotly.graph_objects as go
-import plotly.express as px
 import pandas as pd
 import re
 import numpy as np
 from datetime import datetime, date, timedelta
 from core.data_helpers import execute_query
+import dash.exceptions
 
 def load_assay_details(crude_value: str | None = None):
     """Load assay details data from DB for the selected crude (first row)."""
@@ -453,7 +453,7 @@ def load_refined_products(crude_value: str | None = None):
     
     # Handle Property column - allow null/empty values (for Yield Volume/Weight entries)
     df_ref["Property"] = df_ref["Property"].fillna("").astype(str).str.strip()
-    df_ref["Unit"] = df_ref.get("Unit", "").fillna("").astype(str).str.strip()
+    df_ref["Unit"] = df_ref.get("Unit", "").fillna("").astype(str).str.strip().apply(lambda x: x + " (%)" if x in ["Yield Volume", "Yield Weight"] else x)
     df_ref["Value"] = df_ref.get("Value", "").astype(str).str.strip()
 
     # Filter: Keep rows that have Product AND (Property OR Unit OR Value)
@@ -658,6 +658,17 @@ def load_port_details(crude_value: str | None = None):
     df["measure_name"] = df.get("measure_name", "").fillna("").astype(str).str.strip()
     # Format measure_name from snake_case to Title Case
     df["measure_name"] = df["measure_name"].apply(lambda x: ' '.join([word.capitalize() for word in x.split('_')]))
+
+    # Append units to specific measure names
+    unit_mapping = {
+        "Max Draft": " (meters)",
+        "Max Length": " (meters)",
+        "Max Loading Rate": " (bbl/hour)",
+        "Max Tonnage": " (dwt)",
+        "Storage Capacity": " (million bbl)",
+    }
+    df["measure_name"] = df.apply(lambda row: row["measure_name"] + unit_mapping.get(row["measure_name"], ""), axis=1)
+
     df["value"] = df.get("value", "").fillna("").astype(str).str.strip()
     df["PortName"] = df.get("PortName", "").fillna("").astype(str).str.strip()
 
@@ -701,7 +712,7 @@ def load_loading_ports(crude_value: str | None = None):
                ON a.crude_id = b.dim_crude_id
         LEFT JOIN dim_country c 
                ON a.country_id = c.dim_country_id
-        WHERE b.crude_name = :crude_name
+        WHERE b.crude_name LIKE '%' || :crude_name || '%'
     """
     try:
         results = execute_query(query, {"crude_name": crude_name})
@@ -735,7 +746,8 @@ def load_producers_sellers(crude_value: str | None = None):
     query = """
         SELECT
             a.sellers,
-            a.producers
+            a.producers,
+            a.crude_name
         FROM fact_wcod_crude a
         WHERE a.ci_rank IS NOT NULL 
           AND a.crude_name = :crude_name
@@ -758,8 +770,9 @@ def load_producers_sellers(crude_value: str | None = None):
     for _, row in df.iterrows():
         prod = row.get("producers", "")
         sell = row.get("sellers", "")
-        if prod or sell:
-            return [(prod, sell)]
+        crude = row.get("crude_name", "")
+        if prod or sell or crude:
+            return [(prod, sell, crude)]
 
     return fallback
 
@@ -990,9 +1003,9 @@ def create_grouped_assay_table(crude_value: str | None = None):
         id="assay-table",
         data=assay_data,
         columns=[
-            {"name": "Property", "id": "Property", "presentation": "markdown"},
-            {"name": "Unit", "id": "Unit", "presentation": "markdown"}, 
-            {"name": "Value", "id": "Value", "presentation": "markdown"}
+            {"name": "Property", "id": "Property", "presentation": "markdown", "minWidth": "80px", "maxWidth": "120px"},
+            {"name": "Unit", "id": "Unit", "presentation": "markdown", "minWidth": "50px", "maxWidth": "80px"}, 
+            {"name": "Value", "id": "Value", "presentation": "markdown", "minWidth": "50px", "maxWidth": "70px"}
         ],
         style_table={
             "overflowX": "auto",
@@ -1180,7 +1193,7 @@ def create_map_chart(crude_value: str | None = None):
             margin=dict(l=0, r=0, t=0, b=0),
             geo=dict(
                 projection_type="natural earth",
-                center=dict(lat=40, lon=-95),
+                center=dict(lat=40, lon=-85),
                 scope="north america",
                 showland=True,
                 landcolor="rgb(243, 243, 243)",
@@ -1266,8 +1279,8 @@ def create_map_chart(crude_value: str | None = None):
             countrycolor="rgb(200, 200, 200)",
             showlakes=True,
             lakecolor="white",
-            lataxis=dict(range=[lat_min - 10, lat_max + 10]),  # Increased padding
-            lonaxis=dict(range=[lon_min - 20, lon_max + 20]),  # Increased padding
+            lataxis=dict(range=[lat_min - 50, lat_max + 50]),  # Increased padding
+            lonaxis=dict(range=[lon_min - 100, lon_max + 60]),  # Increased padding
             subunitcolor="rgb(200, 200, 200)",
             bgcolor="white"
         )
@@ -1275,7 +1288,7 @@ def create_map_chart(crude_value: str | None = None):
         # Default North America view if no valid coordinates
         fig.update_geos(
             projection_type="natural earth",
-            center=dict(lat=40, lon=-95),
+            center=dict(lat=40, lon=-85),
             scope="north america",
             showland=True,
             landcolor="rgb(243, 243, 243)",
@@ -1329,6 +1342,13 @@ def create_layout(server=None):
         "color": "#333",
         "overflowX": "hidden"
     }, children=[
+        # Download components for CSV exports
+        dcc.Download(id="download-mars-assay-csv"),
+        dcc.Download(id="download-refined-products-csv"),
+        dcc.Download(id="download-production-exports-csv"),
+        dcc.Download(id="download-loading-ports-csv"),
+        dcc.Download(id="download-port-details-csv"),
+        dcc.Download(id="download-sellers-producers-csv"),
         # CSS Styles for merged cells
         html.Div(style={"display": "none"}, children=[
             dcc.Markdown("""
@@ -1500,16 +1520,23 @@ def create_layout(server=None):
                     "display": "block",
                     "marginBottom": "5px"
                 }),
-                dcc.Dropdown(
-                    id="crude-select",
-                    options=crude_options,
-                    value=default_crude,
-                    clearable=False,
-                    style={
-                        "width": "650px",
-                        "fontSize": "13px",
-                        "display": "block"
-                    }
+                dcc.Loading(
+                    id="crude-select-loading-spinner",
+                    type="default",
+                    color="#fe5000",
+                    children=[
+                        dcc.Dropdown(
+                            id="crude-select",
+                            options=crude_options,
+                            value=default_crude,
+                            clearable=False,
+                            style={
+                                "width": "650px",
+                                "fontSize": "13px",
+                                "display": "block"
+                            }
+                        )
+                    ]
                 )
             ]),
             html.A(
@@ -1537,159 +1564,178 @@ def create_layout(server=None):
             "marginTop": "20px"
         }, children=[
             # Left: Assay Details table
-            html.Div(style={
-                "flex": "1",
-                "minWidth": "250px",
-                "background": "#f8fafc",
-                "padding": "12px",
-                "borderRadius": "5px",
-                "border": "1px solid #e6e6e6"
-            }, children=[
-                
-                html.Table(style={
-                    "width": "100%",
-                    "borderCollapse": "collapse",
-                    "fontSize": "9pt",
-                    "color": "#333"
+            dcc.Loading(
+            id="assay-details-loading-spinner",
+            type="default",
+            color="#fe5000",
+            children=[
+                html.Div(style={
+                    "flex": "1",
+                    "minWidth": "250px",
+                    "background": "#f8fafc",
+                    "padding": "12px",
+                    "borderRadius": "5px",
+                    "border": "1px solid #e6e6e6"
                 }, children=[
-                    html.Thead(html.Tr([
-                        html.Th("Alternate Crude Names", style={
-                            "border": "1px solid #e6e6e6",
-                            "padding": "8px",
-                            "backgroundColor": "#eef3f8",
-                            "color": "#1f3263",
-                            "fontWeight": "bold",
-                            "textAlign": "left"
-                        }),
-                        html.Th("Country", style={
-                            "border": "1px solid #e6e6e6",
-                            "padding": "8px",
-                            "backgroundColor": "#eef3f8",
-                            "color": "#1f3263",
-                            "fontWeight": "bold",
-                            "textAlign": "left"
-                        }),
-                        html.Th("Assay Date", style={
-                            "border": "1px solid #e6e6e6",
-                            "padding": "8px",
-                            "backgroundColor": "#eef3f8",
-                            "color": "#1f3263",
-                            "fontWeight": "bold",
-                            "textAlign": "right"
-                        })
-                    ])),
-                    html.Tbody(html.Tr([
-                        html.Td(assay_details["alternate_names"], id="assay-alt-names", style={
-                            "border": "1px solid #e6e6e6",
-                            "padding": "8px"
-                        }),
-                        html.Td(assay_details["country"], id="assay-country", style={
-                            "border": "1px solid #e6e6e6",
-                            "padding": "8px"
-                        }),
-                        html.Td(assay_details["assay_date"], id="assay-date", style={
-                            "border": "1px solid #e6e6e6",
-                            "padding": "8px",
-                            "textAlign": "right"
-                        })
-                    ]))
+                    
+                    html.Table(style={
+                        "width": "100%",
+                        "borderCollapse": "collapse",
+                        "fontSize": "9pt",
+                        "color": "#333"
+                    }, children=[
+                        html.Thead(html.Tr([
+                            html.Th("Alternate Crude Names", style={
+                                "border": "1px solid #e6e6e6",
+                                "padding": "8px",
+                                "backgroundColor": "#eef3f8",
+                                "color": "#1f3263",
+                                "fontWeight": "bold",
+                                "textAlign": "left"
+                            }),
+                            html.Th("Country", style={
+                                "border": "1px solid #e6e6e6",
+                                "padding": "8px",
+                                "backgroundColor": "#eef3f8",
+                                "color": "#1f3263",
+                                "fontWeight": "bold",
+                                "textAlign": "left"
+                            }),
+                            html.Th("Assay Date", style={
+                                "border": "1px solid #e6e6e6",
+                                "padding": "8px",
+                                "backgroundColor": "#eef3f8",
+                                "color": "#1f3263",
+                                "fontWeight": "bold",
+                                "textAlign": "right"
+                            })
+                        ])),
+                        html.Tbody(html.Tr([
+                            html.Td(assay_details["alternate_names"], id="assay-alt-names", style={
+                                "border": "1px solid #e6e6e6",
+                                "padding": "8px"
+                            }),
+                            html.Td(assay_details["country"], id="assay-country", style={
+                                "border": "1px solid #e6e6e6",
+                                "padding": "8px"
+                            }),
+                            html.Td(assay_details["assay_date"], id="assay-date", style={
+                                "border": "1px solid #e6e6e6",
+                                "padding": "8px",
+                                "textAlign": "right"
+                            })
+                        ]))
+                    ])
                 ])
             ]),
             
             # Center: Carbon Intensity Box
-            html.Div(style={
-                "background": "linear-gradient(135deg, #fff9e6, #ffedcc)",
-                "border": "1px solid #e6b800",
-                "padding": "20px 10px",
-                "borderRadius": "5px",
-                "textAlign": "center",
-                "minWidth": "150px",
-                "flexShrink": "0"
-            }, children=[
-                html.Div("Carbon Intensity", style={
-                    "color": "#1b365d",
-                    "fontWeight": "bold",
-                    "fontSize": "9pt",
-                    "marginBottom": "8px"
-                }),
-                html.Div("Low", id="carbon-intensity-value", style={
-                    "color": "#1b365d",
-                    "fontWeight": "normal",
-                    "fontSize": "9pt"
-                })
-            ]),
+            dcc.Loading(
+                id="carbon-intensity-loading-spinner",
+                type="default",
+                color="#fe5000",
+                children=[
+                    html.Div(style={
+                        "background": "linear-gradient(135deg, #fff9e6, #ffedcc)",
+                        "border": "1px solid #e6b800",
+                        "padding": "20px 10px",
+                        "borderRadius": "5px",
+                        "textAlign": "center",
+                        "minWidth": "150px",
+                        "flexShrink": "0"
+                    }, children=[
+                        html.Div("Carbon Intensity", style={
+                            "color": "#1b365d",
+                            "fontWeight": "bold",
+                            "fontSize": "9pt",
+                            "marginBottom": "8px"
+                        }),
+                        html.Div("Low", id="carbon-intensity-value", style={
+                            "color": "#1b365d",
+                            "fontWeight": "normal",
+                            "fontSize": "9pt"
+                        })
+                    ])
+                ]
+            ),
             
             # Right: Latest Quality Specs table
-            html.Div(style={
-                "flex": "1",
-                "minWidth": "350px",
-                "background": "#f8fafc",
-                "padding": "9pt",
-                "borderRadius": "5px",
-                "border": "1px solid #e6e6e6"
-            }, children=[
-                html.Div("Latest Quality Specs", style={
-                    "color": "#fe5000",
-                    "fontWeight": "bold",
-                    "fontSize": "16px",
-                    "marginBottom": "12px",                    
-                    "paddingBottom": "6px",
-                    "textAlign": "center"
-                }),
-                html.Table(style={
-                    "width": "100%",
-                    "borderCollapse": "collapse",
-                    "fontSize": "13px",
-                    "color": "#333"
-                }, children=[
-                    html.Thead(html.Tr([
-                        html.Th("Gravity (API at 60F)", style={
-                            "border": "1px solid #e6e6e6",
-                            "padding": "10px",
-                            "backgroundColor": "#eef3f8",
-                            "color": "#1f3263",
+            dcc.Loading(
+                id="quality-specs-loading-spinner",
+                type="default",
+                color="#fe5000",
+                children=[
+                    html.Div(style={
+                        "flex": "1",
+                        "minWidth": "350px",
+                        "background": "#f8fafc",
+                        "padding": "9pt",
+                        "borderRadius": "5px",
+                        "border": "1px solid #e6e6e6"
+                    }, children=[
+                        html.Div("Latest Quality Specs", style={
+                            "color": "#fe5000",
                             "fontWeight": "bold",
+                            "fontSize": "16px",
+                            "marginBottom": "12px",                    
+                            "paddingBottom": "6px",
                             "textAlign": "center"
                         }),
-                        html.Th("Sulfur Content (% Wt)", style={
-                            "border": "1px solid #e6e6e6",
-                            "padding": "10px",
-                            "backgroundColor": "#eef3f8",
-                            "color": "#1f3263",
-                            "fontWeight": "bold",
-                            "textAlign": "center"
-                        }),
-                        html.Th("TAN (mg KOH/g)", style={
-                            "border": "1px solid #e6e6e6",
-                            "padding": "10px",
-                            "backgroundColor": "#eef3f8",
-                            "color": "#1f3263",
-                            "fontWeight": "bold",
-                            "textAlign": "center"
-                        })
-                    ])),
-                    html.Tbody([
-                        html.Tr([
-                            html.Td(quality_specs[0][1] if len(quality_specs) > 0 else "28.40", id="quality-spec-gravity", style={
-                                "border": "1px solid #e6e6e6",
-                                "padding": "10px",
-                                "textAlign": "center"
-                            }),
-                            html.Td(quality_specs[1][1] if len(quality_specs) > 1 else "2.17", id="quality-spec-sulfur", style={
-                                "border": "1px solid #e6e6e6",
-                                "padding": "10px",
-                                "textAlign": "center"
-                            }),
-                            html.Td(quality_specs[2][1] if len(quality_specs) > 2 else "0.48", id="quality-spec-tan", style={
-                                "border": "1px solid #e6e6e6",
-                                "padding": "10px",
-                                "textAlign": "center"
-                            })
+                        html.Table(style={
+                            "width": "100%",
+                            "borderCollapse": "collapse",
+                            "fontSize": "13px",
+                            "color": "#333"
+                        }, children=[
+                            html.Thead(html.Tr([
+                                html.Th("Gravity (API at 60F)", style={
+                                    "border": "1px solid #e6e6e6",
+                                    "padding": "10px",
+                                    "backgroundColor": "#eef3f8",
+                                    "color": "#1f3263",
+                                    "fontWeight": "bold",
+                                    "textAlign": "center"
+                                }),
+                                html.Th("Sulfur Content (% Wt)", style={
+                                    "border": "1px solid #e6e6e6",
+                                    "padding": "10px",
+                                    "backgroundColor": "#eef3f8",
+                                    "color": "#1f3263",
+                                    "fontWeight": "bold",
+                                    "textAlign": "center"
+                                }),
+                                html.Th("TAN (mg KOH/g)", style={
+                                    "border": "1px solid #e6e6e6",
+                                    "padding": "10px",
+                                    "backgroundColor": "#eef3f8",
+                                    "color": "#1f3263",
+                                    "fontWeight": "bold",
+                                    "textAlign": "center"
+                                })
+                            ])),
+                            html.Tbody([
+                                html.Tr([
+                                    html.Td(quality_specs[0][1] if len(quality_specs) > 0 else "28.40", id="quality-spec-gravity", style={
+                                        "border": "1px solid #e6e6e6",
+                                        "padding": "10px",
+                                        "textAlign": "center"
+                                    }),
+                                    html.Td(quality_specs[1][1] if len(quality_specs) > 1 else "2.17", id="quality-spec-sulfur", style={
+                                        "border": "1px solid #e6e6e6",
+                                        "padding": "10px",
+                                        "textAlign": "center"
+                                    }),
+                                    html.Td(quality_specs[2][1] if len(quality_specs) > 2 else "0.48", id="quality-spec-tan", style={
+                                        "border": "1px solid #e6e6e6",
+                                        "padding": "10px",
+                                        "textAlign": "center"
+                                    })
+                                ])
+                            ])
                         ])
                     ])
-                ])
-            ])
-        ]),
+            ]), # Closing for html.Div (Latest Quality Specs)
+        ]), # Closing for dcc.Loading (quality-specs-loading-spinner)
         
         # Main Grid Layout
         html.Div(style={
@@ -1700,59 +1746,105 @@ def create_layout(server=None):
             "alignItems": "start"
         }, children=[
             # Column 1: Mars Blend Assay
-            html.Div(style={"gridColumn": "1 / 2"}, children=[
-                html.Div("Mars Blend Assay", style={
-                    "color": "#fe5000",
-                    "fontWeight": "bold",
-                    "fontSize": "16px",
-                    "margin": "20px 0 10px 0",                   
-                    "paddingBottom": "5px",
-                    "textAlign": "center"
-                }),
-                create_grouped_assay_table(default_crude)
-            ]),
+            dcc.Loading(
+                id="mars-assay-loading-spinner",
+                type="default",
+                color="#fe5000",
+                children=[
+                    html.Div(style={"gridColumn": "1 / 2"}, children=[
+                        html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                            html.Div("Mars Blend Assay", style={
+                                "color": "#fe5000",
+                                "fontWeight": "bold",
+                                "fontSize": "16px",
+                                "margin": "20px 0 10px 0",                   
+                                "paddingBottom": "5px",
+                                "textAlign": "center"
+                            }),
+                            html.Button("Export CSV", id='export-mars-assay-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                        ]),
+                        create_grouped_assay_table(default_crude)
+                    ]),
+            ]), # Closing for dcc.Loading (mars-assay-loading-spinner)
             
             # Column 2: Refined Products Breakdown & Properties
-            html.Div(style={"gridColumn": "2 / 2"}, children=[
-                html.Div("Refined Products Breakdown & Properties", style={
-                    "color": "#fe5000",
-                    "fontWeight": "bold",
-                    "fontSize": "16px",
-                    "margin": "20px 0 10px 0",                   
-                    "paddingBottom": "5px",
-                    "textAlign": "center"
-                }),
-                create_grouped_refined_products_table(default_crude)
-            ]),
+            dcc.Loading(
+                id="refined-products-loading-spinner",
+                type="default",
+                color="#fe5000",
+                children=[
+                    html.Div(style={"gridColumn": "2 / 2"}, children=[
+                        html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                            html.Div("Refined Products Breakdown & Properties", style={
+                                "color": "#fe5000",
+                                "fontWeight": "bold",
+                                "fontSize": "16px",
+                                "margin": "20px 0 10px 0",                   
+                                "paddingBottom": "5px",
+                                "textAlign": "center"
+                            }),
+                            html.Button("Export CSV", id='export-refined-products-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                        ]),
+                        create_grouped_refined_products_table(default_crude)
+                    ]),
+            ]), # Closing for dcc.Loading (refined-products-loading-spinner)
             
             # Column 3: Right-side stack
-            html.Div(style={"gridColumn": "3 / 4", "display": "flex", "flexDirection": "column"}, children=[
-                html.Div("Production and Exports", style={
-                    "color": "#fe5000",
-                    "fontWeight": "bold",
-                    "fontSize": "16px", 
-                    "margin": "20px 0 10px 0",                    
-                    "paddingBottom": "5px",
-                    "textAlign": "center"
-                }),
-                html.Div(style={
-                    "border": "1px solid #ddd",
-                    "padding": "15px",
-                    "borderRadius": "4px",
-                    "margin": "10px 0",
-                    "backgroundColor": "white"
-                }, children=[
-                    dcc.Graph(id="production-exports-graph", figure=production_fig, config={"displayModeBar": False})
+            html.Div(style={"gridColumn": "3 / 4", "display": "flex", "flexDirection": "column"}, 
+            children=[
+                dcc.Loading(
+                id="production-exports-loading-spinner",
+                type="default",
+                color="#fe5000",
+                children=[
+                    html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                        html.Div("Production and Exports", style={
+                            "color": "#fe5000",
+                            "fontWeight": "bold",
+                            "fontSize": "16px", 
+                            "margin": "20px 0 10px 0",                    
+                            "paddingBottom": "5px",
+                            "textAlign": "center"
+                        }),
+                        html.Button("Export CSV", id='export-production-exports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                            'color': '#2c3e50',
+                            'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                    ]),
+                    html.Div(style={
+                        "border": "1px solid #ddd",
+                        "padding": "15px",
+                        "borderRadius": "4px",
+                        "margin": "10px 0",
+                        "backgroundColor": "white"
+                    }, children=[
+                        dcc.Graph(id="production-exports-graph", figure=production_fig, config={"displayModeBar": False})
+                    ])
+                ]), # Closing for dcc.Loading (production-exports-loading-spinner),
+                
+                html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, 
+                children=[
+                    html.Div("Loading Ports", style={
+                        "color": "#fe5000",
+                        "fontWeight": "bold",
+                        "fontSize": "16px",
+                        "margin": "25px 0 10px 0",                   
+                        "paddingBottom": "5px",
+                        "textAlign": "center"
+                    }),
+                    html.Button("Export CSV", id='export-loading-ports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                 ]),
-                html.Div("Loading Ports", style={
-                    "color": "#fe5000",
-                    "fontWeight": "bold",
-                    "fontSize": "16px",
-                    "margin": "25px 0 10px 0",                   
-                    "paddingBottom": "5px",
-                    "textAlign": "center"
-                }),
-                html.Div(style={
+                dcc.Loading(
+                id="loading-ports-map-loading-spinner",
+                type="default",
+                color="#fe5000",
+                    children=[
+                html.Div(id="loading-ports-map-container", style={
                     "border": "1px solid #ddd",
                     "padding": "15px",
                     "borderRadius": "4px",
@@ -1760,169 +1852,226 @@ def create_layout(server=None):
                     "backgroundColor": "white"
                 }, children=[
                     dcc.Graph(id="loading-ports-map", figure=map_fig, config={"displayModeBar": False}),
-                    html.Div([
-                        html.A("© 2025 Mapbox", href="https://www.mapbox.com/about/maps", target="_blank", style={
+                        html.Div([
+                            html.A("© 2025 Mapbox", href="https://www.mapbox.com/about/maps", target="_blank", style={
+                                "color": "#666",
+                                "textDecoration": "none"
+                            }),
+                            " ",
+                            html.A("© OpenStreetMap", href="https://www.openstreetmap.org/about", target="_blank", style={
+                                "color": "#666",
+                                "textDecoration": "none"
+                            })
+                        ], style={
+                            "fontSize": "10px",
                             "color": "#666",
-                            "textDecoration": "none"
-                        }),
-                        " ",
-                        html.A("© OpenStreetMap", href="https://www.openstreetmap.org/about", target="_blank", style={
-                            "color": "#666",
-                            "textDecoration": "none"
+                            "marginTop": "5px",
+                            "textAlign": "left"
                         })
-                    ], style={
-                        "fontSize": "10px",
-                        "color": "#666",
-                        "marginTop": "5px",
-                        "textAlign": "left"
-                    })
+                    ]),
                 ]),
+                
                 html.Div("Inland points represent terminals for pipeline-delivered crudes.", style={
                     "fontSize": "11px",
                     "color": "#0066cc",
                     "marginTop": "5px",
                     "textAlign": "left"
                 }),
-                html.Div("Port Details", style={
-                    "color": "#fe5000",
-                    "fontWeight": "bold",
-                    "fontSize": "16px",
-                    "margin": "25px 0 10px 0",                  
-                    "paddingBottom": "5px",
-                    "textAlign": "center"
-                }),
-                dash_table.DataTable(
-                    id="port-details-table",
-                    data=port_details_table_data,
-                    columns=[
-                        {"name": "Measure", "id": "Measure"},
-                        {"name": port_details_label, "id": port_details_label}
-                    ],
-                    style_table={
-                        "width": "100%",
-                        "marginBottom": "15px",
-                        "fontFamily": "Arial, sans-serif",
-                        "position": "relative",
-                        "maxHeight": "500px",  # Consistent with assay table
-                        "overflowY": "auto",
-                        "overflowX": "auto",
-                        "border": "1px solid #ddd",
-                    },
-                    style_cell={
-                        "border": "1px solid #ddd",
-                        "paddingLeft": "6px",
-                        "paddingRight": "0px",
-                        "marginTop": "4px",
-                        "fontSize": "8pt", # Consistent with other tables
-                        "textAlign": "left",
-                        "backgroundColor": "white",
-                        "fontFamily": "Arial, sans-serif",
-                        "whiteSpace": "normal",
-                        "height": "auto",
-                        "minHeight": "35px", # Consistent with other tables
-                        "verticalAlign": "middle",
-                    },
-                    style_header={
-                        "backgroundColor": "#f5f5f5",
-                        "fontWeight": "bold",
-                        "fontSize": "9pt", # Consistent with other tables
-                        "border": "1px solid #ddd",
-                        "padding": "6px",
-                        "textAlign": "left",
-                        "position": "static", # Make header sticky
-                        "top": "0",
-                        "zIndex": "10",
-                    },
-                    style_data={
-                        "border": "1px solid #ddd",
-                        "whiteSpace": "normal",
-                        "height": "auto"
-                    },
-                    style_data_conditional=[
-                        # Alternate row colors for better readability
-                        {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"},
-                        {"if": {"row_index": "even"}, "backgroundColor": "#FFFFFF"},
-                        # Measure column styling
-                        {
-                            "if": {"column_id": "Measure"},
-                            "fontWeight": "normal",
-                            "color": "#1f3263",
-                            "borderRight": "2px solid #ccc",
-                            "maxWidth": "150px", # Example max-width, adjust as needed
-                        },
-                    ],
-                    css=[
-                        # Stronger border for Measure column
-                        {
-                            'selector': '.dash-cell[data-dash-column="Measure"]',
-                            'rule': 'border-right: 2px solid #ccc !important;'
-                        },
-                    ],
-                    editable=False,
-                    sort_action="native",
-                    filter_action="none",
-                    page_action="none",
-                )
-            ]),
             
-            # Bottom Row: Sellers and Producers
-            html.Div(style={"gridColumn": "1 / 3"}, children=[
-                html.Div("Sellers and Producers", style={
-                    "color": "#fe5000",
-                    "fontWeight": "bold", 
-                    "fontSize": "16px",
-                    "margin": "20px 0 10px 0",
-                    "paddingBottom": "5px",
-                    "textAlign": "center"
-                }),
-                html.Table(style={
-                    "width": "100%",
-                    "borderCollapse": "collapse",
-                    "marginBottom": "15px",
-                    "fontFamily": "Arial, sans-serif"
-                }, children=[
-                    html.Thead(html.Tr([
-                        html.Th("Producers", style={
-                            "border": "1px solid #ddd",
-                            "padding": "10px",
-                            "backgroundColor": "#f5f5f5",
-                            "fontWeight": "bold",
-                            "textAlign": "left",
-                            "fontSize": "12px"
-                        }),
-                        html.Th("Sellers", style={
-                            "border": "1px solid #ddd",
-                            "padding": "10px",
-                            "backgroundColor": "#f5f5f5",
-                            "fontWeight": "bold",
-                            "textAlign": "left",
-                            "fontSize": "12px"
-                        })
-                    ])),
-                    html.Tbody(html.Tr([
-                        html.Td(producers_sellers[0][0] if producers_sellers else "", id="producers-cell", style={
-                            "border": "1px solid #ddd",
-                            "padding": "10px",
-                            "fontSize": "12px"
-                        }),
-                        html.Td(producers_sellers[0][1] if producers_sellers else "", id="sellers-cell", style={
-                            "border": "1px solid #ddd",
-                            "padding": "10px",
-                            "fontSize": "12px"
-                        })
-                    ]))
+                html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, 
+                children=[
+                    html.Div("Port Details", style={
+                        "color": "#fe5000",
+                        "fontWeight": "bold",
+                        "fontSize": "16px",
+                        "margin": "25px 0 10px 0",                  
+                        "paddingBottom": "5px",
+                        "textAlign": "center"
+                    }),
+                    html.Button("Export CSV", id='export-port-details-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                 ]),
-                html.Div(
-                    "Countries: Select jurisdictions are included under countries for data presentation purposes.",
-                    style={
-                        "fontSize": "11px",
-                        "color": "#666",
-                        "marginTop": "10px",
-                        "fontStyle": "italic"
-                    }
-                )
+                dcc.Loading(
+                id="port-details-table-loading-spinner",
+                type="default",
+                color="#fe5000",
+                children=[
+                html.Div(id="port-details-table-container", children=[
+                    dash_table.DataTable(
+                        id="port-details-table",
+                        data=port_details_table_data,
+                        columns=[
+                            {"name": "Measure", "id": "Measure"},
+                            {"name": port_details_label, "id": port_details_label}
+                        ],
+                        style_table={
+                            "width": "100%",
+                            "marginBottom": "15px",
+                            "fontFamily": "Arial, sans-serif",
+                            "position": "relative",
+                            "maxHeight": "500px",  # Consistent with assay table
+                            "overflowY": "auto",
+                            "overflowX": "auto",
+                            "border": "1px solid #ddd",
+                        },
+                        style_cell={
+                            "border": "1px solid #ddd",
+                            "paddingLeft": "6px",
+                            "paddingRight": "0px",
+                            "marginTop": "4px",
+                            "fontSize": "8pt", # Consistent with other tables
+                            "textAlign": "left",
+                            "backgroundColor": "white",
+                            "fontFamily": "Arial, sans-serif",
+                            "whiteSpace": "normal",
+                            "height": "auto",
+                            "minHeight": "35px", # Consistent with other tables
+                            "verticalAlign": "middle",
+                        },
+                        style_header={
+                            "backgroundColor": "#f5f5f5",
+                            "fontWeight": "bold",
+                            "fontSize": "9pt", # Consistent with other tables
+                            "border": "1px solid #ddd",
+                            "padding": "6px",
+                            "textAlign": "left", # Default to left, then override conditionally
+                            "position": "static", # Make header sticky
+                            "top": "0",
+                            "zIndex": "10",
+                        },
+                        style_data={
+                            "border": "1px solid #ddd",
+                            "whiteSpace": "normal",
+                            "height": "auto"
+                        },
+                        style_header_conditional=[
+                            {
+                                "if": {"column_id": "Measure"},
+                                "textAlign": "left",
+                            },
+                            {
+                                "if": {"column_id": port_details_label},
+                                "textAlign": "center",
+                            },
+                        ],
+                        style_data_conditional=[
+                            # Alternate row colors for better readability
+                            {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9"},
+                            {"if": {"row_index": "even"}, "backgroundColor": "#FFFFFF"},
+                            # Measure column styling
+                            {
+                                "if": {"column_id": "Measure"},
+                                "fontWeight": "normal",
+                                "color": "#1f3263",
+                                "borderRight": "2px solid #ccc",
+                                "maxWidth": "150px", # Example max-width, adjust as needed
+                                "textAlign": "left",
+                            },
+                            {
+                                "if": {"column_id": port_details_label},
+                                "textAlign": "center",
+                            },
+                        ],
+                        css=[
+                            # Stronger border for Measure column
+                            {
+                                'selector': '.dash-cell[data-dash-column="Measure"]',
+                                'rule': 'border-right: 2px solid #ccc !important;'
+                            },
+                        ],
+                        editable=False,
+                        sort_action="native",
+                        filter_action="none",
+                        page_action="none",
+                    )
+                ]), # Closing for html.Div (port-details-table-container)
+                ]), # Closing for dcc.Loading (port-details-table-loading-spinner)
+            ]), # Closing for dcc.Loading (loading-ports-map-loading-spinner),   
+            html.Div(style={"gridColumn": "1 / 3", "marginBottom": "20px"}, 
+            children=[ # Wrapper for the entire section
+                dcc.Loading(
+                id="sellers-producers-loading-spinner",
+                type="default",
+                color="#fe5000",
+                children=[
+                    html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                        html.Div("Sellers and Producers", style={
+                            "color": "#fe5000",
+                            "fontWeight": "bold",
+                            "fontSize": "16px",
+                            "margin": "20px 0 10px 0",
+                            "paddingBottom": "5px",
+                            "textAlign": "center"
+                        }),
+                        html.Button("Export CSV", id='export-sellers-producers-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                            'color': '#2c3e50',
+                            'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
+                    ]),
+                    html.Table(style={
+                        "width": "100%",
+                        "borderCollapse": "collapse",
+                        "marginBottom": "15px",
+                        "fontFamily": "Arial, sans-serif"
+                    }, children=[
+                        html.Thead(html.Tr([
+                            html.Th("Producers", style={
+                                "border": "1px solid #ddd",
+                                "padding": "10px",
+                                "backgroundColor": "#f5f5f5",
+                                "fontWeight": "bold",
+                                "textAlign": "left",
+                                "fontSize": "12px"
+                            }),
+                            html.Th("Sellers", style={
+                                "border": "1px solid #ddd",
+                                "padding": "10px",
+                                "backgroundColor": "#f5f5f5",
+                                "fontWeight": "bold",
+                                "textAlign": "left",
+                                "fontSize": "12px"
+                            }),
+                            html.Th("Crude Name", style={
+                                "border": "1px solid #ddd",
+                                "padding": "10px",
+                                "backgroundColor": "#f5f5f5",
+                                "fontWeight": "bold",
+                                "textAlign": "left",
+                                "fontSize": "12px"
+                            })
+                        ])),
+                        html.Tbody(html.Tr([
+                            html.Td(producers_sellers[0][0] if producers_sellers else "", id="producers-cell", style={
+                                "border": "1px solid #ddd",
+                                "padding": "10px",
+                                "fontSize": "12px"
+                            }),
+                            html.Td(producers_sellers[0][1] if producers_sellers else "", id="sellers-cell", style={
+                                "border": "1px solid #ddd",
+                                "padding": "10px",
+                                "fontSize": "12px"
+                            }),
+                            html.Td(producers_sellers[0][2] if producers_sellers else "", id="crude-name-cell", style={
+                                "border": "1px solid #ddd",
+                                "padding": "10px",
+                                "fontSize": "12px"
+                            })
+                        ]))
+                    ]),
+                    html.Div(
+                        "Countries: Select jurisdictions are included under countries for data presentation purposes.",
+                        style={
+                            "fontSize": "11px",
+                            "color": "#666",
+                            "marginTop": "10px",
+                            "fontStyle": "italic"
+                        }
+                    )
+                ]) # Closing for dcc.Loading (sellers-producers-loading-spinner)
+            
             ])
         ])
+            
     ])
 
 # ------------------------------------------------------------------------------
@@ -1939,11 +2088,14 @@ def register_callbacks(app):
         Output('quality-spec-tan', 'children'),
         Output('carbon-intensity-value', 'children'),
         Output('loading-ports-map', 'figure'),
+        Output('loading-ports-map-container', 'style'), # Added for conditional visibility
         Output('port-details-table', 'data'),
         Output('port-details-table', 'columns'),
+        Output('port-details-table-container', 'style'), # Added for conditional visibility
         Output('production-exports-graph', 'figure'),
         Output('producers-cell', 'children'),
         Output('sellers-cell', 'children'),
+        Output('crude-name-cell', 'children'), # Added output for Crude Name
         Output('assay-alt-names', 'children'),
         Output('assay-country', 'children'),
         Output('assay-date', 'children'),
@@ -1958,11 +2110,19 @@ def register_callbacks(app):
             grouped_data = load_refined_products(selected_crude)
             quality_specs = load_quality_specs(selected_crude)
             carbon_intensity = load_carbon_intensity(selected_crude)
+            ports_data = load_loading_ports(selected_crude) # Load ports data here
             port_details_data = load_port_details(selected_crude)
             map_fig = create_map_chart(selected_crude)
             production_fig = create_production_chart(selected_crude)
             producers_sellers = load_producers_sellers(selected_crude)
             assay_details = load_assay_details(selected_crude)
+
+            # Determine map visibility
+            map_display_style = {'display': 'block'} if ports_data else {'display': 'none'}
+
+            # Determine port details table visibility
+            port_details_rows_data = port_details_data.get("rows", [])
+            port_details_display_style = {'display': 'block'} if port_details_rows_data else {'display': 'none'}
 
             # Convert grouped data to flat rows for DataTable
             table_data = []
@@ -1985,14 +2145,15 @@ def register_callbacks(app):
             tan_val = quality_specs[2][1] if len(quality_specs) > 2 else "0.48"
 
             port_label = port_details_data.get("label", "Port Details")
-            port_rows = [{"Measure": r[0], port_label: r[1]} for r in port_details_data.get("rows", [])]
+            port_rows = [{"Measure": r[0], port_label: r[1]} for r in port_details_rows_data]
             port_columns = [
-                {"name": "Measure", "id": "Measure"},
-                {"name": port_label, "id": port_label}
+                {"name": "Measure", "id": "Measure", "header_style": {"textAlign": "left"}, "style": {"textAlign": "left"}},
+                {"name": port_label, "id": port_label, "header_style": {"textAlign": "center"}, "style": {"textAlign": "center"}}
             ]
 
             prod_text = producers_sellers[0][0] if producers_sellers else ""
             sell_text = producers_sellers[0][1] if producers_sellers else ""
+            crude_text = producers_sellers[0][2] if producers_sellers else ""
 
             return (
                 assay_data,
@@ -2002,11 +2163,14 @@ def register_callbacks(app):
                 tan_val,
                 carbon_intensity,
                 map_fig,
+                map_display_style, # Added map_display_style
                 port_rows,
                 port_columns,
+                port_details_display_style, # Added port_details_display_style
                 production_fig,
                 prod_text,
                 sell_text,
+                crude_text, # Added crude_text to the return tuple
                 assay_details.get("alternate_names", ""),
                 assay_details.get("country", ""),
                 assay_details.get("assay_date", ""),
@@ -2037,8 +2201,111 @@ def register_callbacks(app):
             "2025",
             "https://www.energyintel.com/wcod/crude-profile/Mars-Blend",
         )
-    
-    # Handle popup menu interactions
+
+    # Callbacks for CSV exports
+    @app.callback(
+        Output('download-mars-assay-csv', 'data'),
+        Input('export-mars-assay-btn', 'n_clicks'),
+        State('crude-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_mars_assay_csv(n_clicks, selected_crude):
+        if n_clicks and selected_crude:
+            df = pd.DataFrame(load_mars_assay(selected_crude))
+            return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Mars_Blend_Assay.csv")
+        raise dash.exceptions.PreventUpdate
+
+    @app.callback(
+        Output('download-refined-products-csv', 'data'),
+        Input('export-refined-products-btn', 'n_clicks'),
+        State('crude-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_refined_products_csv(n_clicks, selected_crude):
+        if n_clicks and selected_crude:
+            grouped_data = load_refined_products(selected_crude)
+            table_data = []
+            for product_group in grouped_data:
+                product = product_group["Product"]
+                cut_points = product_group["Cut Points (°C)"]
+                properties = product_group["properties"]
+                for i, prop in enumerate(properties):
+                    table_data.append({
+                        "Product": product if i == 0 else "",
+                        "Cut Points (°C)": cut_points if i == 0 else "",
+                        "Property": prop["Property"],
+                        "Unit": prop["Unit"],
+                        "Value": prop["Value"]
+                    })
+            df = pd.DataFrame(table_data)
+            return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Refined_Products_Breakdown_Properties.csv")
+        raise dash.exceptions.PreventUpdate
+
+    @app.callback(
+        Output('download-production-exports-csv', 'data'),
+        Input('export-production-exports-btn', 'n_clicks'),
+        State('crude-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_production_exports_csv(n_clicks, selected_crude):
+        if n_clicks and selected_crude:
+            df = pd.DataFrame(load_production_exports(selected_crude))
+            return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Production_Exports.csv")
+        raise dash.exceptions.PreventUpdate
+
+    @app.callback(
+        Output('download-loading-ports-csv', 'data'),
+        Input('export-loading-ports-btn', 'n_clicks'),
+        State('crude-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_loading_ports_csv(n_clicks, selected_crude):
+        if n_clicks and selected_crude:
+            ports_data = load_loading_ports(selected_crude)
+            df = pd.DataFrame([
+                {
+                    "Latitude": port.get('latitude'),
+                    "Longitude": port.get('longitude'),
+                    "Country": port.get('country'),
+                    "Crude": port.get('crude'),
+                        "Port Name": port.get('port'),
+                    }
+                    for port in ports_data
+            ])
+            df.drop_duplicates(subset=["Latitude", "Longitude", "Country", "Crude", "Port Name"], inplace=True)
+            return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Loading_Ports_Map_Data.csv")
+        raise dash.exceptions.PreventUpdate
+
+    @app.callback(
+        Output('download-port-details-csv', 'data'),
+        Input('export-port-details-btn', 'n_clicks'),
+        State('crude-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_port_details_csv(n_clicks, selected_crude):
+        if n_clicks and selected_crude:
+            port_details_data = load_port_details(selected_crude)
+            rows = port_details_data.get("rows", [])
+            formatted_rows = []
+            for r in rows:
+                measure_name = " ".join([word.capitalize() for word in r[0].split('_')])
+                formatted_rows.append({"Measure": measure_name, port_details_data.get("label", "Value"): r[1]})
+            df = pd.DataFrame(formatted_rows)
+            return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Port_Details.csv")
+        raise dash.exceptions.PreventUpdate
+
+    @app.callback(
+        Output('download-sellers-producers-csv', 'data'),
+        Input('export-sellers-producers-btn', 'n_clicks'),
+        State('crude-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_sellers_producers_csv(n_clicks, selected_crude):
+        if n_clicks and selected_crude:
+            producers_sellers = load_producers_sellers(selected_crude)
+            df = pd.DataFrame(producers_sellers, columns=["Producers", "Sellers", "Crude Name"])
+            return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Sellers_Producers.csv")
+        raise dash.exceptions.PreventUpdate
     @app.callback(
         [Output('crude-profile-sorting-controls', 'style'),
          Output('crude-profile-avg-text-box', 'style')],

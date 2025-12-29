@@ -1,3 +1,9 @@
+html, body {
+    height: 100%;
+    margin: 0;
+    overflow: auto;
+}
+
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     background-color: #f5f5f5;
@@ -235,7 +241,7 @@ div[class*="rc-slider-track"] {
 .Select-value-label {
     font-size: 12px !important;
     line-height: 22px !important;
-    padding-top: 10px !important;
+    /* padding-top: 10px !important; */
     padding-bottom: 0px !important;
     color: rgb(27, 54, 93) !important;
 }
@@ -583,6 +589,6 @@ div[id*="range-slider"] {
 .dash-tooltip {
     position: absolute !important;
     z-index: 9999 !important; /* Ensure tooltip is on top */
-    overflow: visible !important; /* Allow tooltip content to escape bounds */    
+    opacity: 0.9;
+    overflow: visible !important; /* Allow tooltip content to escape bounds */
 }
-

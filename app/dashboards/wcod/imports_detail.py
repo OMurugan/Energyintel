@@ -3,6 +3,7 @@ Imports - Country Detail View
 Detailed imports data by country
 """
 from dash import dcc, html, Input, Output, callback, State, dash_table
+import dash
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
@@ -240,6 +241,9 @@ def create_layout():
         dcc.Store(id='selected-country-store', data=default_country),  # Store selected country
         dcc.Store(id='imports-expand-store', data={'years': [], 'quarters': []}),  # Track header expansion state
         dcc.Store(id='imports-time-visibility', data={'Year': True, 'Quarter': False, 'Month': False, 'Day': False}),
+        dcc.Download(id="download-imports-by-region-csv"),
+        dcc.Download(id="download-imports-by-country-csv"),
+        dcc.Download(id="download-imports-detail-csv"),
         
         # Country Selector
         html.Div([
@@ -260,6 +264,8 @@ def create_layout():
                 id='importing-country-select',
                 options=[{'label': country, 'value': country} for country in available_countries],
                 value=default_country,
+                clearable=False,
+                searchable=True,
                 style={
                     'width': '1200px',
                     'fontSize': '13px',
@@ -273,6 +279,24 @@ def create_layout():
         
         # First Chart: Imports by Region over Time
         html.Div([
+            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                html.Div(id='imports-by-region-chart-title', style={
+                    'fontSize': '21px',
+                    'fontWeight': 'bold',
+                    'color': '#fe5000',
+                    'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif'
+                }),
+                html.Button("Export CSV", id='export-imports-by-region-btn', n_clicks=0, style={
+                    'marginLeft': '12px',
+                    'backgroundColor': 'white',
+                    'color': '#2c3e50',
+                    'border': '1px solid #dee2e6',
+                    'padding': '6px 10px',
+                    'borderRadius': '4px',
+                    'cursor': 'pointer',
+                    'fontSize': '12px'
+                })
+            ]),
             dcc.Graph(id='imports-by-region-chart')
         ], style={'marginBottom': '30px'}),
         
@@ -286,29 +310,60 @@ def create_layout():
         
         # Second Chart: Imports by Country for Selected Year
         html.Div([
+            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                html.Div(id='imports-by-country-chart-title', style={
+                    'fontSize': '21px',
+                    'fontWeight': 'bold',
+                    'color': '#fe5000',
+                    'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif'
+                }),
+                html.Button("Export CSV", id='export-imports-by-country-btn', n_clicks=0, style={
+                    'marginLeft': '12px',
+                    'backgroundColor': 'white',
+                    'color': '#2c3e50',
+                    'border': '1px solid #dee2e6',
+                    'padding': '6px 10px',
+                    'borderRadius': '4px',
+                    'cursor': 'pointer',
+                    'fontSize': '12px'
+                })
+            ]),
             dcc.Graph(id='imports-by-country-chart')
         ], style={'marginBottom': '30px'}),
         
         # Table: Detailed Imports Data
         html.Div([
+            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                html.H4(id='imports-table-title', children="Japan Crude Oil Imports by Region and Country", className='imports-table-title', style={'color': '#fe5000', 'textAlign': 'center','fontSize': '21px', 'fontWeight': 'bold'}),
+                html.Button("Export CSV", id='export-imports-detail-btn', n_clicks=0, style={
+                    'marginLeft': '12px',
+                    'backgroundColor': 'white',
+                    'color': '#2c3e50',
+                    'border': '1px solid #dee2e6',
+                    'padding': '6px 10px',
+                    'borderRadius': '4px',
+                    'cursor': 'pointer',
+                    'fontSize': '12px'
+                })
+            ]),
             # Time dimension toggle row (Year / Quarter / Month / Day)
-            html.Div([
-            # Year toggle hidden (Year always on)
-            html.Div([
-                html.Span("Year of Year"),
-                html.Button('−', id='imports-toggle-year-btn', n_clicks=0)
-            ], style={'display': 'none'}),
+            html.Div([            
+                # Year toggle hidden (Year always on)
                 html.Div([
-                    html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
-                    html.Button('+', id='imports-toggle-quarter-btn', n_clicks=0, style={
-                        'width': '20px', 'height': '20px', 'padding': '0',
-                        'border': '1px solid #dee2e6', 'backgroundColor': '#f8f9fa',
-                        'color': '#2c3e50', 'borderRadius': '3px', 'cursor': 'pointer',
-                        'fontSize': '14px', 'fontWeight': 'bold', 'lineHeight': '1',
-                        'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
-                        'marginLeft': '8px', 'flexShrink': '0'
-                    })
-                ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '150px'}),
+                    html.Span("Year of Year"),
+                    html.Button('−', id='imports-toggle-year-btn', n_clicks=0)
+                ], style={'display': 'none'}),
+                    html.Div([
+                        html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                        html.Button('+', id='imports-toggle-quarter-btn', n_clicks=0, style={
+                            'width': '20px', 'height': '20px', 'padding': '0',
+                            'border': '1px solid #dee2e6', 'backgroundColor': '#f8f9fa',
+                            'color': '#2c3e50', 'borderRadius': '3px', 'cursor': 'pointer',
+                            'fontSize': '14px', 'fontWeight': 'bold', 'lineHeight': '1',
+                            'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+                            'marginLeft': '8px', 'flexShrink': '0'
+                        })
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '150px'}),
                 html.Div([
                     html.Span("Month of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
                     html.Button('+', id='imports-toggle-month-btn', n_clicks=0, style={
@@ -338,8 +393,7 @@ def create_layout():
                 'justifyContent': 'flex-start',
                 'alignItems': 'center',
                 'gap': '10px'
-            }),
-            html.H4(id='imports-table-title', children="Japan Crude Oil Imports by Region and Country", className='imports-table-title'),
+            }),            
             dash_table.DataTable(
                 id='imports-detail-table',
                 data=[],
@@ -358,8 +412,8 @@ def create_layout():
                     'borderRadius': '4px'
                 },
                 style_cell={
-                    'textAlign': 'left',
-                    'padding': '10px 12px',
+                    
+                    'padding': '10px 5px',
                     'fontSize': '12px',
                     'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif',
                     'border': '1px solid #e0e0e0',
@@ -391,6 +445,14 @@ def create_layout():
                     {
                         'selector': '.dash-loading-overlay',
                         'rule': 'display: none !important;'
+                    },
+                    {
+                        'selector': '.dash-header',
+                        'rule': 'white-space: pre-line !important; line-height: 1.2 !important;'
+                    },
+                    {
+                        'selector': '.dash-header .column-header--sort',
+                        'rule': 'white-space: pre-line !important; line-height: 1.2 !important;'
                     }
                 ],
                 style_data_conditional=[
@@ -403,30 +465,23 @@ def create_layout():
                         'fontWeight': '600',
                         'backgroundColor': '#f0f0f0'
                     },
+                    # Ensure first four columns are left-aligned
                     {
                         'if': {'column_id': 'Exporting Region'},
-                        'minWidth': '150px',
-                        'width': '150px',
-                        'maxWidth': '150px'
+                        'textAlign': 'left', 'minWidth': '150px', 'width': '150px', 'maxWidth': '150px'
                     },
                     {
                         'if': {'column_id': 'Exporter'},
-                        'minWidth': '150px',
-                        'width': '150px',
-                        'maxWidth': '150px'
+                        'textAlign': 'left', 'minWidth': '150px', 'width': '150px', 'maxWidth': '150px'
                     },
                     {
                         'if': {'column_id': 'Company'},
-                        'minWidth': '120px',
-                        'width': '120px',
-                        'maxWidth': '120px'
+                        'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '120px'
                     },
                     {
                         'if': {'column_id': 'Crude'},
-                        'minWidth': '150px',
-                        'width': '150px',
-                        'maxWidth': '150px'
-                    }
+                        'textAlign': 'left', 'minWidth': '150px', 'width': '150px', 'maxWidth': '150px'
+                    },
                 ],
                 page_action='none',
                 filter_action='none',
@@ -469,19 +524,16 @@ def create_imports_by_region_chart(selected_country='Japan'):
     # Get all years from 2006 to 2025 (matching Figure 1)
     years = sorted([y for y in df_grouped['Year'].unique() if 2006 <= y <= 2025])
     
-    # Define stacking order to match Figure 1: Middle East at bottom, then others
-    # Order: Middle East (bottom), Africa, Asia-Pacific, Europe, FSU, Latin America, North America, Others (top)
-    region_order = ['Middle East', 'Africa', 'Asia-Pacific', 'Europe', 'FSU', 'Latin America', 'North America', 'Others']
-    
     # Get available regions from data
     available_regions = df_grouped['Region'].unique().tolist()
     
-    # Sort regions according to the stacking order (only include regions that exist in data)
-    regions = [r for r in region_order if r in available_regions]
-    # Add any remaining regions not in the predefined order
-    for r in sorted(available_regions):
-        if r not in regions:
-            regions.append(r)
+    # Separate 'Others' and sort the rest alphabetically
+    regions = sorted(available_regions)
+    
+    print(f"Regions order for chart: {regions}")
+    
+    # Reverse the regions list to change stacking order (bottom to top: Others -> ... -> Africa)
+    regions.reverse()
     
     fig = go.Figure()
     
@@ -562,18 +614,9 @@ def create_imports_by_region_chart(selected_country='Japan'):
     
     # Update layout to match Figure 1 exactly
     fig.update_layout(
-        title={
-            'text': f"{selected_country}'s Crude Imports by Exporting Region",
-            'x': 0.5,
-            'xanchor': 'center',
-            'font': {
-                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
-                'size': 16,
-                'color': '#ff7f0e'  # Orange color matching Figure 1
-            }
-        },
+        title=None,  # Title is now in a separate div above the chart
         xaxis=dict(
-            title="Year",
+            title="",
             tickmode='linear',
             tick0=2006,
             dtick=1,  # Show every year
@@ -636,7 +679,8 @@ def create_imports_by_region_chart(selected_country='Japan'):
             },
             bgcolor='rgba(255,255,255,0.8)',
             bordercolor='#d3d3d3',
-            borderwidth=1
+            borderwidth=1,
+            traceorder='reversed' # Ensure legend order is reversed from trace order for ascending display
         ),
         hovermode='closest',
         hoverlabel=dict(
@@ -648,7 +692,8 @@ def create_imports_by_region_chart(selected_country='Japan'):
                 color='#000000'
             ),
             align='left'
-        )
+        ),
+        legend_traceorder='reversed' # Ensure legend order is reversed from trace order for ascending display
     )
     
     return fig
@@ -746,7 +791,16 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
     }
     
     # Get unique crudes from data
-    crudes = sorted(df_grouped['Crude'].unique())
+    available_crudes = df_grouped['Crude'].unique().tolist()
+
+    # Separate 'Other' crude and sort the rest alphabetically
+    other_crude = 'Other'
+    crudes = sorted(available_crudes)
+    
+    print(f"Crudes order for chart: {crudes}")
+    
+    # Reverse the crudes list to change stacking order (bottom to top: Other -> ... -> Al-Shaheen)
+    crudes.reverse()
     
     fig = go.Figure()
     
@@ -790,19 +844,19 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
     # Update layout
     fig.update_layout(
         title={
-            'text': f"{selected_country} Crude Imports by Country - {actual_year}",
+            'text': f"<b>{selected_country} Crude Imports by Country - {actual_year}</b>",
             'x': 0.5,
             'xanchor': 'center',
             'font': {
                 'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
-                'size': 16,
-                'color': '#333333'
+                'size': 21,
+                'color': '#fe5000'
             },
             'pad': {'t': 10, 'b': 20}
         },
         xaxis=dict(
             title={
-                'text': "Country",
+                'text': "",
                 'font': {
                     'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
                     'size': 13,
@@ -814,7 +868,7 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
                 'size': 10,
                 'color': '#666666'
             },
-            tickangle=90,  # Vertical labels (straight up)
+            tickangle=-90,  # Horizontal labels
             showgrid=False,  # Remove vertical grid lines to avoid square boxes
             showline=True,  # Show the axis line
             linecolor='#d3d3d3',
@@ -823,7 +877,7 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
         ),
         yaxis=dict(
             title={
-                'text': "Volume ('000 b/d)",
+                'text': "",
                 'font': {
                     'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
                     'size': 13,
@@ -867,7 +921,8 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
             },
             bgcolor='rgba(255,255,255,0.8)',
             bordercolor='#d3d3d3',
-            borderwidth=1
+            borderwidth=1,
+            traceorder='reversed' # Ensure legend order matches trace order
         ),
         hovermode='closest',  # Show only the hovered segment
         hoverlabel=dict(
@@ -946,23 +1001,28 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
     for year in years:
         q_def, m_def, d_def = year_defaults.get(year, ('', '', ''))
         if show_day:
-            header_label = " ".join(part for part in [str(year), q_def, m_def, d_def] if part)
+            header_lines = [str(year), q_def, m_def, d_def]
+            header_name = '\n'.join(line for line in header_lines if line)
             col_id = day_id(year)
         elif show_month:
-            header_label = " ".join(part for part in [str(year), q_def, m_def] if part)
+            header_lines = [str(year), q_def, m_def]
+            header_name = '\n'.join(line for line in header_lines if line)
             col_id = month_id(year)
         elif show_quarter:
-            header_label = " ".join(part for part in [str(year), q_def] if part)
+            header_lines = [str(year), q_def]
+            header_name = '\n'.join(line for line in header_lines if line)
             col_id = quarter_id(year)
         else:
-            header_label = str(year)
+            header_name = str(year)
             col_id = year_id(year)
         dynamic_columns.append({
-            'name': header_label,
+            'name': header_name,
             'id': col_id,
             'type': 'numeric',
             'format': {'specifier': ',.1f'},
-            'presentation': 'input'
+            'presentation': 'input',
+            'header_styles': {'textAlign': 'center'},
+            'cell_styles': {'textAlign': 'right'}
         })
     columns.extend(dynamic_columns)
     
@@ -1084,7 +1144,8 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for Imports - Country Detail"""
     
     @callback(
-        Output('imports-by-region-chart', 'figure'),
+        [Output('imports-by-region-chart', 'figure'),
+         Output('imports-by-region-chart-title', 'children')],
         [Input('importing-country-select', 'value'),
          Input('current-submenu', 'data')],
         prevent_initial_call=False
@@ -1092,15 +1153,17 @@ def register_callbacks(dash_app, server):
     def update_imports_by_region(selected_country, submenu):
         """Update imports by region chart"""
         if submenu != 'imports-detail':
-            return go.Figure()
+            return go.Figure(), ""
         fig = create_imports_by_region_chart(selected_country)
+        title = f"{selected_country}'s Crude Imports by Exporting Region"
         # Ensure the figure is valid and has data
         if fig and len(fig.data) > 0:
-            return fig
-        return go.Figure()
+            return fig, title
+        return go.Figure(), title
     
     @callback(
-        Output('imports-by-country-chart', 'figure'),
+        [Output('imports-by-country-chart', 'figure'),
+         Output('imports-by-country-chart-title', 'children')],
         [Input('importing-country-select', 'value'),
          Input('current-submenu', 'data'),
          State('selected-year-store', 'data')]
@@ -1108,13 +1171,14 @@ def register_callbacks(dash_app, server):
     def update_imports_by_country(selected_country, submenu, current_year):
         """Update imports by country chart based on country selection"""
         if submenu != 'imports-detail':
-            return go.Figure()
+            return go.Figure(), ""
         
         # Use current year (default 2023) - chart 1 clicks no longer affect chart 2
         selected_year = current_year if current_year else 2023
         
         fig = create_imports_by_country_chart(selected_year, selected_country)
-        return fig
+        title = f"{selected_country}'s Crude Imports by Country - {selected_year}"
+        return fig, title
     
     @callback(
         [Output('imports-detail-table', 'data'),
@@ -1368,3 +1432,112 @@ def register_callbacks(dash_app, server):
         vis = (vis or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}).copy()
         vis['Day'] = not vis.get('Day', False)
         return vis
+    
+    @callback(
+        Output('download-imports-by-region-csv', 'data'),
+        Input('export-imports-by-region-btn', 'n_clicks'),
+        State('importing-country-select', 'value'),
+        prevent_initial_call=True
+    )
+    def export_imports_by_region_csv(n_clicks, selected_country):
+        #\"\"\"Export imports by region data to CSV\"\"\"
+        if n_clicks and selected_country:
+            df = load_imports_by_region_data(selected_country)
+            if not df.empty:
+                # Rename columns for export
+                df_export = df.rename(columns={'Region': 'Exporting Region', 'Volume': "Import Volume ('000 b/d)"})
+                # Group by Region and Year, sum volumes
+                df_grouped = df_export.groupby(['Exporting Region', 'Year'])["Import Volume ('000 b/d)"].sum().reset_index()
+                # Sort by Year and Region
+                df_grouped = df_grouped.sort_values(['Year', 'Exporting Region'])
+                filename = f"{selected_country}_Crude_Imports_by_Exporting_Region.csv"
+                return dcc.send_data_frame(df_grouped.to_csv, filename=filename, index=False)
+        raise dash.exceptions.PreventUpdate
+
+    @callback(
+        Output('download-imports-detail-csv', 'data'),
+        Input('export-imports-detail-btn', 'n_clicks'),
+        State('importing-country-select', 'value'),
+        State('imports-expand-store', 'data'),
+        State('imports-time-visibility', 'data'),
+        prevent_initial_call=True
+    )
+    def export_imports_detail_csv(n_clicks, selected_country, expand_state, time_visibility):
+        #\"\"\"Export imports detail table data to CSV\"\"\"\
+        if n_clicks and selected_country:
+            # Load the data directly as it would be displayed in the table
+            df = load_table_data(selected_country)
+            
+            if df.empty:
+                raise dash.exceptions.PreventUpdate
+            
+            time_visibility = time_visibility or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}
+            show_year = time_visibility.get('Year', True)
+            show_quarter = time_visibility.get('Quarter', False)
+            show_month = time_visibility.get('Month', False)
+            show_day = time_visibility.get('Day', False)
+            
+            # Dynamically select and rename columns based on active time dimension
+            export_columns = ['Exporting Region', 'Exporter', 'Company', 'Crude']
+            
+            # Determine the active year/quarter/month/day columns and append to export_columns
+            # This logic needs to align with how create_imports_table constructs columns
+            years = sorted(df['Year of Year'].unique(), reverse=True)
+            
+            for year in years:
+                if show_day:
+                    col_id = f"D|{year}"
+                elif show_month:
+                    col_id = f"M|{year}"
+                elif show_quarter:
+                    col_id = f"Q|{year}"
+                else:
+                    col_id = f"Y|{year}"
+                export_columns.append(col_id)
+            
+            # Create the DataFrame for export using the selected columns and the raw data from load_table_data
+            # We need to pivot the data or aggregate it to match the table's structure
+            # For accurate CSV export, we should use the same logic as create_imports_table
+            # to transform the dataframe into the wide format, and then export that.
+            # Instead of re-implementing, we can call create_imports_table and use its output data.
+            table_data_dicts, _, _ = create_imports_table(selected_country, expand_state, time_visibility)
+            df_export = pd.DataFrame(table_data_dicts)
+            
+            # Clean column names for export (remove prefixes like Y|, Q|, M|, D|)
+            # And ensure numeric columns are properly formatted
+            cleaned_columns = {}
+            for col in df_export.columns:
+                if col.startswith('Y|') or col.startswith('Q|') or col.startswith('M|') or col.startswith('D|'):
+                    # Remove the prefix and use the year/quarter/month/day as the column name
+                    new_col_name = col.split('|', 1)[1] # Keep only the year, or year-quarter, etc.
+                    cleaned_columns[col] = new_col_name
+                else:
+                    cleaned_columns[col] = col # Keep original for non-dynamic columns
+            
+            df_export = df_export.rename(columns=cleaned_columns)
+            
+            filename = f"{selected_country}_Crude_Imports_Detail.csv"
+            return dcc.send_data_frame(df_export.to_csv, filename=filename, index=False)
+        raise dash.exceptions.PreventUpdate
+
+    @callback(
+        Output('download-imports-by-country-csv', 'data'),
+        Input('export-imports-by-country-btn', 'n_clicks'),
+        State('importing-country-select', 'value'),
+        State('selected-year-store', 'data'),
+        prevent_initial_call=True
+    )
+    def export_imports_by_country_csv(n_clicks, selected_country, selected_year):
+        """Export crude imports by country data to CSV"""
+        if n_clicks and selected_country:
+            df = load_imports_by_country_crude_data(selected_country, selected_year)
+            if not df.empty:
+                # Group by Exporter and Crude, sum volumes (query returns individual records)
+                df_grouped = df.groupby(['Exporter', 'Crude'])['DataValue'].sum().reset_index()
+                df_grouped = df_grouped.rename(columns={'DataValue': f"Import Volume ({selected_year}) ('000 b/d)"})
+                # Sort by Exporter and Crude
+                df_grouped = df_grouped.sort_values(['Exporter', 'Crude'])
+                filename = f"{selected_country}_Crude_Imports_by_Country_{selected_year}.csv"
+                return dcc.send_data_frame(df_grouped.to_csv, filename=filename, index=False)
+        raise dash.exceptions.PreventUpdate
+
