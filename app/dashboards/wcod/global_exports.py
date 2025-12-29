@@ -2349,16 +2349,11 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                     filename = "Annual_Exports_Volume.csv"
                     return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
                 
-                # Apply filters
+                # Apply filters - NOTE: Country filter is NOT applied to export (export all countries)
+                # Stream filter IS applied to export (export only selected streams)
                 df = TABLE_DF.copy()
                 
-                # Filter by countries
-                if selected_countries is not None:
-                    resolved_countries = _resolve_countries(selected_countries, COUNTRY_OPTIONS)
-                    if len(resolved_countries) > 0 and "(All)" not in selected_countries:
-                        df = df[df["country"].isin(resolved_countries)]
-                
-                # Filter by streams (crude types)
+                # Filter by streams (crude types) only - country filter is ignored
                 if selected_streams:
                     df = df[df["crude"].isin(selected_streams)]
                 
