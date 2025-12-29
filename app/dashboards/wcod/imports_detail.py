@@ -445,6 +445,14 @@ def create_layout():
                     {
                         'selector': '.dash-loading-overlay',
                         'rule': 'display: none !important;'
+                    },
+                    {
+                        'selector': '.dash-header',
+                        'rule': 'white-space: pre-line !important; line-height: 1.2 !important;'
+                    },
+                    {
+                        'selector': '.dash-header .column-header--sort',
+                        'rule': 'white-space: pre-line !important; line-height: 1.2 !important;'
                     }
                 ],
                 style_data_conditional=[
@@ -993,19 +1001,22 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
     for year in years:
         q_def, m_def, d_def = year_defaults.get(year, ('', '', ''))
         if show_day:
-            header_label = " ".join(part for part in [str(year), q_def, m_def, d_def] if part)
+            header_lines = [str(year), q_def, m_def, d_def]
+            header_name = '\n'.join(line for line in header_lines if line)
             col_id = day_id(year)
         elif show_month:
-            header_label = " ".join(part for part in [str(year), q_def, m_def] if part)
+            header_lines = [str(year), q_def, m_def]
+            header_name = '\n'.join(line for line in header_lines if line)
             col_id = month_id(year)
         elif show_quarter:
-            header_label = " ".join(part for part in [str(year), q_def] if part)
+            header_lines = [str(year), q_def]
+            header_name = '\n'.join(line for line in header_lines if line)
             col_id = quarter_id(year)
         else:
-            header_label = str(year)
+            header_name = str(year)
             col_id = year_id(year)
         dynamic_columns.append({
-            'name': header_label,
+            'name': header_name,
             'id': col_id,
             'type': 'numeric',
             'format': {'specifier': ',.1f'},
