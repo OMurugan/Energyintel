@@ -1,12 +1,22 @@
-from pathlib import Path
-import pandas as pd
-import plotly.graph_objects as go
-from dash import html, dcc, Input, Output, callback_context, dash_table
-from core.data_helpers import execute_query
 import os
-import numpy as np
-import dash
 import time
+import logging
+import base64
+import io
+from pathlib import Path
+
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+import plotly.io as pio
+import dash
+from dash import html, dcc, callback_context, dash_table
+from dash.dependencies import Input, Output, State
+from weasyprint import HTML, CSS
+import fitz # PyMuPDF
+from PIL import Image
+
+from core.data_helpers import execute_query
 
 
 def _set_df_metadata(df, **metadata):
@@ -17,6 +27,42 @@ def _set_df_metadata(df, **metadata):
 def _get_df_metadata(df, key, default=None):
     """Retrieve custom metadata from a DataFrame."""
     return df.attrs.get(key, default)
+
+
+def prepare_df_for_export(df):
+    """
+    Prepare DataFrame for export by reconstructing grouping headers
+    if they are present in metadata.
+    """
+    if df.empty:
+        return df
+    
+    # Get column info from metadata
+    column_info = _get_df_metadata(df, "column_info")
+    if not column_info:
+        return df
+    
+    # Create tuples for MultiIndex
+    col_mapping = {}
+    for info in column_info:
+        col_id = info.get('id')
+        parent = info.get('parent', '')
+        sub = info.get('sub', '')
+        if col_id in df.columns:
+            col_mapping[col_id] = (parent, sub)
+            
+    # Handle any columns in df that weren't in column_info
+    for col in df.columns:
+        if col not in col_mapping:
+            col_mapping[col] = ("", str(col))
+    
+    # Create new MultiIndex
+    tuples = [col_mapping[col] for col in df.columns]
+    
+    export_df = df.copy()
+    export_df.columns = pd.MultiIndex.from_tuples(tuples, names=["Category", "Property"])
+    
+    return export_df
 
 CSV_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'CrossPlot.csv')
 
@@ -55,8 +101,10 @@ def load_crossplot_data():
         WHERE a.to_be_deleted IS NULL
           AND a.property IS NOT NULL
           AND a.value IS NOT NULL
+          AND LOWER(a.product) = 'crude oil'
         UNION
         /* ---- Volume data for latest year ---- */
+
         SELECT
             prod_data.crude_name AS "CrudeOil",
             prod_data.country_name AS "Country",
@@ -147,6 +195,7 @@ def load_crude_quality_table():
     LEFT JOIN dim_country grp
            ON c.country_id = grp.dim_country_id
     WHERE a.to_be_deleted IS NULL
+      AND LOWER(a.product) = 'crude oil'
     """
     
     try:
@@ -880,6 +929,12 @@ def load_yield_volume_table():
     LEFT JOIN fact_wcod_crude c 
            ON a.crude_id = c.crude_id
     WHERE a.to_be_deleted IS NULL
+      AND a.value IS NOT NULL
+      AND (
+          (LOWER(a.product) = 'crude oil' AND LOWER(a.property) IN ('gravity', 'barrels', 'api'))
+          OR 
+          (LOWER(a.unit) LIKE '%yield volume%')
+      )
     """
     
     try:
@@ -996,7 +1051,8 @@ def load_yield_volume_table():
                     product_mask |= product_lower.str.contains(pattern, case=False, na=False, regex=False)
             
             # Filter for Yield Volume unit only
-            unit_mask = df['unit'].astype(str).str.lower().str.contains('yield volume', case=False, na=False)
+            # Be flexible with unit names (allow 'Yield Vol', 'Yield Volume (%)', etc.)
+            unit_mask = df['unit'].astype(str).str.lower().str.contains('yield', case=False, na=False)
             
             product_data = df[product_mask & unit_mask].copy()
             
@@ -1580,11 +1636,53 @@ def create_layout(dash_app=None):
         html.Div([
             # Chart
             html.Div([
+                html.Div([
+                    html.Div(
+                        dcc.Dropdown(
+                            id='crude-map-export-dropdown',
+                            options=[
+                                {'label': 'Export Data PDF', 'value': 'pdf'},
+                                {'label': 'Export Data PNG', 'value': 'png'},
+                                {'label': 'Export Data CSV', 'value': 'csv'}
+                            ],
+                            placeholder='Export Data',
+                            style={
+                                'width': '200px',
+                                'marginRight': '10px',
+                                'fontSize': '13px',
+                                'color': '#2c3e50',
+                                'display': 'inline-block'
+                            },
+                            clearable=False
+                        ),
+                        style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'width': 'auto'}
+                    ),
+                    dcc.Download(id="download-crude-map-pdf"),
+                    dcc.Download(id="download-crude-map-png"),
+                    dcc.Download(id="download-crude-map-csv"),
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'margin-bottom': '10px'}),
+                
                 dcc.Loading(
                     id="loading-crude-quality-chart",
                     type="circle",
                     children=dcc.Graph(
                         id='crude-quality-chart',
+                        figure={
+                            'data': [],
+                            'layout': {
+                                'xaxis': {'visible': False},
+                                'yaxis': {'visible': False},
+                                'plot_bgcolor': 'rgba(0,0,0,0)',
+                                'paper_bgcolor': 'rgba(0,0,0,0)',
+                                'annotations': [{
+                                    'text': 'Loading data...',
+                                    'xref': 'paper',
+                                    'yref': 'paper',
+                                    'showarrow': False,
+                                    'font': {'size': 16}
+                                }]
+                            }
+                        },
                         config={
                             'displayModeBar': False,
                             'displaylogo': False,
@@ -1693,11 +1791,33 @@ def create_layout(dash_app=None):
                             'color': '#FF6600',
                             'fontWeight': 'bold',
                             'marginBottom': '10px',
-                            'fontSize': '20px'
+                            'fontSize': '20px',
+                            'flexGrow': 1
                         }
                     ),
+                    html.Div([
+                        html.Button(
+                            'Export Data to CSV',
+                            id='btn-export-quality-table-csv',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '5px 10px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '12px'
+                            }
+                        ),
+                        dcc.Download(id="download-quality-table-csv")
+                    ])
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginBottom': '10px'}),
 
-                    dash_table.DataTable(
+                dcc.Loading(
+                    id="loading-crude-quality-table",
+                    type="circle",
+                    children=dash_table.DataTable(
                         id='crude-quality-table',
                         columns=[],  # Will be updated by callback when data loads
                         data=[],  # Will be updated by callback when data loads
@@ -1708,7 +1828,8 @@ def create_layout(dash_app=None):
                             'border': '1px solid #CFCFCF',
                             'borderCollapse': 'separate',
                             'borderSpacing': 0,
-                            'width': '100%'
+                            'width': '100%',
+                            'minWidth': '100%'
                         },
                         style_cell={
                             'padding': '8px 8px',
@@ -1735,10 +1856,7 @@ def create_layout(dash_app=None):
                         style_cell_conditional=[
                             {
                                 'if': {'column_id': country_col_id},
-                                'position': 'sticky',
-                                'left': 0,
                                 'backgroundColor': 'white',
-                                'zIndex': 10,
                                 'textAlign': 'left',
                                 'minWidth': '140px',
                                 'width': '140px',
@@ -1750,10 +1868,7 @@ def create_layout(dash_app=None):
                             },
                             {
                                 'if': {'column_id': crudeoil_col_id},
-                                'position': 'sticky',
-                                'left': '140px',
                                 'backgroundColor': 'white',
-                                'zIndex': 10,
                                 'textAlign': 'left',
                                 'minWidth': '170px',
                                 'width': '170px',
@@ -1765,19 +1880,13 @@ def create_layout(dash_app=None):
                         style_header_conditional=[
                             {
                                 'if': {'column_id': country_col_id},
-                                'position': 'sticky',
-                                'left': 0,
                                 'backgroundColor': 'white',
-                                'zIndex': 11,
                                 'textAlign': 'left',
                                 'borderRight': '2px solid #D3D3D3'
                             },
                             {
                                 'if': {'column_id': crudeoil_col_id},
-                                'position': 'sticky',
-                                'left': '140px',
                                 'backgroundColor': 'white',
-                                'zIndex': 11,
                                 'textAlign': 'left',
                                 'borderRight': '2px solid #D3D3D3'
                             },
@@ -1856,135 +1965,148 @@ def create_layout(dash_app=None):
                         merge_duplicate_headers=True,
                         filter_action="none",
                         page_action="none",
-                        sort_action="native"
+                        sort_action="native",
+                        fixed_columns={'headers': True, 'data': 2}
                     )
+                )
 
-                ], style={'marginTop': '30px', 'marginBottom': '30px'})
-            ]),
+                ], style={'marginTop': '30px', 'marginBottom': '30px'}),
 
 
             # Second Table: Crudes Compared by Product Yield
             html.Div([
-                html.H3("Crudes Compared by Product Yield", 
-                       style={'color': '#FF6600', 'fontWeight': 'bold', 'marginBottom': '10px', 'fontSize': '20px'}),
-                dash_table.DataTable(
-                    id='yield-volume-table',
-                    columns=[],  # Will be updated by callback when data loads
-                    data=[],  # Will be updated by callback when data loads
-                    style_table={
-                        'overflowX': 'auto',
-                        'overflowY': 'auto',
-                        'height': '540px',
-                        'border': '1px solid #CFCFCF',
-                        'borderCollapse': 'separate',
-                        'borderSpacing': 0,
-                        'width': '100%'
-                    },
-                    style_cell={
-                        'padding': '8px 8px',
-                        'fontSize': '12px',
-                        'fontFamily': 'Arial, sans-serif',
-                        'border': '1px solid #E6E6E6',
-                        'textAlign': 'right',
-                        'minWidth': '80px',
-                        'backgroundColor': 'white',
-                        'height': 'auto',
-                        'lineHeight': '1.4'
-                    },
-                    style_header={
-                        'fontWeight': 'bold',
-                        'fontSize': '12px',
-                        'fontFamily': 'Arial, sans-serif',
-                        'backgroundColor': 'white',
-                        'border': '1px solid #D0D0D0',
-                        'borderBottom': '2px solid #D0D0D0',
-                        'textAlign': 'center',
-                        'padding': '8px 6px'
-                    },
-                    style_cell_conditional=([
-                        {
-                            'if': {'column_id': yield_country_col_id},
-                            'position': 'sticky',
-                            'left': 0,
-                            'backgroundColor': 'white',
-                            'zIndex': 10,
-                            'textAlign': 'left',
-                            'minWidth': '140px',
-                            'width': '140px',
-                            'fontWeight': 'bold',
-                            'color': '#333',
-                            'borderRight': '2px solid #D3D3D3',
-                            'fontSize': '12px',
-                            'padding': '8px 8px'
+                html.Div([
+                    html.H3("Crudes Compared by Product Yield",
+                       style={'color': '#FF6600', 'fontWeight': 'bold', 'marginBottom': '10px', 'fontSize': '20px', 'flexGrow': 1}),
+                    html.Div([
+                        html.Button(
+                            'Export Data to CSV',
+                            id='btn-export-yield-table-csv',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '5px 10px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '12px'
+                            }
+                        ),
+                        dcc.Download(id="download-yield-table-csv")
+                    ])
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginBottom': '10px'}),
+                dcc.Loading(
+                    id="loading-yield-volume-table",
+                    type="circle",
+                    children=dash_table.DataTable(
+                        id='yield-volume-table',
+                        columns=[],  # Will be updated by callback when data loads
+                        data=[],  # Will be updated by callback when data loads
+                        style_table={
+                            'overflowX': 'auto',
+                            'overflowY': 'auto',
+                            'height': '540px',
+                            'border': '1px solid #CFCFCF',
+                            'borderCollapse': 'separate',
+                            'borderSpacing': 0,
+                            'width': '100%'
                         },
-                        {
-                            'if': {'column_id': yield_crudeoil_col_id},
-                            'position': 'sticky',
-                            'left': '140px',
-                            'backgroundColor': 'white',
-                            'zIndex': 10,
-                            'textAlign': 'left',
-                            'minWidth': '170px',
-                            'width': '170px',
-                            'borderRight': '2px solid #D3D3D3',
-                            'fontSize': '12px',
-                            'padding': '8px 8px'
-                        },
-                    ] if yield_country_col_id and yield_crudeoil_col_id else []),
-                    style_header_conditional=([
-                        {
-                            'if': {'column_id': yield_country_col_id},
-                            'position': 'sticky',
-                            'left': 0,
-                            'backgroundColor': 'white',
-                            'zIndex': 11,
-                            'textAlign': 'left',
-                            'borderRight': '2px solid #D3D3D3'
-                        },
-                        {
-                            'if': {'column_id': yield_crudeoil_col_id},
-                            'position': 'sticky',
-                            'left': '140px',
-                            'backgroundColor': 'white',
-                            'zIndex': 11,
-                            'textAlign': 'left',
-                            'borderRight': '2px solid #D3D3D3'
-                        },
-                    ] if yield_country_col_id and yield_crudeoil_col_id else []),
-                    style_data_conditional=([
-                        {
-                            'if': {'row_index': 'odd'},
-                            'backgroundColor': '#f9f9f9'
-                        },
-                        {
-                            'if': {'row_index': 'even'},
-                            'backgroundColor': '#ffffff'
-                        },
-                        # Retain existing conditional styles for specific columns if needed
-                        {
-                            'if': {'column_id': yield_country_col_id},
-                            'fontWeight': 'bold',
-                            'borderTop': '2px solid #CFCFCF',
-                            'borderBottom': '1px solid #E6E6E6',
-                            'verticalAlign': 'middle',
+                        style_cell={
                             'padding': '8px 8px',
-                            'textAlign': 'left',
+                            'fontSize': '12px',
+                            'fontFamily': 'Arial, sans-serif',
+                            'border': '1px solid #E6E6E6',
+                            'textAlign': 'right',
+                            'minWidth': '80px',
+                            'backgroundColor': 'white',
+                            'height': 'auto',
+                            'lineHeight': '1.4'
                         },
-                        {
-                            'if': {'column_id': yield_crudeoil_col_id},
-                            'paddingLeft': '24px',
-                            'fontWeight': 'normal',
-                            'paddingTop': '8px',
-                            'paddingBottom': '8px',
-                            'paddingRight': '8px',
-                            'textAlign': 'left',
+                        style_header={
+                            'fontWeight': 'bold',
+                            'fontSize': '12px',
+                            'fontFamily': 'Arial, sans-serif',
+                            'backgroundColor': 'white',
+                            'border': '1px solid #D0D0D0',
+                            'borderBottom': '2px solid #D0D0D0',
+                            'textAlign': 'center',
+                            'padding': '8px 6px'
                         },
-                    ] if yield_country_col_id and yield_crudeoil_col_id else []),
-                    merge_duplicate_headers=True,
-                    filter_action="none",
-                    page_action="none",
-                    sort_action="native"
-                ),
+                        style_cell_conditional=([
+                            {
+                                'if': {'column_id': yield_country_col_id},
+                                'backgroundColor': 'white',
+                                'textAlign': 'left',
+                                'minWidth': '140px',
+                                'width': '140px',
+                                'fontWeight': 'bold',
+                                'color': '#333',
+                                'borderRight': '2px solid #D3D3D3',
+                                'fontSize': '12px',
+                                'padding': '8px 8px'
+                            },
+                            {
+                                'if': {'column_id': yield_crudeoil_col_id},
+                                'backgroundColor': 'white',
+                                'textAlign': 'left',
+                                'minWidth': '170px',
+                                'width': '170px',
+                                'borderRight': '2px solid #D3D3D3',
+                                'fontSize': '12px',
+                                'padding': '8px 8px'
+                            },
+                        ] if yield_country_col_id and yield_crudeoil_col_id else []),
+                        style_header_conditional=([
+                            {
+                                'if': {'column_id': yield_country_col_id},
+                                'backgroundColor': 'white',
+                                'textAlign': 'left',
+                                'borderRight': '2px solid #D3D3D3'
+                            },
+                            {
+                                'if': {'column_id': yield_crudeoil_col_id},
+                                'backgroundColor': 'white',
+                                'textAlign': 'left',
+                                'borderRight': '2px solid #D3D3D3'
+                            },
+                        ] if yield_country_col_id and yield_crudeoil_col_id else []),
+                        style_data_conditional=([
+                            {
+                                'if': {'row_index': 'odd'},
+                                'backgroundColor': '#f9f9f9'
+                            },
+                            {
+                                'if': {'row_index': 'even'},
+                                'backgroundColor': '#ffffff'
+                            },
+                            # Retain existing conditional styles for specific columns if needed
+                            {
+                                'if': {'column_id': yield_country_col_id},
+                                'fontWeight': 'bold',
+                                'borderTop': '2px solid #CFCFCF',
+                                'borderBottom': '1px solid #E6E6E6',
+                                'verticalAlign': 'middle',
+                                'padding': '8px 8px',
+                                'textAlign': 'left',
+                            },
+                            {
+                                'if': {'column_id': yield_crudeoil_col_id},
+                                'paddingLeft': '24px',
+                                'fontWeight': 'normal',
+                                'paddingTop': '8px',
+                                'paddingBottom': '8px',
+                                'paddingRight': '8px',
+                                'textAlign': 'left',
+                            },
+                        ] if yield_country_col_id and yield_crudeoil_col_id else []),
+                        merge_duplicate_headers=True,
+                        filter_action="none",
+                        page_action="none",
+                        sort_action="native"
+                    )
+                )
+,
                 html.P("Countries: Select jurisdictions are included under countries for data presentation purposes.",
                     style={'fontSize': '11px', 'fontStyle': 'italic', 'color': '#777', 'textAlign': 'left', 'marginTop': '10px', 'fontFamily': 'Arial'})
             ], style={'marginTop': '30px', 'marginBottom': '30px'})
@@ -2068,6 +2190,7 @@ def create_crude_quality_dashboard(server, url_base_pathname="/dash/crude-qualit
             height: auto !important;
         }
         
+
         /* Ensure sticky columns maintain proper background */
         #crude-quality-table .dash-table-container table thead tr th:first-child,
         #crude-quality-table .dash-table-container table tbody tr td:first-child,
@@ -2075,13 +2198,14 @@ def create_crude_quality_dashboard(server, url_base_pathname="/dash/crude-qualit
         #yield-volume-table .dash-table-container table tbody tr td:first-child {
             background-color: white !important;
         }
-        
+
         #crude-quality-table .dash-table-container table thead tr th:nth-child(2),
         #crude-quality-table .dash-table-container table tbody tr td:nth-child(2),
         #yield-volume-table .dash-table-container table thead tr th:nth-child(2),
         #yield-volume-table .dash-table-container table tbody tr td:nth-child(2) {
             background-color: white !important;
         }
+
         
         /* Ensure proper border rendering */
         #crude-quality-table table,
@@ -2438,21 +2562,287 @@ def create_crude_quality_dashboard(server, url_base_pathname="/dash/crude-qualit
 def register_callbacks(dash_app, server=None):
 
     @dash_app.callback(
+        [Output('download-crude-map-pdf', 'data'),
+         Output('download-crude-map-png', 'data'),
+         Output('download-crude-map-csv', 'data')],
+        [Input('crude-map-export-dropdown', 'value')],
+        [State('crude-quality-chart', 'figure'),
+         State('crude-filter-checklist-items', 'value'),
+         State('crude-quality-table', 'data'),
+         State('crude-quality-table', 'columns'),
+         State('yield-volume-table', 'data'),
+         State('yield-volume-table', 'columns')],
+        prevent_initial_call=True
+    )
+    def export_map_content_and_data(selected_value, chart_figure, selected_crudes, 
+                                   quality_data, quality_cols, yield_data, yield_cols):
+        if not selected_value:
+            return dash.no_update, dash.no_update, dash.no_update
+
+        # Initialize all download triggers to no_update
+        download_pdf = dash.no_update
+        download_png = dash.no_update
+        download_csv = dash.no_update
+
+        def build_html_table(data, columns, title):
+            if not data or not columns:
+                return ""
+            
+            # Identify columns to display (exclude dummy/internal columns)
+            display_columns = [col for col in columns if col['id'] not in ('bsp_link', 'profile_url', 'crude_id')]
+            
+            # Check for two-level headers
+            has_two_levels = any(isinstance(col.get('name'), list) and len(col.get('name')) > 1 for col in display_columns)
+            
+            html = f"<div class='table-container'><h4>{title}</h4>"
+            html += "<table border='1' style='width:100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10px;'>"
+            html += "<thead>"
+            
+            if has_two_levels:
+                # First header row
+                html += "<tr style='background-color: #f8f9fa; font-weight: bold;'>"
+                current_parent = None
+                colspan = 0
+                for col in display_columns:
+                    name = col.get('name')
+                    parent = name[0] if isinstance(name, list) and len(name) > 1 else ""
+                    if parent == current_parent:
+                        colspan += 1
+                    else:
+                        if current_parent is not None:
+                            html += f"<th colspan='{colspan}' style='padding: 5px; border: 1px solid #dee2e6;'>{current_parent}</th>"
+                        current_parent = parent
+                        colspan = 1
+                html += f"<th colspan='{colspan}' style='padding: 5px; border: 1px solid #dee2e6;'>{current_parent}</th></tr>"
+                
+                # Second header row
+                html += "<tr style='background-color: #f8f9fa; font-weight: bold;'>"
+                for col in display_columns:
+                    name = col.get('name')
+                    sub = name[1] if isinstance(name, list) and len(name) > 1 else (name[0] if isinstance(name, list) else name)
+                    html += f"<th style='padding: 5px; border: 1px solid #dee2e6;'>{sub}</th>"
+                html += "</tr>"
+            else:
+                html += "<tr style='background-color: #f8f9fa; font-weight: bold;'>"
+                for col in display_columns:
+                    name = col.get('name')
+                    html += f"<th style='padding: 5px; border: 1px solid #dee2e6;'>{name}</th>"
+                html += "</tr>"
+            html += "</thead><tbody>"
+            
+            for row in data:
+                html += "<tr>"
+                for col in display_columns:
+                    val = row.get(col['id'], '')
+                    # Clean up markdown links if any (though usually not in these tables)
+                    if isinstance(val, str) and '](' in val:
+                        val = val.split('](')[0][1:]
+                    html += f"<td style='padding: 4px; border: 1px solid #dee2e6; text-align: left;'>{val}</td>"
+                html += "</tr>"
+            html += "</tbody></table></div>"
+            return html
+
+        if selected_value in ('pdf', 'png'):
+            fig = go.Figure(chart_figure)
+            img_bytes = pio.to_image(fig, format="png", height=720, width=1280, scale=2)
+            img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+
+            quality_table_html = build_html_table(quality_data, quality_cols, "Crudes Compared by Quality")
+            yield_table_html = build_html_table(yield_data, yield_cols, "Crudes Compared by Product Yield")
+
+            html_content = f"""
+                <html>
+                <head>
+                    <title>Crude Quality Report</title>
+                    <style>
+                        @page {{
+                            size: 1400px 5000px;
+                            margin: 30px;
+                        }}
+                        body {{ font-family: Arial, sans-serif; margin: 0; color: #2c3e50; }}
+                        h1, h4 {{ color: #fe5000; text-align: center; margin-top: 20px; }}
+                        .chart-img {{ max-width: 100%; height: auto; display: block; margin: 20px auto; border: 1px solid #dee2e6; }}
+                        .table-container {{ margin-top: 30px; }}
+                        table {{ width: 100%; border-collapse: collapse; }}
+                        th, td {{ border: 1px solid #dee2e6; padding: 8px; text-align: center; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>Crude Quality Report</h1>
+                    <h4>Crude Oils Compared by Quality Chart</h4>
+                    <img class="chart-img" src="data:image/png;base64,{img_base64}" />
+                    {quality_table_html}
+                    {yield_table_html}
+                </body>
+                </html>
+            """
+
+            if selected_value == 'pdf':
+                pdf_bytes = HTML(string=html_content).write_pdf()
+                download_pdf = dcc.send_bytes(pdf_bytes, "crude_quality_comparison_report.pdf")
+            else: # png
+                pdf_for_png_bytes = HTML(string=html_content).write_pdf()
+                doc = fitz.open("pdf", pdf_for_png_bytes)
+                
+                images = []
+                total_height = 0
+                max_width = 0
+                
+                for page in doc:
+                    pix = page.get_pixmap()
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    images.append(img)
+                    total_height += pix.height
+                    max_width = max(max_width, pix.width)
+                
+                if images:
+                    final_img = Image.new("RGB", (max_width, total_height))
+                    y_offset = 0
+                    for img in images:
+                        final_img.paste(img, (0, y_offset))
+                        y_offset += img.height
+                    
+                    img_byte_arr = io.BytesIO()
+                    final_img.save(img_byte_arr, format="PNG")
+                    png_bytes = img_byte_arr.getvalue()
+                else:
+                    png_bytes = b""
+                
+                doc.close()
+                download_png = dcc.send_bytes(png_bytes, "crude_quality_comparison_report.png")
+
+        elif selected_value == 'csv':
+            # Filter original data based on selection
+            plot_df = load_crude_quality_table()
+            
+            if selected_crudes and len(selected_crudes) > 0:
+                # Identify CrudeOil column
+                crude_col_name = 'CrudeOil'
+                if crude_col_name not in plot_df.columns:
+                     # Try to find it via metadata or fallback
+                    quality_column_info = _get_df_metadata(plot_df, "column_info")
+                    if quality_column_info:
+                        for info in quality_column_info:
+                            if info.get('sub') == 'CrudeOil':
+                                crude_col_name = info.get('id')
+                                break
+                
+                if crude_col_name in plot_df.columns:
+                    plot_df = plot_df[plot_df[crude_col_name].isin(selected_crudes)]
+            elif selected_crudes is None:
+                 # Empty selection -> Use original (no change) or all? 
+                 # Usually dashboard shows all if (All) is checked.
+                 pass
+
+            export_df = prepare_df_for_export(plot_df)
+            download_csv = dcc.send_data_frame(export_df.to_csv, "crude_map_data.csv")
+
+        return download_pdf, download_png, download_csv
+
+    @dash_app.callback(
+        Output('download-quality-table-csv', 'data'),
+        Input('btn-export-quality-table-csv', 'n_clicks'),
+        State('crude-filter-checklist-items', 'value'),
+        prevent_initial_call=True
+    )
+    def export_quality_table_data_to_csv(n_clicks, selected_crudes):
+        if n_clicks > 0:
+            quality_df = load_crude_quality_table()
+            
+            # Filter
+            if selected_crudes and len(selected_crudes) > 0:
+                crude_col_name = 'CrudeOil'
+                if crude_col_name not in quality_df.columns:
+                    quality_column_info = _get_df_metadata(quality_df, "column_info")
+                    if quality_column_info:
+                        for info in quality_column_info:
+                            if info.get('sub') == 'CrudeOil':
+                                crude_col_name = info.get('id')
+                                break
+                
+                if crude_col_name in quality_df.columns:
+                    quality_df = quality_df[quality_df[crude_col_name].isin(selected_crudes)]
+            elif selected_crudes is None:
+                pass
+                
+            export_df = prepare_df_for_export(quality_df)
+            return dcc.send_data_frame(export_df.to_csv, "crude_quality_table.csv")
+        return dash.no_update
+
+    @dash_app.callback(
+        Output('download-yield-table-csv', 'data'),
+        Input('btn-export-yield-table-csv', 'n_clicks'),
+        State('crude-filter-checklist-items', 'value'),
+        prevent_initial_call=True
+    )
+    def export_yield_table_data_to_csv(n_clicks, selected_crudes):
+        if n_clicks > 0:
+            yield_df = load_yield_volume_table()
+            
+            # Filter
+            if selected_crudes and len(selected_crudes) > 0:
+                crude_col_name = 'CrudeOil'
+                if crude_col_name not in yield_df.columns:
+                    for col in yield_df.columns:
+                        if col == 'CrudeOil' or (isinstance(col, str) and col.startswith('CrudeOil')):
+                            crude_col_name = col
+                            break
+                            
+                if crude_col_name in yield_df.columns:
+                    yield_df = yield_df[yield_df[crude_col_name].isin(selected_crudes)]
+            elif selected_crudes is None:
+                pass
+            
+            export_df = prepare_df_for_export(yield_df)
+            return dcc.send_data_frame(export_df.to_csv, "crude_yield_table.csv")
+        return dash.no_update
+
+    @dash_app.callback(
         [
             Output('crude-quality-table', 'columns'),
             Output('crude-quality-table', 'data')
         ],
-        Input('current-submenu', 'data'),
+        [
+            Input('current-submenu', 'data'),
+            Input('crude-filter-checklist-items', 'value'),
+            Input('crude-filter-checklist-all', 'value')
+        ],
         prevent_initial_call=False
     )
-    def update_quality_table(current_submenu):
+    def update_quality_table(current_submenu, selected_crudes, all_checked):
         """Load and update the Crudes Compared by Quality table when page is active"""
         if current_submenu != 'crude-quality':
+            return [], []
+        
+        # Determine if we should show all data
+        show_all = all_checked and 'all' in all_checked
+
+        # Optimization: If no crudes selected AND not showing all, return empty immediately
+        if not show_all and (selected_crudes is None or len(selected_crudes) == 0):
             return [], []
         
         try:
             # Load quality table data
             quality_df = load_crude_quality_table()
+            
+            if quality_df.empty:
+                return [], []
+            
+            # If not showing all, filter by selected crudes
+            if not show_all:
+                # Identify CrudeOil column for filtering
+                crude_col_name = 'CrudeOil'
+                if crude_col_name not in quality_df.columns:
+                     # Try to find it via metadata or fallback
+                    quality_column_info = _get_df_metadata(quality_df, "column_info")
+                    if quality_column_info:
+                        for info in quality_column_info:
+                            if info.get('sub') == 'CrudeOil':
+                                crude_col_name = info.get('id')
+                                break
+                
+                if crude_col_name in quality_df.columns:
+                    quality_df = quality_df[quality_df[crude_col_name].isin(selected_crudes)]
             
             if quality_df.empty:
                 return [], []
@@ -2495,18 +2885,46 @@ def register_callbacks(dash_app, server=None):
             Output('yield-volume-table', 'columns'),
             Output('yield-volume-table', 'data')
         ],
-        Input('current-submenu', 'data'),
+        [
+            Input('current-submenu', 'data'),
+            Input('crude-filter-checklist-items', 'value'),
+            Input('crude-filter-checklist-all', 'value')
+        ],
         prevent_initial_call=False
     )
-    def update_yield_table(current_submenu):
+    def update_yield_table(current_submenu, selected_crudes, all_checked):
         """Load and update the Crudes Compared by Product Yield table when page is active"""
         if current_submenu != 'crude-quality':
+            return [], []
+        
+        # Determine if we should show all data
+        show_all = all_checked and 'all' in all_checked
+        
+        # Optimization: If no crudes selected AND not showing all, return empty immediately
+        if not show_all and (selected_crudes is None or len(selected_crudes) == 0):
             return [], []
         
         try:
             # Load yield table data
             yield_df = load_yield_volume_table()
             
+            if yield_df.empty:
+                return [], []
+            
+            # If not showing all, filter by selected crudes
+            if not show_all:
+                # Identify CrudeOil column for filtering
+                crude_col_name = 'CrudeOil'
+                if crude_col_name not in yield_df.columns:
+                    # Try to find it if name is different
+                    for col in yield_df.columns:
+                        if col == 'CrudeOil' or (isinstance(col, str) and col.startswith('CrudeOil')):
+                            crude_col_name = col
+                            break
+                
+                if crude_col_name in yield_df.columns:
+                    yield_df = yield_df[yield_df[crude_col_name].isin(selected_crudes)]
+
             if yield_df.empty:
                 return [], []
             
@@ -2833,16 +3251,32 @@ def register_callbacks(dash_app, server=None):
             Input("y-range-slider", "value"),
             Input("bubble-range-slider", "value"),
             Input('crude-filter-checklist-items', 'value'),
+            Input('crude-filter-checklist-all', 'value'),
         ]
     )
-    def update_crude_quality(x_col, y_col, size_col, x_range, y_range, size_range, selected_crudes):
+    def update_crude_quality(x_col, y_col, size_col, x_range, y_range, size_range, selected_crudes, all_checked):
+        
+        # Determine if we should show all data
+        show_all = all_checked and 'all' in all_checked
 
-        if not x_col or not y_col or not size_col:
-            time.sleep(2) # Added for debugging loading state
+        # Optimization: If no crudes selected AND not showing all, return empty immediately without loading data
+        if not show_all and (selected_crudes is None or len(selected_crudes) == 0):
             fig = go.Figure()
             fig.update_layout(
                 title=dict(text="Crude Oils Compared by Quality", x=0.5, font=dict(color="#FF6600", size=20)),
- plot_bgcolor="white"
+                xaxis=dict(visible=False),
+                yaxis=dict(visible=False),
+                plot_bgcolor="white"
+            )
+            return fig
+
+        if not x_col or not y_col or not size_col:
+            fig = go.Figure()
+            fig.update_layout(
+                title=dict(text="Crude Oils Compared by Quality", x=0.5, font=dict(color="#FF6600", size=20)),
+                xaxis=dict(visible=False),
+                yaxis=dict(visible=False),
+                plot_bgcolor="white"
             )
             return fig
 
@@ -2859,7 +3293,9 @@ def register_callbacks(dash_app, server=None):
             fig = go.Figure()
             fig.update_layout(
                 title=dict(text="Crude Oils Compared by Quality", x=0.5, font=dict(color="#FF6600", size=20)),
- plot_bgcolor="white"
+                xaxis=dict(visible=False),
+                yaxis=dict(visible=False),
+                plot_bgcolor="white"
             )
             return fig
         
@@ -2930,8 +3366,8 @@ def register_callbacks(dash_app, server=None):
             (plot_df['size_value'] >= size_range[0]) & (plot_df['size_value'] <= size_range[1])
         ]
         
-        # Filter by selected crudes
-        if selected_crudes and len(selected_crudes) > 0:
+        # Filter by selected crudes (if not showing all)
+        if not show_all and selected_crudes and len(selected_crudes) > 0:
             plot_df = plot_df[plot_df['CrudeOil'].isin(selected_crudes)]
         
         if len(plot_df) == 0:
@@ -2996,15 +3432,15 @@ def register_callbacks(dash_app, server=None):
                 )
             ))
 
-        # Set fixed axis ranges
+        # Use flexible axis ranges from slider inputs
         if "API" in x_col:
-            x_axis_range = [10.0, 65.0]  # Reversed for API
+            x_axis_range = x_range
             x_axis_autorange = False
         else:
-            x_axis_range = [10.0, 65.0]
+            x_axis_range = x_range
             x_axis_autorange = False
         
-        y_axis_range = [0.00, 4.50]
+        y_axis_range = y_range
 
         fig.update_layout(
             title=dict(text="Crude Oils Compared by Quality", x=0.5, font=dict(color="#FF6600", size=20)),
@@ -3029,7 +3465,7 @@ def register_callbacks(dash_app, server=None):
                 linecolor="black",
                 mirror=True
             ),
-            height=700,
+            height=550,
             width=1000,
             autosize=False,
             plot_bgcolor="white",
