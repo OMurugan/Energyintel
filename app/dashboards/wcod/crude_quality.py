@@ -141,11 +141,9 @@ def load_crossplot_data():
     try:
         results = execute_query(query)
         if not results:
-            print("⚠️ No crossplot data found. Returning empty DataFrame.")
             return pd.DataFrame()
         
         df = pd.DataFrame(results)
-        print(f"✅ Loaded {len(df)} crossplot records from database")
         return df
         
     except Exception as e:
@@ -449,6 +447,7 @@ def load_crude_quality_table():
         if 'assay_yr' in df.columns:
             df = df.sort_values('assay_yr', ascending=False, na_position='last')
         
+        
         # Preserve region_group before pivoting (if it exists)
         region_group_map = None
         if 'region_group' in df.columns:
@@ -480,7 +479,6 @@ def load_crude_quality_table():
             pivot_df['region_group'] = pivot_df.set_index(['country_name', 'Crudeoil']).index.map(
                 lambda x: region_group_map.get(x, 'Others')
             ).values
-        
         # Debug: print structure before flattening
         print(f"DEBUG: pivot_df columns before flattening: {list(pivot_df.columns)}")
         print(f"DEBUG: pivot_df shape: {pivot_df.shape}")
@@ -829,10 +827,10 @@ def create_grouped_columns(df):
                 index_str = invisible_chars[0]
             unique_sub = f"{sub}{index_str}"  # Only invisible characters, no visible numbers
 
-            # For Country and CrudeOil, use empty parent header to align with two-level structure
+            # For Country and CrudeOil, use unique invisible placeholder for top row
+            # This prevents horizontal merging while keeping the top header "empty"
             if sub in ["Country", "CrudeOil"]:
-                # Use empty string as parent to show only sub-header in second row
-                display_name = ["", unique_sub]
+                display_name = [index_str, sub]
             elif parent and parent != sub:
                 # Two-level header: first row = parent, second row = sub (unique)
                 display_name = [parent, unique_sub]
@@ -1855,7 +1853,7 @@ def create_layout(dash_app=None):
                         },
                         style_cell_conditional=[
                             {
-                                'if': {'column_id': country_col_id},
+                                'if': {'column_id': 'Country'},
                                 'backgroundColor': 'white',
                                 'textAlign': 'left',
                                 'minWidth': '140px',
@@ -1867,7 +1865,7 @@ def create_layout(dash_app=None):
                                 'padding': '8px 8px'
                             },
                             {
-                                'if': {'column_id': crudeoil_col_id},
+                                'if': {'column_id': 'CrudeOil'},
                                 'backgroundColor': 'white',
                                 'textAlign': 'left',
                                 'minWidth': '170px',
@@ -1879,13 +1877,13 @@ def create_layout(dash_app=None):
                         ],
                         style_header_conditional=[
                             {
-                                'if': {'column_id': country_col_id},
+                                'if': {'column_id': 'Country'},
                                 'backgroundColor': 'white',
                                 'textAlign': 'left',
                                 'borderRight': '2px solid #D3D3D3'
                             },
                             {
-                                'if': {'column_id': crudeoil_col_id},
+                                'if': {'column_id': 'CrudeOil'},
                                 'backgroundColor': 'white',
                                 'textAlign': 'left',
                                 'borderRight': '2px solid #D3D3D3'
@@ -1903,8 +1901,8 @@ def create_layout(dash_app=None):
                             # Country column styling - header rows (non-empty)
                             {
                                 'if': {
-                                    'filter_query': f'{{{country_col_id}}} != ""',
-                                    'column_id': country_col_id
+                                    'filter_query': f'{{Country}} != ""',
+                                    'column_id': 'Country'
                                 },
                                 'fontWeight': 'bold',
                                 'borderTop': '2px solid #CFCFCF',
@@ -1915,21 +1913,21 @@ def create_layout(dash_app=None):
                             # Country column - child rows (empty country cell)
                             {
                                 'if': {
-                                    'filter_query': f'{{{country_col_id}}} = ""',
-                                    'column_id': country_col_id
+                                    'filter_query': f'{{Country}} = ""',
+                                    'column_id': 'Country'
                                 },
                                 'borderTop': 'none',
                                 'borderBottom': '1px solid #E6E6E6',
                                 'backgroundColor': 'white',
                                 'padding': '8px 8px'
                             },
-                            # CrudeOil column - child rows (indented, when country is empty)
+                            # CrudeOil column - child rows (aligned with header)
                             {
                                 'if': {
-                                    'filter_query': f'{{{country_col_id}}} = ""',
-                                    'column_id': crudeoil_col_id
+                                    'filter_query': f'{{Country}} = ""',
+                                    'column_id': 'CrudeOil'
                                 },
-                                'paddingLeft': '28px',
+                                'paddingLeft': '8px',
                                 'fontWeight': 'normal',
                                 'backgroundColor': 'white',
                                 'paddingTop': '8px',
@@ -1938,8 +1936,8 @@ def create_layout(dash_app=None):
                             # CrudeOil column - header rows (when country is not empty)
                             {
                                 'if': {
-                                    'filter_query': f'{{{country_col_id}}} != ""',
-                                    'column_id': crudeoil_col_id
+                                    'filter_query': f'{{Country}} != ""',
+                                    'column_id': 'CrudeOil'
                                 },
                                 'paddingLeft': '8px',
                                 'fontWeight': 'normal',
@@ -1950,14 +1948,14 @@ def create_layout(dash_app=None):
                             # Text alignment - Country column always left
                             {
                                 'if': {
-                                    'column_id': country_col_id
+                                    'column_id': 'Country'
                                 },
                                 'textAlign': 'left'
                             },
                             # Text alignment - CrudeOil column always left
                             {
                                 'if': {
-                                    'column_id': crudeoil_col_id
+                                    'column_id': 'CrudeOil'
                                 },
                                 'textAlign': 'left'
                             }
@@ -2033,9 +2031,9 @@ def create_layout(dash_app=None):
                             'textAlign': 'center',
                             'padding': '8px 6px'
                         },
-                        style_cell_conditional=([
+                        style_cell_conditional=[
                             {
-                                'if': {'column_id': yield_country_col_id},
+                                'if': {'column_id': 'Country'},
                                 'backgroundColor': 'white',
                                 'textAlign': 'left',
                                 'minWidth': '140px',
@@ -2047,7 +2045,7 @@ def create_layout(dash_app=None):
                                 'padding': '8px 8px'
                             },
                             {
-                                'if': {'column_id': yield_crudeoil_col_id},
+                                'if': {'column_id': 'CrudeOil'},
                                 'backgroundColor': 'white',
                                 'textAlign': 'left',
                                 'minWidth': '170px',
@@ -2056,22 +2054,22 @@ def create_layout(dash_app=None):
                                 'fontSize': '12px',
                                 'padding': '8px 8px'
                             },
-                        ] if yield_country_col_id and yield_crudeoil_col_id else []),
-                        style_header_conditional=([
+                        ],
+                        style_header_conditional=[
                             {
-                                'if': {'column_id': yield_country_col_id},
+                                'if': {'column_id': 'Country'},
                                 'backgroundColor': 'white',
                                 'textAlign': 'left',
                                 'borderRight': '2px solid #D3D3D3'
                             },
                             {
-                                'if': {'column_id': yield_crudeoil_col_id},
+                                'if': {'column_id': 'CrudeOil'},
                                 'backgroundColor': 'white',
                                 'textAlign': 'left',
                                 'borderRight': '2px solid #D3D3D3'
                             },
-                        ] if yield_country_col_id and yield_crudeoil_col_id else []),
-                        style_data_conditional=([
+                        ],
+                        style_data_conditional=[
                             {
                                 'if': {'row_index': 'odd'},
                                 'backgroundColor': '#f9f9f9'
@@ -2080,9 +2078,9 @@ def create_layout(dash_app=None):
                                 'if': {'row_index': 'even'},
                                 'backgroundColor': '#ffffff'
                             },
-                            # Retain existing conditional styles for specific columns if needed
+                            # Country column
                             {
-                                'if': {'column_id': yield_country_col_id},
+                                'if': {'column_id': 'Country'},
                                 'fontWeight': 'bold',
                                 'borderTop': '2px solid #CFCFCF',
                                 'borderBottom': '1px solid #E6E6E6',
@@ -2090,16 +2088,17 @@ def create_layout(dash_app=None):
                                 'padding': '8px 8px',
                                 'textAlign': 'left',
                             },
+                            # CrudeOil column
                             {
-                                'if': {'column_id': yield_crudeoil_col_id},
-                                'paddingLeft': '24px',
+                                'if': {'column_id': 'CrudeOil'},
+                                'paddingLeft': '8px',
                                 'fontWeight': 'normal',
                                 'paddingTop': '8px',
                                 'paddingBottom': '8px',
                                 'paddingRight': '8px',
                                 'textAlign': 'left',
                             },
-                        ] if yield_country_col_id and yield_crudeoil_col_id else []),
+                        ],
                         merge_duplicate_headers=True,
                         filter_action="none",
                         page_action="none",
@@ -2825,6 +2824,11 @@ def register_callbacks(dash_app, server=None):
             # Load quality table data
             quality_df = load_crude_quality_table()
             
+            # Drop any columns containing 'region_group' from the display (keep in exports)
+            region_group_cols = [c for c in quality_df.columns if 'region_group' in str(c)]
+            if region_group_cols:
+                quality_df = quality_df.drop(columns=region_group_cols)
+            
             if quality_df.empty:
                 return [], []
             
@@ -3076,31 +3080,31 @@ def register_callbacks(dash_app, server=None):
     )
     def update_y_slider(y_prop):
         if not y_prop:
-            return 0, 100, [0, 100], 0.01, 0, 100
+            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
         
         # Load crossplot data
         try:
             df = load_crossplot_data()
         except Exception as e:
             print(f"Error loading crossplot data for y slider: {e}")
-            return 0, 100, [0, 100], 0.01, 0, 100
+            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
         
         if df.empty:
-            return 0, 100, [0, 100], 0.01, 0, 100
+            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
         
         # Filter for the selected property
         y_data = df[df['Property - Unit'] == y_prop].copy()
         if y_data.empty:
-            return 0, 100, [0, 100], 0.01, 0, 100
+            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
         
         y_data['Value'] = pd.to_numeric(y_data['Value'], errors="coerce")
         y_data = y_data.dropna(subset=['Value'])
         
         if len(y_data) == 0:
-            return 0, 100, [0, 100], 0.01, 0, 100
+            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
         
-        min_val = float(y_data['Value'].min())
-        max_val = float(y_data['Value'].max())
+        min_val = 0.0
+        max_val = 5.98
         step = 0.1 if (max_val - min_val) > 10 else 0.01
         
         return min_val, max_val, [min_val, max_val], step, min_val, max_val
@@ -3117,31 +3121,31 @@ def register_callbacks(dash_app, server=None):
     )
     def update_bubble_slider(bubble_prop):
         if not bubble_prop:
-            return 0, 100, [0, 100], 0, 100
+            return 0, 5.98, [0, 5.98], 0, 5.98
         
         # Load crossplot data
         try:
             df = load_crossplot_data()
         except Exception as e:
             print(f"Error loading crossplot data for bubble slider: {e}")
-            return 0, 100, [0, 100], 0, 100
+            return 0, 5.98, [0, 5.98], 0, 5.98
         
         if df.empty:
-            return 0, 100, [0, 100], 0, 100
+            return 0, 5.98, [0, 5.98], 0, 5.98
         
         # Filter for the selected property
         size_data = df[df['Property - Unit'] == bubble_prop].copy()
         if size_data.empty:
-            return 0, 100, [0, 100], 0, 100
+            return 0, 5.98, [0, 5.98], 0, 5.98
         
         size_data['Value'] = pd.to_numeric(size_data['Value'], errors="coerce").fillna(40)
         size_data = size_data.dropna(subset=['Value'])
         
         if len(size_data) == 0:
-            return 0, 100, [0, 100], 0, 100
+            return 0, 5.98, [0, 5.98], 0, 5.98
         
-        min_val = 0
-        max_val = int(size_data['Value'].max())
+        min_val = 0.0
+        max_val = 5.98
         
         return min_val, max_val, [min_val, max_val], min_val, max_val
 
