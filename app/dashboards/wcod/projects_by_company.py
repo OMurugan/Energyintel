@@ -1313,22 +1313,21 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     country_totals = year_df.groupby('Country')['value_company'].sum().reset_index()
     country_totals.columns = ['Country', 'Value']
     
-    # Calculate centroids for country name labels (same pattern as projects_by_country.py)
-    centroids = (
-        year_df.groupby('Country')[['Latitude', 'Longitude']]
-        .mean()
-        .reset_index()
-        .dropna(subset=['Latitude', 'Longitude'])
-    )
-    # Limit label density to avoid clutter (same pattern as projects_by_country.py)
-    max_labels = len(centroids)
-    if len(centroids) > 60:
-        max_labels = 60
-    centroids_display = (
-        centroids.sort_values('Country').head(max_labels)
-        if max_labels < len(centroids)
-        else centroids
-    )
+    # Calculate centroids for country name labels - only for countries with data
+    # This ensures clean, readable labels without clutter
+    if not year_df.empty and 'Latitude' in year_df.columns and 'Longitude' in year_df.columns:
+        centroids = (
+            year_df.groupby('Country')[['Latitude', 'Longitude']]
+            .mean()
+            .reset_index()
+            .dropna(subset=['Latitude', 'Longitude'])
+        )
+    else:
+        centroids = pd.DataFrame(columns=['Country', 'Latitude', 'Longitude'])
+    
+    # Limit label density to avoid clutter
+    max_labels = 100 if len(centroids) > 100 else len(centroids)
+    centroids_display = centroids.sort_values('Country').head(max_labels) if max_labels < len(centroids) else centroids
     
     # Create choropleth map including all countries from the CSV
     fig = go.Figure(data=go.Choropleth(
@@ -1363,7 +1362,7 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
         showscale=False  # hide colorbar in the map; we render a custom legend beside controls
     ))
     
-    # Add country name labels on map (same pattern as projects_by_country.py)
+    # Add country name labels on map
     if not centroids_display.empty:
         fig.add_trace(
             go.Scattergeo(
@@ -1371,8 +1370,8 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
                 lat=centroids_display['Latitude'],
                 mode='text',
                 text=centroids_display['Country'],
-                textfont=dict(size=10, color='#2c3e50'),
-                textposition='top center',
+                textfont=dict(size=12, color='#1b365d', family='Arial, sans-serif'),
+                textposition='middle center',
                 hoverinfo='skip',
                 showlegend=False,
             )
@@ -1382,6 +1381,7 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     center_lat = year_df['Latitude'].mean() if not year_df.empty and 'Latitude' in year_df.columns else 24.0
     center_lon = year_df['Longitude'].mean() if not year_df.empty and 'Longitude' in year_df.columns else 45.0
     fig.update_geos(
+        fitbounds="locations",
         showframe=False,
         showcoastlines=True,
         projection_type='equirectangular',
@@ -1846,12 +1846,12 @@ def create_layout():
         html.Div([
             html.Div([
                 html.H4(
-                    "Project Details",
+                    "Projected Oil Capacity Details by Company",
                     style={
                         'marginBottom': '0',
-                        'fontSize': '16px',
+                        'fontSize': '24px',
                         'fontWeight': 'bold',
-                        'fontFamily': 'Lato, sans-serif',
+                        'fontFamily': 'Georgia, serif',
                         'color': '#fe5000',
                         'textAlign': 'left'
                     }
@@ -1883,7 +1883,7 @@ def create_layout():
                     tooltip_duration=None,
                     page_action='none',
                     sort_action='native',
-                    filter_action='native',
+                    filter_action='native',  # Native filtering shows filter inputs below headers
                     style_table={
                         'overflowX': 'auto',
                         'overflowY': 'auto',
@@ -1894,7 +1894,7 @@ def create_layout():
                     style_cell={
                         'textAlign': 'left',
                         'padding': '8px',
-                        'whiteSpace': 'normal',
+                        'whiteSpace': 'nowrap',
                         'height': 'auto',
                         'overflow': 'hidden',
                         'textOverflow': 'ellipsis',
@@ -1902,25 +1902,25 @@ def create_layout():
                         'fontSize': '12px',
                         'border': '1px solid #ddd',
                         'backgroundColor': '#fff',
-                        'fontFamily': 'Lato, sans-serif',
-                        'color': 'rgb(27, 54, 93)'
+                        'fontFamily': 'Georgia, serif',
+                        'color': '#333333'
                     },
                     style_header={
-                        'backgroundColor': '#f8f9fa',
+                        'backgroundColor': '#ffffff',
                         'fontWeight': 'bold',
-                        'fontFamily': 'Lato, sans-serif',
-                        'color': 'rgb(27, 54, 93)',
+                        'fontFamily': 'Georgia, serif',
+                        'color': '#333333',
                         'border': '1px solid #ddd',
-                        'textAlign': 'center',
-                        'whiteSpace': 'normal',
+                        'textAlign': 'left',
+                        'whiteSpace': 'nowrap',
                         'height': 'auto',
                         'position': 'relative'
                     },
                     style_data={
                         'border': '1px solid #ddd',
-                        'whiteSpace': 'normal',
-                        'fontFamily': 'Lato, sans-serif',
-                        'color': 'rgb(27, 54, 93)'
+                        'whiteSpace': 'nowrap',
+                        'fontFamily': 'Georgia, serif',
+                        'color': '#333333'
                     },
                     style_data_conditional=[
                         {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'},
@@ -1935,7 +1935,7 @@ def create_layout():
                     ],
                     css=[{
                         'selector': '.dash-table-tooltip',
-                        'rule': 'font-size: 10px !important; font-family: Lato, sans-serif !important; color: rgb(27, 54, 93) !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
+                        'rule': 'font-size: 10px !important; font-family: Georgia, serif !important; color: #333333 !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
                     }, {
                         'selector': '.dash-table-container .row:last-child',
                         'rule': 'display: none !important;'
@@ -2263,6 +2263,7 @@ def register_callbacks(dash_app, server):
         base_priority = [
             'Project Name',
             'Likely Go-ahead',
+            'Field Type',
             'Country',
             'Region',
             'Group',
@@ -2353,6 +2354,7 @@ def register_callbacks(dash_app, server):
             'Country': '120px',
             'Region': '120px',
             'Group': '140px',
+            'Field Type': '100px',
             'Hydrocarbon': '120px',
             'Depth': '80px',
             'Field/Block': '140px',
@@ -2454,7 +2456,7 @@ def register_callbacks(dash_app, server):
                     aElement.style.cursor = 'pointer';
                     aElement.style.padding = '1px 2px';
                     aElement.style.borderRadius = '1px';
-                    aElement.style.fontFamily = 'Lato, sans-serif';
+                    aElement.style.fontFamily = 'Georgia, serif';
                     aElement.style.fontSize = '10px';
                     aElement.onmouseover = function() {
                         aElement.style.backgroundColor = '#d4e7ff';
@@ -2479,7 +2481,7 @@ def register_callbacks(dash_app, server):
                     zElement.style.cursor = 'pointer';
                     zElement.style.padding = '1px 2px';
                     zElement.style.borderRadius = '1px';
-                    zElement.style.fontFamily = 'Lato, sans-serif';
+                    zElement.style.fontFamily = 'Georgia, serif';
                     zElement.style.fontSize = '10px';
                     zElement.onmouseover = function() {
                         zElement.style.backgroundColor = '#d4e7ff';
