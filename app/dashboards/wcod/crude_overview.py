@@ -36,6 +36,12 @@ MONTHLY_GRADES_CSV = os.path.join(DATA_DIR, 'Monthly List of grades for selected
 COUNTRIES_GEOJSON = None
 
 # Helpers
+COUNTRY_NAME_MAPPING = {
+    "United States": "United States of America",
+    "Abu Dhabi": "United Arab Emirates",
+    "Dubai": "United Arab Emirates",
+    "Congo (Brazzaville)": "Republic of the Congo",
+}
 def _resolve_countries_selection(selected):
     """Normalize country selection; expand '(All)' to full list."""
     if selected is None:
@@ -210,7 +216,7 @@ def load_monthly_bar():
             country AS "Country",
             stream_name AS "Stream Name",
             value AS "Value"
-        FROM t_wcod_monthly_stream_production
+        FROM t_wcod_monthly_stream_production where stream_name not in ('Total')
         ORDER BY date DESC, stream_name;
     """
     try:
@@ -319,7 +325,11 @@ def load_monthly_map_from_db(raw_export=False):
         df["month"] = pd.to_numeric(df["month_year"].astype(str).str.split("-").str[1], errors="coerce")
         df["value"] = pd.to_numeric(df["value"], errors="coerce")
         df = df.rename(columns={"country": "Country"})
-        df_long = df[["Country", "year", "month", "value"]].copy()
+        
+        # Add GeoCountry for map matching while keeping Country for labels
+        df["GeoCountry"] = df["Country"].apply(lambda x: COUNTRY_NAME_MAPPING.get(x, x))
+        
+        df_long = df[["Country", "GeoCountry", "year", "month", "value"]].copy()
         df_long["year"] = df_long["year"].astype(str)
         df_long = df_long.dropna(subset=["Country", "year", "month", "value"])
         df_long["month"] = df_long["month"].astype(int)
@@ -389,9 +399,12 @@ def load_yearly_map_from_db(raw_export=False):
             print(f"DEBUG: Yearly map DB result missing required columns. Columns: {df.columns.tolist()}")
             return pd.DataFrame()
         df = df.rename(columns={"country": "Country"})
+        # Add GeoCountry for map matching while keeping Country for labels
+        df["GeoCountry"] = df["Country"].apply(lambda x: COUNTRY_NAME_MAPPING.get(x, x))
+        
         df["year"] = df["year"].astype(str)
         df["value"] = pd.to_numeric(df["value"], errors="coerce")
-        df_long = df[["Country", "year", "value"]].copy()
+        df_long = df[["Country", "GeoCountry", "year", "value"]].copy()
         df_long = df_long.dropna(subset=["Country", "year", "value"])
         df_long = df_long[df_long["value"] > 0].copy()
         print(f"DEBUG: Loaded {len(df_long)} yearly map records from DB")
@@ -1074,7 +1087,12 @@ def load_table():
                 TO_CHAR(a.date, 'FMMonth') AS "Month of Date",
                 a.value as "Value"
             FROM t_wcod_monthly_stream_production a
-            LEFT JOIN fact_wcod_crude b  on a.crude_id = b.crude_id 
+            LEFT JOIN (
+                SELECT DISTINCT ON (crude_id) 
+                    crude_id, crude_name, ci_rank, api, sulfur_pct
+                FROM fact_wcod_crude
+                ORDER BY crude_id, yr DESC
+            ) b ON a.crude_id = b.crude_id 
         """
         monthly_rows = execute_query(monthly_query)
         if monthly_rows:
@@ -1263,6 +1281,8 @@ def _collect_filter_values(column_name):
 CI_OPTIONS = []
 API_OPTIONS = []
 SULFUR_OPTIONS = []
+
+CI_FILTER_CHOICES = ["-", "High", "Low", "Medium", "Very High", "Very Low"]
 API_FILTER_CHOICES = ["-", "Heavy", "Light", "Medium"]
 SULFUR_FILTER_CHOICES = ["-", "Sour", "Sweet"]
 
@@ -1276,11 +1296,15 @@ def classify_api_value(value):
         api_value = float(value_str)
     except ValueError:
         return "-"
-    if api_value < 22.3:
-        return "Heavy"
-    if api_value <= 31.1:
+    
+    if api_value == 0:
+        return "-"
+    if api_value > 31.1:
+        return "Light"
+    if api_value > 22.3:
         return "Medium"
-    return "Light"
+    # Grouping <10 (Extra Heavy) into Heavy as per latest user request
+    return "Heavy"
 
 def classify_sulfur_value(value):
     if value is None:
@@ -1292,6 +1316,8 @@ def classify_sulfur_value(value):
         sulfur_value = float(value_str)
     except ValueError:
         return "-"
+    
+    # User rule: < 0.5% = Sweet, > 0.5% = Sour. Using >= for Sour boundary.
     return "Sour" if sulfur_value >= 0.5 else "Sweet"
 
 # Initialize to empty - will be populated when data loads
@@ -1755,6 +1781,14 @@ def create_layout(server=None):
                                 {
                                     "if": {"column_id": "Crude"},
                                     "textAlign": "left"
+                                },
+                                {
+                                    "if": {"column_id": "CI Rank"},
+                                    "textAlign": "left"
+                                },
+                                {
+                                    "if": {"column_id": "API"},
+                                    "textAlign": "left"
                                 }
                             ],
                             
@@ -1822,29 +1856,50 @@ def register_callbacks(dash_app, server):
         [Input("crude-main-tabs", "value")]
     )
     def toggle_monthly_filters(tab):
-        """Show filters only for monthly tab by dynamically updating children"""
+        """Show filters only for monthly tab by dynamically updating children as checklists"""
+        print(f"DEBUG: toggle_monthly_filters called for tab: {tab}")
         if tab == "monthly":
             _ensure_data_loaded()
+            
+            checklist_style = {
+                "maxHeight": "150px",
+                "overflowY": "auto",
+                "padding": "8px",
+                "border": "1px solid #e0e0e0",
+                "borderRadius": "6px",
+                "background": "white",
+                "fontSize": "12px"
+            }
+            
             return [
-                html.Label("CI Rank"),
-                dcc.Dropdown(
+                html.Label("CI Rank", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
+                dcc.Checklist(
                     id="filter-ci", 
-                    options=([{"label":"(All)", "value":"(All)"}] + [{"label":v, "value":v} for v in CI_OPTIONS]) if CI_OPTIONS else [{"label":"(All)", "value":"(All)"}],
-                    multi=True
+                    options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in CI_FILTER_CHOICES],
+                    value=["ALL"] + CI_FILTER_CHOICES,
+                    inputStyle={"marginRight": "8px"},
+                    labelStyle={"display": "block", "marginBottom": "6px"},
+                    style=checklist_style
                 ),
                 html.Br(),
-                html.Label("API"),
-                dcc.Dropdown(
+                html.Label("API", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
+                dcc.Checklist(
                     id="filter-api", 
-                    options=([{"label":"(All)", "value":"(All)"}] + [{"label":v, "value":v} for v in API_OPTIONS]) if API_OPTIONS else [{"label":"(All)", "value":"(All)"}],
-                    multi=True
+                    options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in API_FILTER_CHOICES],
+                    value=["ALL"] + API_FILTER_CHOICES,
+                    inputStyle={"marginRight": "8px"},
+                    labelStyle={"display": "block", "marginBottom": "6px"},
+                    style=checklist_style
                 ),
                 html.Br(),
-                html.Label("Sulfur"),
-                dcc.Dropdown(
+                html.Label("Sulfur", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
+                dcc.Checklist(
                     id="filter-sulfur", 
-                    options=([{"label":"(All)", "value":"(All)"}] + [{"label":v, "value":v} for v in SULFUR_OPTIONS]) if SULFUR_OPTIONS else [{"label":"(All)", "value":"(All)"}],
-                    multi=True
+                    options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in SULFUR_FILTER_CHOICES],
+                    value=["ALL"] + SULFUR_FILTER_CHOICES,
+                    inputStyle={"marginRight": "8px"},
+                    labelStyle={"display": "block", "marginBottom": "6px"},
+                    style=checklist_style
                 ),
             ]
         return []
@@ -1980,6 +2035,65 @@ def register_callbacks(dash_app, server):
         new_sorted = normalized
         old_sorted = sorted(selected, key=lambda x: x if isinstance(x, int) else int(x) if str(x).isdigit() else 0, reverse=True)
         return new_sorted if new_sorted != old_sorted else no_update
+
+    def _sync_categorical_checklist(selected, options, all_values):
+        """Helper to sync 'ALL' toggle for categorical checklists."""
+        if not options:
+            return no_update
+        
+        selected = selected or []
+        selected_set = set(selected)
+        has_all = "ALL" in selected_set
+        others_set = selected_set - {"ALL"}
+        all_categories_set = set(all_values)
+        
+        if has_all and not others_set:
+            # Only ALL selected -> select everything
+            normalized = ["ALL"] + all_values
+        elif has_all and others_set:
+            # ALL and some others -> if user unchecked one from a full set, uncheck ALL
+            if len(others_set) < len(all_categories_set):
+                normalized = sorted(list(others_set))
+            else:
+                normalized = ["ALL"] + all_values
+        elif not has_all and others_set == all_categories_set:
+            # Everything except ALL is checked -> check ALL too
+            normalized = ["ALL"] + all_values
+        elif not has_all and not others_set:
+            # Nothing selected
+            normalized = []
+        else:
+            # Just some categories
+            normalized = sorted(list(others_set))
+            
+        return normalized if normalized != selected else no_update
+
+    @dash_app.callback(
+        Output("filter-ci", "value"),
+        Input("filter-ci", "value"),
+        State("filter-ci", "options"),
+        prevent_initial_call=True
+    )
+    def sync_ci_all(selected, options):
+        return _sync_categorical_checklist(selected, options, CI_FILTER_CHOICES)
+
+    @dash_app.callback(
+        Output("filter-api", "value"),
+        Input("filter-api", "value"),
+        State("filter-api", "options"),
+        prevent_initial_call=True
+    )
+    def sync_api_all(selected, options):
+        return _sync_categorical_checklist(selected, options, API_FILTER_CHOICES)
+
+    @dash_app.callback(
+        Output("filter-sulfur", "value"),
+        Input("filter-sulfur", "value"),
+        State("filter-sulfur", "options"),
+        prevent_initial_call=True
+    )
+    def sync_sulfur_all(selected, options):
+        return _sync_categorical_checklist(selected, options, SULFUR_FILTER_CHOICES)
     
     @dash_app.callback(
         [Output("profiled-streams", "options"),
@@ -2585,11 +2699,14 @@ def register_callbacks(dash_app, server):
                 if not MAP_YEARLY_LONG.empty and "year" in MAP_YEARLY_LONG.columns:
                     agg = MAP_YEARLY_LONG[MAP_YEARLY_LONG["year"] == str(selected_year)].copy()
                     if len(agg) > 0:
-                        agg = agg.groupby("Country")["value"].sum().reset_index()
+                        agg = agg.groupby("GeoCountry").agg({
+                            "value": "sum",
+                            "Country": lambda x: x.iloc[0] if len(x.unique()) == 1 else COUNTRY_NAME_MAPPING.get(x.iloc[0], x.iloc[0])
+                        }).reset_index()
                     else:
-                        agg = pd.DataFrame(columns=["Country", "value"])
+                        agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
                 else:
-                    agg = pd.DataFrame(columns=["Country", "value"])
+                    agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
             else:
                 # Monthly view - Map uses Year Month dropdown
                 print(f"DEBUG MAP MONTHLY: selected_year_month={selected_year_month}, tab={tab}, MAP_MONTHLY_LONG empty={MAP_MONTHLY_LONG.empty}")
@@ -2622,22 +2739,29 @@ def register_callbacks(dash_app, server):
                                     agg = df_monthly.copy()
                                     print(f"DEBUG MAP MONTHLY: Using default max_year={max_year}, max_month={max_month}, agg length={len(agg)}")
                                 else:
-                                    agg = pd.DataFrame(columns=["Country", "value"])
+                                    agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
                             else:
-                                agg = pd.DataFrame(columns=["Country", "value"])
+                                agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
                         
                         if len(agg) > 0:
-                            agg = agg.groupby("Country")["value"].sum().reset_index()
+                            # Group by GeoCountry to merge Abu Dhabi/Dubai and handle renames (USA)
+                            # Use 'first' for Country to preserve original label where possible
+                            # but if it was a merge (UAE), the GeoCountry name might be better.
+                            # For simplicity, we'll keep the first one or just use GeoCountry for the tooltip.
+                            agg = agg.groupby("GeoCountry").agg({
+                                "value": "sum",
+                                "Country": lambda x: x.iloc[0] if len(x.unique()) == 1 else COUNTRY_NAME_MAPPING.get(x.iloc[0], x.iloc[0])
+                            }).reset_index()
                             print(f"DEBUG MAP MONTHLY: After groupby, agg length={len(agg)}")
-                            print(f"DEBUG MAP MONTHLY: Sample countries: {agg['Country'].head().tolist() if len(agg) > 0 else []}")
+                            print(f"DEBUG MAP MONTHLY: Sample mapping: {agg[['Country', 'GeoCountry']].head().values.tolist()}")
                         else:
-                            agg = pd.DataFrame(columns=["Country", "value"])
+                            agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
                     else:
                         print(f"DEBUG MAP MONTHLY: Missing required columns. Available: {MAP_MONTHLY_LONG.columns.tolist()}")
-                        agg = pd.DataFrame(columns=["Country", "value"])
+                        agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
                 else:
                     print(f"DEBUG MAP MONTHLY: MAP_MONTHLY_LONG is empty")
-                    agg = pd.DataFrame(columns=["Country", "value"])
+                    agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
         except Exception as e:
             print(f"Error in update_map: {e}")
             import traceback
@@ -2674,7 +2798,7 @@ def register_callbacks(dash_app, server):
             fig = px.choropleth_mapbox(
                 agg,
                 geojson=geojson,
-                locations="Country",
+                locations="GeoCountry",
                 featureidkey="properties.name",
                 color="value",
                 color_continuous_scale="Blues",
@@ -2733,7 +2857,7 @@ def register_callbacks(dash_app, server):
         else:
             fig = px.choropleth(
                 agg, 
-                locations="Country", 
+                locations="GeoCountry", 
                 locationmode="country names", 
                 color="value",
                 projection="natural earth", 
@@ -4037,7 +4161,7 @@ def register_callbacks(dash_app, server):
         def sanitize(values):
             if not values:
                 return []
-            return [v for v in values if v and v != "(All)"]
+            return [v for v in values if v and v not in ("(All)", "ALL")]
         
         ci = sanitize(ci)
         api = sanitize(api)
