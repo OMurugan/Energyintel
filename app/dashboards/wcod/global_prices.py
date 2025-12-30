@@ -247,12 +247,15 @@ def create_table_columns(column_metadata):
     # but is visually invisible. This ensures country headers align correctly with their blend columns.
     # The same placeholder value across all left columns causes Dash to merge them into a single colspan cell
     # in the middle header row, which properly aligns with the country header row (Algeria, Angola, etc.)
-    date_placeholder = '\u200B'  # Zero-width space - invisible but creates proper cell structure and colspan
+    # Use unique invisible placeholders for Level 1 and Level 2 of date columns.
+    # This prevents them from merging with each other or the region labels, 
+    # ensuring that th[data-dash-column="..."] correctly hides all hierarchical levels
+    # for Quarter and Day without affecting Year or Month.
     columns = [
-        {'name': [region_name, date_placeholder, 'Year'], 'id': 'Year', 'type': 'text'},
-        {'name': [region_name, date_placeholder, 'Quarter'], 'id': 'Quarter', 'type': 'text'},
-        {'name': [region_name, date_placeholder, 'Month'], 'id': 'Month', 'type': 'text'},
-        {'name': [region_name, date_placeholder, 'Day'], 'id': 'Day', 'type': 'text'},
+        {'name': ['\u200B', '\u200B', 'Year'], 'id': 'Year', 'type': 'text'},
+        {'name': ['\u200C', '\u200C', 'Quarter'], 'id': 'Quarter', 'type': 'text'},
+        {'name': ['\u200D', '\u200D', 'Month'], 'id': 'Month', 'type': 'text'},
+        {'name': ['\u200E', '\u200E', 'Day'], 'id': 'Day', 'type': 'text'},
     ]
     
     # Dynamic order: region → country → blend (alphabetical) so all DB data shows
@@ -527,7 +530,7 @@ def create_layout():
                      }
                  ]
              )], style={'width': '100%', 'overflowX': 'hidden'})
-         )], style={'margin': '0 auto', 'maxWidth': '100%', 'position': 'relative'}),
+         )], style={'margin': '0 auto', 'maxWidth': '100%', 'position': 'relative', 'padding': '20px'}),
         
         # Hidden div for clientside callback anchor
         html.Div(id='global-prices-enhancer-anchor', style={'display': 'none'}),
@@ -640,20 +643,33 @@ def register_callbacks(dash_app, server):
    - With Day: colspan 4 (Year, Quarter, Month, Day)
    This ensures the middle-level header spans all visible date columns and aligns with country headers */
 /* Default: Quarter and Day columns hidden (Year and Month visible by default) */
+/* Use very specific selectors to ensure these columns are hidden on initial load */
 #global-prices-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
-#global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"],
 #global-prices-table .dash-spreadsheet-container td[data-dash-column="Quarter"],
-#global-prices-table .dash-spreadsheet-container td[data-dash-column="Day"],
-#global-prices-table .dash-spreadsheet-container table th[data-dash-column="Quarter"],
-#global-prices-table .dash-spreadsheet-container table th[data-dash-column="Day"],
-#global-prices-table .dash-spreadsheet-container table td[data-dash-column="Quarter"],
-#global-prices-table .dash-spreadsheet-container table td[data-dash-column="Day"] {
+#global-prices-table .dash-spreadsheet-container th[data-dash-column="Day"],
+#global-prices-table .dash-spreadsheet-container td[data-dash-column="Day"] {
     display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
 }
 /* Show Quarter when year is expanded */
 #global-prices-table .dash-spreadsheet-container.year-expanded th[data-dash-column="Quarter"],
 #global-prices-table .dash-spreadsheet-container.year-expanded td[data-dash-column="Quarter"] {
     display: table-cell !important;
+    width: auto !important;
+    min-width: 60px !important;
+    max-width: none !important;
+    padding: 6px 10px !important;
+    margin: 0 !important;
+    border: 1px solid #e6e6e6 !important;
+    overflow: visible !important;
+    visibility: visible !important;
 }
 /* Hide Month and Day when quarter is collapsed (only when Quarter is visible) */
 #global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed th[data-dash-column="Month"],
@@ -661,11 +677,23 @@ def register_callbacks(dash_app, server):
 #global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Month"],
 #global-prices-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Day"] {
     display: none !important;
+    width: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
 }
 /* Show Day when month is expanded (hide if quarter is collapsed) */
 #global-prices-table .dash-spreadsheet-container.month-expanded:not(.quarter-collapsed) th[data-dash-column="Day"],
 #global-prices-table .dash-spreadsheet-container.month-expanded:not(.quarter-collapsed) td[data-dash-column="Day"] {
     display: table-cell !important;
+    width: auto !important;
+    min-width: 50px !important;
+    max-width: none !important;
+    padding: 6px 10px !important;
+    margin: 0 !important;
+    border: 1px solid #e6e6e6 !important;
+    overflow: visible !important;
+    visibility: visible !important;
 }
 #global-prices-table .dash-spreadsheet-container td[data-dash-column="Year"],
 #global-prices-table .dash-spreadsheet-container td[data-dash-column="Month"] {
