@@ -870,21 +870,23 @@ def create_layout(server):
                 "left": "209px"
             }),
             
+            # Export button
             html.Div([
                 html.Div([
-                    dcc.Dropdown(
-                        id='crude-comparison-export-dropdown',
-                        options=[
-                            {'label': 'Export Data CSV', 'value': 'csv'}
-                        ],
-                        placeholder='Export Data',
+                    html.Button(
+                        "Export Data CSV",
+                        id="crude-comparison-export-btn",
+                        n_clicks=0,
                         style={
-                            'width': '200px',
-                            'fontSize': '13px',
+                            'backgroundColor': 'white',
                             'color': '#2c3e50',
+                            'border': '1px solid #dee2e6',
+                            'padding': '6px 12px',
+                            'borderRadius': '4px',
+                            'cursor': 'pointer',
+                            'fontSize': '13px',
                             'display': 'inline-block'
-                        },
-                        clearable=False
+                        }
                     ),
                     dcc.Download(id="download-crude-comparison-csv"),
                 ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'marginBottom': '10px'}),
@@ -1890,13 +1892,13 @@ def register_callbacks(app, server):
 
     @app.callback(
         Output("download-crude-comparison-csv", "data"),
-        Input("crude-comparison-export-dropdown", "value"),
+        Input("crude-comparison-export-btn", "n_clicks"),
         [State("crude-comparison-table", "data"),
          State("crude-comparison-table", "columns")],
         prevent_initial_call=True
     )
-    def export_crude_comparison_csv(export_type, data, columns):
-        if not export_type or export_type != 'csv' or not data:
+    def export_crude_comparison_csv(n_clicks, data, columns):
+        if not n_clicks or not data:
             raise dash.exceptions.PreventUpdate
 
         # Convert to DataFrame
@@ -1917,14 +1919,6 @@ def register_callbacks(app, server):
         df = df.rename(columns=rename_dict)
 
         return dcc.send_data_frame(df.to_csv, "crude_comparison_export.csv", index=False)
-
-    @app.callback(
-        Output("crude-comparison-export-dropdown", "value"),
-        Input("download-crude-comparison-csv", "data"),
-        prevent_initial_call=True
-    )
-    def reset_export_dropdown(data):
-        return None
     
 def create_crude_comparison_dashboard(dash_app, server, url_base_pathname="/dash/crude-comparison"):
     """Create the Crude Overview dashboard"""
