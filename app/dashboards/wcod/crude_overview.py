@@ -1515,11 +1515,7 @@ def create_layout(server=None):
         ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'position': 'relative', 'width': '100%'}),
         dcc.Download(id="download-map-csv"),
         html.Hr(),
-        html.H4(
-            id="production-breakdown-title",
-            children="",
-            style={"display": "none"}
-        ),
+
         html.Div([
             html.Div([
                 dcc.Loading(
@@ -1593,6 +1589,33 @@ def create_layout(server=None):
         ], className='row'),
         html.Br(),
         html.Div([
+            html.Div([
+                html.H4(
+                    id="production-breakdown-title",
+                    children="",
+                    style={"color": "#d35400", "textAlign": "center", "marginTop": "10px", "marginBottom": "0px", "flexGrow": 1}
+                ),
+                html.Div([
+                    html.Button(
+                        'Export Data',
+                        id='btn-export-chart-csv',
+                        n_clicks=0,
+                        style={
+                            'backgroundColor': 'white',
+                            'color': '#2c3e50',
+                            'border': '1px solid #dee2e6',
+                            'padding': '4px 10px',
+                            'borderRadius': '4px',
+                            'cursor': 'pointer',
+                            'fontSize': '12px',
+                            'margin': '0',
+                            'display': 'inline-block'
+                        }
+                    ),
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'position': 'absolute', 'right': '15px', 'top': '10px'})
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'position': 'relative', 'width': '100%', 'marginBottom': '10px'}),
+            dcc.Download(id="download-chart-csv"),
+
             html.Div(
                 dcc.Loading(
                     id="loading-chart",
@@ -1661,11 +1684,32 @@ def create_layout(server=None):
             ], className='col-md-2', style={'padding': '15px'})
         ], className='row'),
         html.Br(),
-        html.H4(
-            id="table-title",
-            children="Global Crude Production Breakdown",
-            style={"color":"#d35400","textAlign":"center"}
-        ),
+        html.Div([
+            html.H4(
+                id="table-title",
+                children="Global Crude Production Breakdown",
+                style={"color":"#d35400","textAlign":"center", "marginTop":"10px", "marginBottom": "0px", "flexGrow": 1}
+            ),
+            html.Div([
+                html.Button(
+                    'Export Data',
+                    id='btn-export-table-csv',
+                    n_clicks=0,
+                    style={
+                        'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6',
+                        'padding': '4px 10px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'fontSize': '12px',
+                        'margin': '0',
+                        'display': 'inline-block'
+                    }
+                ),
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'position': 'absolute', 'right': '15px', 'top': '10px'})
+        ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'position': 'relative', 'width': '100%'}),
+        dcc.Download(id="download-table-csv"),
         html.Div([
             html.Div([
                 dcc.Loading(
@@ -4182,6 +4226,111 @@ def register_callbacks(dash_app, server):
             traceback.print_exc()
             return no_update
 
+    # ----------------------------------------------------------------------
+    # Export Callbacks for Chart and Table
+    # ----------------------------------------------------------------------
+    @dash_app.callback(
+        Output("download-chart-csv", "data"),
+        Input("btn-export-chart-csv", "n_clicks"),
+        [State("crude-country-dropdown", "value"),
+         State("production-year-dropdown", "value"),
+         State("profiled-streams", "value"),
+         State("crude-main-tabs", "value")],
+        prevent_initial_call=True
+    )
+    def export_chart_data(n_clicks, country, production_years, profiled, tab):
+        print(f"DEBUG EXPORT CHART: Triggered. n_clicks={n_clicks}, tab={tab}")
+        if n_clicks is None or n_clicks <= 0:
+            return no_update
+            
+        try:
+            _ensure_data_loaded()
+            print("DEBUG EXPORT CHART: Data loaded.")
+            
+            country = _resolve_countries_selection(country)
+            print(f"DEBUG EXPORT CHART: Resolved country={country}")
+            
+            if tab is None:
+                tab = "yearly"
+                
+            df_export = pd.DataFrame()
+            filename = "crude_production_breakdown.csv"
+            
+            if tab == "yearly":
+                df = BAR_LONG_YEARLY.copy()
+                print(f"DEBUG EXPORT CHART: Yearly mode. BAR_LONG_YEARLY empty? {df.empty}")
+                if not df.empty:
+                    # Filter by country
+                    if country:
+                        df = df[df["Country"].isin(country)]
+                    
+                    # Filter by Profiled Streams 
+                    if profiled and len(profiled) > 0:
+                        df = df[df["Stream"].isin(profiled)]
+                    
+                    df_export = df
+                    filename = "crude_production_breakdown_yearly.csv"
+            else:
+                # Monthly
+                df = BAR_LONG_MONTHLY.copy()
+                print(f"DEBUG EXPORT CHART: Monthly mode. BAR_LONG_MONTHLY empty? {df.empty}, production_years={production_years}")
+                if not df.empty:
+                    # Filter by country
+                    if country:
+                        df = df[df["Country"].isin(country)]
+                    
+                    # Filter by Year (production-year-dropdown)
+                    selected_years = _resolve_years_selection(production_years)
+                    print(f"DEBUG EXPORT CHART: Selected years={selected_years}")
+                    if not selected_years:
+                        if PRODUCTION_YEARS:
+                             selected_years = [int(PRODUCTION_YEARS[-1])]
+                        else:
+                             selected_years = [2024]
+                    
+                    if "year" in df.columns:
+                        df = df[df["year"].astype(int).isin(selected_years)]
+                    
+                    df_export = df
+                    filename = "crude_production_breakdown_monthly.csv"
+            
+            print(f"DEBUG EXPORT CHART: Exporting {len(df_export)} rows to {filename}")
+            if df_export.empty:
+                print("DEBUG EXPORT CHART: No data to export")
+                return no_update
+                
+            return dcc.send_data_frame(df_export.to_csv, filename, index=False)
+
+        except Exception as e:
+            print(f"Error exporting chart data: {e}")
+            import traceback
+            traceback.print_exc()
+            return no_update
+
+    @dash_app.callback(
+        Output("download-table-csv", "data"),
+        Input("btn-export-table-csv", "n_clicks"),
+        State("crude-table", "data"),
+        prevent_initial_call=True
+    )
+    def export_table_data(n_clicks, table_data):
+        print(f"DEBUG EXPORT TABLE: Triggered. n_clicks={n_clicks}")
+        if n_clicks is None or n_clicks <= 0:
+            return no_update
+        
+        if not table_data:
+             print("DEBUG EXPORT TABLE: No table data available")
+             return no_update
+
+        print(f"DEBUG EXPORT TABLE: Found {len(table_data)} rows.")
+        try:
+            df = pd.DataFrame(table_data)
+            return dcc.send_data_frame(df.to_csv, "global_crude_production_breakdown.csv", index=False)
+        except Exception as e:
+            print(f"Error exporting table data: {e}")
+            import traceback
+            traceback.print_exc()
+            return no_update
 
 # DASH APP CREATION
 # ------------------------------------------------------------------------------
