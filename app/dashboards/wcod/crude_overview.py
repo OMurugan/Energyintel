@@ -287,8 +287,8 @@ def load_monthly_map_from_db(raw_export=False):
             q.longitude,
             p.value,
             p.country_id
-        FROM dev.t_wcod_monthly_stream_production p
-        LEFT JOIN dev.dim_country q
+        FROM t_wcod_monthly_stream_production p
+        LEFT JOIN dim_country q
             ON q.dim_country_id = p.country_id
         WHERE q.latitude is NOT NULL
         ORDER BY
@@ -347,8 +347,8 @@ def load_yearly_map_from_db(raw_export=False):
                 p.country_id,
                 q.latitude,
                 q.longitude
-            FROM dev.t_wcod_monthly_stream_production p
-            LEFT JOIN dev.dim_country q
+            FROM t_wcod_monthly_stream_production p
+            LEFT JOIN dim_country q
                 ON q.dim_country_id = p.country_id
             WHERE q.latitude is NOT NULL
             ORDER BY p.country, TO_CHAR(p.date, 'YYYY-MM'), p.value DESC
