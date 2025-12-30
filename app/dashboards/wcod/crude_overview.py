@@ -1744,7 +1744,7 @@ def create_layout(server=None):
                                 "whiteSpace": "normal",
                                 "color": "#1f3b6f",
                                 "minWidth": "90px",
-                                # "textAlign": "right"
+                                "textAlign": "right"
                             },
 
                             style_cell_conditional=[
@@ -1753,10 +1753,12 @@ def create_layout(server=None):
                                     "textAlign": "left"
                                 },
                                 {
-                                    "if": {"column_type": "numeric"},
-                                    "textAlign": "right"
+                                    "if": {"column_id": "Crude"},
+                                    "textAlign": "left"
                                 }
                             ],
+                            
+
 
                             style_header={
                                 "textAlign": "center",
@@ -1788,19 +1790,13 @@ def create_layout(server=None):
                                     "if": {"row_index": "even"},
                                       "backgroundColor": "white"  # White for even rows
                                   },
-                                # Left align all data cells
-                                {
-                                    "if": {"column_type": "text"},
-                                    "textAlign": "right"
-                                },
-                                {
-                                    "if": {"column_type": "numeric"},
-                                    "textAlign": "right"
-                                },
+
+                                # Remove conflicting text alignment rules
+
                                 # Keep link styling
                                 *TABLE_LINK_STYLE
                             ],
-                            css=TABLE_LINK_CSS,
+                            css=[{"selector": "p", "rule": "text-align: inherit; margin: 0; padding: 0;"}] + TABLE_LINK_CSS,
                             merge_duplicate_headers=True
                         )
                     ],
@@ -2628,6 +2624,13 @@ def register_callbacks(dash_app, server):
             traceback.print_exc()
             agg = pd.DataFrame(columns=["Country", "value"])
         
+        # Add year/period for tooltip
+        if not agg.empty:
+            if tab == "yearly":
+                agg["Year"] = str(selected_year)
+            else:
+                agg["Year"] = str(selected_year_month)
+        
         if agg.empty:
             fig = go.Figure()
             fig.add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
@@ -2656,11 +2659,19 @@ def register_callbacks(dash_app, server):
                 color="value",
                 color_continuous_scale="Blues",
                 labels={"value": "Production ('000 b/d)"},
-                hover_data={"Country": True, "value": ":,.0f"},
+                custom_data=["Country", "Year"],
                 range_color=[0, color_max],
                 mapbox_style="open-street-map",
                 center={"lat": 20, "lon": 0},
                 zoom=1
+            )
+            fig.update_traces(
+                hovertemplate=(
+                    "<span style='color: #7f7f7f;'>Country:</span> <span style='font-weight: bold; color: #000;'>%{customdata[0]}</span><br>"
+                    "<span style='color: #7f7f7f;'>Production Volume:</span> <span style='font-weight: bold; color: #000;'>%{z:,.0f} ('000 b/d)</span><br>"
+                    "<span style='color: #7f7f7f;'>Year:</span> <span style='font-weight: bold; color: #000;'>%{customdata[1]}</span>"
+                    "<extra></extra>"
+                )
             )
             fig.update_layout(
                 margin=dict(l=10, r=10, t=10, b=80),
@@ -2686,7 +2697,13 @@ def register_callbacks(dash_app, server):
                     ticks="outside"
                 ),
                 template="plotly_white",
-                autosize=True
+                autosize=True,
+                hoverlabel=dict(
+                    bgcolor="white",
+                    bordercolor="#ccc",
+                    font=dict(family="Arial", size=13, color="black"),
+                    align="left"
+                )
             )
         else:
             fig = px.choropleth(
@@ -2697,8 +2714,16 @@ def register_callbacks(dash_app, server):
                 projection="natural earth", 
                 color_continuous_scale="Blues",
                 labels={"value":"Production ('000 b/d)"},
-                hover_data={"Country": True, "value": ":,.0f"},
+                custom_data=["Country", "Year"],
                 range_color=[0, color_max]
+            )
+            fig.update_traces(
+                hovertemplate=(
+                    "<span style='color: #7f7f7f;'>Country:</span> <span style='font-weight: bold; color: #000;'>%{customdata[0]}</span><br>"
+                    "<span style='color: #7f7f7f;'>Production Volume:</span> <span style='font-weight: bold; color: #000;'>%{z:,.0f} ('000 b/d)</span><br>"
+                    "<span style='color: #7f7f7f;'>Year:</span> <span style='font-weight: bold; color: #000;'>%{customdata[1]}</span>"
+                    "<extra></extra>"
+                )
             )
             fig.update_layout(
                 margin=dict(l=10,r=10,t=10,b=80),
@@ -2746,7 +2771,13 @@ def register_callbacks(dash_app, server):
                     ticks="outside"
                 ),
                 template="plotly_white",
-                autosize=True
+                autosize=True,
+                hoverlabel=dict(
+                    bgcolor="white",
+                    bordercolor="#ccc",
+                    font=dict(family="Arial", size=13, color="black"),
+                    align="left"
+                )
             )
         fig.update_geos(
             resolution=50,
