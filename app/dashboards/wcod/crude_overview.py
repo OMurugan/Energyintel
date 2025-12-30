@@ -2399,8 +2399,13 @@ def register_callbacks(dash_app, server):
     def update_profiled_streams_from_buttons(button_clicks, button_ids, current_selected):
         """Update profiled-streams selection when stream buttons are clicked - toggle behavior"""
         from dash import ctx
-        
         if not ctx.triggered:
+            return no_update
+            
+        # CRITICAL: Ensure this only runs if a button was actually clicked.
+        # Pattern-matching callbacks can trigger when buttons are added to the layout (Input ALL).
+        # We check if any of the buttons have n_clicks > 0.
+        if not any(click and click > 0 for click in (button_clicks or []) if click is not None):
             return no_update
         
         # Find which button was clicked using ctx.triggered
@@ -3982,16 +3987,9 @@ def register_callbacks(dash_app, server):
                 print(f"DEBUG TABLE: profiled_streams is empty - default mode, showing ALL crude oils from database (df has {len(df)} rows)")
             elif available_streams_from_options and len(profiled_streams) == len(available_streams_from_options):
                 # All available streams are selected (default mode): don't filter
-                # Compare sets to ensure they match exactly
-                profiled_set = set(profiled_streams)
-                available_set = set(available_streams_from_options)
-                if profiled_set == available_set:
-                    should_filter = False
-                    print(f"DEBUG TABLE: All streams selected (default mode) - {len(profiled_streams)} streams match {len(available_streams_from_options)} available, showing ALL crude oils from database (df has {len(df)} rows)")
-                else:
-                    # Counts match but sets don't - this is unusual, but treat as default mode
-                    should_filter = False
-                    print(f"DEBUG TABLE: Stream count matches but sets differ - default mode, showing ALL crude oils from database (df has {len(df)} rows)")
+                should_filter = False
+                print(f"DEBUG TABLE: All streams selected (default mode) - showing ALL crude oils")
+
             elif len(profiled_streams) == 1:
                 # Exactly one stream selected: check if options are initialized
                 if not available_streams_from_options or len(available_streams_from_options) <= 1:
