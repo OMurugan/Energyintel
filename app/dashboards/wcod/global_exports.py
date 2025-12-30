@@ -1554,8 +1554,12 @@ def create_layout():
                 style={"padding": "10px"},
             ),
             html.P(
-                "Source: Energy Intelligence (Global Crude Exports dashboard).",
-                style={"fontSize": "11px", "color": "#6c757d", "marginTop": "15px"},
+                "Source: Energy Intelligence.",
+                style={"fontSize": "13px", "color": "#6c757d", "marginTop": "15px", "fontStyle": "italic", "fontWeight": "normal"},
+            ),
+            html.P(
+                "Countries: Select jurisdictions are included under countries for data presentation purposes.",
+                style={"fontSize": "11px", "color": "#6c757d", "marginTop": "5px", "fontStyle": "italic"},
             ),
         ],
         className="tab-content",
