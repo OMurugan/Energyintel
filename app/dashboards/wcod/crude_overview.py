@@ -36,6 +36,12 @@ MONTHLY_GRADES_CSV = os.path.join(DATA_DIR, 'Monthly List of grades for selected
 COUNTRIES_GEOJSON = None
 
 # Helpers
+COUNTRY_NAME_MAPPING = {
+    "United States": "United States of America",
+    "Abu Dhabi": "United Arab Emirates",
+    "Dubai": "United Arab Emirates",
+    "Congo (Brazzaville)": "Republic of the Congo",
+}
 def _resolve_countries_selection(selected):
     """Normalize country selection; expand '(All)' to full list."""
     if selected is None:
@@ -319,7 +325,11 @@ def load_monthly_map_from_db(raw_export=False):
         df["month"] = pd.to_numeric(df["month_year"].astype(str).str.split("-").str[1], errors="coerce")
         df["value"] = pd.to_numeric(df["value"], errors="coerce")
         df = df.rename(columns={"country": "Country"})
-        df_long = df[["Country", "year", "month", "value"]].copy()
+        
+        # Add GeoCountry for map matching while keeping Country for labels
+        df["GeoCountry"] = df["Country"].apply(lambda x: COUNTRY_NAME_MAPPING.get(x, x))
+        
+        df_long = df[["Country", "GeoCountry", "year", "month", "value"]].copy()
         df_long["year"] = df_long["year"].astype(str)
         df_long = df_long.dropna(subset=["Country", "year", "month", "value"])
         df_long["month"] = df_long["month"].astype(int)
@@ -389,9 +399,12 @@ def load_yearly_map_from_db(raw_export=False):
             print(f"DEBUG: Yearly map DB result missing required columns. Columns: {df.columns.tolist()}")
             return pd.DataFrame()
         df = df.rename(columns={"country": "Country"})
+        # Add GeoCountry for map matching while keeping Country for labels
+        df["GeoCountry"] = df["Country"].apply(lambda x: COUNTRY_NAME_MAPPING.get(x, x))
+        
         df["year"] = df["year"].astype(str)
         df["value"] = pd.to_numeric(df["value"], errors="coerce")
-        df_long = df[["Country", "year", "value"]].copy()
+        df_long = df[["Country", "GeoCountry", "year", "value"]].copy()
         df_long = df_long.dropna(subset=["Country", "year", "value"])
         df_long = df_long[df_long["value"] > 0].copy()
         print(f"DEBUG: Loaded {len(df_long)} yearly map records from DB")
@@ -2686,11 +2699,14 @@ def register_callbacks(dash_app, server):
                 if not MAP_YEARLY_LONG.empty and "year" in MAP_YEARLY_LONG.columns:
                     agg = MAP_YEARLY_LONG[MAP_YEARLY_LONG["year"] == str(selected_year)].copy()
                     if len(agg) > 0:
-                        agg = agg.groupby("Country")["value"].sum().reset_index()
+                        agg = agg.groupby("GeoCountry").agg({
+                            "value": "sum",
+                            "Country": lambda x: x.iloc[0] if len(x.unique()) == 1 else COUNTRY_NAME_MAPPING.get(x.iloc[0], x.iloc[0])
+                        }).reset_index()
                     else:
-                        agg = pd.DataFrame(columns=["Country", "value"])
+                        agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
                 else:
-                    agg = pd.DataFrame(columns=["Country", "value"])
+                    agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
             else:
                 # Monthly view - Map uses Year Month dropdown
                 print(f"DEBUG MAP MONTHLY: selected_year_month={selected_year_month}, tab={tab}, MAP_MONTHLY_LONG empty={MAP_MONTHLY_LONG.empty}")
@@ -2723,22 +2739,29 @@ def register_callbacks(dash_app, server):
                                     agg = df_monthly.copy()
                                     print(f"DEBUG MAP MONTHLY: Using default max_year={max_year}, max_month={max_month}, agg length={len(agg)}")
                                 else:
-                                    agg = pd.DataFrame(columns=["Country", "value"])
+                                    agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
                             else:
-                                agg = pd.DataFrame(columns=["Country", "value"])
+                                agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
                         
                         if len(agg) > 0:
-                            agg = agg.groupby("Country")["value"].sum().reset_index()
+                            # Group by GeoCountry to merge Abu Dhabi/Dubai and handle renames (USA)
+                            # Use 'first' for Country to preserve original label where possible
+                            # but if it was a merge (UAE), the GeoCountry name might be better.
+                            # For simplicity, we'll keep the first one or just use GeoCountry for the tooltip.
+                            agg = agg.groupby("GeoCountry").agg({
+                                "value": "sum",
+                                "Country": lambda x: x.iloc[0] if len(x.unique()) == 1 else COUNTRY_NAME_MAPPING.get(x.iloc[0], x.iloc[0])
+                            }).reset_index()
                             print(f"DEBUG MAP MONTHLY: After groupby, agg length={len(agg)}")
-                            print(f"DEBUG MAP MONTHLY: Sample countries: {agg['Country'].head().tolist() if len(agg) > 0 else []}")
+                            print(f"DEBUG MAP MONTHLY: Sample mapping: {agg[['Country', 'GeoCountry']].head().values.tolist()}")
                         else:
-                            agg = pd.DataFrame(columns=["Country", "value"])
+                            agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
                     else:
                         print(f"DEBUG MAP MONTHLY: Missing required columns. Available: {MAP_MONTHLY_LONG.columns.tolist()}")
-                        agg = pd.DataFrame(columns=["Country", "value"])
+                        agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
                 else:
                     print(f"DEBUG MAP MONTHLY: MAP_MONTHLY_LONG is empty")
-                    agg = pd.DataFrame(columns=["Country", "value"])
+                    agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
         except Exception as e:
             print(f"Error in update_map: {e}")
             import traceback
@@ -2775,7 +2798,7 @@ def register_callbacks(dash_app, server):
             fig = px.choropleth_mapbox(
                 agg,
                 geojson=geojson,
-                locations="Country",
+                locations="GeoCountry",
                 featureidkey="properties.name",
                 color="value",
                 color_continuous_scale="Blues",
@@ -2834,7 +2857,7 @@ def register_callbacks(dash_app, server):
         else:
             fig = px.choropleth(
                 agg, 
-                locations="Country", 
+                locations="GeoCountry", 
                 locationmode="country names", 
                 color="value",
                 projection="natural earth", 
