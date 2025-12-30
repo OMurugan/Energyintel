@@ -287,8 +287,8 @@ def load_monthly_map_from_db(raw_export=False):
             q.longitude,
             p.value,
             p.country_id
-        FROM dev.t_wcod_monthly_stream_production p
-        LEFT JOIN dev.dim_country q
+        FROM t_wcod_monthly_stream_production p
+        LEFT JOIN dim_country q
             ON q.dim_country_id = p.country_id
         WHERE q.latitude is NOT NULL
         ORDER BY
@@ -347,8 +347,8 @@ def load_yearly_map_from_db(raw_export=False):
                 p.country_id,
                 q.latitude,
                 q.longitude
-            FROM dev.t_wcod_monthly_stream_production p
-            LEFT JOIN dev.dim_country q
+            FROM t_wcod_monthly_stream_production p
+            LEFT JOIN dim_country q
                 ON q.dim_country_id = p.country_id
             WHERE q.latitude is NOT NULL
             ORDER BY p.country, TO_CHAR(p.date, 'YYYY-MM'), p.value DESC
@@ -1263,6 +1263,8 @@ def _collect_filter_values(column_name):
 CI_OPTIONS = []
 API_OPTIONS = []
 SULFUR_OPTIONS = []
+
+CI_FILTER_CHOICES = ["-", "High", "Low", "Medium", "Very High", "Very Low"]
 API_FILTER_CHOICES = ["-", "Heavy", "Light", "Medium"]
 SULFUR_FILTER_CHOICES = ["-", "Sour", "Sweet"]
 
@@ -1276,11 +1278,15 @@ def classify_api_value(value):
         api_value = float(value_str)
     except ValueError:
         return "-"
-    if api_value < 22.3:
-        return "Heavy"
-    if api_value <= 31.1:
+    
+    if api_value == 0:
+        return "-"
+    if api_value > 31.1:
+        return "Light"
+    if api_value > 22.3:
         return "Medium"
-    return "Light"
+    # Grouping <10 (Extra Heavy) into Heavy as per latest user request
+    return "Heavy"
 
 def classify_sulfur_value(value):
     if value is None:
@@ -1292,6 +1298,8 @@ def classify_sulfur_value(value):
         sulfur_value = float(value_str)
     except ValueError:
         return "-"
+    
+    # User rule: < 0.5% = Sweet, > 0.5% = Sour. Using >= for Sour boundary.
     return "Sour" if sulfur_value >= 0.5 else "Sweet"
 
 # Initialize to empty - will be populated when data loads
@@ -1823,27 +1831,34 @@ def register_callbacks(dash_app, server):
     )
     def toggle_monthly_filters(tab):
         """Show filters only for monthly tab by dynamically updating children"""
+        print(f"DEBUG: toggle_monthly_filters called for tab: {tab}")
         if tab == "monthly":
             _ensure_data_loaded()
+            choices = {
+                "CI Rank": CI_FILTER_CHOICES,
+                "API": API_FILTER_CHOICES,
+                "Sulfur": SULFUR_FILTER_CHOICES
+            }
+            print(f"DEBUG: Returning categorical dropdowns. API choices: {API_FILTER_CHOICES}")
             return [
                 html.Label("CI Rank"),
                 dcc.Dropdown(
                     id="filter-ci", 
-                    options=([{"label":"(All)", "value":"(All)"}] + [{"label":v, "value":v} for v in CI_OPTIONS]) if CI_OPTIONS else [{"label":"(All)", "value":"(All)"}],
+                    options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in CI_FILTER_CHOICES],
                     multi=True
                 ),
                 html.Br(),
                 html.Label("API"),
                 dcc.Dropdown(
                     id="filter-api", 
-                    options=([{"label":"(All)", "value":"(All)"}] + [{"label":v, "value":v} for v in API_OPTIONS]) if API_OPTIONS else [{"label":"(All)", "value":"(All)"}],
+                    options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in API_FILTER_CHOICES],
                     multi=True
                 ),
                 html.Br(),
                 html.Label("Sulfur"),
                 dcc.Dropdown(
                     id="filter-sulfur", 
-                    options=([{"label":"(All)", "value":"(All)"}] + [{"label":v, "value":v} for v in SULFUR_OPTIONS]) if SULFUR_OPTIONS else [{"label":"(All)", "value":"(All)"}],
+                    options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in SULFUR_FILTER_CHOICES],
                     multi=True
                 ),
             ]
@@ -4037,7 +4052,7 @@ def register_callbacks(dash_app, server):
         def sanitize(values):
             if not values:
                 return []
-            return [v for v in values if v and v != "(All)"]
+            return [v for v in values if v and v not in ("(All)", "ALL")]
         
         ci = sanitize(ci)
         api = sanitize(api)
