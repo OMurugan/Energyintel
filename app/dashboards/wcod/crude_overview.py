@@ -273,7 +273,7 @@ def _load_countries_geojson():
     return COUNTRIES_GEOJSON
 
 
-def load_monthly_map_from_db():
+def load_monthly_map_from_db(raw_export=False):
     """
     Load monthly map data from the database instead of CSV.
     Expected columns from query:
@@ -283,10 +283,18 @@ def load_monthly_map_from_db():
         SELECT DISTINCT ON (p.country, TO_CHAR(p.date, 'YYYY-MM'))
             p.country,
             TO_CHAR(p.date, 'YYYY-MM') AS month_year,
+            q.latitude,
+            q.longitude,
             p.value,
             p.country_id
-        FROM t_wcod_monthly_stream_production p
-        ORDER BY p.country, TO_CHAR(p.date, 'YYYY-MM'), p.value DESC;
+        FROM dev.t_wcod_monthly_stream_production p
+        LEFT JOIN dev.dim_country q
+            ON q.dim_country_id = p.country_id
+        WHERE q.latitude is NOT NULL
+        ORDER BY
+            p.country,
+            TO_CHAR(p.date, 'YYYY-MM'),
+            p.value DESC;
     """
     try:
         rows = execute_query(query)
@@ -298,6 +306,11 @@ def load_monthly_map_from_db():
             print("DEBUG: Monthly map DataFrame is empty after conversion")
             return pd.DataFrame()
         df.columns = df.columns.str.strip()
+        
+        if raw_export:
+            print(f"DEBUG: Returning raw monthly map data with {len(df)} rows")
+            return df
+            
         required_cols = {"country", "month_year", "value"}
         if not required_cols.issubset(set(df.columns)):
             print(f"DEBUG: Monthly map DB result missing required columns. Columns: {df.columns.tolist()}")
@@ -320,7 +333,7 @@ def load_monthly_map_from_db():
         return pd.DataFrame()
 
 
-def load_yearly_map_from_db():
+def load_yearly_map_from_db(raw_export=False):
     """
     Load yearly map data from the database, averaging monthly values per year.
     """
@@ -331,17 +344,30 @@ def load_yearly_map_from_db():
                 TO_CHAR(p.date, 'YYYY-MM') AS month_year,
                 TO_CHAR(p.date, 'YYYY') AS year,
                 p.value,
-                p.country_id
-            FROM t_wcod_monthly_stream_production p
+                p.country_id,
+                q.latitude,
+                q.longitude
+            FROM dev.t_wcod_monthly_stream_production p
+            LEFT JOIN dev.dim_country q
+                ON q.dim_country_id = p.country_id
+            WHERE q.latitude is NOT NULL
             ORDER BY p.country, TO_CHAR(p.date, 'YYYY-MM'), p.value DESC
         )
         SELECT
             country,
             year,
             AVG(value) AS value,
-            country_id
+            country_id,
+            latitude,
+            longitude
         FROM monthly_distinct
-        GROUP BY country, year, country_id
+        GROUP BY
+            country,
+            year,
+            country_id,
+            latitude,
+            longitude
+        ORDER BY year;
     """
     try:
         rows = execute_query(query)
@@ -353,6 +379,11 @@ def load_yearly_map_from_db():
             print("DEBUG: Yearly map DataFrame is empty after conversion")
             return pd.DataFrame()
         df.columns = df.columns.str.strip()
+        
+        if raw_export:
+            print(f"DEBUG: Returning raw yearly map data with {len(df)} rows")
+            return df
+            
         required_cols = {"country", "year", "value"}
         if not required_cols.issubset(set(df.columns)):
             print(f"DEBUG: Yearly map DB result missing required columns. Columns: {df.columns.tolist()}")
@@ -1458,10 +1489,31 @@ def create_layout(server=None):
             style={"marginBottom": "20px", "display": "flex", "justifyContent": "center"}
         ),
         html.Br(),
-        html.H4(
-            "World Crude Production*", 
-            style={"color":"#d35400","textAlign":"center", "marginTop":"10px"}
-        ),
+        html.Div([
+            html.H4(
+                "World Crude Production*", 
+                style={"color":"#d35400", "textAlign":"center", "marginTop":"10px", "marginBottom": "0px", "flexGrow": 1}
+            ),
+            html.Div([
+                html.Button(
+                    'Export Data',
+                    id='btn-export-map-csv',
+                    n_clicks=0,
+                    style={
+                        'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6',
+                        'padding': '4px 10px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'fontSize': '12px',
+                        'margin': '0',
+                        'display': 'inline-block'
+                    }
+                ),
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'position': 'absolute', 'right': '15px', 'top': '10px'})
+        ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'position': 'relative', 'width': '100%'}),
+        dcc.Download(id="download-map-csv"),
         html.Hr(),
         html.H4(
             id="production-breakdown-title",
@@ -1623,7 +1675,12 @@ def create_layout(server=None):
                     children=[
                         dash_table.DataTable(
                             id="crude-table",
-                            columns=[{"name":str(c),"id":str(c)} for c in TABLE_DF_YEARLY.columns.tolist()] if not TABLE_DF_YEARLY.empty else [],
+                            columns=[
+                                {"name": str(c), "id": str(c), "type": "numeric"}
+                                if c != "CrudeOil" else
+                                {"name": "CrudeOil", "id": "CrudeOil", "type": "text"}
+                                for c in TABLE_DF_YEARLY.columns.tolist()
+                            ] if not TABLE_DF_YEARLY.empty else [],
                             data=TABLE_DF_YEARLY.to_dict("records") if not TABLE_DF_YEARLY.empty else [],
                             page_action='none',
                             markdown_options={"link_target": "_blank"},
@@ -1643,13 +1700,17 @@ def create_layout(server=None):
                                 "whiteSpace": "normal",
                                 "color": "#1f3b6f",
                                 "minWidth": "90px",
-                                "textAlign": "right"
+                                # "textAlign": "right"
                             },
 
                             style_cell_conditional=[
                                 {
                                     "if": {"column_id": "CrudeOil"},
                                     "textAlign": "left"
+                                },
+                                {
+                                    "if": {"column_type": "numeric"},
+                                    "textAlign": "right"
                                 }
                             ],
 
@@ -4083,7 +4144,45 @@ def register_callbacks(dash_app, server):
             return table_data, columns
 
 
-# ------------------------------------------------------------------------------
+
+    @callback(
+        Output("download-map-csv", "data"),
+        Input("btn-export-map-csv", "n_clicks"),
+        State("crude-main-tabs", "value"),
+        prevent_initial_call=True
+    )
+    def export_map_data_to_csv(n_clicks, tab):
+        if n_clicks is None or n_clicks <= 0:
+            return no_update
+            
+        try:
+            # Default to yearly map if tab is None
+            if tab is None:
+                tab = "yearly"
+                
+            if tab == "yearly":
+                print("DEBUG: Exporting YEARLY map data (raw_export=True)")
+                df = load_yearly_map_from_db(raw_export=True)
+                filename = "world_crude_production_yearly.csv"
+            else:
+                # monthly
+                print("DEBUG: Exporting MONTHLY map data (raw_export=True)")
+                df = load_monthly_map_from_db(raw_export=True)
+                filename = "world_crude_production_monthly.csv"
+            
+            if df.empty:
+                print("DEBUG: No data to export for map")
+                return no_update
+                
+            return dcc.send_data_frame(df.to_csv, filename, index=False)
+            
+        except Exception as e:
+            print(f"Error exporting map data: {e}")
+            import traceback
+            traceback.print_exc()
+            return no_update
+
+
 # DASH APP CREATION
 # ------------------------------------------------------------------------------
 def create_crude_overview_dashboard(dash_app, server, url_base_pathname="/dash/crude-overview/"):
