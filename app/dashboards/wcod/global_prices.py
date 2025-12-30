@@ -297,36 +297,43 @@ def create_layout():
         dcc.Store(id='global-prices-year-collapse-store', data={'is_collapsed': False}),
         
         # Title
-        html.H2(
-            "Daily Crude Spot Prices ($/bbl)",
-            style={
-                'textAlign': 'center',
-                'marginBottom': '10px',
-                'marginTop': '0px',
-                'fontSize': '20px',
-                'fontWeight': 'bold',
-                'color': '#fe5000',
-                'fontFamily': 'Arial, sans-serif'
-            }
-        ),
+        html.Div([
+            html.Div(style={'flexGrow': 1}), # Left spacer
+            # Title
+            html.H2(
+                "Daily Crude Spot Prices ($/bbl)",
+                style={
+                    'textAlign': 'center', # Center the title
+                    'marginTop': '0px',
+                    'fontSize': '20px',
+                    'fontWeight': 'bold',
+                    'color': '#fe5000',
+                    'fontFamily': 'Arial, sans-serif'
+                }
+            ),
+            # Export button and download component
+            html.Div([
+                html.Button(
+                    "Export Data Table to CSV",
+                    id='btn-export-global-prices-data-table-csv',
+                    n_clicks=0,
+                    style={
+                        'margin': '10px 0',
+                        'padding': '10px 20px',
+                        'fontSize': '14px',
+                        'fontWeight': 'bold',
+                        'color': '#1b365d',
+                        'backgroundColor': '#f8f9fa',
+                        'border': '1px solid #dee2e6',
+                        'borderRadius': '5px',
+                        'cursor': 'pointer'
+                    }
+                ),
+                dcc.Download(id="download-global-prices-data-table-csv"),
+            ], style={'textAlign': 'right', 'flexGrow': 1}) # Align the button to the right within its container
+        ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'paddingBottom': '20px'}),
         
         # Table
-        html.Div([
-            html.Button("Export Data Table to CSV", id="btn-export-global-prices-data-table-csv", n_clicks=0,
-                        style={
-                            'margin': '10px 0',
-                            'padding': '10px 20px',
-                            'fontSize': '14px',
-                            'fontWeight': 'bold',
-                            'color': '#1b365d',
-                            'backgroundColor': '#f8f9fa',
-                            'border': '1px solid #dee2e6',
-                            'borderRadius': '5px',
-                            'cursor': 'pointer',
-                            'float': 'right'
-                        }),
-            dcc.Download(id="download-global-prices-data-table-csv"),
-        ], style={'display': 'inline-block', 'width': '100%', 'textAlign': 'right'}),
         html.Div([
             dcc.Loading(
                 id="loading-global-prices-table",
