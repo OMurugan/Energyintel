@@ -3080,32 +3080,32 @@ def register_callbacks(dash_app, server=None):
     )
     def update_y_slider(y_prop):
         if not y_prop:
-            return 0, 100, [0, 100], 0.00, 0, 100
+            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
         
         # Load crossplot data
         try:
             df = load_crossplot_data()
         except Exception as e:
             print(f"Error loading crossplot data for y slider: {e}")
-            return 0, 100, [0, 100], 0.00, 0, 100
+            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
         
         if df.empty:
-            return 0, 100, [0, 100], 0.00, 0, 100
+            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
         
         # Filter for the selected property
         y_data = df[df['Property - Unit'] == y_prop].copy()
         if y_data.empty:
-            return 0, 100, [0, 100], 0.00, 0, 100
+            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
         
         y_data['Value'] = pd.to_numeric(y_data['Value'], errors="coerce")
         y_data = y_data.dropna(subset=['Value'])
         
         if len(y_data) == 0:
-            return 0, 100, [0, 100], 0.00, 0, 100
+            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
         
-        min_val = float(y_data['Value'].min())
-        max_val = float(y_data['Value'].max())
-        step = 0.1 if (max_val - min_val) > 10 else 0.00
+        min_val = 0.0
+        max_val = 5.98
+        step = 0.1 if (max_val - min_val) > 10 else 0.01
         
         return min_val, max_val, [min_val, max_val], step, min_val, max_val
 
@@ -3121,31 +3121,31 @@ def register_callbacks(dash_app, server=None):
     )
     def update_bubble_slider(bubble_prop):
         if not bubble_prop:
-            return 0, 100, [0, 100], 0.00, 0, 100
+            return 0, 5.98, [0, 5.98], 0, 5.98
         
         # Load crossplot data
         try:
             df = load_crossplot_data()
         except Exception as e:
             print(f"Error loading crossplot data for bubble slider: {e}")
-            return 0, 100, [0, 100], 0.00, 0, 100
+            return 0, 5.98, [0, 5.98], 0, 5.98
         
         if df.empty:
-            return 0, 100, [0, 100], 0.00, 0, 100
+            return 0, 5.98, [0, 5.98], 0, 5.98
         
         # Filter for the selected property
         size_data = df[df['Property - Unit'] == bubble_prop].copy()
         if size_data.empty:
-            return 0, 100, [0, 100], 0.00, 0, 100
+            return 0, 5.98, [0, 5.98], 0, 5.98
         
         size_data['Value'] = pd.to_numeric(size_data['Value'], errors="coerce").fillna(40)
         size_data = size_data.dropna(subset=['Value'])
         
         if len(size_data) == 0:
-            return 0, 100, [0, 100], 0, 100
+            return 0, 5.98, [0, 5.98], 0, 5.98
         
-        min_val = 0
-        max_val = int(size_data['Value'].max())
+        min_val = 0.0
+        max_val = 5.98
         
         return min_val, max_val, [min_val, max_val], min_val, max_val
 
