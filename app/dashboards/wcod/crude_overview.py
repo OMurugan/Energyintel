@@ -1074,7 +1074,12 @@ def load_table():
                 TO_CHAR(a.date, 'FMMonth') AS "Month of Date",
                 a.value as "Value"
             FROM t_wcod_monthly_stream_production a
-            LEFT JOIN fact_wcod_crude b  on a.crude_id = b.crude_id 
+            LEFT JOIN (
+                SELECT DISTINCT ON (crude_id) 
+                    crude_id, crude_name, ci_rank, api, sulfur_pct
+                FROM fact_wcod_crude
+                ORDER BY crude_id, yr DESC
+            ) b ON a.crude_id = b.crude_id 
         """
         monthly_rows = execute_query(monthly_query)
         if monthly_rows:
@@ -1762,6 +1767,14 @@ def create_layout(server=None):
                                 },
                                 {
                                     "if": {"column_id": "Crude"},
+                                    "textAlign": "left"
+                                },
+                                {
+                                    "if": {"column_id": "CI Rank"},
+                                    "textAlign": "left"
+                                },
+                                {
+                                    "if": {"column_id": "API"},
                                     "textAlign": "left"
                                 }
                             ],
