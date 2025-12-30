@@ -2671,6 +2671,11 @@ def register_callbacks(dash_app, server):
                     "<span style='color: #7f7f7f;'>Production Volume:</span> <span style='font-weight: bold; color: #000;'>%{z:,.0f} ('000 b/d)</span><br>"
                     "<span style='color: #7f7f7f;'>Year:</span> <span style='font-weight: bold; color: #000;'>%{customdata[1]}</span>"
                     "<extra></extra>"
+                ) if tab == "yearly" else (
+                    "<span style='color: #7f7f7f;'>Date:</span> <span style='font-weight: bold; color: #000;'>%{customdata[1]}</span><br>"
+                    "<span style='color: #7f7f7f;'>Country:</span> <span style='font-weight: bold; color: #000;'>%{customdata[0]}</span><br>"
+                    "<span style='color: #7f7f7f;'>Production Volume:</span> <span style='font-weight: bold; color: #000;'>%{z:,.0f} ('000 b/d)</span>"
+                    "<extra></extra>"
                 )
             )
             fig.update_layout(
@@ -2722,6 +2727,11 @@ def register_callbacks(dash_app, server):
                     "<span style='color: #7f7f7f;'>Country:</span> <span style='font-weight: bold; color: #000;'>%{customdata[0]}</span><br>"
                     "<span style='color: #7f7f7f;'>Production Volume:</span> <span style='font-weight: bold; color: #000;'>%{z:,.0f} ('000 b/d)</span><br>"
                     "<span style='color: #7f7f7f;'>Year:</span> <span style='font-weight: bold; color: #000;'>%{customdata[1]}</span>"
+                    "<extra></extra>"
+                ) if tab == "yearly" else (
+                    "<span style='color: #7f7f7f;'>Date:</span> <span style='font-weight: bold; color: #000;'>%{customdata[1]}</span><br>"
+                    "<span style='color: #7f7f7f;'>Country:</span> <span style='font-weight: bold; color: #000;'>%{customdata[0]}</span><br>"
+                    "<span style='color: #7f7f7f;'>Production Volume:</span> <span style='font-weight: bold; color: #000;'>%{z:,.0f} ('000 b/d)</span>"
                     "<extra></extra>"
                 )
             )
