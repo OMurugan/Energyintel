@@ -1807,6 +1807,25 @@ def create_layout(server=None):
                 html.Label("Stream Name"),
                 dcc.Input(id="filter-stream", type="text", placeholder="Stream Name"),
                 html.Br(), html.Br(),
+                html.Div([], id="monthly-only-filters-container")
+            ], className='col-md-2', style={'padding': '15px'})
+
+        ], className='row')
+    ], style={'padding': '20px', 'background': '#f8f9fa'})
+
+
+def register_callbacks(dash_app, server):
+    """Register all callbacks for Crude Overview"""
+    
+    @dash_app.callback(
+        Output("monthly-only-filters-container", "children"),
+        [Input("crude-main-tabs", "value")]
+    )
+    def toggle_monthly_filters(tab):
+        """Show filters only for monthly tab by dynamically updating children"""
+        if tab == "monthly":
+            _ensure_data_loaded()
+            return [
                 html.Label("CI Rank"),
                 dcc.Dropdown(
                     id="filter-ci", 
@@ -1817,26 +1836,22 @@ def create_layout(server=None):
                 html.Label("API"),
                 dcc.Dropdown(
                     id="filter-api", 
-                    options=[{"label":"(All)", "value":"(All)"}] + [{"label":v, "value":v} for v in API_FILTER_CHOICES],
+                    options=([{"label":"(All)", "value":"(All)"}] + [{"label":v, "value":v} for v in API_OPTIONS]) if API_OPTIONS else [{"label":"(All)", "value":"(All)"}],
                     multi=True
                 ),
                 html.Br(),
                 html.Label("Sulfur"),
                 dcc.Dropdown(
                     id="filter-sulfur", 
-                    options=[{"label":"(All)", "value":"(All)"}] + [{"label":v, "value":v} for v in SULFUR_FILTER_CHOICES],
+                    options=([{"label":"(All)", "value":"(All)"}] + [{"label":v, "value":v} for v in SULFUR_OPTIONS]) if SULFUR_OPTIONS else [{"label":"(All)", "value":"(All)"}],
                     multi=True
                 ),
-            ], className='col-md-2', style={'padding': '15px'})
-        ], className='row')
-    ], style={'padding': '20px', 'background': '#f8f9fa'})
+            ]
+        return []
 
-
-def register_callbacks(dash_app, server):
-    """Register all callbacks for Crude Overview"""
-    
     @dash_app.callback(
         [Output("crude-country-dropdown", "options"),
+
          Output("crude-country-dropdown", "value", allow_duplicate=True)],
         Input("current-submenu", "data"),
         # Using initial_duplicate to allow initial population alongside other callbacks on the same output
