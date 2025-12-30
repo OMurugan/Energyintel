@@ -273,7 +273,7 @@ def _load_countries_geojson():
     return COUNTRIES_GEOJSON
 
 
-def load_monthly_map_from_db():
+def load_monthly_map_from_db(raw_export=False):
     """
     Load monthly map data from the database instead of CSV.
     Expected columns from query:
@@ -283,10 +283,18 @@ def load_monthly_map_from_db():
         SELECT DISTINCT ON (p.country, TO_CHAR(p.date, 'YYYY-MM'))
             p.country,
             TO_CHAR(p.date, 'YYYY-MM') AS month_year,
+            q.latitude,
+            q.longitude,
             p.value,
             p.country_id
-        FROM t_wcod_monthly_stream_production p
-        ORDER BY p.country, TO_CHAR(p.date, 'YYYY-MM'), p.value DESC;
+        FROM dev.t_wcod_monthly_stream_production p
+        LEFT JOIN dev.dim_country q
+            ON q.dim_country_id = p.country_id
+        WHERE q.latitude is NOT NULL
+        ORDER BY
+            p.country,
+            TO_CHAR(p.date, 'YYYY-MM'),
+            p.value DESC;
     """
     try:
         rows = execute_query(query)
@@ -298,6 +306,11 @@ def load_monthly_map_from_db():
             print("DEBUG: Monthly map DataFrame is empty after conversion")
             return pd.DataFrame()
         df.columns = df.columns.str.strip()
+        
+        if raw_export:
+            print(f"DEBUG: Returning raw monthly map data with {len(df)} rows")
+            return df
+            
         required_cols = {"country", "month_year", "value"}
         if not required_cols.issubset(set(df.columns)):
             print(f"DEBUG: Monthly map DB result missing required columns. Columns: {df.columns.tolist()}")
@@ -320,7 +333,7 @@ def load_monthly_map_from_db():
         return pd.DataFrame()
 
 
-def load_yearly_map_from_db():
+def load_yearly_map_from_db(raw_export=False):
     """
     Load yearly map data from the database, averaging monthly values per year.
     """
@@ -331,17 +344,30 @@ def load_yearly_map_from_db():
                 TO_CHAR(p.date, 'YYYY-MM') AS month_year,
                 TO_CHAR(p.date, 'YYYY') AS year,
                 p.value,
-                p.country_id
-            FROM t_wcod_monthly_stream_production p
+                p.country_id,
+                q.latitude,
+                q.longitude
+            FROM dev.t_wcod_monthly_stream_production p
+            LEFT JOIN dev.dim_country q
+                ON q.dim_country_id = p.country_id
+            WHERE q.latitude is NOT NULL
             ORDER BY p.country, TO_CHAR(p.date, 'YYYY-MM'), p.value DESC
         )
         SELECT
             country,
             year,
             AVG(value) AS value,
-            country_id
+            country_id,
+            latitude,
+            longitude
         FROM monthly_distinct
-        GROUP BY country, year, country_id
+        GROUP BY
+            country,
+            year,
+            country_id,
+            latitude,
+            longitude
+        ORDER BY year;
     """
     try:
         rows = execute_query(query)
@@ -353,6 +379,11 @@ def load_yearly_map_from_db():
             print("DEBUG: Yearly map DataFrame is empty after conversion")
             return pd.DataFrame()
         df.columns = df.columns.str.strip()
+        
+        if raw_export:
+            print(f"DEBUG: Returning raw yearly map data with {len(df)} rows")
+            return df
+            
         required_cols = {"country", "year", "value"}
         if not required_cols.issubset(set(df.columns)):
             print(f"DEBUG: Yearly map DB result missing required columns. Columns: {df.columns.tolist()}")
@@ -1295,19 +1326,38 @@ FALLBACK_COLORS = [
 ]
 TABLE_LINK_COLUMNS = ["Crude", "CrudeOil"]
 TABLE_LINK_STYLE = [
-    {"if": {"column_id": col}, "color": "#1b365d"}
+    {"if": {"column_id": col}, "color": "#000000", "textDecoration": "none"}
     for col in TABLE_LINK_COLUMNS
 ]
+
+# ================================
+# TABLE TEXT COLOR & ALIGN FIXES
+# ================================
+
+# ================================
+# TABLE STYLE – EXACT FIG MATCH
+# ================================
+
+# ================================
+# TABLE LINK UNDERLINE REMOVAL
+# ================================
 TABLE_LINK_CSS = [
     {
-        "selector": ".dash-cell-value a",
-        "rule": "color: #1b365d !important; text-decoration: none !important;"
+        "selector": "#crude-table .dash-cell-value, #crude-table .dash-cell-value a",
+        "rule": "color: #1f3b6f !important; text-decoration: none !important;"
     },
     {
-        "selector": ".dash-cell-value a:hover",
-        "rule": "color: #1b365d !important; text-decoration: none !important;"
+        "selector": "#crude-table .dash-cell-value a:hover",
+        "rule": "color: #1f3b6f !important; text-decoration: none !important;"
+    },
+    {
+        "selector": "#crude-table th",
+        "rule": "color: #1f3b6f !important; font-weight: bold;"
     }
 ]
+
+
+
 
 
 def get_stream_order(tab="yearly"):
@@ -1362,6 +1412,12 @@ def create_layout(server=None):
     """Create the Crude Overview layout matching Tableau dashboard"""
     default_country_value = ["Russia"] if "Russia" in COUNTRIES else ([COUNTRIES[0]] if COUNTRIES else None)
     return html.Div([
+        # Store to hold profile URLs for streams
+        dcc.Store(id="stream-profile-urls-store", data={}),
+        # Store to track last clicked stream (to prevent duplicate navigation)
+        dcc.Store(id="last-clicked-stream-store", data=None),
+        # Dummy store for navigation callback output
+        dcc.Store(id="stream-navigation-dummy", data=None),
         # Custom CSS to style markdown links in DataTable to look like normal text
         html.Div(
             dcc.Markdown(
@@ -1372,7 +1428,7 @@ def create_layout(server=None):
                     #crude-table .dash-cell-value a:visited,
                     #crude-table .dash-cell-value a:hover,
                     #crude-table .dash-cell-value a:active {
-                        color: #1b365d !important;
+                        color: #000000 !important;
                         text-decoration: none !important;
                     }
                 </style>
@@ -1389,7 +1445,7 @@ def create_layout(server=None):
         # Top tabs: Yearly / Monthly
         dcc.Tabs(
             id="crude-main-tabs", 
-            value="yearly", 
+            value="monthly", 
             children=[
                 dcc.Tab(
                     label="Yearly", 
@@ -1433,10 +1489,31 @@ def create_layout(server=None):
             style={"marginBottom": "20px", "display": "flex", "justifyContent": "center"}
         ),
         html.Br(),
-        html.H4(
-            "World Crude Production*", 
-            style={"color":"#d35400","textAlign":"center", "marginTop":"10px"}
-        ),
+        html.Div([
+            html.H4(
+                "World Crude Production*", 
+                style={"color":"#d35400", "textAlign":"center", "marginTop":"10px", "marginBottom": "0px", "flexGrow": 1}
+            ),
+            html.Div([
+                html.Button(
+                    'Export Data',
+                    id='btn-export-map-csv',
+                    n_clicks=0,
+                    style={
+                        'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6',
+                        'padding': '4px 10px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'fontSize': '12px',
+                        'margin': '0',
+                        'display': 'inline-block'
+                    }
+                ),
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'position': 'absolute', 'right': '15px', 'top': '10px'})
+        ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'position': 'relative', 'width': '100%'}),
+        dcc.Download(id="download-map-csv"),
         html.Hr(),
         html.H4(
             id="production-breakdown-title",
@@ -1598,7 +1675,12 @@ def create_layout(server=None):
                     children=[
                         dash_table.DataTable(
                             id="crude-table",
-                            columns=[{"name":str(c),"id":str(c)} for c in TABLE_DF_YEARLY.columns.tolist()] if not TABLE_DF_YEARLY.empty else [],
+                            columns=[
+                                {"name": str(c), "id": str(c), "type": "numeric"}
+                                if c != "CrudeOil" else
+                                {"name": "CrudeOil", "id": "CrudeOil", "type": "text"}
+                                for c in TABLE_DF_YEARLY.columns.tolist()
+                            ] if not TABLE_DF_YEARLY.empty else [],
                             data=TABLE_DF_YEARLY.to_dict("records") if not TABLE_DF_YEARLY.empty else [],
                             page_action='none',
                             markdown_options={"link_target": "_blank"},
@@ -1609,12 +1691,71 @@ def create_layout(server=None):
                                 "maxHeight": "600px",
                                 "height": "auto"
                             },
-                            style_cell={"textAlign":"left","minWidth":"80px","whiteSpace":"normal","fontSize":"12px"},
+                            
+    
+                            
+                            style_cell={
+                                "fontSize": "13px",
+                                "fontFamily": "Arial",
+                                "whiteSpace": "normal",
+                                "color": "#1f3b6f",
+                                "minWidth": "90px",
+                                # "textAlign": "right"
+                            },
+
+                            style_cell_conditional=[
+                                {
+                                    "if": {"column_id": "CrudeOil"},
+                                    "textAlign": "left"
+                                },
+                                {
+                                    "if": {"column_type": "numeric"},
+                                    "textAlign": "right"
+                                }
+                            ],
+
                             style_header={
                                 "textAlign": "center",
-                                "fontWeight": "bold"
+                                "fontWeight": "bold",
+                                "backgroundColor": "white",
+                                "color": "#1f3b6f"
                             },
-                            style_data_conditional=TABLE_LINK_STYLE,
+
+
+                            style_header_conditional=[
+                                # Keep year headers (top level) centered
+                                {
+                                    "if": {"header_index": 0},
+                                    "textAlign": "center"
+                                },
+                                # Left align month headers (second level) for monthly view
+                                {
+                                    "if": {"header_index": 1},
+                                    "textAlign": "right"
+                                }
+                            ],
+                            style_data_conditional=[
+                                # Alternating row colors (white and grey)
+                                {
+                                    "if": {"row_index": "odd"},
+                                      "backgroundColor": "#f5f5f5"  # Light grey for odd rows
+                                  },
+                                {
+                                    "if": {"row_index": "even"},
+                                      "backgroundColor": "white"  # White for even rows
+                                  },
+                                # Left align all data cells
+                                {
+                                    "if": {"column_type": "text"},
+                                    "textAlign": "right"
+                                },
+                                {
+                                    "if": {"column_type": "numeric"},
+                                    "textAlign": "right"
+                                },
+                                # Keep link styling
+                                *TABLE_LINK_STYLE
+                            ],
                             css=TABLE_LINK_CSS,
                             merge_duplicate_headers=True
                         )
@@ -1825,18 +1966,35 @@ def register_callbacks(dash_app, server):
                 country_df = get_yearly_grades_for_country(resolved_countries)
                 if not country_df.empty and "Stream" in country_df.columns:
                     # Extract link if available (profile_url or BSP link)
+                    # Check all possible column name variations
                     link_col = None
-                    for col in ["profile_url", "Profile URL", "Profile_URL", "profile-url", "Profile-URL", "BSP link", "BSP Link"]:
+                    possible_cols = ["profile_url", "Profile URL", "Profile_URL", "profile-url", "Profile-URL", 
+                                     "BSP link", "BSP Link", "BSP_link", "BSP_link", "bsp_link", "Bsp_link"]
+                    for col in possible_cols:
                         if col in country_df.columns:
                             link_col = col
+                            print(f"DEBUG: Found link column '{col}' in yearly data")
                             break
                     
+                    # Also check case-insensitive
+                    if not link_col:
+                        for col in country_df.columns:
+                            if col.lower().replace(" ", "_").replace("-", "_") in ["profile_url", "bsp_link"]:
+                                link_col = col
+                                print(f"DEBUG: Found link column '{col}' (case-insensitive match) in yearly data")
+                                break
+                    
                     if link_col:
+                        print(f"DEBUG: Using link column '{link_col}' for yearly streams")
                         for _, row in country_df.iterrows():
                             stream = str(row["Stream"]).strip() if pd.notna(row["Stream"]) else None
-                            url = str(row[link_col]).strip() if pd.notna(row[link_col]) else None
-                            if stream and url:
+                            url_val = row[link_col]
+                            url = str(url_val).strip() if pd.notna(url_val) and str(url_val).strip() else None
+                            if stream and url and url != "nan" and url != "None":
                                 stream_to_url[stream] = url
+                                print(f"DEBUG: Stored URL for stream '{stream}': {url}")
+                    else:
+                        print(f"DEBUG: No link column found in yearly data. Available columns: {list(country_df.columns)}")
                     
                     country_streams = country_df["Stream"].dropna().unique().tolist()
                     available_streams = order_streams_list(country_streams, tab="yearly")
@@ -1846,18 +2004,35 @@ def register_callbacks(dash_app, server):
                 country_df = get_monthly_grades_for_country(resolved_countries)
                 if not country_df.empty and "Stream" in country_df.columns:
                     # Extract link if available (profile_url or BSP link)
+                    # Check all possible column name variations
                     link_col = None
-                    for col in ["profile_url", "Profile URL", "Profile_URL", "profile-url", "Profile-URL", "BSP link", "BSP Link", "BSP_link"]:
+                    possible_cols = ["profile_url", "Profile URL", "Profile_URL", "profile-url", "Profile-URL", 
+                                     "BSP link", "BSP Link", "BSP_link", "BSP_link", "bsp_link", "Bsp_link"]
+                    for col in possible_cols:
                         if col in country_df.columns:
                             link_col = col
+                            print(f"DEBUG: Found link column '{col}' in monthly data")
                             break
                     
+                    # Also check case-insensitive
+                    if not link_col:
+                        for col in country_df.columns:
+                            if col.lower().replace(" ", "_").replace("-", "_") in ["profile_url", "bsp_link"]:
+                                link_col = col
+                                print(f"DEBUG: Found link column '{col}' (case-insensitive match) in monthly data")
+                                break
+                    
                     if link_col:
+                        print(f"DEBUG: Using link column '{link_col}' for monthly streams")
                         for _, row in country_df.iterrows():
                             stream = str(row["Stream"]).strip() if pd.notna(row["Stream"]) else None
-                            url = str(row[link_col]).strip() if pd.notna(row[link_col]) else None
-                            if stream and url:
+                            url_val = row[link_col]
+                            url = str(url_val).strip() if pd.notna(url_val) and str(url_val).strip() else None
+                            if stream and url and url != "nan" and url != "None":
                                 stream_to_url[stream] = url
+                                print(f"DEBUG: Stored URL for stream '{stream}': {url}")
+                    else:
+                        print(f"DEBUG: No link column found in monthly data. Available columns: {list(country_df.columns)}")
                     
                     country_streams = country_df["Stream"].dropna().unique().tolist()
                     
@@ -1973,7 +2148,8 @@ def register_callbacks(dash_app, server):
         return FALLBACK_COLORS[0]
     
     @dash_app.callback(
-        Output("profiled-streams-container", "children"),
+        [Output("profiled-streams-container", "children"),
+         Output("stream-profile-urls-store", "data")],
         [Input("profiled-streams", "value"),
          Input("profiled-streams", "options"),
          Input("production-breakdown-chart", "figure"),
@@ -2038,6 +2214,7 @@ def register_callbacks(dash_app, server):
         # Create clickable stream buttons with highlight/dimmed states
         stream_items = []
         selected_set = set(selected_streams) if selected_streams else set()
+        profile_urls_dict = {}  # Store profile URLs for navigation
         
         # Helper function to dim a color (reduce opacity/brightness)
         def dim_color(color_hex, opacity=0.3):
@@ -2062,6 +2239,10 @@ def register_callbacks(dash_app, server):
                 stream = ""
             is_selected = stream in selected_set
             profile_url = opt.get("profile_url")  # Get profile_url from options
+            
+            # Store profile URL for navigation
+            if profile_url:
+                profile_urls_dict[stream] = profile_url
             
             # Get color for this stream - check multiple sources
             color = None
@@ -2165,7 +2346,8 @@ def register_callbacks(dash_app, server):
             
             stream_items.append(stream_button)
         
-        return stream_items
+        print(f"DEBUG NAVIGATION: Storing {len(profile_urls_dict)} profile URLs: {list(profile_urls_dict.keys())[:5]}...")
+        return stream_items, profile_urls_dict
     
     @dash_app.callback(
         Output("profiled-streams", "value", allow_duplicate=True),
@@ -2230,6 +2412,72 @@ def register_callbacks(dash_app, server):
         else:
             # Clicking a different stream when one is already selected: select the clicked stream
             return [clicked_stream]
+    
+    # Clientside callback to navigate to stream profile URL and track last clicked stream
+    clientside_callback(
+        """
+        function(button_clicks, button_ids, profile_urls, last_clicked_stream) {
+            if (!window.dash_clientside) {
+                return null;
+            }
+            
+            if (!profile_urls || Object.keys(profile_urls).length === 0) {
+                console.log('No profile URLs available');
+                return null;
+            }
+            
+            // Find which button was clicked
+            const triggered = window.dash_clientside.callback_context.triggered[0];
+            if (!triggered) {
+                return null;
+            }
+            
+            // Parse the triggered_id to get the stream name
+            // Format: '{"type":"stream-button","stream":"Arco"}.n_clicks'
+            try {
+                const jsonPart = triggered.prop_id.split('.')[0];
+                const buttonId = JSON.parse(jsonPart);
+                const clickedStream = buttonId.stream;
+                
+                console.log('Button clicked for stream:', clickedStream);
+                console.log('Last clicked stream:', last_clicked_stream);
+                
+                // Check if this is the same stream as last clicked - if so, don't navigate
+                // We compare against the last_clicked_stream from the store
+                if (clickedStream === last_clicked_stream) {
+                    console.log('Same stream clicked again, skipping navigation');
+                    return null;
+                }
+                
+                console.log('Available profile URLs:', Object.keys(profile_urls));
+                
+                if (clickedStream && profile_urls[clickedStream]) {
+                    const profileUrl = profile_urls[clickedStream];
+                    if (profileUrl && profileUrl !== 'nan' && profileUrl !== 'None' && profileUrl.trim() !== '') {
+                        console.log('Navigating to', profileUrl, 'for stream', clickedStream);
+                        // Open in new tab
+                        window.open(profileUrl, '_blank');
+                        // Return the clicked stream so it becomes the new last_clicked_stream
+                        return clickedStream;
+                    } else {
+                        console.log('Invalid URL for stream', clickedStream, ':', profileUrl);
+                    }
+                } else {
+                    console.log('No URL found for stream:', clickedStream);
+                }
+            } catch (e) {
+                console.error('Error parsing button click:', e);
+            }
+            
+            return null;
+        }
+        """,
+        Output("last-clicked-stream-store", "data"),
+        [Input({"type": "stream-button", "stream": ALL}, "n_clicks")],
+        [State({"type": "stream-button", "stream": ALL}, "id"),
+         State("stream-profile-urls-store", "data"),
+         State("last-clicked-stream-store", "data")]
+    )
     
     @dash_app.callback(
         [Output("year-controls", "style"),
@@ -3163,6 +3411,15 @@ def register_callbacks(dash_app, server):
                 
                 print(f"DEBUG BREAKDOWN MONTHLY: Aggregated rows={len(agg)}, years={agg['year'].unique().tolist() if not agg.empty else []}")
                 
+                # Filter out months with no data (value = 0 or missing)
+                # Only keep months where at least one stream has data (value > 0)
+                if not agg.empty:
+                    # Group by year and month to find months with data
+                    months_with_data = agg[agg["value"] > 0].groupby(["year", "month"]).size().reset_index(name="count")
+                    # Keep only year-month combinations that have data
+                    agg = agg.merge(months_with_data[["year", "month"]], on=["year", "month"], how="inner")
+                    print(f"DEBUG BREAKDOWN MONTHLY: After filtering months with no data, rows={len(agg)}")
+                
                 # Get available streams from the data
                 available_monthly_streams = sorted(agg["Stream"].dropna().unique().tolist()) if not agg.empty else []
                 
@@ -3206,38 +3463,92 @@ def register_callbacks(dash_app, server):
                 # Stream color map
                 color_map = get_stream_color_map("monthly")
                 
-                # Prepare hover_data with Country and Year
-                hover_data_dict = {}
-                if "Country" in agg.columns:
-                    hover_data_dict["Country"] = True
-                hover_data_dict["year"] = True
+                # Ensure data is sorted by year and month (in correct month order)
+                # This ensures months appear in the right order and only months with data are shown
+                if not agg.empty:
+                    # Convert month names to numeric for proper sorting
+                    month_to_num = {name: idx+1 for idx, name in enumerate(month_names)}
+                    agg["month_num"] = agg["month"].map(month_to_num)
+                    agg = agg.sort_values(["year", "month_num"]).drop(columns=["month_num"])
+                    
+                    # Convert month to categorical with only the months that have data
+                    # This ensures Plotly only shows months with data for each facet
+                    # Get unique months from data, sorted in month order
+                    available_months = agg["month"].unique().tolist()
+                    months_ordered = [m for m in month_names if m in available_months]
+                    agg["month"] = pd.Categorical(agg["month"], categories=months_ordered, ordered=True)
+                    print(f"DEBUG BREAKDOWN MONTHLY: Data sorted by year and month, month column converted to categorical with {len(months_ordered)} months")
                 
-                # Create chart with original color_map (opacity will be applied to traces afterward)
-                fig = px.bar(
-                    agg,
-                    x="month",
-                    y="value",
-                    color="Stream",
-                    facet_col="year",
-                    category_orders={"month": month_names},
-                    color_discrete_map=color_map if color_map else None,
-                    labels={"value": "Production Volume ('000 b/d)", "month": "", "Stream": "Stream"},
-                    hover_data=hover_data_dict if hover_data_dict else None
+                # Get unique years - each will be a separate subplot
+                unique_years = sorted(agg["year"].unique().tolist()) if not agg.empty else []
+                
+                if not unique_years:
+                    # No years, return empty chart
+                    fig = go.Figure()
+                    fig.add_annotation(text="No monthly data available.", xref="paper", yref="paper",
+                                       x=0.5, y=0.5, showarrow=False,
+                                       font=dict(size=14, color='#7f8c8d'))
+                    fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
+                    return fig, title_text
+                
+                # Create subplots - one column per year
+                fig = make_subplots(
+                    rows=1,
+                    cols=len(unique_years),
+                    subplot_titles=unique_years,
+                    shared_yaxes=True,
+                    horizontal_spacing=0.05
                 )
                 
-                # Update facet column titles to show just the year (remove "year=" prefix)
-                # Plotly Express creates annotations for facet column titles
-                if fig.layout.annotations:
-                    for annotation in fig.layout.annotations:
-                        if hasattr(annotation, 'text') and annotation.text:
-                            # Check if it's a facet column title (starts with "year=")
-                            if annotation.text.startswith("year="):
-                                # Extract just the year value
-                                year_value = annotation.text.replace("year=", "")
-                                annotation.text = year_value
-                
-                # Get unique years to update each subplot's xaxis
-                unique_years = sorted(agg["year"].unique().tolist()) if not agg.empty else []
+                # Add traces for each year separately
+                for year_idx, year_val in enumerate(unique_years):
+                    year_data = agg[agg["year"] == year_val].copy()
+                    
+                    if year_data.empty:
+                        continue
+                    
+                    # Get months with data for this year, in correct order
+                    year_months = year_data["month"].unique().tolist()
+                    year_months_ordered = [m for m in month_names if m in year_months]
+                    
+                    # Get unique streams for this year
+                    year_streams = sorted(year_data["Stream"].unique().tolist())
+                    
+                    # Add a trace for each stream
+                    for stream in year_streams:
+                        stream_data = year_data[year_data["Stream"] == stream].copy()
+                        
+                        # Ensure months are in correct order
+                        stream_data["month_cat"] = pd.Categorical(
+                            stream_data["month"], 
+                            categories=year_months_ordered, 
+                            ordered=True
+                        )
+                        stream_data = stream_data.sort_values("month_cat")
+                        
+                        # Get color for this stream
+                        stream_color = color_map.get(stream) if color_map else None
+                        if not stream_color:
+                            stream_color = get_stream_color(stream, year_streams, tab="monthly")
+                        
+                        # Add bar trace for this stream
+                        fig.add_trace(
+                            go.Bar(
+                                x=stream_data["month"],
+                                y=stream_data["value"],
+                                name=stream,
+                                marker_color=stream_color,
+                                legendgroup=stream,
+                                showlegend=False,  # Hide legend since we have custom legend
+                                hovertemplate=(
+                                    "<b>Month:</b> %{x}<br>"
+                                    "<b>Stream:</b> " + stream + "<br>"
+                                    "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
+                                )
+                            ),
+                            row=1,
+                            col=year_idx + 1
+                        )
                 
                 # Calculate max value across all data for Y-axis scaling
                 max_value = agg["value"].max() if not agg.empty and "value" in agg.columns else 0
@@ -3245,19 +3556,27 @@ def register_callbacks(dash_app, server):
                 # Calculate Y-axis ticks (5 evenly spaced values from 0 to max)
                 y_axis_max, y_axis_ticks = _calculate_yaxis_ticks(max_value)
                 
-                # Calculate bar width to match yearly chart appearance
-                # Yearly chart has ~19 years with bargap=0.2, monthly has 12 months per facet
-                # To match bar width, we need to set explicit width for monthly bars
-                # Calculate width: yearly has ~19 categories, monthly has 12 categories per facet
-                # Use a width that makes monthly bars similar in appearance to yearly bars
-                # Width is a fraction (0-1) of the category width
-                num_months = 12
-                # Calculate proportional width: if yearly bars look good, monthly bars need to be wider
-                # Since monthly has fewer categories per facet (12 vs ~19), we can use a larger width fraction
-                # Yearly: ~19 categories with bargap=0.2 means bars use ~0.8/19 = ~0.042 per category
-                # Monthly: 12 categories, to match visual width, use width ~0.7-0.8
-                monthly_bar_width = 0.75  # 75% of category width to make bars wider
+                # Calculate bar width to ensure all bars are equal size across all years
+                # Find the maximum number of months across all years
+                max_months = 0
+                for year_val in unique_years:
+                    year_data = agg[agg["year"] == year_val]
+                    if not year_data.empty:
+                        num_months_for_year = len(year_data["month"].unique())
+                        max_months = max(max_months, num_months_for_year)
+                
+                # If no data, default to 12
+                if max_months == 0:
+                    max_months = 12
+                
+                # Calculate bar width as a fraction that will make all bars appear equal
+                # Use a consistent fraction (e.g., 0.75) but base it on max_months
+                # This ensures bars in years with fewer months don't appear wider
+                # The bargap will create consistent spacing
+                monthly_bar_width = 0.75  # 75% of category width - consistent across all years
                 monthly_bargap = 0.2  # Keep same gap as yearly for consistency
+                
+                print(f"DEBUG BREAKDOWN MONTHLY: Max months across all years: {max_months}, bar width: {monthly_bar_width}")
                 
                 # Update layout
                 fig.update_layout(
@@ -3273,92 +3592,171 @@ def register_callbacks(dash_app, server):
                     height=520
                 )
                 
-                # Set explicit bar width and update hover template
-                # With facet_col, each trace represents one Stream, and data points are distributed across facets
-                # We need to manually construct customdata that matches each trace's data points
-                for trace_idx, trace in enumerate(fig.data):
-                    trace.width = monthly_bar_width
+                # Update subplot title annotations to match styling
+                if fig.layout.annotations:
+                    for annotation in fig.layout.annotations:
+                        if hasattr(annotation, 'text') and annotation.text in [str(y) for y in unique_years]:
+                            annotation.font = dict(size=14, color="#2c3e50", family="Arial, sans-serif")
+                
+                # Calculate domains for each subplot so that each month gets equal visual space
+                # This ensures bars appear the same size across all years
+                total_months = 0
+                year_month_counts = {}
+                for year_val in unique_years:
+                    year_data = agg[agg["year"] == year_val]
+                    if not year_data.empty:
+                        num_months = len(year_data["month"].unique())
+                        year_month_counts[year_val] = num_months
+                        total_months += num_months
+                    else:
+                        year_month_counts[year_val] = 0
+                
+                # Calculate domain start positions for each subplot
+                # Each subplot gets domain width proportional to its number of months
+                domain_start = 0
+                domain_width_per_month = 1.0 / total_months if total_months > 0 else 1.0 / len(unique_years)
+                
+                # Update x-axis for each subplot to show only months with data and make labels vertical
+                for year_idx, year_val in enumerate(unique_years):
+                    year_data = agg[agg["year"] == year_val]
+                    year_months_ordered = []
+                    if not year_data.empty:
+                        year_months = year_data["month"].unique().tolist()
+                        # Sort months according to month_names order
+                        year_months_ordered = [m for m in month_names if m in year_months]
+                        print(f"DEBUG BREAKDOWN MONTHLY: Year {year_val} has months: {year_months_ordered}")
                     
-                    # Get the Stream name for this trace
-                    stream_name = trace.name
+                    # Calculate domain for this subplot
+                    num_months_for_year = year_month_counts.get(year_val, 0)
+                    if num_months_for_year > 0:
+                        subplot_domain_width = num_months_for_year * domain_width_per_month
+                        domain_end = domain_start + subplot_domain_width
+                    else:
+                        # Fallback: equal width for all subplots
+                        subplot_domain_width = 1.0 / len(unique_years)
+                        domain_end = domain_start + subplot_domain_width
                     
-                    # Determine which facet (year) this trace belongs to
-                    # With facet_col, traces are ordered: all streams for year1, then all streams for year2, etc.
-                    # Calculate facet index from trace index (once per trace)
-                    unique_streams = sorted(agg["Stream"].unique().tolist()) if not agg.empty else []
-                    num_streams = len(unique_streams) if unique_streams else 1
+                    # Update x-axis for this specific subplot
+                    if year_months_ordered:
+                        fig.update_xaxes(
+                            tickangle=-90,  # Vertical labels
+                            type="category",
+                            categoryorder="array",
+                            categoryarray=year_months_ordered,  # Only months with data for this year
+                            tickfont=dict(size=10, color="#2c3e50"),
+                            titlefont=dict(size=12, color="#2c3e50"),
+                            domain=[domain_start, domain_end],  # Set domain proportional to number of months
+                            row=1,
+                            col=year_idx + 1
+                        )
+                    else:
+                        fig.update_xaxes(
+                            tickangle=-90,
+                            type="category",
+                            tickfont=dict(size=10, color="#2c3e50"),
+                            titlefont=dict(size=12, color="#2c3e50"),
+                            domain=[domain_start, domain_end],
+                            row=1,
+                            col=year_idx + 1
+                        )
                     
-                    # Calculate which facet this trace belongs to
-                    facet_idx = trace_idx // num_streams if num_streams > 0 else 0
-                    unique_years_sorted = sorted(unique_years)
-                    year_for_trace = unique_years_sorted[facet_idx] if facet_idx < len(unique_years_sorted) else (unique_years_sorted[0] if unique_years_sorted else "")
+                    # Update domain start for next subplot
+                    domain_start = domain_end
+                
+                # Update y-axis
+                fig.update_yaxes(
+                    title_text="Production Volume ('000 b/d)",
+                    tickfont=dict(size=10, color="#2c3e50"),
+                    titlefont=dict(size=12, color="#2c3e50"),
+                    row=1,
+                    col=1
+                )
+                
+                # Set explicit bar width and update hover template with Country info
+                # With make_subplots, traces are added in order: all streams for year1, then all streams for year2, etc.
+                trace_idx = 0
+                for year_idx, year_val in enumerate(unique_years):
+                    year_data = agg[agg["year"] == year_val]
+                    if year_data.empty:
+                        continue
                     
-                    # Build customdata array matching this trace's data points
-                    # Each trace has x (month) values, and we match them with the determined year and Country
-                    customdata_list = []
-                    if len(trace.x) > 0:
-                        for month_val in trace.x:
-                            # Match by Stream, month, and the determined year
-                            matching_rows = agg[
-                                (agg["Stream"] == stream_name) & 
-                                (agg["month"] == month_val) & 
-                                (agg["year"] == str(year_for_trace))
-                            ]
-                            
-                            if not matching_rows.empty:
-                                country_val = matching_rows.iloc[0]["Country"] if "Country" in matching_rows.columns else ""
+                    year_streams = sorted(year_data["Stream"].unique().tolist())
+                    
+                    # Process traces for this year
+                    for stream in year_streams:
+                        if trace_idx >= len(fig.data):
+                            break
+                        
+                        trace = fig.data[trace_idx]
+                        trace.width = monthly_bar_width
+                        
+                        # Get the Stream name for this trace
+                        stream_name = trace.name
+                        
+                        # Build customdata array matching this trace's data points
+                        customdata_list = []
+                        if len(trace.x) > 0:
+                            for month_val in trace.x:
+                                # Match by Stream, month, and year
+                                matching_rows = year_data[
+                                    (year_data["Stream"] == stream_name) & 
+                                    (year_data["month"] == month_val)
+                                ]
+                                
+                                if not matching_rows.empty and "Country" in matching_rows.columns:
+                                    country_val = matching_rows.iloc[0]["Country"]
+                                else:
+                                    country_val = ""
+                                
+                                # Add to customdata: [Country, Year]
+                                customdata_list.append([country_val, str(year_val)])
+                        
+                        # Set customdata
+                        trace.customdata = customdata_list if customdata_list else None
+                        
+                        # Create custom hover template
+                        trace.hovertemplate = (
+                            "<b>Month of Date:</b> %{x}<br>"
+                            "<b>Country:</b> %{customdata[0]}<br>"
+                            "<b>Stream Name:</b> " + stream_name + "<br>"
+                            "<b>Year of Date:</b> " + str(year_val) + "<br>"
+                            "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
+                        )
+                        
+                        # Apply highlight/dimmed styling for monthly view
+                        try:
+                            if selected_stream_for_highlight:
+                                if stream_name == selected_stream_for_highlight:
+                                    # Selected stream: full opacity (highlighted)
+                                    target_opacity = 1.0
+                                else:
+                                    # Other streams: reduced opacity (dimmed)
+                                    target_opacity = 0.3
                             else:
-                                country_val = ""
-                            
-                            # Add to customdata: [Country, Year]
-                            customdata_list.append([country_val, str(year_for_trace)])
-                    
-                    # Set customdata
-                    trace.customdata = customdata_list if customdata_list else None
-                    
-                    # Create custom hover template
-                    # Always include Country and Year fields - they'll show empty if customdata is not available
-                    trace.hovertemplate = (
-                        "<b>Month of Date:</b> %{x}<br>"
-                        "<b>Country:</b> %{customdata[0]}<br>"
-                        "<b>Stream Name:</b> %{fullData.name}<br>"
-                        "<b>Year of Date:</b> %{customdata[1]}<br>"
-                        "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
-                    )
-                    
-                    # Apply highlight/dimmed styling for monthly view
-                    # If a stream is selected, highlight it (full opacity) and dim others (reduced opacity)
-                    try:
-                        if selected_stream_for_highlight:
-                            if stream_name == selected_stream_for_highlight:
-                                # Selected stream: full opacity (highlighted)
+                                # Default mode: all streams at full opacity
                                 target_opacity = 1.0
+                            
+                            # Apply opacity to trace
+                            trace.opacity = target_opacity
+                            
+                            # Also apply to marker if it exists
+                            if not hasattr(trace, 'marker') or trace.marker is None:
+                                trace.marker = {}
+                            if isinstance(trace.marker, dict):
+                                trace.marker['opacity'] = target_opacity
                             else:
-                                # Other streams: reduced opacity (dimmed)
-                                target_opacity = 0.3
-                        else:
-                            # Default mode: all streams at full opacity
-                            target_opacity = 1.0
+                                # Plotly marker object
+                                try:
+                                    trace.marker.opacity = target_opacity
+                                except:
+                                    # Fallback: create new marker dict
+                                    trace.marker = {'opacity': target_opacity}
+                        except Exception as e:
+                            print(f"Error applying opacity to trace {stream_name}: {e}")
+                            # Continue without opacity modification
+                            pass
                         
-                        # Apply opacity to trace
-                        trace.opacity = target_opacity
-                        
-                        # Also apply to marker if it exists
-                        if not hasattr(trace, 'marker') or trace.marker is None:
-                            trace.marker = {}
-                        if isinstance(trace.marker, dict):
-                            trace.marker['opacity'] = target_opacity
-                        else:
-                            # Plotly marker object
-                            try:
-                                trace.marker.opacity = target_opacity
-                            except:
-                                # Fallback: create new marker dict
-                                trace.marker = {'opacity': target_opacity}
-                    except Exception as e:
-                        print(f"Error applying opacity to trace {stream_name}: {e}")
-                        # Continue without opacity modification
-                        pass
+                        trace_idx += 1
                 
                 # Update Y-axis for all subplots (yaxis, yaxis2, yaxis3, etc.) with 5 evenly spaced ticks
                 for i in range(len(unique_years)):
@@ -3746,7 +4144,45 @@ def register_callbacks(dash_app, server):
             return table_data, columns
 
 
-# ------------------------------------------------------------------------------
+
+    @callback(
+        Output("download-map-csv", "data"),
+        Input("btn-export-map-csv", "n_clicks"),
+        State("crude-main-tabs", "value"),
+        prevent_initial_call=True
+    )
+    def export_map_data_to_csv(n_clicks, tab):
+        if n_clicks is None or n_clicks <= 0:
+            return no_update
+            
+        try:
+            # Default to yearly map if tab is None
+            if tab is None:
+                tab = "yearly"
+                
+            if tab == "yearly":
+                print("DEBUG: Exporting YEARLY map data (raw_export=True)")
+                df = load_yearly_map_from_db(raw_export=True)
+                filename = "world_crude_production_yearly.csv"
+            else:
+                # monthly
+                print("DEBUG: Exporting MONTHLY map data (raw_export=True)")
+                df = load_monthly_map_from_db(raw_export=True)
+                filename = "world_crude_production_monthly.csv"
+            
+            if df.empty:
+                print("DEBUG: No data to export for map")
+                return no_update
+                
+            return dcc.send_data_frame(df.to_csv, filename, index=False)
+            
+        except Exception as e:
+            print(f"Error exporting map data: {e}")
+            import traceback
+            traceback.print_exc()
+            return no_update
+
+
 # DASH APP CREATION
 # ------------------------------------------------------------------------------
 def create_crude_overview_dashboard(dash_app, server, url_base_pathname="/dash/crude-overview/"):
