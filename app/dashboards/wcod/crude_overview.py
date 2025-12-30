@@ -210,7 +210,7 @@ def load_monthly_bar():
             country AS "Country",
             stream_name AS "Stream Name",
             value AS "Value"
-        FROM t_wcod_monthly_stream_production
+        FROM t_wcod_monthly_stream_production where stream_name not in ('Total')
         ORDER BY date DESC, stream_name;
     """
     try:
