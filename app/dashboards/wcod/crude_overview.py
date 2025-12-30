@@ -1830,36 +1830,50 @@ def register_callbacks(dash_app, server):
         [Input("crude-main-tabs", "value")]
     )
     def toggle_monthly_filters(tab):
-        """Show filters only for monthly tab by dynamically updating children"""
+        """Show filters only for monthly tab by dynamically updating children as checklists"""
         print(f"DEBUG: toggle_monthly_filters called for tab: {tab}")
         if tab == "monthly":
             _ensure_data_loaded()
-            choices = {
-                "CI Rank": CI_FILTER_CHOICES,
-                "API": API_FILTER_CHOICES,
-                "Sulfur": SULFUR_FILTER_CHOICES
+            
+            checklist_style = {
+                "maxHeight": "150px",
+                "overflowY": "auto",
+                "padding": "8px",
+                "border": "1px solid #e0e0e0",
+                "borderRadius": "6px",
+                "background": "white",
+                "fontSize": "12px"
             }
-            print(f"DEBUG: Returning categorical dropdowns. API choices: {API_FILTER_CHOICES}")
+            
             return [
-                html.Label("CI Rank"),
-                dcc.Dropdown(
+                html.Label("CI Rank", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
+                dcc.Checklist(
                     id="filter-ci", 
                     options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in CI_FILTER_CHOICES],
-                    multi=True
+                    value=["ALL"] + CI_FILTER_CHOICES,
+                    inputStyle={"marginRight": "8px"},
+                    labelStyle={"display": "block", "marginBottom": "6px"},
+                    style=checklist_style
                 ),
                 html.Br(),
-                html.Label("API"),
-                dcc.Dropdown(
+                html.Label("API", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
+                dcc.Checklist(
                     id="filter-api", 
                     options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in API_FILTER_CHOICES],
-                    multi=True
+                    value=["ALL"] + API_FILTER_CHOICES,
+                    inputStyle={"marginRight": "8px"},
+                    labelStyle={"display": "block", "marginBottom": "6px"},
+                    style=checklist_style
                 ),
                 html.Br(),
-                html.Label("Sulfur"),
-                dcc.Dropdown(
+                html.Label("Sulfur", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
+                dcc.Checklist(
                     id="filter-sulfur", 
                     options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in SULFUR_FILTER_CHOICES],
-                    multi=True
+                    value=["ALL"] + SULFUR_FILTER_CHOICES,
+                    inputStyle={"marginRight": "8px"},
+                    labelStyle={"display": "block", "marginBottom": "6px"},
+                    style=checklist_style
                 ),
             ]
         return []
@@ -1995,6 +2009,65 @@ def register_callbacks(dash_app, server):
         new_sorted = normalized
         old_sorted = sorted(selected, key=lambda x: x if isinstance(x, int) else int(x) if str(x).isdigit() else 0, reverse=True)
         return new_sorted if new_sorted != old_sorted else no_update
+
+    def _sync_categorical_checklist(selected, options, all_values):
+        """Helper to sync 'ALL' toggle for categorical checklists."""
+        if not options:
+            return no_update
+        
+        selected = selected or []
+        selected_set = set(selected)
+        has_all = "ALL" in selected_set
+        others_set = selected_set - {"ALL"}
+        all_categories_set = set(all_values)
+        
+        if has_all and not others_set:
+            # Only ALL selected -> select everything
+            normalized = ["ALL"] + all_values
+        elif has_all and others_set:
+            # ALL and some others -> if user unchecked one from a full set, uncheck ALL
+            if len(others_set) < len(all_categories_set):
+                normalized = sorted(list(others_set))
+            else:
+                normalized = ["ALL"] + all_values
+        elif not has_all and others_set == all_categories_set:
+            # Everything except ALL is checked -> check ALL too
+            normalized = ["ALL"] + all_values
+        elif not has_all and not others_set:
+            # Nothing selected
+            normalized = []
+        else:
+            # Just some categories
+            normalized = sorted(list(others_set))
+            
+        return normalized if normalized != selected else no_update
+
+    @dash_app.callback(
+        Output("filter-ci", "value"),
+        Input("filter-ci", "value"),
+        State("filter-ci", "options"),
+        prevent_initial_call=True
+    )
+    def sync_ci_all(selected, options):
+        return _sync_categorical_checklist(selected, options, CI_FILTER_CHOICES)
+
+    @dash_app.callback(
+        Output("filter-api", "value"),
+        Input("filter-api", "value"),
+        State("filter-api", "options"),
+        prevent_initial_call=True
+    )
+    def sync_api_all(selected, options):
+        return _sync_categorical_checklist(selected, options, API_FILTER_CHOICES)
+
+    @dash_app.callback(
+        Output("filter-sulfur", "value"),
+        Input("filter-sulfur", "value"),
+        State("filter-sulfur", "options"),
+        prevent_initial_call=True
+    )
+    def sync_sulfur_all(selected, options):
+        return _sync_categorical_checklist(selected, options, SULFUR_FILTER_CHOICES)
     
     @dash_app.callback(
         [Output("profiled-streams", "options"),
