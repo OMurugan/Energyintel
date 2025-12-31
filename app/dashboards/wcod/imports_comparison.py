@@ -3,6 +3,7 @@ Imports - Country Comparison View
 Global Crude Imports Dashboard - Based on Tableau design
 """
 import json
+import os
 from urllib.request import urlopen
 import dash
 from dash import dcc, html, Input, Output, State, callback, dash_table, no_update
@@ -181,10 +182,10 @@ def load_annual_imports_data(selected_countries=None):
         return pd.DataFrame()
 
 
-def load_import_export_matrix_data(selected_year=2023):
-    """Load Import – Export Matrix data from database (single-year snapshot)"""
+def load_import_export_matrix_data(selected_year=2023, selected_countries=None):
+    """Load Import – Export Matrix data from database (single-year snapshot) with optional country filtering"""
     try:
-        query = """
+        base_query = """
         SELECT
             EXTRACT(YEAR FROM yr)::INT AS "Year",
             import_country AS "Importer",
@@ -197,6 +198,31 @@ def load_import_export_matrix_data(selected_year=2023):
                 import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
                 OR source <> 'OECD Imports'
             )
+        """
+        
+        params = {'selected_year': selected_year}
+        
+        # Add country filter if countries are specified (filter out 'All' if present)
+        if selected_countries:
+            # Remove 'All' from the list if present
+            countries_to_filter = [c for c in selected_countries if c != 'All']
+            
+            # If no countries are selected after removing 'All', return empty DataFrame
+            if not countries_to_filter:
+                return pd.DataFrame()
+            
+            if len(countries_to_filter) == 1:
+                # Single country - use = operator
+                base_query += " AND import_country = :import_country"
+                params['import_country'] = countries_to_filter[0]
+            else:
+                # Multiple countries - use IN clause
+                placeholders = ", ".join([f":country_{i}" for i in range(len(countries_to_filter))])
+                base_query += f" AND import_country IN ({placeholders})"
+                for i, country in enumerate(countries_to_filter):
+                    params[f"country_{i}"] = country
+        
+        base_query += """
         GROUP BY
             EXTRACT(YEAR FROM yr),
             import_country,
@@ -207,7 +233,7 @@ def load_import_export_matrix_data(selected_year=2023):
             "Exporter";
         """
         
-        rows = execute_query(query, {'selected_year': selected_year})
+        rows = execute_query(base_query, params)
         
         if not rows:
             return pd.DataFrame()
@@ -352,7 +378,234 @@ def build_year_marks(years, max_marks=8):
     return marks
 
 
-YEAR_SLIDER_MARKS = build_year_marks(AVAILABLE_YEARS)
+def create_imports_map_figure(df_map, single_selected_country, max_volume, selected_year):
+    """Create the imports map figure, using the same safe approach as projects_by_country.py"""
+    if df_map.empty:
+        map_fig = go.Figure()
+        map_fig.add_annotation(
+            text="No countries with valid data for map display",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5,
+            showarrow=False
+        )
+        map_fig.update_layout(height=550, plot_bgcolor='white', paper_bgcolor='white')
+        return map_fig
+    
+    # Guard against bad coords to avoid client-side Mapbox layer errors
+    df = df_map.copy()
+    
+    # Only attempt Mapbox rendering when a token looks valid; otherwise fall back
+    # to the non-Mapbox choropleth to avoid client-side "Mapbox error".
+    _mapbox_token = (getattr(Config, "MAPBOX_ACCESS_TOKEN", None) or "").strip()
+    has_mapbox_token = _mapbox_token.startswith("pk.")
+    use_mapbox_env = os.getenv("USE_MAPBOX_WCOD", "false").lower() in ("1", "true", "yes")
+    use_mapbox = (
+        has_mapbox_token
+        and (_load_world_geojson() is not None)
+        and use_mapbox_env
+    )
+    
+    print(f"Mapbox configuration: has_token={has_mapbox_token}, has_geojson={_load_world_geojson() is not None}, env_enabled={use_mapbox_env}, use_mapbox={use_mapbox}")
+    
+    # Load GeoJSON and coordinates
+    geojson = _load_world_geojson()
+    all_countries_df = get_all_countries_with_coordinates()
+    
+    # Preferred Mapbox path (with world geojson) for OSM base map + controls
+    world_center = {"lat": 24.0, "lon": 45.0}
+    map_center = world_center
+    map_zoom = 2.8  # Use consistent zoom level like projects_by_country.py
+    
+    if geojson and use_mapbox:
+        try:
+            print("Attempting Mapbox choropleth rendering")
+            
+            # Create choropleth with import volume data
+            fig = go.Figure(
+                go.Choroplethmapbox(
+                    geojson=geojson,
+                    locations=df['ISO_Code'].astype(str).tolist(),
+                    z=df['Import_Volume'].tolist(),
+                    zmin=0,
+                    zmax=max_volume,
+                    featureidkey="id",  # world.geo.json uses ISO-3 in `id`
+                    colorscale=MAP_COLOR_SCALE,
+                    showscale=False,
+                    hoverinfo="text",
+                    hovertext=df.apply(
+                        lambda row: f"<b>{row['Country_DB_Original']}</b><br>Import Volume: {row['Import_Volume']:,.0f}('000 b/d)<br>Year: {selected_year}<br>Click to select",
+                        axis=1,
+                    ),
+                    marker_line_color="white",
+                    marker_line_width=0.6,
+                )
+            )
+            
+            # Add country labels for countries in the data
+            if not all_countries_df.empty:
+                countries_in_map = df['Country_DB_Original'].tolist()
+                valid_coords = all_countries_df[all_countries_df['Country'].isin(countries_in_map)].copy()
+                
+                if not valid_coords.empty:
+                    # Limit label density at low zoom so names stay readable
+                    max_labels = len(valid_coords)
+                    if map_zoom <= 2.8:
+                        max_labels = 40
+                    elif map_zoom <= 3.4:
+                        max_labels = 80
+                    
+                    coords_display = (
+                        valid_coords.sort_values("Country").head(max_labels)
+                        if max_labels < len(valid_coords)
+                        else valid_coords
+                    )
+                    
+                    fig.add_trace(
+                        go.Scattermapbox(
+                            lon=coords_display["Longitude"],
+                            lat=coords_display["Latitude"],
+                            mode="text",
+                            text=coords_display["Country"],
+                            textfont=dict(size=10, color="#2c3e50"),
+                            textposition="top center",
+                            hoverinfo="skip",
+                            showlegend=False,
+                        )
+                    )
+            
+            # Add selection outline for single selected country
+            if single_selected_country and single_selected_country in df['Country_DB_Original'].values:
+                sel_iso = df.loc[df['Country_DB_Original'] == single_selected_country, 'ISO_Code'].iloc[0]
+                fig.add_trace(
+                    go.Choroplethmapbox(
+                        geojson=geojson,
+                        locations=[sel_iso],
+                        z=[0],
+                        featureidkey="id",
+                        colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
+                        showscale=False,
+                        marker_line_color="#FF6B35",
+                        marker_line_width=2.5,
+                        hoverinfo="skip",
+                    )
+                )
+                # Reorder traces to put selection outline on top
+                if len(fig.data) > 1:
+                    fig.data = tuple(list(fig.data)[1:] + [fig.data[0]])
+            
+            mapbox_layout = dict(
+                style="carto-positron",
+                center=map_center,
+                zoom=map_zoom,
+                bearing=0,
+                pitch=0,
+            )
+            if has_mapbox_token:
+                mapbox_layout["accesstoken"] = _mapbox_token
+            
+            fig.update_layout(
+                margin=dict(l=20, r=20, t=20, b=80),
+                height=550,
+                mapbox=mapbox_layout,
+                hovermode="closest",
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                showlegend=False,
+                uirevision='imports-map'
+            )
+            
+            print("Mapbox choropleth created successfully")
+            return fig
+            
+        except Exception as exc:
+            print(f"Mapbox rendering failed; falling back to geo map. Error: {exc}")
+            import traceback
+            traceback.print_exc()
+    
+    # Fallback: geo-based choropleth (no Mapbox) if GeoJSON unavailable or Mapbox fails
+    print("Using fallback geo-based choropleth")
+    
+    fig = go.Figure(
+        go.Choropleth(
+            locations=df['ISO_Code'].astype(str).tolist(),
+            z=df['Import_Volume'].tolist(),
+            zmin=0,
+            zmax=max_volume,
+            locationmode="ISO-3",
+            colorscale=MAP_COLOR_SCALE,
+            showscale=False,
+            hoverinfo="text",
+            hovertext=df.apply(
+                lambda row: f"<b>{row['Country_DB_Original']}</b><br>Import Volume: {row['Import_Volume']:,.0f}('000 b/d)<br>Year: {selected_year}<br>Click to select",
+                axis=1,
+            ),
+            marker_line_color="white",
+            marker_line_width=0.7,
+        )
+    )
+    
+    # Add country labels for fallback map
+    if not all_countries_df.empty:
+        countries_in_map = df['Country_DB_Original'].tolist()
+        valid_coords = all_countries_df[all_countries_df['Country'].isin(countries_in_map)].copy()
+        
+        if not valid_coords.empty:
+            # Limit label density
+            fallback_labels = valid_coords
+            if len(valid_coords) > 60:
+                fallback_labels = valid_coords.sort_values("Country").head(60)
+            
+            fig.add_trace(
+                go.Scattergeo(
+                    lon=fallback_labels["Longitude"],
+                    lat=fallback_labels["Latitude"],
+                    mode="text",
+                    text=fallback_labels["Country"],
+                    textfont=dict(size=10, color="#2c3e50"),
+                    textposition="top center",
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
+    
+    # Always use world center - don't auto-center on selected countries
+    world_center_lat = 24.0
+    world_center_lon = 45.0
+    
+    fig.update_layout(
+        margin=dict(l=20, r=20, t=20, b=80),
+        height=550,
+        geo=dict(
+            showframe=False,
+            showcoastlines=True,
+            projection=dict(type="natural earth"),
+            center=dict(lat=world_center_lat, lon=world_center_lon),
+        ),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        uirevision='imports-map'
+    )
+    
+    # Add selection outline for single selected country in fallback mode
+    if single_selected_country and single_selected_country in df['Country_DB_Original'].values:
+        sel_iso = df.loc[df['Country_DB_Original'] == single_selected_country, 'ISO_Code'].iloc[0]
+        fig.add_trace(
+            go.Choropleth(
+                locations=[sel_iso],
+                z=[0],
+                locationmode="ISO-3",
+                colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
+                showscale=False,
+                marker_line_color="#FF6B35",
+                marker_line_width=2.5,
+                hoverinfo="skip",
+            )
+        )
+        # Reorder traces to put selection outline on top
+        if len(fig.data) > 1:
+            fig.data = tuple(list(fig.data)[1:] + [fig.data[0]])
+    
+    return fig
 
 def create_layout():
     """Create the Imports - Country Comparison layout matching Tableau design"""
@@ -763,49 +1016,71 @@ def register_callbacks(dash_app, server):
         [Output('imports-map-clicked-country', 'data'),
          Output('imports-country-checklist', 'value', allow_duplicate=True)],
         Input('imports-world-map', 'clickData'),
-        State('imports-map-clicked-country', 'data'),
+        [State('imports-map-clicked-country', 'data'),
+         State('imports-country-checklist', 'value')],
         prevent_initial_call=True
     )
-    def handle_map_click(clickData, current_clicked_country):
-        """Handle map click to store clicked country and update checklist.
-        If clicking the same country again, deselect it and return to original state.
-        For Mapbox, clickData contains ISO codes in 'location' or country names in 'customdata'."""
-        if clickData and 'points' in clickData and len(clickData['points']) > 0:
-            point = clickData['points'][0]
-            clicked_country = None
+    def handle_map_click(clickData, current_clicked_country, current_selection):
+        """Handle map click to update country selection like in projects_by_country.py"""
+        if not clickData or 'points' not in clickData or len(clickData['points']) == 0:
+            return no_update, no_update
+        
+        point = clickData['points'][0]
+        clicked_country = None
+        
+        # Extract country name using multiple fallback methods (same as projects_by_country.py)
+        if "text" in point and point["text"]:
+            clicked_country = point["text"]
+        elif "hovertext" in point and point["hovertext"]:
+            hovertext = point["hovertext"]
+            if "<b>" in hovertext and "</b>" in hovertext:
+                clicked_country = hovertext.split("<b>")[1].split("</b>")[0]
+        elif "customdata" in point and point["customdata"]:
+            if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
+                clicked_country = point["customdata"][0]
+            else:
+                clicked_country = point["customdata"]
+        elif "location" in point:
+            iso_value = point["location"]
+            # Use reverse mapping from COUNTRY_TO_ISO
+            reverse_map = {v: k for k, v in COUNTRY_TO_ISO.items()}
+            clicked_country = reverse_map.get(iso_value, None)
+        
+        if not clicked_country:
+            return no_update, no_update
+        
+        # Denormalize country name if needed (convert from map display name to original name)
+        original_country_name = denormalize_country_name(clicked_country)
+        if original_country_name not in AVAILABLE_COUNTRIES:
+            # Try to find by case-insensitive matching
+            for country in AVAILABLE_COUNTRIES:
+                if (country.lower() == clicked_country.lower() or 
+                    normalize_country_name(country).lower() == clicked_country.lower()):
+                    original_country_name = country
+                    break
+            else:
+                # Country not found in available countries
+                return no_update, no_update
+        
+        # Apply the same logic as projects_by_country.py
+        current_selection = current_selection or []
+        
+        # Resolve current selection (handle "All" case)
+        if 'All' in current_selection:
+            resolved_countries = AVAILABLE_COUNTRIES
+        else:
+            resolved_countries = [c for c in current_selection if c in AVAILABLE_COUNTRIES]
+        
+        # If country is not currently in the resolved selection, select only this country
+        if original_country_name not in resolved_countries:
+            return original_country_name, [original_country_name]
+        
+        # If this country is already the only one selected, expand to show all
+        if len(resolved_countries) == 1 and original_country_name in resolved_countries:
+            return None, ['All'] + AVAILABLE_COUNTRIES
             
-            # Try to get country from customdata first (contains original country name)
-            if 'customdata' in point and point['customdata']:
-                customdata = point['customdata']
-                if isinstance(customdata, list) and len(customdata) > 0:
-                    clicked_country = customdata[0]  # First element is country name
-                elif isinstance(customdata, str):
-                    clicked_country = customdata
-            # Fallback: try to get from location (ISO code) - need to map back to country
-            elif 'location' in point and point['location']:
-                iso_code = point['location']
-                # Use reverse mapping from COUNTRY_TO_ISO
-                iso_to_country_reverse = {v: k for k, v in COUNTRY_TO_ISO.items()}
-                clicked_country = iso_to_country_reverse.get(iso_code)
-                # If not found in mapping, try to get from all_countries_df
-                if not clicked_country:
-                    all_countries_df = get_all_countries_with_coordinates()
-                    if not all_countries_df.empty and 'ISO_Code' in all_countries_df.columns:
-                        iso_to_country = dict(zip(all_countries_df['ISO_Code'], all_countries_df['Country']))
-                        clicked_country = iso_to_country.get(iso_code)
-            
-            if clicked_country:
-                # Check if the country exists in available countries
-                if clicked_country in AVAILABLE_COUNTRIES:
-                    # If clicking the same country that's already selected, deselect it (return to original)
-                    if current_clicked_country == clicked_country:
-                        # Return to original state: clear clicked country and select all countries
-                        return None, ['All'] + AVAILABLE_COUNTRIES
-                    else:
-                        # Select only the clicked country in the checklist (deselect all others)
-                        return clicked_country, [clicked_country]
-                return clicked_country, no_update
-        return None, no_update
+        # If multiple countries are selected and this one is clicked, select only this country
+        return original_country_name, [original_country_name]
     
     @dash_app.callback(
         [Output('imports-world-map', 'figure'),
@@ -852,11 +1127,32 @@ def register_callbacks(dash_app, server):
         
         # Filter by countries if not "All"
         # The checklist uses original country names, but map data uses normalized names
-        if 'All' not in selected_countries and selected_countries:
-            # Convert original country names to normalized names for map filtering
-            # Map data already has normalized names, so we need to normalize the selected countries
-            normalized_countries = [normalize_country_name(country) for country in selected_countries]
-            df_filtered = df_filtered[df_filtered['Importer'].isin(normalized_countries)].copy()
+        selected_countries_for_map = []
+        if 'All' in selected_countries:
+            # Show all countries
+            selected_countries_for_map = [normalize_country_name(country) for country in AVAILABLE_COUNTRIES]
+        elif selected_countries:
+            # Show only selected countries
+            selected_countries_for_map = [normalize_country_name(country) for country in selected_countries]
+        else:
+            # No countries selected, show empty
+            selected_countries_for_map = []
+        
+        # Filter the data to show only selected countries
+        if selected_countries_for_map:
+            df_filtered = df_filtered[df_filtered['Importer'].isin(selected_countries_for_map)].copy()
+        else:
+            # No countries selected, return empty dataframe
+            df_filtered = pd.DataFrame()
+        
+        print(f"After country filtering: {len(df_filtered)} rows, countries: {df_filtered['Importer'].unique().tolist() if not df_filtered.empty else []}")
+        
+        # Determine if a single country is selected for special handling
+        single_selected_country = None
+        if clicked_country and clicked_country in selected_countries:
+            single_selected_country = clicked_country
+        elif len(selected_countries) == 1 and 'All' not in selected_countries:
+            single_selected_country = selected_countries[0]
         
         # Create map
         if df_filtered.empty:
@@ -873,6 +1169,10 @@ def register_callbacks(dash_app, server):
             df_map = df_filtered.groupby('Importer')['Import_Volume'].sum().reset_index()
             df_map.columns = ['Country', 'Import_Volume']
             
+            print(f"Map data after aggregation: {len(df_map)} countries")
+            if not df_map.empty:
+                print(f"Countries in map data: {df_map['Country'].tolist()}")
+            
             # Store original country names BEFORE normalization for ISO code lookup
             df_map['Country_DB_Original'] = df_map['Country'].copy()
             
@@ -887,170 +1187,25 @@ def register_callbacks(dash_app, server):
             # Add year column for hover
             df_map['Year'] = selected_year
             
-            # Load GeoJSON and all countries data for Mapbox
-            geojson = _load_world_geojson()
-            all_countries_df = get_all_countries_with_coordinates()
+            # Store original country names BEFORE normalization for ISO code lookup
+            df_map['Country_DB_Original'] = df_map['Country'].copy()
+            
+            # Store normalized country names for display
+            df_map['Country_Original'] = df_map['Country'].apply(normalize_country_name)
             
             # Create mapping from country names to ISO-3 codes using _iso_for_country function
-            # This ensures we get proper ISO-3 codes that match the GeoJSON
             df_map['ISO_Code'] = df_map['Country_DB_Original'].apply(_iso_for_country)
+            
             # Filter out any countries without valid ISO-3 codes
             df_map = df_map.dropna(subset=['ISO_Code']).copy()
+            
             # Ensure ISO codes are strings and exactly 3 characters
             if not df_map.empty:
                 df_map['ISO_Code'] = df_map['ISO_Code'].astype(str)
                 df_map = df_map[df_map['ISO_Code'].str.len() == 3].copy()
             
-            # Handle clicked country highlighting
-            # clicked_country is the original country name from AVAILABLE_COUNTRIES
-            clicked_country_original = None
-            if clicked_country and not df_map.empty:
-                # Get ISO code for the clicked country (use original database name)
-                clicked_iso = _iso_for_country(clicked_country)
-                # Check if we have a valid ISO code
-                if clicked_iso and len(str(clicked_iso)) == 3:
-                    clicked_iso_str = str(clicked_iso)
-                    # Check if this ISO code exists in our filtered map data (compare as strings)
-                    matching_iso_rows = df_map[df_map['ISO_Code'].astype(str) == clicked_iso_str]
-                    if not matching_iso_rows.empty:
-                        # Found a match by ISO code - use the normalized country name for display
-                        clicked_country_original = matching_iso_rows.iloc[0]['Country_Original']
-                    else:
-                        # Try matching by original database country name (case-insensitive)
-                        matching_name_rows = df_map[df_map['Country_DB_Original'].str.strip().str.lower() == str(clicked_country).strip().lower()]
-                        if not matching_name_rows.empty:
-                            clicked_country_original = matching_name_rows.iloc[0]['Country_Original']
-            
-            if geojson is None:
-                # Fallback to empty map if no GeoJSON
-                map_fig = go.Figure()
-                map_fig.add_annotation(
-                    text="No GeoJSON data available for map display",
-                    xref="paper", yref="paper",
-                    x=0.5, y=0.5,
-                    showarrow=False
-                )
-                map_fig.update_layout(height=550, plot_bgcolor='white', paper_bgcolor='white')
-            elif df_map.empty:
-                # No valid countries with ISO-3 codes
-                map_fig = go.Figure()
-                map_fig.add_annotation(
-                    text="No countries with valid ISO codes for map display",
-                    xref="paper", yref="paper",
-                    x=0.5, y=0.5,
-                    showarrow=False
-                )
-                map_fig.update_layout(height=550, plot_bgcolor='white', paper_bgcolor='white')
-            else:
-                # Create Mapbox choropleth map
-                map_fig = go.Figure()
-                
-                if clicked_country_original:
-                    # Dimmed base map for all countries - filter to only valid ISO-3 codes
-                    df_map_valid = df_map.copy()  # Already filtered to valid ISO codes
-                    if not df_map_valid.empty:
-                        map_fig.add_trace(go.Choroplethmapbox(
-                            geojson=geojson,
-                            locations=df_map_valid['ISO_Code'].tolist(),
-                            z=df_map_valid['Import_Volume'].tolist(),
-                            featureidkey="id",
-                            colorscale=MAP_COLOR_SCALE,
-                            zmin=0,
-                            zmax=max_volume,
-                            marker=dict(line=dict(color='#ffffff', width=0.5), opacity=0.3),
-                            showscale=False,
-                            hovertemplate="<b>Importer:</b> %{customdata[0]}<br>" \
-                                          "<b>Year:</b> %{customdata[1]}<br>" \
-                                          "<b>Traded Volume:</b> %{z:,.0f}('000 b/d)<extra></extra>",
-                            customdata=[[c, selected_year] for c in df_map_valid['Country_Original']],
-                            hoverlabel=dict(bgcolor='white', font_color='#1b365d', bordercolor='#99a6b8',
-                                           font_size=12, font_family='Arial, sans-serif')
-                        ))
-                    
-                    # Highlighted country - add on top with full opacity and black border
-                    df_highlighted = df_map[df_map['Country_Original'] == clicked_country_original].copy()
-                    if not df_highlighted.empty:
-                        map_fig.add_trace(go.Choroplethmapbox(
-                            geojson=geojson,
-                            locations=df_highlighted['ISO_Code'].tolist(),
-                            z=df_highlighted['Import_Volume'].tolist(),
-                            featureidkey="id",
-                            colorscale=MAP_COLOR_SCALE,
-                            zmin=0,
-                            zmax=max_volume,
-                            marker=dict(line=dict(color='#000000', width=3), opacity=1.0),
-                            showscale=False,
-                            hovertemplate="<b>Importer:</b> %{customdata[0]}<br>" \
-                                          "<b>Year:</b> %{customdata[1]}<br>" \
-                                          "<b>Traded Volume:</b> %{z:,.0f}('000 b/d)<br>" \
-                                          "<b>(Selected)</b><extra></extra>",
-                            customdata=[[c, selected_year] for c in df_highlighted['Country_Original']],
-                            hoverlabel=dict(bgcolor='white', font_color='#1b365d', bordercolor='#000000',
-                                           font_size=12, font_family='Arial, sans-serif')
-                        ))
-                else:
-                    # Normal map - already filtered to valid ISO-3 codes
-                    df_map_valid = df_map.copy()
-                    if not df_map_valid.empty:
-                        map_fig.add_trace(go.Choroplethmapbox(
-                            geojson=geojson,
-                            locations=df_map_valid['ISO_Code'].tolist(),
-                            z=df_map_valid['Import_Volume'].tolist(),
-                            featureidkey="id",
-                            colorscale=MAP_COLOR_SCALE,
-                            zmin=0,
-                            zmax=max_volume,
-                            marker=dict(line=dict(color='#ffffff', width=0.5)),
-                            showscale=False,
-                            hovertemplate="<b>Importer:</b> %{customdata[0]}<br>" \
-                                          "<b>Year:</b> %{customdata[1]}<br>" \
-                                          "<b>Traded Volume:</b> %{z:,.0f}('000 b/d)<extra></extra>",
-                            customdata=[[c, selected_year] for c in df_map_valid['Country_Original']],
-                            hoverlabel=dict(bgcolor='white', font_color='#1b365d', bordercolor='#99a6b8',
-                                           font_size=12, font_family='Arial, sans-serif')
-                        ))
-                
-                # Add ALL country labels (not just import countries)
-                if not all_countries_df.empty:
-                    map_fig.add_trace(go.Scattermapbox(
-                        lat=all_countries_df['Latitude'].tolist(),
-                        lon=all_countries_df['Longitude'].tolist(),
-                        mode='text',
-                        text=all_countries_df['Country'].tolist(),
-                        textfont=dict(size=9, color='#2c3e50', family='Arial'),
-                        textposition='top center',
-                        hoverinfo='skip',
-                        showlegend=False
-                    ))
-                
-                # Update layout with Mapbox
-                mapbox_layout = dict(
-                    style="carto-positron",
-                    center=dict(lat=24.0, lon=45.0),
-                    zoom=1.5
-                )
-                if Config.MAPBOX_ACCESS_TOKEN:
-                    mapbox_layout["accesstoken"] = Config.MAPBOX_ACCESS_TOKEN
-                
-                map_fig.update_layout(
-                    margin=dict(l=20, r=20, t=20, b=80),
-                    height=550,
-                    plot_bgcolor='white',
-                    paper_bgcolor='white',
-                    mapbox=mapbox_layout,
-                    uirevision='imports-map'
-                )
-                
-                # Add copyright annotation
-                map_fig.add_annotation(
-                    text="© 2025 Mapbox © OpenStreetMap",
-                    xref="paper", yref="paper",
-                    x=0.01, y=0.01,
-                    showarrow=False,
-                    font=dict(size=10, color='#666'),
-                    bgcolor='rgba(255,255,255,0.8)',
-                    bordercolor='rgba(255,255,255,0.8)'
-                )
+            # Create map figure using the same approach as projects_by_country.py
+            map_fig = create_imports_map_figure(df_map, single_selected_country, max_volume, selected_year)
         
         # Create annual table using database query with dynamic country filtering
         # Load annual imports data based on selected countries
@@ -1183,8 +1338,9 @@ def register_callbacks(dash_app, server):
                     merge_duplicate_headers=True
                 )
 
-        # Load matrix data dynamically for the selected year
-        IMPORT_EXPORT_MATRIX_DF = load_import_export_matrix_data(selected_year)
+        # Load matrix data dynamically for the selected year and countries
+        # Pass selected_countries to filter the matrix by clicked/selected countries
+        IMPORT_EXPORT_MATRIX_DF = load_import_export_matrix_data(selected_year, selected_countries)
         
         if IMPORT_EXPORT_MATRIX_DF.empty:
             matrix_table = html.Div(
@@ -1770,13 +1926,14 @@ def register_callbacks(dash_app, server):
         Output('download-matrix-imports-csv', 'data'),
         Input('export-matrix-imports-btn', 'n_clicks'),
         State('imports-year-store', 'data'),
+        State('imports-country-checklist', 'value'),
         prevent_initial_call=True
     )
-    def export_matrix_imports_csv(n_clicks, selected_year):
+    def export_matrix_imports_csv(n_clicks, selected_year, selected_countries):
         """Export Import-Export Matrix data to CSV"""
         if n_clicks and selected_year:
-            # Load the same data used for the matrix table
-            df = load_import_export_matrix_data(selected_year)
+            # Load the same data used for the matrix table (with country filtering)
+            df = load_import_export_matrix_data(selected_year, selected_countries)
             
             if df.empty:
                 # Return empty CSV if no data
