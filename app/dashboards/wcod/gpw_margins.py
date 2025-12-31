@@ -602,7 +602,7 @@ def _empty_figure(message: str, height: int = 400) -> go.Figure:
         paper_bgcolor="white",
         plot_bgcolor="white",
         height=height,
-        margin=dict(l=0, r=0, t=10, b=0),
+        margin=dict(l=0, r=0, t=5, b=0),
     )
     return fig
 
@@ -662,11 +662,17 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_displa
             line_width = 2
             line_color = color
             marker_size = 4
+            opacity = 1.0
 
-            if highlight_crude and crude == highlight_crude:
-                line_width = 2  # Thicker line for highlight
-                # Can also change color here if desired, e.g., line_color = 'black'
-                marker_size = 4 # Larger marker for highlight
+            if highlight_crude:
+                if crude == highlight_crude:
+                    line_width = 2   # Thinner highlighted line as requested
+                    marker_size = 4  # Normal marker size
+                else:
+                    # Low opacity original colors for others
+                    line_width = 1
+                    marker_size = 2
+                    opacity = 0.15  # Slightly increased for better visibility of "disabled" lines
 
             fig.add_trace(go.Scatter(
                 x=crude_df['Date'],
@@ -674,7 +680,8 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_displa
                 mode='lines+markers',
                 name=crude,
                 line=dict(color=line_color, width=line_width),
-                marker=dict(size=marker_size, color=line_color), # Ensure marker color matches line
+                marker=dict(size=marker_size, color=line_color),
+                opacity=opacity,
                 customdata=hover_texts,
                 hovertemplate="%{customdata}<extra></extra>"
             ))
@@ -696,10 +703,10 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_displa
             gridcolor="#e0e0e0"
         ),
         hovermode='closest',
-        height=400,
+        height=350,
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=60, r=20, t=80, b=50),
+        margin=dict(l=60, r=20, t=40, b=30),
         hoverlabel=dict(
             bgcolor="white",
             bordercolor="#999999",
@@ -779,11 +786,17 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type_internal: str, 
             line_width = 2
             line_color = color
             marker_size = 4
+            opacity = 1.0
 
-            if highlight_crude and crude == highlight_crude:
-                line_width = 2  # Thicker line for highlight
-                # Can also change color here if desired, e.g., line_color = 'black'
-                marker_size = 4 # Larger marker for highlight
+            if highlight_crude:
+                if crude == highlight_crude:
+                    line_width = 2   # Thinner highlighted line as requested
+                    marker_size = 4  # Normal marker size
+                else:
+                    # Low opacity original colors for others
+                    line_width = 1
+                    marker_size = 2
+                    opacity = 0.15  # Slightly increased for better visibility of "disabled" lines
 
             fig.add_trace(go.Scatter(
                 x=crude_df['Date'],
@@ -791,7 +804,8 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type_internal: str, 
                 mode='lines+markers',
                 name=crude,
                 line=dict(color=line_color, width=line_width),
-                marker=dict(size=marker_size, color=line_color), # Ensure marker color matches line
+                marker=dict(size=marker_size, color=line_color),
+                opacity=opacity,
                 customdata=hover_texts,
                 hovertemplate="%{customdata}<extra></extra>"
             ))
@@ -814,10 +828,10 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type_internal: str, 
             zeroline=False # Hide the zero line
         ),
         hovermode='closest',
-        height=400,
+        height=350,
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=60, r=20, t=80, b=50),
+        margin=dict(l=60, r=20, t=40, b=30),
         hoverlabel=dict(
             bgcolor="white",
             bordercolor="#999999",
@@ -1008,16 +1022,35 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
         filtered_tooltip_row = {k: v for k, v in row_tooltip.items() if k not in empty_column_ids}
         filtered_tooltip_data.append(filtered_tooltip_row)
     
-    styles_data_conditional = []
+    styles_data_conditional = [
+        # Always make the DateStr column bold as requested
+        {
+            'if': {'column_id': 'DateStr'},
+            'fontWeight': 'bold',
+            'color': '#000000',
+            'textAlign': 'center'
+        }
+    ]
+    
     if highlight_crude:
+        # All columns except DateStr should be dimmed by default when highlighting is active
+        non_highlighted_cols = [col['id'] for col in filtered_columns if col['id'] != 'DateStr']
+        styles_data_conditional.append({
+            'if': {'column_id': non_highlighted_cols},
+            'color': '#aaaaaa',  # Slightly darker gray for better visibility
+            'opacity': 0.5       # Increased opacity for "disabled" look
+        })
+
         for data_type in DATA_TYPES:
             for tech_type in TECH_TYPES:
                 # Construct the column ID for the highlighted crude
                 col_id = f"{data_type}_{tech_type}_{highlight_crude}".replace(' ', '_').replace('/', '_')
                 styles_data_conditional.append({
                     'if': {'column_id': col_id},
-                    'backgroundColor': HIGHLIGHT_COLOR,
-                    'border': '1px solid #cccccc'
+                    'backgroundColor': '#fffde7',  # Subtler yellow highlight (Lemon Chiffon variant)
+                    'color': '#000000',           # Ensure text remains black/visible
+                    'fontWeight': 'bold',         # Make the highlighted column text bold
+                    'border': '1px solid #3498db'  # Consistent blue border
                 })
     
     return filtered_columns, filtered_data, filtered_tooltip_data, styles_data_conditional
@@ -1214,7 +1247,7 @@ def create_layout():
                 style={
                     'color': '#fe5000',
                     'textAlign': 'center',
-                    'marginBottom': '30px',
+                    'marginBottom': '15px',
                     'fontSize': '24px',
                     'fontWeight': 'bold'
                 }
@@ -1286,11 +1319,11 @@ def create_layout():
                 ], className='col-md-8', style={'padding': '10px'})
             ], className='row', style={
                 'backgroundColor': '#f8f9fa',
-                'padding': '20px',
+                'padding': '10px 20px',
                 'marginBottom': '0px',
                 'borderRadius': '5px'
             })
-        ], style={'padding': '20px'}),
+        ], style={'padding': '10px 20px'}),
         
         # Gross Product Worth Section
         html.Div([
@@ -1303,7 +1336,7 @@ def create_layout():
                             style={
                                 'color': '#fe5000',
                                 'textAlign': 'center',
-                                'marginBottom': '15px',
+                                'marginBottom': '10px',
                                 'fontSize': '16px',
                                 'fontWeight': 'bold',
                                 'flexGrow': 1 # Allow title to take available space
@@ -1343,7 +1376,7 @@ def create_layout():
                                     style={
                                         'color': '#1b365d',
                                         'textAlign': 'center',
-                                        'marginBottom': '15px',
+                                        'marginBottom': '8px',
                                         'fontSize': '16px',
                                         'fontWeight': 'bold',
                                         'flexGrow': 1
@@ -1356,7 +1389,7 @@ def create_layout():
                             dcc.Graph(id='gpw-catalytic-cracking-chart',
 
                                 config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False}),
-                        ], className='col-md-6', style={'padding': '15px'}),
+                        ], className='col-md-6', style={'padding': '8px 15px'}),
                         
                         html.Div([
                             html.Div([
@@ -1366,7 +1399,7 @@ def create_layout():
                                     style={
                                         'color': '#1b365d',
                                         'textAlign': 'center',
-                                        'marginBottom': '15px',
+                                        'marginBottom': '8px',
                                         'fontSize': '16px',
                                         'fontWeight': 'bold',
                                         'flexGrow': 1
@@ -1471,6 +1504,7 @@ def create_layout():
                     
                     html.Label(
                         "Crude",
+                        id='gpw-crude-legend-title',
                         style={
                             'fontWeight': 'bold',
                             'color': '#2c3e50',
@@ -1480,48 +1514,7 @@ def create_layout():
                         }
                     ),
                     # Crude Legend with row click selection (no checkboxes)
-                    html.Div([
-                        html.Div(
-                            id={'type': 'gpw-crude-legend-item', 'crude': crude},
-                            n_clicks=0,
-                            children=[
-                                html.Div(
-                                    style={
-                                        'width': '14px',
-                                        'height': '14px',
-                                        'backgroundColor': CRUDE_COLORS.get(crude, FALLBACK_COLORS[idx % len(FALLBACK_COLORS)]),
-                                        'borderRadius': '2px',
-                                        'marginRight': '10px',
-                                        'border': '1px solid #cfd8e3',
-                                        'boxShadow': '0 0 2px rgba(0,0,0,0.1)',
-                                        'display': 'inline-block',
-                                        'verticalAlign': 'middle'
-                                    }
-                                ),
-                                html.Span(
-                                    crude,
-                                    style={
-                                        'color': '#1b365d',
-                                        'fontWeight': '600',
-                                        'fontSize': '13px',
-                                        'verticalAlign': 'middle'
-                                    }
-                                )
-                            ],
-                            style={
-                                'display': 'flex',
-                                'alignItems': 'center',
-                                'padding': '6px 8px',
-                                'marginBottom': '2px',
-                                'borderRadius': '4px',
-                                'cursor': 'pointer',
-                                'transition': 'background-color 0.2s ease',
-                                'userSelect': 'none',
-                                'backgroundColor': '#ffffff',
-                                'border': '1px solid transparent'
-                            }
-                        ) for idx, crude in enumerate(CRUDES)
-                    ]),
+                    html.Div([], id='gpw-crude-legend-container'),
                     # Hidden checklist to store selected values
                     dcc.Checklist(
                         id='gpw-crude-legend',
@@ -1530,7 +1523,7 @@ def create_layout():
                         style={'display': 'none'}
                     ),
                 ], className='col-md-2', style={
-                    'padding': '25px 20px',
+                    'padding': '15px 20px',
                     'border': '0px solid #dfe3eb',
                     'borderRadius': '6px',
                     'backgroundColor': '#f8f9fb',
@@ -1539,7 +1532,7 @@ def create_layout():
                     'marginLeft': '0',
                 }),
             ], className='row')
-        ], style={'padding': '20px', 'marginBottom': '30px'}),
+        ], style={'padding': '10px 20px', 'marginBottom': '15px'}),
         
         # Incremental Margins Section
         html.Div([
@@ -1552,7 +1545,7 @@ def create_layout():
                             style={
                                 'color': '#fe5000',
                                 'textAlign': 'left',
-                                'marginBottom': '15px',
+                                'marginBottom': '10px',
                                 'fontSize': '16px',
                                 'fontWeight': 'bold',
                                 'flexGrow': 1
@@ -1588,7 +1581,7 @@ def create_layout():
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
-                                    'marginBottom': '15px',
+                                    'marginBottom': '8px',
                                     'fontSize': '16px',
                                     'fontWeight': 'bold'
                                 }
@@ -2219,7 +2212,8 @@ def register_callbacks(dash_app, server):
     )
     def update_all_charts(submenu, date_slider_value, region, crude_filter, tech_type_filter, crude_legend):
         """Update all charts and table based on filters."""
-        highlight_crude = crude_legend[0] if crude_legend else None
+        # Only highlight if EXACTLY ONE crude is selected from the legend
+        highlight_crude = crude_legend[0] if crude_legend and len(crude_legend) == 1 else None
         if submenu != 'gpw-margins':
             return (
                 _empty_figure(""),
@@ -2286,27 +2280,22 @@ def register_callbacks(dash_app, server):
             tech_type_value = [] # No tech types available
 
 
-        # Determine selected crudes (use filter if available, otherwise use legend)
-        # Filter takes priority since it's the user's direct input
-        # Check if filter is explicitly set (not None and not empty list if it was intentionally cleared)
-        if crude_legend:
-            # If a crude is selected from the legend, it takes precedence
-            selected_crudes = crude_legend if isinstance(crude_legend, list) else [crude_legend]
-        elif crude_filter is not None:
-            # If legend is empty, use the crude filter (checkboxes)
+        # Determine selected crudes for plotting
+        # Data inclusion is STRICTLY determined by the crude_filter (checkboxes)
+        if crude_filter is not None:
             selected_crudes = crude_filter if isinstance(crude_filter, list) else [crude_filter]
         else:
-            # If both are empty/None, default to all crudes for the *current region*
+            # Default to all available crudes if no filter set
             selected_crudes = available_crudes_for_region.copy()
-        
-        # Handle ALL option for crudes
+
+        # Handle ALL option for crudes in data selection
         if selected_crudes and 'ALL' in selected_crudes:
             selected_crudes = available_crudes_for_region.copy()
         else:
-            # Remove ALL from list if present
             selected_crudes = [c for c in selected_crudes if c != 'ALL'] if selected_crudes else []
-            # Don't default to all crudes if empty - respect user's empty selection
-            # Empty selection means no crudes selected (show empty charts)
+        
+        # Note: crude_legend is used ONLY to determine highlight_crude at the start of the function.
+        # This matches the live site where clicking the legend focuses one line but keeps others faint.
         
         # Determine selected tech types from checkbox
         if tech_type_filter:
@@ -2659,63 +2648,137 @@ def register_callbacks(dash_app, server):
         
         return new_values if new_values else []
     
-    # Update legend item visual state based on selection
+    # Update legend content and visual state based on selection and active region
     @dash_app.callback(
-        Output({'type': 'gpw-crude-legend-item', 'crude': dd.ALL}, 'style'),
+        Output('gpw-crude-legend-container', 'children'),
+        Output('gpw-crude-legend-title', 'children'),
         Input('gpw-crude-legend', 'value'),
-        Input('gpw-region-filter', 'value'), # Add region filter as input
-        Input('gpw-available-crudes-for-region', 'data'), # Add available crudes for region as input
+        Input('gpw-region-filter', 'value'),
+        Input('gpw-available-crudes-for-region', 'data'),
         prevent_initial_call=False
     )
-    def update_crude_legend_visual_state(selected_crudes, region, available_crudes_from_store):
-        """Update visual state of legend items based on selection and active region."""
+    def update_crude_legend_content(selected_crudes, region, available_crudes_from_store):
+        """Update visible legend items, their order, and their style based on selection."""
         selected_crudes = selected_crudes or []
-        selected_set = set(selected_crudes) if isinstance(selected_crudes, list) else set([selected_crudes])
+        selected_set = set(selected_crudes)
         
-        # Use available_crudes_from_store to filter which crudes are shown in the legend
+        # Determine available crudes for the region
         available_crudes_for_region = available_crudes_from_store if available_crudes_from_store is not None else []
         available_crudes_set = set(available_crudes_for_region)
 
-        styles = []
-        for crude in CRUDES: # Iterate through all crudes, but only apply style if in available_crudes_for_region
-            if crude in available_crudes_set:
-                if crude in selected_set:
-                    # Selected state: color with name and border
-                    style = {
-                        'display': 'flex',
-                        'alignItems': 'center',
-                        'padding': '6px 8px',
-                        'marginBottom': '2px',
-                        'borderRadius': '4px',
-                        'cursor': 'pointer',
-                        'transition': 'background-color 0.2s ease',
-                        'userSelect': 'none',
-                        'backgroundColor': '#e6f1ff',
-                        'border': '1px solid #3498db', # Added a blue border for selected state
-                        'boxShadow': '0 2px 8px rgba(52, 152, 219, 0.2)' # Added a subtle shadow
-                    }
-                else:
-                    # Unselected state: muted background, dashed border, and reduced opacity
-                    style = {
-                        'display': 'flex',
-                        'alignItems': 'center',
-                        'padding': '6px 8px',
-                        'marginBottom': '2px',
-                        'borderRadius': '4px',
-                        'cursor': 'pointer',
-                        'transition': 'background-color 0.2s ease, opacity 0.2s ease', # Added opacity transition
-                        'userSelect': 'none',
-                        'backgroundColor': '#f8f9fa', # Lighter background for unselected
-                        'border': '1px dashed #cccccc', # Dashed border for unselected
-                        'opacity': 0.6 # Reduced opacity for unselected
-                    }
-            else:
-                # Crude not available for the selected region, hide it.
-                style = {'display': 'none'}
-            
-            styles.append(style)
+        # Determine "highlight mode"
+        is_highlight_mode = 0 < len(selected_set) < len(available_crudes_set)
+
+        # Sort crudes: selected ones first, then others (maintaining original CRUDES order within groups)
+        ordered_crudes = []
+        # First add selected crudes that are available for the region
+        for crude in CRUDES:
+            if crude in available_crudes_set and crude in selected_set:
+                ordered_crudes.append(crude)
         
-        return styles
+        # Then add remaining available crudes
+        for crude in CRUDES:
+            if crude in available_crudes_set and crude not in selected_set:
+                ordered_crudes.append(crude)
+
+        legend_items = []
+        for crude in ordered_crudes:
+            # Determine style based on highlight mode
+            if is_highlight_mode:
+                if crude in selected_set:
+                    # Highlighted state
+                    container_style = {
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '6px 8px',
+                        'marginBottom': '4px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'transition': 'all 0.2s ease',
+                        'userSelect': 'none',
+                        'backgroundColor': '#ffffff',
+                        'border': '2px solid #3498db',
+                        'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'
+                    }
+                    opacity = 1.0
+                else:
+                    # Dimmed state
+                    container_style = {
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'padding': '6px 8px',
+                        'marginBottom': '4px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'transition': 'all 0.2s ease',
+                        'userSelect': 'none',
+                        'backgroundColor': 'transparent',
+                        'border': '1px solid transparent',
+                        'opacity': 0.4  # Increased visibility from 0.15
+                    }
+                    opacity = 1.0
+            else:
+                # Normal state
+                container_style = {
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'padding': '6px 8px',
+                    'marginBottom': '4px',
+                    'borderRadius': '4px',
+                    'cursor': 'pointer',
+                    'transition': 'all 0.2s ease',
+                    'userSelect': 'none',
+                    'backgroundColor': 'transparent',
+                    'border': '1px solid transparent'
+                }
+                opacity = 1.0
+
+            # Get color for swatch
+            color = CRUDE_COLORS.get(crude, FALLBACK_COLORS[CRUDES.index(crude) % len(FALLBACK_COLORS)])
+
+            # If in highlight mode and NOT selected, dim the swatch as well
+            swatch_opacity = 0.4 if is_highlight_mode and crude not in selected_set else 1.0
+            text_color = '#1b365d' if not (is_highlight_mode and crude not in selected_set) else '#999999'
+
+            item = html.Div(
+                id={'type': 'gpw-crude-legend-item', 'crude': crude},
+                n_clicks=0,
+                children=[
+                    html.Div(
+                        style={
+                            'width': '14px',
+                            'height': '14px',
+                            'backgroundColor': color,
+                            'borderRadius': '2px',
+                            'marginRight': '10px',
+                            'border': '1px solid #cfd8e3',
+                            'boxShadow': '0 0 2px rgba(0,0,0,0.1)',
+                            'display': 'inline-block',
+                            'verticalAlign': 'middle',
+                            'opacity': swatch_opacity,
+                            'transition': 'opacity 0.2s ease'
+                        }
+                    ),
+                    html.Span(
+                        crude,
+                        style={
+                            'color': text_color,
+                            'fontWeight': '600',
+                            'fontSize': '13px',
+                            'verticalAlign': 'middle',
+                            'transition': 'color 0.2s ease'
+                        }
+                    )
+                ],
+                style=container_style
+            )
+            legend_items.append(item)
+        
+        # Calculate crude count for header
+        crude_count = len(available_crudes_for_region)
+        title_text = f"Crude ({crude_count})"
+        
+        return legend_items, title_text
     
     # Sync crude filter checkbox with crude legend checklist (one-way: legend -> filter)
     # This sync happens when legend changes

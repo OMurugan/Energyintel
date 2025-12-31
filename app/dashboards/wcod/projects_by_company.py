@@ -1153,7 +1153,7 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
     fig.update_layout(
         barmode='stack',
         bargap=0.12,  # slight gap to mirror reference spacing
-        height=500,
+        height=480,
         plot_bgcolor='white',
         paper_bgcolor='white',
         title={
@@ -1257,9 +1257,12 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
     
     return fig
 
-def create_world_map(selected_year=2025, selected_company=None, likely_goahead_filter=None):
+def create_world_map(selected_year=2025, selected_company=None, likely_goahead_filter=None, selected_countries=None):
     """Create world map showing geographical distribution for selected year - matching Tableau design exactly"""
+    if selected_countries is None:
+        selected_countries = []
     # Load map data from database for selected company with filters
+
     map_df = load_map_data(selected_company, likely_goahead_filter)
     
     if map_df.empty:
@@ -1312,7 +1315,10 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     # Aggregate by country (sum values if multiple entries per country)
     country_totals = year_df.groupby('Country')['value_company'].sum().reset_index()
     country_totals.columns = ['Country', 'Value']
-    
+
+    # Create map traces
+    fig = go.Figure()
+
     # Calculate centroids for country name labels - only for countries with data
     # This ensures clean, readable labels without clutter
     if not year_df.empty and 'Latitude' in year_df.columns and 'Longitude' in year_df.columns:
@@ -1328,49 +1334,73 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     # Limit label density to avoid clutter
     max_labels = 100 if len(centroids) > 100 else len(centroids)
     centroids_display = centroids.sort_values('Country').head(max_labels) if max_labels < len(centroids) else centroids
-    
-    # Create choropleth map including all countries from the CSV
-    fig = go.Figure(data=go.Choropleth(
-        locations=country_totals['Country'],
-        z=country_totals['Value'],
-        locationmode='country names',
-        colorscale=colorscale,
-        zmin=zmin,
-        zmax=zmax,
-        marker_line_color='#ffffff',
-        marker_line_width=0.5,
-        hovertemplate='<b>%{location}</b><br>Production Addition: %{z:,.1f} \'000 b/d<extra></extra>',
-        colorbar=dict(
-            title="Production Additions ('000 b/d)",
-            titleside='top',
-            titlefont=dict(size=12, family='Arial, sans-serif', color='#1b365d'),
-            tickfont=dict(size=10, family='Arial, sans-serif', color='#1b365d'),
-            orientation='h',
-            thickness=12,
-            len=0.22,
-            lenmode='fraction',
-            x=1.0,
-            xanchor='left',
-            y=0.74,
-            yanchor='top',
-            outlinecolor='rgba(0,0,0,0)',
-            outlinewidth=0,
-            ticklen=0,
-            tickvals=[0.7, 135.0],
-            ticktext=['0.7', '135.0']
-        ),
-        showscale=False  # hide colorbar in the map; we render a custom legend beside controls
-    ))
+
+    if len(selected_countries) > 0:
+        # Trace 1: Non-selected countries (muted/disabled)
+        non_selected_df = country_totals[~country_totals['Country'].isin(selected_countries)]
+        if not non_selected_df.empty:
+            fig.add_trace(go.Choropleth(
+                locations=non_selected_df['Country'],
+                z=non_selected_df['Value'],
+                locationmode='country names',
+                colorscale=colorscale,
+                zmin=zmin,
+                zmax=zmax,
+                marker_line_color='#ffffff',
+                marker_line_width=0.5,
+                marker_opacity=0.25, # Muted/Disabled look
+                hovertemplate='<b>%{location}</b><br>Production Addition: %{z:,.1f} \'000 b/d<extra></extra>',
+                showscale=False
+            ))
+
+        # Trace 2: Selected countries (highlighted)
+        selected_df = country_totals[country_totals['Country'].isin(selected_countries)]
+        if not selected_df.empty:
+            fig.add_trace(go.Choropleth(
+                locations=selected_df['Country'],
+                z=selected_df['Value'],
+                locationmode='country names',
+                colorscale=colorscale,
+                zmin=zmin,
+                zmax=zmax,
+                marker_line_color='#000000',
+                marker_line_width=2.0,
+                marker_opacity=1.0,
+                hovertemplate='<b>%{location}</b><br>Production Addition: %{z:,.1f} \'000 b/d<extra></extra>',
+                showscale=False
+            ))
+    else:
+        # No countries selected: single trace with normal look
+        fig.add_trace(go.Choropleth(
+            locations=country_totals['Country'],
+            z=country_totals['Value'],
+            locationmode='country names',
+            colorscale=colorscale,
+            zmin=zmin,
+            zmax=zmax,
+            marker_line_color='#ffffff',
+            marker_line_width=0.5,
+            marker_opacity=1.0,
+            hovertemplate='<b>%{location}</b><br>Production Addition: %{z:,.1f} \'000 b/d<extra></extra>',
+            showscale=False
+        ))
+
     
     # Add country name labels on map
     if not centroids_display.empty:
+        # Determine label colors based on selection
+        if len(selected_countries) > 0:
+            label_colors = ['#1b365d' if c in selected_countries else '#c5c5c5' for c in centroids_display['Country']]
+        else:
+            label_colors = '#1b365d'
+
         fig.add_trace(
             go.Scattergeo(
                 lon=centroids_display['Longitude'],
                 lat=centroids_display['Latitude'],
                 mode='text',
                 text=centroids_display['Country'],
-                textfont=dict(size=12, color='#1b365d', family='Arial, sans-serif'),
+                textfont=dict(size=12, color=label_colors, family='Arial, sans-serif'),
                 textposition='middle center',
                 hoverinfo='skip',
                 showlegend=False,
@@ -1398,10 +1428,10 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     )
     
     fig.update_layout(
-        height=520,
+        height=480,
         paper_bgcolor='white',
         plot_bgcolor='white',
-        margin=dict(l=0, r=190, t=30, b=10),
+        margin=dict(l=0, r=190, t=20, b=10),
         title={
             'text': f"Oil Projects Capacity Start Up by {selected_company} ('000 b/d)*- {selected_year}",
             'x': 0.0,
@@ -1563,7 +1593,7 @@ def create_layout():
             'alignItems': 'center',
             'gap': '8px',
             'width': '100%',
-            'marginBottom': '8px'
+            'marginBottom': '0px'
         }),
         
         # Main content – chart/map on the left, legend & filters on the right
@@ -1590,7 +1620,7 @@ def create_layout():
                 ], style={'width': '100%', 'display': 'block', 'height': '25px'}),
                 dcc.Graph(
                     id='projects-company-bar-chart',
-                    style={'height': '500px', 'marginBottom': '20px'}
+                    style={'height': '380px', 'marginBottom': '5px'}
                 ),
                 html.Div([
                     html.Div([
@@ -1616,7 +1646,7 @@ def create_layout():
                     dcc.Graph(
                         id='projects-company-map',
                         style={
-                            'height': '520px',
+                            'height': '380px',
                             'width': '100%'
                         }
                     ),
@@ -1752,7 +1782,7 @@ def create_layout():
                                 'marginTop': '2px'
                             })
                         ])
-                        ], id='production-additions-legend', style={'marginTop': '10px'}),
+                        ], id='production-additions-legend', style={'marginTop': '5px'}),
                         html.Div(
                             id='year-period-display',
                             style={'display': 'none'}
@@ -2001,6 +2031,37 @@ def register_callbacks(dash_app, server):
         return new_selected
     
     @callback(
+        Output('selected-countries-store', 'data', allow_duplicate=True),
+        Input('projects-company-map', 'clickData'),
+        State('selected-countries-store', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_country_from_map(click_data, selected_countries):
+        """Toggle country selection on map click"""
+        if not click_data or 'points' not in click_data or not click_data['points']:
+            return dash.no_update
+        
+        try:
+            clicked_country = click_data['points'][0].get('location')
+            if not clicked_country:
+                return dash.no_update
+        except (ValueError, TypeError, AttributeError, IndexError):
+            return dash.no_update
+        
+        # Initialize selected_countries if None
+        if selected_countries is None:
+            selected_countries = []
+        
+        # Toggle the clicked country
+        if clicked_country in selected_countries:
+            new_selected = [c for c in selected_countries if c != clicked_country]
+        else:
+            new_selected = selected_countries + [clicked_country]
+            
+        return new_selected
+
+    
+    @callback(
         country_outputs,
         Input('selected-countries-store', 'data'),
         prevent_initial_call=False
@@ -2202,8 +2263,9 @@ def register_callbacks(dash_app, server):
         df = pd.DataFrame(data_full)
         
         # Filter by selected countries (when any are chosen)
-        if selected_countries:
-            df = df[df['Country'].isin(selected_countries)]
+        # DECOUPLED: Removed filtering by selected_countries so table remains full
+        # if selected_countries:
+        #     df = df[df['Country'].isin(selected_countries)]
         
         if df.empty:
             return [], [], [], dash.no_update, dash.no_update
@@ -2854,14 +2916,15 @@ def register_callbacks(dash_app, server):
         bar_fig = create_stacked_bar_chart(
             bar_df,
             company or "Company",
-            countries_to_show,
+            [], # Pass empty list to chart to avoid highlighting/greying out
             highlight_year=bar_highlight_year,
             highlight_quarter=quarter_highlight
         )
         
         
         # Create map - always filtered by selected year (Year of Period filter controls the map)
-        map_fig = create_world_map(year_to_use, company, ltg_list)
+        map_fig = create_world_map(year_to_use, company, ltg_list, selected_countries)
+
         
         # Show Year of Period section and normal Production Additions gradient when there's data
         return bar_fig, map_fig, {'display': 'block'}, normal_content
