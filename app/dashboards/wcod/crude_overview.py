@@ -1802,24 +1802,7 @@ def create_layout(server=None):
                                 "textAlign": "right"
                             },
 
-                            style_cell_conditional=[
-                                {
-                                    "if": {"column_id": "CrudeOil"},
-                                    "textAlign": "left"
-                                },
-                                {
-                                    "if": {"column_id": "Crude"},
-                                    "textAlign": "left"
-                                },
-                                {
-                                    "if": {"column_id": "CI Rank"},
-                                    "textAlign": "left"
-                                },
-                                {
-                                    "if": {"column_id": "API"},
-                                    "textAlign": "left"
-                                }
-                            ],
+                            # Removed style_cell_conditional to keep all columns right-aligned
                             
 
 
@@ -1855,13 +1838,21 @@ def create_layout(server=None):
                                       "backgroundColor": "white",  # White for even rows
                                       "textAlign": "right"
                                   },
+                                # Left-align first column (Crude name)
+                                {
+                                    "if": {"column_id": "CrudeOil"},
+                                    "textAlign": "left"
+                                },
 
                                 # Remove conflicting text alignment rules
 
                                 # Keep link styling
                                 *TABLE_LINK_STYLE
                             ],
-                            css=[{"selector": "p", "rule": "text-align: inherit; margin: 0; padding: 0;"}] + TABLE_LINK_CSS,
+                            css=[
+                                {"selector": "p", "rule": "text-align: right; margin: 0; padding: 0;"},
+                                {"selector": ".dash-cell.column-0 p, .dash-cell.column-0", "rule": "text-align: left !important;"}
+                            ] + TABLE_LINK_CSS,
                             merge_duplicate_headers=True
                         )
                     ],
