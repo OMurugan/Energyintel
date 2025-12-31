@@ -227,9 +227,7 @@ else:
     CHART_MAX_YEAR = DEFAULT_YEAR or 0
 
 COUNTRY_OPTIONS = sorted(TABLE_DF["country"].unique().tolist()) if not TABLE_DF.empty else []
-DEFAULT_COUNTRY = (
-    ["Russia"] if "Russia" in COUNTRY_OPTIONS else (COUNTRY_OPTIONS[0] if COUNTRY_OPTIONS else [])
-)
+DEFAULT_COUNTRY = ["(All)"]  # Default to show all countries instead of just Russia
 
 # Base stream configuration – explicit ordering and colors requested by design
 STREAM_DISPLAY = [
@@ -963,7 +961,7 @@ def _build_chart_figure(
     return fig
 
 
-INITIAL_TABLE_RAW = _filter_table_data(DEFAULT_YEAR, None)
+INITIAL_TABLE_RAW = _filter_table_data(DEFAULT_YEAR, None)  # Pass None for countries to get ALL data
 INITIAL_TABLE_DATA = _prepare_table_records(INITIAL_TABLE_RAW)
 
 
@@ -1524,7 +1522,7 @@ def create_layout():
                             dash_table.DataTable(
                                 id="global-exports-table",
                                 columns=TABLE_COLUMNS,
-                                data=[],
+                                data=INITIAL_TABLE_DATA,  # Use initial data showing all countries
                                 sort_action="native",
                                 page_action="none",
                                 style_table={
@@ -1697,10 +1695,11 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             year_value = _parse_year_value(year_str)
             normalized_year = _normalize_year(year_value)
             
-            # On initial load, ignore country filter - show all countries
-            # Check if country filter input triggered this callback
+            # Check if this is initial load or if country filter was explicitly changed
             ctx = dash.callback_context
             country_filter_triggered = False
+            is_initial_call = not ctx.triggered or len(ctx.triggered) == 0
+            
             if ctx.triggered:
                 for trigger in ctx.triggered:
                     if "global-exports-country-filter" in trigger.get("prop_id", ""):
@@ -1710,10 +1709,13 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             # Resolve countries for filtering
             selected_countries = None
             highlight = selected_country  # Highlight the clicked country
-            # Only apply country filter if it was explicitly changed by user
-            # On initial load, ignore country filter to show all countries
-            if not country_filter_triggered:
-                # Show all countries on initial load or when filter wasn't changed
+            
+            # On initial load, ALWAYS show all countries regardless of default country selection
+            if is_initial_call:
+                # Initial load - show ALL countries (ignore any default selection)
+                selected_countries = None
+            elif not country_filter_triggered:
+                # Show all countries when filter wasn't explicitly changed
                 selected_countries = None
             elif country_value is not None:
                 # Handle empty list (when "(All)" is unselected)
@@ -1819,7 +1821,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     )
     def handle_map_click(click_data, current_filter, options):
         """Handle map click to update country selection like in projects_by_country.py"""
-        print(f"Map click callback triggered with click_data: {click_data}")
         if not click_data or not click_data.get("points"):
             return no_update, no_update
         
@@ -1843,37 +1844,28 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             # For choropleth maps, location contains the country name
             country = point["location"]
         
-        print(f"Extracted country from map click: {country}")
-        
         if not country or not options:
-            print(f"No country or options - country: {country}, options: {options}")
             return no_update, no_update
         
         # Extract all country options (excluding "(All)")
         all_country_options = [opt["value"] for opt in options if opt["value"] != "(All)"]
         if country not in all_country_options:
-            print(f"Country {country} not in available options: {all_country_options}")
             return no_update, no_update
         
         # Get current selection and resolve it
         current_filter = current_filter or []
         resolved_countries = _resolve_countries(current_filter, all_country_options)
         
-        print(f"Current filter: {current_filter}, Resolved countries: {resolved_countries}")
-        
         # Apply the same logic as projects_by_country.py:
         # If country is not currently in the resolved selection, select only this country
         if country not in resolved_countries:
-            print(f"Selecting only country: {country}")
             return [country], country
         
         # If this country is already the only one selected, expand to show all
         if len(resolved_countries) == 1 and country in resolved_countries:
-            print(f"Expanding to show all countries")
             return ["(All)"] + all_country_options, None
             
         # If multiple countries are selected and this one is clicked, select only this country
-        print(f"Multiple countries selected, selecting only: {country}")
         return [country], country
 
     @dash_app.callback(
@@ -1973,6 +1965,10 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             if isinstance(streams, list) and len(streams) == 0:
                 streams = STREAM_ORDER if STREAM_ORDER else []
             
+            # Check if this is initial load
+            ctx = dash.callback_context
+            is_initial_call = not ctx.triggered or len(ctx.triggered) == 0
+            
             # Resolve countries (handle "(All)" option and empty selection)
             # Get available countries from chart data for proper resolution
             resolved_countries = None
@@ -1986,8 +1982,12 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                     available_countries_in_chart = COUNTRY_OPTIONS if COUNTRY_OPTIONS else []
                 
                 # Handle country selection
-                if countries is None:
-                    # None means default - show all countries (for initial load)
+                # On initial load, ALWAYS show all countries regardless of default selection
+                if is_initial_call:
+                    # Initial load - show all countries (ignore any default selection)
+                    resolved_countries = None
+                elif countries is None:
+                    # None means default - show all countries
                     resolved_countries = None
                 elif isinstance(countries, list) and len(countries) == 0:
                     # Empty list means "(All)" was unselected - show no countries
@@ -2034,7 +2034,10 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             # Generate title
             title = default_title
             try:
-                if countries and COUNTRY_OPTIONS and len(COUNTRY_OPTIONS) > 0:
+                # On initial load, always use default title
+                if is_initial_call:
+                    title = default_title
+                elif countries and COUNTRY_OPTIONS and len(COUNTRY_OPTIONS) > 0:
                     # Use resolved_countries from above if available, otherwise resolve again for title
                     if resolved_countries is not None and len(resolved_countries) > 0:
                         title_countries = resolved_countries
@@ -2145,6 +2148,13 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             # Check if this is truly an initial call (no triggers at all)
             is_initial_call = not ctx.triggered or len(ctx.triggered) == 0
             
+            # IMPORTANT: On initial load, ALWAYS show ALL data regardless of default country selection
+            if is_initial_call:
+                # Initial load - show ALL data (ignore any default country selection)
+                if TABLE_DF.empty:
+                    return []
+                return _prepare_table_records(TABLE_DF.copy())
+            
             # Check for legend button clicks - must check actual n_clicks values
             legend_clicked = False
             if ctx.triggered and not is_initial_call and legend_clicks:
@@ -2165,10 +2175,8 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                     trigger_id = trigger.get("prop_id", "")
                     if "global-exports-country-filter" in trigger_id:
                         country_filter_triggered = True
-                        print(f"Country filter triggered: {trigger_id}")
                     elif "global-exports-selected-country" in trigger_id:
                         selected_country_triggered = True
-                        print(f"Selected country triggered: {trigger_id}")
                 
                 # Map click is detected if either country filter or selected country was triggered
                 # AND we have a specific country selected (not "All")
@@ -2177,11 +2185,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                         # Check if it's a specific country selection (not "All")
                         if "(All)" not in country_filter or len(country_filter) == 1:
                             map_clicked = True
-                            print(f"Map click detected - country_filter: {country_filter}")
-            
-            print(f"Table callback - is_initial_call: {is_initial_call}, legend_clicked: {legend_clicked}, map_clicked: {map_clicked}")
-            print(f"Country filter value: {country_filter}")
-            print(f"Triggers: country_filter_triggered={country_filter_triggered}, selected_country_triggered={selected_country_triggered}")
             
             # IMPORTANT: Table behavior based on live source:
             # - On initial load: show ALL data (no filters applied)
@@ -2190,31 +2193,28 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             # - When specific country is selected: always apply country filter
             
             # Check if we have a specific country selected (not "All")
+            # BUT only apply filtering if there was an actual user interaction (map click or manual selection)
             has_specific_country = False
+            user_interacted = False
+            
             if country_filter and isinstance(country_filter, list):
                 if len(country_filter) == 1 and country_filter[0] != "(All)":
                     has_specific_country = True
                 elif len(country_filter) > 1 and "(All)" not in country_filter:
                     has_specific_country = True
             
-            print(f"Has specific country: {has_specific_country}")
+            # Check if user actually interacted (not just initial load with default values)
+            if ctx.triggered and not is_initial_call:
+                user_interacted = True
             
-            if is_initial_call:
-                # Initial load - show ALL data (no filters)
-                if TABLE_DF.empty:
-                    return []
-                print("Table: Returning all data (initial load)")
-                return _prepare_table_records(TABLE_DF.copy())
-            
-            # If we have a specific country selected, always apply country filter
-            if has_specific_country:
-                print("Table: Specific country selected, applying filters")
+            # If we have a specific country selected AND user interacted, apply country filter
+            if has_specific_country and user_interacted:
                 # Skip the "no interaction" check - we want to filter
+                pass
             elif not legend_clicked and not map_clicked:
-                # No interaction and no specific country - show ALL data
+                # No interaction or no specific country - show ALL data
                 if TABLE_DF.empty:
                     return []
-                print("Table: Returning all data (no interaction, no specific country)")
                 return _prepare_table_records(TABLE_DF.copy())
             
             # Legend was clicked OR map was clicked - apply filters
@@ -2230,51 +2230,36 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 stream_filter_set = set(stream_filter_state)
                 if stream_filter_set == all_available_streams:
                     # All streams selected AND no map click - show all data
-                    print("Table: All streams selected and no map click, returning all data")
                     return _prepare_table_records(TABLE_DF.copy())
             
             # Start with all data
             filtered = TABLE_DF.copy()
-            print(f"Table: Starting with {len(filtered)} rows")
             
-            # Apply country filter when we have a specific country selected OR map was clicked
-            if (has_specific_country or map_clicked) and country_filter is not None:
-                print(f"Table: Applying country filter - has_specific_country: {has_specific_country}, map_clicked: {map_clicked}, country_filter: {country_filter}")
+            # Apply country filter when we have a specific country selected AND user interacted
+            if (has_specific_country and user_interacted) and country_filter is not None:
                 try:
                     resolved = _resolve_countries(country_filter, COUNTRY_OPTIONS)
-                    print(f"Table: Resolved countries: {resolved}")
                     if "(All)" in country_filter and len(country_filter) > 1:
                         # "(All)" + specific countries - use specific countries only
                         resolved = [c for c in country_filter if c != "(All)"]
-                        print(f"Table: Filtered out (All), using: {resolved}")
                     
                     if resolved and len(resolved) > 0:
-                        print(f"Table: Filtering by countries: {resolved}")
                         filtered = filtered[filtered["country"].isin(resolved)]
-                        print(f"Table: After country filtering: {len(filtered)} rows")
                     else:
                         # Empty selection - show no countries
-                        print("Table: Empty country selection, returning empty")
                         return []
-                except Exception as e:
+                except Exception:
                     # Error resolving countries - show all data
-                    print(f"Table: Error resolving countries: {e}")
                     pass
-            else:
-                print(f"Table: Not applying country filter - has_specific_country: {has_specific_country}, map_clicked: {map_clicked}, country_filter: {country_filter}")
             
             # Apply stream filter (for both legend clicks and map clicks)
             if stream_filter_state:
-                print(f"Table: Applying stream filter: {stream_filter_state}")
                 try:
                     filtered = filtered[filtered["crude"].isin(stream_filter_state)]
-                    print(f"Table: After stream filtering: {len(filtered)} rows")
-                except Exception as e:
+                except Exception:
                     # Error filtering by streams - continue with current filtered data
-                    print(f"Table: Error filtering by streams: {e}")
                     pass
             
-            print(f"Table: Returning {len(filtered)} rows")
             return _prepare_table_records(filtered)
         except Exception:
             # Return empty on any error
