@@ -704,6 +704,24 @@ def create_layout():
         # World Map Section with hover controls (full screen)        
         # Map container with relative positioning for controls overlay
         html.Div([
+            # Port click status indicator
+            html.Div(
+                id='port-click-status',
+                children='Click on a port to see details',
+                style={
+                    'position': 'absolute',
+                    'top': '10px',
+                    'right': '10px',
+                    'background': 'rgba(254, 80, 0, 0.9)',
+                    'color': 'white',
+                    'padding': '8px 12px',
+                    'borderRadius': '4px',
+                    'fontSize': '12px',
+                    'fontWeight': 'bold',
+                    'zIndex': '1000',
+                    'display': 'none'
+                }
+            ),
             dcc.Loading(
                 id='map-loading',
                 type='default',
@@ -715,7 +733,7 @@ def create_layout():
                         id='world-map-chart',
                         figure=initial_map,
                         style={
-                            'height': 'calc(80vh - 180px)',
+                            'height': 'calc(85vh - 180px)',
                             'width': '100vw',  # Changed to viewport width
                             'maxWidth': '100%',
                             'background': 'white',
@@ -731,7 +749,7 @@ def create_layout():
                     )
                 ]
             ),
-        ], style={'width': '100%', 'overflow': 'hidden'}),  # Added this wrapper div
+        ], style={'width': '100%', 'overflow': 'hidden', 'position': 'relative'}),  # Added position relative
                 
         # CSS injection div (will be handled by clientside callback)
         html.Div(id='css-injection-placeholder', style={'display': 'none'}),
@@ -921,6 +939,35 @@ def create_world_map(selected_country=None):
             # Add one trace per symbol to avoid per-point symbol issues
             for symbol_key, data_bucket in ports_by_symbol.items():
                 print(f"DEBUG: Adding trace for symbol '{symbol_key}' with {len(data_bucket['lat'])} ports")
+                
+                # Prepare enhanced hover data for each port
+                enhanced_hover_text = []
+                for i, port_name in enumerate(data_bucket["name"]):
+                    # Get detailed port information
+                    port_details = get_port_details_for_hover(port_name)
+                    
+                    # Build hover text with available details
+                    hover_lines = [f"<b>Port Name:</b> {port_name}"]
+                    
+                    # # Add port details if available
+                    # if port_details:
+                    #     for measure, value in port_details.items():
+                    #         if measure and value and str(value).strip():
+                    #             # Format measure names for display
+                    #             display_measure = measure.replace('_', ' ').title()
+                    #             if 'bbl' in measure.lower():
+                    #                 display_measure = display_measure.replace('Bbl', 'bbl')
+                    #             elif 'dwt' in measure.lower():
+                    #                 display_measure = display_measure.replace('Dwt', 'dwt')
+                    #             hover_lines.append(f"<b>{display_measure}:</b> {value}")
+                    
+                    # # Add coordinates
+                    # lat_val = data_bucket["lat"][i]
+                    # lon_val = data_bucket["lon"][i]
+                    # hover_lines.append(f"<b>Coordinates:</b> {lat_val:.4f}, {lon_val:.4f}")
+                    
+                    enhanced_hover_text.append("<br>".join(hover_lines))
+                
                 fig.add_trace(go.Scattermapbox(
                     lat=data_bucket["lat"],
                     lon=data_bucket["lon"],
@@ -931,13 +978,11 @@ def create_world_map(selected_country=None):
                         opacity=0.9,
                         symbol='circle'
                     ),
-                    text=data_bucket["name"],
+                    text=enhanced_hover_text,
                     customdata=data_bucket["custom"],
-                    hovertemplate="""
-                        <b>Port Name:</b> %{text}
-                        <extra></extra>
-                    """,
-                    showlegend=False
+                    hovertemplate="%{text}<extra></extra>",
+                    showlegend=False,
+                    name=f"ports-{symbol_key}"  # Add name for click detection
                 ))
         else:
             print("DEBUG: No ports to display - ports_by_symbol is empty")
@@ -2908,9 +2953,24 @@ def register_callbacks(dash_app, server):
             #world-map-chart .plotly .scattergeo .points path {
                 pointer-events: auto !important;
                 cursor: pointer;
+                transition: all 0.2s ease;
             }
             #world-map-chart .plotly .scattergeo .points path:hover {
-                stroke: none !important;
+                stroke: #fe5000 !important;
+                stroke-width: 3px !important;
+                filter: brightness(1.2);
+                transform: scale(1.1);
+            }
+            /* Enhanced port marker styling */
+            #world-map-chart .plotly .scattermapbox .points circle {
+                cursor: pointer !important;
+                transition: all 0.2s ease !important;
+            }
+            #world-map-chart .plotly .scattermapbox .points circle:hover {
+                stroke: #fe5000 !important;
+                stroke-width: 3px !important;
+                filter: brightness(1.3) !important;
+                r: 8 !important;
             }
             /* Hide X and Y axis lines on map */
             #world-map-chart .plotly .xaxis,
@@ -3687,6 +3747,82 @@ def register_callbacks(dash_app, server):
         Input('css-injection-placeholder', 'id'),
         prevent_initial_call=False
     )
+
+    # Port click callback for enhanced interaction
+    @dash_app.callback(
+        Output('port-details-table', 'style_data_conditional'),
+        Output('port-click-status', 'style'),
+        Output('port-click-status', 'children'),
+        Input('world-map-chart', 'clickData'),
+        State('country-select-profile', 'value'),
+        prevent_initial_call=True
+    )
+    def handle_port_click(click_data, selected_country):
+        """Handle port clicks on the map to highlight corresponding row in port details table"""
+        default_style = [
+            {
+                'if': {'row_index': 'odd'},
+                'backgroundColor': '#f8f9fa'
+            },
+            {
+                'if': {'state': 'active'},
+                'backgroundColor': '#fdeedc',
+                'border': '1px solid #fe5000'
+            },
+            {
+                'if': {'state': 'selected'},
+                'backgroundColor': '#e1f0ff',
+                'border': '1px solid #3390ff'
+            }
+        ]
+        
+        status_hidden = {
+            'position': 'absolute',
+            'top': '10px',
+            'right': '10px',
+            'background': 'rgba(254, 80, 0, 0.9)',
+            'color': 'white',
+            'padding': '8px 12px',
+            'borderRadius': '4px',
+            'fontSize': '12px',
+            'fontWeight': 'bold',
+            'zIndex': '1000',
+            'display': 'none'
+        }
+        
+        if not click_data or not click_data.get('points') or not selected_country:
+            return default_style, status_hidden, 'Click on a port to see details'
+        
+        point = click_data['points'][0]
+        
+        # Check if this is a port click (has text with port details)
+        if 'text' in point and '<b>Port Name:</b>' in str(point['text']):
+            # Extract port name from the hover text
+            text = point['text']
+            if '<b>Port Name:</b>' in text:
+                port_name_line = text.split('<br>')[0]  # First line contains port name
+                port_name = port_name_line.replace('<b>Port Name:</b>', '').strip()
+                
+                # Show status indicator
+                status_visible = status_hidden.copy()
+                status_visible['display'] = 'block'
+                
+                # Return style to highlight the clicked port in the table
+                highlighted_style = default_style + [
+                    {
+                        'if': {
+                            'filter_query': f'{{Port Name}} = "{port_name}"'
+                        },
+                        'backgroundColor': '#fff3cd',
+                        'border': '2px solid #ffc107',
+                        'fontWeight': 'bold'
+                    }
+                ]
+                
+                return highlighted_style, status_visible, f'Selected Port: {port_name}'
+        
+        # Default return if no port clicked
+        return default_style, status_hidden, 'Click on a port to see details'
 
 
 # ------------------------------------------------------------------------------
