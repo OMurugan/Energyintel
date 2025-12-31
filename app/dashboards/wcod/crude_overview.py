@@ -1079,20 +1079,32 @@ def load_table():
         # Load monthly table data from DB
         monthly_query = """
             SELECT     
-                b.crude_name AS "Crude",
-                b.ci_rank,
-                b.api,
-                b.sulfur_pct,
+                c.crude_name AS "Crude",
+                c.ci_rank,
+                c.api,
+                c.sulfur_pct,
+                l.bsp_link AS profile_url,
                 EXTRACT(YEAR FROM a.date) AS "Year of Date",
                 TO_CHAR(a.date, 'FMMonth') AS "Month of Date",
-                a.value as "Value"
+                a.value AS "Value"
             FROM t_wcod_monthly_stream_production a
+
+            -- Latest crude master data
             LEFT JOIN (
                 SELECT DISTINCT ON (crude_id) 
-                    crude_id, crude_name, ci_rank, api, sulfur_pct
+                    crude_id,
+                    crude_name,
+                    ci_rank,
+                    api,
+                    sulfur_pct
                 FROM fact_wcod_crude
                 ORDER BY crude_id, yr DESC
-            ) b ON a.crude_id = b.crude_id 
+            ) c 
+                ON a.crude_id = c.crude_id
+
+            -- Profile URL
+            LEFT JOIN fact_wcod_crude_bsp_links l
+                ON a.crude_id = l.crude_id
         """
         monthly_rows = execute_query(monthly_query)
         if monthly_rows:
@@ -4247,6 +4259,7 @@ def register_callbacks(dash_app, server):
                     if pd.notna(link_value):
                         link = str(link_value).strip()
                 if link:
+                    record["profile_url"] = link  # Store for row navigation
                     for col in display_cols:
                         record[col] = format_with_link(record.get(col, ""), link)
                 else:
@@ -4314,6 +4327,10 @@ def register_callbacks(dash_app, server):
                         link = crude_row.get("profile_url")
                     elif "BSP link" in df.columns and pd.notna(crude_row.get("BSP link")):
                         link = crude_row.get("BSP link")
+                    
+                    if link:
+                        row["profile_url"] = link  # Store for row navigation
+                        
                     for col in display_metadata_cols:
                         if col in df.columns:
                             label = crude_row[col] if pd.notna(crude_row[col]) else ''
@@ -4509,6 +4526,23 @@ def register_callbacks(dash_app, server):
             import traceback
             traceback.print_exc()
             return no_update
+
+    dash_app.clientside_callback(
+        """
+        function(active_cell, data) {
+            if (active_cell && data) {
+                const row = data[active_cell.row];
+                if (row && row.profile_url) {
+                    window.open(row.profile_url, '_blank');
+                }
+            }
+            return null;
+        }
+        """,
+        Output("stream-navigation-dummy", "data"),
+        Input("crude-table", "active_cell"),
+        State("crude-table", "data")
+    )
 
 # DASH APP CREATION
 # ------------------------------------------------------------------------------
