@@ -6,6 +6,17 @@ import pandas as pd
 from dash import dcc, html, Input, Output, callback, dash_table, State, no_update, callback_context
 import re
 from core.data_helpers import execute_query
+from datetime import datetime, timedelta
+
+def get_current_monday_date():
+    """Returns the date of the current week's Monday in 'Week of Month Day, Year' format."""
+    today = datetime.now()
+    # Calculate the timedelta to the most recent Monday
+    # weekday() returns 0 for Monday, 1 for Tuesday, ..., 6 for Sunday
+    days_since_monday = today.weekday()
+    current_monday = today - timedelta(days=days_since_monday)
+    return current_monday.strftime("Week of %B %d, %Y")
+
 
 def create_link_text(comment, link_url, default_label="Article"):
     link_str = str(link_url).strip() if pd.notna(link_url) else ""
@@ -262,7 +273,7 @@ def create_layout():
                 # Title section
                 html.Div(children=[
                     html.H3(
-                        "List of Updated Projects- Week of December 8, 2025",
+                        f"List of Updated Projects- {get_current_monday_date()}",
                         id='updated-projects-title',
                         style={
                             'color': '#ff6600',
