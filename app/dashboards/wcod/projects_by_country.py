@@ -595,6 +595,19 @@ def create_layout():
             dcc.Store(id="projects-selected-country", data=None),
             dcc.Store(id="projects-country-filter-previous", data=[]),
             dcc.Store(id="projects-likely-filter-previous", data=["Y"]),
+            
+            # Download components
+            dcc.Download(id="download-projects-map-csv"),
+            dcc.Download(id="download-projects-chart-csv"),
+            dcc.Download(id="download-projects-table-csv"),
+            
+            # Loading states for exports
+            dcc.Store(id="export-map-loading", data=False),
+            dcc.Store(id="export-chart-loading", data=False),
+            dcc.Store(id="export-table-loading", data=False),
+            
+            # Global loading state
+            dcc.Store(id="global-loading-state", data=False),
             # Top row: Map + Chart on left, Filters on right
             html.Div(
                 [
@@ -606,46 +619,76 @@ def create_layout():
                                 [
                                     html.Div(
                                         [
-                                            html.H3(
-                                                "Producing Countries",
-                                                style={
-                                                    "marginBottom": "8px",
-                                                    "color": "#fe5000",
-                                                    "fontSize": "20px",
-                                                    "fontWeight": "bold",
-                                                },
-                                            ),
                                             html.Div(
-                                                id="projects-selected-country-label",
-                                                style={
-                                                    "fontSize": "13px",
-                                                    "color": "#4e79a7",
-                                                    "fontWeight": "600",
-                                                },
+                                                [
+                                                    html.H3(
+                                                        "Producing Countries",
+                                                        style={
+                                                            "marginBottom": "8px",
+                                                            "color": "#fe5000",
+                                                            "fontSize": "20px",
+                                                            "fontWeight": "bold",
+                                                        },
+                                                    ),
+                                                    html.Div(
+                                                        id="projects-selected-country-label",
+                                                        style={
+                                                            "fontSize": "13px",
+                                                            "color": "#4e79a7",
+                                                            "fontWeight": "600",
+                                                        },
+                                                    ),
+                                                ],
+                                            ),
+                                            dcc.Loading(
+                                                id="loading-export-map",
+                                                type="default",
+                                                color="#fe5000",
+                                                children=[
+                                                    html.Button(
+                                                        "Export CSV",
+                                                        id="export-projects-map-btn",
+                                                        n_clicks=0,
+                                                        style={
+                                                            "backgroundColor": "white",
+                                                            "color": "#2c3e50",
+                                                            "border": "1px solid #dee2e6",
+                                                            "padding": "6px 12px",
+                                                            "borderRadius": "4px",
+                                                            "cursor": "pointer",
+                                                            "fontSize": "12px",
+                                                            "fontWeight": "normal",
+                                                        },
+                                                    )
+                                                ],
                                             ),
                                         ],
                                         style={
                                             "display": "flex",
                                             "justifyContent": "space-between",
-                                            "alignItems": "baseline",
+                                            "alignItems": "center",
                                         },
                                     ),
                                     dcc.Loading(
-                                        dcc.Graph(
-                                            id="projects-country-map",
-                                            style={"height": "520px"},
-                                            config={
-                                                "displayModeBar": True,
-                                                "modeBarButtonsToAdd": [
-                                                    "zoomIn2d",
-                                                    "zoomOut2d",
-                                                    "autoScale2d",
-                                                    "resetViewMapbox",
-                                                ],
-                                                "scrollZoom": True,
-                                            },
-                                        ),
+                                        id="loading-projects-map",
                                         type="dot",
+                                        color="#fe5000",
+                                        children=[
+                                            dcc.Graph(
+                                                id="projects-country-map",
+                                                style={"height": "520px"},
+                                                config={
+                                                    "displayModeBar": True,
+                                                    "modeBarButtonsToAdd": [
+                                                        "zoomIn2d",
+                                                        "zoomOut2d",
+                                                        "autoScale2d",
+                                                        "resetViewMapbox",
+                                                    ],
+                                                    "scrollZoom": True,
+                                                },
+                                            )
+                                        ],
                                     ),
                                 ],
                                 style={
@@ -659,22 +702,58 @@ def create_layout():
                             # Chart
                             html.Div(
                                 [
-                                    html.H3(
-                                        "Projected Oil Capacity Additions by Quarter ('000 b/d) - All",
+                                    html.Div(
+                                        [
+                                            html.H3(
+                                                "Projected Oil Capacity Additions by Quarter ('000 b/d) - All",
+                                                style={
+                                                    "marginBottom": "8px",
+                                                    "color": "#fe5000",
+                                                    "fontSize": "20px",
+                                                    "fontWeight": "bold",
+                                                },
+                                            ),
+                                            dcc.Loading(
+                                                id="loading-export-chart",
+                                                type="default",
+                                                color="#fe5000",
+                                                children=[
+                                                    html.Button(
+                                                        "Export CSV",
+                                                        id="export-projects-chart-btn",
+                                                        n_clicks=0,
+                                                        style={
+                                                            "backgroundColor": "white",
+                                                            "color": "#2c3e50",
+                                                            "border": "1px solid #dee2e6",
+                                                            "padding": "6px 12px",
+                                                            "borderRadius": "4px",
+                                                            "cursor": "pointer",
+                                                            "fontSize": "12px",
+                                                            "fontWeight": "normal",
+                                                        },
+                                                    )
+                                                ],
+                                            ),
+                                        ],
                                         style={
+                                            "display": "flex",
+                                            "justifyContent": "space-between",
+                                            "alignItems": "center",
                                             "marginBottom": "8px",
-                                            "color": "#fe5000",
-                                            "fontSize": "20px",
-                                            "fontWeight": "bold",
                                         },
                                     ),
                                     dcc.Loading(
-                                        dcc.Graph(
-                                            id="projects-country-chart",
-                                            style={"height": "420px", "width": "100%"},
-                                            config={"displayModeBar": False},
-                                        ),
+                                        id="loading-projects-chart",
                                         type="dot",
+                                        color="#fe5000",
+                                        children=[
+                                            dcc.Graph(
+                                                id="projects-country-chart",
+                                                style={"height": "420px", "width": "100%"},
+                                                config={"displayModeBar": False},
+                                            )
+                                        ],
                                     ),
                                 ],
                                 style={
@@ -696,6 +775,13 @@ def create_layout():
                     # Right column: filters
                     html.Div(
                         [
+                            dcc.Loading(
+                                id="loading-filters",
+                                type="default",
+                                color="#fe5000",
+                                style={"position": "absolute", "top": "10px", "right": "10px", "zIndex": "1000"},
+                                children=[html.Div(id="filter-loading-trigger", style={"display": "none"})],
+                            ),
                             html.H4(
                                 "Filters",
                                 style={
@@ -980,55 +1066,93 @@ def create_layout():
             # Full width table below
             html.Div(
                 [
-                    html.H3(
-                        "Project Details",
+                    html.Div(
+                        [
+                            html.H3(
+                                "Project Details",
+                                style={
+                                    "marginBottom": "8px",
+                                    "color": "#fe5000",
+                                    "fontSize": "20px",
+                                    "fontWeight": "bold",
+                                },
+                            ),
+                            dcc.Loading(
+                                id="loading-export-table",
+                                type="default",
+                                color="#fe5000",
+                                children=[
+                                    html.Button(
+                                        "Export CSV",
+                                        id="export-projects-table-btn",
+                                        n_clicks=0,
+                                        style={
+                                            "backgroundColor": "white",
+                                            "color": "#2c3e50",
+                                            "border": "1px solid #dee2e6",
+                                            "padding": "6px 12px",
+                                            "borderRadius": "4px",
+                                            "cursor": "pointer",
+                                            "fontSize": "12px",
+                                            "fontWeight": "normal",
+                                        },
+                                    )
+                                ],
+                            ),
+                        ],
                         style={
+                            "display": "flex",
+                            "justifyContent": "space-between",
+                            "alignItems": "center",
                             "marginBottom": "8px",
-                            "color": "#1b2838",
                         },
                     ),
                     dcc.Loading(
-                        dash_table.DataTable(
-                            id="projects-country-table",
-                            columns=[],  # Columns will be dynamically generated in callback
-                            data=[],
-                            page_action="none",
-                            sort_action="native",
-                            filter_action="native",
-                            tooltip_duration=None,
-                            style_table={
-                                "overflowX": "auto",
-                                "maxHeight": "600px",
-                            },
-                            style_cell={
-                                "fontFamily": "Arial, sans-serif",
-                                "fontSize": "12px",
-                                "padding": "6px",
-                                "whiteSpace": "normal",
-                                "height": "auto",
-                            },
-                            style_cell_conditional=[
-                                {
-                                    "if": {"column_id": "Comments"},
-                                    "whiteSpace": "nowrap",
-                                    "overflow": "hidden",
-                                    "textOverflow": "ellipsis",
-                                    "height": "auto",
-                                    "textAlign": "left",
-                                }
-                            ],
-                            style_header={
-                                "backgroundColor": "#f5f6fa",
-                                "fontWeight": "600",
-                            },
-                            css=[
-                                {
-                                    "selector": ".dash-table-tooltip",
-                                    "rule": "font-size: 10px !important; font-family: Arial, sans-serif !important; color: #1b2838 !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;",
-                                }
-                            ],
-                        ),
+                        id="loading-projects-table",
                         type="dot",
+                        color="#fe5000",
+                        children=[
+                            dash_table.DataTable(
+                                id="projects-country-table",
+                                columns=[],  # Columns will be dynamically generated in callback
+                                data=[],
+                                page_action="none",
+                                sort_action="native",
+                                filter_action="native",
+                                tooltip_duration=None,
+                                style_table={
+                                    "overflowX": "auto",
+                                    "maxHeight": "600px",
+                                },
+                                style_cell={
+                                    "fontFamily": "Arial, sans-serif",
+                                    "fontSize": "12px",
+                                    "padding": "6px",
+                                    "whiteSpace": "normal",
+                                    "height": "auto",
+                                },
+                                style_cell_conditional=[
+                                    {
+                                        "if": {"column_id": "Comments"},
+                                        "whiteSpace": "nowrap",
+                                        "overflow": "hidden",
+                                        "textOverflow": "ellipsis",
+                                        "height": "auto",
+                                        "textAlign": "left",
+                                    }
+                                ],
+                                style_header={
+                                    "backgroundColor": "#f5f6fa",
+                                    "fontWeight": "600",
+                                },
+                                css=[
+                                    {
+                                        "selector": ".dash-table-tooltip",
+                                        "rule": "font-size: 10px !important; font-family: Arial, sans-serif !important; color: #1b2838 !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;",
+                                    }
+                                ],
+                            )
+                        ],
                     ),
                 ],
                 style={
@@ -1041,7 +1165,7 @@ def create_layout():
             ),
         ],
         className="tab-content",
-        style={"padding": "5px", "background": "#f5f6fa"},
+        style={"padding": "5px", "background": "#f5f6fa", "position": "relative"},
     )
 
 
@@ -2144,3 +2268,253 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         
         logger.info(f"Returning {len(display_df)} rows to table")
         return data, columns, tooltip_data
+
+    # CSV Export Callbacks
+    @dash_app.callback(
+        Output("download-projects-map-csv", "data"),
+        Input("export-projects-map-btn", "n_clicks"),
+        [
+            State("projects-country-filter", "value"),
+            State("projects-group-filter", "value"),
+            State("projects-chart-group-filter", "value"),
+            State("projects-likely-filter", "value"),
+        ],
+        prevent_initial_call=True,
+    )
+    def export_map_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter):
+        """Export map data to CSV."""
+        if n_clicks == 0:
+            return no_update
+            
+        try:
+            # Apply same filtering logic as map
+            likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
+            if not likely_values:
+                return no_update
+                
+            group_set = set(group_filter or DEFAULT_GROUPS)
+            chart_group_set = (
+                set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
+            )
+            if not chart_group_set:
+                return no_update
+
+            allowed_groups = group_set.intersection(chart_group_set)
+            if not allowed_groups:
+                return no_update
+                
+            base_df = load_map_data()
+            all_countries = base_df["Country"].tolist()
+            selected_countries = _resolve_countries(country_filter, all_countries)
+            
+            filtered_df = base_df[
+                base_df["Group"].isin(allowed_groups) & base_df["Country"].isin(selected_countries)
+            ]
+            
+            if filtered_df.empty:
+                return no_update
+                
+            # Prepare export data
+            export_df = filtered_df[["Country", "Group", "Latitude", "Longitude"]].copy()
+            
+            # Generate filename
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"projects_producing_countries_{timestamp}.csv"
+            
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+            
+        except Exception as e:
+            logger.error(f"Error exporting map data: {e}")
+            return no_update
+
+    @dash_app.callback(
+        Output("download-projects-chart-csv", "data"),
+        Input("export-projects-chart-btn", "n_clicks"),
+        [
+            State("projects-country-filter", "value"),
+            State("projects-group-filter", "value"),
+            State("projects-chart-group-filter", "value"),
+            State("projects-likely-filter", "value"),
+        ],
+        prevent_initial_call=True,
+    )
+    def export_chart_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter):
+        """Export chart data to CSV."""
+        if n_clicks == 0:
+            return no_update
+            
+        try:
+            # Apply same filtering logic as chart
+            likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
+            if not likely_values:
+                return no_update
+                
+            group_set = set(group_filter or DEFAULT_GROUPS)
+            chart_group_set = (
+                set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
+            )
+            if not chart_group_set:
+                return no_update
+
+            allowed_groups = group_set.intersection(chart_group_set)
+            if not allowed_groups:
+                return no_update
+                
+            # Load and filter chart data
+            df = load_chart_data()
+            map_data = load_map_data()
+            country_to_group = map_data.set_index("Country")["Group"].to_dict()
+
+            def _allowed(country: str) -> bool:
+                if not allowed_groups:
+                    return True
+                return country_to_group.get(country) in allowed_groups
+
+            all_countries = map_data["Country"].tolist()
+            selected_countries = _resolve_countries(country_filter, all_countries)
+            base_countries = [c for c in selected_countries if _allowed(c)]
+            
+            country_df = df[df["Country"].isin(base_countries)].copy()
+            
+            if country_df.empty:
+                return no_update
+                
+            # Aggregate data for export
+            export_df = (
+                country_df.groupby(["Country", "Year", "QuarterNum", "Quarter"], as_index=False)[
+                    "ProductionAdditions"
+                ]
+                .sum()
+                .sort_values(["Year", "QuarterNum", "Country"])
+            )
+            
+            # Generate filename
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"projects_capacity_additions_{timestamp}.csv"
+            
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+            
+        except Exception as e:
+            logger.error(f"Error exporting chart data: {e}")
+            return no_update
+
+    @dash_app.callback(
+        Output("download-projects-table-csv", "data"),
+        Input("export-projects-table-btn", "n_clicks"),
+        [
+            State("projects-country-filter", "value"),
+            State("projects-group-filter", "value"),
+            State("projects-chart-group-filter", "value"),
+            State("projects-likely-filter", "value"),
+        ],
+        prevent_initial_call=True,
+    )
+    def export_table_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter):
+        """Export table data to CSV."""
+        if n_clicks == 0:
+            return no_update
+            
+        try:
+            # Apply same filtering logic as table
+            df = load_table_data()
+            
+            if df.empty:
+                return no_update
+                
+            groups = group_filter or DEFAULT_GROUPS
+            likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
+            
+            # Apply group filtering
+            group_set = set(groups)
+            chart_group_set = (
+                set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
+            )
+            if not chart_group_set:
+                return no_update
+
+            allowed_groups = group_set.intersection(chart_group_set)
+            if not allowed_groups:
+                return no_update
+                
+            # Filter by group
+            if "Opec_group" in df.columns:
+                df = df[df["Opec_group"].isin(allowed_groups)]
+            elif "Group" in df.columns:
+                df = df[df["Group"].isin(allowed_groups)]
+                
+            # Filter by likely go-ahead
+            if "likely_goahead" in df.columns:
+                def _normalize_likely(val: str) -> str:
+                    if pd.isna(val):
+                        return ""
+                    text = str(val or "").strip().lower()
+                    if not text:
+                        return ""
+                    if text.startswith("y"):
+                        return "Y"
+                    if text.startswith("n"):
+                        return "N"
+                    if "uncertain" in text:
+                        return "Uncertain"
+                    return text.capitalize()
+                
+                df["likely_goahead_normalized"] = df["likely_goahead"].apply(_normalize_likely)
+                if "(All)" not in likely_values:
+                    if not likely_values:
+                        return no_update
+                    else:
+                        df = df[df["likely_goahead_normalized"].isin(likely_values)]
+                df = df.drop(columns=["likely_goahead_normalized"], errors="ignore")
+                
+            # Filter by country
+            if "Country" in df.columns:
+                available_countries = df["Country"].unique().tolist()
+                selected_countries = _resolve_countries(country_filter, available_countries)
+                if selected_countries:
+                    df = df[df["Country"].isin(selected_countries)]
+                    
+            if df.empty:
+                return no_update
+                
+            # Clean up data for export
+            export_df = df.fillna("")
+            
+            # Generate filename
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"projects_details_{timestamp}.csv"
+            
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+            
+        except Exception as e:
+            logger.error(f"Error exporting table data: {e}")
+            return no_update
+
+    # Filter loading indicator callback
+    @dash_app.callback(
+        Output("filter-loading-trigger", "children"),
+        [
+            Input("projects-country-filter", "value"),
+            Input("projects-group-filter", "value"),
+            Input("projects-chart-group-filter", "value"),
+            Input("projects-likely-filter", "value"),
+        ],
+        prevent_initial_call=True,
+    )
+    def trigger_filter_loading(country_filter, group_filter, chart_group_filter, likely_filter):
+        """Trigger loading indicator when filters change."""
+        return ""
+
+    # Performance optimization: Add loading states for better UX
+    @dash_app.callback(
+        Output("global-loading-state", "data"),
+        [
+            Input("projects-country-filter", "value"),
+            Input("projects-group-filter", "value"),
+            Input("projects-chart-group-filter", "value"),
+            Input("projects-likely-filter", "value"),
+        ],
+        prevent_initial_call=True,
+    )
+    def update_global_loading_state(country_filter, group_filter, chart_group_filter, likely_filter):
+        """Update global loading state when filters change."""
+        return True  # Indicates loading is in progress
