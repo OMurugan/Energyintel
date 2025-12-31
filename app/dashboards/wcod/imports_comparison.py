@@ -39,6 +39,7 @@ MAP_LAND_COLOR = '#f4f4f4'
 def load_imports_data(selected_year=2023):
     """Load imports comparison data from database"""
     try:
+        print(f"Loading imports data for year {selected_year}...")
         query = """
         SELECT
             EXTRACT(YEAR FROM yr)::INT AS "Year",
@@ -60,8 +61,10 @@ def load_imports_data(selected_year=2023):
         rows = execute_query(query, {'selected_year': selected_year})
         
         if not rows:
+            print("No imports data found for the selected year")
             return pd.DataFrame()
         
+        print(f"Loaded {len(rows)} import records")
         df = pd.DataFrame(rows)
         # Rename DataValue to Import_Volume for consistency
         df = df.rename(columns={'DataValue': 'Import_Volume'})
@@ -78,6 +81,7 @@ def load_imports_data(selected_year=2023):
         # Filter out zero values for better visualization
         df = df[df['Import_Volume'] > 0].copy()
         
+        print(f"Processed imports data: {len(df)} valid records")
         return df
     except Exception as e:
         print(f"Error loading imports data: {e}")
@@ -508,10 +512,21 @@ def create_imports_map_figure(df_map, single_selected_country, max_volume, selec
                 height=550,
                 mapbox=mapbox_layout,
                 hovermode="closest",
-                plot_bgcolor="white",
+                plot_bgcolor=MAP_BACKGROUND_COLOR,  # Set plot background to match
                 paper_bgcolor="white",
                 showlegend=False,
                 uirevision='imports-map'
+            )
+            
+            # Add copyright annotation
+            fig.add_annotation(
+                text="© 2025 Mapbox © OpenStreetMap",
+                xref="paper", yref="paper",
+                x=0.01, y=0.01,
+                showarrow=False,
+                font=dict(size=10, color='#666'),
+                bgcolor='rgba(255,255,255,0.8)',
+                bordercolor='rgba(255,255,255,0.8)'
             )
             
             print("Mapbox choropleth created successfully")
@@ -580,10 +595,30 @@ def create_imports_map_figure(df_map, single_selected_country, max_volume, selec
             showcoastlines=True,
             projection=dict(type="natural earth"),
             center=dict(lat=world_center_lat, lon=world_center_lon),
+            bgcolor=MAP_BACKGROUND_COLOR,  # Add background color
+            showland=True,
+            landcolor=MAP_LAND_COLOR,  # Add land color
+            showocean=True,
+            oceancolor=MAP_BACKGROUND_COLOR,  # Add ocean color
+            showlakes=True,
+            lakecolor=MAP_BACKGROUND_COLOR,  # Add lake color
+            coastlinecolor='#cccccc',  # Add coastline color
+            coastlinewidth=0.5,
         ),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
+        plot_bgcolor=MAP_BACKGROUND_COLOR,  # Set plot background
+        paper_bgcolor='white',  # Keep paper background white
         uirevision='imports-map'
+    )
+    
+    # Add copyright annotation to match original styling
+    fig.add_annotation(
+        text="© 2025 Natural Earth",
+        xref="paper", yref="paper",
+        x=0.01, y=0.01,
+        showarrow=False,
+        font=dict(size=10, color='#666'),
+        bgcolor='rgba(255,255,255,0.8)',
+        bordercolor='rgba(255,255,255,0.8)'
     )
     
     # Add selection outline for single selected country in fallback mode
@@ -614,22 +649,30 @@ def create_layout():
         dcc.Store(id='imports-year-play-store', data=False),
         dcc.Store(id='imports-country-store', data={'all_selected': True}),
         dcc.Store(id='imports-map-clicked-country', data=None),  # Store clicked country from map
+        dcc.Store(id='imports-loading-state', data=False),  # Global loading state
         dcc.Interval(id='imports-year-interval', interval=2000, disabled=True),
         # Download components
         dcc.Download(id="download-global-imports-csv"),
         dcc.Download(id="download-annual-imports-csv"),
         dcc.Download(id="download-matrix-imports-csv"),
-        # Instruction text
-        html.P(
-            "Select Countries from Map or List (right) to filter the tables below:",
-            style={
-                'textAlign': 'left',
-                'fontSize': '14px',
-                'color': '#1b365d',
-                'fontWeight': 'bold',
-                'marginBottom': '10px',
-                'marginTop': '10px'
-            }
+        # Instruction text with loading indicator
+        dcc.Loading(
+            id="loading-instructions",
+            type="dot",
+            color="#d35400",
+            children=[
+                html.P(
+                    "Select Countries from Map or List (right) to filter the tables below:",
+                    style={
+                        'textAlign': 'left',
+                        'fontSize': '14px',
+                        'color': '#1b365d',
+                        'fontWeight': 'bold',
+                        'marginBottom': '10px',
+                        'marginTop': '10px'
+                    }
+                )
+            ]
         ),
         # Main title with export button
         html.Div([
@@ -646,47 +689,62 @@ def create_layout():
                     'flex': '1'
                 }
             ),
-            html.Button(
-                "Export CSV",
-                id='export-global-imports-btn',
-                n_clicks=0,
-                style={
-                    'backgroundColor': 'white',
-                    'color': '#2c3e50',
-                    'border': '1px solid #dee2e6',
-                    'padding': '6px 12px',
-                    'borderRadius': '4px',
-                    'cursor': 'pointer',
-                    'fontSize': '12px',
-                    'fontWeight': 'normal'
-                }
+            dcc.Loading(
+                id="loading-export-global-imports",
+                type="default",
+                color="#d35400",
+                children=[
+                    html.Button(
+                        "Export CSV",
+                        id='export-global-imports-btn',
+                        n_clicks=0,
+                        style={
+                            'backgroundColor': 'white',
+                            'color': '#2c3e50',
+                            'border': '1px solid #dee2e6',
+                            'padding': '6px 12px',
+                            'borderRadius': '4px',
+                            'cursor': 'pointer',
+                            'fontSize': '12px',
+                            'fontWeight': 'normal'
+                        }
+                    )
+                ]
             )
         ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'gap': '20px', 'marginBottom': '25px'}),
         # Main content area
         html.Div([
             # Map area (left, larger)
             html.Div([
-                dcc.Graph(
-                    id='imports-world-map',
-                    config={
-                        'displayModeBar': True,
-                        'displaylogo': False,
-                        # Geo-specific controls (home/reset + zoom)
-                        'modeBarButtonsToAdd': [
-                            'zoomInGeo',
-                            'zoomOutGeo',
-                            'resetGeo',
-                            'resetScale2d'  # home-style reset icon
-                        ],
-                        'scrollZoom': True,
-                        'doubleClick': 'reset'
-                    },
-                    style={
-                        'height': '100%',
-                        'width': '100%',
-                        'maxWidth': '100%',
-                        'margin': '0 auto'
-                    }
+                dcc.Loading(
+                    id="loading-imports-map",
+                    type="dot",
+                    color="#d35400",
+                    children=[
+                        dcc.Graph(
+                            id='imports-world-map',
+                            config={
+                                'displayModeBar': True,
+                                'displaylogo': False,
+                                # Geo-specific controls (home/reset + zoom)
+                                'modeBarButtonsToAdd': [
+                                    'zoomInGeo',
+                                    'zoomOutGeo',
+                                    'resetGeo',
+                                    'resetScale2d'  # home-style reset icon
+                                ],
+                                'scrollZoom': True,
+                                'doubleClick': 'reset'
+                            },
+                            style={
+                                'height': '100%',
+                                'width': '100%',
+                                'maxWidth': '100%',
+                                'margin': '0 auto'
+                            }
+                        )
+                    ],
+                    style={'height': '550px'}  # Match the map height
                 )
             ], style={
                 'flex': '1 1 calc(100% - 260px)',
@@ -876,34 +934,41 @@ def create_layout():
                             'display': 'block'
                         }
                     ),
-                html.Div([
-                    html.Div([
-                        html.Div(style={'flex': 1, 'backgroundColor': '#e9ecf2'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#d9dee8'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#c6cedf'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#b3bed6'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#a1adcc'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#8e9cc3'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#7c8cb9'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#6a7bb0'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#586ba6'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#475a9d'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#364a94'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#25398a'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#132880'})
-                    ], style={
-                        'display': 'flex',
-                        'height': '16px',
-                        'borderRadius': '4px',
-                        'overflow': 'hidden',
-                        'border': '1px solid #8e98ad'
-                    }),
-                    html.Div([
-                        html.Span('0', style={'fontSize': '10px', 'color': '#333', 'flex': '1', 'textAlign': 'left', 'paddingTop': '3px'}),
-                        html.Span(id='imports-mid-value', children='', style={'display': 'none'}),
-                        html.Span(id='imports-max-value', children='0', style={'fontSize': '10px', 'color': '#333', 'flex': '1', 'textAlign': 'right', 'paddingTop': '3px'})
-                    ], style={'display': 'flex', 'width': '100%'})
-                ], id='imports-legend', style={'maxWidth': '190px'})
+                    dcc.Loading(
+                        id="loading-imports-legend",
+                        type="dot",
+                        color="#d35400",
+                        children=[
+                            html.Div([
+                                html.Div([
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#e9ecf2'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#d9dee8'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#c6cedf'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#b3bed6'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#a1adcc'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#8e9cc3'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#7c8cb9'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#6a7bb0'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#586ba6'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#475a9d'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#364a94'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#25398a'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#132880'})
+                                ], style={
+                                    'display': 'flex',
+                                    'height': '16px',
+                                    'borderRadius': '4px',
+                                    'overflow': 'hidden',
+                                    'border': '1px solid #8e98ad'
+                                }),
+                                html.Div([
+                                    html.Span('0', style={'fontSize': '10px', 'color': '#333', 'flex': '1', 'textAlign': 'left', 'paddingTop': '3px'}),
+                                    html.Span(id='imports-mid-value', children='', style={'display': 'none'}),
+                                    html.Span(id='imports-max-value', children='0', style={'fontSize': '10px', 'color': '#333', 'flex': '1', 'textAlign': 'right', 'paddingTop': '3px'})
+                                ], style={'display': 'flex', 'width': '100%'})
+                            ], id='imports-legend', style={'maxWidth': '190px'})
+                        ]
+                    )
                 ], style={'marginTop': '20px'})
             ], style={
                 'width': '240px',
@@ -929,25 +994,40 @@ def create_layout():
                         'flex': '1'
                     }
                 ),
-                html.Button(
-                    "Export CSV",
-                    id='export-annual-imports-btn',
-                    n_clicks=0,
-                    style={
-                        'backgroundColor': 'white',
-                        'color': '#2c3e50',
-                        'border': '1px solid #dee2e6',
-                        'padding': '6px 12px',
-                        'borderRadius': '4px',
-                        'cursor': 'pointer',
-                        'fontSize': '12px',
-                        'marginTop': '30px'
-                    }
+                dcc.Loading(
+                    id="loading-export-annual-imports",
+                    type="default",
+                    color="#d35400",
+                    children=[
+                        html.Button(
+                            "Export CSV",
+                            id='export-annual-imports-btn',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '6px 12px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '12px',
+                                'marginTop': '30px'
+                            }
+                        )
+                    ]
                 )
             ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'gap': '20px'}),
-            html.Div(
-                id='imports-annual-table-container',
-                children=[]
+            dcc.Loading(
+                id="loading-imports-annual-table",
+                type="default",
+                color="#d35400",
+                children=[
+                    html.Div(
+                        id='imports-annual-table-container',
+                        children=[]
+                    )
+                ],
+                style={'minHeight': '430px'}  # Match the table height
             ),
             html.Div([
                 html.P(
@@ -962,26 +1042,41 @@ def create_layout():
                         'flex': '1'
                     }
                 ),
-                html.Button(
-                    "Export CSV",
-                    id='export-matrix-imports-btn',
-                    n_clicks=0,
-                    style={
-                        'backgroundColor': 'white',
-                        'color': '#2c3e50',
-                        'border': '1px solid #dee2e6',
-                        'padding': '6px 12px',
-                        'borderRadius': '4px',
-                        'cursor': 'pointer',
-                        'fontSize': '12px',
-                        'marginTop': '15px'
-                    }
+                dcc.Loading(
+                    id="loading-export-matrix-imports",
+                    type="default",
+                    color="#d35400",
+                    children=[
+                        html.Button(
+                            "Export CSV",
+                            id='export-matrix-imports-btn',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '6px 12px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '12px',
+                                'marginTop': '15px'
+                            }
+                        )
+                    ]
                 )
             ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'gap': '20px'}),
-            html.Div(
-                id='imports-matrix-table-container',
-                children=[],
-                style={'marginTop': '10px'}
+            dcc.Loading(
+                id="loading-imports-matrix-table",
+                type="default",
+                color="#d35400",
+                children=[
+                    html.Div(
+                        id='imports-matrix-table-container',
+                        children=[],
+                        style={'marginTop': '10px'}
+                    )
+                ],
+                style={'minHeight': '520px'}  # Match the matrix table height
             ),
             html.Div(
                 id='imports-footnotes',
@@ -1091,7 +1186,8 @@ def register_callbacks(dash_app, server):
          Output('imports-matrix-caption', 'children')],
         [Input('imports-year-store', 'data'),
          Input('imports-country-checklist', 'value'),
-         Input('imports-map-clicked-country', 'data')]
+         Input('imports-map-clicked-country', 'data')],
+        prevent_initial_call=False
     )
     def update_imports_dashboard(selected_year, selected_countries, clicked_country):
         """Update map and annual chart based on filters"""
