@@ -2367,6 +2367,21 @@ def create_project_details_table(df):
         if col not in df.columns:
             df[col] = None
     
+    # Apply data formatting before creating the table
+    for col in df.columns:
+        if any(q in col for q in ['_Q1', '_Q2', '_Q3', '_Q4']) or 'Share %' in col:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            df[col] = df[col].apply(lambda x: f'{x:,.3f}' if pd.notna(x) and x != 0 else '')
+    
+    bool_display_map = {
+        'Y': 'Yes', 'N': 'No', 'true': 'Yes', 'false': 'No', 'True': 'Yes', 'False': 'No'
+    }
+    
+    # Identify bool columns (likely_goahead might be display name or ID)
+    for col in df.columns:
+        if col.lower() in ['likely_goahead', 'sanctioned']:
+            df[col] = df[col].astype(str).str.strip().map(bool_display_map).fillna(df[col])
+    
     # Preserve full comments for tooltips, but shorten comments in the displayed table
     if 'Comments' in df.columns:
         original_comments = df['Comments'].copy()
@@ -2425,18 +2440,22 @@ def create_project_details_table(df):
             col_def['maxWidth'] = column_widths[col]
         columns.append(col_def)
 
-    # Prepare tooltip data for Comments column (show full comment on hover)
+    # Prepare tooltip data for all columns
     tooltip_data = []
-    for i, row in enumerate(table_data):
-        tooltip_row = {}
-        if 'Comments' in row:
-            orig = str(original_comments.iloc[i]) if i < len(original_comments) else ''
-            if orig and orig != 'nan' and orig.strip():
-                tooltip_row['Comments'] = {
-                    'value': orig,
-                    'type': 'text'
-                }
-        tooltip_data.append(tooltip_row)
+    for idx, row in df.iterrows():
+        tip_row = {}
+        for col in all_columns:
+            if col == 'Comments':
+                val = str(original_comments.loc[idx]) if idx in original_comments.index else ''
+            else:
+                val = str(row[col])
+            
+            val = val.strip()
+            if val and val.lower() != 'nan' and val != 'None':
+                # Only show tooltip for long values (>25 chars) or Comments
+                if col == 'Comments' or len(val) > 25:
+                    tip_row[col] = {'value': val, 'type': 'text'}
+        tooltip_data.append(tip_row)
 
     table = dash_table.DataTable(
         id='projects-status-details-table',
@@ -2458,21 +2477,12 @@ def create_project_details_table(df):
             'fontSize': '12px',
             'fontFamily': 'Lato, sans-serif',
             'color': 'rgb(27, 54, 93)',
-            'whiteSpace': 'normal',
+            'whiteSpace': 'nowrap',
             'height': 'auto',
             'overflow': 'hidden',
-            'textOverflow': 'ellipsis'
+            'textOverflow': 'ellipsis',
+            'maxWidth': '180px'
         },
-        style_cell_conditional=[
-            {
-                'if': {'column_id': 'Comments'},
-                'whiteSpace': 'nowrap',
-                'overflow': 'hidden',
-                'textOverflow': 'ellipsis',
-                'height': 'auto',
-                'textAlign': 'left'
-            }
-        ],
         style_header={
             'backgroundColor': '#f8f9fa',
             'fontWeight': 'bold',
@@ -2483,9 +2493,11 @@ def create_project_details_table(df):
         },
         style_data={
             'border': '1px solid #ddd',
-            'whiteSpace': 'normal',
+            'whiteSpace': 'nowrap',
             'fontFamily': 'Lato, sans-serif',
-            'color': 'rgb(27, 54, 93)'
+            'color': 'rgb(27, 54, 93)',
+            'overflow': 'hidden',
+            'textOverflow': 'ellipsis'
         },
         style_data_conditional=[
             {
