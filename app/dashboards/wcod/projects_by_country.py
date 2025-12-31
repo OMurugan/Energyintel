@@ -719,6 +719,7 @@ def create_layout():
     return html.Div(
         [
             dcc.Store(id="projects-selected-country", data=None),
+            dcc.Store(id="projects-country-filter-previous", data=[]),
             # Top row: Map + Chart on left, Filters on right
             html.Div(
                 [
@@ -1624,48 +1625,62 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         return new_sorted if new_sorted != old_sorted else dash.no_update
 
     @dash_app.callback(
-        Output("projects-country-filter", "value", allow_duplicate=True),
+        [Output("projects-country-filter", "value", allow_duplicate=True),
+         Output("projects-country-filter-previous", "data")],
         Input("projects-country-filter", "value"),
-        State("projects-country-filter", "options"),
+        [State("projects-country-filter", "options"),
+         State("projects-country-filter-previous", "data")],
         prevent_initial_call=True,
     )
-    def sync_country_all(selected, options):
-        """Ensure '(All)' behaves as a real select-all for dropdown."""
+    def sync_country_all(selected, options, previous_selected):
+        """Handle (All) checkbox behavior with proper sequential logic."""
         if not options:
-            return selected
+            return selected, selected
+        
+        # Get all individual country options (excluding "(All)")
         all_countries = [o["value"] for o in options if o["value"] != "(All)"]
         selected = selected or []
-        selected_set = set(selected)
-        has_all = "(All)" in selected_set
-        all_set = set(all_countries)
-        subset_set = selected_set - {"(All)"}
-
-        # Rules:
-        # 1) "(All)" clicked alone => select all countries.
-        # 2) "(All)" + subset:
-        #    - If subset is nearly/all countries (user deselected while All was on), drop "(All)" and honor subset.
-        #    - Otherwise (user added All while a partial subset was selected), snap to full select-all.
-        # 3) If everything is selected but "(All)" is not present, treat as user unchecked All -> clear all.
-        # 4) If nothing selected, keep empty.
-        # 5) Otherwise, keep the chosen subset.
-        if has_all and not subset_set:
-            normalized = ["(All)"] + all_countries
-        elif has_all and subset_set:
-            if len(all_set) > 0 and len(subset_set) >= len(all_set) - 1:
-                normalized = sorted(subset_set)  # user is deselecting while All was active
+        previous_selected = previous_selected or []
+        
+        # Detect what changed by comparing current vs previous
+        current_set = set(selected)
+        previous_set = set(previous_selected)
+        
+        added = current_set - previous_set
+        removed = previous_set - current_set
+        
+        # Current state
+        individual_countries = [c for c in selected if c != "(All)"]
+        individual_set = set(individual_countries)
+        all_countries_set = set(all_countries)
+        
+        # Determine user intent based on what changed
+        
+        # Case 1: User clicked "(All)" to select it
+        if "(All)" in added:
+            result = ["(All)"] + all_countries
+            return result, result
+            
+        # Case 2: User clicked "(All)" to unselect it  
+        elif "(All)" in removed:
+            result = []  # Unselect everything
+            return result, result
+            
+        # Case 3: User selected/unselected individual countries
+        elif added or removed:
+            # Check if all individual countries are now selected
+            if individual_set == all_countries_set and len(all_countries) > 0:
+                # Auto-add "(All)" when all individuals are selected
+                result = ["(All)"] + all_countries
+                return result, result
             else:
-                normalized = ["(All)"] + all_countries  # user added All from a partial subset
-        elif not has_all and subset_set == all_set and all_countries:
-            normalized = []  # allow explicit unselect-all after All was selected
-        elif not subset_set:
-            normalized = []
+                # Keep only individual selections (no "(All)")
+                result = individual_countries
+                return result, result
+                
+        # Case 4: No change detected or initialization
         else:
-            normalized = sorted(subset_set)
-
-        # Avoid loops
-        new_sorted = normalized
-        old_sorted = sorted(selected)
-        return new_sorted if new_sorted != old_sorted else dash.no_update
+            return selected, selected
 
     @dash_app.callback(
         Output("projects-country-filter", "value", allow_duplicate=True),
@@ -1689,19 +1704,34 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             return dash.no_update
 
         all_countries = _ordered_countries()
-        selected_set = set(_resolve_countries(current_values or [], all_countries))
-
-        if country in selected_set:
-            selected_set.remove(country)
+        current_values = current_values or []
+        
+        # Check if "(All)" is currently selected
+        has_all = "(All)" in current_values
+        
+        if has_all:
+            # Special case: "(All)" is selected, user clicks individual country
+            # This should unselect "(All)" and select only the clicked country
+            new_values = [country]
         else:
-            selected_set.add(country)
+            # Normal case: toggle individual countries
+            individual_countries = [c for c in current_values if c != "(All)"]
+            selected_set = set(individual_countries)
 
-        if not selected_set:
-            new_values = []
-        elif selected_set == set(all_countries):
-            new_values = ["(All)"] + all_countries
-        else:
-            new_values = sorted(selected_set)
+            # Toggle the clicked country
+            if country in selected_set:
+                selected_set.remove(country)
+            else:
+                selected_set.add(country)
+
+            # Determine result based on selection
+            if not selected_set:
+                new_values = []
+            elif selected_set == set(all_countries):
+                new_values = ["(All)"] + all_countries
+            else:
+                new_values = sorted(selected_set)
+        
         return new_values
 
     @dash_app.callback(
