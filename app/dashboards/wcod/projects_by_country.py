@@ -13,6 +13,7 @@ from dash import (
     dcc,
     html,
     dash_table,
+    no_update,
 )
 import pandas as pd
 import plotly.express as px
@@ -1084,14 +1085,9 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
     # Preferred Mapbox path (with world geojson) for OSM base map + controls
     geojson = _load_world_geojson()
     world_center = {"lat": 24.0, "lon": 45.0}
-    avg_lat = df["Latitude"].mean()
-    avg_lon = df["Longitude"].mean()
-    map_center = (
-        dict(lat=avg_lat, lon=avg_lon)
-        if selected_country and not (pd.isna(avg_lat) or pd.isna(avg_lon))
-        else world_center
-    )
-    map_zoom = 2.8 if not selected_country else 2
+    # Always use world center - don't auto-center on selected country
+    map_center = world_center
+    map_zoom = 2.8  # Always use consistent zoom level
 
     if geojson and use_mapbox:
         try:
@@ -1235,8 +1231,9 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
             showlegend=False,
         )
     )
-    center_lat = df["Latitude"].mean()
-    center_lon = df["Longitude"].mean()
+    # Always use world center - don't auto-center on selected countries
+    world_center_lat = 24.0
+    world_center_lon = 45.0
 
     fig.update_layout(
         margin=dict(l=0, r=0, t=0, b=0),
@@ -1245,7 +1242,7 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
             showframe=False,
             showcoastlines=True,
             projection=dict(type="natural earth"),
-            center=dict(lat=center_lat, lon=center_lon),
+            center=dict(lat=world_center_lat, lon=world_center_lon),
         ),
         plot_bgcolor="white",
         paper_bgcolor="white",
@@ -1727,17 +1724,74 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         return current_selected
 
     @dash_app.callback(
-        Output("projects-selected-country-label", "children"),
+        Output("projects-country-filter", "value", allow_duplicate=True),
+        Input("projects-country-map", "clickData"),
         [
-            Input("projects-selected-country", "data"),
-            Input("projects-country-filter", "value"),
+            State("projects-country-filter", "value"),
+            State("current-submenu", "data"),
         ],
+        prevent_initial_call=True,
     )
-    def render_selected_country_label(selected_country, countries):
+    def update_country_filter_from_map_click(click_data, current_filter, submenu):
+        """Update country filter when a country is clicked on the map."""
+        if submenu != "projects-country":
+            return no_update
+        
+        if not click_data:
+            return no_update
+            
+        # Extract country name from click data
+        point = click_data["points"][0]
+        country = None
+        
+        if "text" in point and point["text"]:
+            country = point["text"]
+        elif "hovertext" in point and point["hovertext"]:
+            hovertext = point["hovertext"]
+            if "<b>" in hovertext and "</b>" in hovertext:
+                country = hovertext.split("<b>")[1].split("</b>")[0]
+        elif "customdata" in point and point["customdata"]:
+            if isinstance(point["customdata"], list):
+                country = point["customdata"][0]
+            else:
+                country = point["customdata"]
+        elif "location" in point:
+            iso_value = point["location"]
+            reverse_map = {v: k for k, v in COUNTRY_TO_ISO.items()}
+            country = reverse_map.get(iso_value, None)
+        
+        if not country:
+            return no_update
+            
+        # Verify country exists in available countries
+        all_countries = load_map_data()["Country"].tolist()
+        if country not in all_countries:
+            return no_update
+            
+        # Check current filter state
+        current_filter = current_filter or []
+        resolved_countries = _resolve_countries(current_filter, all_countries)
+        
+        # If country is not currently in the resolved selection, select only this country
+        if country not in resolved_countries:
+            return [country]
+        
+        # If this country is already the only one selected, expand to show all
+        if len(resolved_countries) == 1 and country in resolved_countries:
+            return ["(All)"] + all_countries
+            
+        # If multiple countries are selected and this one is clicked, select only this country
+        return [country]
+
+    @dash_app.callback(
+        Output("projects-selected-country-label", "children"),
+        Input("projects-country-filter", "value"),
+    )
+    def render_selected_country_label(countries):
         all_countries = load_map_data()["Country"].tolist()
         resolved = _resolve_countries(countries, all_countries)
-        if selected_country:
-            return f"Selected country: {selected_country}"
+        if len(resolved) == 1:
+            return f"Selected country: {resolved[0]}"
         return f"{len(resolved)} countries selected"
 
     @dash_app.callback(
@@ -1745,13 +1799,12 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         [
             Input("projects-group-filter", "value"),
             Input("projects-country-filter", "value"),
-            Input("projects-selected-country", "data"),
             Input("projects-likely-filter", "value"),
             Input("projects-chart-group-filter", "value"),
         ],
         prevent_initial_call=False,
     )
-    def refresh_map(group_filter, country_filter, selected_country, likely_filter, chart_group_filter):
+    def refresh_map(group_filter, country_filter, likely_filter, chart_group_filter):
         try:
             # Check if likely filter is empty (no options selected)
             likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
@@ -1773,9 +1826,17 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             base_df = load_map_data()
             all_countries = base_df["Country"].tolist()
             selected_countries = _resolve_countries(country_filter, all_countries)
+            
+            # Filter the map data to show only selected countries
             filtered_df = base_df[
                 base_df["Group"].isin(allowed_groups) & base_df["Country"].isin(selected_countries)
             ]
+            
+            # Determine if a single country is selected for highlighting
+            selected_country = None
+            if len(selected_countries) == 1:
+                selected_country = selected_countries[0]
+            
             return _map_figure(filtered_df, selected_country)
         except Exception as e:
             print(f"Error updating projects-country-map: {e}")
@@ -1786,7 +1847,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     @dash_app.callback(
         Output("projects-country-chart", "figure"),
         [
-            Input("projects-selected-country", "data"),
             Input("projects-country-filter", "value"),
             Input("projects-group-filter", "value"),
             Input("projects-chart-group-filter", "value"),
@@ -1795,7 +1855,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         prevent_initial_call=False,
     )
     def refresh_chart(
-        selected_country, country_filter, group_filter, chart_group_filter, likely_filter
+        country_filter, group_filter, chart_group_filter, likely_filter
     ):
         # Check if likely filter is empty (no options selected)
         likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
@@ -1815,6 +1875,12 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
 
         all_countries = load_map_data()["Country"].tolist()
         selected_countries = _resolve_countries(country_filter, all_countries)
+        
+        # Determine if a single country is selected
+        selected_country = None
+        if len(selected_countries) == 1:
+            selected_country = selected_countries[0]
+            
         return _chart_figure(selected_country, selected_countries, allowed_groups)
 
     @dash_app.callback(
@@ -1824,7 +1890,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             Output("projects-country-table", "tooltip_data"),
         ],
         [
-            Input("projects-selected-country", "data"),
             Input("projects-country-filter", "value"),
             Input("projects-group-filter", "value"),
             Input("projects-likely-filter", "value"),
@@ -1833,7 +1898,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         prevent_initial_call=False,
     )
     def refresh_table(
-        selected_country, country_filter, group_filter, likely_filter, chart_group_filter
+        country_filter, group_filter, likely_filter, chart_group_filter
     ):
         df = load_table_data()
         
@@ -1859,9 +1924,9 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         # Get available countries from the dataframe
         if "Country" in df.columns:
             available_countries = df["Country"].unique().tolist()
-            countries = _resolve_countries(country_filter, available_countries)
+            selected_countries = _resolve_countries(country_filter, available_countries)
         else:
-            countries = []
+            selected_countries = []
             logger.warning("Country column not found in table data")
 
         # Filter by group - use Opec_group column name
@@ -1897,12 +1962,9 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                     df = df[df["likely_goahead_normalized"].isin(likely_values)]
             df = df.drop(columns=["likely_goahead_normalized"], errors="ignore")
         
-        # Filter by country
-        if "Country" in df.columns:
-            if selected_country:
-                df = df[df["Country"] == selected_country]
-            elif countries:
-                df = df[df["Country"].isin(countries)]
+        # Filter by country - use the resolved countries from country filter
+        if "Country" in df.columns and selected_countries:
+            df = df[df["Country"].isin(selected_countries)]
         
         if df.empty:
             logger.warning("Table data is empty after filtering")
