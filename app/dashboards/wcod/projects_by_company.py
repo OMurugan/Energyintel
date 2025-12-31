@@ -1313,22 +1313,21 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     country_totals = year_df.groupby('Country')['value_company'].sum().reset_index()
     country_totals.columns = ['Country', 'Value']
     
-    # Calculate centroids for country name labels (same pattern as projects_by_country.py)
-    centroids = (
-        year_df.groupby('Country')[['Latitude', 'Longitude']]
-        .mean()
-        .reset_index()
-        .dropna(subset=['Latitude', 'Longitude'])
-    )
-    # Limit label density to avoid clutter (same pattern as projects_by_country.py)
-    max_labels = len(centroids)
-    if len(centroids) > 60:
-        max_labels = 60
-    centroids_display = (
-        centroids.sort_values('Country').head(max_labels)
-        if max_labels < len(centroids)
-        else centroids
-    )
+    # Calculate centroids for country name labels - only for countries with data
+    # This ensures clean, readable labels without clutter
+    if not year_df.empty and 'Latitude' in year_df.columns and 'Longitude' in year_df.columns:
+        centroids = (
+            year_df.groupby('Country')[['Latitude', 'Longitude']]
+            .mean()
+            .reset_index()
+            .dropna(subset=['Latitude', 'Longitude'])
+        )
+    else:
+        centroids = pd.DataFrame(columns=['Country', 'Latitude', 'Longitude'])
+    
+    # Limit label density to avoid clutter
+    max_labels = 100 if len(centroids) > 100 else len(centroids)
+    centroids_display = centroids.sort_values('Country').head(max_labels) if max_labels < len(centroids) else centroids
     
     # Create choropleth map including all countries from the CSV
     fig = go.Figure(data=go.Choropleth(
@@ -1363,7 +1362,7 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
         showscale=False  # hide colorbar in the map; we render a custom legend beside controls
     ))
     
-    # Add country name labels on map (same pattern as projects_by_country.py)
+    # Add country name labels on map
     if not centroids_display.empty:
         fig.add_trace(
             go.Scattergeo(
@@ -1371,8 +1370,8 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
                 lat=centroids_display['Latitude'],
                 mode='text',
                 text=centroids_display['Country'],
-                textfont=dict(size=10, color='#2c3e50'),
-                textposition='top center',
+                textfont=dict(size=12, color='#1b365d', family='Arial, sans-serif'),
+                textposition='middle center',
                 hoverinfo='skip',
                 showlegend=False,
             )
@@ -1382,6 +1381,7 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     center_lat = year_df['Latitude'].mean() if not year_df.empty and 'Latitude' in year_df.columns else 24.0
     center_lon = year_df['Longitude'].mean() if not year_df.empty and 'Longitude' in year_df.columns else 45.0
     fig.update_geos(
+        fitbounds="locations",
         showframe=False,
         showcoastlines=True,
         projection_type='equirectangular',
@@ -1521,6 +1521,11 @@ def create_layout():
         dcc.Store(id='likely-filter-previous-store', data=[]),
         # Stores to keep full table data for filtering
         dcc.Store(id='projects-company-table-data-full', data=data_full if df_table is not None else []),
+        
+        # Download Components
+        dcc.Download(id='projects-company-download-chart-csv'),
+        dcc.Download(id='projects-company-download-map-csv'),
+        dcc.Download(id='projects-company-download-table-csv'),
         dcc.Store(id='projects-company-table-tooltip-full', data=tooltip_data if df_table is not None else []),
         # Dummy target for clientside sort UI (adds A/Z hover like projects_latest)
         dcc.Store(id='projects-company-dummy-sort', data='', storage_type='memory'),
@@ -1565,11 +1570,49 @@ def create_layout():
         html.Div([
             # LEFT COLUMN: bar chart and map
             html.Div([
+                html.Div([
+                     html.Button(
+                        'Download Chart CSV',
+                        id='projects-company-btn-download-chart',
+                        n_clicks=0,
+                        style={
+                            'backgroundColor': 'white',
+                            'color': '#2c3e50',
+                            'border': '1px solid #dee2e6',
+                            'padding': '4px 10px',
+                            'borderRadius': '4px',
+                            'cursor': 'pointer',
+                            'fontSize': '11px',
+                            'marginBottom': '5px',
+                            'float': 'right'
+                        }
+                    )
+                ], style={'width': '100%', 'display': 'block', 'height': '25px'}),
                 dcc.Graph(
                     id='projects-company-bar-chart',
                     style={'height': '500px', 'marginBottom': '20px'}
                 ),
                 html.Div([
+                    html.Div([
+                         html.Button(
+                            'Download Map CSV',
+                            id='projects-company-btn-download-map',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '4px 10px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '11px',
+                                'marginBottom': '5px',
+                                'float': 'right',
+                                'zIndex': '10',
+                                'position': 'relative'
+                            }
+                        )
+                    ], style={'width': '100%', 'display': 'block', 'height': '25px'}),
                     dcc.Graph(
                         id='projects-company-map',
                         style={
@@ -1801,17 +1844,34 @@ def create_layout():
         
         # Projects table – match design from projects_by_time
         html.Div([
-            html.H4(
-                "Project Details",
-                style={
-                    'marginBottom': '15px',
-                    'fontSize': '16px',
-                    'fontWeight': 'bold',
-                    'fontFamily': 'Lato, sans-serif',
-                    'color': '#fe5000',
-                    'textAlign': 'left'
-                }
-            ),
+            html.Div([
+                html.H4(
+                    "Projected Oil Capacity Details by Company",
+                    style={
+                        'marginBottom': '0',
+                        'fontSize': '24px',
+                        'fontWeight': 'bold',
+                        'fontFamily': 'Georgia, serif',
+                        'color': '#fe5000',
+                        'textAlign': 'left'
+                    }
+                ),
+                html.Button(
+                    'Download Table CSV',
+                    id='projects-company-btn-download-table',
+                    n_clicks=0,
+                    style={
+                        'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6',
+                        'padding': '4px 10px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'fontSize': '11px',
+                        'marginLeft': 'auto'
+                    }
+                )
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginBottom': '15px'}),
             dcc.Loading(
                 id="loading-projects-company-table",
                 type="default",
@@ -1823,7 +1883,7 @@ def create_layout():
                     tooltip_duration=None,
                     page_action='none',
                     sort_action='native',
-                    filter_action='native',
+                    filter_action='native',  # Native filtering shows filter inputs below headers
                     style_table={
                         'overflowX': 'auto',
                         'overflowY': 'auto',
@@ -1834,7 +1894,7 @@ def create_layout():
                     style_cell={
                         'textAlign': 'left',
                         'padding': '8px',
-                        'whiteSpace': 'normal',
+                        'whiteSpace': 'nowrap',
                         'height': 'auto',
                         'overflow': 'hidden',
                         'textOverflow': 'ellipsis',
@@ -1842,25 +1902,25 @@ def create_layout():
                         'fontSize': '12px',
                         'border': '1px solid #ddd',
                         'backgroundColor': '#fff',
-                        'fontFamily': 'Lato, sans-serif',
-                        'color': 'rgb(27, 54, 93)'
+                        'fontFamily': 'Georgia, serif',
+                        'color': '#333333'
                     },
                     style_header={
-                        'backgroundColor': '#f8f9fa',
+                        'backgroundColor': '#ffffff',
                         'fontWeight': 'bold',
-                        'fontFamily': 'Lato, sans-serif',
-                        'color': 'rgb(27, 54, 93)',
+                        'fontFamily': 'Georgia, serif',
+                        'color': '#333333',
                         'border': '1px solid #ddd',
-                        'textAlign': 'center',
-                        'whiteSpace': 'normal',
+                        'textAlign': 'left',
+                        'whiteSpace': 'nowrap',
                         'height': 'auto',
                         'position': 'relative'
                     },
                     style_data={
                         'border': '1px solid #ddd',
-                        'whiteSpace': 'normal',
-                        'fontFamily': 'Lato, sans-serif',
-                        'color': 'rgb(27, 54, 93)'
+                        'whiteSpace': 'nowrap',
+                        'fontFamily': 'Georgia, serif',
+                        'color': '#333333'
                     },
                     style_data_conditional=[
                         {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'},
@@ -1875,7 +1935,7 @@ def create_layout():
                     ],
                     css=[{
                         'selector': '.dash-table-tooltip',
-                        'rule': 'font-size: 10px !important; font-family: Lato, sans-serif !important; color: rgb(27, 54, 93) !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
+                        'rule': 'font-size: 10px !important; font-family: Georgia, serif !important; color: #333333 !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
                     }, {
                         'selector': '.dash-table-container .row:last-child',
                         'rule': 'display: none !important;'
@@ -2203,6 +2263,7 @@ def register_callbacks(dash_app, server):
         base_priority = [
             'Project Name',
             'Likely Go-ahead',
+            'Field Type',
             'Country',
             'Region',
             'Group',
@@ -2293,6 +2354,7 @@ def register_callbacks(dash_app, server):
             'Country': '120px',
             'Region': '120px',
             'Group': '140px',
+            'Field Type': '100px',
             'Hydrocarbon': '120px',
             'Depth': '80px',
             'Field/Block': '140px',
@@ -2394,7 +2456,7 @@ def register_callbacks(dash_app, server):
                     aElement.style.cursor = 'pointer';
                     aElement.style.padding = '1px 2px';
                     aElement.style.borderRadius = '1px';
-                    aElement.style.fontFamily = 'Lato, sans-serif';
+                    aElement.style.fontFamily = 'Georgia, serif';
                     aElement.style.fontSize = '10px';
                     aElement.onmouseover = function() {
                         aElement.style.backgroundColor = '#d4e7ff';
@@ -2419,7 +2481,7 @@ def register_callbacks(dash_app, server):
                     zElement.style.cursor = 'pointer';
                     zElement.style.padding = '1px 2px';
                     zElement.style.borderRadius = '1px';
-                    zElement.style.fontFamily = 'Lato, sans-serif';
+                    zElement.style.fontFamily = 'Georgia, serif';
                     zElement.style.fontSize = '10px';
                     zElement.onmouseover = function() {
                         zElement.style.backgroundColor = '#d4e7ff';
@@ -2797,9 +2859,70 @@ def register_callbacks(dash_app, server):
             highlight_quarter=quarter_highlight
         )
         
+        
         # Create map - always filtered by selected year (Year of Period filter controls the map)
-        # Pass filters to load_map_data
         map_fig = create_world_map(year_to_use, company, ltg_list)
         
         # Show Year of Period section and normal Production Additions gradient when there's data
         return bar_fig, map_fig, {'display': 'block'}, normal_content
+
+    # Download Callbacks
+    
+    # Download Chart Data
+    @callback(
+        Output('projects-company-download-chart-csv', 'data'),
+        Input('projects-company-btn-download-chart', 'n_clicks'),
+        [State('company-filter', 'value'),
+         State('likely-to-go-filter', 'value')],
+        prevent_initial_call=True
+    )
+    def download_chart_data(n_clicks, company, likely_to_go):
+        if not n_clicks:
+            return dash.no_update
+        ltg_list = likely_to_go if isinstance(likely_to_go, list) else ([likely_to_go] if likely_to_go else [])
+        df = load_chart_data(company, ltg_list)
+        if df.empty:
+            return dash.no_update
+        return dcc.send_data_frame(df.to_csv, "projects_capacity_chart_data.csv")
+
+    # Download Map Data
+    @callback(
+        Output('projects-company-download-map-csv', 'data'),
+        Input('projects-company-btn-download-map', 'n_clicks'),
+        [State('company-filter', 'value'),
+         State('likely-to-go-filter', 'value'),
+         State('year-of-period-filter', 'value'),
+         State('year-period-slider', 'value')],
+        prevent_initial_call=True
+    )
+    def download_map_data(n_clicks, company, likely_to_go, year_dropdown, year_slider):
+        if not n_clicks:
+            return dash.no_update
+        ltg_list = likely_to_go if isinstance(likely_to_go, list) else ([likely_to_go] if likely_to_go else [])
+        df = load_map_data(company, ltg_list)
+        
+        if df.empty:
+             return dash.no_update
+        
+        # Filter by selected year
+        year_to_use = year_dropdown if year_dropdown else year_slider
+        if year_to_use:
+             try:
+                 df = df[df['Year of Period'] == int(year_to_use)]
+             except:
+                 pass
+             
+        return dcc.send_data_frame(df.to_csv, "projects_map_data.csv")
+    
+    # Download Table Data
+    @callback(
+        Output('projects-company-download-table-csv', 'data'),
+        Input('projects-company-btn-download-table', 'n_clicks'),
+        State('projects-company-table', 'derived_virtual_data'),
+        prevent_initial_call=True
+    )
+    def download_table_data(n_clicks, table_data):
+        if not n_clicks or not table_data:
+            return dash.no_update
+        
+        return dcc.send_data_frame(pd.DataFrame(table_data).to_csv, "projects_details.csv")

@@ -13,6 +13,7 @@ from dash import (
     dcc,
     html,
     dash_table,
+    no_update,
 )
 import pandas as pd
 import plotly.express as px
@@ -20,6 +21,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from config import Config
 from core.data_helpers import execute_query
+from core.country_mappings import COUNTRY_TO_ISO, get_iso_code
 
 # ---------------------------------------------------------------------
 # Data locations and shared constants
@@ -43,121 +45,7 @@ world_geojson = None
 if Config.MAPBOX_ACCESS_TOKEN:
     px.set_mapbox_access_token(Config.MAPBOX_ACCESS_TOKEN)
 
-# Common ISO mapping used to draw filled country shapes on the map
-COUNTRY_TO_ISO = {
-    "United States": "USA",
-    "United Kingdom": "GBR",
-    "Saudi Arabia": "SAU",
-    "Russia": "RUS",
-    "China": "CHN",
-    "India": "IND",
-    "Brazil": "BRA",
-    "Canada": "CAN",
-    "Mexico": "MEX",
-    "Venezuela": "VEN",
-    "Nigeria": "NGA",
-    "Angola": "AGO",
-    "Algeria": "DZA",
-    "Libya": "LBY",
-    "Iraq": "IRQ",
-    "Iran": "IRN",
-    "Kuwait": "KWT",
-    "United Arab Emirates": "ARE",
-    "Qatar": "QAT",
-    "Norway": "NOR",
-    "Kazakhstan": "KAZ",
-    "Azerbaijan": "AZE",
-    "Indonesia": "IDN",
-    "Malaysia": "MYS",
-    "Thailand": "THA",
-    "Vietnam": "VNM",
-    "Australia": "AUS",
-    "Colombia": "COL",
-    "Ecuador": "ECU",
-    "Argentina": "ARG",
-    "Chile": "CHL",
-    "Peru": "PER",
-    "Egypt": "EGY",
-    "Sudan": "SDN",
-    "South Sudan": "SSD",
-    "Gabon": "GAB",
-    "Congo": "COG",
-    "Republic of the Congo": "COG",
-    "Equatorial Guinea": "GNQ",
-    "Cameroon": "CMR",
-    "Ghana": "GHA",
-    "Côte d'Ivoire": "CIV",
-    "Cote d'Ivoire": "CIV",
-    "Ivory Coast": "CIV",
-    "Tunisia": "TUN",
-    "Oman": "OMN",
-    "Yemen": "YEM",
-    "Turkmenistan": "TKM",
-    "Uzbekistan": "UZB",
-    "Georgia": "GEO",
-    "Turkey": "TUR",
-    "Greece": "GRC",
-    "Italy": "ITA",
-    "Spain": "ESP",
-    "France": "FRA",
-    "Germany": "DEU",
-    "Netherlands": "NLD",
-    "Belgium": "BEL",
-    "Denmark": "DNK",
-    "Sweden": "SWE",
-    "Finland": "FIN",
-    "Poland": "POL",
-    "Romania": "ROU",
-    "Bulgaria": "BGR",
-    "Ukraine": "UKR",
-    "Belarus": "BLR",
-    "Lithuania": "LTU",
-    "Latvia": "LVA",
-    "Estonia": "EST",
-    "Portugal": "PRT",
-    "Ireland": "IRL",
-    "Austria": "AUT",
-    "Switzerland": "CHE",
-    "Czech Republic": "CZE",
-    "Slovakia": "SVK",
-    "Hungary": "HUN",
-    "Slovenia": "SVN",
-    "Croatia": "HRV",
-    "Serbia": "SRB",
-    "Bosnia and Herzegovina": "BIH",
-    "Montenegro": "MNE",
-    "North Macedonia": "MKD",
-    "Albania": "ALB",
-    "Morocco": "MAR",
-    "Kenya": "KEN",
-    "Ethiopia": "ETH",
-    "Tanzania": "TZA",
-    "Uganda": "UGA",
-    "Chad": "TCD",
-    "Niger": "NER",
-    "Suriname": "SUR",
-    "Senegal": "SEN",
-    "Trinidad and Tobago": "TTO",
-    "Papua New Guinea": "PNG",
-    "Guyana": "GUY",
-    "Brunei": "BRN",
-    "Bahrain": "BHR",
-    "Japan": "JPN",
-    "South Korea": "KOR",
-    "Philippines": "PHL",
-    "Singapore": "SGP",
-    "Myanmar": "MMR",
-    "Bangladesh": "BGD",
-    "Pakistan": "PAK",
-    "Sri Lanka": "LKA"
-}
-
 logger = logging.getLogger(__name__)
-
-try:  # Optional fallback resolver for ISO codes
-    import pycountry  # type: ignore
-except Exception:  # pragma: no cover - pycountry might not be installed
-    pycountry = None
 
 
 # ---------------------------------------------------------------------
@@ -188,22 +76,8 @@ def _normalize_group(raw_value: str | None) -> str | None:
 
 
 def _iso_for_country(country: str | None) -> str | None:
-    """Return ISO Alpha-3 code for a country, using custom map then pycountry."""
-    if not country:
-        return None
-    country_clean = str(country).strip()
-    if not country_clean:
-        return None
-    if country_clean in COUNTRY_TO_ISO:
-        return COUNTRY_TO_ISO[country_clean]
-    if pycountry:
-        try:
-            match = pycountry.countries.search_fuzzy(country_clean)
-            if match:
-                return match[0].alpha_3
-        except Exception:
-            pass
-    return None
+    """Return ISO Alpha-3 code for a country, using centralized mapping."""
+    return get_iso_code(country)
 
 
 def _build_country_colors(countries: list[str]) -> dict[str, str]:
@@ -719,6 +593,21 @@ def create_layout():
     return html.Div(
         [
             dcc.Store(id="projects-selected-country", data=None),
+            dcc.Store(id="projects-country-filter-previous", data=[]),
+            dcc.Store(id="projects-likely-filter-previous", data=["Y"]),
+            
+            # Download components
+            dcc.Download(id="download-projects-map-csv"),
+            dcc.Download(id="download-projects-chart-csv"),
+            dcc.Download(id="download-projects-table-csv"),
+            
+            # Loading states for exports
+            dcc.Store(id="export-map-loading", data=False),
+            dcc.Store(id="export-chart-loading", data=False),
+            dcc.Store(id="export-table-loading", data=False),
+            
+            # Global loading state
+            dcc.Store(id="global-loading-state", data=False),
             # Top row: Map + Chart on left, Filters on right
             html.Div(
                 [
@@ -730,46 +619,76 @@ def create_layout():
                                 [
                                     html.Div(
                                         [
-                                            html.H3(
-                                                "Producing Countries",
-                                                style={
-                                                    "marginBottom": "8px",
-                                                    "color": "#fe5000",
-                                                    "fontSize": "20px",
-                                                    "fontWeight": "bold",
-                                                },
-                                            ),
                                             html.Div(
-                                                id="projects-selected-country-label",
-                                                style={
-                                                    "fontSize": "13px",
-                                                    "color": "#4e79a7",
-                                                    "fontWeight": "600",
-                                                },
+                                                [
+                                                    html.H3(
+                                                        "Producing Countries",
+                                                        style={
+                                                            "marginBottom": "8px",
+                                                            "color": "#fe5000",
+                                                            "fontSize": "20px",
+                                                            "fontWeight": "bold",
+                                                        },
+                                                    ),
+                                                    html.Div(
+                                                        id="projects-selected-country-label",
+                                                        style={
+                                                            "fontSize": "13px",
+                                                            "color": "#4e79a7",
+                                                            "fontWeight": "600",
+                                                        },
+                                                    ),
+                                                ],
+                                            ),
+                                            dcc.Loading(
+                                                id="loading-export-map",
+                                                type="default",
+                                                color="#fe5000",
+                                                children=[
+                                                    html.Button(
+                                                        "Export CSV",
+                                                        id="export-projects-map-btn",
+                                                        n_clicks=0,
+                                                        style={
+                                                            "backgroundColor": "white",
+                                                            "color": "#2c3e50",
+                                                            "border": "1px solid #dee2e6",
+                                                            "padding": "6px 12px",
+                                                            "borderRadius": "4px",
+                                                            "cursor": "pointer",
+                                                            "fontSize": "12px",
+                                                            "fontWeight": "normal",
+                                                        },
+                                                    )
+                                                ],
                                             ),
                                         ],
                                         style={
                                             "display": "flex",
                                             "justifyContent": "space-between",
-                                            "alignItems": "baseline",
+                                            "alignItems": "center",
                                         },
                                     ),
                                     dcc.Loading(
-                                        dcc.Graph(
-                                            id="projects-country-map",
-                                            style={"height": "520px"},
-                                            config={
-                                                "displayModeBar": True,
-                                                "modeBarButtonsToAdd": [
-                                                    "zoomIn2d",
-                                                    "zoomOut2d",
-                                                    "autoScale2d",
-                                                    "resetViewMapbox",
-                                                ],
-                                                "scrollZoom": True,
-                                            },
-                                        ),
+                                        id="loading-projects-map",
                                         type="dot",
+                                        color="#fe5000",
+                                        children=[
+                                            dcc.Graph(
+                                                id="projects-country-map",
+                                                style={"height": "520px"},
+                                                config={
+                                                    "displayModeBar": True,
+                                                    "modeBarButtonsToAdd": [
+                                                        "zoomIn2d",
+                                                        "zoomOut2d",
+                                                        "autoScale2d",
+                                                        "resetViewMapbox",
+                                                    ],
+                                                    "scrollZoom": True,
+                                                },
+                                            )
+                                        ],
                                     ),
                                 ],
                                 style={
@@ -783,22 +702,58 @@ def create_layout():
                             # Chart
                             html.Div(
                                 [
-                                    html.H3(
-                                        "Projected Oil Capacity Additions by Quarter ('000 b/d) - All",
+                                    html.Div(
+                                        [
+                                            html.H3(
+                                                "Projected Oil Capacity Additions by Quarter ('000 b/d) - All",
+                                                style={
+                                                    "marginBottom": "8px",
+                                                    "color": "#fe5000",
+                                                    "fontSize": "20px",
+                                                    "fontWeight": "bold",
+                                                },
+                                            ),
+                                            dcc.Loading(
+                                                id="loading-export-chart",
+                                                type="default",
+                                                color="#fe5000",
+                                                children=[
+                                                    html.Button(
+                                                        "Export CSV",
+                                                        id="export-projects-chart-btn",
+                                                        n_clicks=0,
+                                                        style={
+                                                            "backgroundColor": "white",
+                                                            "color": "#2c3e50",
+                                                            "border": "1px solid #dee2e6",
+                                                            "padding": "6px 12px",
+                                                            "borderRadius": "4px",
+                                                            "cursor": "pointer",
+                                                            "fontSize": "12px",
+                                                            "fontWeight": "normal",
+                                                        },
+                                                    )
+                                                ],
+                                            ),
+                                        ],
                                         style={
+                                            "display": "flex",
+                                            "justifyContent": "space-between",
+                                            "alignItems": "center",
                                             "marginBottom": "8px",
-                                            "color": "#fe5000",
-                                            "fontSize": "20px",
-                                            "fontWeight": "bold",
                                         },
                                     ),
                                     dcc.Loading(
-                                        dcc.Graph(
-                                            id="projects-country-chart",
-                                            style={"height": "420px", "width": "100%"},
-                                            config={"displayModeBar": False},
-                                        ),
+                                        id="loading-projects-chart",
                                         type="dot",
+                                        color="#fe5000",
+                                        children=[
+                                            dcc.Graph(
+                                                id="projects-country-chart",
+                                                style={"height": "420px", "width": "100%"},
+                                                config={"displayModeBar": False},
+                                            )
+                                        ],
                                     ),
                                 ],
                                 style={
@@ -820,6 +775,13 @@ def create_layout():
                     # Right column: filters
                     html.Div(
                         [
+                            dcc.Loading(
+                                id="loading-filters",
+                                type="default",
+                                color="#fe5000",
+                                style={"position": "absolute", "top": "10px", "right": "10px", "zIndex": "1000"},
+                                children=[html.Div(id="filter-loading-trigger", style={"display": "none"})],
+                            ),
                             html.H4(
                                 "Filters",
                                 style={
@@ -1104,55 +1066,93 @@ def create_layout():
             # Full width table below
             html.Div(
                 [
-                    html.H3(
-                        "Project Details",
+                    html.Div(
+                        [
+                            html.H3(
+                                "Project Details",
+                                style={
+                                    "marginBottom": "8px",
+                                    "color": "#fe5000",
+                                    "fontSize": "20px",
+                                    "fontWeight": "bold",
+                                },
+                            ),
+                            dcc.Loading(
+                                id="loading-export-table",
+                                type="default",
+                                color="#fe5000",
+                                children=[
+                                    html.Button(
+                                        "Export CSV",
+                                        id="export-projects-table-btn",
+                                        n_clicks=0,
+                                        style={
+                                            "backgroundColor": "white",
+                                            "color": "#2c3e50",
+                                            "border": "1px solid #dee2e6",
+                                            "padding": "6px 12px",
+                                            "borderRadius": "4px",
+                                            "cursor": "pointer",
+                                            "fontSize": "12px",
+                                            "fontWeight": "normal",
+                                        },
+                                    )
+                                ],
+                            ),
+                        ],
                         style={
+                            "display": "flex",
+                            "justifyContent": "space-between",
+                            "alignItems": "center",
                             "marginBottom": "8px",
-                            "color": "#1b2838",
                         },
                     ),
                     dcc.Loading(
-                        dash_table.DataTable(
-                            id="projects-country-table",
-                            columns=[],  # Columns will be dynamically generated in callback
-                            data=[],
-                            page_action="none",
-                            sort_action="native",
-                            filter_action="native",
-                            tooltip_duration=None,
-                            style_table={
-                                "overflowX": "auto",
-                                "maxHeight": "600px",
-                            },
-                            style_cell={
-                                "fontFamily": "Arial, sans-serif",
-                                "fontSize": "12px",
-                                "padding": "6px",
-                                "whiteSpace": "normal",
-                                "height": "auto",
-                            },
-                            style_cell_conditional=[
-                                {
-                                    "if": {"column_id": "Comments"},
-                                    "whiteSpace": "nowrap",
-                                    "overflow": "hidden",
-                                    "textOverflow": "ellipsis",
-                                    "height": "auto",
-                                    "textAlign": "left",
-                                }
-                            ],
-                            style_header={
-                                "backgroundColor": "#f5f6fa",
-                                "fontWeight": "600",
-                            },
-                            css=[
-                                {
-                                    "selector": ".dash-table-tooltip",
-                                    "rule": "font-size: 10px !important; font-family: Arial, sans-serif !important; color: #1b2838 !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;",
-                                }
-                            ],
-                        ),
+                        id="loading-projects-table",
                         type="dot",
+                        color="#fe5000",
+                        children=[
+                            dash_table.DataTable(
+                                id="projects-country-table",
+                                columns=[],  # Columns will be dynamically generated in callback
+                                data=[],
+                                page_action="none",
+                                sort_action="native",
+                                filter_action="native",
+                                tooltip_duration=None,
+                                style_table={
+                                    "overflowX": "auto",
+                                    "maxHeight": "600px",
+                                },
+                                style_cell={
+                                    "fontFamily": "Arial, sans-serif",
+                                    "fontSize": "12px",
+                                    "padding": "6px",
+                                    "whiteSpace": "normal",
+                                    "height": "auto",
+                                },
+                                style_cell_conditional=[
+                                    {
+                                        "if": {"column_id": "Comments"},
+                                        "whiteSpace": "nowrap",
+                                        "overflow": "hidden",
+                                        "textOverflow": "ellipsis",
+                                        "height": "auto",
+                                        "textAlign": "left",
+                                    }
+                                ],
+                                style_header={
+                                    "backgroundColor": "#f5f6fa",
+                                    "fontWeight": "600",
+                                },
+                                css=[
+                                    {
+                                        "selector": ".dash-table-tooltip",
+                                        "rule": "font-size: 10px !important; font-family: Arial, sans-serif !important; color: #1b2838 !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;",
+                                    }
+                                ],
+                            )
+                        ],
                     ),
                 ],
                 style={
@@ -1165,7 +1165,7 @@ def create_layout():
             ),
         ],
         className="tab-content",
-        style={"padding": "5px", "background": "#f5f6fa"},
+        style={"padding": "5px", "background": "#f5f6fa", "position": "relative"},
     )
 
 
@@ -1209,14 +1209,9 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
     # Preferred Mapbox path (with world geojson) for OSM base map + controls
     geojson = _load_world_geojson()
     world_center = {"lat": 24.0, "lon": 45.0}
-    avg_lat = df["Latitude"].mean()
-    avg_lon = df["Longitude"].mean()
-    map_center = (
-        dict(lat=avg_lat, lon=avg_lon)
-        if selected_country and not (pd.isna(avg_lat) or pd.isna(avg_lon))
-        else world_center
-    )
-    map_zoom = 2.8 if not selected_country else 2
+    # Always use world center - don't auto-center on selected country
+    map_center = world_center
+    map_zoom = 2.8  # Always use consistent zoom level
 
     if geojson and use_mapbox:
         try:
@@ -1360,8 +1355,9 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
             showlegend=False,
         )
     )
-    center_lat = df["Latitude"].mean()
-    center_lon = df["Longitude"].mean()
+    # Always use world center - don't auto-center on selected countries
+    world_center_lat = 24.0
+    world_center_lon = 45.0
 
     fig.update_layout(
         margin=dict(l=0, r=0, t=0, b=0),
@@ -1370,7 +1366,7 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
             showframe=False,
             showcoastlines=True,
             projection=dict(type="natural earth"),
-            center=dict(lat=center_lat, lon=center_lon),
+            center=dict(lat=world_center_lat, lon=world_center_lon),
         ),
         plot_bgcolor="white",
         paper_bgcolor="white",
@@ -1597,75 +1593,140 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         )
 
     @dash_app.callback(
-        Output("projects-likely-filter", "value", allow_duplicate=True),
+        [Output("projects-likely-filter", "value", allow_duplicate=True),
+         Output("projects-likely-filter-previous", "data")],
         Input("projects-likely-filter", "value"),
-        State("projects-likely-filter", "options"),
+        [State("projects-likely-filter", "options"),
+         State("projects-likely-filter-previous", "data")],
         prevent_initial_call=True,
     )
-    def sync_likely_all(selected, options):
-        """Ensure '(All)' behaves as select-all for Likely filter."""
+    def sync_likely_all(selected, options, previous_selected):
+        """Handle (All) checkbox behavior with proper sequential logic for Likely filter."""
         if not options:
-            return selected
-        all_values = [o["value"] for o in options if o["value"] != "(All)"]
+            return selected, selected
+        
+        # Get all individual likely options (excluding "(All)")
+        all_likely = [o["value"] for o in options if o["value"] != "(All)"]
         selected = selected or []
-        selected_set = set(selected)
-        has_all = "(All)" in selected_set
-
-        normalized = selected
-        if has_all and len(selected_set) == 1:
-            normalized = ["(All)"] + all_values
-        elif not has_all and set(all_values).issubset(selected_set):
-            normalized = ["(All)"] + all_values
-        elif has_all and not set(all_values).issubset(selected_set):
-            normalized = [v for v in selected if v != "(All)"]
-
-        new_sorted = sorted(normalized)
-        old_sorted = sorted(selected)
-        return new_sorted if new_sorted != old_sorted else dash.no_update
+        previous_selected = previous_selected or []
+        
+        # Convert to sets for easier comparison
+        current_set = set(selected)
+        previous_set = set(previous_selected)
+        
+        # Check what changed
+        added = current_set - previous_set
+        removed = previous_set - current_set
+        
+        # Priority 1: Handle explicit "(All)" checkbox clicks
+        if "(All)" in removed and "(All)" in previous_set and not added:
+            # User explicitly unchecked "(All)" only - clear everything
+            return [], []
+            
+        if "(All)" in added and "(All)" not in previous_set and len(added) == 1:
+            # User explicitly checked "(All)" only - select everything
+            result = ["(All)"] + all_likely
+            return result, result
+        
+        # Priority 2: Handle individual likely changes when "(All)" is currently selected
+        if "(All)" in previous_selected and added and not removed:
+            # User clicked an individual likely while "(All)" was selected
+            # This should unselect "(All)" and select only the clicked likely
+            clicked_likely = list(added)
+            return clicked_likely, clicked_likely
+        
+        # Priority 3: Handle individual likely changes when "(All)" is not selected
+        if added or removed:
+            # Get current individual likely (excluding "(All)")
+            individual_likely = [c for c in selected if c != "(All)"]
+            individual_set = set(individual_likely)
+            all_likely_set = set(all_likely)
+            
+            # If all individual likely are now selected, auto-add "(All)"
+            if individual_set == all_likely_set and len(all_likely) > 0 and "(All)" not in selected:
+                result = ["(All)"] + all_likely
+                return result, result
+            
+            # If "(All)" is currently selected but not all likely are individually selected
+            if "(All)" in selected and individual_set != all_likely_set:
+                result = individual_likely
+                return result, result
+            
+            # Otherwise keep current individual selections
+            result = individual_likely
+            return result, result
+        
+        # No changes detected - return current state
+        return selected, selected
 
     @dash_app.callback(
-        Output("projects-country-filter", "value", allow_duplicate=True),
+        [Output("projects-country-filter", "value", allow_duplicate=True),
+         Output("projects-country-filter-previous", "data")],
         Input("projects-country-filter", "value"),
-        State("projects-country-filter", "options"),
+        [State("projects-country-filter", "options"),
+         State("projects-country-filter-previous", "data")],
         prevent_initial_call=True,
     )
-    def sync_country_all(selected, options):
-        """Ensure '(All)' behaves as a real select-all for dropdown."""
+    def sync_country_all(selected, options, previous_selected):
+        """Handle (All) checkbox behavior with proper sequential logic."""
         if not options:
-            return selected
+            return selected, selected
+        
+        # Get all individual country options (excluding "(All)")
         all_countries = [o["value"] for o in options if o["value"] != "(All)"]
         selected = selected or []
-        selected_set = set(selected)
-        has_all = "(All)" in selected_set
-        all_set = set(all_countries)
-        subset_set = selected_set - {"(All)"}
+        previous_selected = previous_selected or []
+        
+        # Convert to sets for easier comparison
+        current_set = set(selected)
+        previous_set = set(previous_selected)
+        
+        # Check what changed
+        added = current_set - previous_set
+        removed = previous_set - current_set
+        
+        # Priority 1: Handle explicit "(All)" checkbox clicks
+        if "(All)" in removed and "(All)" in previous_set and not added:
+            # User explicitly unchecked "(All)" only - clear everything
+            return [], []
+            
+        if "(All)" in added and "(All)" not in previous_set and len(added) == 1:
+            # User explicitly checked "(All)" only - select everything
+            result = ["(All)"] + all_countries
+            return result, result
+        
+        # Priority 2: Handle individual country changes when "(All)" is currently selected
+        if "(All)" in previous_selected and added and not removed:
+            # User clicked an individual country while "(All)" was selected
+            # This should unselect "(All)" and select only the clicked country
+            clicked_countries = list(added)
+            return clicked_countries, clicked_countries
+        
+        # Priority 3: Handle individual country changes when "(All)" is not selected
+        if added or removed:
+            # Get current individual countries (excluding "(All)")
+            individual_countries = [c for c in selected if c != "(All)"]
+            individual_set = set(individual_countries)
+            all_countries_set = set(all_countries)
+            
+            # If all individual countries are now selected, auto-add "(All)"
+            if individual_set == all_countries_set and len(all_countries) > 0 and "(All)" not in selected:
+                result = ["(All)"] + all_countries
+                return result, result
+            
+            # If "(All)" is currently selected but not all countries are individually selected
+            if "(All)" in selected and individual_set != all_countries_set:
+                result = individual_countries
+                return result, result
+            
+            # Otherwise keep current individual selections
+            result = individual_countries
+            return result, result
+        
+        # No changes detected - return current state
+        return selected, selected
 
-        # Rules:
-        # 1) "(All)" clicked alone => select all countries.
-        # 2) "(All)" + subset:
-        #    - If subset is nearly/all countries (user deselected while All was on), drop "(All)" and honor subset.
-        #    - Otherwise (user added All while a partial subset was selected), snap to full select-all.
-        # 3) If everything is selected but "(All)" is not present, treat as user unchecked All -> clear all.
-        # 4) If nothing selected, keep empty.
-        # 5) Otherwise, keep the chosen subset.
-        if has_all and not subset_set:
-            normalized = ["(All)"] + all_countries
-        elif has_all and subset_set:
-            if len(all_set) > 0 and len(subset_set) >= len(all_set) - 1:
-                normalized = sorted(subset_set)  # user is deselecting while All was active
-            else:
-                normalized = ["(All)"] + all_countries  # user added All from a partial subset
-        elif not has_all and subset_set == all_set and all_countries:
-            normalized = []  # allow explicit unselect-all after All was selected
-        elif not subset_set:
-            normalized = []
-        else:
-            normalized = sorted(subset_set)
 
-        # Avoid loops
-        new_sorted = normalized
-        old_sorted = sorted(selected)
-        return new_sorted if new_sorted != old_sorted else dash.no_update
 
     @dash_app.callback(
         Output("projects-country-filter", "value", allow_duplicate=True),
@@ -1674,7 +1735,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         prevent_initial_call=True,
     )
     def toggle_country_from_legend(n_clicks_list, current_values):
-        """Toggle countries via legend blocks."""
+        """Toggle countries via legend blocks with updated behavior."""
         ctx = callback_context
         if not ctx.triggered:
             return dash.no_update
@@ -1689,19 +1750,19 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             return dash.no_update
 
         all_countries = _ordered_countries()
-        selected_set = set(_resolve_countries(current_values or [], all_countries))
-
-        if country in selected_set:
-            selected_set.remove(country)
-        else:
-            selected_set.add(country)
-
-        if not selected_set:
-            new_values = []
-        elif selected_set == set(all_countries):
+        current_values = current_values or []
+        
+        # Resolve current selection (handle "(All)" case)
+        resolved_countries = _resolve_countries(current_values, all_countries)
+        
+        # Check if only this country is currently selected
+        if len(resolved_countries) == 1 and country in resolved_countries:
+            # If clicking the same active country, reset to show all countries
             new_values = ["(All)"] + all_countries
         else:
-            new_values = sorted(selected_set)
+            # Otherwise, select only this country
+            new_values = [country]
+        
         return new_values
 
     @dash_app.callback(
@@ -1787,17 +1848,74 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         return current_selected
 
     @dash_app.callback(
-        Output("projects-selected-country-label", "children"),
+        Output("projects-country-filter", "value", allow_duplicate=True),
+        Input("projects-country-map", "clickData"),
         [
-            Input("projects-selected-country", "data"),
-            Input("projects-country-filter", "value"),
+            State("projects-country-filter", "value"),
+            State("current-submenu", "data"),
         ],
+        prevent_initial_call=True,
     )
-    def render_selected_country_label(selected_country, countries):
+    def update_country_filter_from_map_click(click_data, current_filter, submenu):
+        """Update country filter when a country is clicked on the map."""
+        if submenu != "projects-country":
+            return no_update
+        
+        if not click_data:
+            return no_update
+            
+        # Extract country name from click data
+        point = click_data["points"][0]
+        country = None
+        
+        if "text" in point and point["text"]:
+            country = point["text"]
+        elif "hovertext" in point and point["hovertext"]:
+            hovertext = point["hovertext"]
+            if "<b>" in hovertext and "</b>" in hovertext:
+                country = hovertext.split("<b>")[1].split("</b>")[0]
+        elif "customdata" in point and point["customdata"]:
+            if isinstance(point["customdata"], list):
+                country = point["customdata"][0]
+            else:
+                country = point["customdata"]
+        elif "location" in point:
+            iso_value = point["location"]
+            reverse_map = {v: k for k, v in COUNTRY_TO_ISO.items()}
+            country = reverse_map.get(iso_value, None)
+        
+        if not country:
+            return no_update
+            
+        # Verify country exists in available countries
+        all_countries = load_map_data()["Country"].tolist()
+        if country not in all_countries:
+            return no_update
+            
+        # Check current filter state
+        current_filter = current_filter or []
+        resolved_countries = _resolve_countries(current_filter, all_countries)
+        
+        # If country is not currently in the resolved selection, select only this country
+        if country not in resolved_countries:
+            return [country]
+        
+        # If this country is already the only one selected, expand to show all
+        if len(resolved_countries) == 1 and country in resolved_countries:
+            return ["(All)"] + all_countries
+            
+        # If multiple countries are selected and this one is clicked, select only this country
+        return [country]
+
+    @dash_app.callback(
+        Output("projects-selected-country-label", "children"),
+        Input("projects-country-filter", "value"),
+    )
+    def render_selected_country_label(countries):
         all_countries = load_map_data()["Country"].tolist()
         resolved = _resolve_countries(countries, all_countries)
-        if selected_country:
-            return f"Selected country: {selected_country}"
+        if len(resolved) == 1:
+            return f"Selected country: {resolved[0]}"
         return f"{len(resolved)} countries selected"
 
     @dash_app.callback(
@@ -1805,19 +1923,44 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         [
             Input("projects-group-filter", "value"),
             Input("projects-country-filter", "value"),
-            Input("projects-selected-country", "data"),
+            Input("projects-likely-filter", "value"),
+            Input("projects-chart-group-filter", "value"),
         ],
         prevent_initial_call=False,
     )
-    def refresh_map(group_filter, country_filter, selected_country):
+    def refresh_map(group_filter, country_filter, likely_filter, chart_group_filter):
         try:
+            # Check if likely filter is empty (no options selected)
+            likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
+            if not likely_values:  # If no likely options selected, return empty map
+                return _empty_figure("No data available. Please select at least one option from 'Likely To Go Ahead' filter.")
+            
+            # Apply same group filtering logic as chart (intersection of both group filters)
+            group_set = set(group_filter or DEFAULT_GROUPS)
+            chart_group_set = (
+                set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
+            )
+            if not chart_group_set:
+                return _empty_figure("Select at least one group to see the map.")
+
+            allowed_groups = group_set.intersection(chart_group_set)
+            if not allowed_groups:
+                return _empty_figure("Selected groups are filtered out.")
+            
             base_df = load_map_data()
             all_countries = base_df["Country"].tolist()
-            groups = group_filter or DEFAULT_GROUPS
             selected_countries = _resolve_countries(country_filter, all_countries)
+            
+            # Filter the map data to show only selected countries
             filtered_df = base_df[
-                base_df["Group"].isin(groups) & base_df["Country"].isin(selected_countries)
+                base_df["Group"].isin(allowed_groups) & base_df["Country"].isin(selected_countries)
             ]
+            
+            # Determine if a single country is selected for highlighting
+            selected_country = None
+            if len(selected_countries) == 1:
+                selected_country = selected_countries[0]
+            
             return _map_figure(filtered_df, selected_country)
         except Exception as e:
             print(f"Error updating projects-country-map: {e}")
@@ -1828,16 +1971,21 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     @dash_app.callback(
         Output("projects-country-chart", "figure"),
         [
-            Input("projects-selected-country", "data"),
             Input("projects-country-filter", "value"),
             Input("projects-group-filter", "value"),
             Input("projects-chart-group-filter", "value"),
+            Input("projects-likely-filter", "value"),
         ],
         prevent_initial_call=False,
     )
     def refresh_chart(
-        selected_country, country_filter, group_filter, chart_group_filter
+        country_filter, group_filter, chart_group_filter, likely_filter
     ):
+        # Check if likely filter is empty (no options selected)
+        likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
+        if not likely_values:  # If no likely options selected, return empty chart
+            return _empty_figure("No data available. Please select at least one option from 'Likely To Go Ahead' filter.")
+        
         group_set = set(group_filter or DEFAULT_GROUPS)
         chart_group_set = (
             set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
@@ -1851,6 +1999,12 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
 
         all_countries = load_map_data()["Country"].tolist()
         selected_countries = _resolve_countries(country_filter, all_countries)
+        
+        # Determine if a single country is selected
+        selected_country = None
+        if len(selected_countries) == 1:
+            selected_country = selected_countries[0]
+            
         return _chart_figure(selected_country, selected_countries, allowed_groups)
 
     @dash_app.callback(
@@ -1860,15 +2014,15 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             Output("projects-country-table", "tooltip_data"),
         ],
         [
-            Input("projects-selected-country", "data"),
             Input("projects-country-filter", "value"),
             Input("projects-group-filter", "value"),
             Input("projects-likely-filter", "value"),
+            Input("projects-chart-group-filter", "value"),
         ],
         prevent_initial_call=False,
     )
     def refresh_table(
-        selected_country, country_filter, group_filter, likely_filter
+        country_filter, group_filter, likely_filter, chart_group_filter
     ):
         df = load_table_data()
         
@@ -1877,21 +2031,33 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             return [], [], []
         
         groups = group_filter or DEFAULT_GROUPS
-        likely_values = likely_filter or DEFAULT_LIKELY
+        likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
+        
+        # Apply same group filtering logic as chart (intersection of both group filters)
+        group_set = set(groups)
+        chart_group_set = (
+            set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
+        )
+        if not chart_group_set:
+            return [], [], []
+
+        allowed_groups = group_set.intersection(chart_group_set)
+        if not allowed_groups:
+            return [], [], []
         
         # Get available countries from the dataframe
         if "Country" in df.columns:
             available_countries = df["Country"].unique().tolist()
-            countries = _resolve_countries(country_filter, available_countries)
+            selected_countries = _resolve_countries(country_filter, available_countries)
         else:
-            countries = []
+            selected_countries = []
             logger.warning("Country column not found in table data")
 
         # Filter by group - use Opec_group column name
         if "Opec_group" in df.columns:
-            df = df[df["Opec_group"].isin(groups)]
+            df = df[df["Opec_group"].isin(allowed_groups)]
         elif "Group" in df.columns:
-            df = df[df["Group"].isin(groups)]
+            df = df[df["Group"].isin(allowed_groups)]
         else:
             logger.warning("Group column not found in table data")
         
@@ -1914,15 +2080,15 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             
             df["likely_goahead_normalized"] = df["likely_goahead"].apply(_normalize_likely)
             if "(All)" not in likely_values:
-                df = df[df["likely_goahead_normalized"].isin(likely_values)]
+                if not likely_values:  # If no options selected, return empty dataframe
+                    df = df.iloc[0:0]  # Return empty dataframe with same structure
+                else:
+                    df = df[df["likely_goahead_normalized"].isin(likely_values)]
             df = df.drop(columns=["likely_goahead_normalized"], errors="ignore")
         
-        # Filter by country
-        if "Country" in df.columns:
-            if selected_country:
-                df = df[df["Country"] == selected_country]
-            elif countries:
-                df = df[df["Country"].isin(countries)]
+        # Filter by country - use the resolved countries from country filter
+        if "Country" in df.columns and selected_countries:
+            df = df[df["Country"].isin(selected_countries)]
         
         if df.empty:
             logger.warning("Table data is empty after filtering")
@@ -2102,3 +2268,253 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         
         logger.info(f"Returning {len(display_df)} rows to table")
         return data, columns, tooltip_data
+
+    # CSV Export Callbacks
+    @dash_app.callback(
+        Output("download-projects-map-csv", "data"),
+        Input("export-projects-map-btn", "n_clicks"),
+        [
+            State("projects-country-filter", "value"),
+            State("projects-group-filter", "value"),
+            State("projects-chart-group-filter", "value"),
+            State("projects-likely-filter", "value"),
+        ],
+        prevent_initial_call=True,
+    )
+    def export_map_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter):
+        """Export map data to CSV."""
+        if n_clicks == 0:
+            return no_update
+            
+        try:
+            # Apply same filtering logic as map
+            likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
+            if not likely_values:
+                return no_update
+                
+            group_set = set(group_filter or DEFAULT_GROUPS)
+            chart_group_set = (
+                set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
+            )
+            if not chart_group_set:
+                return no_update
+
+            allowed_groups = group_set.intersection(chart_group_set)
+            if not allowed_groups:
+                return no_update
+                
+            base_df = load_map_data()
+            all_countries = base_df["Country"].tolist()
+            selected_countries = _resolve_countries(country_filter, all_countries)
+            
+            filtered_df = base_df[
+                base_df["Group"].isin(allowed_groups) & base_df["Country"].isin(selected_countries)
+            ]
+            
+            if filtered_df.empty:
+                return no_update
+                
+            # Prepare export data
+            export_df = filtered_df[["Country", "Group", "Latitude", "Longitude"]].copy()
+            
+            # Generate filename
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"projects_producing_countries_{timestamp}.csv"
+            
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+            
+        except Exception as e:
+            logger.error(f"Error exporting map data: {e}")
+            return no_update
+
+    @dash_app.callback(
+        Output("download-projects-chart-csv", "data"),
+        Input("export-projects-chart-btn", "n_clicks"),
+        [
+            State("projects-country-filter", "value"),
+            State("projects-group-filter", "value"),
+            State("projects-chart-group-filter", "value"),
+            State("projects-likely-filter", "value"),
+        ],
+        prevent_initial_call=True,
+    )
+    def export_chart_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter):
+        """Export chart data to CSV."""
+        if n_clicks == 0:
+            return no_update
+            
+        try:
+            # Apply same filtering logic as chart
+            likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
+            if not likely_values:
+                return no_update
+                
+            group_set = set(group_filter or DEFAULT_GROUPS)
+            chart_group_set = (
+                set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
+            )
+            if not chart_group_set:
+                return no_update
+
+            allowed_groups = group_set.intersection(chart_group_set)
+            if not allowed_groups:
+                return no_update
+                
+            # Load and filter chart data
+            df = load_chart_data()
+            map_data = load_map_data()
+            country_to_group = map_data.set_index("Country")["Group"].to_dict()
+
+            def _allowed(country: str) -> bool:
+                if not allowed_groups:
+                    return True
+                return country_to_group.get(country) in allowed_groups
+
+            all_countries = map_data["Country"].tolist()
+            selected_countries = _resolve_countries(country_filter, all_countries)
+            base_countries = [c for c in selected_countries if _allowed(c)]
+            
+            country_df = df[df["Country"].isin(base_countries)].copy()
+            
+            if country_df.empty:
+                return no_update
+                
+            # Aggregate data for export
+            export_df = (
+                country_df.groupby(["Country", "Year", "QuarterNum", "Quarter"], as_index=False)[
+                    "ProductionAdditions"
+                ]
+                .sum()
+                .sort_values(["Year", "QuarterNum", "Country"])
+            )
+            
+            # Generate filename
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"projects_capacity_additions_{timestamp}.csv"
+            
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+            
+        except Exception as e:
+            logger.error(f"Error exporting chart data: {e}")
+            return no_update
+
+    @dash_app.callback(
+        Output("download-projects-table-csv", "data"),
+        Input("export-projects-table-btn", "n_clicks"),
+        [
+            State("projects-country-filter", "value"),
+            State("projects-group-filter", "value"),
+            State("projects-chart-group-filter", "value"),
+            State("projects-likely-filter", "value"),
+        ],
+        prevent_initial_call=True,
+    )
+    def export_table_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter):
+        """Export table data to CSV."""
+        if n_clicks == 0:
+            return no_update
+            
+        try:
+            # Apply same filtering logic as table
+            df = load_table_data()
+            
+            if df.empty:
+                return no_update
+                
+            groups = group_filter or DEFAULT_GROUPS
+            likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
+            
+            # Apply group filtering
+            group_set = set(groups)
+            chart_group_set = (
+                set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
+            )
+            if not chart_group_set:
+                return no_update
+
+            allowed_groups = group_set.intersection(chart_group_set)
+            if not allowed_groups:
+                return no_update
+                
+            # Filter by group
+            if "Opec_group" in df.columns:
+                df = df[df["Opec_group"].isin(allowed_groups)]
+            elif "Group" in df.columns:
+                df = df[df["Group"].isin(allowed_groups)]
+                
+            # Filter by likely go-ahead
+            if "likely_goahead" in df.columns:
+                def _normalize_likely(val: str) -> str:
+                    if pd.isna(val):
+                        return ""
+                    text = str(val or "").strip().lower()
+                    if not text:
+                        return ""
+                    if text.startswith("y"):
+                        return "Y"
+                    if text.startswith("n"):
+                        return "N"
+                    if "uncertain" in text:
+                        return "Uncertain"
+                    return text.capitalize()
+                
+                df["likely_goahead_normalized"] = df["likely_goahead"].apply(_normalize_likely)
+                if "(All)" not in likely_values:
+                    if not likely_values:
+                        return no_update
+                    else:
+                        df = df[df["likely_goahead_normalized"].isin(likely_values)]
+                df = df.drop(columns=["likely_goahead_normalized"], errors="ignore")
+                
+            # Filter by country
+            if "Country" in df.columns:
+                available_countries = df["Country"].unique().tolist()
+                selected_countries = _resolve_countries(country_filter, available_countries)
+                if selected_countries:
+                    df = df[df["Country"].isin(selected_countries)]
+                    
+            if df.empty:
+                return no_update
+                
+            # Clean up data for export
+            export_df = df.fillna("")
+            
+            # Generate filename
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"projects_details_{timestamp}.csv"
+            
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+            
+        except Exception as e:
+            logger.error(f"Error exporting table data: {e}")
+            return no_update
+
+    # Filter loading indicator callback
+    @dash_app.callback(
+        Output("filter-loading-trigger", "children"),
+        [
+            Input("projects-country-filter", "value"),
+            Input("projects-group-filter", "value"),
+            Input("projects-chart-group-filter", "value"),
+            Input("projects-likely-filter", "value"),
+        ],
+        prevent_initial_call=True,
+    )
+    def trigger_filter_loading(country_filter, group_filter, chart_group_filter, likely_filter):
+        """Trigger loading indicator when filters change."""
+        return ""
+
+    # Performance optimization: Add loading states for better UX
+    @dash_app.callback(
+        Output("global-loading-state", "data"),
+        [
+            Input("projects-country-filter", "value"),
+            Input("projects-group-filter", "value"),
+            Input("projects-chart-group-filter", "value"),
+            Input("projects-likely-filter", "value"),
+        ],
+        prevent_initial_call=True,
+    )
+    def update_global_loading_state(country_filter, group_filter, chart_group_filter, likely_filter):
+        """Update global loading state when filters change."""
+        return True  # Indicates loading is in progress

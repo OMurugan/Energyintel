@@ -869,272 +869,300 @@ def create_layout(server):
                 "top": "213px",
                 "left": "209px"
             }),
+            
+            # Export button
+            html.Div([
+                html.Div([
+                    html.Button(
+                        "Export Data CSV",
+                        id="crude-comparison-export-btn",
+                        n_clicks=0,
+                        style={
+                            'backgroundColor': 'white',
+                            'color': '#2c3e50',
+                            'border': '1px solid #dee2e6',
+                            'padding': '6px 12px',
+                            'borderRadius': '4px',
+                            'cursor': 'pointer',
+                            'fontSize': '13px',
+                            'display': 'inline-block'
+                        }
+                    ),
+                    dcc.Download(id="download-crude-comparison-csv"),
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'marginBottom': '10px'}),
+            ], style={'width': '100%'}),
 
-            dash_table.DataTable(
-                id="crude-comparison-table",
-                data=production_data,
-                columns=production_columns,
-                style_table={
-                    "overflowX": "auto",
-                    "overflowY": "auto",
-                    "height": "1000px",
-                    "maxHeight": "1000px",
-                    "border": "1px solid #d9d9d9",
-                    "backgroundColor": "white",
-                    "position": "relative",
-                },
-                style_cell={
-                    "textAlign": "center",
-                    "padding": "8px 12px",
-                    "fontSize": "11px",
-                    "fontFamily": "Arial, sans-serif",
-                    "border": "1px solid #e0e0e0",
-                    "whiteSpace": "normal",
-                    "height": "auto",
-                    "minHeight": "35px",
-                    "color": "#333333",
-                },
-                style_header={
-                    "backgroundColor": "#f2f2f2",
-                    "fontWeight": "bold",
-                    "fontSize": "14px",
-                    "fontFamily": "Arial, sans-serif",
-                    "border": "1px solid #d0d0d0",
-                    "color": "#1f3263",
-                    "textAlign": "center",
-                    "padding": "10px 12px",
-                    "position": "relative",
-                },
-                style_cell_conditional=[
-                    {
-                        "if": {"column_id": "CrudeOil"},
-                        "textAlign": "left",
-                        "fontWeight": "600",
-                        "minWidth": "180px",
-                        "backgroundColor": "#FFFFFF",
-                        "borderRight": "1px solid #d0d0d0",
-                        "paddingLeft": "12px",
-                        "paddingRight": "12px",
-                        "color": "#1f3263",
-                        "cursor": "pointer",
-                    },
-                    {
-                        "if": {"column_id": "CrudeOil", "header": True},
-                        "textAlign": "left",
-                        "color": "#1f3263",
-                        "position": "relative",
-                    },
-                    # Year column headers - dark blue, center-aligned
-                    {
-                        "if": {"header": True, "column_id": [str(year) for year in range(2007, 2025)]},
-                        "color": "#1f3263",
-                        "textAlign": "center",
-                    },
-                ],
-                style_data_conditional=[
-                    # All data rows white background
-                    {
-                        "if": {"row_index": "odd"},
-                        "backgroundColor": "#FFFFFF",
-                    },
-                    {
-                        "if": {"row_index": "even"},
-                        "backgroundColor": "#FFFFFF",
-                    },
-                    # CrudeOil column data - dark blue
-                    {
-                        "if": {"column_id": "CrudeOil"},
-                        "color": "#1f3263",
-                        "backgroundColor": "#FFFFFF",
-                    },
-                    # Year columns data - dark gray/black, center-aligned
-                    {
-                        "if": {"column_id": [str(year) for year in range(2007, 2025)]},
-                        "color": "#333333",
-                        "textAlign": "center",
-                    },
-                ],
-                css=[
-                    {
-                        'selector': '.dash-cell[data-dash-column="CrudeOil"]',
-                        'rule': '''
-                            cursor: pointer !important;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-cell[data-dash-column="CrudeOil"] a',
-                        'rule': '''
-                            color: #1f3263 !important; 
-                            text-decoration: underline !important;
-                            font-weight: 600 !important;
-                            font-family: Arial, sans-serif !important;
-                            cursor: pointer !important;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-cell[data-dash-column="CrudeOil"] a:hover',
-                        'rule': '''
-                            color: #1f3263 !important; 
-                            text-decoration: underline !important;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"]',
-                        'rule': '''
-                            color: #1f3263 !important;
-                            position: relative !important;
-                            text-align: left !important;
-                        '''
-                    },
-                    # Year column headers styling
-                    {
-                        'selector': '.dash-header[data-dash-column*="20"]',
-                        'rule': '''
-                            color: #1f3263 !important;
-                            text-align: center !important;
-                            font-weight: bold !important;
-                        '''
-                    },
-                    # Table borders - horizontal lines for rows
-                    {
-                        'selector': '.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table',
-                        'rule': '''
-                            border-collapse: collapse !important;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-cell',
-                        'rule': '''
-                            border-top: 1px solid #e0e0e0 !important;
-                            border-bottom: 1px solid #e0e0e0 !important;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-header',
-                        'rule': '''
-                            border-left: 1px solid #d0d0d0 !important;
-                            border-right: 1px solid #d0d0d0 !important;
-                        '''
-                    },
-                    # A-Z vertical text for sort order - HIDDEN BY DEFAULT
-                    {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-order-container',
-                        'rule': '''
-                            position: absolute;
-                            right: 30px;
-                            top: 50%;
-                            transform: translateY(-50%);
-                            font-size: 10px;
-                            color: #666;
-                            cursor: pointer;
-                            padding: 2px;
-                            border: 1px solid transparent;
-                            border-radius: 2px;
-                            line-height: 1;
-                            text-align: center;
-                            display: flex;
-                            flex-direction: column;
-                            align-items: center;
-                            justify-content: center;
-                            height: 30px;
-                            opacity: 0;
-                            transition: opacity 0.2s ease;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"]:hover .sort-order-container',
-                        'rule': '''
-                            opacity: 1;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-order-container:hover',
-                        'rule': '''
-                            background-color: #e6f3ff;
-                            border-color: #1f3263;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-asc',
-                        'rule': '''
-                            display: block;
-                            line-height: 1;
-                            cursor: pointer;
-                            padding: 1px 2px;
-                            border-radius: 1px;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-asc:hover',
-                        'rule': '''
-                            background-color: #d4e7ff;
-                            font-weight: bold;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-desc',
-                        'rule': '''
-                            display: block;
-                            line-height: 1;
-                            cursor: pointer;
-                            padding: 1px 2px;
-                            border-radius: 1px;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-desc:hover',
-                        'rule': '''
-                            background-color: #d4e7ff;
-                            font-weight: bold;
-                        '''
-                    },
-                    # Sort indicator (SVG icon) for ALL headers - HIDDEN BY DEFAULT
-                    {
-                        'selector': '.dash-header .sort-indicator',
-                        'rule': '''
-                            position: absolute;
-                            right: 8px;
-                            top: 50%;
-                            transform: translateY(-50%);
-                            width: 15px;
-                            height: 15px;
-                            cursor: pointer;
-                            opacity: 0;
-                            transition: opacity 0.2s ease;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-header:hover .sort-indicator',
-                        'rule': '''
-                            opacity: 1;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-header .sort-indicator:hover',
-                        'rule': '''
-                            background-color: #e6f3ff;
-                            border-radius: 2px;
-                        '''
-                    },
-                    {
-                        'selector': '.dash-cell:not([data-dash-column="CrudeOil"]):not(.dash-header)',
-                        'rule': 'cursor: pointer;'
-                    },
-                    # SUM text box styling
-                    {
-                        'selector': '#sum-text-box',
-                        'rule': 'cursor: pointer !important;'
-                    },
-                    {
-                        'selector': '#sum-text-box:hover',
-                        'rule': 'background-color: #f5f5f5 !important; border-color: #999 !important;'
-                    },
-                ],
-                fixed_rows={"headers": True},
-                page_action="none",
-                sort_action="none",
-                filter_action="none",
+            dcc.Loading(
+                id="crude-comparison-table-loading",
+                type="circle",
+                children=[
+                    dash_table.DataTable(
+                        id="crude-comparison-table",
+                        data=production_data,
+                        columns=production_columns,
+                        style_table={
+                            "overflowX": "auto",
+                            "overflowY": "auto",
+                            "height": "1000px",
+                            "maxHeight": "1000px",
+                            "border": "1px solid #d9d9d9",
+                            "backgroundColor": "white",
+                            "position": "relative",
+                        },
+                        style_cell={
+                            "textAlign": "center",
+                            "padding": "8px 12px",
+                            "fontSize": "11px",
+                            "fontFamily": "Arial, sans-serif",
+                            "border": "1px solid #e0e0e0",
+                            "whiteSpace": "normal",
+                            "height": "auto",
+                            "minHeight": "35px",
+                            "color": "#333333",
+                        },
+                        style_header={
+                            "backgroundColor": "#f2f2f2",
+                            "fontWeight": "bold",
+                            "fontSize": "14px",
+                            "fontFamily": "Arial, sans-serif",
+                            "border": "1px solid #d0d0d0",
+                            "color": "#1f3263",
+                            "textAlign": "center",
+                            "padding": "10px 12px",
+                            "position": "relative",
+                        },
+                        style_cell_conditional=[
+                            {
+                                "if": {"column_id": "CrudeOil"},
+                                "textAlign": "left",
+                                "fontWeight": "600",
+                                "minWidth": "180px",
+                                "backgroundColor": "#FFFFFF",
+                                "borderRight": "1px solid #d0d0d0",
+                                "paddingLeft": "12px",
+                                "paddingRight": "12px",
+                                "color": "#1f3263",
+                                "cursor": "pointer",
+                            },
+                            {
+                                "if": {"column_id": "CrudeOil", "header": True},
+                                "textAlign": "left",
+                                "color": "#1f3263",
+                                "position": "relative",
+                            },
+                            # Year column headers - dark blue, center-aligned
+                            {
+                                "if": {"header": True, "column_id": [str(year) for year in range(2007, 2025)]},
+                                "color": "#1f3263",
+                                "textAlign": "center",
+                            },
+                        ],
+                        style_data_conditional=[
+                            # All data rows white background
+                            {
+                                "if": {"row_index": "odd"},
+                                "backgroundColor": "#FFFFFF",
+                            },
+                            {
+                                "if": {"row_index": "even"},
+                                "backgroundColor": "#FFFFFF",
+                            },
+                            # CrudeOil column data - dark blue
+                            {
+                                "if": {"column_id": "CrudeOil"},
+                                "color": "#1f3263",
+                                "backgroundColor": "#FFFFFF",
+                            },
+                            # Year columns data - dark gray/black, center-aligned
+                            {
+                                "if": {"column_id": [str(year) for year in range(2007, 2025)]},
+                                "color": "#333333",
+                                "textAlign": "center",
+                            },
+                        ],
+                        css=[
+                            {
+                                'selector': '.dash-cell[data-dash-column="CrudeOil"]',
+                                'rule': '''
+                                    cursor: pointer !important;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-cell[data-dash-column="CrudeOil"] a',
+                                'rule': '''
+                                    color: #1f3263 !important; 
+                                    text-decoration: underline !important;
+                                    font-weight: 600 !important;
+                                    font-family: Arial, sans-serif !important;
+                                    cursor: pointer !important;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-cell[data-dash-column="CrudeOil"] a:hover',
+                                'rule': '''
+                                    color: #1f3263 !important; 
+                                    text-decoration: underline !important;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-header[data-dash-column="CrudeOil"]',
+                                'rule': '''
+                                    color: #1f3263 !important;
+                                    position: relative !important;
+                                    text-align: left !important;
+                                '''
+                            },
+                            # Year column headers styling
+                            {
+                                'selector': '.dash-header[data-dash-column*="20"]',
+                                'rule': '''
+                                    color: #1f3263 !important;
+                                    text-align: center !important;
+                                    font-weight: bold !important;
+                                '''
+                            },
+                            # Table borders - horizontal lines for rows
+                            {
+                                'selector': '.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table',
+                                'rule': '''
+                                    border-collapse: collapse !important;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-cell',
+                                'rule': '''
+                                    border-top: 1px solid #e0e0e0 !important;
+                                    border-bottom: 1px solid #e0e0e0 !important;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-header',
+                                'rule': '''
+                                    border-left: 1px solid #d0d0d0 !important;
+                                    border-right: 1px solid #d0d0d0 !important;
+                                '''
+                            },
+                            # A-Z vertical text for sort order - HIDDEN BY DEFAULT
+                            {
+                                'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-order-container',
+                                'rule': '''
+                                    position: absolute;
+                                    right: 30px;
+                                    top: 50%;
+                                    transform: translateY(-50%);
+                                    font-size: 10px;
+                                    color: #666;
+                                    cursor: pointer;
+                                    padding: 2px;
+                                    border: 1px solid transparent;
+                                    border-radius: 2px;
+                                    line-height: 1;
+                                    text-align: center;
+                                    display: flex;
+                                    flex-direction: column;
+                                    align-items: center;
+                                    justify-content: center;
+                                    height: 30px;
+                                    opacity: 0;
+                                    transition: opacity 0.2s ease;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-header[data-dash-column="CrudeOil"]:hover .sort-order-container',
+                                'rule': '''
+                                    opacity: 1;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-order-container:hover',
+                                'rule': '''
+                                    background-color: #e6f3ff;
+                                    border-color: #1f3263;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-asc',
+                                'rule': '''
+                                    display: block;
+                                    line-height: 1;
+                                    cursor: pointer;
+                                    padding: 1px 2px;
+                                    border-radius: 1px;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-asc:hover',
+                                'rule': '''
+                                    background-color: #d4e7ff;
+                                    font-weight: bold;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-desc',
+                                'rule': '''
+                                    display: block;
+                                    line-height: 1;
+                                    cursor: pointer;
+                                    padding: 1px 2px;
+                                    border-radius: 1px;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-header[data-dash-column="CrudeOil"] .sort-desc:hover',
+                                'rule': '''
+                                    background-color: #d4e7ff;
+                                    font-weight: bold;
+                                '''
+                            },
+                            # Sort indicator (SVG icon) for ALL headers - HIDDEN BY DEFAULT
+                            {
+                                'selector': '.dash-header .sort-indicator',
+                                'rule': '''
+                                    position: absolute;
+                                    right: 8px;
+                                    top: 50%;
+                                    transform: translateY(-50%);
+                                    width: 15px;
+                                    height: 15px;
+                                    cursor: pointer;
+                                    opacity: 0;
+                                    transition: opacity 0.2s ease;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-header:hover .sort-indicator',
+                                'rule': '''
+                                    opacity: 1;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-header .sort-indicator:hover',
+                                'rule': '''
+                                    background-color: #e6f3ff;
+                                    border-radius: 2px;
+                                '''
+                            },
+                            {
+                                'selector': '.dash-cell:not([data-dash-column="CrudeOil"]):not(.dash-header)',
+                                'rule': 'cursor: pointer;'
+                            },
+                            # SUM text box styling
+                            {
+                                'selector': '#sum-text-box',
+                                'rule': 'cursor: pointer !important;'
+                            },
+                            {
+                                'selector': '#sum-text-box:hover',
+                                'rule': 'background-color: #f5f5f5 !important; border-color: #999 !important;'
+                            },
+                        ],
+                        fixed_rows={"headers": True},
+                        page_action="none",
+                        sort_action="none",
+                        filter_action="none",
                         markdown_options={"html": True, "link_target": "_blank"},
+                    ),
+                ]
             ),
 
             # Store components
@@ -1861,6 +1889,36 @@ def register_callbacks(app, server):
         Input('crude-comparison-table', 'columns'),
         prevent_initial_call=False
     )
+
+    @app.callback(
+        Output("download-crude-comparison-csv", "data"),
+        Input("crude-comparison-export-btn", "n_clicks"),
+        [State("crude-comparison-table", "data"),
+         State("crude-comparison-table", "columns")],
+        prevent_initial_call=True
+    )
+    def export_crude_comparison_csv(n_clicks, data, columns):
+        if not n_clicks or not data:
+            raise dash.exceptions.PreventUpdate
+
+        # Convert to DataFrame
+        df = pd.DataFrame(data)
+        
+        # Clean CrudeOil column (remove Markdown links)
+        if 'CrudeOil' in df.columns:
+            df['CrudeOil'] = df['CrudeOil'].apply(lambda x: re.sub(r'\[(.*?)\]\(.*?\)', r'\1', str(x)) if '[' in str(x) else x)
+            
+        # Get column names for sorting
+        col_names = [c['id'] for c in columns]
+        # Only keep columns that are in the dataframe
+        col_names = [c for c in col_names if c in df.columns]
+        df = df[col_names]
+        
+        # Rename columns to their display names
+        rename_dict = {c['id']: c['name'] for c in columns}
+        df = df.rename(columns=rename_dict)
+
+        return dcc.send_data_frame(df.to_csv, "crude_comparison_export.csv", index=False)
     
 def create_crude_comparison_dashboard(dash_app, server, url_base_pathname="/dash/crude-comparison"):
     """Create the Crude Overview dashboard"""

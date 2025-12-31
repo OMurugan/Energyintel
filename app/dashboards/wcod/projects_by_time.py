@@ -349,6 +349,27 @@ def create_layout():
     return html.Div([
         html.Div([
             html.Div([
+                html.Div([
+                    html.H4("Projected Oil Capacity additions by Quarter ('000 b/d)", 
+                           style={'marginBottom': '10px', 'fontSize': '16px', 'fontWeight': 'bold', 'fontFamily': 'Lato, sans-serif', 'color': '#fe5000', 'flexGrow': 1}),
+                    html.Div([
+                        html.Button(
+                            'Export Data to CSV',
+                            id='btn-export-projects-chart-csv',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '5px 10px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '12px'
+                            }
+                        ),
+                        dcc.Download(id="download-projects-chart-csv")
+                    ])
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'paddingRight': '10px'}),
                 dcc.Loading(
                     id="loading-chart",
                     type="default",
@@ -406,7 +427,26 @@ def create_layout():
         ]),
         
         html.Div([
-            html.H4("Project Details", style={'marginBottom': '15px', 'fontSize': '16px', 'fontWeight': 'bold', 'fontFamily': 'Lato, sans-serif', 'color': '#fe5000', 'textAlign': 'left'}),
+            html.Div([
+                html.H4("Project Details", style={'marginBottom': '0px', 'fontSize': '16px', 'fontWeight': 'bold', 'fontFamily': 'Lato, sans-serif', 'color': '#fe5000', 'flexGrow': 1}),
+                html.Div([
+                    html.Button(
+                        'Export Data to CSV',
+                        id='btn-export-projects-table-csv',
+                        n_clicks=0,
+                        style={
+                            'backgroundColor': 'white',
+                            'color': '#2c3e50',
+                            'border': '1px solid #dee2e6',
+                            'padding': '5px 10px',
+                            'borderRadius': '4px',
+                            'cursor': 'pointer',
+                            'fontSize': '12px'
+                        }
+                    ),
+                    dcc.Download(id="download-projects-table-csv")
+                ])
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginBottom': '15px'}),
             dcc.Loading(
                 id="loading-table",
                 type="default",
@@ -609,13 +649,7 @@ def register_callbacks(dash_app, server):
             fig.update_layout(
                 height=500,
                 plot_bgcolor='white',
-                paper_bgcolor='white',
-                title={
-                    'text': "Projected Oil Capacity additions by Quarter ('000 b/d)",
-                    'x': 0,
-                    'xanchor': 'left',
-                    'font': {'size': 18, 'family': 'Lato', 'color': '#fe5000'}
-                }
+                paper_bgcolor='white'
             )
             return fig
         
@@ -696,13 +730,6 @@ def register_callbacks(dash_app, server):
             })
         
         fig.update_layout(
-            title={
-                'text': "Projected Oil Capacity additions by Quarter ('000 b/d)",
-                'x': 0,
-                'xanchor': 'left',
-                'font': {'size': 16, 'color': '#fe5000', 'family': 'Lato'},
-                'y': 0.98
-            },
             xaxis={
                 'title': '',
                 'showgrid': False,
@@ -939,7 +966,10 @@ def register_callbacks(dash_app, server):
                 columns.append(col_def)
             
             df = df.fillna('')
+            
             data = df.to_dict('records')
+            
+            # Prepare tooltip data for Comments column only
             tooltip_data = []
             for i, row in enumerate(data):
                 tooltip_row = {}
@@ -956,3 +986,140 @@ def register_callbacks(dash_app, server):
         except Exception as e:
             traceback.print_exc()
             return [], [], []
+
+    @callback(
+        Output('download-projects-chart-csv', 'data'),
+        Input('btn-export-projects-chart-csv', 'n_clicks'),
+        State('likely-filter', 'value'),
+        prevent_initial_call=True
+    )
+    def export_projects_chart_data(n_clicks, likely_filter):
+        if n_clicks > 0:
+            df = load_chart_data()
+            if not df.empty:
+                # Apply filter same as update_chart
+                likely_col = 'likely_goahead'
+                if likely_col in df.columns:
+                    df[likely_col] = df[likely_col].astype(str).str.strip()
+                    col_upper = df[likely_col].str.upper()
+                    if not likely_filter:
+                        likely_filter = []
+                    if not isinstance(likely_filter, list):
+                        likely_filter = [likely_filter] if likely_filter else []
+                    
+                    valid_statuses = ['Y', 'N', 'UNCERTAIN', '']
+                    has_all = 'All' in likely_filter
+                    if has_all:
+                        selected_statuses = valid_statuses
+                    else:
+                        selected_statuses = []
+                        for v in likely_filter:
+                            v_up = str(v).upper()
+                            if v_up in ['Y', 'N'] or v_up.startswith('UNCERT'):
+                                selected_statuses.append(v_up)
+                            elif v == '':
+                                selected_statuses.append('')
+                    
+                    if selected_statuses:
+                        mask = pd.Series(False, index=col_upper.index)
+                        for status in selected_statuses:
+                            if status == 'Y':
+                                mask |= col_upper.str.startswith('Y')
+                            elif status == 'N':
+                                mask |= col_upper.str.startswith('N')
+                            elif status.startswith('UNCERT'):
+                                mask |= col_upper.str.startswith('U')
+                            elif status == '':
+                                mask |= (col_upper == '')
+                        df = df[mask].copy()
+                
+                # Aggregated data for the chart export
+                export_df = df.groupby(['Region', 'Year', 'Quarter'], as_index=False)['Value'].sum()
+                # Rename Value to match chart description
+                export_df = export_df.rename(columns={'Value': "Oil Capacity Additions ('000 b/d)"})
+                # Remove newline from Quarter
+                export_df['Quarter'] = export_df['Quarter'].str.replace('\n', ' ')
+                
+                return dcc.send_data_frame(export_df.to_csv, "projects_chart_data.csv", index=False)
+        return None
+
+    @callback(
+        Output('download-projects-table-csv', 'data'),
+        Input('btn-export-projects-table-csv', 'n_clicks'),
+        State('likely-filter', 'value'),
+        State('projects-time-chart', 'clickData'),
+        State('projects-time-chart', 'figure'),
+        prevent_initial_call=True
+    )
+    def export_projects_table_data(n_clicks, likely_filter, click_data, figure):
+        if n_clicks > 0:
+            df = load_table_data()
+            if not df.empty:
+                # Apply region filter if clicked
+                clicked_region = None
+                if click_data and isinstance(click_data, dict) and 'points' in click_data and len(click_data['points']) > 0:
+                    point = click_data['points'][0]
+                    if isinstance(point, dict):
+                        if 'fullData' in point and 'name' in point['fullData']:
+                            clicked_region = point['fullData']['name']
+                        elif figure and isinstance(figure, dict) and 'data' in figure:
+                            trace_index = point.get('curveNumber', 0)
+                            if isinstance(trace_index, int) and trace_index < len(figure['data']):
+                                trace_data = figure['data'][trace_index]
+                                if isinstance(trace_data, dict) and 'name' in trace_data:
+                                    clicked_region = trace_data['name']
+                
+                if clicked_region and 'Region' in df.columns:
+                    df = df[df['Region'] == clicked_region].copy()
+
+                # Apply likely filter
+                likely_col = None
+                for col in df.columns:
+                    col_lower = col.lower()
+                    if 'likely' in col_lower and ('go' in col_lower or 'ahead' in col_lower):
+                        likely_col = col
+                        break
+                
+                if likely_col:
+                    df[likely_col] = df[likely_col].astype(str).str.strip()
+                    col_upper = df[likely_col].str.upper()
+                    if not likely_filter:
+                        likely_filter = []
+                    if not isinstance(likely_filter, list):
+                        likely_filter = [likely_filter] if likely_filter else []
+                        
+                    if 'All' not in likely_filter and len(likely_filter) > 0:
+                        mask = pd.Series(False, index=col_upper.index)
+                        for v in likely_filter:
+                            v_up = str(v).upper()
+                            if v_up == 'Y':
+                                mask |= col_upper.str.startswith('Y')
+                            elif v_up == 'N':
+                                mask |= col_upper.str.startswith('N')
+                            elif v_up.startswith('UNCERT'):
+                                mask |= col_upper.str.startswith('U')
+                            else:
+                                mask |= (col_upper == v_up)
+                        df = df[mask].copy()
+                    elif 'All' not in likely_filter and len(likely_filter) == 0:
+                        df = pd.DataFrame()
+                
+                # Map column names for export to match display names
+                display_name_map = {
+                    'Opec_group': 'Group',
+                    'field_type': 'Field Type',
+                    'field': 'Field/Block',
+                    'play_type': 'Play Type',
+                    'likely_goahead': 'Likely To Go Ahead',
+                }
+                df = df.rename(columns=display_name_map)
+                
+                # Format boolean columns for export
+                bool_display_map = {'Y': 'Yes', 'N': 'No', 'true': 'Yes', 'false': 'No', 'True': 'Yes', 'False': 'No'}
+                bool_columns = ['Likely To Go Ahead', 'Sanctioned']
+                for col in bool_columns:
+                    if col in df.columns:
+                        df[col] = df[col].astype(str).str.strip().map(bool_display_map).fillna(df[col])
+
+                return dcc.send_data_frame(df.to_csv, "projects_table_data.csv", index=False)
+        return None

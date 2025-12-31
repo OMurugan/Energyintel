@@ -2,8 +2,9 @@
 Price Scorecard for Key World Oil Grades View
 Price scorecard table for key crude grades with multi-level headers
 """
-from dash import dcc, html, Input, Output, callback, dash_table
+from dash import dcc, html, Input, Output, callback, dash_table, State, ctx
 import dash
+import re
 import pandas as pd
 import os
 from pathlib import Path
@@ -21,19 +22,6 @@ def create_layout():
             'margin': '0',
             'marginBottom': '20px'
         }),
-        
-        # Title - left-aligned, orange-brown, serif font
-        html.H3("PIW SCORECARD -- COSTS TO REFINERS OF KEY FORMULA PRICED CRUDE OILS IN PRIMARY WORLD MARKETS ($/bbl)", 
-                style={
-                    'marginBottom': '20px', 
-                    'fontSize': '16px', 
-                    'fontWeight': 'normal',
-                    'textAlign': 'left',
-                    'color': '#cc6600',  # Orange-brown color
-                    'fontFamily': 'Times New Roman, serif',
-                    'padding': '0',
-                    'margin': '0 0 20px 0'
-                }),
         
         # Clickable boxes container
         html.Div([
@@ -108,6 +96,40 @@ def create_layout():
             'marginBottom': '30px',
             'textAlign': 'left'
         }),
+        # Title - left-aligned, orange-brown, serif font
+        html.H3("PIW SCORECARD -- COSTS TO REFINERS OF KEY FORMULA PRICED CRUDE OILS IN PRIMARY WORLD MARKETS ($/bbl)", 
+        id='price-scorecard-header',
+        style={
+            'marginBottom': '20px', 
+            'fontSize': '16px', 
+            'fontWeight': 'normal',
+            'textAlign': 'left',
+            'color': '#cc6600',  # Orange-brown color
+            'fontFamily': 'Times New Roman, serif',
+            'padding': '0',
+            'margin': '0 0 20px 0'
+        }),
+        # Export button
+        html.Div([
+            html.Div([
+                html.Button(
+                    "Export Data CSV",
+                    id="price-scorecard-export-btn",
+                    n_clicks=0,
+                    style={
+                        'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6',
+                        'padding': '6px 12px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'fontSize': '13px',
+                        'display': 'inline-block'
+                    }
+                ),
+                dcc.Download(id="download-price-scorecard-csv"),
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'marginBottom': '10px'}),
+        ], style={'width': '100%'}),
         
         # Store selected type filter
         dcc.Store(id='selected-type-filter', data='Cost to Refiners'),
@@ -128,7 +150,16 @@ def create_layout():
                 id='price-scorecard-table-container',
                 style={'minHeight': '400px'}
             )
-        )
+        ),
+        
+        # Footnote
+        html.Div(id='price-scorecard-footnote', style={
+            'marginTop': '20px',
+            'fontSize': '13px',
+            'color': 'grey',
+            'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif',
+            'textAlign': 'left'
+        }),
     ], className='tab-content', style={'padding': '20px', 'backgroundColor': '#ffffff'})
 
 
@@ -576,6 +607,26 @@ def register_callbacks(dash_app, server):
         
         # Default to Cost to Refiners
         return active_style, inactive_style, last_button_inactive
+
+    # Callback to update the heading text and footnote based on selected type
+    @callback(
+        [Output('price-scorecard-header', 'children'),
+         Output('price-scorecard-footnote', 'children')],
+        Input('selected-type-filter', 'data')
+    )
+    def update_header_and_footnote(selected_type):
+        """Update header text and footnote based on selected type"""
+        if selected_type == 'Port of Loading':
+            header = "PIW SCORECARD -- CRUDE VALUES AT PORT OF LOADING ($/bbl)"
+            footnote = ""
+        elif selected_type == 'Price Formula':
+            header = "PIW SCORECARD - PRICE FORMULA ADJUSTMENT FACTORS ($/bbl)"
+            footnote = "f.o.b. is freight on board,"
+        else:
+            header = "PIW SCORECARD -- COSTS TO REFINERS OF KEY FORMULA PRICED CRUDE OILS IN PRIMARY WORLD MARKETS ($/bbl)"
+            footnote = "f.o.b. is freight on board, c.i.f. is cargo, insurance and freight"
+            
+        return header, footnote
     
     # Callback to update table based on selected type filter
     @callback(
@@ -652,9 +703,10 @@ def register_callbacks(dash_app, server):
                 merge_duplicate_headers=True,
                 style_table={
                     'overflowX': 'auto',
+                    'overflowY': 'auto',
                     'fontSize': '11px',
                     'border': 'none',  # Remove outer border
-                    'maxHeight': '600px',
+                    'height': '1000px',
                     'width': '100%',
                     'borderCollapse': 'collapse'
                 },
@@ -798,10 +850,51 @@ def register_callbacks(dash_app, server):
             return html.Div(
                 [
                     html.Div(f"Error loading table: {str(e)}", style={'padding': '20px', 'color': 'red', 'fontWeight': 'bold'}),
-                    html.Div("Please try refreshing the page or selecting a different filter.", style={'padding': '10px 20px', 'color': '#666'})
-                ],
-                style={'padding': '20px'}
+                    html.Pre(error_details, style={'whiteSpace': 'pre-wrap', 'fontSize': '10px'})
+                ]
             )
+
+    @callback(
+        Output("download-price-scorecard-csv", "data"),
+        Input("price-scorecard-export-btn", "n_clicks"),
+        [State("price-scorecard-table", "data"),
+         State("price-scorecard-table", "columns")],
+        prevent_initial_call=True
+    )
+    def export_price_scorecard_csv(n_clicks, data, columns):
+        if not n_clicks or not data:
+            raise dash.exceptions.PreventUpdate
+
+        # Convert to DataFrame
+        df = pd.DataFrame(data)
+        
+        # Get column names for sorting
+        col_names = [c['id'] for c in columns]
+        # Only keep columns that are in the dataframe
+        col_names = [c for c in col_names if c in df.columns]
+        df = df[col_names]
+        
+        # Rename columns to their display names (joined multi-level headers)
+        rename_dict = {}
+        for c in columns:
+            if isinstance(c['name'], list):
+                # Filter out empty strings and invisible characters, then join
+                # Removing invisible characters like \u200B, \u200C, \u200D, \uFEFF
+                clean_names = []
+                for n in c['name']:
+                    if n and n.strip():
+                        clean_n = n.replace('\u200B', '').replace('\u200C', '').replace('\u200D', '').replace('\uFEFF', '').strip()
+                        if clean_n:
+                            clean_names.append(clean_n)
+                
+                joined_name = " / ".join(clean_names)
+                rename_dict[c['id']] = joined_name
+            else:
+                rename_dict[c['id']] = c['name']
+        
+        df = df.rename(columns=rename_dict)
+
+        return dcc.send_data_frame(df.to_csv, "price_scorecard_export.csv", index=False)
     
     # Client-side callback to handle header clicks and column highlighting
     dash_app.clientside_callback(

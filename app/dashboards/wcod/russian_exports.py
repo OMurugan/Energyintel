@@ -40,6 +40,12 @@ def create_layout():
             'backgroundColor': '#e8f4f8',
             'fontWeight': 'bold'
         },
+        {
+            'if': {'filter_query': '{Terminal, Country} = "Grand Total"'},
+            'backgroundColor': '#d4edda',
+            'fontWeight': 'bold',
+            'color': '#155724'
+        },
         # Striped table rows - even rows (light gray) for all columns EXCEPT Terminal, Country
         {
             'if': {'row_index': 'even'},
@@ -77,12 +83,21 @@ def create_layout():
             'width': '100px',
             'fontSize': '12px'
         },
-        # Company column - increased font size
+        # Terminal, Country column - bold font weight and increased font size
+        {
+            'if': {
+                'column_id': 'Terminal, Country'
+            },
+            'fontSize': '12px',
+            'fontWeight': 'bold'
+        },
+        # Company column - bold font weight and increased font size
         {
             'if': {
                 'column_id': 'Company'
             },
-            'fontSize': '12px'
+            'fontSize': '12px',
+            'fontWeight': 'bold'
         },
         # Remove top border for all OTHER columns when Terminal, Country cell is empty (to create merged appearance)
         {
@@ -99,12 +114,13 @@ def create_layout():
             'paddingTop': '0px',
         }
     ]
-    # Add right-align and fontSize for year columns
+    # Add right-align, fontSize, and normal font weight for year columns
     for col in year_columns:
         conditional_styles.append({
             'if': {'column_id': col},
             'textAlign': 'right',
             'fontSize': '12px',
+            'fontWeight': 'normal'
         })
     
     # Create header conditional styles for year columns to minimize whitespace
@@ -133,6 +149,8 @@ def create_layout():
             html.P("('000 b/d)", 
                    style={'marginTop': '0px', 'marginBottom': '20px', 'color': '#ff6600', 'textAlign': 'center', 'fontSize': '21px', 'fontWeight': 'normal'}),
         ]),
+        # CSV Export components
+        dcc.Download(id="download-russian-exports-csv"),
         # Store for year column sort order (True = descending, False = ascending)
         dcc.Store(id='year-column-sort-order', data=True),  # Default: descending (2022 → 2006)
         # Hidden button to trigger sort toggle from clientside callback
@@ -140,6 +158,19 @@ def create_layout():
         # Dummy output for clientside callback
         html.Div(id='russian-exports-dummy-sort', style={'display': 'none'}),
         html.Div([
+            # Export button positioned above the table
+            html.Div([
+                html.Button("Export CSV", id='export-russian-exports-btn', n_clicks=0, style={
+                    'backgroundColor': 'white',
+                    'color': '#2c3e50',
+                    'border': '1px solid #dee2e6', 
+                    'padding': '6px 10px', 
+                    'borderRadius': '4px', 
+                    'cursor': 'pointer', 
+                    'fontSize': '12px',
+                    'marginBottom': '10px'
+                })
+            ], style={'display': 'flex', 'justifyContent': 'flex-end'}),
             dcc.Loading(
                 id='loading-russian-exports-table',
                 type='default',
@@ -180,7 +211,7 @@ def create_layout():
                             'fontFamily': 'Lato',
                             'fontSize': '12px',
                             'fontStyle': 'normal',
-                            'fontWeight': 'bold',
+                            'fontWeight': 'normal',
                             'textDecoration': 'none',
                             'color': 'rgb(27, 54, 93)',
                             'textAlign': 'left',
@@ -307,8 +338,54 @@ def register_callbacks(dash_app, server):
             # Reorder columns: Terminal, Country, Company, then years
             df = df_pivot[['Terminal, Country', 'Company'] + year_columns_str].copy()
             
-            # Sort by Terminal, Country and Company
-            df = df.sort_values(['Terminal, Country', 'Company']).reset_index(drop=True)
+            # Sort by Terminal, Country (ascending) and Company (custom order to match live source)
+            # Company ordering: Regular companies in descending alphabetical order, then Grand Total last
+            # This matches the live source at: https://dataanalytics.energyintel.com/t/EIProd/views/RussianExports/RussianExports
+            # Create a custom sort key for Company column
+            def company_sort_key(company):
+                if pd.isna(company) or company == '':
+                    return (1, '')  # Empty companies last within each group
+                else:
+                    return (0, company)  # Regular companies in descending alphabetical order
+            
+            df['_sort_key'] = df['Company'].apply(company_sort_key)
+            df = df.sort_values(['Terminal, Country', '_sort_key'], ascending=[True, True]).reset_index(drop=True)
+            df = df.drop('_sort_key', axis=1)
+            
+            # For regular companies, sort in descending order within each terminal
+            df_final = []
+            current_terminal = None
+            current_group = []
+            
+            for idx, row in df.iterrows():
+                terminal = row['Terminal, Country']
+                
+                if terminal != current_terminal and current_terminal is not None:
+                    # Process the previous group - sort companies in descending order
+                    if current_group:
+                        current_group.sort(key=lambda x: str(x['Company']), reverse=True)
+                        df_final.extend(current_group)
+                    current_group = []
+                
+                current_terminal = terminal
+                current_group.append(row.to_dict())
+            
+            # Process the last group
+            if current_group:
+                current_group.sort(key=lambda x: str(x['Company']), reverse=True)
+                df_final.extend(current_group)
+            
+            # Convert back to DataFrame
+            df = pd.DataFrame(df_final)
+            
+            # Add single Grand Total row at the bottom (sums ALL exports across ALL terminals/companies)
+            grand_total_row = {'Terminal, Country': 'Grand Total', 'Company': ''}
+            for year_col in year_columns_str:
+                year_sum = pd.to_numeric(df[year_col], errors='coerce').sum()
+                grand_total_row[year_col] = year_sum if not pd.isna(year_sum) else None
+            
+            # Append Grand Total row to the end of the dataframe
+            df = pd.concat([df, pd.DataFrame([grand_total_row])], ignore_index=True)
             
             # Handle Terminal, Country merging (clear duplicate values)
             terminal_col = 'Terminal, Country'
@@ -460,5 +537,99 @@ def register_callbacks(dash_app, server):
         Input('russian-exports-table', 'data'),
         prevent_initial_call=False
     )
+    
+    # CSV Export Callback
+    @callback(
+        Output('download-russian-exports-csv', 'data'),
+        Input('export-russian-exports-btn', 'n_clicks'),
+        State('russian-exports-table', 'data'),
+        State('russian-exports-table', 'columns'),
+        prevent_initial_call=True
+    )
+    def export_russian_exports_csv(n_clicks, table_data, table_columns):
+        """Export Russian Exports table data to CSV"""
+        if n_clicks and table_data and table_columns:
+            try:
+                # Convert table data to DataFrame
+                df = pd.DataFrame(table_data)
+                
+                if df.empty:
+                    # Return empty CSV if no data
+                    empty_df = pd.DataFrame(columns=['Terminal_Country', 'Company'])
+                    filename = "Russian_Exports_by_Terminal_and_Company.csv"
+                    return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+                
+                # Clean up column names for CSV (replace spaces and special characters)
+                column_mapping = {}
+                for col in df.columns:
+                    clean_name = str(col).replace(', ', '_').replace(' ', '_').replace('(', '').replace(')', '').replace("'", '')
+                    column_mapping[col] = clean_name
+                
+                df_export = df.rename(columns=column_mapping)
+                
+                # Handle the merged Terminal, Country column - fill empty cells with the previous non-empty value
+                terminal_col = 'Terminal_Country'
+                if terminal_col in df_export.columns:
+                    # Forward fill the Terminal, Country values to handle merged cells (except for Grand Total row)
+                    current_terminal = None
+                    for idx in df_export.index:
+                        cell_value = df_export.loc[idx, terminal_col]
+                        if pd.isna(cell_value) or cell_value == '' or cell_value is None:
+                            # Don't fill Grand Total row
+                            if current_terminal is not None and current_terminal != 'Grand Total':
+                                df_export.loc[idx, terminal_col] = current_terminal
+                        else:
+                            current_terminal = str(cell_value).strip()
+                
+                # Sort by Terminal_Country (ascending) and Company (descending), with Grand Total at the end
+                if 'Terminal_Country' in df_export.columns and 'Company' in df_export.columns:
+                    # Separate Grand Total row from regular data
+                    grand_total_rows = df_export[df_export['Terminal_Country'] == 'Grand Total'].copy()
+                    regular_rows = df_export[df_export['Terminal_Country'] != 'Grand Total'].copy()
+                    
+                    if not regular_rows.empty:
+                        # Sort regular rows by terminal and company (descending)
+                        df_final_csv = []
+                        current_terminal = None
+                        current_group = []
+                        
+                        # Sort by terminal first
+                        regular_rows = regular_rows.sort_values(['Terminal_Country'], ascending=[True]).reset_index(drop=True)
+                        
+                        for idx, row in regular_rows.iterrows():
+                            terminal = row['Terminal_Country']
+                            
+                            if terminal != current_terminal and current_terminal is not None:
+                                # Process the previous group - sort companies in descending order
+                                if current_group:
+                                    current_group.sort(key=lambda x: str(x['Company']), reverse=True)
+                                    df_final_csv.extend(current_group)
+                                current_group = []
+                            
+                            current_terminal = terminal
+                            current_group.append(row.to_dict())
+                        
+                        # Process the last group
+                        if current_group:
+                            current_group.sort(key=lambda x: str(x['Company']), reverse=True)
+                            df_final_csv.extend(current_group)
+                        
+                        # Combine regular rows with Grand Total at the end
+                        df_export = pd.DataFrame(df_final_csv)
+                        if not grand_total_rows.empty:
+                            df_export = pd.concat([df_export, grand_total_rows], ignore_index=True)
+                    else:
+                        df_export = grand_total_rows
+                
+                filename = "Russian_Exports_by_Terminal_and_Company.csv"
+                return dcc.send_data_frame(df_export.to_csv, filename=filename, index=False)
+                
+            except Exception as e:
+                # Return empty CSV on error
+                empty_df = pd.DataFrame(columns=['Error'], data=[{'Error': f'Export failed: {str(e)}'}])
+                filename = "Russian_Exports_Export_Error.csv"
+                return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+        
+        raise dash.exceptions.PreventUpdate
     
 

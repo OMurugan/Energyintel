@@ -3,6 +3,7 @@ Imports - Country Comparison View
 Global Crude Imports Dashboard - Based on Tableau design
 """
 import json
+import os
 from urllib.request import urlopen
 import dash
 from dash import dcc, html, Input, Output, State, callback, dash_table, no_update
@@ -10,108 +11,16 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 from core.data_helpers import execute_query
+from core.country_mappings import COUNTRY_TO_ISO, get_iso_code
 from config import Config
 
 # Set Mapbox access token
 if Config.MAPBOX_ACCESS_TOKEN:
     px.set_mapbox_access_token(Config.MAPBOX_ACCESS_TOKEN)
 
-# Country to ISO-3 mapping for Mapbox
-COUNTRY_TO_ISO = {
-    "United States": "USA",
-    "United Kingdom": "GBR",
-    "Saudi Arabia": "SAU",
-    "Russia": "RUS",
-    "China": "CHN",
-    "India": "IND",
-    "Brazil": "BRA",
-    "Canada": "CAN",
-    "Mexico": "MEX",
-    "Venezuela": "VEN",
-    "Nigeria": "NGA",
-    "Angola": "AGO",
-    "Algeria": "DZA",
-    "Libya": "LBY",
-    "Iraq": "IRQ",
-    "Iran": "IRN",
-    "Kuwait": "KWT",
-    "United Arab Emirates": "ARE",
-    "Qatar": "QAT",
-    "Norway": "NOR",
-    "Kazakhstan": "KAZ",
-    "Azerbaijan": "AZE",
-    "Indonesia": "IDN",
-    "Malaysia": "MYS",
-    "Thailand": "THA",
-    "Vietnam": "VNM",
-    "Australia": "AUS",
-    "Colombia": "COL",
-    "Ecuador": "ECU",
-    "Argentina": "ARG",
-    "Chile": "CHL",
-    "Peru": "PER",
-    "Egypt": "EGY",
-    "Sudan": "SDN",
-    "South Sudan": "SSD",
-    "Gabon": "GAB",
-    "Congo": "COG",
-    "Republic of the Congo": "COG",
-    "Equatorial Guinea": "GNQ",
-    "Cameroon": "CMR",
-    "Ghana": "GHA",
-    "Côte d'Ivoire": "CIV",
-    "Cote d'Ivoire": "CIV",
-    "Ivory Coast": "CIV",
-    "Tunisia": "TUN",
-    "Oman": "OMN",
-    "Yemen": "YEM",
-    "Turkmenistan": "TKM",
-    "Uzbekistan": "UZB",
-    "Georgia": "GEO",
-    "Turkey": "TUR",
-    "Greece": "GRC",
-    "Italy": "ITA",
-    "Spain": "ESP",
-    "France": "FRA",
-    "Germany": "DEU",
-    "Netherlands": "NLD",
-    "Belgium": "BEL",
-    "Denmark": "DNK",
-    "Sweden": "SWE",
-    "Finland": "FIN",
-    "Poland": "POL",
-    "Romania": "ROU",
-    "Bulgaria": "BGR",
-    "Ukraine": "UKR",
-    "Japan": "JPN",
-    "South Korea": "KOR",
-    "Philippines": "PHL",
-    "Singapore": "SGP",
-    "Brunei": "BRN"
-}
-
-try:
-    import pycountry
-except Exception:
-    pycountry = None
-
 def _iso_for_country(country):
-    """Return ISO Alpha-3 code for a country, using custom map then pycountry."""
-    if not country:
-        return None
-    country_clean = str(country).strip()
-    if not country_clean:
-        return None
-    if country_clean in COUNTRY_TO_ISO:
-        return COUNTRY_TO_ISO[country_clean]
-    if pycountry:
-        try:
-            match = pycountry.countries.search_fuzzy(country_clean)
-            if match:
-                return match[0].alpha_3
-        except Exception:
-            pass
-    return None
+    """Return ISO Alpha-3 code for a country, using centralized mapping."""
+    return get_iso_code(country)
 
 # Styling constants to match Energy Intelligence design
 # Adjusted color scale with darker colors at lower values for better visibility
@@ -130,6 +39,7 @@ MAP_LAND_COLOR = '#f4f4f4'
 def load_imports_data(selected_year=2023):
     """Load imports comparison data from database"""
     try:
+        print(f"Loading imports data for year {selected_year}...")
         query = """
         SELECT
             EXTRACT(YEAR FROM yr)::INT AS "Year",
@@ -151,8 +61,10 @@ def load_imports_data(selected_year=2023):
         rows = execute_query(query, {'selected_year': selected_year})
         
         if not rows:
+            print("No imports data found for the selected year")
             return pd.DataFrame()
         
+        print(f"Loaded {len(rows)} import records")
         df = pd.DataFrame(rows)
         # Rename DataValue to Import_Volume for consistency
         df = df.rename(columns={'DataValue': 'Import_Volume'})
@@ -169,6 +81,7 @@ def load_imports_data(selected_year=2023):
         # Filter out zero values for better visualization
         df = df[df['Import_Volume'] > 0].copy()
         
+        print(f"Processed imports data: {len(df)} valid records")
         return df
     except Exception as e:
         print(f"Error loading imports data: {e}")
@@ -218,16 +131,22 @@ def load_annual_imports_data(selected_countries=None):
             # Remove 'All' from the list if present
             countries_to_filter = [c for c in selected_countries if c != 'All']
             
-            if countries_to_filter:
-                if len(countries_to_filter) == 1:
-                    # Single country - use = operator
-                    base_query += " AND import_country = :import_country"
-                    params['import_country'] = countries_to_filter[0]
-                else:
-                    # Multiple countries - use IN clause
-                    placeholders = ", ".join([f":country_{i}" for i in range(len(countries_to_filter))])
-                    base_query += f" AND import_country IN ({placeholders})"
-                    params = {f"country_{i}": country for i, country in enumerate(countries_to_filter)}
+            # If no countries are selected after removing 'All', return empty DataFrame
+            if not countries_to_filter:
+                return pd.DataFrame()
+            
+            if len(countries_to_filter) == 1:
+                # Single country - use = operator
+                base_query += " AND import_country = :import_country"
+                params['import_country'] = countries_to_filter[0]
+            else:
+                # Multiple countries - use IN clause
+                placeholders = ", ".join([f":country_{i}" for i in range(len(countries_to_filter))])
+                base_query += f" AND import_country IN ({placeholders})"
+                params = {f"country_{i}": country for i, country in enumerate(countries_to_filter)}
+        else:
+            # If selected_countries is None or empty, return empty DataFrame
+            return pd.DataFrame()
         
         base_query += """
         GROUP BY
@@ -267,10 +186,10 @@ def load_annual_imports_data(selected_countries=None):
         return pd.DataFrame()
 
 
-def load_import_export_matrix_data(selected_year=2023):
-    """Load Import – Export Matrix data from database (single-year snapshot)"""
+def load_import_export_matrix_data(selected_year=2023, selected_countries=None):
+    """Load Import – Export Matrix data from database (single-year snapshot) with optional country filtering"""
     try:
-        query = """
+        base_query = """
         SELECT
             EXTRACT(YEAR FROM yr)::INT AS "Year",
             import_country AS "Importer",
@@ -283,6 +202,31 @@ def load_import_export_matrix_data(selected_year=2023):
                 import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
                 OR source <> 'OECD Imports'
             )
+        """
+        
+        params = {'selected_year': selected_year}
+        
+        # Add country filter if countries are specified (filter out 'All' if present)
+        if selected_countries:
+            # Remove 'All' from the list if present
+            countries_to_filter = [c for c in selected_countries if c != 'All']
+            
+            # If no countries are selected after removing 'All', return empty DataFrame
+            if not countries_to_filter:
+                return pd.DataFrame()
+            
+            if len(countries_to_filter) == 1:
+                # Single country - use = operator
+                base_query += " AND import_country = :import_country"
+                params['import_country'] = countries_to_filter[0]
+            else:
+                # Multiple countries - use IN clause
+                placeholders = ", ".join([f":country_{i}" for i in range(len(countries_to_filter))])
+                base_query += f" AND import_country IN ({placeholders})"
+                for i, country in enumerate(countries_to_filter):
+                    params[f"country_{i}"] = country
+        
+        base_query += """
         GROUP BY
             EXTRACT(YEAR FROM yr),
             import_country,
@@ -293,7 +237,7 @@ def load_import_export_matrix_data(selected_year=2023):
             "Exporter";
         """
         
-        rows = execute_query(query, {'selected_year': selected_year})
+        rows = execute_query(base_query, params)
         
         if not rows:
             return pd.DataFrame()
@@ -438,7 +382,265 @@ def build_year_marks(years, max_marks=8):
     return marks
 
 
-YEAR_SLIDER_MARKS = build_year_marks(AVAILABLE_YEARS)
+def create_imports_map_figure(df_map, single_selected_country, max_volume, selected_year):
+    """Create the imports map figure, using the same safe approach as projects_by_country.py"""
+    if df_map.empty:
+        map_fig = go.Figure()
+        map_fig.add_annotation(
+            text="No countries with valid data for map display",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5,
+            showarrow=False
+        )
+        map_fig.update_layout(height=550, plot_bgcolor='white', paper_bgcolor='white')
+        return map_fig
+    
+    # Guard against bad coords to avoid client-side Mapbox layer errors
+    df = df_map.copy()
+    
+    # Only attempt Mapbox rendering when a token looks valid; otherwise fall back
+    # to the non-Mapbox choropleth to avoid client-side "Mapbox error".
+    _mapbox_token = (getattr(Config, "MAPBOX_ACCESS_TOKEN", None) or "").strip()
+    has_mapbox_token = _mapbox_token.startswith("pk.")
+    use_mapbox_env = os.getenv("USE_MAPBOX_WCOD", "false").lower() in ("1", "true", "yes")
+    use_mapbox = (
+        has_mapbox_token
+        and (_load_world_geojson() is not None)
+        and use_mapbox_env
+    )
+    
+    print(f"Mapbox configuration: has_token={has_mapbox_token}, has_geojson={_load_world_geojson() is not None}, env_enabled={use_mapbox_env}, use_mapbox={use_mapbox}")
+    
+    # Load GeoJSON and coordinates
+    geojson = _load_world_geojson()
+    all_countries_df = get_all_countries_with_coordinates()
+    
+    # Preferred Mapbox path (with world geojson) for OSM base map + controls
+    world_center = {"lat": 24.0, "lon": 45.0}
+    map_center = world_center
+    map_zoom = 2.8  # Use consistent zoom level like projects_by_country.py
+    
+    if geojson and use_mapbox:
+        try:
+            print("Attempting Mapbox choropleth rendering")
+            
+            # Create choropleth with import volume data
+            fig = go.Figure(
+                go.Choroplethmapbox(
+                    geojson=geojson,
+                    locations=df['ISO_Code'].astype(str).tolist(),
+                    z=df['Import_Volume'].tolist(),
+                    zmin=0,
+                    zmax=max_volume,
+                    featureidkey="id",  # world.geo.json uses ISO-3 in `id`
+                    colorscale=MAP_COLOR_SCALE,
+                    showscale=False,
+                    hoverinfo="text",
+                    hovertext=df.apply(
+                        lambda row: f"<b>{row['Country_DB_Original']}</b><br>Import Volume: {row['Import_Volume']:,.0f}('000 b/d)<br>Year: {selected_year}<br>Click to select",
+                        axis=1,
+                    ),
+                    marker_line_color="white",
+                    marker_line_width=0.6,
+                )
+            )
+            
+            # Add country labels for countries in the data
+            if not all_countries_df.empty:
+                countries_in_map = df['Country_DB_Original'].tolist()
+                valid_coords = all_countries_df[all_countries_df['Country'].isin(countries_in_map)].copy()
+                
+                if not valid_coords.empty:
+                    # Limit label density at low zoom so names stay readable
+                    max_labels = len(valid_coords)
+                    if map_zoom <= 2.8:
+                        max_labels = 40
+                    elif map_zoom <= 3.4:
+                        max_labels = 80
+                    
+                    coords_display = (
+                        valid_coords.sort_values("Country").head(max_labels)
+                        if max_labels < len(valid_coords)
+                        else valid_coords
+                    )
+                    
+                    fig.add_trace(
+                        go.Scattermapbox(
+                            lon=coords_display["Longitude"],
+                            lat=coords_display["Latitude"],
+                            mode="text",
+                            text=coords_display["Country"],
+                            textfont=dict(size=10, color="#2c3e50"),
+                            textposition="top center",
+                            hoverinfo="skip",
+                            showlegend=False,
+                        )
+                    )
+            
+            # Add selection outline for single selected country
+            if single_selected_country and single_selected_country in df['Country_DB_Original'].values:
+                sel_iso = df.loc[df['Country_DB_Original'] == single_selected_country, 'ISO_Code'].iloc[0]
+                fig.add_trace(
+                    go.Choroplethmapbox(
+                        geojson=geojson,
+                        locations=[sel_iso],
+                        z=[0],
+                        featureidkey="id",
+                        colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
+                        showscale=False,
+                        marker_line_color="#FF6B35",
+                        marker_line_width=2.5,
+                        hoverinfo="skip",
+                    )
+                )
+                # Reorder traces to put selection outline on top
+                if len(fig.data) > 1:
+                    fig.data = tuple(list(fig.data)[1:] + [fig.data[0]])
+            
+            mapbox_layout = dict(
+                style="carto-positron",
+                center=map_center,
+                zoom=map_zoom,
+                bearing=0,
+                pitch=0,
+            )
+            if has_mapbox_token:
+                mapbox_layout["accesstoken"] = _mapbox_token
+            
+            fig.update_layout(
+                margin=dict(l=20, r=20, t=20, b=80),
+                height=550,
+                mapbox=mapbox_layout,
+                hovermode="closest",
+                plot_bgcolor=MAP_BACKGROUND_COLOR,  # Set plot background to match
+                paper_bgcolor="white",
+                showlegend=False,
+                uirevision='imports-map'
+            )
+            
+            # Add copyright annotation
+            fig.add_annotation(
+                text="© 2025 Mapbox © OpenStreetMap",
+                xref="paper", yref="paper",
+                x=0.01, y=0.01,
+                showarrow=False,
+                font=dict(size=10, color='#666'),
+                bgcolor='rgba(255,255,255,0.8)',
+                bordercolor='rgba(255,255,255,0.8)'
+            )
+            
+            print("Mapbox choropleth created successfully")
+            return fig
+            
+        except Exception as exc:
+            print(f"Mapbox rendering failed; falling back to geo map. Error: {exc}")
+            import traceback
+            traceback.print_exc()
+    
+    # Fallback: geo-based choropleth (no Mapbox) if GeoJSON unavailable or Mapbox fails
+    print("Using fallback geo-based choropleth")
+    
+    fig = go.Figure(
+        go.Choropleth(
+            locations=df['ISO_Code'].astype(str).tolist(),
+            z=df['Import_Volume'].tolist(),
+            zmin=0,
+            zmax=max_volume,
+            locationmode="ISO-3",
+            colorscale=MAP_COLOR_SCALE,
+            showscale=False,
+            hoverinfo="text",
+            hovertext=df.apply(
+                lambda row: f"<b>{row['Country_DB_Original']}</b><br>Import Volume: {row['Import_Volume']:,.0f}('000 b/d)<br>Year: {selected_year}<br>Click to select",
+                axis=1,
+            ),
+            marker_line_color="white",
+            marker_line_width=0.7,
+        )
+    )
+    
+    # Add country labels for fallback map
+    if not all_countries_df.empty:
+        countries_in_map = df['Country_DB_Original'].tolist()
+        valid_coords = all_countries_df[all_countries_df['Country'].isin(countries_in_map)].copy()
+        
+        if not valid_coords.empty:
+            # Limit label density
+            fallback_labels = valid_coords
+            if len(valid_coords) > 60:
+                fallback_labels = valid_coords.sort_values("Country").head(60)
+            
+            fig.add_trace(
+                go.Scattergeo(
+                    lon=fallback_labels["Longitude"],
+                    lat=fallback_labels["Latitude"],
+                    mode="text",
+                    text=fallback_labels["Country"],
+                    textfont=dict(size=10, color="#2c3e50"),
+                    textposition="top center",
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
+    
+    # Always use world center - don't auto-center on selected countries
+    world_center_lat = 24.0
+    world_center_lon = 45.0
+    
+    fig.update_layout(
+        margin=dict(l=20, r=20, t=20, b=80),
+        height=550,
+        geo=dict(
+            showframe=False,
+            showcoastlines=True,
+            projection=dict(type="natural earth"),
+            center=dict(lat=world_center_lat, lon=world_center_lon),
+            bgcolor=MAP_BACKGROUND_COLOR,  # Add background color
+            showland=True,
+            landcolor=MAP_LAND_COLOR,  # Add land color
+            showocean=True,
+            oceancolor=MAP_BACKGROUND_COLOR,  # Add ocean color
+            showlakes=True,
+            lakecolor=MAP_BACKGROUND_COLOR,  # Add lake color
+            coastlinecolor='#cccccc',  # Add coastline color
+            coastlinewidth=0.5,
+        ),
+        plot_bgcolor=MAP_BACKGROUND_COLOR,  # Set plot background
+        paper_bgcolor='white',  # Keep paper background white
+        uirevision='imports-map'
+    )
+    
+    # Add copyright annotation to match original styling
+    fig.add_annotation(
+        text="© 2025 Natural Earth",
+        xref="paper", yref="paper",
+        x=0.01, y=0.01,
+        showarrow=False,
+        font=dict(size=10, color='#666'),
+        bgcolor='rgba(255,255,255,0.8)',
+        bordercolor='rgba(255,255,255,0.8)'
+    )
+    
+    # Add selection outline for single selected country in fallback mode
+    if single_selected_country and single_selected_country in df['Country_DB_Original'].values:
+        sel_iso = df.loc[df['Country_DB_Original'] == single_selected_country, 'ISO_Code'].iloc[0]
+        fig.add_trace(
+            go.Choropleth(
+                locations=[sel_iso],
+                z=[0],
+                locationmode="ISO-3",
+                colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
+                showscale=False,
+                marker_line_color="#FF6B35",
+                marker_line_width=2.5,
+                hoverinfo="skip",
+            )
+        )
+        # Reorder traces to put selection outline on top
+        if len(fig.data) > 1:
+            fig.data = tuple(list(fig.data)[1:] + [fig.data[0]])
+    
+    return fig
 
 def create_layout():
     """Create the Imports - Country Comparison layout matching Tableau design"""
@@ -447,57 +649,102 @@ def create_layout():
         dcc.Store(id='imports-year-play-store', data=False),
         dcc.Store(id='imports-country-store', data={'all_selected': True}),
         dcc.Store(id='imports-map-clicked-country', data=None),  # Store clicked country from map
+        dcc.Store(id='imports-loading-state', data=False),  # Global loading state
         dcc.Interval(id='imports-year-interval', interval=2000, disabled=True),
-        # Instruction text
-        html.P(
-            "Select Countries from Map or List (right) to filter the tables below:",
-            style={
-                'textAlign': 'left',
-                'fontSize': '14px',
-                'color': '#1b365d',
-                'fontWeight': 'bold',
-                'marginBottom': '10px',
-                'marginTop': '10px'
-            }
+        # Download components
+        dcc.Download(id="download-global-imports-csv"),
+        dcc.Download(id="download-annual-imports-csv"),
+        dcc.Download(id="download-matrix-imports-csv"),
+        # Instruction text with loading indicator
+        dcc.Loading(
+            id="loading-instructions",
+            type="dot",
+            color="#d35400",
+            children=[
+                html.P(
+                    "Select Countries from Map or List (right) to filter the tables below:",
+                    style={
+                        'textAlign': 'left',
+                        'fontSize': '14px',
+                        'color': '#1b365d',
+                        'fontWeight': 'bold',
+                        'marginBottom': '10px',
+                        'marginTop': '10px'
+                    }
+                )
+            ]
         ),
-        # Main title
-        html.H2(
-            "Global Crude Imports",
-            style={
-                'color': '#d35400',  # Orange color
-                'textAlign': 'center',
-                'marginBottom': '25px',
-                'fontSize': '20px',
-                'fontWeight': 'bold',
-                'letterSpacing': '0.5px',
-                'textTransform': 'uppercase'
-            }
-        ),
+        # Main title with export button
+        html.Div([
+            html.H2(
+                "Global Crude Imports",
+                style={
+                    'color': '#d35400',  # Orange color
+                    'textAlign': 'center',
+                    'marginBottom': '25px',
+                    'fontSize': '20px',
+                    'fontWeight': 'bold',
+                    'letterSpacing': '0.5px',
+                    'textTransform': 'uppercase',
+                    'flex': '1'
+                }
+            ),
+            dcc.Loading(
+                id="loading-export-global-imports",
+                type="default",
+                color="#d35400",
+                children=[
+                    html.Button(
+                        "Export CSV",
+                        id='export-global-imports-btn',
+                        n_clicks=0,
+                        style={
+                            'backgroundColor': 'white',
+                            'color': '#2c3e50',
+                            'border': '1px solid #dee2e6',
+                            'padding': '6px 12px',
+                            'borderRadius': '4px',
+                            'cursor': 'pointer',
+                            'fontSize': '12px',
+                            'fontWeight': 'normal'
+                        }
+                    )
+                ]
+            )
+        ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'gap': '20px', 'marginBottom': '25px'}),
         # Main content area
         html.Div([
             # Map area (left, larger)
             html.Div([
-                dcc.Graph(
-                    id='imports-world-map',
-                    config={
-                        'displayModeBar': True,
-                        'displaylogo': False,
-                        # Geo-specific controls (home/reset + zoom)
-                        'modeBarButtonsToAdd': [
-                            'zoomInGeo',
-                            'zoomOutGeo',
-                            'resetGeo',
-                            'resetScale2d'  # home-style reset icon
-                        ],
-                        'scrollZoom': True,
-                        'doubleClick': 'reset'
-                    },
-                    style={
-                        'height': '100%',
-                        'width': '100%',
-                        'maxWidth': '100%',
-                        'margin': '0 auto'
-                    }
+                dcc.Loading(
+                    id="loading-imports-map",
+                    type="dot",
+                    color="#d35400",
+                    children=[
+                        dcc.Graph(
+                            id='imports-world-map',
+                            config={
+                                'displayModeBar': True,
+                                'displaylogo': False,
+                                # Geo-specific controls (home/reset + zoom)
+                                'modeBarButtonsToAdd': [
+                                    'zoomInGeo',
+                                    'zoomOutGeo',
+                                    'resetGeo',
+                                    'resetScale2d'  # home-style reset icon
+                                ],
+                                'scrollZoom': True,
+                                'doubleClick': 'reset'
+                            },
+                            style={
+                                'height': '100%',
+                                'width': '100%',
+                                'maxWidth': '100%',
+                                'margin': '0 auto'
+                            }
+                        )
+                    ],
+                    style={'height': '550px'}  # Match the map height
                 )
             ], style={
                 'flex': '1 1 calc(100% - 260px)',
@@ -687,34 +934,41 @@ def create_layout():
                             'display': 'block'
                         }
                     ),
-                html.Div([
-                    html.Div([
-                        html.Div(style={'flex': 1, 'backgroundColor': '#e9ecf2'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#d9dee8'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#c6cedf'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#b3bed6'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#a1adcc'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#8e9cc3'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#7c8cb9'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#6a7bb0'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#586ba6'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#475a9d'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#364a94'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#25398a'}),
-                        html.Div(style={'flex': 1, 'backgroundColor': '#132880'})
-                    ], style={
-                        'display': 'flex',
-                        'height': '16px',
-                        'borderRadius': '4px',
-                        'overflow': 'hidden',
-                        'border': '1px solid #8e98ad'
-                    }),
-                    html.Div([
-                        html.Span('0', style={'fontSize': '10px', 'color': '#333', 'flex': '1', 'textAlign': 'left', 'paddingTop': '3px'}),
-                        html.Span(id='imports-mid-value', children='', style={'display': 'none'}),
-                        html.Span(id='imports-max-value', children='0', style={'fontSize': '10px', 'color': '#333', 'flex': '1', 'textAlign': 'right', 'paddingTop': '3px'})
-                    ], style={'display': 'flex', 'width': '100%'})
-                ], id='imports-legend', style={'maxWidth': '190px'})
+                    dcc.Loading(
+                        id="loading-imports-legend",
+                        type="dot",
+                        color="#d35400",
+                        children=[
+                            html.Div([
+                                html.Div([
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#e9ecf2'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#d9dee8'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#c6cedf'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#b3bed6'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#a1adcc'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#8e9cc3'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#7c8cb9'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#6a7bb0'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#586ba6'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#475a9d'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#364a94'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#25398a'}),
+                                    html.Div(style={'flex': 1, 'backgroundColor': '#132880'})
+                                ], style={
+                                    'display': 'flex',
+                                    'height': '16px',
+                                    'borderRadius': '4px',
+                                    'overflow': 'hidden',
+                                    'border': '1px solid #8e98ad'
+                                }),
+                                html.Div([
+                                    html.Span('0', style={'fontSize': '10px', 'color': '#333', 'flex': '1', 'textAlign': 'left', 'paddingTop': '3px'}),
+                                    html.Span(id='imports-mid-value', children='', style={'display': 'none'}),
+                                    html.Span(id='imports-max-value', children='0', style={'fontSize': '10px', 'color': '#333', 'flex': '1', 'textAlign': 'right', 'paddingTop': '3px'})
+                                ], style={'display': 'flex', 'width': '100%'})
+                            ], id='imports-legend', style={'maxWidth': '190px'})
+                        ]
+                    )
                 ], style={'marginTop': '20px'})
             ], style={
                 'width': '240px',
@@ -727,36 +981,102 @@ def create_layout():
         ], style={'width': '100%', 'display': 'flex'}),
         # Annual Imports Volume section
         html.Div([
-            html.H3(
-                "Annual Imports Volume ('000 b/d)",
-                style={
-                    'color': '#d35400',
-                    'textAlign': 'center',
-                    'marginTop': '30px',
-                    'marginBottom': '15px',
-                    'fontSize': '20px',
-                    'fontWeight': 'bold'
-                }
+            html.Div([
+                html.H3(
+                    "Annual Imports Volume ('000 b/d)",
+                    style={
+                        'color': '#d35400',
+                        'textAlign': 'center',
+                        'marginTop': '30px',
+                        'marginBottom': '15px',
+                        'fontSize': '20px',
+                        'fontWeight': 'bold',
+                        'flex': '1'
+                    }
+                ),
+                dcc.Loading(
+                    id="loading-export-annual-imports",
+                    type="default",
+                    color="#d35400",
+                    children=[
+                        html.Button(
+                            "Export CSV",
+                            id='export-annual-imports-btn',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '6px 12px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '12px',
+                                'marginTop': '30px'
+                            }
+                        )
+                    ]
+                )
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'gap': '20px'}),
+            dcc.Loading(
+                id="loading-imports-annual-table",
+                type="default",
+                color="#d35400",
+                children=[
+                    html.Div(
+                        id='imports-annual-table-container',
+                        children=[]
+                    )
+                ],
+                style={'minHeight': '430px'}  # Match the table height
             ),
-            html.Div(
-                id='imports-annual-table-container',
-                children=[]
-            ),
-            html.P(
-                id='imports-matrix-caption',
-                children="Import – Export Matrix ('000 b/d)",
-                style={
-                    'textAlign': 'center',
-                    'fontWeight': 'bold',
-                    'color': '#d35400',
-                    'marginTop': '15px',
-                    'marginBottom': '0'
-                }
-            ),
-            html.Div(
-                id='imports-matrix-table-container',
-                children=[],
-                style={'marginTop': '10px'}
+            html.Div([
+                html.P(
+                    id='imports-matrix-caption',
+                    children="Import – Export Matrix ('000 b/d)",
+                    style={
+                        'textAlign': 'center',
+                        'fontWeight': 'bold',
+                        'color': '#d35400',
+                        'marginTop': '15px',
+                        'marginBottom': '0',
+                        'flex': '1'
+                    }
+                ),
+                dcc.Loading(
+                    id="loading-export-matrix-imports",
+                    type="default",
+                    color="#d35400",
+                    children=[
+                        html.Button(
+                            "Export CSV",
+                            id='export-matrix-imports-btn',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '6px 12px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '12px',
+                                'marginTop': '15px'
+                            }
+                        )
+                    ]
+                )
+            ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'gap': '20px'}),
+            dcc.Loading(
+                id="loading-imports-matrix-table",
+                type="default",
+                color="#d35400",
+                children=[
+                    html.Div(
+                        id='imports-matrix-table-container',
+                        children=[],
+                        style={'marginTop': '10px'}
+                    )
+                ],
+                style={'minHeight': '520px'}  # Match the matrix table height
             ),
             html.Div(
                 id='imports-footnotes',
@@ -791,49 +1111,71 @@ def register_callbacks(dash_app, server):
         [Output('imports-map-clicked-country', 'data'),
          Output('imports-country-checklist', 'value', allow_duplicate=True)],
         Input('imports-world-map', 'clickData'),
-        State('imports-map-clicked-country', 'data'),
+        [State('imports-map-clicked-country', 'data'),
+         State('imports-country-checklist', 'value')],
         prevent_initial_call=True
     )
-    def handle_map_click(clickData, current_clicked_country):
-        """Handle map click to store clicked country and update checklist.
-        If clicking the same country again, deselect it and return to original state.
-        For Mapbox, clickData contains ISO codes in 'location' or country names in 'customdata'."""
-        if clickData and 'points' in clickData and len(clickData['points']) > 0:
-            point = clickData['points'][0]
-            clicked_country = None
+    def handle_map_click(clickData, current_clicked_country, current_selection):
+        """Handle map click to update country selection like in projects_by_country.py"""
+        if not clickData or 'points' not in clickData or len(clickData['points']) == 0:
+            return no_update, no_update
+        
+        point = clickData['points'][0]
+        clicked_country = None
+        
+        # Extract country name using multiple fallback methods (same as projects_by_country.py)
+        if "text" in point and point["text"]:
+            clicked_country = point["text"]
+        elif "hovertext" in point and point["hovertext"]:
+            hovertext = point["hovertext"]
+            if "<b>" in hovertext and "</b>" in hovertext:
+                clicked_country = hovertext.split("<b>")[1].split("</b>")[0]
+        elif "customdata" in point and point["customdata"]:
+            if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
+                clicked_country = point["customdata"][0]
+            else:
+                clicked_country = point["customdata"]
+        elif "location" in point:
+            iso_value = point["location"]
+            # Use reverse mapping from COUNTRY_TO_ISO
+            reverse_map = {v: k for k, v in COUNTRY_TO_ISO.items()}
+            clicked_country = reverse_map.get(iso_value, None)
+        
+        if not clicked_country:
+            return no_update, no_update
+        
+        # Denormalize country name if needed (convert from map display name to original name)
+        original_country_name = denormalize_country_name(clicked_country)
+        if original_country_name not in AVAILABLE_COUNTRIES:
+            # Try to find by case-insensitive matching
+            for country in AVAILABLE_COUNTRIES:
+                if (country.lower() == clicked_country.lower() or 
+                    normalize_country_name(country).lower() == clicked_country.lower()):
+                    original_country_name = country
+                    break
+            else:
+                # Country not found in available countries
+                return no_update, no_update
+        
+        # Apply the same logic as projects_by_country.py
+        current_selection = current_selection or []
+        
+        # Resolve current selection (handle "All" case)
+        if 'All' in current_selection:
+            resolved_countries = AVAILABLE_COUNTRIES
+        else:
+            resolved_countries = [c for c in current_selection if c in AVAILABLE_COUNTRIES]
+        
+        # If country is not currently in the resolved selection, select only this country
+        if original_country_name not in resolved_countries:
+            return original_country_name, [original_country_name]
+        
+        # If this country is already the only one selected, expand to show all
+        if len(resolved_countries) == 1 and original_country_name in resolved_countries:
+            return None, ['All'] + AVAILABLE_COUNTRIES
             
-            # Try to get country from customdata first (contains original country name)
-            if 'customdata' in point and point['customdata']:
-                customdata = point['customdata']
-                if isinstance(customdata, list) and len(customdata) > 0:
-                    clicked_country = customdata[0]  # First element is country name
-                elif isinstance(customdata, str):
-                    clicked_country = customdata
-            # Fallback: try to get from location (ISO code) - need to map back to country
-            elif 'location' in point and point['location']:
-                iso_code = point['location']
-                # Use reverse mapping from COUNTRY_TO_ISO
-                iso_to_country_reverse = {v: k for k, v in COUNTRY_TO_ISO.items()}
-                clicked_country = iso_to_country_reverse.get(iso_code)
-                # If not found in mapping, try to get from all_countries_df
-                if not clicked_country:
-                    all_countries_df = get_all_countries_with_coordinates()
-                    if not all_countries_df.empty and 'ISO_Code' in all_countries_df.columns:
-                        iso_to_country = dict(zip(all_countries_df['ISO_Code'], all_countries_df['Country']))
-                        clicked_country = iso_to_country.get(iso_code)
-            
-            if clicked_country:
-                # Check if the country exists in available countries
-                if clicked_country in AVAILABLE_COUNTRIES:
-                    # If clicking the same country that's already selected, deselect it (return to original)
-                    if current_clicked_country == clicked_country:
-                        # Return to original state: clear clicked country and select all countries
-                        return None, ['All'] + AVAILABLE_COUNTRIES
-                    else:
-                        # Select only the clicked country in the checklist (deselect all others)
-                        return clicked_country, [clicked_country]
-                return clicked_country, no_update
-        return None, no_update
+        # If multiple countries are selected and this one is clicked, select only this country
+        return original_country_name, [original_country_name]
     
     @dash_app.callback(
         [Output('imports-world-map', 'figure'),
@@ -844,7 +1186,8 @@ def register_callbacks(dash_app, server):
          Output('imports-matrix-caption', 'children')],
         [Input('imports-year-store', 'data'),
          Input('imports-country-checklist', 'value'),
-         Input('imports-map-clicked-country', 'data')]
+         Input('imports-map-clicked-country', 'data')],
+        prevent_initial_call=False
     )
     def update_imports_dashboard(selected_year, selected_countries, clicked_country):
         """Update map and annual chart based on filters"""
@@ -880,11 +1223,32 @@ def register_callbacks(dash_app, server):
         
         # Filter by countries if not "All"
         # The checklist uses original country names, but map data uses normalized names
-        if 'All' not in selected_countries and selected_countries:
-            # Convert original country names to normalized names for map filtering
-            # Map data already has normalized names, so we need to normalize the selected countries
-            normalized_countries = [normalize_country_name(country) for country in selected_countries]
-            df_filtered = df_filtered[df_filtered['Importer'].isin(normalized_countries)].copy()
+        selected_countries_for_map = []
+        if 'All' in selected_countries:
+            # Show all countries
+            selected_countries_for_map = [normalize_country_name(country) for country in AVAILABLE_COUNTRIES]
+        elif selected_countries:
+            # Show only selected countries
+            selected_countries_for_map = [normalize_country_name(country) for country in selected_countries]
+        else:
+            # No countries selected, show empty
+            selected_countries_for_map = []
+        
+        # Filter the data to show only selected countries
+        if selected_countries_for_map:
+            df_filtered = df_filtered[df_filtered['Importer'].isin(selected_countries_for_map)].copy()
+        else:
+            # No countries selected, return empty dataframe
+            df_filtered = pd.DataFrame()
+        
+        print(f"After country filtering: {len(df_filtered)} rows, countries: {df_filtered['Importer'].unique().tolist() if not df_filtered.empty else []}")
+        
+        # Determine if a single country is selected for special handling
+        single_selected_country = None
+        if clicked_country and clicked_country in selected_countries:
+            single_selected_country = clicked_country
+        elif len(selected_countries) == 1 and 'All' not in selected_countries:
+            single_selected_country = selected_countries[0]
         
         # Create map
         if df_filtered.empty:
@@ -900,9 +1264,18 @@ def register_callbacks(dash_app, server):
             # Aggregate by country (sum if multiple entries)
             df_map = df_filtered.groupby('Importer')['Import_Volume'].sum().reset_index()
             df_map.columns = ['Country', 'Import_Volume']
-            # Store original country names before normalization for matching
-            df_map['Country_Original'] = df_map['Country'].copy()
-            # Ensure country names are normalized
+            
+            print(f"Map data after aggregation: {len(df_map)} countries")
+            if not df_map.empty:
+                print(f"Countries in map data: {df_map['Country'].tolist()}")
+            
+            # Store original country names BEFORE normalization for ISO code lookup
+            df_map['Country_DB_Original'] = df_map['Country'].copy()
+            
+            # Store normalized country names for display
+            df_map['Country_Original'] = df_map['Country'].apply(normalize_country_name)
+            
+            # Ensure country names are normalized for map compatibility
             df_map['Country'] = df_map['Country'].apply(normalize_country_name)
             
             # Create choropleth map
@@ -910,170 +1283,25 @@ def register_callbacks(dash_app, server):
             # Add year column for hover
             df_map['Year'] = selected_year
             
-            # Load GeoJSON and all countries data for Mapbox
-            geojson = _load_world_geojson()
-            all_countries_df = get_all_countries_with_coordinates()
+            # Store original country names BEFORE normalization for ISO code lookup
+            df_map['Country_DB_Original'] = df_map['Country'].copy()
+            
+            # Store normalized country names for display
+            df_map['Country_Original'] = df_map['Country'].apply(normalize_country_name)
             
             # Create mapping from country names to ISO-3 codes using _iso_for_country function
-            # This ensures we get proper ISO-3 codes that match the GeoJSON
-            df_map['ISO_Code'] = df_map['Country_Original'].apply(_iso_for_country)
+            df_map['ISO_Code'] = df_map['Country_DB_Original'].apply(_iso_for_country)
+            
             # Filter out any countries without valid ISO-3 codes
             df_map = df_map.dropna(subset=['ISO_Code']).copy()
+            
             # Ensure ISO codes are strings and exactly 3 characters
             if not df_map.empty:
                 df_map['ISO_Code'] = df_map['ISO_Code'].astype(str)
                 df_map = df_map[df_map['ISO_Code'].str.len() == 3].copy()
             
-            # Handle clicked country highlighting
-            # clicked_country is the original country name from AVAILABLE_COUNTRIES
-            clicked_country_original = None
-            if clicked_country and not df_map.empty:
-                # Get ISO code for the clicked country
-                clicked_iso = _iso_for_country(clicked_country)
-                # Check if we have a valid ISO code
-                if clicked_iso and len(str(clicked_iso)) == 3:
-                    clicked_iso_str = str(clicked_iso)
-                    # Check if this ISO code exists in our filtered map data (compare as strings)
-                    matching_iso_rows = df_map[df_map['ISO_Code'].astype(str) == clicked_iso_str]
-                    if not matching_iso_rows.empty:
-                        # Found a match by ISO code - use the country name from the data
-                        clicked_country_original = matching_iso_rows.iloc[0]['Country_Original']
-                    else:
-                        # Try matching by country name (case-insensitive)
-                        matching_name_rows = df_map[df_map['Country_Original'].str.strip().str.lower() == str(clicked_country).strip().lower()]
-                        if not matching_name_rows.empty:
-                            clicked_country_original = matching_name_rows.iloc[0]['Country_Original']
-            
-            if geojson is None:
-                # Fallback to empty map if no GeoJSON
-                map_fig = go.Figure()
-                map_fig.add_annotation(
-                    text="No GeoJSON data available for map display",
-                    xref="paper", yref="paper",
-                    x=0.5, y=0.5,
-                    showarrow=False
-                )
-                map_fig.update_layout(height=550, plot_bgcolor='white', paper_bgcolor='white')
-            elif df_map.empty:
-                # No valid countries with ISO-3 codes
-                map_fig = go.Figure()
-                map_fig.add_annotation(
-                    text="No countries with valid ISO codes for map display",
-                    xref="paper", yref="paper",
-                    x=0.5, y=0.5,
-                    showarrow=False
-                )
-                map_fig.update_layout(height=550, plot_bgcolor='white', paper_bgcolor='white')
-            else:
-                # Create Mapbox choropleth map
-                map_fig = go.Figure()
-                
-                if clicked_country_original:
-                    # Dimmed base map for all countries - filter to only valid ISO-3 codes
-                    df_map_valid = df_map.copy()  # Already filtered to valid ISO codes
-                    if not df_map_valid.empty:
-                        map_fig.add_trace(go.Choroplethmapbox(
-                            geojson=geojson,
-                            locations=df_map_valid['ISO_Code'].tolist(),
-                            z=df_map_valid['Import_Volume'].tolist(),
-                            featureidkey="id",
-                            colorscale=MAP_COLOR_SCALE,
-                            zmin=0,
-                            zmax=max_volume,
-                            marker=dict(line=dict(color='#ffffff', width=0.5), opacity=0.3),
-                            showscale=False,
-                            hovertemplate="<b>Importer:</b> %{customdata[0]}<br>" \
-                                          "<b>Year:</b> %{customdata[1]}<br>" \
-                                          "<b>Traded Volume:</b> %{z:,.0f}('000 b/d)<extra></extra>",
-                            customdata=[[c, selected_year] for c in df_map_valid['Country_Original']],
-                            hoverlabel=dict(bgcolor='white', font_color='#1b365d', bordercolor='#99a6b8',
-                                           font_size=12, font_family='Arial, sans-serif')
-                        ))
-                    
-                    # Highlighted country - add on top with full opacity and black border
-                    df_highlighted = df_map[df_map['Country_Original'] == clicked_country_original].copy()
-                    if not df_highlighted.empty:
-                        map_fig.add_trace(go.Choroplethmapbox(
-                            geojson=geojson,
-                            locations=df_highlighted['ISO_Code'].tolist(),
-                            z=df_highlighted['Import_Volume'].tolist(),
-                            featureidkey="id",
-                            colorscale=MAP_COLOR_SCALE,
-                            zmin=0,
-                            zmax=max_volume,
-                            marker=dict(line=dict(color='#000000', width=3), opacity=1.0),
-                            showscale=False,
-                            hovertemplate="<b>Importer:</b> %{customdata[0]}<br>" \
-                                          "<b>Year:</b> %{customdata[1]}<br>" \
-                                          "<b>Traded Volume:</b> %{z:,.0f}('000 b/d)<br>" \
-                                          "<b>(Selected)</b><extra></extra>",
-                            customdata=[[c, selected_year] for c in df_highlighted['Country_Original']],
-                            hoverlabel=dict(bgcolor='white', font_color='#1b365d', bordercolor='#000000',
-                                           font_size=12, font_family='Arial, sans-serif')
-                        ))
-                else:
-                    # Normal map - already filtered to valid ISO-3 codes
-                    df_map_valid = df_map.copy()
-                    if not df_map_valid.empty:
-                        map_fig.add_trace(go.Choroplethmapbox(
-                            geojson=geojson,
-                            locations=df_map_valid['ISO_Code'].tolist(),
-                            z=df_map_valid['Import_Volume'].tolist(),
-                            featureidkey="id",
-                            colorscale=MAP_COLOR_SCALE,
-                            zmin=0,
-                            zmax=max_volume,
-                            marker=dict(line=dict(color='#ffffff', width=0.5)),
-                            showscale=False,
-                            hovertemplate="<b>Importer:</b> %{customdata[0]}<br>" \
-                                          "<b>Year:</b> %{customdata[1]}<br>" \
-                                          "<b>Traded Volume:</b> %{z:,.0f}('000 b/d)<extra></extra>",
-                            customdata=[[c, selected_year] for c in df_map_valid['Country_Original']],
-                            hoverlabel=dict(bgcolor='white', font_color='#1b365d', bordercolor='#99a6b8',
-                                           font_size=12, font_family='Arial, sans-serif')
-                        ))
-                
-                # Add ALL country labels (not just import countries)
-                if not all_countries_df.empty:
-                    map_fig.add_trace(go.Scattermapbox(
-                        lat=all_countries_df['Latitude'].tolist(),
-                        lon=all_countries_df['Longitude'].tolist(),
-                        mode='text',
-                        text=all_countries_df['Country'].tolist(),
-                        textfont=dict(size=9, color='#2c3e50', family='Arial'),
-                        textposition='top center',
-                        hoverinfo='skip',
-                        showlegend=False
-                    ))
-                
-                # Update layout with Mapbox
-                mapbox_layout = dict(
-                    style="carto-positron",
-                    center=dict(lat=24.0, lon=45.0),
-                    zoom=1.5
-                )
-                if Config.MAPBOX_ACCESS_TOKEN:
-                    mapbox_layout["accesstoken"] = Config.MAPBOX_ACCESS_TOKEN
-                
-                map_fig.update_layout(
-                    margin=dict(l=20, r=20, t=20, b=80),
-                    height=550,
-                    plot_bgcolor='white',
-                    paper_bgcolor='white',
-                    mapbox=mapbox_layout,
-                    uirevision='imports-map'
-                )
-                
-                # Add copyright annotation
-                map_fig.add_annotation(
-                    text="© 2025 Mapbox © OpenStreetMap",
-                    xref="paper", yref="paper",
-                    x=0.01, y=0.01,
-                    showarrow=False,
-                    font=dict(size=10, color='#666'),
-                    bgcolor='rgba(255,255,255,0.8)',
-                    bordercolor='rgba(255,255,255,0.8)'
-                )
+            # Create map figure using the same approach as projects_by_country.py
+            map_fig = create_imports_map_figure(df_map, single_selected_country, max_volume, selected_year)
         
         # Create annual table using database query with dynamic country filtering
         # Load annual imports data based on selected countries
@@ -1206,8 +1434,9 @@ def register_callbacks(dash_app, server):
                     merge_duplicate_headers=True
                 )
 
-        # Load matrix data dynamically for the selected year
-        IMPORT_EXPORT_MATRIX_DF = load_import_export_matrix_data(selected_year)
+        # Load matrix data dynamically for the selected year and countries
+        # Pass selected_countries to filter the matrix by clicked/selected countries
+        IMPORT_EXPORT_MATRIX_DF = load_import_export_matrix_data(selected_year, selected_countries)
         
         if IMPORT_EXPORT_MATRIX_DF.empty:
             matrix_table = html.Div(
@@ -1692,3 +1921,150 @@ def register_callbacks(dash_app, server):
         Input('imports-table-enhancer-anchor', 'id'),
         prevent_initial_call=False
     )
+
+    # CSV Export Callbacks
+    @dash_app.callback(
+        Output('download-global-imports-csv', 'data'),
+        Input('export-global-imports-btn', 'n_clicks'),
+        State('imports-year-store', 'data'),
+        State('imports-country-checklist', 'value'),
+        prevent_initial_call=True
+    )
+    def export_global_imports_csv(n_clicks, selected_year, selected_countries):
+        """Export Global Crude Imports data to CSV"""
+        if n_clicks and selected_year:
+            # Load the same data used for the map
+            df = load_imports_data(selected_year)
+            
+            if df.empty:
+                # Return empty CSV if no data
+                empty_df = pd.DataFrame(columns=['Year', 'Importer', 'Import_Volume'])
+                filename = f"Global_Crude_Imports_{selected_year}.csv"
+                return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+            
+            # Filter by countries if not "All"
+            if 'All' not in selected_countries and selected_countries:
+                # Convert original country names to normalized names for filtering
+                normalized_countries = [normalize_country_name(country) for country in selected_countries]
+                df = df[df['Importer'].isin(normalized_countries)].copy()
+            
+            # Denormalize country names back to original for export
+            df['Importer'] = df['Importer'].apply(denormalize_country_name)
+            
+            # Sort by import volume descending
+            df = df.sort_values('Import_Volume', ascending=False)
+            
+            # Rename columns for export
+            df_export = df.rename(columns={
+                'Import_Volume': f"Import Volume {selected_year} ('000 b/d)"
+            })
+            
+            filename = f"Global_Crude_Imports_{selected_year}.csv"
+            return dcc.send_data_frame(df_export.to_csv, filename=filename, index=False)
+        raise dash.exceptions.PreventUpdate
+
+    @dash_app.callback(
+        Output('download-annual-imports-csv', 'data'),
+        Input('export-annual-imports-btn', 'n_clicks'),
+        State('imports-country-checklist', 'value'),
+        prevent_initial_call=True
+    )
+    def export_annual_imports_csv(n_clicks, selected_countries):
+        """Export Annual Imports Volume data to CSV"""
+        if n_clicks:
+            # Load the same data used for the annual table
+            df = load_annual_imports_data(selected_countries)
+            
+            if df.empty:
+                # Return empty CSV if no data
+                empty_df = pd.DataFrame(columns=['Importer', 'Year', 'Import_Volume'])
+                filename = "Annual_Imports_Volume.csv"
+                return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+            
+            # Get available years (sorted descending)
+            available_years = sorted(df['Year'].unique().tolist(), reverse=True)
+            target_years = [y for y in range(2025, 2018, -1) if y in available_years]
+            if not target_years:
+                target_years = available_years
+            
+            # Create pivot table: countries as rows, years as columns
+            df_pivot = df[df['Year'].isin(target_years)].pivot(
+                index='Importer', 
+                columns='Year', 
+                values='Import_Volume'
+            ).fillna(0)
+            
+            # Reorder columns to match year order (newest first)
+            df_pivot = df_pivot.reindex(columns=target_years, fill_value=0)
+            
+            # Sort countries alphabetically
+            df_pivot = df_pivot.sort_index()
+            
+            # Reset index to make Importer a column
+            df_pivot = df_pivot.reset_index()
+            df_pivot.columns.name = None
+            
+            # Add grand total row
+            totals_row = {'Importer': 'Grand Total'}
+            for year in target_years:
+                totals_row[year] = df[df['Year'] == year]['Import_Volume'].sum()
+            df_pivot = pd.concat([df_pivot, pd.DataFrame([totals_row])], ignore_index=True)
+            
+            # Rename year columns to include units
+            rename_dict = {year: f"{year} ('000 b/d)" for year in target_years}
+            df_pivot = df_pivot.rename(columns=rename_dict)
+            
+            filename = "Annual_Imports_Volume.csv"
+            return dcc.send_data_frame(df_pivot.to_csv, filename=filename, index=False)
+        raise dash.exceptions.PreventUpdate
+
+    @dash_app.callback(
+        Output('download-matrix-imports-csv', 'data'),
+        Input('export-matrix-imports-btn', 'n_clicks'),
+        State('imports-year-store', 'data'),
+        State('imports-country-checklist', 'value'),
+        prevent_initial_call=True
+    )
+    def export_matrix_imports_csv(n_clicks, selected_year, selected_countries):
+        """Export Import-Export Matrix data to CSV"""
+        if n_clicks and selected_year:
+            # Load the same data used for the matrix table (with country filtering)
+            df = load_import_export_matrix_data(selected_year, selected_countries)
+            
+            if df.empty:
+                # Return empty CSV if no data
+                empty_df = pd.DataFrame(columns=['Exporter'])
+                filename = f"Import_Export_Matrix_{selected_year}.csv"
+                return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
+            
+            # Get column order (all columns except 'Exporter')
+            column_order = [col for col in df.columns if col != 'Exporter']
+            column_order = sorted(column_order)
+            
+            # Add row totals (sum of all importers for each exporter)
+            df = df.copy()
+            df['Grand Total'] = df[column_order].sum(axis=1)
+            
+            # Add column totals (sum of all exporters for each importer)
+            totals_row = {'Exporter': 'Grand Total'}
+            for col in column_order:
+                totals_row[col] = df[col].sum()
+            totals_row['Grand Total'] = df[column_order].sum().sum()
+            
+            # Append totals row to dataframe
+            df = pd.concat([df, pd.DataFrame([totals_row])], ignore_index=True)
+            
+            # Update column order to include Grand Total
+            column_order_with_total = column_order + ['Grand Total']
+            
+            # Reorder columns: Exporter first, then importers, then Grand Total
+            df = df[['Exporter'] + column_order_with_total]
+            
+            # Rename columns to include units and year
+            rename_dict = {col: f"{col} {selected_year} ('000 b/d)" for col in column_order_with_total if col != 'Grand Total'}
+            rename_dict['Grand Total'] = f"Grand Total {selected_year} ('000 b/d)"
+            df = df.rename(columns=rename_dict)
+            
+            filename = f"Import_Export_Matrix_{selected_year}.csv"
+            return dcc.send_data_frame(df.to_csv, filename=filename, index=False)
+        raise dash.exceptions.PreventUpdate

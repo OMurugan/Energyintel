@@ -713,7 +713,7 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
     
     fig.update_layout(
         title=dict(
-            text="Total Capacity Additions 2025 Q1 - 2029 Q4",
+            text="",
             x=0.5,
             xanchor="center",
             y=0.98,
@@ -789,6 +789,27 @@ def create_layout():
         html.Div([
             # Main visualization area (75% width)
             html.Div([
+                html.Div([
+                    html.H4("Total Capacity Additions 2025 Q1 - 2029 Q4", 
+                           style={'marginBottom': '10px', 'fontSize': '20px', 'fontWeight': 'bold', 'fontFamily': 'Arial, sans-serif', 'color': '#E75224', 'flexGrow': 1, 'textAlign': 'center'}),
+                    html.Div([
+                        html.Button(
+                            'Export Data to CSV',
+                            id='btn-export-status-chart-csv',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '5px 10px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '12px'
+                            }
+                        ),
+                        dcc.Download(id="download-status-chart-csv")
+                    ])
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'paddingRight': '10px'}),
                 dcc.Graph(
                     id='projects-status-treemap',
                     style={'height': '700px'},
@@ -948,16 +969,26 @@ def create_layout():
             
             # Project Details Table - Full width below treemap and filters
             html.Div([
-                html.H4(
-                    "Project Details",
-                    style={
-                        'color': '#E75224',
-                        'marginTop': '30px',
-                        'marginBottom': '15px',
-                        'fontSize': '18px',
-                        'fontWeight': 'bold'
-                    }
-                ),
+                html.Div([
+                    html.H4("Project Details", style={'marginBottom': '0px', 'fontSize': '18px', 'fontWeight': 'bold', 'color': '#E75224', 'flexGrow': 1}),
+                    html.Div([
+                        html.Button(
+                            'Export Data to CSV',
+                            id='btn-export-status-table-csv',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '5px 10px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '12px'
+                            }
+                        ),
+                        dcc.Download(id="download-status-table-csv")
+                    ])
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginBottom': '15px'}),
                 html.Div(
                     id='projects-status-table-container',
                     style={'marginTop': '10px', 'width': '100%'}
@@ -1929,6 +1960,189 @@ def register_callbacks(dash_app, server):
         
         return kpi_table, details_table
 
+    @dash_app.callback(
+        Output('download-status-chart-csv', 'data'),
+        Input('btn-export-status-chart-csv', 'n_clicks'),
+        State('projects-status-region-filter', 'value'),
+        State('projects-status-likely-filter', 'value'),
+        State('projects-status-treemap-store', 'data'),
+        State('projects-status-table-store', 'data'),
+        prevent_initial_call=True
+    )
+    def export_status_chart_data(n_clicks, region_filter, likely_filter, treemap_store, table_store):
+        if n_clicks > 0:
+            if treemap_store:
+                df = pd.DataFrame(treemap_store)
+            else:
+                df = load_treemap_data()
+            
+            if not df.empty:
+                # Apply filters as in update_treemap
+                # Region filter
+                if region_filter:
+                    if isinstance(region_filter, list):
+                        if len(region_filter) > 0:
+                            df = df[df["Region"].isin(region_filter)]
+                    elif region_filter != "(All)":
+                        df = df[df["Region"] == region_filter]
+                
+                # Likely filter
+                if likely_filter:
+                    if table_store:
+                        table_df = pd.DataFrame(table_store)
+                    else:
+                        table_df = load_table_data()
+                    
+                    filter_values = likely_filter
+                    if isinstance(likely_filter, list):
+                        if 'All' in likely_filter and len(likely_filter) > 1:
+                            filter_values = [v for v in likely_filter if v != 'All']
+                        if not likely_filter or (len(likely_filter) == 1 and likely_filter[0] == 'All'):
+                            filter_values = None
+
+                    if filter_values is not None:
+                        likely_col = None
+                        for col in table_df.columns:
+                            lc = col.lower()
+                            if 'likely' in lc and ('go' in lc or 'ahead' in lc):
+                                likely_col = col
+                                break
+                        if likely_col:
+                            col_upper = table_df[likely_col].astype(str).str.upper()
+                            selected_vals = filter_values if isinstance(filter_values, list) else [filter_values]
+                            mask = pd.Series(False, index=col_upper.index)
+                            for v in selected_vals:
+                                v_str, v_up = str(v).strip(), str(v).strip().upper()
+                                if v_up == 'ALL' or v == 'All':
+                                    mask |= pd.Series(True, index=col_upper.index)
+                                elif v_up == '' or v_str.lower() == 'blank':
+                                    mask |= (col_upper == '')
+                                elif v_up.startswith('Y') or v_up == 'YES':
+                                    mask |= col_upper.str.startswith('Y')
+                                elif v_up.startswith('N'):
+                                    mask |= col_upper.str.startswith('N')
+                                elif v_up.startswith('UNCERT') or v_up.startswith('U'):
+                                    mask |= col_upper.str.startswith('U')
+                            matching_projects = table_df[mask]
+                            if not matching_projects.empty:
+                                combos = set()
+                                for _, row in matching_projects.iterrows():
+                                    combos.add((str(row.get("Region", "")).strip(), str(row.get("Play Type", "")).strip(), str(row.get("Project Status", "")).strip()))
+                                def matches_combo(r):
+                                    return (str(r.get("Region", "")).strip(), str(r.get("Play Type", "")).strip(), str(r.get("Project Status", "")).strip()) in combos
+                                df = df[df.apply(matches_combo, axis=1)]
+                
+                # Format for export
+                export_df = df.rename(columns={'Production Additions': "Production Additions ('000 b/d)"})
+                return dcc.send_data_frame(export_df.to_csv, "projects_status_chart_data.csv", index=False)
+        return dash.no_update
+
+    @dash_app.callback(
+        Output('download-status-table-csv', 'data'),
+        Input('btn-export-status-table-csv', 'n_clicks'),
+        State('projects-status-region-filter', 'value'),
+        State('projects-status-likely-filter', 'value'),
+        State('projects-status-click-selection', 'data'),
+        State('projects-status-table-store', 'data'),
+        prevent_initial_call=True
+    )
+    def export_status_table_data(n_clicks, region_filter, likely_filter, click_selection, table_store):
+        if n_clicks > 0:
+            if table_store:
+                df = pd.DataFrame(table_store)
+            else:
+                df = load_table_data()
+            
+            if not df.empty:
+                # Apply filter logic as in update_tables
+                # Unique projects
+                if "Project Name" in df.columns:
+                    if "Measure Names" in df.columns:
+                        quarter_pattern = r'^\d{4}_Q[1-4]$'
+                        df = df[~df["Measure Names"].astype(str).str.match(quarter_pattern, na=False)]
+                    df = df.drop_duplicates(subset=["Project Name"], keep='first')
+                
+                # Region filter
+                if region_filter:
+                    if isinstance(region_filter, list):
+                        if len(region_filter) > 0 and "Region" in df.columns:
+                            df = df[df["Region"].isin(region_filter)]
+                    elif region_filter != "(All)" and "Region" in df.columns:
+                        df = df[df["Region"] == region_filter]
+                
+                # Likely filter
+                if likely_filter:
+                    filter_values = likely_filter
+                    if isinstance(likely_filter, list):
+                        if 'All' in likely_filter and len(likely_filter) > 1:
+                            filter_values = [v for v in likely_filter if v != 'All']
+                        if not likely_filter or (len(likely_filter) == 1 and likely_filter[0] == 'All'):
+                            filter_values = None
+                    if filter_values is not None:
+                        likely_col = None
+                        for col in df.columns:
+                            lc = col.lower()
+                            if 'likely' in lc and ('go' in lc or 'ahead' in lc):
+                                likely_col = col
+                                break
+                        if likely_col:
+                            col_upper = df[likely_col].astype(str).str.upper()
+                            selected_vals = filter_values if isinstance(filter_values, list) else [filter_values]
+                            mask = pd.Series(False, index=col_upper.index)
+                            for v in selected_vals:
+                                v_str, v_up = str(v).strip(), str(v).strip().upper()
+                                if v_up == 'ALL' or v == 'All':
+                                    mask |= pd.Series(True, index=col_upper.index)
+                                elif v_up == '' or v_str.lower() == 'blank':
+                                    mask |= (col_upper == '')
+                                elif v_up.startswith('Y') or v_up == 'YES':
+                                    mask |= col_upper.str.startswith('Y')
+                                elif v_up.startswith('N'):
+                                    mask |= col_upper.str.startswith('N')
+                                elif v_up.startswith('UNCERT') or v_up.startswith('U'):
+                                    mask |= col_upper.str.startswith('U')
+                            df = df[mask]
+                
+                # Treemap click selection filter
+                if isinstance(click_selection, dict):
+                    sel_type = click_selection.get("type")
+                    sel_region = click_selection.get("region")
+                    sel_status = click_selection.get("project_status")
+                    sel_play = click_selection.get("play_type")
+                    
+                    if sel_type == "region" and sel_region and "Region" in df.columns:
+                        df = df[df["Region"] == sel_region]
+                    elif sel_type == "status":
+                        if sel_region and "Region" in df.columns:
+                            df = df[df["Region"] == sel_region]
+                        if sel_status and "Project Status" in df.columns:
+                            df = df[df["Project Status"] == sel_status]
+                        if sel_play and "Play Type" in df.columns:
+                            df = df[df["Play Type"] == sel_play]
+
+                # Map column names for export
+                display_name_map = {
+                    'Opec_group': 'Group',
+                    'field_type': 'Field Type',
+                    'field': 'Field/Block',
+                    'play_type': 'Play Type',
+                    'likely_goahead': 'Likely To Go Ahead',
+                }
+                df = df.rename(columns=display_name_map)
+                
+                # Format boolean columns
+                def _map_export_bool(series):
+                    return series.astype(str).str.strip().apply(
+                        lambda x: 'Yes' if str(x).upper().startswith('Y') or str(x).lower() == 'true'
+                        else ('No' if str(x).upper().startswith('N') or str(x).lower() == 'false' else x)
+                    )
+                for col in ['Likely To Go Ahead', 'Sanctioned']:
+                    if col in df.columns:
+                        df[col] = _map_export_bool(df[col])
+
+                return dcc.send_data_frame(df.to_csv, "projects_status_table_data.csv", index=False)
+        return dash.no_update
+
 
 def create_kpi_table_for_clicked_status(project_status, production_additions):
     """Create KPI table for clicked Project Status with Grand Total"""
@@ -2294,3 +2508,4 @@ def create_project_details_table(df):
     )
     
     return table
+
