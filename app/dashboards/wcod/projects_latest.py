@@ -720,22 +720,24 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         Output('download-latest-updates-csv', 'data'),
         Input('btn-export-latest-updates-csv', 'n_clicks'),
+        State('latest-updates-table', 'data'), # Add State for filtered data
         prevent_initial_call=True
     )
-    def export_latest_updates_csv(n_clicks):
-        if n_clicks > 0:
-            df = load_latest_updates_data()
+    def export_latest_updates_csv(n_clicks, table_data):
+        if n_clicks > 0 and table_data:
+            df = pd.DataFrame(table_data)
             return dcc.send_data_frame(df.to_csv, "latest_updates_data.csv", index=False)
         return no_update
 
     @dash_app.callback(
         Output('download-all-projects-csv', 'data'),
         Input('btn-export-all-projects-csv', 'n_clicks'),
+        State('projects-table', 'data'), # Add State for filtered data
         prevent_initial_call=True
     )
-    def export_all_projects_csv(n_clicks):
-        if n_clicks > 0:
-            df = load_all_projects_data()
+    def export_all_projects_csv(n_clicks, table_data):
+        if n_clicks > 0 and table_data:
+            df = pd.DataFrame(table_data)
             return dcc.send_data_frame(df.to_csv, "all_projects_data.csv", index=False)
         return no_update
 
