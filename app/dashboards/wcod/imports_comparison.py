@@ -10,120 +10,16 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 from core.data_helpers import execute_query
+from core.country_mappings import COUNTRY_TO_ISO, get_iso_code
 from config import Config
 
 # Set Mapbox access token
 if Config.MAPBOX_ACCESS_TOKEN:
     px.set_mapbox_access_token(Config.MAPBOX_ACCESS_TOKEN)
 
-# Country to ISO-3 mapping for Mapbox
-COUNTRY_TO_ISO = {
-    "United States": "USA",
-    "United States of America": "USA",  # Add normalized name
-    "United Kingdom": "GBR",
-    "Saudi Arabia": "SAU",
-    "Russia": "RUS",
-    "China": "CHN",
-    "India": "IND",
-    "Brazil": "BRA",
-    "Canada": "CAN",
-    "Mexico": "MEX",
-    "Venezuela": "VEN",
-    "Nigeria": "NGA",
-    "Angola": "AGO",
-    "Algeria": "DZA",
-    "Libya": "LBY",
-    "Iraq": "IRQ",
-    "Iran": "IRN",
-    "Kuwait": "KWT",
-    "United Arab Emirates": "ARE",
-    "Qatar": "QAT",
-    "Norway": "NOR",
-    "Kazakhstan": "KAZ",
-    "Azerbaijan": "AZE",
-    "Indonesia": "IDN",
-    "Malaysia": "MYS",
-    "Thailand": "THA",
-    "Vietnam": "VNM",
-    "Australia": "AUS",
-    "Colombia": "COL",
-    "Ecuador": "ECU",
-    "Argentina": "ARG",
-    "Chile": "CHL",
-    "Peru": "PER",
-    "Egypt": "EGY",
-    "Sudan": "SDN",
-    "South Sudan": "SSD",
-    "Gabon": "GAB",
-    "Congo": "COG",
-    "Republic of the Congo": "COG",
-    "Equatorial Guinea": "GNQ",
-    "Cameroon": "CMR",
-    "Ghana": "GHA",
-    "Côte d'Ivoire": "CIV",
-    "Cote d'Ivoire": "CIV",
-    "Ivory Coast": "CIV",
-    "Tunisia": "TUN",
-    "Oman": "OMN",
-    "Yemen": "YEM",
-    "Turkmenistan": "TKM",
-    "Uzbekistan": "UZB",
-    "Georgia": "GEO",
-    "Turkey": "TUR",
-    "Greece": "GRC",
-    "Italy": "ITA",
-    "Spain": "ESP",
-    "France": "FRA",
-    "Germany": "DEU",
-    "Netherlands": "NLD",
-    "Belgium": "BEL",
-    "Denmark": "DNK",
-    "Sweden": "SWE",
-    "Finland": "FIN",
-    "Poland": "POL",
-    "Romania": "ROU",
-    "Bulgaria": "BGR",
-    "Ukraine": "UKR",
-    "Japan": "JPN",
-    "South Korea": "KOR",
-    "Philippines": "PHL",
-    "Singapore": "SGP",
-    "Brunei": "BRN",
-    "Czechia": "CZE",  # Add normalized name
-    "Czech Republic": "CZE"
-}
-
-try:
-    import pycountry
-except Exception:
-    pycountry = None
-
 def _iso_for_country(country):
-    """Return ISO Alpha-3 code for a country, using custom map then pycountry."""
-    if not country:
-        return None
-    country_clean = str(country).strip()
-    if not country_clean:
-        return None
-    
-    # First try the original country name
-    if country_clean in COUNTRY_TO_ISO:
-        return COUNTRY_TO_ISO[country_clean]
-    
-    # If not found, try the denormalized version (in case we received a normalized name)
-    denormalized = denormalize_country_name(country_clean)
-    if denormalized != country_clean and denormalized in COUNTRY_TO_ISO:
-        return COUNTRY_TO_ISO[denormalized]
-    
-    # Try pycountry as fallback
-    if pycountry:
-        try:
-            match = pycountry.countries.search_fuzzy(country_clean)
-            if match:
-                return match[0].alpha_3
-        except Exception:
-            pass
-    return None
+    """Return ISO Alpha-3 code for a country, using centralized mapping."""
+    return get_iso_code(country)
 
 # Styling constants to match Energy Intelligence design
 # Adjusted color scale with darker colors at lower values for better visibility

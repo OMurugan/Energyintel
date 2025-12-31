@@ -20,6 +20,7 @@ import base64
 import io
 from urllib.request import urlopen
 from core.data_helpers import execute_query
+from core.country_mappings import COUNTRY_TO_ISO, get_iso_code
 from config import Config
 
 # # CSV paths
@@ -786,84 +787,6 @@ def get_port_details_for_hover(port_name):
 def create_world_map(selected_country=None):
     """Create world map choropleth using database map data, filtered by selected country"""
 
-    # Map country names to ISO codes (common mappings)
-    country_to_iso = {
-        'United States': 'USA',
-        'United Kingdom': 'GBR',
-        'Saudi Arabia': 'SAU',
-        'Russia': 'RUS',
-        'China': 'CHN',
-        'India': 'IND',
-        'Brazil': 'BRA',
-        'Canada': 'CAN',
-        'Mexico': 'MEX',
-        'Venezuela': 'VEN',
-        'Nigeria': 'NGA',
-        'Angola': 'AGO',
-        'Algeria': 'DZA',
-        'Libya': 'LBY',
-        'Iraq': 'IRQ',
-        'Iran': 'IRN',
-        'Kuwait': 'KWT',
-        'United Arab Emirates': 'ARE',
-        'Abu Dhabi': 'ARE',  # Abu Dhabi is part of UAE
-        'Dubai': 'ARE',  # Dubai is part of UAE
-        'Qatar': 'QAT',
-        'Norway': 'NOR',
-        'Kazakhstan': 'KAZ',
-        'Azerbaijan': 'AZE',
-        'Indonesia': 'IDN',
-        'Malaysia': 'MYS',
-        'Thailand': 'THA',
-        'Vietnam': 'VNM',
-        'Australia': 'AUS',
-        'Colombia': 'COL',
-        'Ecuador': 'ECU',
-        'Argentina': 'ARG',
-        'Chile': 'CHL',
-        'Peru': 'PER',
-        'Egypt': 'EGY',
-        'Sudan': 'SDN',
-        'South Sudan': 'SSD',
-        'Gabon': 'GAB',
-        'Congo': 'COG',
-        'Equatorial Guinea': 'GNQ',
-        'Cameroon': 'CMR',
-        'Ghana': 'GHA',
-        'Côte d\'Ivoire': 'CIV',
-        'Tunisia': 'TUN',
-        'Oman': 'OMN',
-        'Yemen': 'YEM',
-        'Turkmenistan': 'TKM',
-        'Uzbekistan': 'UZB',
-        'Azerbaijan': 'AZE',
-        'Georgia': 'GEO',
-        'Turkey': 'TUR',
-        'Greece': 'GRC',
-        'Italy': 'ITA',
-        'Spain': 'ESP',
-        'France': 'FRA',
-        'Germany': 'DEU',
-        'Netherlands': 'NLD',
-        'Belgium': 'BEL',
-        'Denmark': 'DNK',
-        'Sweden': 'SWE',
-        'Finland': 'FIN',
-        'Poland': 'POL',
-        'Romania': 'ROU',
-        'Bulgaria': 'BGR',
-        'Ukraine': 'UKR',
-        'Japan': 'JPN',
-        'South Korea': 'KOR',
-        'Philippines': 'PHL',
-        'Singapore': 'SGP',
-        'Brunei': 'BRN',
-        'Myanmar': 'MMR',
-        'Bangladesh': 'BGD',
-        'Pakistan': 'PAK',
-        'Sri Lanka': 'LKA'
-    }
-
     if map_df.empty:
         return create_empty_map()
     # Work with numeric latitude/longitude only to avoid NaN/invalid geometries
@@ -930,7 +853,7 @@ def create_world_map(selected_country=None):
         fig = go.Figure()
         
         # Get ISO code for selected country
-        country_iso = country_to_iso.get(selected_country, None)
+        country_iso = get_iso_code(selected_country)
         
         # Add Choroplethmapbox (country fill) if ISO code exists
         if country_iso:
@@ -1058,7 +981,7 @@ def create_world_map(selected_country=None):
         # For all countries, show a choropleth map of all countries
         # Use px.choropleth_mapbox for simpler all-country view
         all_countries_df = numeric_map[['country_long_name']].drop_duplicates().dropna().copy()
-        all_countries_df['iso_alpha'] = all_countries_df['country_long_name'].map(country_to_iso)
+        all_countries_df['iso_alpha'] = all_countries_df['country_long_name'].apply(get_iso_code)
         all_countries_df = all_countries_df.dropna(subset=['iso_alpha'])
         
         fig = px.choropleth_mapbox(all_countries_df,
