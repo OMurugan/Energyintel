@@ -20,6 +20,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from config import Config
 from core.data_helpers import execute_query
+from core.country_mappings import COUNTRY_TO_ISO, get_iso_code
 
 # ---------------------------------------------------------------------
 # Data locations and shared constants
@@ -43,121 +44,7 @@ world_geojson = None
 if Config.MAPBOX_ACCESS_TOKEN:
     px.set_mapbox_access_token(Config.MAPBOX_ACCESS_TOKEN)
 
-# Common ISO mapping used to draw filled country shapes on the map
-COUNTRY_TO_ISO = {
-    "United States": "USA",
-    "United Kingdom": "GBR",
-    "Saudi Arabia": "SAU",
-    "Russia": "RUS",
-    "China": "CHN",
-    "India": "IND",
-    "Brazil": "BRA",
-    "Canada": "CAN",
-    "Mexico": "MEX",
-    "Venezuela": "VEN",
-    "Nigeria": "NGA",
-    "Angola": "AGO",
-    "Algeria": "DZA",
-    "Libya": "LBY",
-    "Iraq": "IRQ",
-    "Iran": "IRN",
-    "Kuwait": "KWT",
-    "United Arab Emirates": "ARE",
-    "Qatar": "QAT",
-    "Norway": "NOR",
-    "Kazakhstan": "KAZ",
-    "Azerbaijan": "AZE",
-    "Indonesia": "IDN",
-    "Malaysia": "MYS",
-    "Thailand": "THA",
-    "Vietnam": "VNM",
-    "Australia": "AUS",
-    "Colombia": "COL",
-    "Ecuador": "ECU",
-    "Argentina": "ARG",
-    "Chile": "CHL",
-    "Peru": "PER",
-    "Egypt": "EGY",
-    "Sudan": "SDN",
-    "South Sudan": "SSD",
-    "Gabon": "GAB",
-    "Congo": "COG",
-    "Republic of the Congo": "COG",
-    "Equatorial Guinea": "GNQ",
-    "Cameroon": "CMR",
-    "Ghana": "GHA",
-    "Côte d'Ivoire": "CIV",
-    "Cote d'Ivoire": "CIV",
-    "Ivory Coast": "CIV",
-    "Tunisia": "TUN",
-    "Oman": "OMN",
-    "Yemen": "YEM",
-    "Turkmenistan": "TKM",
-    "Uzbekistan": "UZB",
-    "Georgia": "GEO",
-    "Turkey": "TUR",
-    "Greece": "GRC",
-    "Italy": "ITA",
-    "Spain": "ESP",
-    "France": "FRA",
-    "Germany": "DEU",
-    "Netherlands": "NLD",
-    "Belgium": "BEL",
-    "Denmark": "DNK",
-    "Sweden": "SWE",
-    "Finland": "FIN",
-    "Poland": "POL",
-    "Romania": "ROU",
-    "Bulgaria": "BGR",
-    "Ukraine": "UKR",
-    "Belarus": "BLR",
-    "Lithuania": "LTU",
-    "Latvia": "LVA",
-    "Estonia": "EST",
-    "Portugal": "PRT",
-    "Ireland": "IRL",
-    "Austria": "AUT",
-    "Switzerland": "CHE",
-    "Czech Republic": "CZE",
-    "Slovakia": "SVK",
-    "Hungary": "HUN",
-    "Slovenia": "SVN",
-    "Croatia": "HRV",
-    "Serbia": "SRB",
-    "Bosnia and Herzegovina": "BIH",
-    "Montenegro": "MNE",
-    "North Macedonia": "MKD",
-    "Albania": "ALB",
-    "Morocco": "MAR",
-    "Kenya": "KEN",
-    "Ethiopia": "ETH",
-    "Tanzania": "TZA",
-    "Uganda": "UGA",
-    "Chad": "TCD",
-    "Niger": "NER",
-    "Suriname": "SUR",
-    "Senegal": "SEN",
-    "Trinidad and Tobago": "TTO",
-    "Papua New Guinea": "PNG",
-    "Guyana": "GUY",
-    "Brunei": "BRN",
-    "Bahrain": "BHR",
-    "Japan": "JPN",
-    "South Korea": "KOR",
-    "Philippines": "PHL",
-    "Singapore": "SGP",
-    "Myanmar": "MMR",
-    "Bangladesh": "BGD",
-    "Pakistan": "PAK",
-    "Sri Lanka": "LKA"
-}
-
 logger = logging.getLogger(__name__)
-
-try:  # Optional fallback resolver for ISO codes
-    import pycountry  # type: ignore
-except Exception:  # pragma: no cover - pycountry might not be installed
-    pycountry = None
 
 
 # ---------------------------------------------------------------------
@@ -188,22 +75,8 @@ def _normalize_group(raw_value: str | None) -> str | None:
 
 
 def _iso_for_country(country: str | None) -> str | None:
-    """Return ISO Alpha-3 code for a country, using custom map then pycountry."""
-    if not country:
-        return None
-    country_clean = str(country).strip()
-    if not country_clean:
-        return None
-    if country_clean in COUNTRY_TO_ISO:
-        return COUNTRY_TO_ISO[country_clean]
-    if pycountry:
-        try:
-            match = pycountry.countries.search_fuzzy(country_clean)
-            if match:
-                return match[0].alpha_3
-        except Exception:
-            pass
-    return None
+    """Return ISO Alpha-3 code for a country, using centralized mapping."""
+    return get_iso_code(country)
 
 
 def _build_country_colors(countries: list[str]) -> dict[str, str]:
@@ -720,6 +593,7 @@ def create_layout():
         [
             dcc.Store(id="projects-selected-country", data=None),
             dcc.Store(id="projects-country-filter-previous", data=[]),
+            dcc.Store(id="projects-likely-filter-previous", data=["Y"]),
             # Top row: Map + Chart on left, Filters on right
             html.Div(
                 [
@@ -1598,31 +1472,71 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         )
 
     @dash_app.callback(
-        Output("projects-likely-filter", "value", allow_duplicate=True),
+        [Output("projects-likely-filter", "value", allow_duplicate=True),
+         Output("projects-likely-filter-previous", "data")],
         Input("projects-likely-filter", "value"),
-        State("projects-likely-filter", "options"),
+        [State("projects-likely-filter", "options"),
+         State("projects-likely-filter-previous", "data")],
         prevent_initial_call=True,
     )
-    def sync_likely_all(selected, options):
-        """Ensure '(All)' behaves as select-all for Likely filter."""
+    def sync_likely_all(selected, options, previous_selected):
+        """Handle (All) checkbox behavior with proper sequential logic for Likely filter."""
         if not options:
-            return selected
-        all_values = [o["value"] for o in options if o["value"] != "(All)"]
+            return selected, selected
+        
+        # Get all individual likely options (excluding "(All)")
+        all_likely = [o["value"] for o in options if o["value"] != "(All)"]
         selected = selected or []
-        selected_set = set(selected)
-        has_all = "(All)" in selected_set
-
-        normalized = selected
-        if has_all and len(selected_set) == 1:
-            normalized = ["(All)"] + all_values
-        elif not has_all and set(all_values).issubset(selected_set):
-            normalized = ["(All)"] + all_values
-        elif has_all and not set(all_values).issubset(selected_set):
-            normalized = [v for v in selected if v != "(All)"]
-
-        new_sorted = sorted(normalized)
-        old_sorted = sorted(selected)
-        return new_sorted if new_sorted != old_sorted else dash.no_update
+        previous_selected = previous_selected or []
+        
+        # Convert to sets for easier comparison
+        current_set = set(selected)
+        previous_set = set(previous_selected)
+        
+        # Check what changed
+        added = current_set - previous_set
+        removed = previous_set - current_set
+        
+        # Priority 1: Handle explicit "(All)" checkbox clicks
+        if "(All)" in removed and "(All)" in previous_set and not added:
+            # User explicitly unchecked "(All)" only - clear everything
+            return [], []
+            
+        if "(All)" in added and "(All)" not in previous_set and len(added) == 1:
+            # User explicitly checked "(All)" only - select everything
+            result = ["(All)"] + all_likely
+            return result, result
+        
+        # Priority 2: Handle individual likely changes when "(All)" is currently selected
+        if "(All)" in previous_selected and added and not removed:
+            # User clicked an individual likely while "(All)" was selected
+            # This should unselect "(All)" and select only the clicked likely
+            clicked_likely = list(added)
+            return clicked_likely, clicked_likely
+        
+        # Priority 3: Handle individual likely changes when "(All)" is not selected
+        if added or removed:
+            # Get current individual likely (excluding "(All)")
+            individual_likely = [c for c in selected if c != "(All)"]
+            individual_set = set(individual_likely)
+            all_likely_set = set(all_likely)
+            
+            # If all individual likely are now selected, auto-add "(All)"
+            if individual_set == all_likely_set and len(all_likely) > 0 and "(All)" not in selected:
+                result = ["(All)"] + all_likely
+                return result, result
+            
+            # If "(All)" is currently selected but not all likely are individually selected
+            if "(All)" in selected and individual_set != all_likely_set:
+                result = individual_likely
+                return result, result
+            
+            # Otherwise keep current individual selections
+            result = individual_likely
+            return result, result
+        
+        # No changes detected - return current state
+        return selected, selected
 
     @dash_app.callback(
         [Output("projects-country-filter", "value", allow_duplicate=True),
@@ -1832,17 +1746,35 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             Input("projects-group-filter", "value"),
             Input("projects-country-filter", "value"),
             Input("projects-selected-country", "data"),
+            Input("projects-likely-filter", "value"),
+            Input("projects-chart-group-filter", "value"),
         ],
         prevent_initial_call=False,
     )
-    def refresh_map(group_filter, country_filter, selected_country):
+    def refresh_map(group_filter, country_filter, selected_country, likely_filter, chart_group_filter):
         try:
+            # Check if likely filter is empty (no options selected)
+            likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
+            if not likely_values:  # If no likely options selected, return empty map
+                return _empty_figure("No data available. Please select at least one option from 'Likely To Go Ahead' filter.")
+            
+            # Apply same group filtering logic as chart (intersection of both group filters)
+            group_set = set(group_filter or DEFAULT_GROUPS)
+            chart_group_set = (
+                set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
+            )
+            if not chart_group_set:
+                return _empty_figure("Select at least one group to see the map.")
+
+            allowed_groups = group_set.intersection(chart_group_set)
+            if not allowed_groups:
+                return _empty_figure("Selected groups are filtered out.")
+            
             base_df = load_map_data()
             all_countries = base_df["Country"].tolist()
-            groups = group_filter or DEFAULT_GROUPS
             selected_countries = _resolve_countries(country_filter, all_countries)
             filtered_df = base_df[
-                base_df["Group"].isin(groups) & base_df["Country"].isin(selected_countries)
+                base_df["Group"].isin(allowed_groups) & base_df["Country"].isin(selected_countries)
             ]
             return _map_figure(filtered_df, selected_country)
         except Exception as e:
@@ -1858,12 +1790,18 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             Input("projects-country-filter", "value"),
             Input("projects-group-filter", "value"),
             Input("projects-chart-group-filter", "value"),
+            Input("projects-likely-filter", "value"),
         ],
         prevent_initial_call=False,
     )
     def refresh_chart(
-        selected_country, country_filter, group_filter, chart_group_filter
+        selected_country, country_filter, group_filter, chart_group_filter, likely_filter
     ):
+        # Check if likely filter is empty (no options selected)
+        likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
+        if not likely_values:  # If no likely options selected, return empty chart
+            return _empty_figure("No data available. Please select at least one option from 'Likely To Go Ahead' filter.")
+        
         group_set = set(group_filter or DEFAULT_GROUPS)
         chart_group_set = (
             set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
@@ -1890,11 +1828,12 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             Input("projects-country-filter", "value"),
             Input("projects-group-filter", "value"),
             Input("projects-likely-filter", "value"),
+            Input("projects-chart-group-filter", "value"),
         ],
         prevent_initial_call=False,
     )
     def refresh_table(
-        selected_country, country_filter, group_filter, likely_filter
+        selected_country, country_filter, group_filter, likely_filter, chart_group_filter
     ):
         df = load_table_data()
         
@@ -1903,7 +1842,19 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             return [], [], []
         
         groups = group_filter or DEFAULT_GROUPS
-        likely_values = likely_filter or DEFAULT_LIKELY
+        likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
+        
+        # Apply same group filtering logic as chart (intersection of both group filters)
+        group_set = set(groups)
+        chart_group_set = (
+            set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
+        )
+        if not chart_group_set:
+            return [], [], []
+
+        allowed_groups = group_set.intersection(chart_group_set)
+        if not allowed_groups:
+            return [], [], []
         
         # Get available countries from the dataframe
         if "Country" in df.columns:
@@ -1915,9 +1866,9 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
 
         # Filter by group - use Opec_group column name
         if "Opec_group" in df.columns:
-            df = df[df["Opec_group"].isin(groups)]
+            df = df[df["Opec_group"].isin(allowed_groups)]
         elif "Group" in df.columns:
-            df = df[df["Group"].isin(groups)]
+            df = df[df["Group"].isin(allowed_groups)]
         else:
             logger.warning("Group column not found in table data")
         
@@ -1940,7 +1891,10 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             
             df["likely_goahead_normalized"] = df["likely_goahead"].apply(_normalize_likely)
             if "(All)" not in likely_values:
-                df = df[df["likely_goahead_normalized"].isin(likely_values)]
+                if not likely_values:  # If no options selected, return empty dataframe
+                    df = df.iloc[0:0]  # Return empty dataframe with same structure
+                else:
+                    df = df[df["likely_goahead_normalized"].isin(likely_values)]
             df = df.drop(columns=["likely_goahead_normalized"], errors="ignore")
         
         # Filter by country
