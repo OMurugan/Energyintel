@@ -4243,8 +4243,16 @@ def register_callbacks(dash_app, server):
         if sulfur_vals and "Sulfur" in df.columns:
             df = df[df["Sulfur"].apply(lambda v: classify_sulfur_value(v) in sulfur_vals)]
 
-        # 4. Country Filter - Only apply to monthly tab (Yearly is "Global" breakdown)
-        if tab == "monthly" and country and country != ['ALL']:
+
+        # 4. Country Filter
+        # Map selection applies to both tabs
+        # Dropdown country filter only applies to monthly tab (Yearly is "Global" by default from dropdown)
+        if selected_country_map:
+            # Map selection overrides everything - apply to both tabs
+            if "Country" in df.columns:
+                df = df[df["Country"] == selected_country_map]
+        elif tab == "monthly" and country and country != ['ALL']:
+            # Dropdown country filter only for monthly when no map selection
             resolved_countries = _resolve_countries_selection(country)
             if "Country" in df.columns:
                 df = df[df["Country"].isin(resolved_countries)]
