@@ -1642,45 +1642,56 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         selected = selected or []
         previous_selected = previous_selected or []
         
-        # Detect what changed by comparing current vs previous
+        # Convert to sets for easier comparison
         current_set = set(selected)
         previous_set = set(previous_selected)
         
+        # Check what changed
         added = current_set - previous_set
         removed = previous_set - current_set
         
-        # Current state
-        individual_countries = [c for c in selected if c != "(All)"]
-        individual_set = set(individual_countries)
-        all_countries_set = set(all_countries)
-        
-        # Determine user intent based on what changed
-        
-        # Case 1: User clicked "(All)" to select it
-        if "(All)" in added:
+        # Priority 1: Handle explicit "(All)" checkbox clicks
+        if "(All)" in removed and "(All)" in previous_set and not added:
+            # User explicitly unchecked "(All)" only - clear everything
+            return [], []
+            
+        if "(All)" in added and "(All)" not in previous_set and len(added) == 1:
+            # User explicitly checked "(All)" only - select everything
             result = ["(All)"] + all_countries
             return result, result
+        
+        # Priority 2: Handle individual country changes when "(All)" is currently selected
+        if "(All)" in previous_selected and added and not removed:
+            # User clicked an individual country while "(All)" was selected
+            # This should unselect "(All)" and select only the clicked country
+            clicked_countries = list(added)
+            return clicked_countries, clicked_countries
+        
+        # Priority 3: Handle individual country changes when "(All)" is not selected
+        if added or removed:
+            # Get current individual countries (excluding "(All)")
+            individual_countries = [c for c in selected if c != "(All)"]
+            individual_set = set(individual_countries)
+            all_countries_set = set(all_countries)
             
-        # Case 2: User clicked "(All)" to unselect it  
-        elif "(All)" in removed:
-            result = []  # Unselect everything
-            return result, result
-            
-        # Case 3: User selected/unselected individual countries
-        elif added or removed:
-            # Check if all individual countries are now selected
-            if individual_set == all_countries_set and len(all_countries) > 0:
-                # Auto-add "(All)" when all individuals are selected
+            # If all individual countries are now selected, auto-add "(All)"
+            if individual_set == all_countries_set and len(all_countries) > 0 and "(All)" not in selected:
                 result = ["(All)"] + all_countries
                 return result, result
-            else:
-                # Keep only individual selections (no "(All)")
+            
+            # If "(All)" is currently selected but not all countries are individually selected
+            if "(All)" in selected and individual_set != all_countries_set:
                 result = individual_countries
                 return result, result
-                
-        # Case 4: No change detected or initialization
-        else:
-            return selected, selected
+            
+            # Otherwise keep current individual selections
+            result = individual_countries
+            return result, result
+        
+        # No changes detected - return current state
+        return selected, selected
+
+
 
     @dash_app.callback(
         Output("projects-country-filter", "value", allow_duplicate=True),
@@ -1689,7 +1700,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         prevent_initial_call=True,
     )
     def toggle_country_from_legend(n_clicks_list, current_values):
-        """Toggle countries via legend blocks."""
+        """Toggle countries via legend blocks with updated behavior."""
         ctx = callback_context
         if not ctx.triggered:
             return dash.no_update
@@ -1706,31 +1717,16 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         all_countries = _ordered_countries()
         current_values = current_values or []
         
-        # Check if "(All)" is currently selected
-        has_all = "(All)" in current_values
+        # Resolve current selection (handle "(All)" case)
+        resolved_countries = _resolve_countries(current_values, all_countries)
         
-        if has_all:
-            # Special case: "(All)" is selected, user clicks individual country
-            # This should unselect "(All)" and select only the clicked country
-            new_values = [country]
+        # Check if only this country is currently selected
+        if len(resolved_countries) == 1 and country in resolved_countries:
+            # If clicking the same active country, reset to show all countries
+            new_values = ["(All)"] + all_countries
         else:
-            # Normal case: toggle individual countries
-            individual_countries = [c for c in current_values if c != "(All)"]
-            selected_set = set(individual_countries)
-
-            # Toggle the clicked country
-            if country in selected_set:
-                selected_set.remove(country)
-            else:
-                selected_set.add(country)
-
-            # Determine result based on selection
-            if not selected_set:
-                new_values = []
-            elif selected_set == set(all_countries):
-                new_values = ["(All)"] + all_countries
-            else:
-                new_values = sorted(selected_set)
+            # Otherwise, select only this country
+            new_values = [country]
         
         return new_values
 
