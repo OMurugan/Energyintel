@@ -249,6 +249,8 @@ def create_layout():
                     'textAlign': 'left',
                 }
             ),
+            dcc.Download(id="download-latest-updates-csv"),
+            dcc.Download(id="download-all-projects-csv"),
 
             # Header section with title and filter
             html.Div(style={
@@ -275,6 +277,25 @@ def create_layout():
                     ),
                 ]),
                 
+                html.Div([
+                    html.Button(
+                        'Export Data to CSV',
+                        id='btn-export-latest-updates-csv',
+                        n_clicks=0,
+                        style={
+                            'backgroundColor': 'white',
+                            'color': '#2c3e50',
+                            'border': '1px solid #dee2e6',
+                            'padding': '8px 15px',
+                            'borderRadius': '4px',
+                            'cursor': 'pointer',
+                            'fontSize': '13px',
+                            'margin': '0',
+                            'display': 'inline-block'
+                        }
+                    ),
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'padding': '0'}),
+
                 # Filter container for "Likely To Go Ahead"
                 html.Div(style={
                     'backgroundColor': 'white',
@@ -442,6 +463,24 @@ def create_layout():
                     'paddingBottom': '0',
                 }
             ),
+            html.Div([
+                html.Button(
+                    'Export Data to CSV',
+                    id='btn-export-all-projects-csv',
+                    n_clicks=0,
+                    style={
+                        'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6',
+                        'padding': '8px 15px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'fontSize': '13px',
+                        'margin': '0',
+                        'display': 'inline-block'
+                    }
+                ),
+            ], style={'display': 'flex', 'alignItems': 'right', 'justifyContent': 'flex-end', 'padding': '0 0 15px 0px'}),
             
             # Container for All Projects table that can be hidden
             html.Div(id='all-projects-table-container', children=[
@@ -677,6 +716,28 @@ def register_callbacks(dash_app, server):
             new_final_values,              # Current checkbox values
             previous_values_to_store       # Store for next comparison
         )
+
+    @dash_app.callback(
+        Output('download-latest-updates-csv', 'data'),
+        Input('btn-export-latest-updates-csv', 'n_clicks'),
+        prevent_initial_call=True
+    )
+    def export_latest_updates_csv(n_clicks):
+        if n_clicks > 0:
+            df = load_latest_updates_data()
+            return dcc.send_data_frame(df.to_csv, "latest_updates_data.csv", index=False)
+        return no_update
+
+    @dash_app.callback(
+        Output('download-all-projects-csv', 'data'),
+        Input('btn-export-all-projects-csv', 'n_clicks'),
+        prevent_initial_call=True
+    )
+    def export_all_projects_csv(n_clicks):
+        if n_clicks > 0:
+            df = load_all_projects_data()
+            return dcc.send_data_frame(df.to_csv, "all_projects_data.csv", index=False)
+        return no_update
 
     # SIMPLE CLIENTSIDE CALLBACK - This will definitely work
     dash_app.clientside_callback(
