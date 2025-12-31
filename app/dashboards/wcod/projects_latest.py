@@ -457,6 +457,7 @@ def create_layout():
                             {"name": "Click on the link below to go to the relevant article", "id": "Click on the link below to go to the relevant article", "presentation": "markdown"}
                         ] if df_projects_table is not None else [],
                         data=df_projects_table.to_dict('records') if df_projects_table is not None else [],
+                        fixed_rows={'headers': True},
                         style_table={
                             'overflowX': 'auto',
                             'overflowY': 'auto',
