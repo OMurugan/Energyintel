@@ -1,6 +1,7 @@
 import os
 import re
 from pathlib import Path
+import dash
 from dash import dcc, html, Input, Output, State, callback, dash_table
 from dash.dcc import Loading
 import plotly.graph_objects as go
@@ -403,7 +404,8 @@ def create_layout():
                         labelStyle={'color': 'rgb(27, 54, 93)', 'fontFamily': 'Lato, sans-serif'}
                     ),
                     dcc.Store(id='likely-filter-previous', data=['Y'])
-                ])
+                ]),
+                dcc.Store(id='projects-time-selection', data=None)
             ], style={
                 'width': '25%',
                 'display': 'inline-block',
@@ -464,21 +466,12 @@ def create_layout():
                         'fontSize': '12px',
                         'fontFamily': 'Lato, sans-serif',
                         'color': 'rgb(27, 54, 93)',
-                        'whiteSpace': 'normal',
+                        'whiteSpace': 'nowrap',
                         'height': 'auto',
                         'overflow': 'hidden',
-                        'textOverflow': 'ellipsis'
+                        'textOverflow': 'ellipsis',
+                        'maxWidth': '180px'
                     },
-                    style_cell_conditional=[
-                        {
-                            'if': {'column_id': 'Comments'},
-                            'whiteSpace': 'nowrap',
-                            'overflow': 'hidden',
-                            'textOverflow': 'ellipsis',
-                            'height': 'auto',
-                            'textAlign': 'left'
-                        }
-                    ],
                     style_header={
                         'backgroundColor': '#f8f9fa',
                         'fontWeight': 'bold',
@@ -489,9 +482,11 @@ def create_layout():
                     },
                     style_data={
                         'border': '1px solid #ddd',
-                        'whiteSpace': 'normal',
+                        'whiteSpace': 'nowrap',
                         'fontFamily': 'Lato, sans-serif',
-                        'color': 'rgb(27, 54, 93)'
+                        'color': 'rgb(27, 54, 93)',
+                        'overflow': 'hidden',
+                        'textOverflow': 'ellipsis'
                     },
                     style_data_conditional=[
                         {
@@ -567,13 +562,56 @@ def register_callbacks(dash_app, server):
         
         final_return_values = selected_individual if len(selected_individual) > 0 else (all_options if is_all_selected else [])
         return final_return_values, final_return_values
+
+    @callback(
+        Output('projects-time-selection', 'data'),
+        [Input('projects-time-chart', 'clickData'),
+         Input('current-submenu', 'data')],
+        [State('projects-time-selection', 'data'),
+         State('projects-time-chart', 'figure')],
+        prevent_initial_call=False
+    )
+    def manage_selection(click_data, submenu, current_selection, figure):
+        if not dash.ctx.triggered:
+            return dash.no_update
+        
+        trigger_id = dash.ctx.triggered[0]['prop_id'].split('.')[0]
+        
+        if trigger_id == 'current-submenu':
+            return None
+            
+        if trigger_id == 'projects-time-chart' and click_data:
+            if 'points' in click_data and len(click_data['points']) > 0:
+                point = click_data['points'][0]
+                clicked_region = None
+                clicked_quarter = point.get('x') # e.g., '2025_Q1'
+                
+                # Try multiple ways to find the region name
+                if 'fullData' in point and isinstance(point['fullData'], dict) and 'name' in point['fullData']:
+                    clicked_region = point['fullData']['name']
+                elif 'curveNumber' in point and figure and 'data' in figure:
+                    idx = point['curveNumber']
+                    if idx < len(figure['data']):
+                        clicked_region = figure['data'][idx].get('name')
+                
+                if clicked_region and clicked_quarter:
+                    new_selection = {'region': clicked_region, 'quarter': clicked_quarter}
+                    # Clear selection if clicking the same point again
+                    if isinstance(current_selection, dict) and \
+                       current_selection.get('region') == clicked_region and \
+                       current_selection.get('quarter') == clicked_quarter:
+                        return None
+                    return new_selection
+                
+        return current_selection
     
     @callback(
         Output('projects-time-chart', 'figure'),
         [Input('current-submenu', 'data'),
-         Input('likely-filter', 'value')]
+         Input('likely-filter', 'value'),
+         Input('projects-time-selection', 'data')]
     )
-    def update_chart(submenu, likely_filter):
+    def update_chart(submenu, likely_filter, selected_region):
         """Update projects by time chart"""
         if submenu != 'projects-time':
             return go.Figure()
@@ -670,13 +708,42 @@ def register_callbacks(dash_app, server):
                 while len(values) < 20:
                     values.append(0)
                 
+                # Implement per-point highlight/fade logic
+                base_color = REGION_COLORS.get(region, 'rgb(128, 128, 128)')
+                marker_colors = []
+                line_widths = []
+                line_colors = []
+                
+                selected_reg = selected_region.get('region') if isinstance(selected_region, dict) else None
+                selected_qtr = selected_region.get('quarter') if isinstance(selected_region, dict) else None
+
+                for q_key in quarters:
+                    if selected_reg and selected_qtr:
+                        if region == selected_reg and q_key == selected_qtr:
+                            marker_colors.append(base_color)
+                            line_widths.append(2)
+                            line_colors.append('rgb(50, 50, 50)')
+                        else:
+                            # Faded color
+                            faded = base_color.replace('rgb(', 'rgba(').replace(')', ', 0.15)') if base_color.startswith('rgb(') else base_color
+                            marker_colors.append(faded)
+                            line_widths.append(0)
+                            line_colors.append('white')
+                    else:
+                        marker_colors.append(base_color)
+                        line_widths.append(0)
+                        line_colors.append('white')
+
                 fig.add_trace(go.Bar(
                     name=region,
                     x=quarters,
                     y=values,
                     marker=dict(
-                        color=REGION_COLORS.get(region, 'rgb(128, 128, 128)'),
-                        line=dict(width=0)
+                        color=marker_colors,
+                        line=dict(
+                            width=line_widths,
+                            color=line_colors
+                        )
                     ),
                     hovertemplate=(
                         '<span style="color:grey">Region:</span> <span style="color:black">%{fullData.name}</span><br>' +
@@ -777,12 +844,11 @@ def register_callbacks(dash_app, server):
          Output('projects-time-table', 'columns'),
          Output('projects-time-table', 'tooltip_data')],
         [Input('current-submenu', 'data'),
-         Input('projects-time-chart', 'clickData'),
+         Input('projects-time-selection', 'data'),
          Input('likely-filter', 'value')],
-        [State('projects-time-chart', 'figure')],
         prevent_initial_call=False
     )
-    def update_table(submenu, click_data, likely_filter, figure):
+    def update_table(submenu, selected_region, likely_filter):
         """Update projects table"""
         try:
             if submenu != 'projects-time':
@@ -791,21 +857,22 @@ def register_callbacks(dash_app, server):
             if df.empty:
                 return [], [], []
             
-            clicked_region = None
-            if click_data and isinstance(click_data, dict) and 'points' in click_data and len(click_data['points']) > 0:
-                point = click_data['points'][0]
-                if isinstance(point, dict):
-                    if 'fullData' in point and 'name' in point['fullData']:
-                        clicked_region = point['fullData']['name']
-                    elif figure and isinstance(figure, dict) and 'data' in figure:
-                        trace_index = point.get('curveNumber', 0)
-                        if isinstance(trace_index, int) and trace_index < len(figure['data']):
-                            trace_data = figure['data'][trace_index]
-                            if isinstance(trace_data, dict) and 'name' in trace_data:
-                                clicked_region = trace_data['name']
-            
-            if clicked_region and 'Region' in df.columns:
-                df = df[df['Region'] == clicked_region].copy()
+            if selected_region and isinstance(selected_region, dict):
+                sel_reg = selected_region.get('region')
+                sel_qtr_key = selected_region.get('quarter')  # e.g., '2025_Q1'
+                
+                if sel_reg and 'Region' in df.columns:
+                    df = df[df['Region'] == sel_reg].copy()
+                
+                if sel_qtr_key and '_' in sel_qtr_key:
+                    try:
+                        sel_year, sel_qtr = sel_qtr_key.split('_')
+                        # Filter rows where the production estimate for this quarter is > 0
+                        # Assuming the raw data has columns like '2025_Q1'
+                        if sel_qtr_key in df.columns:
+                            df = df[pd.to_numeric(df[sel_qtr_key], errors='coerce') > 0].copy()
+                    except Exception:
+                        pass
             
             likely_col = None
             for col in df.columns:
@@ -969,17 +1036,24 @@ def register_callbacks(dash_app, server):
             
             data = df.to_dict('records')
             
-            # Prepare tooltip data for Comments column only
+            # Prepare tooltip data for all columns
             tooltip_data = []
-            for i, row in enumerate(data):
+            for idx, row in df.iterrows():
                 tooltip_row = {}
-                if 'Comments' in row:
-                    original_comment = str(original_comments.iloc[i]) if i < len(original_comments) else ''
-                    if original_comment and original_comment != 'nan' and original_comment.strip():
-                        tooltip_row['Comments'] = {
-                            'value': original_comment,
-                            'type': 'text'
-                        }
+                for col in df.columns:
+                    if col == 'Comments' and 'original_comments' in locals():
+                        val = str(original_comments.loc[idx])
+                    else:
+                        val = str(row[col])
+                        
+                    val = val.strip()
+                    if val and val.lower() != 'nan' and val != 'None':
+                        # Only show tooltip for long values (>25 chars) or Comments
+                        if col == 'Comments' or len(val) > 25:
+                            tooltip_row[col] = {
+                                'value': val,
+                                'type': 'text'
+                            }
                 tooltip_data.append(tooltip_row)
             
             return data, columns, tooltip_data
@@ -1046,31 +1120,27 @@ def register_callbacks(dash_app, server):
     @callback(
         Output('download-projects-table-csv', 'data'),
         Input('btn-export-projects-table-csv', 'n_clicks'),
-        State('likely-filter', 'value'),
-        State('projects-time-chart', 'clickData'),
-        State('projects-time-chart', 'figure'),
+        [State('likely-filter', 'value'),
+         State('projects-time-selection', 'data')],
         prevent_initial_call=True
     )
-    def export_projects_table_data(n_clicks, likely_filter, click_data, figure):
+    def export_projects_table_data(n_clicks, likely_filter, selected_region):
         if n_clicks > 0:
             df = load_table_data()
             if not df.empty:
-                # Apply region filter if clicked
-                clicked_region = None
-                if click_data and isinstance(click_data, dict) and 'points' in click_data and len(click_data['points']) > 0:
-                    point = click_data['points'][0]
-                    if isinstance(point, dict):
-                        if 'fullData' in point and 'name' in point['fullData']:
-                            clicked_region = point['fullData']['name']
-                        elif figure and isinstance(figure, dict) and 'data' in figure:
-                            trace_index = point.get('curveNumber', 0)
-                            if isinstance(trace_index, int) and trace_index < len(figure['data']):
-                                trace_data = figure['data'][trace_index]
-                                if isinstance(trace_data, dict) and 'name' in trace_data:
-                                    clicked_region = trace_data['name']
-                
-                if clicked_region and 'Region' in df.columns:
-                    df = df[df['Region'] == clicked_region].copy()
+                # Apply region and quarter filter if selected
+                if selected_region and isinstance(selected_region, dict):
+                    sel_reg = selected_region.get('region')
+                    sel_qtr_key = selected_region.get('quarter')
+                    
+                    if sel_reg and 'Region' in df.columns:
+                        df = df[df['Region'] == sel_reg].copy()
+                    
+                    if sel_qtr_key and sel_qtr_key in df.columns:
+                        try:
+                            df = df[pd.to_numeric(df[sel_qtr_key], errors='coerce') > 0].copy()
+                        except Exception:
+                            pass
 
                 # Apply likely filter
                 likely_col = None
