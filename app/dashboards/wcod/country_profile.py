@@ -964,18 +964,116 @@ def create_world_map(selected_country=None):
             ))
 
         title_text = f"{selected_country} Production"
-        map_zoom = 1.2 # Zoom in for a specific country
+        
+        # Calculate dynamic zoom and center based on country's geographic extent
         map_center_lat = filtered_map['latitude'].mean()
         map_center_lon = filtered_map['longitude'].mean()
+        
         if pd.isna(map_center_lat) or pd.isna(map_center_lon):
             # Fallback to default world view center if data is missing
             map_center = dict(lat=22.0, lon=0.0)
+            map_zoom = 1.2
         else:
-            # Adjust center latitude upward to show top area of country
-            # Adding latitude moves the center north, which shifts viewport to show more northern area
-            # This fixes the issue where top is cut off and there's extra space below
-            # Additional 25px downward adjustment: ~0.4 degrees at zoom 1.5
-            adjusted_lat = map_center_lat + 8.0  # Move center north to show top area, then down 25px
+            # Calculate the geographic extent of the country's ports
+            lat_min, lat_max = filtered_map['latitude'].min(), filtered_map['latitude'].max()
+            lon_min, lon_max = filtered_map['longitude'].min(), filtered_map['longitude'].max()
+            
+            # Calculate the span of coordinates
+            lat_span = lat_max - lat_min
+            lon_span = lon_max - lon_min
+            
+            # Determine zoom level based on geographic extent
+            # Adjusted for reduced map height - need lower zoom levels to fit countries
+            max_span = max(lat_span, lon_span)
+            
+            if max_span > 30:  # Very large countries (e.g., Russia, Canada, USA)
+                map_zoom = 1.2
+            elif max_span > 15:  # Large countries (e.g., Brazil, Australia)
+                map_zoom = 1.4
+            elif max_span > 8:   # Medium countries (e.g., Saudi Arabia, Iran)
+                map_zoom = 1.8
+            elif max_span > 4:   # Smaller countries (e.g., Norway, UK)
+                map_zoom = 2.4
+            elif max_span > 2:   # Small countries (e.g., UAE, Kuwait)
+                map_zoom = 2.8
+            else:                # Very small countries or single port locations
+                map_zoom = 3.4
+            
+            # Country-specific zoom adjustments for reduced map height
+            country_zoom_overrides = {
+                'Russia': 1.0,  # Further reduced to show full northern Russia
+                'Canada': 0.9,
+                'United States': 1.0,  # Further reduced to show full Alaska
+                'Brazil': 1.2,
+                'Australia': 1.1,
+                'China': 1.1,
+                'Saudi Arabia': 1.7,
+                'Iran': 1.8,
+                'Norway': 2.1,
+                'United Kingdom': 2.5,
+                'Nigeria': 1.9,
+                'Venezuela': 1.8,
+                'Mexico': 1.5,
+                'Indonesia': 1.6,
+                'Libya': 2.1,
+                'Algeria': 1.8,
+                'Iraq': 2.2,
+                'Kuwait': 3.0,
+                'Qatar': 3.5,
+                'UAE': 2.7,
+                'Oman': 2.3,
+                'Angola': 2.1,
+                'Ecuador': 2.5,
+                'Gabon': 2.7,
+                'Ghana': 2.9,
+                'Guyana': 2.6,
+                'Kazakhstan': 1.3,
+                'Malaysia': 2.1,
+                'Brunei': 3.3,
+                'Chad': 2.2,
+                'Colombia': 1.9,
+                'Congo (Brazzaville)': 2.5,
+                'Denmark': 2.7,
+                'Egypt': 2.1,
+                'Equatorial Guinea': 3.0,
+                'Papua New Guinea': 2.4,
+                'South Sudan': 2.3,
+                'Sudan': 2.0,
+                'Syria': 2.5,
+                'Turkmenistan': 2.1,
+                'Vietnam': 2.2,
+                'Yemen': 2.4,
+                'Abu Dhabi': 3.3,
+                'Dubai': 3.5,
+                'Neutral Zone': 3.4
+            }
+            
+            # Apply country-specific override if available
+            if selected_country in country_zoom_overrides:
+                map_zoom = country_zoom_overrides[selected_country]
+            
+            # Adjust center for reduced map height - ensure northern parts are visible
+            # Move large countries slightly south to show their northern regions
+            if selected_country == 'United States':
+                # For US, move south to show Alaska completely
+                adjusted_lat = map_center_lat + (lat_span * 0.30)  # Move south to show Alaska
+            elif selected_country == 'Russia':
+                # For Russia, move south to show northern Russia
+                adjusted_lat = map_center_lat + (lat_span * 0.30)  # Move south to show northern Russia
+            elif selected_country == 'Canada':
+                # For Canada, also move slightly south to show northern territories
+                adjusted_lat = map_center_lat + (lat_span * 0.08)  # Move south for northern visibility
+            elif lat_span > 25:  # Very large countries - move south to use bottom space
+                adjusted_lat = map_center_lat + (lat_span * 0.05)  # Move south to show northern parts
+            elif lat_span > 15:  # Large countries - moderate south adjustment
+                adjusted_lat = map_center_lat + (lat_span * 0.08)  # Move south for better fit
+            elif lat_span > 8:  # Medium countries - slight south adjustment
+                adjusted_lat = map_center_lat + (lat_span * 0.05)
+            elif lat_span > 4:  # Smaller countries - minimal south adjustment
+                adjusted_lat = map_center_lat + (lat_span * 0.03)
+            else:  # Small countries - use geographic center
+                adjusted_lat = map_center_lat
+            
             map_center = dict(lat=adjusted_lat, lon=map_center_lon)
     else:
         # For all countries, show a choropleth map of all countries
@@ -996,8 +1094,8 @@ def create_world_map(selected_country=None):
                         )
         
         title_text = 'World Crude Oil Ports by Country'
-        map_zoom = 1.2 # World view zoom - matches original Tableau source
-        map_center = dict(lat=22.0, lon=0.0)  # Centered on equator for balanced world view
+        map_zoom = 1.5 # Adjusted for reduced map height
+        map_center = dict(lat=10.0, lon=0.0)  # Moved south to utilize bottom space better
 
         # Add country name labels with density control to avoid overlap at wide zooms
         country_centroids = (
@@ -1090,8 +1188,8 @@ def create_empty_map():
         },
         mapbox=dict(
             style="carto-positron",
-            center=dict(lat=20.0, lon=0.0),
-            zoom=1.5 # Consistent zoom with world view - matches original Tableau source
+            center=dict(lat=10.0, lon=0.0),  # Moved south to utilize bottom space
+            zoom=1.5 # Adjusted for reduced map height
         ),
         height=400,
         width=700,  # Square aspect ratio
@@ -2870,8 +2968,8 @@ def register_callbacks(dash_app, server):
             const ZOOM_OUT_MAX_LAT = 85;
             const ZOOM_OUT_MIN_LON = -180;
             const ZOOM_OUT_MAX_LON = 180;
-            const MIN_LAT_RANGE = 30;       // Minimum latitude range (degrees) - zoom in limit
-            const MIN_LON_RANGE = 60;       // Minimum longitude range (degrees) - zoom in limit
+            const MIN_LAT_RANGE = 8;        // Minimum latitude range (degrees) - zoom in limit (reduced for closer zoom)
+            const MIN_LON_RANGE = 15;       // Minimum longitude range (degrees) - zoom in limit (reduced for closer zoom)
             const MAX_LAT_RANGE = ZOOM_OUT_MAX_LAT - ZOOM_OUT_MIN_LAT;  // Maximum allowed latitude range (155 degrees)
             const MAX_LON_RANGE = ZOOM_OUT_MAX_LON - ZOOM_OUT_MIN_LON;  // Maximum allowed longitude range (360 degrees)
             
