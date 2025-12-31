@@ -1075,6 +1075,17 @@ def load_table():
                 )
                 yearly_df["CI Rank"] = yearly_df["CrudeOil"].map(ci_map)
             
+            # Add Country metadata if available
+            if "Country" in yearly_raw.columns:
+                country_map = (
+                    yearly_raw[["CrudeOil", "Country"]]
+                    .dropna(subset=["CrudeOil"])
+                    .drop_duplicates(subset=["CrudeOil"])
+                    .set_index("CrudeOil")["Country"]
+                )
+                yearly_df["Country"] = yearly_df["CrudeOil"].map(country_map)
+                print(f"DEBUG LOAD: yearly_df columns: {yearly_df.columns.tolist()} (rows: {len(yearly_df)})")
+            
         # Load monthly table data
         # Load monthly table data from DB
         monthly_query = """
@@ -1238,7 +1249,7 @@ def _ensure_data_loaded():
     global STREAM_COLOR_ORDERS, STREAM_COLOR_MAPS, STREAM_ORDERS
     
     # Check if data is already loaded (not empty)
-    if BAR_DF_YEARLY.empty:
+    if BAR_DF_YEARLY.empty or TABLE_DF_YEARLY.empty:
         BAR_DF_YEARLY, BAR_LONG_YEARLY, YEAR_PRODUCTION_DATA_VALUE = load_yearly_bar()
         BAR_DF_MONTHLY, BAR_LONG_MONTHLY = load_monthly_bar()
         MAP_YEARLY_LONG, MAP_MONTHLY_LONG = load_map_data()
@@ -1391,6 +1402,10 @@ TABLE_LINK_CSS = [
     {
         "selector": "#crude-table th",
         "rule": "color: #1f3b6f !important; font-weight: bold;"
+    },
+    {
+        "selector": "#crude-table .dash-cell, #crude-table .dash-row",
+        "rule": "cursor: pointer;"
     }
 ]
 
@@ -1454,6 +1469,8 @@ def create_layout(server=None):
         dcc.Store(id="stream-profile-urls-store", data={}),
         # Store to track last clicked stream (to prevent duplicate navigation)
         dcc.Store(id="last-clicked-stream-store", data=None),
+        # Store to track map country selection
+        dcc.Store(id="selected-country-map-store", data=None),
         # Dummy store for navigation callback output
         dcc.Store(id="stream-navigation-dummy", data=None),
         # Custom CSS to style markdown links in DataTable to look like normal text
@@ -1830,11 +1847,13 @@ def create_layout(server=None):
                                 # Alternating row colors (white and grey)
                                 {
                                     "if": {"row_index": "odd"},
-                                      "backgroundColor": "#f5f5f5"  # Light grey for odd rows
+                                      "backgroundColor": "#f5f5f5" ,
+                                      "textAlign": "right" # Light grey for odd rows
                                   },
                                 {
                                     "if": {"row_index": "even"},
-                                      "backgroundColor": "white"  # White for even rows
+                                      "backgroundColor": "white",  # White for even rows
+                                      "textAlign": "right"
                                   },
 
                                 # Remove conflicting text alignment rules
@@ -1853,7 +1872,49 @@ def create_layout(server=None):
                 html.Label("Stream Name"),
                 dcc.Input(id="filter-stream", type="text", placeholder="Stream Name"),
                 html.Br(), html.Br(),
-                html.Div([], id="monthly-only-filters-container")
+                html.Div([
+                    html.Label("CI Rank", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
+                    dcc.Checklist(
+                        id="filter-ci", 
+                        options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in CI_FILTER_CHOICES],
+                        value=["ALL"] + CI_FILTER_CHOICES,
+                        inputStyle={"marginRight": "8px"},
+                        labelStyle={"display": "block", "marginBottom": "6px"},
+                        style={
+                            "maxHeight": "150px", "overflowY": "auto", "padding": "8px",
+                            "border": "1px solid #e0e0e0", "borderRadius": "6px",
+                            "background": "white", "fontSize": "12px"
+                        }
+                    ),
+                    html.Br(),
+                    html.Label("API", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
+                    dcc.Checklist(
+                        id="filter-api", 
+                        options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in API_FILTER_CHOICES],
+                        value=["ALL"] + API_FILTER_CHOICES,
+                        inputStyle={"marginRight": "8px"},
+                        labelStyle={"display": "block", "marginBottom": "6px"},
+                        style={
+                            "maxHeight": "150px", "overflowY": "auto", "padding": "8px",
+                            "border": "1px solid #e0e0e0", "borderRadius": "6px",
+                            "background": "white", "fontSize": "12px"
+                        }
+                    ),
+                    html.Br(),
+                    html.Label("Sulfur", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
+                    dcc.Checklist(
+                        id="filter-sulfur", 
+                        options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in SULFUR_FILTER_CHOICES],
+                        value=["ALL"] + SULFUR_FILTER_CHOICES,
+                        inputStyle={"marginRight": "8px"},
+                        labelStyle={"display": "block", "marginBottom": "6px"},
+                        style={
+                            "maxHeight": "150px", "overflowY": "auto", "padding": "8px",
+                            "border": "1px solid #e0e0e0", "borderRadius": "6px",
+                            "background": "white", "fontSize": "12px"
+                        }
+                    ),
+                ], id="monthly-only-filters-container", style={"display": "none"})
             ], className='col-md-2', style={'padding': '15px'})
 
         ], className='row')
@@ -1864,57 +1925,23 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for Crude Overview"""
     
     @dash_app.callback(
-        Output("monthly-only-filters-container", "children"),
+        Output("monthly-only-filters-container", "style"),
         [Input("crude-main-tabs", "value")]
     )
     def toggle_monthly_filters(tab):
-        """Show filters only for monthly tab by dynamically updating children as checklists"""
-        print(f"DEBUG: toggle_monthly_filters called for tab: {tab}")
+        """Show/hide filters only for monthly tab"""
         if tab == "monthly":
-            _ensure_data_loaded()
-            
-            checklist_style = {
-                "maxHeight": "150px",
-                "overflowY": "auto",
-                "padding": "8px",
-                "border": "1px solid #e0e0e0",
-                "borderRadius": "6px",
-                "background": "white",
-                "fontSize": "12px"
-            }
-            
-            return [
-                html.Label("CI Rank", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
-                dcc.Checklist(
-                    id="filter-ci", 
-                    options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in CI_FILTER_CHOICES],
-                    value=["ALL"] + CI_FILTER_CHOICES,
-                    inputStyle={"marginRight": "8px"},
-                    labelStyle={"display": "block", "marginBottom": "6px"},
-                    style=checklist_style
-                ),
-                html.Br(),
-                html.Label("API", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
-                dcc.Checklist(
-                    id="filter-api", 
-                    options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in API_FILTER_CHOICES],
-                    value=["ALL"] + API_FILTER_CHOICES,
-                    inputStyle={"marginRight": "8px"},
-                    labelStyle={"display": "block", "marginBottom": "6px"},
-                    style=checklist_style
-                ),
-                html.Br(),
-                html.Label("Sulfur", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
-                dcc.Checklist(
-                    id="filter-sulfur", 
-                    options=[{"label": "ALL", "value": "ALL"}] + [{"label": v, "value": v} for v in SULFUR_FILTER_CHOICES],
-                    value=["ALL"] + SULFUR_FILTER_CHOICES,
-                    inputStyle={"marginRight": "8px"},
-                    labelStyle={"display": "block", "marginBottom": "6px"},
-                    style=checklist_style
-                ),
-            ]
-        return []
+            return {"display": "block"}
+        return {"display": "none"}
+
+    @dash_app.callback(
+        Output("filter-stream", "value"),
+        [Input("crude-main-tabs", "value")],
+        prevent_initial_call=True
+    )
+    def reset_crude_table_search(tab):
+        """Reset search filter when changing tabs to isolate search results"""
+        return ""
 
     @dash_app.callback(
         [Output("crude-country-dropdown", "options"),
@@ -2680,15 +2707,37 @@ def register_callbacks(dash_app, server):
             return {"display": "none"}, {"display": "block"}, {"display": "block"}
     
     @dash_app.callback(
+        Output("selected-country-map-store", "data"),
+        [Input("crude-map", "clickData")],
+        [State("selected-country-map-store", "data"),
+         State("current-submenu", "data")],
+        prevent_initial_call=True
+    )
+    def update_selected_country_map(click_data, current_selected, submenu):
+        """Update country selection from map click, toggle if clicked again"""
+        if submenu != 'crude-overview':
+            return no_update
+            
+        if click_data and click_data.get("points"):
+            clicked_country = click_data["points"][0].get("location")
+            if clicked_country:
+                # Toggle logic: if already selected, reset to None
+                if clicked_country == current_selected:
+                    return None
+                return clicked_country
+        return current_selected
+    
+    @dash_app.callback(
         Output("crude-map", "figure"),
         [Input("crude-year-dropdown", "value"),
          Input("crude-year-month-dropdown", "value"),
          Input("crude-country-dropdown", "value"),
          Input("crude-main-tabs", "value"),
+         Input("selected-country-map-store", "data"),
          Input("current-submenu", "data")],
         prevent_initial_call=False
     )
-    def update_map(selected_year, selected_year_month, selected_countries, tab, current_submenu):
+    def update_map(selected_year, selected_year_month, selected_countries, tab, selected_country_map, current_submenu):
         """Update world map based on filters - only loads data when page is active"""
         # Only load data if page is active
         if current_submenu != 'crude-overview':
@@ -2806,6 +2855,8 @@ def register_callbacks(dash_app, server):
         
         # Try Mapbox choropleth; fall back to geo-based choropleth if GeoJSON missing.
         geojson = _load_countries_geojson()
+        main_opacity = 0.3 if selected_country_map else 1.0
+        
         if geojson:
             fig = px.choropleth_mapbox(
                 agg,
@@ -2819,7 +2870,8 @@ def register_callbacks(dash_app, server):
                 range_color=[0, color_max],
                 mapbox_style="open-street-map",
                 center={"lat": 20, "lon": 0},
-                zoom=1
+                zoom=1,
+                opacity=main_opacity
             )
             fig.update_traces(
                 hovertemplate=(
@@ -2834,6 +2886,25 @@ def register_callbacks(dash_app, server):
                     "<extra></extra>"
                 )
             )
+            
+            if selected_country_map:
+                sel_df = agg[agg["GeoCountry"] == selected_country_map]
+                if not sel_df.empty:
+                    fig.add_trace(
+                        go.Choroplethmapbox(
+                            geojson=geojson,
+                            locations=sel_df["GeoCountry"],
+                            featureidkey="properties.name",
+                            z=sel_df["value"],
+                            colorscale="Blues",
+                            zmin=0, zmax=color_max,
+                            showscale=False,
+                            marker=dict(opacity=1.0, line=dict(color="#FF6B35", width=3)),
+                            hovertemplate=fig.data[0].hovertemplate,
+                            customdata=sel_df[["Country", "Year"]].values
+                        )
+                    )
+
             fig.update_layout(
                 margin=dict(l=10, r=10, t=10, b=80),
                 height=500,
@@ -2876,7 +2947,8 @@ def register_callbacks(dash_app, server):
                 color_continuous_scale="Blues",
                 labels={"value":"Production ('000 b/d)"},
                 custom_data=["Country", "Year"],
-                range_color=[0, color_max]
+                range_color=[0, color_max],
+                opacity=main_opacity
             )
             fig.update_traces(
                 hovertemplate=(
@@ -2891,6 +2963,24 @@ def register_callbacks(dash_app, server):
                     "<extra></extra>"
                 )
             )
+            
+            if selected_country_map:
+                sel_df = agg[agg["GeoCountry"] == selected_country_map]
+                if not sel_df.empty:
+                    fig.add_trace(
+                        go.Choropleth(
+                            locations=sel_df["GeoCountry"],
+                            locationmode="country names",
+                            z=sel_df["value"],
+                            colorscale="Blues",
+                            zmin=0, zmax=color_max,
+                            showscale=False,
+                            marker=dict(opacity=1.0, line=dict(color="#FF6B35", width=3)),
+                            hovertemplate=fig.data[0].hovertemplate,
+                            customdata=sel_df[["Country", "Year"]].values
+                        )
+                    )
+
             fig.update_layout(
                 margin=dict(l=10,r=10,t=10,b=80),
                 height=500,
@@ -2965,11 +3055,11 @@ def register_callbacks(dash_app, server):
          Input("production-year-dropdown", "value"),  # Year of Date filter for monthly chart
          Input("profiled-streams", "value"),
          Input("crude-main-tabs", "value"),
-         Input("crude-map", "clickData"),
+         Input("selected-country-map-store", "data"),
          Input("current-submenu", "data")],
         prevent_initial_call=False
     )
-    def update_breakdown(country, year, year_month, production_years, profiled, tab, map_click, current_submenu):
+    def update_breakdown(country, year, year_month, production_years, profiled, tab, selected_country_map, current_submenu):
         """Update production breakdown chart - only loads data when page is active"""
         # Only load data if page is active
         if current_submenu != 'crude-overview':
@@ -2991,17 +3081,11 @@ def register_callbacks(dash_app, server):
             month_names = ["January", "February", "March", "April", "May", "June",
                           "July", "August", "September", "October", "November", "December"]
             
-            # Handle map click - update country selection
-            if map_click and map_click.get("points"):
-                clicked_country = map_click["points"][0].get("location")
-                if clicked_country:
-                    if not country:
-                        country = [clicked_country]
-                        original_country_selection = [clicked_country]
-                    elif clicked_country not in country:
-                        country = [clicked_country]
-                        original_country_selection = [clicked_country]
-                    print(f"DEBUG: Map clicked, country={clicked_country}, updated country={country}")
+            # Handle map selection - update country selection
+            if selected_country_map:
+                country = [selected_country_map]
+                original_country_selection = [selected_country_map]
+                print(f"DEBUG: Map selection active, country={selected_country_map}")
             
             if year is None:
                 year = int(YEARS[-1]) if YEARS else 2024
@@ -4080,11 +4164,12 @@ def register_callbacks(dash_app, server):
          Input("crude-country-dropdown", "value"),
          Input("crude-main-tabs", "value"),
          Input("profiled-streams", "value"),
+         Input("selected-country-map-store", "data"),
          Input("current-submenu", "data")],
         [State("profiled-streams", "options")],
         prevent_initial_call=False
     )
-    def filter_table(stream, ci, api, sulfur, year, year_month, country, tab, profiled_streams, current_submenu, profiled_streams_options):
+    def filter_table(stream, ci, api, sulfur, year, year_month, country, tab, profiled_streams, selected_country_map, current_submenu, profiled_streams_options):
         """Filter and update data table - only loads data when page is active"""
         # Only load data if page is active
         if current_submenu != 'crude-overview':
@@ -4092,7 +4177,12 @@ def register_callbacks(dash_app, server):
         
         # Ensure data is loaded
         _ensure_data_loaded()
-        country = _resolve_countries_selection(country)
+        
+        # Map selection overrides dropdown if present
+        if selected_country_map:
+            country = [selected_country_map]
+        else:
+            country = _resolve_countries_selection(country)
         
         # Set defaults if None
         if tab is None:
@@ -4102,88 +4192,62 @@ def register_callbacks(dash_app, server):
             df = TABLE_DF_YEARLY.copy()
         else:
             df = TABLE_DF_MONTHLY.copy()
-        df = df.reset_index(drop=True)
         
         if df.empty:
             return [], []
-        
-        # Filter by selected profiled stream - only filter if exactly ONE stream is selected
-        # If all streams are selected (default mode) or no streams selected, don't apply ANY filter to table
-        # This ensures the table shows ALL crude oils from the database query in default mode
-        # Also handle case where profiled_streams might be None or improperly initialized on initial load
-        
-        # For monthly tab: NEVER filter the table - always show all records
-        # Only apply filtering for yearly tab
-        if tab == "monthly":
-            print(f"DEBUG TABLE: Monthly tab - skipping profiled stream filter, showing ALL crude oils from database (df has {len(df)} rows)")
-            should_filter = False
-            selected_stream = None
-        else:
-            # Get available streams from options to determine if we're in default mode
-            available_streams_from_options = []
-            if profiled_streams_options:
-                available_streams_from_options = [opt.get("value") for opt in profiled_streams_options if opt.get("value")]
             
-            # Determine if we should filter: only filter if exactly ONE stream is selected AND it's not default mode (all selected)
-            should_filter = False
-            selected_stream = None
+        # Unify crude name column to 'Crude' for internal logic
+        if "CrudeOil" in df.columns and "Crude" not in df.columns:
+            df = df.rename(columns={"CrudeOil": "Crude"})
+        elif "Crude" not in df.columns and df.index.name in ["Crude", "CrudeOil"]:
+            df = df.reset_index().rename(columns={df.index.name: "Crude"})
             
-            if profiled_streams is None:
-                # Not initialized: default mode - show all
-                should_filter = False
-                print(f"DEBUG TABLE: profiled_streams is None - default mode, showing ALL crude oils from database (df has {len(df)} rows)")
-            elif len(profiled_streams) == 0:
-                # Empty: default mode - show all
-                should_filter = False
-                print(f"DEBUG TABLE: profiled_streams is empty - default mode, showing ALL crude oils from database (df has {len(df)} rows)")
-            elif available_streams_from_options and len(profiled_streams) == len(available_streams_from_options):
-                # All available streams are selected (default mode): don't filter
-                should_filter = False
-                print(f"DEBUG TABLE: All streams selected (default mode) - showing ALL crude oils")
+        # 1. Profiled Stream Filter (Checklist on the right)
+        # For Yearly tab, we allow filtering by a single selected stream from the checklist
+        # unless a text search is active (text search takes priority)
+        applied_checklist_filter = False
+        if tab == "yearly" and not (stream and str(stream).strip()):
+            if profiled_streams and len(profiled_streams) == 1:
+                selected_stream = profiled_streams[0]
+                # Check if options are initialized to avoid filtering on initial load default state
+                available_streams = [opt.get("value") for opt in (profiled_streams_options or []) if opt.get("value")]
+                if available_streams and len(available_streams) > 1 and len(profiled_streams) < len(available_streams):
+                    if "Crude" in df.columns:
+                        df = df[df["Crude"] == selected_stream]
+                        applied_checklist_filter = True
 
-            elif len(profiled_streams) == 1:
-                # Exactly one stream selected: check if options are initialized
-                if not available_streams_from_options or len(available_streams_from_options) <= 1:
-                    # Options not initialized or only one stream available: default mode - show all
-                    should_filter = False
-                    print(f"DEBUG TABLE: Only one stream in profiled_streams but options not initialized or only one available - default mode, showing ALL crude oils from database (df has {len(df)} rows)")
-                else:
-                    # Options are initialized and user has selected exactly one stream (not all): apply filter
-                    should_filter = True
-                    selected_stream = profiled_streams[0]
-                    print(f"DEBUG TABLE: Exactly one stream selected ({selected_stream}) out of {len(available_streams_from_options)} available - will filter table")
-            else:
-                # Multiple streams selected but not all (shouldn't happen in single selection mode, but handle it): don't filter
-                should_filter = False
-                print(f"DEBUG TABLE: Multiple streams selected ({len(profiled_streams)}) but not all - default mode, showing ALL crude oils from database (df has {len(df)} rows)")
-        
-        # Apply filter only if exactly one stream is selected
-        if should_filter and selected_stream:
-            if tab == "yearly":
-                if "CrudeOil" in df.columns:
-                    df_before = len(df)
-                    df = df[df["CrudeOil"] == selected_stream]
-                    print(f"DEBUG TABLE: Filtered by selected stream: {selected_stream} (before: {df_before} rows, after: {len(df)} rows)")
-            else:
-                if "Crude" in df.columns:
-                    df_before = len(df)
-                    df = df[df["Crude"] == selected_stream]
-                    print(f"DEBUG TABLE: Filtered by selected stream: {selected_stream} (before: {df_before} rows, after: {len(df)} rows)")
-        
+        # 2. Text Search Filter (Stream Name box)
+        if stream and str(stream).strip():
+            stream_val = str(stream).strip()
+            if "Crude" in df.columns:
+                try:
+                    df = df[df["Crude"].astype(str).str.contains(re.escape(stream_val), case=False, na=False)]
+                except Exception as e:
+                    print(f"Error in stream search: {e}")
+
+        # 3. Metadata Filters (CI, API, Sulfur - mostly for monthly)
         def sanitize(values):
-            if not values:
-                return []
+            if not values: return []
             return [v for v in values if v and v not in ("(All)", "ALL")]
         
-        ci = sanitize(ci)
-        api = sanitize(api)
-        sulfur = sanitize(sulfur)
-        
-        # Filter by stream name (text search - secondary filter)
-        if stream:
-            col_name = "CrudeOil" if tab == "yearly" else "Crude"
-            if col_name in df.columns:
-                df = df[df[col_name].astype(str).str.contains(stream, case=False, na=False)]
+        # Only apply these specifically if available in df
+        ci_vals = sanitize(ci)
+        if ci_vals and "CI Rank" in df.columns:
+            df = df[df["CI Rank"].isin(ci_vals)]
+            
+        api_vals = sanitize(api)
+        if api_vals and "API" in df.columns:
+            df = df[df["API"].apply(lambda v: classify_api_value(v) in api_vals)]
+            
+        sulfur_vals = sanitize(sulfur)
+        if sulfur_vals and "Sulfur" in df.columns:
+            df = df[df["Sulfur"].apply(lambda v: classify_sulfur_value(v) in sulfur_vals)]
+
+        # 4. Country Filter - Only apply to monthly tab (Yearly is "Global" breakdown)
+        if tab == "monthly" and country and country != ['ALL']:
+            resolved_countries = _resolve_countries_selection(country)
+            if "Country" in df.columns:
+                df = df[df["Country"].isin(resolved_countries)]
         
         # Filter by CI Rank, API, Sulfur (only for monthly)
         if tab == "monthly":
@@ -4195,8 +4259,8 @@ def register_callbacks(dash_app, server):
                 df = df[df["Sulfur"].apply(lambda v: classify_sulfur_value(v) in sulfur)]
         
         if tab == "yearly":
-            display_metadata_cols = ["CrudeOil"]
-            year_cols = [c for c in df.columns if c not in ["CrudeOil", "CI Rank", "API", "Sulfur"] and str(c).isdigit()]
+            display_metadata_cols = ["Crude"]
+            year_cols = [c for c in df.columns if c not in ["Crude", "CI Rank", "API", "Sulfur"] and str(c).isdigit()]
             year_cols = sorted([int(c) for c in year_cols], reverse=True)
             year_cols = [str(c) for c in year_cols]
             
@@ -4206,35 +4270,47 @@ def register_callbacks(dash_app, server):
                 if year_strs:
                     year_cols = year_strs
             
-            display_cols = [c for c in display_metadata_cols if c in df.columns] + year_cols
+            # Map back to 'CrudeOil' for display if that's what's expected
+            # Actually, let's just use 'CrudeOil' as the ID for the column to be consistent with layout
+            df = df.rename(columns={"Crude": "CrudeOil"})
+            display_cols = ["CrudeOil"] + year_cols
             columns = []
             for c in display_cols:
-                col_def = {
-                    "name": str(c),
+                # Use nested header format [top, bottom] even for yearly to avoid DataTable rendering glitches
+                # when switching from monthly (which has 2 levels)
+                col_name = "CrudeOil" if c == "CrudeOil" else str(c)
+                columns.append({
+                    "name": ["", col_name],
                     "id": str(c),
                     "type": "text",
                     "presentation": "markdown"
-                }
-                columns.append(col_def)
+                })
             
             df_display = df[display_cols].copy()
-            if "CrudeOil" in df_display.columns:
-                df_display = df_display.sort_values("CrudeOil", key=lambda s: s.astype(str).str.lower())
+            df_display = df_display.sort_values("CrudeOil", key=lambda s: s.astype(str).str.lower())
+            
             if 'Year of YearReported' in df.columns:
-                all_years_in_data = (
-                    df['Year of YearReported']
-                    .dropna()
-                    .unique()
-                    .tolist()
-                )
+                all_years_in_data = df['Year of YearReported'].dropna().unique().tolist()
             else:
                 all_years_in_data = year_cols[:]
-            for year in all_years_in_data:
-                year_str = str(int(year))
-                if year_str not in df_display.columns:
-                    df_display[year_str] = ""
+                
+            for y in all_years_in_data:
+                y_str = str(int(y))
+                if y_str not in df_display.columns:
+                    df_display[y_str] = ""
+                    
             df_display = df_display.reset_index(drop=True)
             records = df_display.to_dict("records")
+            
+            # ADD GRAND TOTAL ROW FOR YEARLY VIEW
+            if records:
+                total_record = {"CrudeOil": "**Grand Total**"}
+                for col in year_cols:
+                    if col in df_display.columns:
+                        total_val = pd.to_numeric(df_display[col], errors='coerce').sum()
+                        total_record[col] = total_val
+                records.append(total_record)
+                
             link_col = "profile_url" if "profile_url" in df.columns else None
             link_series = None
             if link_col and link_col in df.columns:
@@ -4268,8 +4344,6 @@ def register_callbacks(dash_app, server):
             return records, columns
         else:
             # Monthly view: Create nested headers with Year -> Month structure
-            if "CrudeOil" in df.columns:
-                df = df.rename(columns={"CrudeOil": "Crude"})
             display_metadata_cols = ["Crude", "CI Rank", "API", "Sulfur"]
             
             # Always show all years/months available in the monthly dataset
@@ -4288,10 +4362,6 @@ def register_callbacks(dash_app, server):
             # Build table data structure
             table_data = []
             crudes = sorted(df['Crude'].dropna().unique().tolist()) if 'Crude' in df.columns else []
-            
-            # Month order references
-            months_order = ['January', 'February', 'March', 'April', 'May', 'June',
-                            'July', 'August', 'September', 'October', 'November', 'December']
             
             # Build columns with nested structure: Year -> Month (same pattern as country_profile.py)
             for year in all_years:
@@ -4315,7 +4385,7 @@ def register_callbacks(dash_app, server):
                             'type': 'text',
                             'presentation': 'markdown'
                         })
-            
+
             # Build table data rows
             for crude in crudes:
                 row = {}
@@ -4379,6 +4449,28 @@ def register_callbacks(dash_app, server):
                                     row[col_name] = ''
                 
                 table_data.append(row)
+            
+            # ADD GRAND TOTAL ROW FOR MONTHLY VIEW
+            if table_data:
+                total_row = {"Crude": "**Grand Total**"}
+                # Metadata columns empty for total row
+                for col in display_metadata_cols:
+                    if col != "Crude":
+                        total_row[col] = ""
+                
+                # Sum the data columns
+                for year in all_years:
+                    year_str = str(year)
+                    if year_str in YEAR_TO_MONTH_COLS:
+                        for entry in reversed(YEAR_TO_MONTH_COLS[year_str]):
+                            col_name = entry.get("column")
+                            if col_name and col_name in df.columns:
+                                total_val = df[col_name].sum()
+                                if pd.notna(total_val):
+                                    total_row[col_name] = f"**{total_val:,.0f}**"
+                                else:
+                                    total_row[col_name] = "0"
+                table_data.append(total_row)
             
             return table_data, columns
 
