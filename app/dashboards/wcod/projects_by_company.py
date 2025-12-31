@@ -1993,7 +1993,7 @@ def register_callbacks(dash_app, server):
         for country in legend_countries
     ]
     
-    @callback(
+    @dash_app.callback(
         Output('selected-countries-store', 'data', allow_duplicate=True),
         Input({'type': 'country-item', 'index': ALL}, 'n_clicks'),
         State('selected-countries-store', 'data'),
@@ -2030,7 +2030,7 @@ def register_callbacks(dash_app, server):
         
         return new_selected
     
-    @callback(
+    @dash_app.callback(
         Output('selected-countries-store', 'data', allow_duplicate=True),
         Input('projects-company-map', 'clickData'),
         State('selected-countries-store', 'data'),
@@ -2061,7 +2061,7 @@ def register_callbacks(dash_app, server):
         return new_selected
 
     
-    @callback(
+    @dash_app.callback(
         country_outputs,
         Input('selected-countries-store', 'data'),
         prevent_initial_call=False
@@ -2111,7 +2111,7 @@ def register_callbacks(dash_app, server):
         return styles
     
     # Callback to handle quarter clicks from chart (clicking on quarter labels Q1, Q2, Q3, Q4)
-    @callback(
+    @dash_app.callback(
         Output('quarter-highlight-store', 'data', allow_duplicate=True),
         Input('projects-company-bar-chart', 'clickData'),
         State('quarter-highlight-store', 'data'),
@@ -2157,7 +2157,7 @@ def register_callbacks(dash_app, server):
         return dash.no_update
     
     # Initial callback to set year display
-    @callback(
+    @dash_app.callback(
         Output('year-period-display', 'children', allow_duplicate=True),
         Input('year-of-period-filter', 'value'),
         prevent_initial_call='initial_duplicate'
@@ -2170,7 +2170,7 @@ def register_callbacks(dash_app, server):
         return str(years[0]) if years else '2025'
     
     # Normalize Likely To Go checklist: (All) selects all; unchecking (All) clears all checkboxes.
-    @callback(
+    @dash_app.callback(
         [Output('likely-to-go-filter', 'value'),
          Output('likely-filter-previous-store', 'data')],
         Input('likely-to-go-filter', 'value'),
@@ -2209,7 +2209,7 @@ def register_callbacks(dash_app, server):
                 seen.append(v)
         return seen, seen
     
-    @callback(
+    @dash_app.callback(
         [Output('projects-company-table', 'data'),
          Output('projects-company-table', 'tooltip_data'),
          Output('projects-company-table', 'columns'),
@@ -2648,7 +2648,7 @@ def register_callbacks(dash_app, server):
     )
     
     # Callback to sync year controls (display, dropdown, slider, prev/next buttons)
-    @callback(
+    @dash_app.callback(
         [Output('year-period-display', 'children'),
          Output('year-of-period-filter', 'value', allow_duplicate=True),
          Output('year-period-slider', 'value', allow_duplicate=True),
@@ -2707,7 +2707,7 @@ def register_callbacks(dash_app, server):
         return str(new_year), new_year, new_year, dash.no_update
 
     # Clicking a bar (or invisible year markers) selects that year's controls and sets year highlight
-    @callback(
+    @dash_app.callback(
         [Output('year-of-period-filter', 'value', allow_duplicate=True),
          Output('year-period-slider', 'value', allow_duplicate=True),
          Output('bar-highlight-year-store', 'data', allow_duplicate=True)],
@@ -2738,7 +2738,7 @@ def register_callbacks(dash_app, server):
         return selected_year, selected_year, selected_year
     
     # Callback to handle play/pause/stop buttons
-    @callback(
+    @dash_app.callback(
         [Output('year-period-play-store', 'data'),
          Output('year-period-interval', 'disabled'),
          Output('year-period-play', 'children')],
@@ -2765,7 +2765,7 @@ def register_callbacks(dash_app, server):
         return dash.no_update, dash.no_update, dash.no_update
     
     # Callback to populate company dropdown on initial load
-    @callback(
+    @dash_app.callback(
         [Output('company-filter', 'options'),
          Output('company-filter', 'value')],
         Input('current-submenu', 'data'),
@@ -2787,7 +2787,7 @@ def register_callbacks(dash_app, server):
         return options, default_value
     
     # Callback to update years dropdown options when company or likely_goahead filter changes
-    @callback(
+    @dash_app.callback(
         [Output('year-of-period-filter', 'options'),
          Output('year-period-slider', 'min'),
          Output('year-period-slider', 'max'),
@@ -2812,7 +2812,7 @@ def register_callbacks(dash_app, server):
         
         return options, min_year, max_year, marks
     
-    @callback(
+    @dash_app.callback(
         [Output('projects-company-bar-chart', 'figure'),
          Output('projects-company-map', 'figure'),
          Output('year-of-period-container', 'style'),
@@ -2932,7 +2932,7 @@ def register_callbacks(dash_app, server):
     # Download Callbacks
     
     # Download Chart Data
-    @callback(
+    @dash_app.callback(
         Output('projects-company-download-chart-csv', 'data'),
         Input('projects-company-btn-download-chart', 'n_clicks'),
         [State('company-filter', 'value'),
@@ -2949,7 +2949,7 @@ def register_callbacks(dash_app, server):
         return dcc.send_data_frame(df.to_csv, "projects_capacity_chart_data.csv")
 
     # Download Map Data
-    @callback(
+    @dash_app.callback(
         Output('projects-company-download-map-csv', 'data'),
         Input('projects-company-btn-download-map', 'n_clicks'),
         [State('company-filter', 'value'),
@@ -2978,7 +2978,7 @@ def register_callbacks(dash_app, server):
         return dcc.send_data_frame(df.to_csv, "projects_map_data.csv")
     
     # Download Table Data
-    @callback(
+    @dash_app.callback(
         Output('projects-company-download-table-csv', 'data'),
         Input('projects-company-btn-download-table', 'n_clicks'),
         State('projects-company-table', 'derived_virtual_data'),
