@@ -728,7 +728,7 @@ def load_crude_quality_table():
         seen_sub_headers = {}  # Track sub-header occurrences for unique IDs
         
         for col in pivot_df.columns:
-            if col in ['Country', 'CrudeOil']:
+            if col in ['Country', 'CrudeOil', 'region_group']:
                 continue
             
             # Parse column name: could be "parent|||sub" format (from MultiIndex flattening) or just "sub"
@@ -2095,7 +2095,6 @@ def create_layout(dash_app=None):
                                 },
                                 'borderTop': 'none',
                                 'borderBottom': '1px solid #E6E6E6',
-                                'backgroundColor': 'white',
                                 'padding': '4px 6px',
                                 'height': '25px',
                                 'whiteSpace': 'nowrap',
@@ -2114,7 +2113,6 @@ def create_layout(dash_app=None):
                                 'overflow': 'hidden',
                                 'textOverflow': 'ellipsis',
                                 'fontWeight': 'normal',
-                                'backgroundColor': 'white',
                             },
                             # CrudeOil column - header rows (when country is not empty)
                             {
@@ -2128,7 +2126,6 @@ def create_layout(dash_app=None):
                                 'overflow': 'hidden',
                                 'textOverflow': 'ellipsis',
                                 'fontWeight': 'bold',
-                                'backgroundColor': 'white',
                             },
                             # Text alignment - Country column always left
                             {
@@ -3020,9 +3017,17 @@ def register_callbacks(dash_app, server=None):
             quality_df = load_crude_quality_table()
             
             # Drop any columns containing 'region_group' from the display (keep in exports)
+            # Filter from DataFrame
             region_group_cols = [c for c in quality_df.columns if 'region_group' in str(c)]
             if region_group_cols:
                 quality_df = quality_df.drop(columns=region_group_cols)
+                
+            # Filter from Metadata (if present)
+            quality_column_info = _get_df_metadata(quality_df, "column_info")
+            if quality_column_info:
+                quality_column_info = [c for c in quality_column_info if 'region_group' not in str(c.get('sub', ''))]
+                # Update metadata - tricky with pandas attrs, but we can filter the final columns output
+
             
             if quality_df.empty:
                 return [], []
@@ -3070,6 +3075,9 @@ def register_callbacks(dash_app, server=None):
             
             # Create columns and data
             columns = create_grouped_columns(quality_df)
+            # Extra safety: remove any columns with 'region_group' in id
+            columns = [col for col in columns if 'region_group' not in str(col.get('id', ''))]
+            
             data = process_quality_table_data(quality_df, country_col_id, crudeoil_col_id)
             
             return columns, data
@@ -3266,14 +3274,11 @@ def register_callbacks(dash_app, server=None):
         if len(x_data) == 0:
             return 10.7, 68.6, [10.7, 68.6], 0.1, 10.7, 68.6
         
+        if 'Gravity' in x_prop:
+             return 10.7, 68.6, [10.7, 68.6], 0.1, 10.7, 68.6
+
         min_val = float(x_data['Value'].min())
         max_val = float(x_data['Value'].max())
-        
-        # Add a small buffer to range
-        padding = (max_val - min_val) * 0.05
-        if padding == 0: padding = 0.1
-        min_val = max(0, min_val - padding) # Assuming most properties are positive
-        max_val = max_val + padding
         
         # Round nicely
         min_val = round(min_val, 2)
@@ -3319,14 +3324,11 @@ def register_callbacks(dash_app, server=None):
         if len(y_data) == 0:
             return 0, 100, [0, 100], 0.1, 0, 100
         
+        if 'Sulfur' in y_prop:
+            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
+
         min_val = float(y_data['Value'].min())
         max_val = float(y_data['Value'].max())
-        
-        # Add buffer
-        padding = (max_val - min_val) * 0.05
-        if padding == 0: padding = 0.1
-        min_val = max(0, min_val - padding)
-        max_val = max_val + padding
         
         # Round
         min_val = round(min_val, 2)
@@ -3371,6 +3373,9 @@ def register_callbacks(dash_app, server=None):
         if len(size_data) == 0:
             return 0, 5000, [0, 5000], 0, 5000
         
+        if 'Volume' in bubble_prop:
+             return 0, 7506, [0, 7506], 0, 7506
+
         min_val = float(size_data['Value'].min())
         max_val = float(size_data['Value'].max())
         
