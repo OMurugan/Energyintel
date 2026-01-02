@@ -1152,10 +1152,10 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
         plot_bgcolor='white',
         paper_bgcolor='white',
         title={
-            'text': f"Oil Projects Capacity Start Up by {selected_company} ('000 b/d)*",
-            'x': 0.5,
-            'xanchor': 'center',
-            'font': {'size': 16, 'family': 'Arial, sans-serif', 'color': '#FF8C42'},
+            'text': f"<b>Oil Projects Capacity Start Up by {selected_company} ('000 b/d)*</b>",
+            'x': 0.0,
+            'xanchor': 'left',
+            'font': {'size': 18, 'family': 'Arial, sans-serif', 'color': '#FF8C42'},
             'y': 0.98
         },
         xaxis=dict(
@@ -1466,12 +1466,12 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
         plot_bgcolor='white',
         margin=dict(l=0, r=190, t=20, b=10),
         title={
-            'text': f"Oil Projects Capacity Start Up by {selected_company} ('000 b/d)*- {selected_year}",
+            'text': f"<b>Oil Projects Capacity Start Up by {selected_company} ('000 b/d)*- {selected_year}</b>",
             'x': 0.0,
             'xanchor': 'left',
             'y': 0.99,
             'yanchor': 'top',
-            'font': {'size': 18, 'family': 'Georgia, serif', 'color': '#FF8C42'}
+            'font': {'size': 18, 'family': 'Arial, sans-serif', 'color': '#FF8C42'}
         },
         hovermode='closest',
         hoverlabel=dict(
