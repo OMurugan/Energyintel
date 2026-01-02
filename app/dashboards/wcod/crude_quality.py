@@ -2011,6 +2011,7 @@ def create_layout(dash_app=None):
                             'textAlign': 'right',
                             'backgroundColor': 'white',
                             'height': '25px',
+                            'minWidth': '80px',
                         },
                         style_header={
                             'backgroundColor': 'white',
@@ -2148,7 +2149,8 @@ def create_layout(dash_app=None):
                         filter_action="none",
                         page_action="none",
                         sort_action="native",
-                        fixed_columns={'headers': True, 'data': 2}
+                        fixed_columns={'headers': True, 'data': 2},
+                        fixed_rows={'headers': True}
                     )
                 )
 
@@ -2294,7 +2296,8 @@ def create_layout(dash_app=None):
                         merge_duplicate_headers=True,
                         filter_action="none",
                         page_action="none",
-                        sort_action="native"
+                        sort_action="native",
+                        fixed_rows={'headers': True}
                     )
                 )
 ,
