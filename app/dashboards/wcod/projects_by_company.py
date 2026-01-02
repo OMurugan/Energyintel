@@ -1257,6 +1257,27 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
     
     return fig
 
+def get_all_country_centroids():
+    """Get centroids for ALL countries from dim_country for the map labels."""
+    query = """
+    SELECT 
+        country_long_name AS "Country",
+        latitude AS "Latitude",
+        longitude AS "Longitude"
+    FROM dim_country
+    WHERE country_long_name IS NOT NULL
+        AND latitude IS NOT NULL 
+        AND longitude IS NOT NULL
+    """
+    try:
+        results = execute_query(query)
+        if not results:
+            return pd.DataFrame()
+        return pd.DataFrame(results)
+    except Exception as e:
+        print(f"Error loading country centroids: {e}")
+        return pd.DataFrame()
+
 def create_world_map(selected_year=2025, selected_company=None, likely_goahead_filter=None, selected_countries=None):
     """Create world map showing geographical distribution for selected year - matching Tableau design exactly"""
     if selected_countries is None:
@@ -1278,7 +1299,10 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
                 showocean=True,
                 oceancolor='white',
                 showcountries=True,
-                countrycolor='#bdbdbd'
+                countrycolor='#bdbdbd',
+                projection_scale=1.2,
+                lataxis_range=[-55, 85],
+                center=dict(lat=20, lon=10)
             ),
             height=500,
             paper_bgcolor='white',
@@ -1319,22 +1343,34 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     # Create map traces
     fig = go.Figure()
 
-    # Calculate centroids for country name labels - only for countries with data
-    # This ensures clean, readable labels without clutter
-    if not year_df.empty and 'Latitude' in year_df.columns and 'Longitude' in year_df.columns:
-        centroids = (
+    # Get centroids for ALL countries for labels
+    all_centroids = get_all_country_centroids()
+    
+    # Filter labels to only show specific countries as requested
+    label_countries = [
+        'Algeria', 'Angola', 'Argentina', 'Australia', 'Azerbaijan', 'Brazil', 'Brunei', 
+        'Cameroon', 'Canada', 'China', "Cote d'Ivoire", 'Denmark', 'Egypt', 'Gabon', 
+        'Ghana', 'Guyana', 'India', 'Indonesia', 'Iran', 'Iraq', 'Kazakhstan', 'Kuwait', 
+        'Libya', 'Malaysia', 'Mexico', 'Namibia', 'Neutral Zone', 'Niger', 'Nigeria', 
+        'Norway', 'Oman', 'Qatar', 'Russia', 'Saudi Arabia', 'Senegal', 'Suriname', 
+        'Thailand', 'Trinidad and Tobago', 'Turkey', 'Turkmenistan', 'Uganda', 
+        'United Arab Emirates', 'United Kingdom', 'United States', 'Vietnam'
+    ]
+    
+    if not all_centroids.empty:
+        all_centroids = all_centroids[all_centroids['Country'].isin(label_countries)]
+
+    centroids_display = all_centroids if not all_centroids.empty else pd.DataFrame(columns=['Country', 'Latitude', 'Longitude'])
+    
+    # Fallback to data centroids if DB query fails (though ideally it won't)
+    if centroids_display.empty and not year_df.empty:
+         centroids_display = (
             year_df.groupby('Country')[['Latitude', 'Longitude']]
             .mean()
             .reset_index()
             .dropna(subset=['Latitude', 'Longitude'])
         )
-    else:
-        centroids = pd.DataFrame(columns=['Country', 'Latitude', 'Longitude'])
-    
-    # Limit label density to avoid clutter
-    max_labels = 100 if len(centroids) > 100 else len(centroids)
-    centroids_display = centroids.sort_values('Country').head(max_labels) if max_labels < len(centroids) else centroids
-
+         
     if len(selected_countries) > 0:
         # Trace 1: Non-selected countries (muted/disabled)
         non_selected_df = country_totals[~country_totals['Country'].isin(selected_countries)]
@@ -1392,7 +1428,8 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
         if len(selected_countries) > 0:
             label_colors = ['#1b365d' if c in selected_countries else '#c5c5c5' for c in centroids_display['Country']]
         else:
-            label_colors = '#1b365d'
+             # Default color for labels
+            label_colors = '#4a4a4a'
 
         fig.add_trace(
             go.Scattergeo(
@@ -1400,7 +1437,7 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
                 lat=centroids_display['Latitude'],
                 mode='text',
                 text=centroids_display['Country'],
-                textfont=dict(size=12, color=label_colors, family='Arial, sans-serif'),
+                textfont=dict(size=10, color=label_colors, family='Arial, sans-serif'),
                 textposition='middle center',
                 hoverinfo='skip',
                 showlegend=False,
@@ -1408,10 +1445,8 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
         )
     
     # Update geo settings to match Tableau design
-    center_lat = year_df['Latitude'].mean() if not year_df.empty and 'Latitude' in year_df.columns else 24.0
-    center_lon = year_df['Longitude'].mean() if not year_df.empty and 'Longitude' in year_df.columns else 45.0
     fig.update_geos(
-        fitbounds="locations",
+        # fitbounds="locations",  <-- Removed to support manual zoom
         showframe=False,
         showcoastlines=True,
         projection_type='equirectangular',
@@ -1424,7 +1459,10 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
         countrycolor='#c5c5c5',
         showlakes=False,
         showrivers=False,
-        resolution=50
+        resolution=50,
+        projection_scale=1.2, # Zoom in
+        center=dict(lat=20, lon=10), # Center focus
+        lataxis_range=[-55, 85] # Crop polar regions
     )
     
     fig.update_layout(
