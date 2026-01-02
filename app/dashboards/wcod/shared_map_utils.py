@@ -139,7 +139,7 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
 
 def add_country_labels(fig: go.Figure, countries_df, use_mapbox: bool = True, max_labels: int = 40):
     """
-    Add country labels to the map with outline effect for better visibility.
+    Add country labels to the map with single text layer for better readability.
     
     Args:
         fig: Plotly figure to add labels to
@@ -154,28 +154,18 @@ def add_country_labels(fig: go.Figure, countries_df, use_mapbox: bool = True, ma
     display_df = countries_df.head(max_labels) if len(countries_df) > max_labels else countries_df
     
     if use_mapbox:
-        # Add black outline (larger text)
+        # Single text layer with good contrast
         fig.add_trace(
             go.Scattermapbox(
                 lon=display_df["Longitude"],
                 lat=display_df["Latitude"],
                 mode="text",
                 text=display_df["Country"],
-                textfont=dict(size=12, color="black", family="system-ui, -apple-system, sans-serif"),
-                textposition="middle center",
-                hoverinfo="skip",
-                showlegend=False,
-                name="labels_outline"
-            )
-        )
-        # Add white text on top (smaller text)
-        fig.add_trace(
-            go.Scattermapbox(
-                lon=display_df["Longitude"],
-                lat=display_df["Latitude"],
-                mode="text",
-                text=display_df["Country"],
-                textfont=dict(size=10, color="white", family="system-ui, -apple-system, sans-serif"),
+                textfont=dict(
+                    size=11, 
+                    color="#2c3e50",  # Dark blue-gray for good contrast
+                    family="system-ui, -apple-system, sans-serif"
+                ),
                 textposition="middle center",
                 hoverinfo="skip",
                 showlegend=False,
@@ -183,29 +173,18 @@ def add_country_labels(fig: go.Figure, countries_df, use_mapbox: bool = True, ma
             )
         )
     else:
-        # Add black outline (larger text)
+        # Single text layer for geo map
         fig.add_trace(
             go.Scattergeo(
                 lon=display_df["Longitude"],
                 lat=display_df["Latitude"],
                 mode="text",
                 text=display_df["Country"],
-                textfont=dict(size=13, color="black", family="system-ui, -apple-system, sans-serif"),
-                textposition="middle center",
-                hoverinfo="skip",
-                showlegend=False,
-                opacity=0.8,
-                name="labels_outline"
-            )
-        )
-        # Add white text on top (smaller text)
-        fig.add_trace(
-            go.Scattergeo(
-                lon=display_df["Longitude"],
-                lat=display_df["Latitude"],
-                mode="text",
-                text=display_df["Country"],
-                textfont=dict(size=11, color="white", family="system-ui, -apple-system, sans-serif"),
+                textfont=dict(
+                    size=12, 
+                    color="#2c3e50",  # Dark blue-gray for good contrast
+                    family="system-ui, -apple-system, sans-serif"
+                ),
                 textposition="middle center",
                 hoverinfo="skip",
                 showlegend=False,

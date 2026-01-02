@@ -1386,29 +1386,18 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
                     if max_labels < len(centroids)
                     else centroids
                 )
-                # Add country labels with better visibility using outline effect
-                # First add black outline (larger text)
+                # Add single text layer with good contrast and readability
                 fig.add_trace(
                     go.Scattermapbox(
                         lon=centroids_display["Longitude"],
                         lat=centroids_display["Latitude"],
                         mode="text",
                         text=centroids_display["Country"],
-                        textfont=dict(size=12, color="black", family="system-ui, -apple-system, sans-serif"),
-                        textposition="middle center",
-                        hoverinfo="skip",
-                        showlegend=False,
-                        name="labels_outline"
-                    )
-                )
-                # Then add white text on top (smaller text)
-                fig.add_trace(
-                    go.Scattermapbox(
-                        lon=centroids_display["Longitude"],
-                        lat=centroids_display["Latitude"],
-                        mode="text",
-                        text=centroids_display["Country"],
-                        textfont=dict(size=10, color="#333333", family="system-ui, -apple-system, sans-serif"),
+                        textfont=dict(
+                            size=11, 
+                            color="#2c3e50",  # Dark blue-gray for good contrast
+                            family="system-ui, -apple-system, sans-serif"
+                        ),
                         textposition="middle center",
                         hoverinfo="skip",
                         showlegend=False,
@@ -1546,30 +1535,18 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
     fallback_labels = centroids
     if len(centroids) > 60:
         fallback_labels = centroids.sort_values("Country").head(60)
-    # Add country labels for geo map with outline effect
-    # First add black outline (larger text)
+    # Add single text layer with good contrast and readability
     fig.add_trace(
         go.Scattergeo(
             lon=fallback_labels["Longitude"],
             lat=fallback_labels["Latitude"],
             mode="text",
             text=fallback_labels["Country"],
-            textfont=dict(size=13, color="black", family="system-ui, -apple-system, sans-serif"),
-            textposition="middle center",
-            hoverinfo="skip",
-            showlegend=False,
-            opacity=0.8,
-            name="labels_outline"
-        )
-    )
-    # Then add white text on top (smaller text)
-    fig.add_trace(
-        go.Scattergeo(
-            lon=fallback_labels["Longitude"],
-            lat=fallback_labels["Latitude"],
-            mode="text",
-            text=fallback_labels["Country"],
-            textfont=dict(size=11, color="#333333", family="system-ui, -apple-system, sans-serif"),
+            textfont=dict(
+                size=12, 
+                color="#2c3e50",  # Dark blue-gray for good contrast
+                family="system-ui, -apple-system, sans-serif"
+            ),
             textposition="middle center",
             hoverinfo="skip",
             showlegend=False,
