@@ -23,6 +23,9 @@ from config import Config
 from core.data_helpers import execute_query
 from core.country_mappings import COUNTRY_TO_ISO, get_iso_code
 
+# Set up logging first
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------
 # Data locations and shared constants
 # ---------------------------------------------------------------------
@@ -41,11 +44,19 @@ table_df = pd.DataFrame()
 country_colors = {}
 world_geojson = None
 
-# Mapbox token (optional)
-if Config.MAPBOX_ACCESS_TOKEN:
-    px.set_mapbox_access_token(Config.MAPBOX_ACCESS_TOKEN)
-
-logger = logging.getLogger(__name__)
+# Mapbox token (optional) with enhanced error handling
+try:
+    if Config.MAPBOX_ACCESS_TOKEN:
+        token = Config.MAPBOX_ACCESS_TOKEN.strip()
+        if token.startswith('pk.'):
+            px.set_mapbox_access_token(token)
+            logger.info(f"Mapbox token configured: {token[:20]}...")
+        else:
+            logger.warning(f"Invalid Mapbox token format: {token[:10]}...")
+    else:
+        logger.warning("No Mapbox token configured - maps will use geo fallback")
+except Exception as e:
+    logger.error(f"Error configuring Mapbox token: {e}")
 
 
 # ---------------------------------------------------------------------
@@ -124,9 +135,13 @@ def _load_world_geojson() -> dict | None:
         return world_geojson
     url = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json"
     try:
-        with urlopen(url, timeout=5) as resp:
+        logger.info("Loading world GeoJSON data...")
+        with urlopen(url, timeout=10) as resp:  # Increased timeout for server environments
             world_geojson = json.load(resp)
-    except Exception:
+        logger.info(f"Successfully loaded GeoJSON with {len(world_geojson.get('features', []))} countries")
+    except Exception as e:
+        logger.warning(f"Failed to load world GeoJSON: {e}")
+        logger.info("Maps will fall back to built-in geo projection")
         world_geojson = None
     return world_geojson
 
@@ -1279,8 +1294,13 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
     has_mapbox_token = _mapbox_token.startswith("pk.")
     geojson = _load_world_geojson()
     
+    # Log configuration status
+    logger.info(f"Mapbox token available: {has_mapbox_token}")
+    logger.info(f"GeoJSON data available: {geojson is not None}")
+    
     # Use Mapbox if available, otherwise fall back to geo
     use_mapbox = has_mapbox_token and geojson is not None
+    logger.info(f"Using Mapbox rendering: {use_mapbox}")
 
     # Color per group; selection outlined separately
     color_map = {}
@@ -1388,7 +1408,7 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
                         lat=centroids_display["Latitude"],
                         mode="text",
                         text=centroids_display["Country"],
-                        textfont=dict(size=10, color="white", family="system-ui, -apple-system, sans-serif"),
+                        textfont=dict(size=10, color="#333333", family="system-ui, -apple-system, sans-serif"),
                         textposition="middle center",
                         hoverinfo="skip",
                         showlegend=False,
@@ -1460,7 +1480,10 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
             )
             return fig
         except Exception as exc:
-            logger.warning("Mapbox rendering failed; falling back to geo map. Error: %s", exc)
+            logger.error(f"Mapbox rendering failed; falling back to geo map. Error: {exc}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            # Continue to geo fallback below
 
     # Fallback: geo-based choropleth (no Mapbox) if GeoJSON unavailable or token missing
     group_code = df["Group"].map({"Non-OPEC-Plus": 0, "OPEC-Plus": 1}).fillna(0)
@@ -1546,7 +1569,7 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
             lat=fallback_labels["Latitude"],
             mode="text",
             text=fallback_labels["Country"],
-            textfont=dict(size=11, color="white", family="system-ui, -apple-system, sans-serif"),
+            textfont=dict(size=11, color="#333333", family="system-ui, -apple-system, sans-serif"),
             textposition="middle center",
             hoverinfo="skip",
             showlegend=False,

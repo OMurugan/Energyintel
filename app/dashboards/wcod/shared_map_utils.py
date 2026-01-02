@@ -41,11 +41,13 @@ def load_world_geojson() -> dict | None:
     
     url = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json"
     try:
-        with urlopen(url, timeout=5) as resp:
+        logger.info("Loading world GeoJSON data from GitHub...")
+        with urlopen(url, timeout=10) as resp:  # Increased timeout for server environments
             _world_geojson = json.load(resp)
-        logger.info("Successfully loaded world GeoJSON")
+        logger.info(f"Successfully loaded GeoJSON with {len(_world_geojson.get('features', []))} countries")
     except Exception as e:
-        logger.warning(f"Failed to load world GeoJSON: {e}")
+        logger.error(f"Failed to load world GeoJSON: {e}")
+        logger.info("Maps will fall back to built-in geo projection")
         _world_geojson = None
     return _world_geojson
 
@@ -61,8 +63,19 @@ def get_mapbox_config() -> tuple[bool, str | None, dict]:
     has_mapbox_token = _mapbox_token.startswith("pk.")
     geojson = load_world_geojson()
     
+    # Log configuration status for debugging
+    logger.info(f"Mapbox token configured: {has_mapbox_token}")
+    logger.info(f"GeoJSON data loaded: {geojson is not None}")
+    
     # Use Mapbox if we have a valid token and geojson
     use_mapbox = has_mapbox_token and geojson is not None
+    
+    if not has_mapbox_token:
+        logger.warning("No valid Mapbox token - using geo fallback")
+    if not geojson:
+        logger.warning("No GeoJSON data - using geo fallback")
+    
+    logger.info(f"Map rendering mode: {'Mapbox' if use_mapbox else 'Geo fallback'}")
     
     mapbox_layout = {
         "style": "carto-positron",  # White background style
