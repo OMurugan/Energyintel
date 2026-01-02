@@ -92,41 +92,48 @@ def _format_production_breakdown_title(country_selection):
     return f"Production Breakdown – {', '.join(first_three)} and {remaining_count} more"
 
 def _calculate_yaxis_ticks(max_value):
-    """Calculate 5 evenly spaced Y-axis ticks from 0 to max_value.
-    
-    Args:
-        max_value: Maximum value for the Y-axis
-    
-    Returns:
-        Tuple of (y_axis_max, tick_values) where tick_values is a list of 5 evenly spaced values
+    """
+    Calculate Y-axis ticks dividing the range into 5 parts based on max value.
+    Returns (y_axis_max, y_axis_ticks)
     """
     import math
     
     if max_value <= 0:
-        # Default fallback
-        y_axis_max = 10000
-        tick_values = [0, 2500, 5000, 7500, 10000]
-        return y_axis_max, tick_values
+        return 100, [0, 20, 40, 60, 80, 100]
+        
+    # Calculate step size to get exactly 5 intervals (6 ticks including 0)
+    # Target: 0, 1*step, 2*step, ... 5*step
+    # where 5*step >= max_value
     
-    # Round up max_value to a nice round number for better readability
-    # Find the order of magnitude
-    order_of_magnitude = 10 ** math.floor(math.log10(max_value))
+    raw_step = max_value / 5
     
-    # Round up to next nice number (add 20% padding, then round up)
-    padded_max = max_value * 1.2
-    rounded_max = math.ceil(padded_max / order_of_magnitude) * order_of_magnitude
+    # Calculate magnitude of the step
+    magnitude = 10 ** math.floor(math.log10(raw_step)) if raw_step > 0 else 1
+    normalized_step = raw_step / magnitude
     
-    # If the rounded value is too small, try rounding to half order of magnitude
-    if rounded_max < padded_max:
-        rounded_max = math.ceil(padded_max / (order_of_magnitude * 0.5)) * (order_of_magnitude * 0.5)
+    # Round up to a nice number: 1, 2, 2.5, 5, 10
+    if normalized_step <= 1:
+        step = 1 * magnitude
+    elif normalized_step <= 2:
+        step = 2 * magnitude
+    elif normalized_step <= 2.5:
+        step = 2.5 * magnitude
+    elif normalized_step <= 5:
+        step = 5 * magnitude
+    else:
+        step = 10 * magnitude
+        
+    # Ensure step is an integer for cleaner look if magnitude >= 1
+    if step >= 1:
+        step = int(step)
+        
+    # Calculate max axis value (5 * step)
+    y_axis_max = step * 5
     
-    y_axis_max = rounded_max
+    # Generate ticks
+    y_axis_ticks = [step * i for i in range(6)]
     
-    # Create 5 evenly spaced ticks: 0, 1/4, 1/2, 3/4, 1 of max
-    tick_step = y_axis_max / 4
-    tick_values = [0, tick_step, tick_step * 2, tick_step * 3, y_axis_max]
-    
-    return y_axis_max, tick_values
+    return y_axis_max, y_axis_ticks
 
 def _resolve_years_selection(selected):
     """Normalize year selection; expand '(All)' to full list."""
@@ -1235,6 +1242,16 @@ def load_table():
                 year_to_month_cols = fallback_year_to_month_cols
                 print(f"DEBUG: Table fallback from BAR_LONG_MONTHLY after error ({len(monthly_df)} rows, {len(year_to_month_cols)} years)")
     
+    # Final cleanup to remove 'nan' strings and NaNs
+    if not yearly_df.empty:
+        yearly_df = yearly_df.fillna("")
+        # Replace string "nan" if it leaked through string conversions
+        yearly_df = yearly_df.replace(to_replace=r'(?i)^nan$', value="", regex=True)
+        
+    if not monthly_df.empty:
+        monthly_df = monthly_df.fillna("")
+        monthly_df = monthly_df.replace(to_replace=r'(?i)^nan$', value="", regex=True)
+
     return yearly_df, monthly_df, year_to_month_cols, yearly_raw_export, monthly_raw_export
 
 # Global variables for lazy loading - initialized to empty DataFrames
@@ -1701,7 +1718,12 @@ def create_layout(server=None):
                         dcc.Graph(
                             id="production-breakdown-chart", 
                             style={"height":"520px"},
-                            figure=go.Figure()  # Initialize with empty figure
+                            figure=go.Figure(),  # Initialize with empty figure
+                            config={
+                                'displayModeBar': True,
+                                'displaylogo': False,
+                                'modeBarButtons': [['toImage', 'resetViews']] 
+                            }
                         )
                     ],
                     style={"height":"520px"}
@@ -1803,6 +1825,7 @@ def create_layout(server=None):
                             ] if not TABLE_DF_YEARLY.empty else [],
                             data=TABLE_DF_YEARLY.to_dict("records") if not TABLE_DF_YEARLY.empty else [],
                             page_action='none',
+                            fixed_rows={'headers': True},  # Freeze headers
                             markdown_options={"link_target": "_blank"},
                             style_table={
                                 "overflowX": "auto", 
@@ -1820,7 +1843,8 @@ def create_layout(server=None):
                                 "whiteSpace": "normal",
                                 "color": "#1f3b6f",
                                 "minWidth": "90px",
-                                "textAlign": "right"
+                                "textAlign": "right",
+                                "padding": "5px"  # Reduced padding for thinner rows
                             },
 
                             # Removed style_cell_conditional to keep all columns right-aligned
@@ -3182,7 +3206,7 @@ def register_callbacks(dash_app, server):
                     empty_df = pd.DataFrame({"year": [str(y) for y in range(2006, 2025)], "value": [0]*19})
                     fig = px.bar(empty_df, x="year", y="value", labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                     fig.update_layout(
-                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
+                        # title removed
                         xaxis_title="Year",
                         yaxis_title="Production Volume ('000 b/d)",
                         barmode="stack",
@@ -3271,7 +3295,7 @@ def register_callbacks(dash_app, server):
                     empty_df = pd.DataFrame({"year": years_sorted, "value": [0]*len(years_sorted)})
                     fig = px.bar(empty_df, x="year", y="value", labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                     fig.update_layout(
-                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
+                        # title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                         xaxis_title="Year",
                         yaxis_title="Production Volume ('000 b/d)",
                         barmode="stack",
@@ -3383,7 +3407,7 @@ def register_callbacks(dash_app, server):
                                          x=0.5, y=0.5, showarrow=False,
                                          font=dict(size=14, color='#7f8c8d'))
                         fig.update_layout(
-                            title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
+                            # title removed
                             xaxis_title="Year",
                             yaxis_title="Production Volume ('000 b/d)",
                             plot_bgcolor="white",
@@ -3401,7 +3425,7 @@ def register_callbacks(dash_app, server):
                         fig = px.bar(empty_df, x="year", y="value", color="Stream", 
                                     labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                         fig.update_layout(
-                            title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
+                            # title removed
                             xaxis_title="Year",
                             yaxis_title="Production Volume ('000 b/d)",
                             barmode="stack",
@@ -3452,7 +3476,7 @@ def register_callbacks(dash_app, server):
                     empty_df = pd.DataFrame({"year": years_sorted, "value": [0]*len(years_sorted)})
                     fig = px.bar(empty_df, x="year", y="value", labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                     fig.update_layout(
-                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
+                        # title removed
                         xaxis_title="Year",
                         yaxis_title="Production Volume ('000 b/d)",
                         barmode="stack",
@@ -3544,12 +3568,16 @@ def register_callbacks(dash_app, server):
                 year_to_index = {year: idx for idx, year in enumerate(years_sorted)}
                 
                 for year in years_sorted:
-                    # Prefer ProductionDataValue, fallback to sum of bars
-                    production_value = year_production_values.get(year)
-                    print(f"DEBUG BREAKDOWN YEARLY: Year {year} - ProductionDataValue: {production_value}, Sum of bars: {year_totals_dict.get(year, 0)}")
+                    param_production_value = year_production_values.get(year)
+                    # Prefer sum of bars (displayed data) to ensure visual consistency
+                    # Fallback to ProductionDataValue only if sum is 0
+                    bar_sum = year_totals_dict.get(year, 0)
+                    if bar_sum > 0:
+                        production_value = bar_sum
+                    else:
+                        production_value = param_production_value
                     
-                    if production_value is None or production_value == 0:
-                        production_value = year_totals_dict.get(year, 0)
+                    print(f"DEBUG BREAKDOWN YEARLY: Year {year} - Bar Sum: {bar_sum}, ProductionDataValue (ignored if bar>0): {param_production_value}, Final Value: {production_value}")
                     
                     # Always show annotation if we have a value (either ProductionDataValue or sum)
                     if production_value > 0:
@@ -3593,13 +3621,6 @@ def register_callbacks(dash_app, server):
                 # Recalculate Y-axis ticks based on the max value needed for annotations
                 y_axis_max, y_axis_ticks = _calculate_yaxis_ticks(base_max)
                 
-                # Ensure y_axis_max is at least as high as needed for annotations
-                if y_axis_max < base_max * 1.1:
-                    y_axis_max = base_max * 1.25
-                    # Recalculate ticks with the adjusted max
-                    tick_step = y_axis_max / 4
-                    y_axis_ticks = [0, tick_step, tick_step * 2, tick_step * 3, y_axis_max]
-                
                 print(f"DEBUG BREAKDOWN YEARLY: max_bar_height={max_bar_height}, max_annotation_y={max_annotation_y}, expected_max_annotation_y={expected_max_annotation_y}, base_max={base_max}, y_axis_max={y_axis_max}, y_axis_ticks={y_axis_ticks}")
                 
                 # Verify all annotations are within Y-axis range
@@ -3615,7 +3636,7 @@ def register_callbacks(dash_app, server):
                 fig.update_layout(
                     xaxis_title="",
                     yaxis_title="Production Volume ('000 b/d)",
-                    title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
+                    title=None, # title removed
                     xaxis=dict(
                         showgrid=False,  # Remove X-axis grid lines (match original)
                         gridcolor="#e0e0e0", 
@@ -3917,7 +3938,7 @@ def register_callbacks(dash_app, server):
                 
                 # Update layout
                 fig.update_layout(
-                    title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
+                    # title removed
                     showlegend=False,
                     plot_bgcolor="white",
                     paper_bgcolor="white",
