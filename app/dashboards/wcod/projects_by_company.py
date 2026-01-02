@@ -97,8 +97,8 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
     WITH base AS (
         SELECT
             a.project_id,
+            a.project_name,
             c.country_long_name AS country,
-            c.region,
             COALESCE(TRIM(a.likely_goahead), '') AS likely_goahead,
             {company_pc_case},
             est."2024_Q1", est."2024_Q2", est."2024_Q3", est."2024_Q4",
@@ -119,7 +119,6 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
     unpvt AS (
         SELECT
             country,
-            region,
             likely_goahead,
             company_pc,
             SPLIT_PART(qtr, '_', 1)::INT AS year_of_period,
@@ -139,15 +138,12 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
                 ('2029_Q1', "2029_Q1"), ('2029_Q2', "2029_Q2"),
                 ('2029_Q3', "2029_Q3"), ('2029_Q4', "2029_Q4")
         ) AS t(qtr, value)
-        WHERE value IS NOT NULL
     )
     SELECT
         year_of_period AS "Year of Period",
         quarter_of_period AS "Quarter of Period",
         country AS "Country",
-        region AS "Region",
-        likely_goahead AS "Likely Go-ahead",
-        (production_value * company_pc) / 100.0 AS value_company,
+        SUM((production_value * company_pc) / 100.0) AS value_company,
         CASE
             WHEN country = 'Algeria' THEN '#a0cbe8'
             WHEN country = 'Angola' THEN '#4e79a7'
@@ -197,8 +193,12 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
             ELSE NULL
         END AS "Country Color"
     FROM unpvt
-    ORDER BY
+    GROUP BY
         year_of_period,
+        quarter_of_period,
+        country
+    ORDER BY
+        country,
         quarter_of_period;
     """
     
@@ -347,26 +347,21 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
                 ('2029_Q1', "2029_Q1"), ('2029_Q2', "2029_Q2"),
                 ('2029_Q3', "2029_Q3"), ('2029_Q4', "2029_Q4")
         ) AS t(qtr, value)
-        WHERE value IS NOT NULL
     )
     SELECT
         year_of_period AS "Year of Period",
         country AS "Country",
         region AS "Region",
-        latitude AS "Latitude",
-        longitude AS "Longitude",
-        likely_goahead AS "Likely Go-ahead",
+        AVG(latitude) AS "Latitude",
+        AVG(longitude) AS "Longitude",
         SUM((production_value * company_pc) / 100.0) AS value_company
     FROM unpvt
     GROUP BY
         year_of_period,
         country,
-        region,
-        latitude,
-        longitude,
-        likely_goahead
+        region
     ORDER BY
-        year_of_period;
+        value_company DESC NULLS LAST;
     """
     
     try:
@@ -376,7 +371,7 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
         
         df = pd.DataFrame(results)
         df.columns = df.columns.str.strip()
-        df['value_company'] = pd.to_numeric(df['value_company'], errors='coerce')
+        df['value_company'] = pd.to_numeric(df['value_company'], errors='coerce').fillna(0)
         return df
     except Exception as e:
         print(f"Error loading map data: {e}")
@@ -2301,9 +2296,8 @@ def register_callbacks(dash_app, server):
         df = pd.DataFrame(data_full)
         
         # Filter by selected countries (when any are chosen)
-        # DECOUPLED: Removed filtering by selected_countries so table remains full
-        # if selected_countries:
-        #     df = df[df['Country'].isin(selected_countries)]
+        if selected_countries:
+            df = df[df['Country'].isin(selected_countries)]
         
         if df.empty:
             return [], [], [], dash.no_update, dash.no_update
@@ -2748,15 +2742,17 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         [Output('year-of-period-filter', 'value', allow_duplicate=True),
          Output('year-period-slider', 'value', allow_duplicate=True),
-         Output('bar-highlight-year-store', 'data', allow_duplicate=True)],
+         Output('bar-highlight-year-store', 'data', allow_duplicate=True),
+         Output('selected-countries-store', 'data', allow_duplicate=True)],
         Input('projects-company-bar-chart', 'clickData'),
+        State('selected-countries-store', 'data'),
         prevent_initial_call=True
     )
-    def set_year_from_bar_click(click_data):
+    def set_year_from_bar_click(click_data, selected_countries):
         """When a bar or year label is clicked, sync the year selection controls to that year and set highlight."""
         if not click_data or 'points' not in click_data or not click_data['points']:
             # Clear highlights when clicking outside/blank
-            return dash.no_update, dash.no_update, None
+            return dash.no_update, dash.no_update, None, dash.no_update
         
         try:
             point = click_data['points'][0]
@@ -2765,15 +2761,31 @@ def register_callbacks(dash_app, server):
             
             # Skip quarter label clicks (y < 0 or quarter-click-capture trace) - those are handled separately
             if y_pos < 0 or trace_name == 'quarter-click-capture':
-                return dash.no_update, dash.no_update, dash.no_update
+                return dash.no_update, dash.no_update, dash.no_update, dash.no_update
             
             x_val = point.get('x')
             year_part = str(x_val).split(' ')[0]
             selected_year = int(year_part)
+            
+            # Update selected countries based on click (if it's a country bar)
+            new_selected_countries = dash.no_update
+            
+            # If it's not a capture trace, it's a country bar
+            if trace_name != 'year-click-capture' and trace_name != 'quarter-click-capture':
+                clicked_country = trace_name
+                selected_countries = selected_countries or []
+                
+                if clicked_country in selected_countries:
+                    # Deselect
+                    new_selected_countries = [c for c in selected_countries if c != clicked_country]
+                else:
+                    # Select
+                    new_selected_countries = selected_countries + [clicked_country]
+                    
         except (ValueError, TypeError, AttributeError, IndexError):
-            return dash.no_update, dash.no_update, dash.no_update
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update
         
-        return selected_year, selected_year, selected_year
+        return selected_year, selected_year, selected_year, new_selected_countries
     
     # Callback to handle play/pause/stop buttons
     @dash_app.callback(
@@ -2954,7 +2966,7 @@ def register_callbacks(dash_app, server):
         bar_fig = create_stacked_bar_chart(
             bar_df,
             company or "Company",
-            [], # Pass empty list to chart to avoid highlighting/greying out
+            selected_countries, # Pass selected countries for highlighting
             highlight_year=bar_highlight_year,
             highlight_quarter=quarter_highlight
         )
@@ -2984,7 +2996,12 @@ def register_callbacks(dash_app, server):
         df = load_chart_data(company, ltg_list)
         if df.empty:
             return dash.no_update
-        return dcc.send_data_frame(df.to_csv, "projects_capacity_chart_data.csv")
+        
+        # Format to match live CSV: Remove 'Country Color' and Index
+        if 'Country Color' in df.columns:
+            df = df.drop(columns=['Country Color'])
+            
+        return dcc.send_data_frame(df.to_csv, "projects_capacity_chart_data.csv", index=False)
 
     # Download Map Data
     @dash_app.callback(
@@ -3026,4 +3043,19 @@ def register_callbacks(dash_app, server):
         if not n_clicks or not table_data:
             return dash.no_update
         
-        return dcc.send_data_frame(pd.DataFrame(table_data).to_csv, "projects_details.csv")
+        df = pd.DataFrame(table_data)
+        
+        # Identify quarter columns (format YYYY_QX)
+        quarter_cols = [c for c in df.columns if isinstance(c, str) and len(c) == 7 and c[4] == '_' and c[:4].isdigit()]
+        
+        if not quarter_cols:
+             return dcc.send_data_frame(df.to_csv, "projects_details.csv", index=False)
+             
+        # Unpivot (melt) the quarter columns to match the live CSV format
+        # Keep all other columns as identifiers
+        id_vars = [c for c in df.columns if c not in quarter_cols]
+        
+        # Melt the dataframe
+        melted_df = df.melt(id_vars=id_vars, value_vars=quarter_cols, var_name='Measure Names', value_name='Measure Values')
+        
+        return dcc.send_data_frame(melted_df.to_csv, "projects_details.csv", index=False)
