@@ -1148,7 +1148,7 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
     fig.update_layout(
         barmode='stack',
         bargap=0.12,  # slight gap to mirror reference spacing
-        height=480,
+        height=520,
         plot_bgcolor='white',
         paper_bgcolor='white',
         title={
@@ -1461,10 +1461,10 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     )
     
     fig.update_layout(
-        height=480,
+        height=520,
         paper_bgcolor='white',
         plot_bgcolor='white',
-        margin=dict(l=0, r=190, t=20, b=10),
+        margin=dict(l=0, r=190, t=50, b=10),
         title={
             'text': f"<b>Oil Projects Capacity Start Up by {selected_company} ('000 b/d)*- {selected_year}</b>",
             'x': 0.0,
@@ -1650,10 +1650,10 @@ def create_layout():
                             'float': 'right'
                         }
                     )
-                ], style={'width': '100%', 'display': 'block', 'height': '25px'}),
+                ], style={'width': '100%', 'display': 'block', 'height': '25px', 'marginBottom': '15px', 'marginTop': '15px'}),
                 dcc.Graph(
                     id='projects-company-bar-chart',
-                    style={'height': '380px', 'marginBottom': '5px'}
+                    style={'height': '520px', 'marginBottom': '30px'}
                 ),
                 html.Div([
                     html.Div([
@@ -1675,11 +1675,11 @@ def create_layout():
                                 'position': 'relative'
                             }
                         )
-                    ], style={'width': '100%', 'display': 'block', 'height': '25px'}),
+                    ], style={'width': '100%', 'display': 'block', 'height': '25px', 'marginBottom': '15px', 'marginTop': '15px'}),
                     dcc.Graph(
                         id='projects-company-map',
                         style={
-                            'height': '380px',
+                            'height': '520px',
                             'width': '100%'
                         }
                     ),
@@ -1834,7 +1834,7 @@ def create_layout():
                     })
                 ], style={
                     'position': 'relative',
-                    'height': '520px',
+                    # 'height': '520px',  <-- Removed fixed height to allow auto-expansion
                     'marginBottom': '20px'
                 })
             ], style={'flex': '4', 'minWidth': '0'}),
