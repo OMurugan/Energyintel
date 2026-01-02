@@ -1361,21 +1361,66 @@ def create_map_chart(crude_value: str | None = None):
     lat_min, lat_max = min(lats), max(lats)
     lon_min, lon_max = min(lons), max(lons)
     
-    # Expand bounds for context
-    lat_pad = max(5, (lat_max - lat_min) * 0.2)
-    lon_pad = max(5, (lon_max - lon_min) * 0.2)
-    lat_min -= lat_pad
-    lat_max += lat_pad
-    lon_min -= lon_pad
-    lon_max += lon_pad
+    # Calculate center
     center_lat = (lat_min + lat_max) / 2
     center_lon = (lon_min + lon_max) / 2
     
-    # Update mapbox layout with calculated center
+    # Calculate dynamic zoom and center based on country (similar to country_profile.py)
+    lat_span = lat_max - lat_min
+    lon_span = lon_max - lon_min
+    max_span = max(lat_span, lon_span)
+    
+    # Dynamic zoom based on country size
+    if max_span > 30:
+        map_zoom = 1.2
+    elif max_span > 15:
+        map_zoom = 1.4
+    elif max_span > 8:
+        map_zoom = 1.8
+    elif max_span > 4:
+        map_zoom = 2.4
+    elif max_span > 2:
+        map_zoom = 2.8
+    else:
+        map_zoom = 3.4
+    
+    # Country-specific zoom overrides (based on the first country in the ports data)
+    if unique_countries:
+        selected_country = unique_countries[0]  # Use first country for zoom calculation
+        country_zoom_overrides = {
+            'Russia': 1.0, 'Canada': 0.9, 'United States': 1.0, 'Brazil': 1.2,
+            'Australia': 1.1, 'China': 1.1, 'Saudi Arabia': 1.7, 'Iran': 1.8,
+            'Norway': 2.1, 'United Kingdom': 2.5, 'Nigeria': 1.9, 'Venezuela': 1.8,
+            'Mexico': 1.5, 'Indonesia': 1.6, 'Libya': 2.1, 'Algeria': 1.8,
+            'Iraq': 2.2, 'Kuwait': 3.0, 'Qatar': 3.5, 'UAE': 2.7, 'Oman': 2.3
+        }
+        
+        if selected_country in country_zoom_overrides:
+            map_zoom = country_zoom_overrides[selected_country]
+        
+        # Adjust center for better visibility (similar to country_profile.py)
+        if selected_country in ['United States', 'Russia']:
+            adjusted_lat = center_lat + (lat_span * 0.30)
+        elif selected_country == 'Canada':
+            adjusted_lat = center_lat + (lat_span * 0.08)
+        elif lat_span > 25:
+            adjusted_lat = center_lat + (lat_span * 0.05)
+        elif lat_span > 15:
+            adjusted_lat = center_lat + (lat_span * 0.08)
+        elif lat_span > 8:
+            adjusted_lat = center_lat + (lat_span * 0.05)
+        elif lat_span > 4:
+            adjusted_lat = center_lat + (lat_span * 0.03)
+        else:
+            adjusted_lat = center_lat
+        
+        center_lat = adjusted_lat
+    
+    # Update mapbox layout with calculated center and zoom
     if use_mapbox:
         mapbox_layout.update({
             "center": {"lat": center_lat, "lon": center_lon},
-            "zoom": 1.2  # Adjust zoom for port view
+            "zoom": map_zoom
         })
         
         fig.update_layout(
@@ -1403,8 +1448,9 @@ def create_map_chart(crude_value: str | None = None):
                 countrycolor="rgb(200, 200, 200)",
                 showlakes=True,
                 lakecolor=MAP_BACKGROUND_COLOR,  # Use shared white background
-                lataxis=dict(range=[lat_min - 50, lat_max + 50]),
-                lonaxis=dict(range=[lon_min - 100, lon_max + 60]),
+                # Use calculated bounds with zoom consideration
+                lataxis=dict(range=[center_lat - (lat_span * (4 - map_zoom) / 2), center_lat + (lat_span * (4 - map_zoom) / 2)]),
+                lonaxis=dict(range=[center_lon - (lon_span * (4 - map_zoom) / 2), center_lon + (lon_span * (4 - map_zoom) / 2)]),
                 subunitcolor="rgb(200, 200, 200)",
                 bgcolor=MAP_BACKGROUND_COLOR
             ),
