@@ -685,7 +685,13 @@ def create_layout():
                                                         "autoScale2d",
                                                         "resetViewMapbox",
                                                     ],
+                                                    "modeBarButtonsToRemove": [
+                                                        "lasso2d",
+                                                        "select2d",
+                                                    ],
                                                     "scrollZoom": True,
+                                                    "doubleClick": "reset",
+                                                    "showTips": True,
                                                 },
                                             )
                                         ],
@@ -1172,8 +1178,87 @@ def create_layout():
 # ---------------------------------------------------------------------
 # Figure builders
 # ---------------------------------------------------------------------
+def _create_fallback_map(df: pd.DataFrame, selected_country: str | None) -> go.Figure:
+    """Create a fallback scatter plot map if Mapbox fails."""
+    fig = go.Figure()
+    
+    # Add country markers using regular scatter plot
+    for _, row in df.iterrows():
+        country = row["Country"]
+        group = row["Group"]
+        lat = float(row["Latitude"]) if pd.notna(row["Latitude"]) else 0.0
+        lon = float(row["Longitude"]) if pd.notna(row["Longitude"]) else 0.0
+        
+        # Skip if coordinates are invalid
+        if lat == 0.0 and lon == 0.0:
+            continue
+            
+        # Determine color based on group
+        color = GROUP_COLORS.get(group, "#888")
+        
+        # Determine size and styling based on selection
+        if selected_country and country == selected_country:
+            # Selected country: larger, highlighted
+            marker_size = 15
+            marker_color = color
+            marker_line_color = "#4A4A4A"
+            marker_line_width = 3
+            hover_text = f"<b>{country}</b><br>Group: {group}<br>Click to reset view"
+        else:
+            # Regular country
+            marker_size = 12
+            marker_color = color
+            marker_line_color = "white"
+            marker_line_width = 2
+            hover_text = f"<b>{country}</b><br>Group: {group}<br>Click to select"
+        
+        fig.add_trace(
+            go.Scatter(
+                x=[lon],
+                y=[lat],
+                mode="markers+text",
+                marker=dict(
+                    size=marker_size,
+                    color=marker_color,
+                    line=dict(color=marker_line_color, width=marker_line_width)
+                ),
+                text=[country],
+                textfont=dict(size=8, color="black"),
+                textposition="middle center",
+                hoverinfo="text",
+                hovertext=hover_text,
+                customdata=[country],
+                showlegend=False,
+                name=f"country_{country}"
+            )
+        )
+    
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=520,
+        hovermode="closest",
+        plot_bgcolor="white",  # White background to match ocean
+        paper_bgcolor="white",
+        showlegend=False,
+        xaxis=dict(
+            range=[-180, 180],
+            showgrid=True,
+            gridcolor="lightgray",
+            title="Longitude"
+        ),
+        yaxis=dict(
+            range=[-90, 90],
+            showgrid=True,
+            gridcolor="lightgray",
+            title="Latitude"
+        )
+    )
+    
+    return fig
+
+
 def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.Figure:
-    """Create a map figure with choropleth fills; no point symbols."""
+    """Create a map figure with choropleth fills matching the live source."""
     if filtered_df.empty:
         return _empty_figure("No countries match the selected filters.", height=520)
 
@@ -1189,15 +1274,13 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
     if df.empty:
         return _empty_figure("No valid country data for mapping.", height=520)
 
-    # Only attempt Mapbox rendering when a token looks valid; otherwise fall back
-    # to the non-Mapbox choropleth to avoid client-side "Mapbox error".
+    # Get Mapbox token and geojson
     _mapbox_token = (getattr(Config, "MAPBOX_ACCESS_TOKEN", None) or "").strip()
     has_mapbox_token = _mapbox_token.startswith("pk.")
-    use_mapbox = (
-        has_mapbox_token
-        and (_load_world_geojson() is not None)
-        and os.getenv("USE_MAPBOX_WCOD", "false").lower() in ("1", "true", "yes")
-    )
+    geojson = _load_world_geojson()
+    
+    # Use Mapbox if available, otherwise fall back to geo
+    use_mapbox = has_mapbox_token and geojson is not None
 
     # Color per group; selection outlined separately
     color_map = {}
@@ -1206,17 +1289,26 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
         group = row["Group"]
         color_map[country] = GROUP_COLORS.get(group, "#888")
 
-    # Preferred Mapbox path (with world geojson) for OSM base map + controls
-    geojson = _load_world_geojson()
-    world_center = {"lat": 24.0, "lon": 45.0}
-    # Always use world center - don't auto-center on selected country
-    map_center = world_center
-    map_zoom = 2.8  # Always use consistent zoom level
+    # World map settings - professional zoom level and positioning
+    world_center = {"lat": 20.0, "lon": 0.0}  # More centered world view
+    map_zoom = 1.2  # Lower zoom for better world overview
 
-    if geojson and use_mapbox:
+    if use_mapbox and geojson:
         try:
+            # Mapbox choropleth approach
             group_code = df["Group"].map({"Non-OPEC-Plus": 0, "OPEC-Plus": 1}).fillna(0)
-            fig = go.Figure(
+            fig = go.Figure()
+            
+            # Add main choropleth layer
+            def generate_hover_text(row):
+                country = row['Country']
+                group = row['Group']
+                if selected_country and country == selected_country:
+                    return f"<b>{country}</b><br>Group: {group}<br>Click to reset view"
+                else:
+                    return f"<b>{country}</b><br>Group: {group}<br>Click to select"
+            
+            fig.add_trace(
                 go.Choroplethmapbox(
                     geojson=geojson,
                     locations=df["iso_alpha"],
@@ -1230,48 +1322,104 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
                     ],
                     showscale=False,
                     hoverinfo="text",
-                    hovertext=df.apply(
-                        lambda row: f"<b>{row['Country']}</b><br>Group: {row['Group']}<br>Click to select",
-                        axis=1,
-                    ),
+                    hovertext=df.apply(generate_hover_text, axis=1),
                     marker_line_color="white",
-                    marker_line_width=0.6,
+                    marker_line_width=0.8,
+                    marker_opacity=0.8,  # Further reduce opacity to make text more visible
+                    name="countries"
                 )
             )
+            
+            # Add invisible background layer for empty area clicks (ocean areas)
+            fig.add_trace(
+                go.Scattermapbox(
+                    lon=[-180, 180, 180, -180, -180],
+                    lat=[-85, -85, 85, 85, -85],
+                    mode="lines",
+                    line=dict(color="rgba(0,0,0,0)", width=0),
+                    fill="toself",
+                    fillcolor="rgba(255,255,255,0.01)",  # Nearly transparent white for better click detection
+                    hoverinfo="text",
+                    hovertext="Click to reset view" if selected_country else "Click anywhere to reset view",
+                    customdata=["__BACKGROUND_CLICK__"],
+                    showlegend=False,
+                    name="background"
+                )
+            )
+            
+            # Add country labels
             centroids = (
                 df.groupby("Country")[["Latitude", "Longitude"]]
                 .mean()
                 .reset_index()
                 .dropna(subset=["Latitude", "Longitude"])
             )
-            if centroids.empty:
-                raise ValueError("No centroid coordinates for Mapbox text labels.")
-            # Limit label density at low zoom so names stay readable
-            max_labels = len(centroids)
-            if map_zoom <= 2.8:
-                max_labels = 40
-            elif map_zoom <= 3.4:
-                max_labels = 80
-            centroids_display = (
-                centroids.sort_values("Country").head(max_labels)
-                if max_labels < len(centroids)
-                else centroids
-            )
-            fig.add_trace(
-                go.Scattermapbox(
-                    lon=centroids_display["Longitude"],
-                    lat=centroids_display["Latitude"],
-                    mode="text",
-                    text=centroids_display["Country"],
-                    textfont=dict(size=10, color="#2c3e50"),
-                    textposition="top center",
-                    hoverinfo="skip",
-                    showlegend=False,
+            if not centroids.empty:
+                # Limit label density at low zoom so names stay readable
+                max_labels = len(centroids)
+                if map_zoom <= 2.8:
+                    max_labels = 40
+                elif map_zoom <= 3.4:
+                    max_labels = 80
+                centroids_display = (
+                    centroids.sort_values("Country").head(max_labels)
+                    if max_labels < len(centroids)
+                    else centroids
                 )
-            )
+                # Add country labels with better visibility using outline effect
+                # First add black outline (larger text)
+                fig.add_trace(
+                    go.Scattermapbox(
+                        lon=centroids_display["Longitude"],
+                        lat=centroids_display["Latitude"],
+                        mode="text",
+                        text=centroids_display["Country"],
+                        textfont=dict(size=12, color="black", family="system-ui, -apple-system, sans-serif"),
+                        textposition="middle center",
+                        hoverinfo="skip",
+                        showlegend=False,
+                        name="labels_outline"
+                    )
+                )
+                # Then add white text on top (smaller text)
+                fig.add_trace(
+                    go.Scattermapbox(
+                        lon=centroids_display["Longitude"],
+                        lat=centroids_display["Latitude"],
+                        mode="text",
+                        text=centroids_display["Country"],
+                        textfont=dict(size=10, color="white", family="system-ui, -apple-system, sans-serif"),
+                        textposition="middle center",
+                        hoverinfo="skip",
+                        showlegend=False,
+                        name="labels"
+                    )
+                )
 
+            # Add selection highlight if a country is selected
             if selected_country and selected_country in df["Country"].values:
                 sel_iso = df.loc[df["Country"] == selected_country, "iso_alpha"].iloc[0]
+                
+                # Add dimming overlay for all countries EXCEPT the selected one
+                other_countries = df[df["Country"] != selected_country]["iso_alpha"].tolist()
+                if other_countries:
+                    fig.add_trace(
+                        go.Choroplethmapbox(
+                            geojson=geojson,
+                            locations=other_countries,
+                            z=[0] * len(other_countries),
+                            featureidkey="id",
+                            colorscale=[[0, "rgba(255,255,255,0.8)"], [1, "rgba(255,255,255,0.8)"]],
+                            showscale=False,
+                            hoverinfo="text",
+                            hovertext=["Click to reset view" for _ in other_countries],
+                            marker_line_color="rgba(200,200,200,0.3)",
+                            marker_line_width=0.5,
+                            name="inactive_countries"
+                        )
+                    )
+                
+                # Add orange border highlight for selected country (keep it fully active)
                 fig.add_trace(
                     go.Choroplethmapbox(
                         geojson=geojson,
@@ -1280,40 +1428,54 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
                         featureidkey="id",
                         colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
                         showscale=False,
-                        marker_line_color="#FF6B35",
-                        marker_line_width=2.5,
-                        hoverinfo="skip",
+                        marker_line_color="#4A4A4A",
+                        marker_line_width=3,
+                        hoverinfo="text",
+                        hovertext=f"<b>{selected_country}</b><br>Click to reset view",
+                        name="selected_country_border"
                     )
                 )
-                if len(fig.data) > 1:
-                    fig.data = tuple(list(fig.data)[1:] + [fig.data[0]])
 
             mapbox_layout = dict(
-                style="carto-positron",
-                center=map_center,
+                style="carto-positron",  # White background style
+                center=world_center,
                 zoom=map_zoom,
                 bearing=0,
                 pitch=0,
             )
             if has_mapbox_token:
                 mapbox_layout["accesstoken"] = _mapbox_token
+                mapbox_layout["style"] = "light"  # Use light style with token (also white background)
 
             fig.update_layout(
                 margin=dict(l=0, r=0, t=0, b=0),
                 height=520,
                 mapbox=mapbox_layout,
                 hovermode="closest",
-                plot_bgcolor="white",
+                plot_bgcolor="white",  # Set ocean/background color to white
                 paper_bgcolor="white",
                 showlegend=False,
+                # Add better zoom and pan controls
+                dragmode="pan",
             )
             return fig
         except Exception as exc:
             logger.warning("Mapbox rendering failed; falling back to geo map. Error: %s", exc)
 
-    # Fallback: geo-based choropleth (no Mapbox) if GeoJSON unavailable
+    # Fallback: geo-based choropleth (no Mapbox) if GeoJSON unavailable or token missing
     group_code = df["Group"].map({"Non-OPEC-Plus": 0, "OPEC-Plus": 1}).fillna(0)
-    fig = go.Figure(
+    fig = go.Figure()
+    
+    # Add main choropleth layer
+    def generate_hover_text_geo(row):
+        country = row['Country']
+        group = row['Group']
+        if selected_country and country == selected_country:
+            return f"<b>{country}</b><br>Group: {group}<br>Click to reset view"
+        else:
+            return f"<b>{country}</b><br>Group: {group}<br>Click to select"
+    
+    fig.add_trace(
         go.Choropleth(
             locations=df["iso_alpha"],
             z=group_code,
@@ -1326,14 +1488,32 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
             ],
             showscale=False,
             hoverinfo="text",
-            hovertext=df.apply(
-                lambda row: f"<b>{row['Country']}</b><br>Group: {row['Group']}<br>Click to select",
-                axis=1,
-            ),
+            hovertext=df.apply(generate_hover_text_geo, axis=1),
             marker_line_color="white",
             marker_line_width=0.7,
+            marker_opacity=0.8,  # Further reduce opacity to make text more visible
+            name="countries"
         )
     )
+    
+    # Add invisible background layer for ocean clicks in geo map
+    fig.add_trace(
+        go.Scattergeo(
+            lon=[-180, 180, 180, -180, -180],
+            lat=[-85, -85, 85, 85, -85],
+            mode="lines",
+            line=dict(color="rgba(0,0,0,0)", width=0),
+            fill="toself",
+            fillcolor="rgba(255,255,255,0.01)",  # Nearly transparent white for click detection
+            hoverinfo="text",
+            hovertext="Click to reset view" if selected_country else "Click anywhere to reset view",
+            customdata=["__BACKGROUND_CLICK__"],
+            showlegend=False,
+            name="background"
+        )
+    )
+    
+    # Add country labels for geo map
     centroids = (
         df.groupby("Country")[["Latitude", "Longitude"]]
         .mean()
@@ -1343,36 +1523,61 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
     fallback_labels = centroids
     if len(centroids) > 60:
         fallback_labels = centroids.sort_values("Country").head(60)
+    # Add country labels for geo map with outline effect
+    # First add black outline (larger text)
     fig.add_trace(
         go.Scattergeo(
             lon=fallback_labels["Longitude"],
             lat=fallback_labels["Latitude"],
             mode="text",
             text=fallback_labels["Country"],
-            textfont=dict(size=10, color="#2c3e50"),
-            textposition="top center",
+            textfont=dict(size=13, color="black", family="system-ui, -apple-system, sans-serif"),
+            textposition="middle center",
             hoverinfo="skip",
             showlegend=False,
+            opacity=0.8,
+            name="labels_outline"
         )
     )
-    # Always use world center - don't auto-center on selected countries
-    world_center_lat = 24.0
-    world_center_lon = 45.0
-
-    fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0),
-        height=520,
-        geo=dict(
-            showframe=False,
-            showcoastlines=True,
-            projection=dict(type="natural earth"),
-            center=dict(lat=world_center_lat, lon=world_center_lon),
-        ),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
+    # Then add white text on top (smaller text)
+    fig.add_trace(
+        go.Scattergeo(
+            lon=fallback_labels["Longitude"],
+            lat=fallback_labels["Latitude"],
+            mode="text",
+            text=fallback_labels["Country"],
+            textfont=dict(size=11, color="white", family="system-ui, -apple-system, sans-serif"),
+            textposition="middle center",
+            hoverinfo="skip",
+            showlegend=False,
+            opacity=1.0,
+            name="labels"
+        )
     )
+    
+    # Add selection highlight for geo map
     if selected_country and selected_country in df["Country"].values:
         sel_iso = df.loc[df["Country"] == selected_country, "iso_alpha"].iloc[0]
+        
+        # Add dimming overlay for all countries EXCEPT the selected one
+        other_countries = df[df["Country"] != selected_country]["iso_alpha"].tolist()
+        if other_countries:
+            fig.add_trace(
+                go.Choropleth(
+                    locations=other_countries,
+                    z=[0] * len(other_countries),
+                    locationmode="ISO-3",
+                    colorscale=[[0, "rgba(255,255,255,0.8)"], [1, "rgba(255,255,255,0.8)"]],
+                    showscale=False,
+                    hoverinfo="text",
+                    hovertext=["Click to reset view" for _ in other_countries],
+                    marker_line_color="rgba(200,200,200,0.3)",
+                    marker_line_width=0.5,
+                    name="inactive_countries"
+                )
+            )
+        
+        # Add orange border highlight for selected country
         fig.add_trace(
             go.Choropleth(
                 locations=[sel_iso],
@@ -1380,13 +1585,39 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
                 locationmode="ISO-3",
                 colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
                 showscale=False,
-                marker_line_color="#FF6B35",
-                marker_line_width=2.5,
-                hoverinfo="skip",
+                marker_line_color="#4A4A4A",
+                marker_line_width=3,
+                hoverinfo="text",
+                hovertext=f"<b>{selected_country}</b><br>Click to reset view",
+                name="selected_country_border"
             )
         )
-        if len(fig.data) > 1:
-            fig.data = tuple(list(fig.data)[1:] + [fig.data[0]])
+
+    # Use consistent center and zoom regardless of selection
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=520,
+        geo=dict(
+            showframe=False,
+            showcoastlines=True,
+            projection=dict(type="natural earth"),
+            center=dict(lat=world_center["lat"], lon=world_center["lon"]),
+            # Clean background styling with white ocean color
+            showland=True,
+            landcolor="rgb(250, 250, 250)",  # Very light gray background
+            coastlinecolor="rgb(220, 220, 220)",
+            showocean=True,
+            oceancolor="white",  # White ocean background
+            showlakes=True,
+            lakecolor="white",  # Match ocean color
+            showrivers=False,
+        ),
+        plot_bgcolor="white",  # Set plot background to white
+        paper_bgcolor="white",
+        showlegend=False,
+        # Add better zoom and pan controls
+        dragmode="pan",
+    )
 
     return fig
         
@@ -1857,55 +2088,113 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         prevent_initial_call=True,
     )
     def update_country_filter_from_map_click(click_data, current_filter, submenu):
-        """Update country filter when a country is clicked on the map."""
+        """Update country filter when a country is clicked on the map or background."""
         if submenu != "projects-country":
             return no_update
         
         if not click_data:
             return no_update
+        
+        # Get available countries and current filter state first
+        all_countries = load_map_data()["Country"].tolist()
+        current_filter = current_filter or []
+        resolved_countries = _resolve_countries(current_filter, all_countries)
             
         # Extract country name from click data
         point = click_data["points"][0]
         country = None
+        is_background_click = False
         
-        if "text" in point and point["text"]:
+        # Check for background click first
+        if "customdata" in point and point["customdata"]:
+            if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
+                if point["customdata"][0] == "__BACKGROUND_CLICK__":
+                    is_background_click = True
+                else:
+                    country = point["customdata"][0]
+            elif point["customdata"] == "__BACKGROUND_CLICK__":
+                is_background_click = True
+            else:
+                country = point["customdata"]
+        elif "text" in point and point["text"]:
             country = point["text"]
         elif "hovertext" in point and point["hovertext"]:
             hovertext = point["hovertext"]
-            if "<b>" in hovertext and "</b>" in hovertext:
+            if "Click to reset view" in hovertext:
+                # This could be background, selected country, or dimmed country reset
+                if "<b>" in hovertext and "</b>" in hovertext:
+                    country = hovertext.split("<b>")[1].split("</b>")[0]
+                    # If this is a dimmed country click, treat as reset
+                    if len(resolved_countries) == 1 and country != resolved_countries[0]:
+                        is_background_click = True
+                else:
+                    is_background_click = True
+            elif "<b>" in hovertext and "</b>" in hovertext:
                 country = hovertext.split("<b>")[1].split("</b>")[0]
-        elif "customdata" in point and point["customdata"]:
-            if isinstance(point["customdata"], list):
-                country = point["customdata"][0]
-            else:
-                country = point["customdata"]
         elif "location" in point:
+            # This is a choropleth click - extract country from ISO code
             iso_value = point["location"]
             reverse_map = {v: k for k, v in COUNTRY_TO_ISO.items()}
-            country = reverse_map.get(iso_value, None)
+            mapped_country = reverse_map.get(iso_value, None)
+            
+            # Handle ISO mapping mismatches - try to find the actual country in our data
+            if mapped_country:
+                # First try exact match
+                if mapped_country in all_countries:
+                    country = mapped_country
+                else:
+                    # Try to find a country in our data that maps to the same ISO
+                    for data_country in all_countries:
+                        if COUNTRY_TO_ISO.get(data_country) == iso_value:
+                            country = data_country
+                            break
+                    else:
+                        # If no match found, use the mapped country anyway
+                        country = mapped_country
         
+        # Handle fallback scatter plot clicks (x, y coordinates)
+        if not country and not is_background_click and "x" in point and "y" in point:
+            # This might be a click on the fallback scatter plot
+            # We can't easily determine the country from coordinates, so treat as background
+            is_background_click = True
+        
+        # Handle background clicks (empty areas like ocean) or dimmed country clicks
+        if is_background_click:
+            # Always reset to all countries when clicking on background/ocean areas
+            return ["(All)"] + all_countries
+        
+        # Handle country clicks
         if not country:
-            return no_update
-            
-        # Verify country exists in available countries
-        all_countries = load_map_data()["Country"].tolist()
-        if country not in all_countries:
-            return no_update
-            
-        # Check current filter state
-        current_filter = current_filter or []
-        resolved_countries = _resolve_countries(current_filter, all_countries)
-        
-        # If country is not currently in the resolved selection, select only this country
-        if country not in resolved_countries:
-            return [country]
-        
-        # If this country is already the only one selected, expand to show all
-        if len(resolved_countries) == 1 and country in resolved_countries:
+            # If we can't determine the country but it's not a background click,
+            # treat it as a background click (reset to all countries)
             return ["(All)"] + all_countries
             
-        # If multiple countries are selected and this one is clicked, select only this country
-        return [country]
+        # Verify country exists in available countries
+        if country not in all_countries:
+            # If clicked country is not in our data, treat as background click
+            return ["(All)"] + all_countries
+        
+        # Enhanced behavior for map interactions:
+        # BEHAVIOR 1: If clicking the same selected country again, reset to show all countries
+        # BEHAVIOR 2: If clicking anywhere else on the map (outside the selected country), reset to show all countries
+        
+        # Check if we currently have exactly one country selected
+        if len(resolved_countries) == 1:
+            selected_country = resolved_countries[0]
+            
+            # BEHAVIOR 1: If clicking on the same selected country, reset to all countries
+            if country == selected_country:
+                return ["(All)"] + all_countries
+            
+            # BEHAVIOR 2: If clicking on any other country when one is selected, reset to all countries
+            # This implements: "clicking anywhere else on the map should reset the view"
+            else:
+                return ["(All)"] + all_countries
+        
+        # If all countries are currently shown or multiple countries are selected,
+        # clicking on any country should select only that country
+        else:
+            return [country]
 
     @dash_app.callback(
         Output("projects-selected-country-label", "children"),
@@ -1951,10 +2240,10 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             all_countries = base_df["Country"].tolist()
             selected_countries = _resolve_countries(country_filter, all_countries)
             
-            # Filter the map data to show only selected countries
-            filtered_df = base_df[
-                base_df["Group"].isin(allowed_groups) & base_df["Country"].isin(selected_countries)
-            ]
+            # For MAP DISPLAY: Show ALL countries that match group filters
+            # Don't filter by selected countries - we want to show all countries on the map
+            # Only filter by group to match the group filter selection
+            filtered_df = base_df[base_df["Group"].isin(allowed_groups)]
             
             # Determine if a single country is selected for highlighting
             selected_country = None
