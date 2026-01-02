@@ -9,6 +9,16 @@ import plotly.graph_objects as go
 import pandas as pd
 import os
 from core.data_helpers import execute_query
+from .shared_map_utils import (
+    create_choropleth_map,
+    get_mapbox_config,
+    load_world_geojson,
+    handle_map_click_reset,
+    create_empty_map,
+    MAP_BACKGROUND_COLOR,
+    WORLD_CENTER,
+    WORLD_ZOOM
+)
 
 def load_chart_data(company_name=None, likely_goahead_filter=None):
     """Load chart data from database using Query 1 (quarterly data for bar chart)."""
