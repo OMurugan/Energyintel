@@ -19,6 +19,7 @@ from .shared_map_utils import (
     WORLD_CENTER,
     WORLD_ZOOM
 )
+from core.country_mappings import get_iso_code
 
 def load_chart_data(company_name=None, likely_goahead_filter=None):
     """Load chart data from database using Query 1 (quarterly data for bar chart)."""
@@ -382,6 +383,10 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
         df = pd.DataFrame(results)
         df.columns = df.columns.str.strip()
         df['value_company'] = pd.to_numeric(df['value_company'], errors='coerce').fillna(0)
+        
+        # Add ISO codes for map
+        df['iso_alpha'] = df['Country'].apply(get_iso_code)
+        
         return df
     except Exception as e:
         print(f"Error loading map data: {e}")
@@ -1284,49 +1289,23 @@ def get_all_country_centroids():
         return pd.DataFrame()
 
 def create_world_map(selected_year=2025, selected_company=None, likely_goahead_filter=None, selected_countries=None):
-    """Create world map showing geographical distribution for selected year - matching Tableau design exactly"""
+    """Create world map showing geographical distribution for selected year using standardized shared component."""
     if selected_countries is None:
         selected_countries = []
+        
     # Load map data from database for selected company with filters
-
     map_df = load_map_data(selected_company, likely_goahead_filter)
     
     if map_df.empty:
-        fig = go.Figure()
-        fig.update_layout(
-            geo=dict(
-                showframe=False,
-                showcoastlines=True,
-                projection_type='equirectangular',
-                bgcolor='rgba(0,0,0,0)',
-                coastlinecolor='#d0d0d0',
-                landcolor='#e8e8e8',
-                showocean=True,
-                oceancolor='white',
-                showcountries=True,
-                countrycolor='#bdbdbd',
-                projection_scale=1.2,
-                lataxis_range=[-55, 85],
-                center=dict(lat=20, lon=10)
-            ),
-            height=500,
-            paper_bgcolor='white',
-            plot_bgcolor='white',
-            title={
-                'text': f"Oil Projects Capacity Start Up by {selected_company} ('000 b/d)*- {selected_year}",
-                'x': 0.02,
-                'xanchor': 'left',
-                'font': {'size': 16, 'family': 'Arial, sans-serif', 'color': '#2c3e50'}
-            }
-        )
-        return fig
+        return create_empty_map(f"No data available for {selected_year}")
     
     # Filter by year
     year_df = map_df[map_df['Year of Period'] == selected_year].copy()
     
-    # Create a blue/teal color scale that matches the reference map (soft teal to
-    # deeper blue-green). Keeping the scale consistent avoids jumps when years
-    # change and preserves the vertical legend look.
+    if year_df.empty:
+         return create_empty_map(f"No data available for {selected_year}")
+
+    # Create a blue/teal color scale that matches the reference map
     colorscale = [
         [0.0, '#C7E8E4'],   # very light teal
         [0.16, '#A4DCD5'],  # light teal
@@ -1337,21 +1316,20 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
         [1.0, '#1C6C7C']    # deepest teal
     ]
     
-    # Fix the range to match the target legend (0.7 – 135.0) so the colorbar
-    # always shows those endpoints and the shading matches the sample map.
-    zmin, zmax = 0.7, 135.0
+    # Aggregate by country 
+    country_totals = year_df.groupby(['Country', 'iso_alpha'])['value_company'].sum().reset_index()
+    country_totals.columns = ['Country', 'iso_alpha', 'Value']
     
-    # Aggregate by country (sum values if multiple entries per country)
-    country_totals = year_df.groupby('Country')['value_company'].sum().reset_index()
-    country_totals.columns = ['Country', 'Value']
-
-    # Create map traces
-    fig = go.Figure()
-
-    # Get centroids for ALL countries for labels
+    # Prepare data for standardized map
+    locations = country_totals['iso_alpha'].tolist()
+    z_values = country_totals['Value'].tolist()
+    hover_text = [
+        f"<b>{row['Country']}</b><br>Production Addition: {row['Value']:,.1f} '000 b/d" 
+        for _, row in country_totals.iterrows()
+    ]
+    
+    # Get centroids for labels (reuse existing logic but simplified)
     all_centroids = get_all_country_centroids()
-    
-    # Filter labels to only show specific countries as requested
     label_countries = [
         'Algeria', 'Angola', 'Argentina', 'Australia', 'Azerbaijan', 'Brazil', 'Brunei', 
         'Cameroon', 'Canada', 'China', "Cote d'Ivoire", 'Denmark', 'Egypt', 'Gabon', 
@@ -1364,117 +1342,35 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     
     if not all_centroids.empty:
         all_centroids = all_centroids[all_centroids['Country'].isin(label_countries)]
-
-    centroids_display = all_centroids if not all_centroids.empty else pd.DataFrame(columns=['Country', 'Latitude', 'Longitude'])
     
-    # Fallback to data centroids if DB query fails (though ideally it won't)
-    if centroids_display.empty and not year_df.empty:
-         centroids_display = (
-            year_df.groupby('Country')[['Latitude', 'Longitude']]
-            .mean()
-            .reset_index()
-            .dropna(subset=['Latitude', 'Longitude'])
-        )
-         
-    if len(selected_countries) > 0:
-        # Trace 1: Non-selected countries (muted/disabled)
-        non_selected_df = country_totals[~country_totals['Country'].isin(selected_countries)]
-        if not non_selected_df.empty:
-            fig.add_trace(go.Choropleth(
-                locations=non_selected_df['Country'],
-                z=non_selected_df['Value'],
-                locationmode='country names',
-                colorscale=colorscale,
-                zmin=zmin,
-                zmax=zmax,
-                marker_line_color='#ffffff',
-                marker_line_width=0.5,
-                marker_opacity=0.25, # Muted/Disabled look
-                hovertemplate='<b>%{location}</b><br>Production Addition: %{z:,.1f} \'000 b/d<extra></extra>',
-                showscale=False
-            ))
-
-        # Trace 2: Selected countries (highlighted)
-        selected_df = country_totals[country_totals['Country'].isin(selected_countries)]
-        if not selected_df.empty:
-            fig.add_trace(go.Choropleth(
-                locations=selected_df['Country'],
-                z=selected_df['Value'],
-                locationmode='country names',
-                colorscale=colorscale,
-                zmin=zmin,
-                zmax=zmax,
-                marker_line_color='#000000',
-                marker_line_width=2.0,
-                marker_opacity=1.0,
-                hovertemplate='<b>%{location}</b><br>Production Addition: %{z:,.1f} \'000 b/d<extra></extra>',
-                showscale=False
-            ))
-    else:
-        # No countries selected: single trace with normal look
-        fig.add_trace(go.Choropleth(
-            locations=country_totals['Country'],
-            z=country_totals['Value'],
-            locationmode='country names',
-            colorscale=colorscale,
-            zmin=zmin,
-            zmax=zmax,
-            marker_line_color='#ffffff',
-            marker_line_width=0.5,
-            marker_opacity=1.0,
-            hovertemplate='<b>%{location}</b><br>Production Addition: %{z:,.1f} \'000 b/d<extra></extra>',
-            showscale=False
-        ))
-
+    # Identify selected ISOs
+    selected_iso = None
+    other_isos = None
+    if selected_countries and len(selected_countries) == 1:
+        # Standard map highlights one country
+        selected_country = selected_countries[0]
+        selected_row = country_totals[country_totals['Country'] == selected_country]
+        if not selected_row.empty:
+            selected_iso = selected_row.iloc[0]['iso_alpha']
+            other_isos = [iso for iso in locations if iso != selected_iso]
     
-    # Add country name labels on map
-    if not centroids_display.empty:
-        # Determine label colors based on selection
-        if len(selected_countries) > 0:
-            label_colors = ['#1b365d' if c in selected_countries else '#c5c5c5' for c in centroids_display['Country']]
-        else:
-             # Default color for labels
-            label_colors = '#4a4a4a'
-
-        fig.add_trace(
-            go.Scattergeo(
-                lon=centroids_display['Longitude'],
-                lat=centroids_display['Latitude'],
-                mode='text',
-                text=centroids_display['Country'],
-                textfont=dict(size=10, color=label_colors, family='Arial, sans-serif'),
-                textposition='middle center',
-                hoverinfo='skip',
-                showlegend=False,
-            )
-        )
-    
-    # Update geo settings to match Tableau design
-    fig.update_geos(
-        # fitbounds="locations",  <-- Removed to support manual zoom
-        showframe=False,
-        showcoastlines=True,
-        projection_type='equirectangular',
-        bgcolor='rgba(0,0,0,0)',
-        coastlinecolor='#c5c5c5',
-        landcolor='#f2f2f2',  # light grey for countries with no data
-        showocean=True,
-        oceancolor='white',
-        showcountries=True,
-        countrycolor='#c5c5c5',
-        showlakes=False,
-        showrivers=False,
-        resolution=50,
-        projection_scale=1.2, # Zoom in
-        center=dict(lat=20, lon=10), # Center focus
-        lataxis_range=[-55, 85] # Crop polar regions
+    # Use standardized map creation
+    fig = create_choropleth_map(
+        locations=locations,
+        z_values=z_values,
+        colorscale=colorscale,
+        hover_text=hover_text,
+        selected_country=selected_countries[0] if selected_countries and len(selected_countries) == 1 else None,
+        selected_iso=selected_iso,
+        other_isos=other_isos,
+        countries_df=all_centroids,
+        height=520,
+        zmin=0.7,
+        zmax=135.0
     )
     
+    # Custom title update to match exact requirement
     fig.update_layout(
-        height=520,
-        paper_bgcolor='white',
-        plot_bgcolor='white',
-        margin=dict(l=0, r=190, t=50, b=10),
         title={
             'text': f"<b>Oil Projects Capacity Start Up by {selected_company} ('000 b/d)*- {selected_year}</b>",
             'x': 0.0,
@@ -1483,17 +1379,10 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
             'yanchor': 'top',
             'font': {'size': 18, 'family': 'Arial, sans-serif', 'color': '#FF8C42'}
         },
-        hovermode='closest',
-        hoverlabel=dict(
-            bgcolor='white',
-            bordercolor='#999999',
-            font_size=13,
-            font_family='Arial, sans-serif',
-            font_color='#000000'
-        )
+        margin=dict(l=0, r=0, t=50, b=10) # Adjust top margin for title
     )
     
-    # Add copyright annotation at bottom left (matching Tableau)
+    # Add copyright annotation at bottom left
     fig.add_annotation(
         text="© 2025 Mapbox © OpenStreetMap",
         xref="paper",
@@ -2080,28 +1969,27 @@ def register_callbacks(dash_app, server):
         prevent_initial_call=True
     )
     def toggle_country_from_map(click_data, selected_countries):
-        """Toggle country selection on map click"""
-        if not click_data or 'points' not in click_data or not click_data['points']:
-            return dash.no_update
+        """Toggle country selection on map click using shared utility"""
+        # Pass (All) if currently empty/none to match shared util expectations, 
+        # though passing [] usually works if util treats empty as 'none selected' 
+        # but generic util might differ. Let's pass current state as is.
+        # Actually, shared util logic:
+        # if "(All)" in current_filter -> resolved = all
+        # else -> resolved = current filtered
+        # 
+        # If we pass [], resolved is []. 
+        # Then it falls through to 'return [country]'. This is correct for selecting map item.
+        # 
+        # If we pass ['Angola'], resolved is ['Angola'].
+        # Then len == 1 -> returns ["(All)"] + all.
         
-        try:
-            clicked_country = click_data['points'][0].get('location')
-            if not clicked_country:
-                return dash.no_update
-        except (ValueError, TypeError, AttributeError, IndexError):
-            return dash.no_update
+        result = handle_map_click_reset(click_data, selected_countries, legend_countries)
         
-        # Initialize selected_countries if None
-        if selected_countries is None:
-            selected_countries = []
-        
-        # Toggle the clicked country
-        if clicked_country in selected_countries:
-            new_selected = [c for c in selected_countries if c != clicked_country]
-        else:
-            new_selected = selected_countries + [clicked_country]
+        # Adapt result: if it contains "(All)", return empty list (standard for this app)
+        if result and "(All)" in result:
+            return []
             
-        return new_selected
+        return result
 
     
     @dash_app.callback(

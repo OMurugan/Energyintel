@@ -237,7 +237,7 @@ else:
     CHART_MAX_YEAR = DEFAULT_YEAR or 0
 
 COUNTRY_OPTIONS = sorted(TABLE_DF["country"].unique().tolist()) if not TABLE_DF.empty else []
-DEFAULT_COUNTRY = ["(All)"]  # Default to show all countries instead of just Russia
+DEFAULT_COUNTRY = ["Russia"]  # Default to show all countries instead of just Russia
 
 # Base stream configuration – explicit ordering and colors requested by design
 STREAM_DISPLAY = [
@@ -319,30 +319,7 @@ MAP_COLOR_STEPS = [
 ]
 COLOR_LEGEND_WIDTH = len(MAP_COLOR_SCALE) * 18
 
-# Map styling constants to match Energy Intelligence design
-MAP_BACKGROUND_COLOR = '#d6e1eb'
-MAP_LAND_COLOR = '#f4f4f4'
 
-# Global variable to cache world GeoJSON
-_world_geojson = None
-
-def _load_world_geojson():
-    """Load world GeoJSON for Mapbox maps"""
-    global _world_geojson
-    if _world_geojson is not None:
-        return _world_geojson
-    
-    try:
-        # Use the same GeoJSON source as imports_comparison.py
-        geojson_url = "https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"
-        with urlopen(geojson_url) as response:
-            _world_geojson = json.load(response)
-        print("World GeoJSON loaded successfully")
-        return _world_geojson
-    except Exception as e:
-        print(f"Failed to load world GeoJSON: {e}")
-        _world_geojson = None
-        return None
 
 def _iso_for_country(country):
     """Return ISO Alpha-3 code for a country, using centralized mapping."""
@@ -575,11 +552,11 @@ def _build_map_figure(
     selected_countries: Optional[Sequence[str]] = None
 ) -> go.Figure:
     if MAP_DF.empty:
-        return _empty_figure("No map data available")
+        return create_empty_map("No map data available")
     normalized_year = _normalize_year(year)
     df = MAP_DF[MAP_DF["year"] == normalized_year].copy()
     if df.empty:
-        return _empty_figure("No data for the selected year")
+        return create_empty_map("No data for the selected year")
     
     # Filter by selected countries if provided
     # Note: selected_countries is already resolved (no "(All)" in it)
@@ -587,102 +564,106 @@ def _build_map_figure(
     if selected_countries is not None and "country" in df.columns:
         if isinstance(selected_countries, list) and len(selected_countries) == 0:
             # Empty list means no countries selected - return empty figure
-            return _empty_figure("No countries selected")
+            return create_empty_map("No countries selected")
         elif selected_countries:
             # Filter df by matching countries (case-insensitive)
             df_countries_normalized = df["country"].str.strip().str.lower()
             target_countries_normalized = {c.lower().strip(): c for c in selected_countries}
             mask = df_countries_normalized.isin(target_countries_normalized.keys())
             df = df[mask].copy()
+
+    # Add ISO codes for the map (required for create_choropleth_map)
+    df["iso_alpha"] = df["country"].apply(_iso_for_country)
+
     max_value = df["value"].max() if not df.empty else None
-    fig = go.Figure(
-        data=[
-            go.Choropleth(
-                locations=df["country"],
-                z=df["value"],
-                locationmode="country names",
-                colorscale=MAP_COLOR_STEPS,
-                zmin=0,
-                zmax=max_value if max_value else None,
-                marker_line_color="#ffffff",
-                marker_line_width=0.5,
-                hovertemplate="<b>%{location}</b><br>Exports: %{z:,.0f} ’000 b/d<extra></extra>",
-                showscale=False,
-            )
-        ]
-    )
-    # Add country labels with density control to reduce overlap at wide zooms
+    
+    # Prepare centroid labels
     centroids = (
         df.groupby("country")[["lat", "lon"]]
         .mean()
         .reset_index()
         .dropna(subset=["lat", "lon"])
     )
+    # Rename columns for shared utility (needs Country, Latitude, Longitude)
+    centroids = centroids.rename(columns={"country": "Country", "lat": "Latitude", "lon": "Longitude"})
+
     label_cap = len(centroids)
     if len(centroids) > 120:
         label_cap = 40
     elif len(centroids) > 80:
         label_cap = 60
+        
     labels_df = (
-        centroids.sort_values("country")
+        centroids.sort_values("Country")
         .head(label_cap)
     )
-    fig.add_trace(
-        go.Scattergeo(
-            lon=labels_df["lon"],
-            lat=labels_df["lat"],
-            mode="text",
-            text=labels_df["country"],
-            textfont=dict(size=8, color="#2c3e50"),
-            textposition="top center",
-            hoverinfo="skip",
-            showlegend=False,
-        )
-    )
-    fig.update_geos(
-        showframe=False,
-        showcoastlines=True,
-        showcountries=True,
-        projection_type="natural earth",
-        bgcolor="rgba(0,0,0,0)",
-        landcolor=MAP_LAND_COLOR,
-        countrycolor="#d0d0d0",
-        coastlinecolor="#d0d0d0",
-        oceancolor=MAP_BACKGROUND_COLOR,
-        # Use center and scale to match projects_by_country.py zoom level
-        center=dict(lat=24.0, lon=45.0),  # Same world center as projects_by_country.py
-        projection=dict(
-            scale=1.0,  # Adjusted to match zoom level 2.8 from projects_by_country.py
-        ),
-    )
-    fig.update_layout(
-        height=520,
-        paper_bgcolor=MAP_BACKGROUND_COLOR,
-        plot_bgcolor=MAP_BACKGROUND_COLOR,
-        # Reduce margins to minimize blank space - keep bottom margin for legend
-        margin=dict(l=0, r=0, t=5, b=5),  # Minimal margins
-        template="plotly_white",
-    )
+
+    # Prepare data for map
+    locations = df["iso_alpha"].tolist()
+    z_values = df["value"].tolist()
+    
+    # Custom hover text with white background styling
+    hover_text = [
+        f"Country: {row['country']}<br>"
+        f"Exports Volume: {row['value']:,.0f} ('000 b/d)<br>"
+        f"Year: {row['year']}"
+        for _, row in df.iterrows()
+    ]
+    
+    # Handle highlighting
+    selected_iso = None
+    other_isos = None
+    
+    # Only highlight if a single country specific highlight is requested
+    # (matches behavior in projects_by_company)
     if highlight_country:
-        highlight_list = (
-            highlight_country
-            if isinstance(highlight_country, list)
-            else [highlight_country]
-        )
-        highlight_list = [c for c in highlight_list if c]
-        if highlight_list:
-            fig.add_trace(
-                go.Choropleth(
-                    locations=highlight_list,
-                    locationmode="country names",
-                    z=[max_value or 1] * len(highlight_list),
-                    colorscale=[[0, "#2f3f5c"], [1, "#2f3f5c"]],
-                    showscale=False,
-                    marker_line_color="#182238",
-                    marker_line_width=1.6,
-                    hoverinfo="skip",
-                )
-            )
+        if isinstance(highlight_country, list):
+             highlight_country = highlight_country[0] if highlight_country else None
+             
+        if highlight_country:
+            selected_iso = _iso_for_country(highlight_country)
+            if selected_iso:
+                other_isos = [iso for iso in locations if iso != selected_iso]
+
+    # Use shared utility
+    fig = create_choropleth_map(
+        locations=locations,
+        z_values=z_values,
+        colorscale=MAP_COLOR_STEPS,
+        hover_text=hover_text,
+        selected_country=highlight_country,
+        selected_iso=selected_iso,
+        other_isos=other_isos,
+        countries_df=labels_df,
+        height=520,
+        zmin=0,
+        zmax=max_value
+    )
+    
+    # Custom layout adjustments specific to Global Exports
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=5, b=5),
+        hoverlabel=dict(
+            bgcolor="white",
+            bordercolor="#cccccc",
+            font=dict(size=13, color="black", family="Arial, sans-serif")
+        ),
+        mapbox_zoom=0.8
+    )
+
+    # Add copyright annotation to match projects_by_company.py
+    fig.add_annotation(
+        text="© 2025 Mapbox © OpenStreetMap",
+        xref="paper",
+        yref="paper",
+        x=0.01,
+        y=0.01,
+        showarrow=False,
+        font=dict(size=10, color='#888888', family='Arial, sans-serif'),
+        xanchor='left',
+        yanchor='bottom'
+    )
+
     return fig
 
 
@@ -1052,13 +1033,25 @@ def create_layout():
                                         config={
                                             "displayModeBar": True,
                                             "displaylogo": False,
-                                            "modeBarButtonsToAdd": [
-                                                "zoomInGeo",
-                                                "zoomOutGeo",
-                                                "resetGeo",
-                                                "resetScale2d",
+                                            "modeBarButtonsToRemove": [
+                                                "zoomInGeo", "zoomOutGeo", 
+                                                "zoomInMapbox", "zoomOutMapbox",
+                                                "pan", "pan2d", "pan3d", 
+                                                "select2d", "lasso2d", 
+                                                "autoScale2d", "resetScale2d",
+                                                "hoverClosestGeo", "hoverClosestGl2d", 
+                                                "hoverClosestPie", "toggleHover", 
+                                                "resetViews", "toggleSpikelines"
                                             ],
-                                            "scrollZoom": True,
+                                            "modeBarButtonsToAdd": ["toImage", "resetGeo", "resetViewMapbox"],
+                                            "toImageButtonOptions": {
+                                                "format": "png",
+                                                "filename": "custom_image",
+                                                "height": 500,
+                                                "width": 700,
+                                                "scale": 1
+                                            },
+                                            "scrollZoom": False,
                                             "doubleClick": "reset",
                                         },
                                         figure=_build_map_figure(
@@ -1396,7 +1389,7 @@ def create_layout():
                             html.Div([
                                 html.H4(
                                     id="global-exports-chart-title",
-                                    children="All Countries Annual Exports by Crude Stream",
+                                    children="All Annual Exports by Crude Stream",
                                     style={
                                         "color": "#fe5000",
                                         "textAlign": "center",
@@ -1961,7 +1954,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     ):
         """Update stacked area chart."""
         # Default values
-        default_title = "All Countries Annual Exports by Crude Stream"
+        default_title = "All Annual Exports by Crude Stream"
         default_fig = _empty_figure("Loading chart...")
         
         try:
@@ -2048,17 +2041,21 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 if is_initial_call:
                     title = default_title
                 elif countries and COUNTRY_OPTIONS and len(COUNTRY_OPTIONS) > 0:
-                    # Use resolved_countries from above if available, otherwise resolve again for title
-                    if resolved_countries is not None and len(resolved_countries) > 0:
-                        title_countries = resolved_countries
-                    elif resolved_countries is None:
-                        # All countries selected - use all for title
+                    # Logic: if resolved_countries is None -> All selected (optimization)
+                    # OR if resolved_countries length equals all options -> All selected
+                    is_all_selected = False
+                    
+                    if resolved_countries is None:
+                        is_all_selected = True
                         title_countries = COUNTRY_OPTIONS
                     else:
-                        # Resolve for title generation
-                        title_countries = _resolve_countries(countries, COUNTRY_OPTIONS)
+                        title_countries = resolved_countries
+                        if len(title_countries) == len(COUNTRY_OPTIONS):
+                            is_all_selected = True
                     
-                    if len(title_countries) == 1:
+                    if is_all_selected:
+                        title = "All Annual Exports by Crude Stream"
+                    elif len(title_countries) == 1:
                         title = f"{title_countries[0]} Annual Exports by Crude Stream"
                     elif len(title_countries) > 1:
                         if len(title_countries) <= 3:
@@ -2079,7 +2076,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             if not isinstance(fig, go.Figure):
                 fig = _empty_figure("Error: Invalid figure type")
             if not isinstance(title, str):
-                title = "All Countries Annual Exports by Crude Stream"
+                title = "All Annual Exports by Crude Stream"
             
             return fig, title
             
@@ -2089,12 +2086,12 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 error_fig = _empty_figure("Error loading chart")
                 if not isinstance(error_fig, go.Figure):
                     error_fig = go.Figure()
-                return error_fig, "All Countries Annual Exports by Crude Stream"
+                return error_fig, "All Annual Exports by Crude Stream"
             except Exception:
                 # Last resort - return minimal valid figure
                 minimal_fig = go.Figure()
                 minimal_fig.add_annotation(text="Error loading chart", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-                return minimal_fig, "All Countries Annual Exports by Crude Stream"
+                return minimal_fig, "All Annual Exports by Crude Stream"
 
     @dash_app.callback(
         Output("global-exports-stream-filter", "value", allow_duplicate=True),
