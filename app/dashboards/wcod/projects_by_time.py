@@ -368,7 +368,7 @@ def create_layout():
                                 'fontSize': '12px'
                             }
                         ),
-                        dcc.Download(id="download-projects-chart-csv")
+                        dcc.Download(id="download-projects-time-chart-csv")
                     ])
                 ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'paddingRight': '10px'}),
                 dcc.Loading(
@@ -446,7 +446,7 @@ def create_layout():
                             'fontSize': '12px'
                         }
                     ),
-                    dcc.Download(id="download-projects-table-csv")
+                    dcc.Download(id="download-projects-table-time-csv")
                 ])
             ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginBottom': '15px'}),
             dcc.Loading(
@@ -514,7 +514,7 @@ def create_layout():
 
 
 def register_callbacks(dash_app, server):    
-    @callback(
+    @dash_app.callback(
         [Output('likely-filter', 'value'),
          Output('likely-filter-previous', 'data')],
         Input('likely-filter', 'value'),
@@ -563,7 +563,7 @@ def register_callbacks(dash_app, server):
         final_return_values = selected_individual if len(selected_individual) > 0 else (all_options if is_all_selected else [])
         return final_return_values, final_return_values
 
-    @callback(
+    @dash_app.callback(
         Output('projects-time-selection', 'data'),
         [Input('projects-time-chart', 'clickData'),
          Input('current-submenu', 'data')],
@@ -605,7 +605,7 @@ def register_callbacks(dash_app, server):
                 
         return current_selection
     
-    @callback(
+    @dash_app.callback(
         Output('projects-time-chart', 'figure'),
         [Input('current-submenu', 'data'),
          Input('likely-filter', 'value'),
@@ -839,7 +839,7 @@ def register_callbacks(dash_app, server):
         
         return fig
     
-    @callback(
+    @dash_app.callback(
         [Output('projects-time-table', 'data'),
          Output('projects-time-table', 'columns'),
          Output('projects-time-table', 'tooltip_data')],
@@ -1061,8 +1061,8 @@ def register_callbacks(dash_app, server):
             traceback.print_exc()
             return [], [], []
 
-    @callback(
-        Output('download-projects-chart-csv', 'data'),
+    @dash_app.callback(
+        Output('download-projects-time-chart-csv', 'data'),
         Input('btn-export-projects-chart-csv', 'n_clicks'),
         State('likely-filter', 'value'),
         prevent_initial_call=True
@@ -1117,8 +1117,8 @@ def register_callbacks(dash_app, server):
                 return dcc.send_data_frame(export_df.to_csv, "projects_chart_data.csv", index=False)
         return None
 
-    @callback(
-        Output('download-projects-table-csv', 'data'),
+    @dash_app.callback(
+        Output('download-projects-table-time-csv', 'data'),
         Input('btn-export-projects-table-csv', 'n_clicks'),
         [State('likely-filter', 'value'),
          State('projects-time-selection', 'data')],

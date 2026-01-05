@@ -22,6 +22,19 @@ from urllib.request import urlopen
 from core.data_helpers import execute_query
 from core.country_mappings import COUNTRY_TO_ISO, get_iso_code
 from config import Config
+from .shared_map_utils import (
+    create_choropleth_map,
+    get_mapbox_config,
+    load_world_geojson,
+    handle_map_click_reset,
+    create_empty_map,
+    add_background_click_layer,
+    add_country_labels,
+    apply_standard_layout,
+    MAP_BACKGROUND_COLOR,
+    WORLD_CENTER,
+    WORLD_ZOOM
+)
 
 # # CSV paths
 # DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'Country_Profile')
@@ -704,6 +717,24 @@ def create_layout():
         # World Map Section with hover controls (full screen)        
         # Map container with relative positioning for controls overlay
         html.Div([
+            # Port click status indicator
+            html.Div(
+                id='port-click-status',
+                children='Click on a port to see details',
+                style={
+                    'position': 'absolute',
+                    'top': '10px',
+                    'right': '10px',
+                    'background': 'rgba(254, 80, 0, 0.9)',
+                    'color': 'white',
+                    'padding': '8px 12px',
+                    'borderRadius': '4px',
+                    'fontSize': '12px',
+                    'fontWeight': 'bold',
+                    'zIndex': '1000',
+                    'display': 'none'
+                }
+            ),
             dcc.Loading(
                 id='map-loading',
                 type='default',
@@ -715,7 +746,7 @@ def create_layout():
                         id='world-map-chart',
                         figure=initial_map,
                         style={
-                            'height': 'calc(80vh - 180px)',
+                            'height': 'calc(85vh - 180px)',
                             'width': '100vw',  # Changed to viewport width
                             'maxWidth': '100%',
                             'background': 'white',
@@ -731,7 +762,7 @@ def create_layout():
                     )
                 ]
             ),
-        ], style={'width': '100%', 'overflow': 'hidden'}),  # Added this wrapper div
+        ], style={'width': '100%', 'overflow': 'hidden', 'position': 'relative'}),  # Added position relative
                 
         # CSS injection div (will be handled by clientside callback)
         html.Div(id='css-injection-placeholder', style={'display': 'none'}),
@@ -786,22 +817,21 @@ def get_port_details_for_hover(port_name):
 
 def create_world_map(selected_country=None):
     """Create world map choropleth using database map data, filtered by selected country"""
-
+    
     if map_df.empty:
-        return create_empty_map()
+        return create_empty_map("No map data available")
+    
     # Work with numeric latitude/longitude only to avoid NaN/invalid geometries
     numeric_map = map_df.copy()
     numeric_map['latitude'] = pd.to_numeric(numeric_map.get('latitude'), errors='coerce')
     numeric_map['longitude'] = pd.to_numeric(numeric_map.get('longitude'), errors='coerce')
     numeric_map = numeric_map.dropna(subset=['latitude', 'longitude'])
     if numeric_map.empty:
-        return create_empty_map()
+        return create_empty_map("No valid coordinate data available")
 
     # Filter by selected country if provided
-    # Note: country_long_name columns are already consolidated during data loading
     if selected_country and 'country_long_name' in numeric_map.columns:
         print(f"DEBUG: Selected country for map: {selected_country}")
-        # Filter by country name (handle case sensitivity and string conversion)
         filtered_map = numeric_map[numeric_map['country_long_name'].astype(str).str.strip() == str(selected_country).strip()].copy()
     else:
         print("DEBUG: No country selected for map, showing all countries.")
@@ -809,13 +839,330 @@ def create_world_map(selected_country=None):
 
     if filtered_map.empty:
         print(f"DEBUG: filtered_map is empty for {selected_country}. Returning empty map.")
-        return create_empty_map()
+        return create_empty_map(f"No data available for {selected_country}")
     
     # Ensure required columns exist
     required_cols = ['Port Name', 'latitude', 'longitude']
     if not all(col in filtered_map.columns for col in required_cols):
         print(f"DEBUG: Missing required columns in filtered_map: {required_cols}. Returning empty map.")
-        return create_empty_map()
+        return create_empty_map("Missing required data columns")
+    
+    # Use shared map configuration
+    use_mapbox, token, mapbox_layout = get_mapbox_config()
+    geojson = load_world_geojson()
+    
+    fig = go.Figure()
+    
+    if selected_country:
+        # For selected country, show individual ports and highlight the country
+        port_cols = ['Port Name', 'latitude', 'longitude', 'port_value']
+        if 'country_long_name' in filtered_map.columns:
+            port_cols.append('country_long_name')
+        if 'Port' in filtered_map.columns:
+            port_cols.append('Port')
+        if 'profile_url' in filtered_map.columns:
+            port_cols.append('profile_url')
+        
+        port_data = filtered_map[port_cols].copy()
+        port_data['latitude'] = pd.to_numeric(port_data['latitude'], errors='coerce')
+        port_data['longitude'] = pd.to_numeric(port_data['longitude'], errors='coerce')
+        port_data = port_data.dropna(subset=['latitude', 'longitude'])
+        
+        # Filter out rows with empty Port Name
+        port_data = port_data[
+            (port_data['Port Name'].astype(str).str.strip() != '') &
+            (port_data['Port Name'].astype(str).str.strip().str.lower() != 'nan')
+        ].copy()
+        
+        if port_data.empty:
+            return create_empty_map(f"No port data available for {selected_country}")
+        
+        # Get ISO code for selected country and add country highlight
+        country_iso = get_iso_code(selected_country)
+        if country_iso and geojson:
+            if use_mapbox:
+                fig.add_trace(go.Choroplethmapbox(
+                    geojson=geojson,
+                    locations=[country_iso],
+                    z=[1],
+                    colorscale=[[0, 'rgba(142, 153, 208, 1)'], [1, 'rgba(142, 153, 208, 1)']],
+                    showscale=False,
+                    featureidkey="id",
+                    hoverinfo='text',
+                    text=[selected_country], 
+                    marker_line_width=0,
+                    marker_line_color='rgba(0,0,0,0)'
+                ))
+            else:
+                fig.add_trace(go.Choropleth(
+                    locations=[country_iso],
+                    z=[1],
+                    locationmode="ISO-3",
+                    colorscale=[[0, 'rgba(142, 153, 208, 1)'], [1, 'rgba(142, 153, 208, 1)']],
+                    showscale=False,
+                    hoverinfo='text',
+                    text=[selected_country], 
+                    marker_line_width=0,
+                    marker_line_color='rgba(0,0,0,0)'
+                ))
+        
+        # Add ports by symbol type
+        ports_by_symbol = {}
+        for _, port_row in port_data.iterrows():
+            port_value = port_row['port_value']
+            if port_value == 171:
+                symbol, marker_size, marker_color = 'circle', 14, '#fe5000'
+            elif port_value == 513:
+                symbol, marker_size, marker_color = '+', 14, '#1f77b4'
+            elif port_value == 342:
+                symbol, marker_size, marker_color = 'square', 14, '#2ca02c'
+            else:
+                symbol, marker_size, marker_color = 'circle', 14, '#6c757d'
+
+            bucket = ports_by_symbol.setdefault(symbol, {"lat": [], "lon": [], "name": [], "size": [], "custom": [], "color": []})
+            bucket["lat"].append(port_row['latitude'])
+            bucket["lon"].append(port_row['longitude'])
+            bucket["name"].append(port_row['Port Name'])
+            bucket["size"].append(marker_size)
+            bucket["color"].append(marker_color)
+            profile_url = f"/wcod/country-profile?country={port_row['country_long_name']}"
+            bucket["custom"].append([profile_url])
+
+        # Add port traces
+        if ports_by_symbol:
+            for symbol_key, data_bucket in ports_by_symbol.items():
+                enhanced_hover_text = []
+                for i, port_name in enumerate(data_bucket["name"]):
+                    port_details = get_port_details_for_hover(port_name)
+                    hover_lines = [f"<b>Port Name:</b> {port_name}"]
+                    enhanced_hover_text.append("<br>".join(hover_lines))
+                
+                if use_mapbox:
+                    fig.add_trace(go.Scattermapbox(
+                        lat=data_bucket["lat"],
+                        lon=data_bucket["lon"],
+                        mode='markers',
+                        marker=dict(
+                            size=data_bucket["size"],
+                            color=data_bucket["color"],
+                            opacity=0.9,
+                            symbol='circle'
+                        ),
+                        text=enhanced_hover_text,
+                        customdata=data_bucket["custom"],
+                        hovertemplate="%{text}<extra></extra>",
+                        showlegend=False,
+                        name=f"ports-{symbol_key}"
+                    ))
+                else:
+                    fig.add_trace(go.Scattergeo(
+                        lat=data_bucket["lat"],
+                        lon=data_bucket["lon"],
+                        mode='markers',
+                        marker=dict(
+                            size=data_bucket["size"],
+                            color=data_bucket["color"],
+                            opacity=0.9,
+                            symbol='circle'
+                        ),
+                        text=enhanced_hover_text,
+                        customdata=data_bucket["custom"],
+                        hovertemplate="%{text}<extra></extra>",
+                        showlegend=False,
+                        name=f"ports-{symbol_key}"
+                    ))
+        
+        # Add country name label
+        if selected_country:
+            map_center_lat = port_data['latitude'].mean() if not port_data.empty else filtered_map['latitude'].mean()
+            map_center_lon = port_data['longitude'].mean() if not port_data.empty else filtered_map['longitude'].mean()
+
+            if not (pd.isna(map_center_lat) or pd.isna(map_center_lon)):
+                if use_mapbox:
+                    fig.add_trace(go.Scattermapbox(
+                        lat=[map_center_lat],
+                        lon=[map_center_lon],
+                        mode='text',
+                        text=[selected_country],
+                        textfont=dict(size=12, color="black"),
+                        textposition="middle center",
+                        hoverinfo='skip',
+                        showlegend=False
+                    ))
+                else:
+                    fig.add_trace(go.Scattergeo(
+                        lat=[map_center_lat],
+                        lon=[map_center_lon],
+                        mode='text',
+                        text=[selected_country],
+                        textfont=dict(size=12, color="black"),
+                        textposition="middle center",
+                        hoverinfo='skip',
+                        showlegend=False
+                    ))
+        
+        # Calculate dynamic zoom and center
+        map_center_lat = filtered_map['latitude'].mean()
+        map_center_lon = filtered_map['longitude'].mean()
+        
+        if pd.isna(map_center_lat) or pd.isna(map_center_lon):
+            map_center = WORLD_CENTER
+            map_zoom = WORLD_ZOOM
+        else:
+            lat_min, lat_max = filtered_map['latitude'].min(), filtered_map['latitude'].max()
+            lon_min, lon_max = filtered_map['longitude'].min(), filtered_map['longitude'].max()
+            lat_span = lat_max - lat_min
+            lon_span = lon_max - lon_min
+            max_span = max(lat_span, lon_span)
+            
+            # Dynamic zoom based on country size
+            if max_span > 30:
+                map_zoom = 1.2
+            elif max_span > 15:
+                map_zoom = 1.4
+            elif max_span > 8:
+                map_zoom = 1.8
+            elif max_span > 4:
+                map_zoom = 2.4
+            elif max_span > 2:
+                map_zoom = 2.8
+            else:
+                map_zoom = 3.4
+            
+            # Country-specific zoom overrides
+            country_zoom_overrides = {
+                'Russia': 1.0, 'Canada': 0.9, 'United States': 1.0, 'Brazil': 1.2,
+                'Australia': 1.1, 'China': 1.1, 'Saudi Arabia': 1.7, 'Iran': 1.8,
+                'Norway': 2.1, 'United Kingdom': 2.5, 'Nigeria': 1.9, 'Venezuela': 1.8,
+                'Mexico': 1.5, 'Indonesia': 1.6, 'Libya': 2.1, 'Algeria': 1.8,
+                'Iraq': 2.2, 'Kuwait': 3.0, 'Qatar': 3.5, 'UAE': 2.7, 'Oman': 2.3
+            }
+            
+            if selected_country in country_zoom_overrides:
+                map_zoom = country_zoom_overrides[selected_country]
+            
+            # Adjust center for better visibility
+            if selected_country in ['United States', 'Russia']:
+                adjusted_lat = map_center_lat + (lat_span * 0.30)
+            elif selected_country == 'Canada':
+                adjusted_lat = map_center_lat + (lat_span * 0.08)
+            elif lat_span > 25:
+                adjusted_lat = map_center_lat + (lat_span * 0.05)
+            elif lat_span > 15:
+                adjusted_lat = map_center_lat + (lat_span * 0.08)
+            elif lat_span > 8:
+                adjusted_lat = map_center_lat + (lat_span * 0.05)
+            elif lat_span > 4:
+                adjusted_lat = map_center_lat + (lat_span * 0.03)
+            else:
+                adjusted_lat = map_center_lat
+            
+            map_center = dict(lat=adjusted_lat, lon=map_center_lon)
+        
+        # Update mapbox layout with calculated center and zoom
+        mapbox_layout.update({"center": map_center, "zoom": map_zoom})
+        
+    else:
+        # For all countries, show choropleth map
+        all_countries_df = numeric_map[['country_long_name']].drop_duplicates().dropna().copy()
+        all_countries_df['iso_alpha'] = all_countries_df['country_long_name'].apply(get_iso_code)
+        all_countries_df = all_countries_df.dropna(subset=['iso_alpha'])
+        
+        if use_mapbox and geojson:
+            fig.add_trace(go.Choroplethmapbox(
+                geojson=geojson,
+                locations=all_countries_df["iso_alpha"],
+                z=list(range(len(all_countries_df))),  # Use index for color variation
+                featureidkey="id",
+                colorscale="Viridis",
+                showscale=False,
+                hoverinfo="text",
+                hovertext=all_countries_df["country_long_name"],
+                marker_line_color="white",
+                marker_line_width=0.5,
+                opacity=0.5
+            ))
+        else:
+            fig.add_trace(go.Choropleth(
+                locations=all_countries_df["iso_alpha"],
+                z=list(range(len(all_countries_df))),
+                locationmode="ISO-3",
+                colorscale="Viridis",
+                showscale=False,
+                hoverinfo="text",
+                hovertext=all_countries_df["country_long_name"],
+                marker_line_color="white",
+                marker_line_width=0.5,
+                opacity=0.5
+            ))
+        
+        # Add country labels
+        country_centroids = (
+            numeric_map.groupby('country_long_name')[['latitude', 'longitude']]
+            .mean()
+            .reset_index()
+            .dropna(subset=['latitude', 'longitude'])
+        )
+        
+        label_cap = min(40, len(country_centroids))
+        labels_df = country_centroids.sort_values('country_long_name').head(label_cap)
+        
+        if use_mapbox:
+            fig.add_trace(go.Scattermapbox(
+                lat=labels_df['latitude'],
+                lon=labels_df['longitude'],
+                mode='text',
+                text=labels_df['country_long_name'],
+                textfont=dict(size=9, color="#2c3e50"),
+                textposition="top center",
+                hoverinfo='skip',
+                showlegend=False
+            ))
+        else:
+            fig.add_trace(go.Scattergeo(
+                lat=labels_df['latitude'],
+                lon=labels_df['longitude'],
+                mode='text',
+                text=labels_df['country_long_name'],
+                textfont=dict(size=9, color="#2c3e50"),
+                textposition="top center",
+                hoverinfo='skip',
+                showlegend=False
+            ))
+        
+        # Use world center for all countries view
+        mapbox_layout.update({"center": {"lat": 10.0, "lon": 0.0}, "zoom": 1.5})
+    
+    # Apply standard layout using shared utilities
+    apply_standard_layout(fig, use_mapbox, mapbox_layout, height=None)
+    
+    # Override some layout settings for country profile specific needs
+    fig.update_layout(
+        title=None,
+        autosize=True,
+        hovermode='closest',
+        hoverlabel=dict(
+            bgcolor='white',
+            font_size=12,
+            font_family="Arial"
+        ),
+        xaxis=dict(
+            showgrid=False,
+            showline=False,
+            showticklabels=False,
+            zeroline=False,
+            visible=False
+        ),
+        yaxis=dict(
+            showgrid=False,
+            showline=False,
+            showticklabels=False,
+            zeroline=False,
+            visible=False
+        )
+    )
+    
+    return fig
     
     # Group by country to get port counts and locations
     if selected_country:
@@ -921,6 +1268,35 @@ def create_world_map(selected_country=None):
             # Add one trace per symbol to avoid per-point symbol issues
             for symbol_key, data_bucket in ports_by_symbol.items():
                 print(f"DEBUG: Adding trace for symbol '{symbol_key}' with {len(data_bucket['lat'])} ports")
+                
+                # Prepare enhanced hover data for each port
+                enhanced_hover_text = []
+                for i, port_name in enumerate(data_bucket["name"]):
+                    # Get detailed port information
+                    port_details = get_port_details_for_hover(port_name)
+                    
+                    # Build hover text with available details
+                    hover_lines = [f"<b>Port Name:</b> {port_name}"]
+                    
+                    # # Add port details if available
+                    # if port_details:
+                    #     for measure, value in port_details.items():
+                    #         if measure and value and str(value).strip():
+                    #             # Format measure names for display
+                    #             display_measure = measure.replace('_', ' ').title()
+                    #             if 'bbl' in measure.lower():
+                    #                 display_measure = display_measure.replace('Bbl', 'bbl')
+                    #             elif 'dwt' in measure.lower():
+                    #                 display_measure = display_measure.replace('Dwt', 'dwt')
+                    #             hover_lines.append(f"<b>{display_measure}:</b> {value}")
+                    
+                    # # Add coordinates
+                    # lat_val = data_bucket["lat"][i]
+                    # lon_val = data_bucket["lon"][i]
+                    # hover_lines.append(f"<b>Coordinates:</b> {lat_val:.4f}, {lon_val:.4f}")
+                    
+                    enhanced_hover_text.append("<br>".join(hover_lines))
+                
                 fig.add_trace(go.Scattermapbox(
                     lat=data_bucket["lat"],
                     lon=data_bucket["lon"],
@@ -931,13 +1307,11 @@ def create_world_map(selected_country=None):
                         opacity=0.9,
                         symbol='circle'
                     ),
-                    text=data_bucket["name"],
+                    text=enhanced_hover_text,
                     customdata=data_bucket["custom"],
-                    hovertemplate="""
-                        <b>Port Name:</b> %{text}
-                        <extra></extra>
-                    """,
-                    showlegend=False
+                    hovertemplate="%{text}<extra></extra>",
+                    showlegend=False,
+                    name=f"ports-{symbol_key}"  # Add name for click detection
                 ))
         else:
             print("DEBUG: No ports to display - ports_by_symbol is empty")
@@ -964,18 +1338,116 @@ def create_world_map(selected_country=None):
             ))
 
         title_text = f"{selected_country} Production"
-        map_zoom = 1.2 # Zoom in for a specific country
+        
+        # Calculate dynamic zoom and center based on country's geographic extent
         map_center_lat = filtered_map['latitude'].mean()
         map_center_lon = filtered_map['longitude'].mean()
+        
         if pd.isna(map_center_lat) or pd.isna(map_center_lon):
             # Fallback to default world view center if data is missing
             map_center = dict(lat=22.0, lon=0.0)
+            map_zoom = 1.2
         else:
-            # Adjust center latitude upward to show top area of country
-            # Adding latitude moves the center north, which shifts viewport to show more northern area
-            # This fixes the issue where top is cut off and there's extra space below
-            # Additional 25px downward adjustment: ~0.4 degrees at zoom 1.5
-            adjusted_lat = map_center_lat + 8.0  # Move center north to show top area, then down 25px
+            # Calculate the geographic extent of the country's ports
+            lat_min, lat_max = filtered_map['latitude'].min(), filtered_map['latitude'].max()
+            lon_min, lon_max = filtered_map['longitude'].min(), filtered_map['longitude'].max()
+            
+            # Calculate the span of coordinates
+            lat_span = lat_max - lat_min
+            lon_span = lon_max - lon_min
+            
+            # Determine zoom level based on geographic extent
+            # Adjusted for reduced map height - need lower zoom levels to fit countries
+            max_span = max(lat_span, lon_span)
+            
+            if max_span > 30:  # Very large countries (e.g., Russia, Canada, USA)
+                map_zoom = 1.2
+            elif max_span > 15:  # Large countries (e.g., Brazil, Australia)
+                map_zoom = 1.4
+            elif max_span > 8:   # Medium countries (e.g., Saudi Arabia, Iran)
+                map_zoom = 1.8
+            elif max_span > 4:   # Smaller countries (e.g., Norway, UK)
+                map_zoom = 2.4
+            elif max_span > 2:   # Small countries (e.g., UAE, Kuwait)
+                map_zoom = 2.8
+            else:                # Very small countries or single port locations
+                map_zoom = 3.4
+            
+            # Country-specific zoom adjustments for reduced map height
+            country_zoom_overrides = {
+                'Russia': 1.0,  # Further reduced to show full northern Russia
+                'Canada': 0.9,
+                'United States': 1.0,  # Further reduced to show full Alaska
+                'Brazil': 1.2,
+                'Australia': 1.1,
+                'China': 1.1,
+                'Saudi Arabia': 1.7,
+                'Iran': 1.8,
+                'Norway': 2.1,
+                'United Kingdom': 2.5,
+                'Nigeria': 1.9,
+                'Venezuela': 1.8,
+                'Mexico': 1.5,
+                'Indonesia': 1.6,
+                'Libya': 2.1,
+                'Algeria': 1.8,
+                'Iraq': 2.2,
+                'Kuwait': 3.0,
+                'Qatar': 3.5,
+                'UAE': 2.7,
+                'Oman': 2.3,
+                'Angola': 2.1,
+                'Ecuador': 2.5,
+                'Gabon': 2.7,
+                'Ghana': 2.9,
+                'Guyana': 2.6,
+                'Kazakhstan': 1.3,
+                'Malaysia': 2.1,
+                'Brunei': 3.3,
+                'Chad': 2.2,
+                'Colombia': 1.9,
+                'Congo (Brazzaville)': 2.5,
+                'Denmark': 2.7,
+                'Egypt': 2.1,
+                'Equatorial Guinea': 3.0,
+                'Papua New Guinea': 2.4,
+                'South Sudan': 2.3,
+                'Sudan': 2.0,
+                'Syria': 2.5,
+                'Turkmenistan': 2.1,
+                'Vietnam': 2.2,
+                'Yemen': 2.4,
+                'Abu Dhabi': 3.3,
+                'Dubai': 3.5,
+                'Neutral Zone': 3.4
+            }
+            
+            # Apply country-specific override if available
+            if selected_country in country_zoom_overrides:
+                map_zoom = country_zoom_overrides[selected_country]
+            
+            # Adjust center for reduced map height - ensure northern parts are visible
+            # Move large countries slightly south to show their northern regions
+            if selected_country == 'United States':
+                # For US, move south to show Alaska completely
+                adjusted_lat = map_center_lat + (lat_span * 0.30)  # Move south to show Alaska
+            elif selected_country == 'Russia':
+                # For Russia, move south to show northern Russia
+                adjusted_lat = map_center_lat + (lat_span * 0.30)  # Move south to show northern Russia
+            elif selected_country == 'Canada':
+                # For Canada, also move slightly south to show northern territories
+                adjusted_lat = map_center_lat + (lat_span * 0.08)  # Move south for northern visibility
+            elif lat_span > 25:  # Very large countries - move south to use bottom space
+                adjusted_lat = map_center_lat + (lat_span * 0.05)  # Move south to show northern parts
+            elif lat_span > 15:  # Large countries - moderate south adjustment
+                adjusted_lat = map_center_lat + (lat_span * 0.08)  # Move south for better fit
+            elif lat_span > 8:  # Medium countries - slight south adjustment
+                adjusted_lat = map_center_lat + (lat_span * 0.05)
+            elif lat_span > 4:  # Smaller countries - minimal south adjustment
+                adjusted_lat = map_center_lat + (lat_span * 0.03)
+            else:  # Small countries - use geographic center
+                adjusted_lat = map_center_lat
+            
             map_center = dict(lat=adjusted_lat, lon=map_center_lon)
     else:
         # For all countries, show a choropleth map of all countries
@@ -996,8 +1468,8 @@ def create_world_map(selected_country=None):
                         )
         
         title_text = 'World Crude Oil Ports by Country'
-        map_zoom = 1.2 # World view zoom - matches original Tableau source
-        map_center = dict(lat=22.0, lon=0.0)  # Centered on equator for balanced world view
+        map_zoom = 1.5 # Adjusted for reduced map height
+        map_center = dict(lat=10.0, lon=0.0)  # Moved south to utilize bottom space better
 
         # Add country name labels with density control to avoid overlap at wide zooms
         country_centroids = (
@@ -1090,8 +1562,8 @@ def create_empty_map():
         },
         mapbox=dict(
             style="carto-positron",
-            center=dict(lat=20.0, lon=0.0),
-            zoom=1.5 # Consistent zoom with world view - matches original Tableau source
+            center=dict(lat=10.0, lon=0.0),  # Moved south to utilize bottom space
+            zoom=1.5 # Adjusted for reduced map height
         ),
         height=400,
         width=700,  # Square aspect ratio
@@ -2810,9 +3282,24 @@ def register_callbacks(dash_app, server):
             #world-map-chart .plotly .scattergeo .points path {
                 pointer-events: auto !important;
                 cursor: pointer;
+                transition: all 0.2s ease;
             }
             #world-map-chart .plotly .scattergeo .points path:hover {
-                stroke: none !important;
+                stroke: #fe5000 !important;
+                stroke-width: 3px !important;
+                filter: brightness(1.2);
+                transform: scale(1.1);
+            }
+            /* Enhanced port marker styling */
+            #world-map-chart .plotly .scattermapbox .points circle {
+                cursor: pointer !important;
+                transition: all 0.2s ease !important;
+            }
+            #world-map-chart .plotly .scattermapbox .points circle:hover {
+                stroke: #fe5000 !important;
+                stroke-width: 3px !important;
+                filter: brightness(1.3) !important;
+                r: 8 !important;
             }
             /* Hide X and Y axis lines on map */
             #world-map-chart .plotly .xaxis,
@@ -2870,8 +3357,8 @@ def register_callbacks(dash_app, server):
             const ZOOM_OUT_MAX_LAT = 85;
             const ZOOM_OUT_MIN_LON = -180;
             const ZOOM_OUT_MAX_LON = 180;
-            const MIN_LAT_RANGE = 30;       // Minimum latitude range (degrees) - zoom in limit
-            const MIN_LON_RANGE = 60;       // Minimum longitude range (degrees) - zoom in limit
+            const MIN_LAT_RANGE = 8;        // Minimum latitude range (degrees) - zoom in limit (reduced for closer zoom)
+            const MIN_LON_RANGE = 15;       // Minimum longitude range (degrees) - zoom in limit (reduced for closer zoom)
             const MAX_LAT_RANGE = ZOOM_OUT_MAX_LAT - ZOOM_OUT_MIN_LAT;  // Maximum allowed latitude range (155 degrees)
             const MAX_LON_RANGE = ZOOM_OUT_MAX_LON - ZOOM_OUT_MIN_LON;  // Maximum allowed longitude range (360 degrees)
             
@@ -3589,6 +4076,82 @@ def register_callbacks(dash_app, server):
         Input('css-injection-placeholder', 'id'),
         prevent_initial_call=False
     )
+
+    # Port click callback for enhanced interaction
+    @dash_app.callback(
+        Output('port-details-table', 'style_data_conditional'),
+        Output('port-click-status', 'style'),
+        Output('port-click-status', 'children'),
+        Input('world-map-chart', 'clickData'),
+        State('country-select-profile', 'value'),
+        prevent_initial_call=True
+    )
+    def handle_port_click(click_data, selected_country):
+        """Handle port clicks on the map to highlight corresponding row in port details table"""
+        default_style = [
+            {
+                'if': {'row_index': 'odd'},
+                'backgroundColor': '#f8f9fa'
+            },
+            {
+                'if': {'state': 'active'},
+                'backgroundColor': '#fdeedc',
+                'border': '1px solid #fe5000'
+            },
+            {
+                'if': {'state': 'selected'},
+                'backgroundColor': '#e1f0ff',
+                'border': '1px solid #3390ff'
+            }
+        ]
+        
+        status_hidden = {
+            'position': 'absolute',
+            'top': '10px',
+            'right': '10px',
+            'background': 'rgba(254, 80, 0, 0.9)',
+            'color': 'white',
+            'padding': '8px 12px',
+            'borderRadius': '4px',
+            'fontSize': '12px',
+            'fontWeight': 'bold',
+            'zIndex': '1000',
+            'display': 'none'
+        }
+        
+        if not click_data or not click_data.get('points') or not selected_country:
+            return default_style, status_hidden, 'Click on a port to see details'
+        
+        point = click_data['points'][0]
+        
+        # Check if this is a port click (has text with port details)
+        if 'text' in point and '<b>Port Name:</b>' in str(point['text']):
+            # Extract port name from the hover text
+            text = point['text']
+            if '<b>Port Name:</b>' in text:
+                port_name_line = text.split('<br>')[0]  # First line contains port name
+                port_name = port_name_line.replace('<b>Port Name:</b>', '').strip()
+                
+                # Show status indicator
+                status_visible = status_hidden.copy()
+                status_visible['display'] = 'block'
+                
+                # Return style to highlight the clicked port in the table
+                highlighted_style = default_style + [
+                    {
+                        'if': {
+                            'filter_query': f'{{Port Name}} = "{port_name}"'
+                        },
+                        'backgroundColor': '#fff3cd',
+                        'border': '2px solid #ffc107',
+                        'fontWeight': 'bold'
+                    }
+                ]
+                
+                return highlighted_style, status_visible, f'Selected Port: {port_name}'
+        
+        # Default return if no port clicked
+        return default_style, status_hidden, 'Click on a port to see details'
 
 
 # ------------------------------------------------------------------------------

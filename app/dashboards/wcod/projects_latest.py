@@ -6,6 +6,17 @@ import pandas as pd
 from dash import dcc, html, Input, Output, callback, dash_table, State, no_update, callback_context
 import re
 from core.data_helpers import execute_query
+from datetime import datetime, timedelta
+
+def get_current_monday_date():
+    """Returns the date of the current week's Monday in 'Week of Month Day, Year' format."""
+    today = datetime.now()
+    # Calculate the timedelta to the most recent Monday
+    # weekday() returns 0 for Monday, 1 for Tuesday, ..., 6 for Sunday
+    days_since_monday = today.weekday()
+    current_monday = today - timedelta(days=days_since_monday)
+    return current_monday.strftime("Week of %B %d, %Y")
+
 
 def create_link_text(comment, link_url, default_label="Article"):
     link_str = str(link_url).strip() if pd.notna(link_url) else ""
@@ -249,6 +260,8 @@ def create_layout():
                     'textAlign': 'left',
                 }
             ),
+            dcc.Download(id="download-latest-updates-csv"),
+            dcc.Download(id="download-all-projects-csv"),
 
             # Header section with title and filter
             html.Div(style={
@@ -260,7 +273,7 @@ def create_layout():
                 # Title section
                 html.Div(children=[
                     html.H3(
-                        "List of Updated Projects- Week of December 8, 2025",
+                        f"List of Updated Projects- {get_current_monday_date()}",
                         id='updated-projects-title',
                         style={
                             'color': '#ff6600',
@@ -275,6 +288,25 @@ def create_layout():
                     ),
                 ]),
                 
+                html.Div([
+                    html.Button(
+                        'Export Data to CSV',
+                        id='btn-export-latest-updates-csv',
+                        n_clicks=0,
+                        style={
+                            'backgroundColor': 'white',
+                            'color': '#2c3e50',
+                            'border': '1px solid #dee2e6',
+                            'padding': '8px 15px',
+                            'borderRadius': '4px',
+                            'cursor': 'pointer',
+                            'fontSize': '13px',
+                            'margin': '0',
+                            'display': 'inline-block'
+                        }
+                    ),
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'padding': '0'}),
+
                 # Filter container for "Likely To Go Ahead"
                 html.Div(style={
                     'backgroundColor': 'white',
@@ -442,6 +474,24 @@ def create_layout():
                     'paddingBottom': '0',
                 }
             ),
+            html.Div([
+                html.Button(
+                    'Export Data to CSV',
+                    id='btn-export-all-projects-csv',
+                    n_clicks=0,
+                    style={
+                        'backgroundColor': 'white',
+                        'color': '#2c3e50',
+                        'border': '1px solid #dee2e6',
+                        'padding': '8px 15px',
+                        'borderRadius': '4px',
+                        'cursor': 'pointer',
+                        'fontSize': '13px',
+                        'margin': '0',
+                        'display': 'inline-block'
+                    }
+                ),
+            ], style={'display': 'flex', 'alignItems': 'right', 'justifyContent': 'flex-end', 'padding': '0 0 15px 0px'}),
             
             # Container for All Projects table that can be hidden
             html.Div(id='all-projects-table-container', children=[
@@ -457,6 +507,7 @@ def create_layout():
                             {"name": "Click on the link below to go to the relevant article", "id": "Click on the link below to go to the relevant article", "presentation": "markdown"}
                         ] if df_projects_table is not None else [],
                         data=df_projects_table.to_dict('records') if df_projects_table is not None else [],
+                        fixed_rows={'headers': True},
                         style_table={
                             'overflowX': 'auto',
                             'overflowY': 'auto',
@@ -676,6 +727,30 @@ def register_callbacks(dash_app, server):
             new_final_values,              # Current checkbox values
             previous_values_to_store       # Store for next comparison
         )
+
+    @dash_app.callback(
+        Output('download-latest-updates-csv', 'data'),
+        Input('btn-export-latest-updates-csv', 'n_clicks'),
+        State('latest-updates-table', 'data'), # Add State for filtered data
+        prevent_initial_call=True
+    )
+    def export_latest_updates_csv(n_clicks, table_data):
+        if n_clicks > 0 and table_data:
+            df = pd.DataFrame(table_data)
+            return dcc.send_data_frame(df.to_csv, "latest_updates_data.csv", index=False)
+        return no_update
+
+    @dash_app.callback(
+        Output('download-all-projects-csv', 'data'),
+        Input('btn-export-all-projects-csv', 'n_clicks'),
+        State('projects-table', 'data'), # Add State for filtered data
+        prevent_initial_call=True
+    )
+    def export_all_projects_csv(n_clicks, table_data):
+        if n_clicks > 0 and table_data:
+            df = pd.DataFrame(table_data)
+            return dcc.send_data_frame(df.to_csv, "all_projects_data.csv", index=False)
+        return no_update
 
     # SIMPLE CLIENTSIDE CALLBACK - This will definitely work
     dash_app.clientside_callback(

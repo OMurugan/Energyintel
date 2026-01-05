@@ -1038,7 +1038,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
         yaxis=dict(
             categoryorder='array',
             categoryarray=country_list,
-            tickfont=dict(size=11, family='Arial Black, Arial, sans-serif', color='#1b365d'),
+            tickfont=dict(size=11, family='Arial, sans-serif', color='#1b365d'),
             showline=True,
             linecolor='#e0e0e0',  # Light gray color
             linewidth=1,
