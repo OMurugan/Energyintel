@@ -689,11 +689,11 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_displa
     fig.update_layout(
         showlegend=False,
         xaxis=dict(
-            title="Date",
+            # title="Date",
             showgrid=True,
             gridcolor="#e0e0e0",
             linecolor="#cccccc", # Added x-axis line color
-            tickangle=-45,
+            tickangle=90,
             dtick="M7",  # Show ticks every 7 months
             tickformat="%b %y" # Format as "Jan 19"
         ),
@@ -706,7 +706,7 @@ def _build_gpw_chart(df: pd.DataFrame, tech_type_internal: str, tech_type_displa
         height=350,
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=60, r=20, t=40, b=30),
+        margin=dict(l=60, r=20, t=40, b=70),
         hoverlabel=dict(
             bgcolor="white",
             bordercolor="#999999",
@@ -813,11 +813,11 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type_internal: str, 
     fig.update_layout(
         showlegend=False,
         xaxis=dict(
-            title="Date",
+            title="",
             showgrid=True,
             gridcolor="#e0e0e0",
             linecolor="#cccccc", # Added x-axis line color
-            tickangle=-45,
+            tickangle=90,
             dtick="M7",  # Show ticks every 7 months
             tickformat="%b %y" # Format as "Jan 19"
         ),
@@ -831,7 +831,7 @@ def _build_incremental_margins_chart(df: pd.DataFrame, tech_type_internal: str, 
         height=350,
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=60, r=20, t=40, b=30),
+        margin=dict(l=60, r=20, t=40, b=70),
         hoverlabel=dict(
             bgcolor="white",
             bordercolor="#999999",
@@ -1108,14 +1108,15 @@ def create_layout():
                     border-color: #3A3A3A !important;
                 }
                 .rc-slider-track,
+                .rc-slider-track,
                 .rc-slider-track-1,
                 .rc-slider-track-2,
                 div[class*="rc-slider-track"] {
-                    background: #D3D3D3 !important; /* Light gray for the left side (from start to handle) */
+                    background: #6E6E6E !important; /* Dark gray for the active range (Start to End) */
                     height: 4px !important;
                 }
                 .rc-slider-rail {
-                    background: #6E6E6E !important; /* Dark gray for the right side (from handle to end) */
+                    background: #D3D3D3 !important; /* Light gray for the inactive range (Min to Start) */
                     height: 4px !important;
                 }
                 /* Date range input fields */
@@ -1248,7 +1249,7 @@ def create_layout():
                 style={
                     'color': '#fe5000',
                     'textAlign': 'center',
-                    'marginBottom': '15px',
+                    'marginBottom': '5px',
                     'fontSize': '24px',
                     'fontWeight': 'bold'
                 }
@@ -1267,33 +1268,29 @@ def create_layout():
                             'fontWeight': 'bold',
                             'fontStyle': 'normal',
                             'textDecoration': 'none',
-                            'marginBottom': '5px'
+                            'marginBottom': '2px'
                         }
                     ),
                     html.Div([
                         html.Div([
-                            dcc.Input(
-                                id="gpw-date-range-min-input",
-                                type="text",
-                                value=_format_date_for_display(DEFAULT_START_DATE),
-                                style={'display': 'inline-block', 'border': '0px solid #dee2e6', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '12px', 'fontWeight': 'bold', 'backgroundColor': 'unset'}
+                            html.Label(
+                                id="gpw-date-range-min-label",
+                                children=_format_date_for_display(DEFAULT_START_DATE),
+                                style={'display': 'inline-block', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '12px', 'fontWeight': 'bold'}
                             ),
-                            dcc.Input(
-                                id="gpw-date-range-max-input",
-                                type="text",
-                                value=_format_date_for_display(DEFAULT_END_DATE),
-                                disabled=True,
-                                readOnly=True,
-                                style={'width': '15%', 'display': 'inline-block', 'float': 'right', 'border': '0px solid #dee2e6', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '12px', 'fontWeight': 'bold', 'backgroundColor': 'unset', 'cursor': 'default', 'pointer-events': 'none'}
+                            html.Label(
+                                id="gpw-date-range-max-label",
+                                children=_format_date_for_display(DEFAULT_END_DATE),
+                                style={'float': 'right', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '12px', 'fontWeight': 'bold'}
                             ),
-                        ], style={'width': '100%', 'marginBottom': '10px', 'position': 'relative'}),
+                        ], style={'width': '100%', 'marginBottom': '2px', 'position': 'relative'}),
                         html.Div([
-                            dcc.Slider(
+                            dcc.RangeSlider(
                                 id="gpw-date-range-slider",
                                 min=0,
                                 max=max(len(DATE_LIST) - 1, 0) if DATE_LIST else 0,
                                 step=1,
-                                value=DEFAULT_START_INDEX,
+                                value=[DEFAULT_START_INDEX, DEFAULT_END_INDEX],
                                 marks=None,
                             ),
                         ], style={'width': '100%', 'margin': '0', 'padding': '0'}),
@@ -1307,7 +1304,7 @@ def create_layout():
                             'fontWeight': 'bold',
                             'color': '#2c3e50',
                             'fontSize': '14px',
-                            'marginBottom': '5px'
+                            'marginBottom': '2px'
                         }
                     ),
                     dcc.Dropdown(
@@ -1320,11 +1317,11 @@ def create_layout():
                 ], className='col-md-8', style={'padding': '10px'})
             ], className='row', style={
                 'backgroundColor': '#f8f9fa',
-                'padding': '10px 20px',
+                'padding': '2px 20px',
                 'marginBottom': '0px',
                 'borderRadius': '5px'
             })
-        ], style={'padding': '10px 20px'}),
+        ], style={'padding': '0px 20px 0px 20px'}),
         
         # Gross Product Worth Section
         html.Div([
@@ -1337,7 +1334,7 @@ def create_layout():
                             style={
                                 'color': '#fe5000',
                                 'textAlign': 'center',
-                                'marginBottom': '10px',
+                                'marginBottom': '5px',
                                 'fontSize': '16px',
                                 'fontWeight': 'bold',
                                 'flexGrow': 1 # Allow title to take available space
@@ -1387,10 +1384,15 @@ def create_layout():
                                 dcc.Download(id={'type': 'download-chart-content', 'index': 'gpw-catalytic-cracking-png'}),
                                 dcc.Download(id={'type': 'download-chart-content', 'index': 'gpw-catalytic-cracking-csv'}),
                             ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '0 15px'}),
-                            dcc.Graph(id='gpw-catalytic-cracking-chart',
-
-                                config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False}),
-                        ], className='col-md-6', style={'padding': '8px 15px'}),
+                            dcc.Loading(
+                                id="loading-cat-cracking",
+                                type="default",
+                                color="#fe5000",
+                                children=dcc.Graph(id='gpw-catalytic-cracking-chart',
+                                style={'height': '550px'},
+                                config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False})
+                            ),
+                        ], className='col-md-6', style={'padding': '5px 15px'}),
                         
                         html.Div([
                             html.Div([
@@ -1407,12 +1409,17 @@ def create_layout():
                                     }
                                 ),
                             ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '0 15px'}),
-                            dcc.Graph(id='gpw-hydroskimming-chart',
-
-                                config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False}),
-                        ], className='col-md-6', style={'padding': '15px'})
+                            dcc.Loading(
+                                id="loading-hydroskimming",
+                                type="default",
+                                color="#fe5000",
+                                children=dcc.Graph(id='gpw-hydroskimming-chart',
+                                style={'height': '550px'},
+                                config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False})
+                            ),
+                        ], className='col-md-6', style={'padding': '0px 15px'})
                     ], className='row')
-                ], className='col-md-10', style={'padding': '15px'}),
+                ], className='col-md-10', style={'padding': '0px 15px'}),
                 
                 # Right Side Filters
                 html.Div([
@@ -1533,7 +1540,7 @@ def create_layout():
                     'marginLeft': '0',
                 }),
             ], className='row')
-        ], style={'padding': '10px 20px', 'marginBottom': '15px'}),
+        ], style={'padding': '0px 20px', 'marginBottom': '5px'}),
         
         # Incremental Margins Section
         html.Div([
@@ -1582,16 +1589,22 @@ def create_layout():
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
-                                    'marginBottom': '8px',
+                                    'marginBottom': '5px',
                                     'fontSize': '16px',
                                     'fontWeight': 'bold'
                                 }
                             ),
                             html.Div([
                             ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '0 15px'}),
-                            dcc.Graph(id='gpw-incremental-catalytic-chart',
-                                config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False}),
-                        ], className='col-md-6', style={'padding': '15px'}),
+                            dcc.Loading(
+                                id="loading-inc-cat",
+                                type="default",
+                                color="#fe5000",
+                                children=dcc.Graph(id='gpw-incremental-catalytic-chart',
+                                    style={'height': '550px'},
+                                    config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False})
+                            ),
+                        ], className='col-md-6', style={'padding': '5px 15px'}),
                         
                         html.Div([
                             html.Div([
@@ -1601,24 +1614,30 @@ def create_layout():
                                     style={
                                         'color': '#1b365d',
                                         'textAlign': 'center',
-                                        'marginBottom': '15px',
+                                        'marginBottom': '5px',
                                         'fontSize': '16px',
                                         'fontWeight': 'bold',
                                         'flexGrow': 1
                                     }
                                 ),
                             ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '0 15px'}),
-                            dcc.Graph(id='gpw-incremental-hydroskimming-chart',
-                                config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False}),
-                        ], className='col-md-6', style={'padding': '15px'})
+                            dcc.Loading(
+                                id="loading-inc-hydro",
+                                type="default",
+                                color="#fe5000",
+                                children=dcc.Graph(id='gpw-incremental-hydroskimming-chart',
+                                    style={'height': '550px'},
+                                    config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False})
+                            ),
+                        ], className='col-md-6', style={'padding': '5px 15px'})
                     ], className='row')
-                ], className='col-md-10', style={'padding': '15px'}),
+                ], className='col-md-10', style={'padding': '5px 15px'}),
                 
                 # Empty column to maintain layout (filters already shown above)
                 html.Div([
-                ], className='col-md-2', style={'padding': '15px'}),
+                ], className='col-md-2', style={'padding': '0px 15px'}),
             ], className='row')
-        ], style={'padding': '20px', 'marginBottom': '30px'}),
+        ], style={'padding': '0px 20px', 'marginBottom': '0px'}),
         
         # Data Table Section
         html.Div([
@@ -1633,7 +1652,7 @@ def create_layout():
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
-                                    'marginBottom': '15px',
+                                    'marginBottom': '5px',
                                     'fontSize': '16px',
                                     'fontWeight': 'bold',
                                     'flexGrow': 1 # Allow title to take available space
@@ -1658,7 +1677,11 @@ def create_layout():
                                 ),
                                 dcc.Download(id="download-gpw-data-table-csv"),
                             ], style={'display': 'flex', 'justifyContent': 'flex-end', 'padding': '0 15px 15px 0'}),
-                            dash_table.DataTable(
+                            dcc.Loading(
+                                id="loading-data-table",
+                                type="default",
+                                color="#fe5000",
+                                children=dash_table.DataTable(
                                 id='gpw-data-table',
                             columns=[],  # Will be populated by callback
                             data=[],     # Will be populated by callback
@@ -1750,6 +1773,7 @@ def create_layout():
                                         'rule': 'opacity: 1 !important; background-color: #b3d9ff !important; color: #1b365d !important; font-weight: 600 !important; border: none !important;'
                                     }
                                 ]
+                            )
                             )
                         ]
                     )
@@ -1879,48 +1903,24 @@ def register_callbacks(dash_app, server):
         prevent_initial_call=False
     )
     
-    # Bidirectional sync: Date range input fields <-> slider
+    # Update date labels based on slider selection
     @dash_app.callback(
         [
-            Output('gpw-date-range-slider', 'value', allow_duplicate=True),
-            Output('gpw-date-range-min-input', 'value', allow_duplicate=True),
-            Output('gpw-date-range-max-input', 'value', allow_duplicate=True)
+            Output('gpw-date-range-min-label', 'children'),
+            Output('gpw-date-range-max-label', 'children')
         ],
-        [
-            Input('gpw-date-range-min-input', 'value'),
-            Input('gpw-date-range-max-input', 'value'),
-            Input('gpw-date-range-slider', 'value')
-        ],
-        prevent_initial_call=True
+        [Input('gpw-date-range-slider', 'value')]
     )
-    def sync_date_range(min_input, max_input, slider_value):
-        """Sync date range inputs with slider. Single slider for start date only."""
-        ctx = callback_context
+    def update_date_labels(slider_range):
+        """Update date labels based on range slider value."""
+        if not slider_range or not isinstance(slider_range, list) or len(slider_range) < 2:
+            return _format_date_for_display(DEFAULT_START_DATE), _format_date_for_display(DEFAULT_END_DATE)
         
-        if not ctx.triggered:
-            return DEFAULT_START_INDEX, _format_date_for_display(DEFAULT_START_DATE), _format_date_for_display(DEFAULT_END_DATE)
+        start_idx, end_idx = slider_range
+        start_date = _index_to_date(start_idx)
+        end_date = _index_to_date(end_idx)
         
-        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-        
-        if trigger_id == 'gpw-date-range-min-input':
-            if min_input:
-                try:
-                    min_date = pd.to_datetime(min_input, format='%b %y', errors='coerce')
-                    if pd.notna(min_date):
-                        min_idx = _date_to_index(min_date)
-                        if min_idx > DEFAULT_END_INDEX:
-                            min_idx = DEFAULT_END_INDEX
-                        return min_idx, min_input, _format_date_for_display(DEFAULT_END_DATE)
-                except Exception:
-                    pass
-        elif trigger_id == 'gpw-date-range-slider':
-            if slider_value is not None:
-                if slider_value > DEFAULT_END_INDEX:
-                    slider_value = DEFAULT_END_INDEX
-                min_date = _index_to_date(slider_value)
-                return slider_value, _format_date_for_display(min_date), _format_date_for_display(DEFAULT_END_DATE)
-        
-        return DEFAULT_START_INDEX, _format_date_for_display(DEFAULT_START_DATE), _format_date_for_display(DEFAULT_END_DATE)
+        return _format_date_for_display(start_date), _format_date_for_display(end_date)
 
     @dash_app.callback(
         [Output('gpw-download-dashboard-content', 'data'),
@@ -2175,9 +2175,13 @@ def register_callbacks(dash_app, server):
         if n_clicks > 0:
             print(f"[DEBUG] n_clicks: {n_clicks}, region: {region}, date_slider_value: {date_range}, crudes: {crudes}, tech_types: {tech_types}")
             
-            # The date_range here is actually the single slider value (index)
-            start_date = _index_to_date(date_range).strftime('%Y-%m-%d') if date_range is not None else DEFAULT_START_DATE.strftime('%Y-%m-%d')
-            end_date = DEFAULT_END_DATE.strftime('%Y-%m-%d')
+            # The date_range here is actually the range slider value (list [start, end])
+            if date_range and isinstance(date_range, list) and len(date_range) >= 2:
+                start_date = _index_to_date(date_range[0]).strftime('%Y-%m-%d')
+                end_date = _index_to_date(date_range[1]).strftime('%Y-%m-%d')
+            else:
+                start_date = _index_to_date(date_range).strftime('%Y-%m-%d') if date_range is not None else DEFAULT_START_DATE.strftime('%Y-%m-%d')
+                end_date = DEFAULT_END_DATE.strftime('%Y-%m-%d')
 
             filtered_crudes = [c for c in crudes if c != 'ALL'] if crudes else None
             filtered_tech_types = [t for t in tech_types if t != 'ALL'] if tech_types else None
@@ -2198,8 +2202,12 @@ def register_callbacks(dash_app, server):
     )
     def export_gpw_table_data_to_csv(n_clicks, region, date_range, crudes, tech_types):
         if n_clicks > 0:
-            start_date = _index_to_date(date_range).strftime('%Y-%m-%d') if date_range is not None else DEFAULT_START_DATE.strftime('%Y-%m-%d')
-            end_date = DEFAULT_END_DATE.strftime('%Y-%m-%d')
+            if date_range and isinstance(date_range, list) and len(date_range) >= 2:
+                start_date = _index_to_date(date_range[0]).strftime('%Y-%m-%d')
+                end_date = _index_to_date(date_range[1]).strftime('%Y-%m-%d')
+            else:
+                start_date = _index_to_date(date_range).strftime('%Y-%m-%d') if date_range is not None else DEFAULT_START_DATE.strftime('%Y-%m-%d')
+                end_date = DEFAULT_END_DATE.strftime('%Y-%m-%d')
             
             # Exclude 'ALL' from crudes and tech_types before passing to DB
             filtered_crudes = [c for c in crudes if c != 'ALL'] if crudes else None
@@ -2335,13 +2343,14 @@ def register_callbacks(dash_app, server):
         # Initialize table tooltips
         table_tooltips = []
         
-        # Parse dates from slider (single value for start date, end date is fixed)
-        if date_slider_value is not None:
-            start_date = _index_to_date(date_slider_value)
+        # Parse dates from slider (range value [start, end])
+        if date_slider_value and isinstance(date_slider_value, list) and len(date_slider_value) >= 2:
+            start_date = _index_to_date(date_slider_value[0])
+            end_date = _index_to_date(date_slider_value[1])
         else:
-            start_date = DEFAULT_START_DATE
-        # End date is always fixed
-        end_date = DEFAULT_END_DATE
+            # Fallback for old slider value or empty
+            start_date = _index_to_date(date_slider_value) if date_slider_value is not None else DEFAULT_START_DATE
+            end_date = DEFAULT_END_DATE
         
         # Load available crudes and tech types for the current region
         available_crudes_for_region = _get_available_crudes(region)
