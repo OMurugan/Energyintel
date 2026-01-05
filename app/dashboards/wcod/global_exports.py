@@ -1380,7 +1380,7 @@ def create_layout():
                             html.Div([
                                 html.H4(
                                     id="global-exports-chart-title",
-                                    children="All Countries Annual Exports by Crude Stream",
+                                    children="All Annual Exports by Crude Stream",
                                     style={
                                         "color": "#fe5000",
                                         "textAlign": "center",
@@ -1956,7 +1956,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     ):
         """Update stacked area chart."""
         # Default values
-        default_title = "All Countries Annual Exports by Crude Stream"
+        default_title = "All Annual Exports by Crude Stream"
         default_fig = _empty_figure("Loading chart...")
         
         try:
@@ -2036,45 +2036,42 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             except Exception:
                 fig = _empty_figure("Error loading chart data")
             
-            # Generate title
+            # Generate title based on country selection
             title = default_title
             try:
-                # On initial load, always use default title
-                if is_initial_call:
-                    title = default_title
-                elif countries and COUNTRY_OPTIONS and len(COUNTRY_OPTIONS) > 0:
-                    # Use resolved_countries from above if available, otherwise resolve again for title
-                    if resolved_countries is not None and len(resolved_countries) > 0:
-                        title_countries = resolved_countries
-                    elif resolved_countries is None:
-                        # All countries selected - use all for title
-                        title_countries = COUNTRY_OPTIONS
-                    else:
-                        # Resolve for title generation
-                        title_countries = _resolve_countries(countries, COUNTRY_OPTIONS)
-                    
-                    if len(title_countries) == 1:
-                        title = f"{title_countries[0]} Annual Exports by Crude Stream"
-                    elif len(title_countries) > 1:
-                        if len(title_countries) <= 3:
-                            country_names = ", ".join(title_countries)
-                        else:
-                            country_names = ", ".join(title_countries[:3]) + f" and {len(title_countries) - 3} more"
+                # Determine which countries are being displayed for title generation
+                # Use selected_country if available (from map clicks), otherwise use resolved_countries
+                if selected_country and selected_country not in [None, "(All)"]:
+                    # Map click selected a specific country
+                    title = f"{selected_country} Annual Exports by Crude Stream"
+                elif resolved_countries is not None and len(resolved_countries) > 0:
+                    # Specific countries selected via country filter
+                    if len(resolved_countries) == 1:
+                        title = f"{resolved_countries[0]} Annual Exports by Crude Stream"
+                    elif len(resolved_countries) <= 3:
+                        country_names = ", ".join(resolved_countries)
                         title = f"{country_names} Annual Exports by Crude Stream"
+                    else:
+                        country_names = ", ".join(resolved_countries[:3])
+                        remaining_count = len(resolved_countries) - 3
+                        title = f"{country_names} and {remaining_count} more Annual Exports by Crude Stream"
+                else:
+                    # All countries (default case)
+                    title = "All Annual Exports by Crude Stream"
             except Exception:
-                title = default_title
+                title = "All Annual Exports by Crude Stream"
             
             # Final validation - ensure we always return valid types
             if not isinstance(fig, go.Figure):
                 fig = default_fig
             if not isinstance(title, str) or not title:
-                title = default_title
+                title = "All Annual Exports by Crude Stream"
             
             # Double-check return values
             if not isinstance(fig, go.Figure):
                 fig = _empty_figure("Error: Invalid figure type")
             if not isinstance(title, str):
-                title = "All Countries Annual Exports by Crude Stream"
+                title = "All Annual Exports by Crude Stream"
             
             return fig, title
             
@@ -2084,12 +2081,12 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 error_fig = _empty_figure("Error loading chart")
                 if not isinstance(error_fig, go.Figure):
                     error_fig = go.Figure()
-                return error_fig, "All Countries Annual Exports by Crude Stream"
+                return error_fig, "All Annual Exports by Crude Stream"
             except Exception:
                 # Last resort - return minimal valid figure
                 minimal_fig = go.Figure()
                 minimal_fig.add_annotation(text="Error loading chart", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-                return minimal_fig, "All Countries Annual Exports by Crude Stream"
+                return minimal_fig, "All Annual Exports by Crude Stream"
 
     @dash_app.callback(
         Output("global-exports-stream-filter", "value", allow_duplicate=True),
@@ -2136,19 +2133,12 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         """
         Update table data.
         
-        Behavior:
-        - Initial load: Show ALL data (ignore default country selection)
-        - Map click (country selection): Apply country filter to selected countries only
-        - Stream filter: Always apply stream filtering regardless of country selection
-        - Combined: Apply both country (from map) and stream (from legend) filters
+        SIMPLE RULE: Only filter by country when selected_country is explicitly set.
+        selected_country should ONLY be set by map clicks, never by defaults.
         """
         try:
             if submenu != "global-exports":
                 return []
-            
-            # Check callback context to determine what triggered the update
-            ctx = dash.callback_context
-            is_initial_call = not ctx.triggered or len(ctx.triggered) == 0
             
             # Start with all data
             if TABLE_DF.empty:
@@ -2156,39 +2146,28 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             
             filtered = TABLE_DF.copy()
             
-            # COUNTRY FILTERING: Only apply if there's an actual selected_country from map click
-            # The selected_country is only set when user actually clicks on the map
-            # It's None on initial load and when user clicks background/ocean to reset
+            # COUNTRY FILTERING: Only if selected_country is explicitly set
+            # selected_country should only be set by the map click callback
             if selected_country and selected_country not in [None, "(All)"]:
                 try:
-                    # Filter by the selected country from map click
                     if selected_country in COUNTRY_OPTIONS:
                         filtered = filtered[filtered["country"] == selected_country]
-                    # If selected_country not in options, keep all countries
                 except Exception:
-                    # Error filtering by country - keep all countries
+                    # On any error, keep all countries
                     pass
             
-            # STREAM FILTERING: Always apply stream filter if provided
-            # This ensures legend selections always filter the table
+            # STREAM FILTERING: Apply if streams are selected
             if stream_filter_state and len(stream_filter_state) > 0:
                 try:
-                    # Filter by selected streams (crude types)
-                    # stream_filter_state contains the selected crude stream names
                     filtered = filtered[filtered["crude"].isin(stream_filter_state)]
                 except Exception:
-                    # Error filtering by streams - keep current data
+                    # On any error, keep current data
                     pass
-            
-            # INITIAL LOAD SPECIAL CASE: If this is initial load, ignore any default selections
-            # and show all data (both countries and streams)
-            if is_initial_call:
-                filtered = TABLE_DF.copy()
             
             return _prepare_table_records(filtered)
             
         except Exception:
-            # Return all data on any error
+            # On any error, return all data
             if not TABLE_DF.empty:
                 return _prepare_table_records(TABLE_DF.copy())
             return []
