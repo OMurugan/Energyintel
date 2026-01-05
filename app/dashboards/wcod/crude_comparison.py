@@ -944,16 +944,11 @@ def create_layout(server):
                                 "color": "#1f3263",
                                 "cursor": "pointer",
                             },
+                            # Year column headers - targeting using column_id only for cells, 
+                            # use style_header_conditional for actual headers if needed, 
+                            # but here we are styling cells based on column content
                             {
-                                "if": {"column_id": "CrudeOil", "header": True},
-                                "textAlign": "left",
-                                "color": "#1f3263",
-                                "position": "relative",
-                            },
-                            # Year column headers - dark blue, center-aligned
-                            {
-                                "if": {"header": True, "column_id": [str(year) for year in range(2007, 2025)]},
-                                "color": "#1f3263",
+                                "if": {"column_id": [str(year) for year in range(2007, 2025)]},
                                 "textAlign": "center",
                             },
                         ],
