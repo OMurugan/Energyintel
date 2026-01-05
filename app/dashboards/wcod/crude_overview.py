@@ -1804,12 +1804,14 @@ def create_layout(server=None):
     
                             
                             style_cell={
-                                "fontSize": "13px",
+                                "fontSize": "11px",
                                 "fontFamily": "Arial",
                                 "whiteSpace": "normal",
                                 "color": "#1f3b6f",
                                 "minWidth": "90px",
-                                "textAlign": "right"
+                                "textAlign": "right",
+                                "padding": "2px",
+                                "height": "auto"
                             },
 
                             # Removed style_cell_conditional to keep all columns right-aligned
@@ -4335,8 +4337,16 @@ def register_callbacks(dash_app, server):
                         record[year_col] = ""
                         continue
                     try:
+                        val_str = str(value).strip().lower()
+                        if val_str == "nan" or val_str == "none" or val_str == "":
+                            record[year_col] = ""
+                            continue
+                            
                         numeric_value = float(str(value).replace(",", ""))
-                        record[year_col] = f"{numeric_value:,.0f}"
+                        if math.isnan(numeric_value):
+                             record[year_col] = ""
+                        else:
+                             record[year_col] = f"{numeric_value:,.0f}"
                     except (ValueError, TypeError):
                         record[year_col] = str(value)
                 link = None
