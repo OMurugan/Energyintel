@@ -1567,7 +1567,7 @@ def create_layout(server=None):
             ),
             html.Div([
                 html.Button(
-                    'Export Data to CSV',
+                    'Export to CSV',
                     id='btn-export-map-csv',
                     n_clicks=0,
                     style={
@@ -1668,7 +1668,7 @@ def create_layout(server=None):
                 ),
                 html.Div([
                     html.Button(
-                        'Export Data to CSV',
+                        'Export to CSV',
                         id='btn-export-chart-csv',
                         n_clicks=0,
                         style={
@@ -1774,7 +1774,7 @@ def create_layout(server=None):
             ),
             html.Div([
                 html.Button(
-                    'Export Data to CSV',
+                    'Export to CSV',
                     id='btn-export-table-csv',
                     n_clicks=0,
                     style={

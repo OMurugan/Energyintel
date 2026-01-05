@@ -794,7 +794,7 @@ def create_layout():
                            style={'marginBottom': '10px', 'fontSize': '20px', 'fontWeight': 'bold', 'fontFamily': 'Arial, sans-serif', 'color': '#E75224', 'flexGrow': 1, 'textAlign': 'center'}),
                     html.Div([
                         html.Button(
-                            'Export Data to CSV',
+                            'Export to CSV',
                             id='btn-export-status-chart-csv',
                             n_clicks=0,
                             style={
@@ -973,7 +973,7 @@ def create_layout():
                     html.H4("Project Details", style={'marginBottom': '0px', 'fontSize': '18px', 'fontWeight': 'bold', 'color': '#E75224', 'flexGrow': 1}),
                     html.Div([
                         html.Button(
-                            'Export Data to CSV',
+                            'Export to CSV',
                             id='btn-export-status-table-csv',
                             n_clicks=0,
                             style={

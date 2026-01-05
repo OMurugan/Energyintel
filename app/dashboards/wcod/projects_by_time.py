@@ -355,7 +355,7 @@ def create_layout():
                            style={'marginBottom': '10px', 'fontSize': '16px', 'fontWeight': 'bold', 'fontFamily': 'Lato, sans-serif', 'color': '#fe5000', 'flexGrow': 1}),
                     html.Div([
                         html.Button(
-                            'Export Data to CSV',
+                            'Export to CSV',
                             id='btn-export-projects-chart-csv',
                             n_clicks=0,
                             style={
@@ -433,7 +433,7 @@ def create_layout():
                 html.H4("Project Details", style={'marginBottom': '0px', 'fontSize': '16px', 'fontWeight': 'bold', 'fontFamily': 'Lato, sans-serif', 'color': '#fe5000', 'flexGrow': 1}),
                 html.Div([
                     html.Button(
-                        'Export Data to CSV',
+                        'Export to CSV',
                         id='btn-export-projects-table-csv',
                         n_clicks=0,
                         style={

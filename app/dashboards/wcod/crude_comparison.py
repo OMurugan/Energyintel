@@ -874,7 +874,7 @@ def create_layout(server):
             html.Div([
                 html.Div([
                     html.Button(
-                        "Export Data to CSV",
+                        "Export to CSV",
                         id="crude-comparison-export-btn",
                         n_clicks=0,
                         style={

@@ -661,7 +661,7 @@ def create_layout():
                                                 color="#fe5000",
                                                 children=[
                                                     html.Button(
-                                                        "Export CSV",
+                                                        "Export to CSV",
                                                         id="export-projects-map-btn",
                                                         n_clicks=0,
                                                         style={
@@ -740,7 +740,7 @@ def create_layout():
                                                 color="#fe5000",
                                                 children=[
                                                     html.Button(
-                                                        "Export CSV",
+                                                        "Export to CSV",
                                                         id="export-projects-chart-btn",
                                                         n_clicks=0,
                                                         style={
@@ -1104,7 +1104,7 @@ def create_layout():
                                 color="#fe5000",
                                 children=[
                                     html.Button(
-                                        "Export CSV",
+                                        "Export to CSV",
                                         id="export-projects-table-btn",
                                         n_clicks=0,
                                         style={

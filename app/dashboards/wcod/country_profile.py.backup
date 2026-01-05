@@ -674,9 +674,9 @@ def create_layout():
                                         dcc.Dropdown(
                                             id='country-profile-export-dropdown',
                                             options=[
-                                                {'label': 'Export to PDF', 'value': 'pdf'},
-                                                {'label': 'Export to PNG', 'value': 'png'},
-                                                {'label': 'Export to CSV', 'value': 'raw_chart_csv'}
+                                                {'label': 'Export Data PDF', 'value': 'pdf'},
+                                                {'label': 'Export Data PNG', 'value': 'png'},
+                                                {'label': 'Export Data CSV', 'value': 'raw_chart_csv'}
                                             ],
                                             placeholder='Export Data',
                                             style={
@@ -1263,7 +1263,10 @@ def create_world_map(selected_country=None):
                 # Prepare enhanced hover data for each port
                 enhanced_hover_text = []
                 for i, port_name in enumerate(data_bucket["name"]):
-                    # Direct hover text for performance
+                    # Get detailed port information
+                    port_details = get_port_details_for_hover(port_name)
+                    
+                    # Build hover text with available details
                     hover_lines = [f"<b>Port Name:</b> {port_name}"]
                     
                     # # Add port details if available
@@ -2537,7 +2540,7 @@ def register_callbacks(dash_app, server):
                             ),
                              # Export buttons on the right side
                             html.Div([
-                                html.Button("Export to CSV", id='export-key-figures-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                                html.Button("Export Key Figures CSV", id='export-key-figures-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                                 'color': '#2c3e50',
                                 'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                             ], style={'display': 'inline-block', 'float': 'right'})
@@ -2566,7 +2569,7 @@ def register_callbacks(dash_app, server):
                             ),
                             # Export buttons on the right side
                             html.Div([
-                                html.Button("Export to CSV", id='export-production-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                                html.Button("Export production CSV", id='export-production-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                                 'color': '#2c3e50',
                                 'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                             ], style={'display': 'inline-block', 'float': 'right'})
@@ -2596,7 +2599,7 @@ def register_callbacks(dash_app, server):
                         ),
                         # Export buttons on the right side
                         html.Div([
-                            html.Button("Export to CSV", id='export-ports-btn', n_clicks=0, style={'marginLeft': '8px', 'backgroundColor': 'white',
+                            html.Button("Export ports CSV", id='export-ports-btn', n_clicks=0, style={'marginLeft': '8px', 'backgroundColor': 'white',
                                 'color': '#2c3e50',
                                 'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                         ], style={'display': 'inline-block', 'float': 'right'})
