@@ -1066,6 +1066,7 @@ def create_layout():
         dcc.Store(id='gpw-available-tech-types', data=[]),
         dcc.Store(id='gpw-available-crudes-for-region', data=[]),
         dcc.Store(id='gpw-highlight-crude-store', data=None),
+        dcc.Store(id='gpw-selected-tech-type-store', data=None),
 
         # CSS styling for rc-slider using dcc.Markdown
         html.Div(
@@ -1110,11 +1111,11 @@ def create_layout():
                 .rc-slider-track-1,
                 .rc-slider-track-2,
                 div[class*="rc-slider-track"] {
-                    background: #6E6E6E !important;
+                    background: #D3D3D3 !important; /* Light gray for the left side (from start to handle) */
                     height: 4px !important;
                 }
                 .rc-slider-rail {
-                    background: #D3D3D3 !important;
+                    background: #6E6E6E !important; /* Dark gray for the right side (from handle to end) */
                     height: 4px !important;
                 }
                 /* Date range input fields */
@@ -1790,6 +1791,93 @@ def register_callbacks(dash_app, server):
             initial_tech = ['ALL'] + TECH_TYPES.copy() if TECH_TYPES else ['ALL']
             return False, initial_crude, initial_tech  # Initial load complete
         return dash.no_update, dash.no_update, dash.no_update
+    
+    # Clientside callback for tech type header click handling
+    dash_app.clientside_callback(
+        """
+        function(_trigger) {
+            try {
+                setTimeout(function() {
+                    const table = document.querySelector('#gpw-data-table');
+                    if (!table) return;
+                    
+                    const container = table.querySelector('.dash-spreadsheet-container');
+                    if (!container) return;
+                    
+                    let selectedTechType = null;
+                    
+                    const headers = container.querySelectorAll('th[data-dash-column]');
+                    headers.forEach(function(header) {
+                        const columnId = header.getAttribute('data-dash-column');
+                        if (!columnId || columnId === 'DateStr') return;
+                        
+                        const headerIndex = header.getAttribute('data-dash-header-index');
+                        if (headerIndex !== '1') return;
+                        
+                        header.style.cursor = 'pointer';
+                        
+                        header.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            
+                            const parts = columnId.split('_');
+                            if (parts.length < 3) return;
+                            
+                            const dataType = parts[0];
+                            let techType = parts[1];
+                            if (parts.length > 3 && (parts[1] === 'Catalytic' || parts[1] === 'Fluid')) {
+                                techType = parts[1] + '_' + parts[2];
+                            }
+                            
+                            const clickedKey = dataType + '_' + techType;
+                            
+                            if (selectedTechType === clickedKey) {
+                                selectedTechType = null;
+                                container.classList.remove('column-selection-active');
+                                
+                                headers.forEach(function(h) {
+                                    h.classList.remove('column-selected');
+                                });
+                                container.querySelectorAll('td').forEach(function(cell) {
+                                    cell.classList.remove('column-cell-selected');
+                                });
+                            } else {
+                                selectedTechType = clickedKey;
+                                container.classList.add('column-selection-active');
+                                
+                                headers.forEach(function(h) {
+                                    h.classList.remove('column-selected');
+                                });
+                                container.querySelectorAll('td').forEach(function(cell) {
+                                    cell.classList.remove('column-cell-selected');
+                                });
+                                
+                                headers.forEach(function(h) {
+                                    const colId = h.getAttribute('data-dash-column');
+                                    if (colId && colId.startsWith(clickedKey)) {
+                                        h.classList.add('column-selected');
+                                    }
+                                });
+                                
+                                container.querySelectorAll('td[data-dash-column]').forEach(function(cell) {
+                                    const colId = cell.getAttribute('data-dash-column');
+                                    if (colId && colId.startsWith(clickedKey)) {
+                                        cell.classList.add('column-cell-selected');
+                                    }
+                                });
+                            }
+                        });
+                    });
+                }, 100);
+            } catch (error) {
+                console.error('Tech type header click error:', error);
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('gpw-selected-tech-type-store', 'data'),
+        Input('gpw-data-table', 'data'),
+        prevent_initial_call=False
+    )
     
     # Bidirectional sync: Date range input fields <-> slider
     @dash_app.callback(
