@@ -2578,7 +2578,7 @@ def register_callbacks(dash_app, server):
                             ),
                             # Export buttons on the right side
                             html.Div([
-                                html.Button("Export production CSV", id='export-production-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                                html.Button("Export Data to CSV", id='export-production-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                                 'color': '#2c3e50',
                                 'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                             ], style={'display': 'inline-block', 'float': 'right'})
@@ -2608,7 +2608,7 @@ def register_callbacks(dash_app, server):
                         ),
                         # Export buttons on the right side
                         html.Div([
-                            html.Button("Export ports CSV", id='export-ports-btn', n_clicks=0, style={'marginLeft': '8px', 'backgroundColor': 'white',
+                            html.Button("Export Data to CSV", id='export-ports-btn', n_clicks=0, style={'marginLeft': '8px', 'backgroundColor': 'white',
                                 'color': '#2c3e50',
                                 'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                         ], style={'display': 'inline-block', 'float': 'right'})
