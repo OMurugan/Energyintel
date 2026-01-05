@@ -78,7 +78,7 @@ def get_mapbox_config() -> tuple[bool, str | None, dict]:
     logger.info(f"Map rendering mode: {'Mapbox' if use_mapbox else 'Geo fallback'}")
     
     mapbox_layout = {
-        "style": "carto-positron",  # White background style
+        "style": "carto-positron",  # White background style as fallback
         "center": WORLD_CENTER,
         "zoom": WORLD_ZOOM,
         "bearing": 0,
@@ -87,7 +87,10 @@ def get_mapbox_config() -> tuple[bool, str | None, dict]:
     
     if has_mapbox_token:
         mapbox_layout["accesstoken"] = _mapbox_token
-        mapbox_layout["style"] = "light"  # Use light style with token
+        # Use Mapbox light style with proper fallback
+        mapbox_layout["style"] = "light"
+        # Add additional Mapbox-specific settings for better reliability
+        mapbox_layout["uirevision"] = "mapbox"  # Preserve UI state
     
     return use_mapbox, _mapbox_token, mapbox_layout
 
@@ -353,6 +356,7 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
     
     # Create main choropleth layer
     if use_mapbox and geojson:
+        logger.info("Creating Mapbox choropleth map")
         fig.add_trace(
             go.Choroplethmapbox(
                 geojson=geojson,
@@ -372,6 +376,7 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
             )
         )
     else:
+        logger.info("Creating geo choropleth map (fallback)")
         fig.add_trace(
             go.Choropleth(
                 locations=locations,
@@ -403,6 +408,18 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
     
     # Apply standard layout
     apply_standard_layout(fig, use_mapbox, mapbox_layout, height)
+    
+    # Add configuration metadata for debugging
+    fig.update_layout(
+        uirevision="map_config",  # Preserve UI state across updates
+        meta={
+            "mapbox_enabled": use_mapbox,
+            "token_present": bool(token),
+            "geojson_loaded": geojson is not None
+        }
+    )
+    
+    logger.info(f"Map created with {len(fig.data)} traces, mapbox_enabled: {use_mapbox}")
     
     return fig
 
