@@ -891,10 +891,10 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
         id='refined-products-table',
         columns=[
             {"name": "Product", "id": "Product", "presentation": "markdown"},
-            {"name": "Cut Points (°C)", "id": "Cut Points (°C)", "presentation": "markdown"},
-            {"name": "Property", "id": "Property", "presentation": "markdown"},
-            {"name": "Unit", "id": "Unit", "presentation": "markdown"},
-            {"name": "Value", "id": "Value", "presentation": "markdown"},
+            {"name": "Cut Points (°C)", "id": "Cut Points (°C)"},
+            {"name": "Property", "id": "Property"},
+            {"name": "Unit", "id": "Unit"},
+            {"name": "Value", "id": "Value"},
         ],
         data=table_data,
         style_table={
@@ -933,6 +933,13 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
             "top": "0",
             "zIndex": "10",
         },
+        style_header_conditional=[
+            {
+                "if": {"column_id": "Value"},
+                "textAlign": "right",
+                "paddingRight": "0px",
+            }
+        ],
         style_data={
             "whiteSpace": "normal",
             "height": "auto"
@@ -980,6 +987,12 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
                 "fontWeight": "normal",
                 "color": "#1f3263",
                 "maxWidth": "56px",
+            },
+            # Value column right alignment
+            {
+                "if": {"column_id": "Value"},
+                "textAlign": "right",
+                "paddingRight": "0px",
             },
         ],
         css=[
@@ -1053,8 +1066,8 @@ def create_grouped_assay_table(crude_value: str | None = None):
         data=assay_data,
         columns=[
             {"name": "Property", "id": "Property", "presentation": "markdown", "minWidth": "80px", "maxWidth": "120px"},
-            {"name": "Unit", "id": "Unit", "presentation": "markdown", "minWidth": "50px", "maxWidth": "80px"}, 
-            {"name": "Value", "id": "Value", "presentation": "markdown", "minWidth": "50px", "maxWidth": "70px"}
+            {"name": "Unit", "id": "Unit", "minWidth": "50px", "maxWidth": "80px"}, 
+            {"name": "Value", "id": "Value", "minWidth": "50px", "maxWidth": "70px"}
         ],
         style_table={
             "overflowX": "auto",
@@ -1066,8 +1079,8 @@ def create_grouped_assay_table(crude_value: str | None = None):
         },
         style_cell={
             "textAlign": "left",
-            "paddingLeft": "6px",
-            "paddingRight": "0px",
+            "paddingLeft": "15px",
+           
             "marginTop": "4px",
             "fontSize": "8pt",
             "fontFamily": "Arial, sans-serif",
@@ -1089,6 +1102,13 @@ def create_grouped_assay_table(crude_value: str | None = None):
             "padding": "6px",
             "position": "relative",
         },
+        style_header_conditional=[
+            {
+                "if": {"column_id": "Value"},
+                "textAlign": "right",
+                "paddingRight": "0px",
+            }
+        ],
         style_cell_conditional=[
             {
                 "if": {"column_id": "Property"},
@@ -1110,13 +1130,15 @@ def create_grouped_assay_table(crude_value: str | None = None):
                 "maxWidth": "80px",
                 "backgroundColor": "#FFFFFF",
                 "borderRight": "1px solid #ddd",
+                "paddingLeft": "6px",
             },
             {
                 "if": {"column_id": "Value"},
-                "textAlign": "left",
+                "textAlign": "right",
                 "minWidth": "50px",
                 "maxWidth": "70px",
                 "backgroundColor": "#FFFFFF",
+                "paddingRight": "0px",
             },
         ],
         style_data_conditional=[
@@ -1142,6 +1164,7 @@ def create_grouped_assay_table(crude_value: str | None = None):
                 'selector': '#assay-table .dash-cell',
                 'rule': 'width: auto !important;'
             },
+            # Force right alignment for markdown content in Value column (Removed)
             {
                 'selector': '.dash-cell[data-dash-column="Property"]:empty',
                 'rule': '''
@@ -1911,7 +1934,7 @@ def create_layout(server=None):
                                 "paddingBottom": "5px",
                                 "textAlign": "center"
                             }),
-                            html.Button("Export CSV", id='export-mars-assay-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                            html.Button("Export Data to CSV", id='export-mars-assay-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                                 'color': '#2c3e50',
                                 'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                         ]),
@@ -1935,7 +1958,7 @@ def create_layout(server=None):
                                 "paddingBottom": "5px",
                                 "textAlign": "center"
                             }),
-                            html.Button("Export CSV", id='export-refined-products-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                            html.Button("Export Data to CSV", id='export-refined-products-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                                 'color': '#2c3e50',
                                 'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                         ]),
@@ -1960,7 +1983,7 @@ def create_layout(server=None):
                             "paddingBottom": "5px",
                             "textAlign": "center"
                         }),
-                        html.Button("Export CSV", id='export-production-exports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        html.Button("Export Data to CSV", id='export-production-exports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                             'color': '#2c3e50',
                             'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                     ]),
@@ -1985,7 +2008,7 @@ def create_layout(server=None):
                         "paddingBottom": "5px",
                         "textAlign": "center"
                     }),
-                    html.Button("Export CSV", id='export-loading-ports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                    html.Button("Export Data to CSV", id='export-loading-ports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                         'color': '#2c3e50',
                         'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                 ]),
@@ -2038,7 +2061,7 @@ def create_layout(server=None):
                         "paddingBottom": "5px",
                         "textAlign": "center"
                     }),
-                    html.Button("Export CSV", id='export-port-details-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                    html.Button("Export Data to CSV", id='export-port-details-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                         'color': '#2c3e50',
                         'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                 ]),
@@ -2102,7 +2125,8 @@ def create_layout(server=None):
                             },
                             {
                                 "if": {"column_id": port_details_label},
-                                "textAlign": "center",
+                                "textAlign": "right",
+                                "paddingRight": "0px",
                             },
                         ],
                         style_data_conditional=[
@@ -2120,7 +2144,8 @@ def create_layout(server=None):
                             },
                             {
                                 "if": {"column_id": port_details_label},
-                                "textAlign": "center",
+                                "textAlign": "right",
+                                "paddingRight": "0px",
                             },
                         ],
                         css=[
@@ -2154,7 +2179,7 @@ def create_layout(server=None):
                             "paddingBottom": "5px",
                             "textAlign": "center"
                         }),
-                        html.Button("Export CSV", id='export-sellers-producers-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        html.Button("Export Data to CSV", id='export-sellers-producers-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                             'color': '#2c3e50',
                             'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                     ]),
