@@ -102,39 +102,47 @@ def _format_production_breakdown_title(country_selection):
     return f"Production Breakdown – {', '.join(first_three)} and {remaining_count} more"
 
 def _calculate_yaxis_ticks(max_value):
-    """Calculate 5 evenly spaced Y-axis ticks from 0 to max_value.
+    """Calculate nice round Y-axis ticks from 0 to max_value.
     
     Args:
         max_value: Maximum value for the Y-axis
     
     Returns:
-        Tuple of (y_axis_max, tick_values) where tick_values is a list of 5 evenly spaced values
+        Tuple of (y_axis_max, tick_values)
     """
     import math
-    
     if max_value <= 0:
-        # Default fallback
-        y_axis_max = 10000
-        tick_values = [0, 2500, 5000, 7500, 10000]
-        return y_axis_max, tick_values
+        return 10000, [0, 2500, 5000, 7500, 10000]
     
-    # Round up max_value to a nice round number for better readability
-    # Find the order of magnitude
-    order_of_magnitude = 10 ** math.floor(math.log10(max_value))
+    # We want roughly 5-7 parts (6-8 ticks)
+    # The user specifically requested 6 parts for 12,000 (steps of 2,000)
+    target_parts = 6
+    raw_step = max_value / target_parts
     
-    # Round up to next nice number (add 20% padding, then round up)
-    padded_max = max_value * 1.2
-    rounded_max = math.ceil(padded_max / order_of_magnitude) * order_of_magnitude
+    if raw_step == 0:
+        return 100, [0, 25, 50, 75, 100]
     
-    # If the rounded value is too small, try rounding to half order of magnitude
-    if rounded_max < padded_max:
-        rounded_max = math.ceil(padded_max / (order_of_magnitude * 0.5)) * (order_of_magnitude * 0.5)
+    magnitude = 10**math.floor(math.log10(raw_step))
+    normalized_step = raw_step / magnitude
     
-    y_axis_max = rounded_max
+    # Choose a nice step based on standard sets {1, 2, 2.5, 5, 10}
+    if normalized_step < 1.5: nice_step = 1
+    elif normalized_step < 2.25: nice_step = 2
+    elif normalized_step < 3: nice_step = 2.5
+    elif normalized_step < 7.5: nice_step = 5
+    else: nice_step = 10
     
-    # Create 5 evenly spaced ticks: 0, 1/4, 1/2, 3/4, 1 of max
-    tick_step = y_axis_max / 4
-    tick_values = [0, tick_step, tick_step * 2, tick_step * 3, y_axis_max]
+    actual_step = nice_step * magnitude
+    
+    # Calculate number of steps to cover max_value
+    num_steps = math.ceil(max_value / actual_step)
+    
+    # Ensure we have at least target_parts if possible (padding)
+    if num_steps < target_parts:
+        num_steps = target_parts
+        
+    y_axis_max = actual_step * num_steps
+    tick_values = [actual_step * i for i in range(num_steps + 1)]
     
     return y_axis_max, tick_values
 
@@ -1688,7 +1696,16 @@ def create_layout(server=None):
                         dcc.Graph(
                             id="production-breakdown-chart", 
                             style={"height":"520px"},
-                            figure=go.Figure()  # Initialize with empty figure
+                            figure=go.Figure(),
+                            config={
+                                'displayModeBar': True,
+                                'displaylogo': False,
+                                'modeBarButtonsToRemove': [
+                                    'zoom2d', 'pan2d', 'select2d', 'lasso2d', 
+                                    'zoomIn2d', 'zoomOut2d', 'autoScale2d', 
+                                    'hoverClosestCartesian', 'hoverCompareCartesian'
+                                ]
+                            }
                         )
                     ],
                     style={"height":"520px"}
@@ -1727,7 +1744,7 @@ def create_layout(server=None):
                     ]
                 ),
                 html.Div([
-                    html.H6("Profiled Crude Oils", style={"marginBottom": "8px", "fontWeight": "bold", "color": "#2c3e50"}),
+                    html.H6("Profiled Crude Oils", style={"marginBottom": "6px", "fontWeight": "bold", "color": "#2c3e50", "fontSize": "12px",}),
                     # Hidden checklist to store values
                     dcc.Checklist(
                         id="profiled-streams", 
@@ -1737,14 +1754,16 @@ def create_layout(server=None):
                     ),
                     html.Div(id="profiled-streams-container", children=[])
                 ], style={
-                    "padding": "15px",
+            
+                    "padding": "12px",
                     "border": "1px solid #ddd",
                     "borderRadius": "4px",
                     "backgroundColor": "#f9f9f9",
-                    "maxHeight": "400px",
-                    "overflowY": "auto"
+                    "maxHeight": "330px",
+                    "overflowY": "auto",
+                    "fontSize": "10px",
                 })
-            ], className='col-md-2', style={'padding': '15px'})
+            ], className='col-md-2', style={'padding': '12px'})
         ], className='row'),
         html.Br(),
         html.Div([
@@ -3276,7 +3295,6 @@ def register_callbacks(dash_app, server):
                     empty_df = pd.DataFrame({"year": years_sorted, "value": [0]*len(years_sorted)})
                     fig = px.bar(empty_df, x="year", y="value", labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                     fig.update_layout(
-                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                         xaxis_title="Year",
                         yaxis_title="Production Volume ('000 b/d)",
                         barmode="stack",
@@ -3388,7 +3406,6 @@ def register_callbacks(dash_app, server):
                                          x=0.5, y=0.5, showarrow=False,
                                          font=dict(size=14, color='#7f8c8d'))
                         fig.update_layout(
-                            title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                             xaxis_title="Year",
                             yaxis_title="Production Volume ('000 b/d)",
                             plot_bgcolor="white",
@@ -3406,7 +3423,6 @@ def register_callbacks(dash_app, server):
                         fig = px.bar(empty_df, x="year", y="value", color="Stream", 
                                     labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                         fig.update_layout(
-                            title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                             xaxis_title="Year",
                             yaxis_title="Production Volume ('000 b/d)",
                             barmode="stack",
@@ -3457,7 +3473,6 @@ def register_callbacks(dash_app, server):
                     empty_df = pd.DataFrame({"year": years_sorted, "value": [0]*len(years_sorted)})
                     fig = px.bar(empty_df, x="year", y="value", labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                     fig.update_layout(
-                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                         xaxis_title="Year",
                         yaxis_title="Production Volume ('000 b/d)",
                         barmode="stack",
@@ -3601,22 +3616,12 @@ def register_callbacks(dash_app, server):
                 print(f"DEBUG BREAKDOWN YEARLY: Created {len(annotations_list)} annotations, max Y: {max_annotation_y}")
                 
                 # Calculate Y-axis max to accommodate annotations
-                # Calculate expected max annotation Y position
-                expected_max_annotation_y = max_bar_height + (max_bar_height * 0.05) if max_bar_height > 0 else 0
-                # Use the larger of actual max annotation Y or expected, then add padding
-                # Ensure we have enough space - use at least 25% padding above the highest point
-                base_max = max(max_annotation_y, expected_max_annotation_y, max_bar_height)
-                # Recalculate Y-axis ticks based on the max value needed for annotations
+                # Use the larger of actual max annotation Y or highest bar height
+                base_max = max(max_annotation_y, max_bar_height)
+                # Recalculate Y-axis ticks based on the max value needed
                 y_axis_max, y_axis_ticks = _calculate_yaxis_ticks(base_max)
                 
-                # Ensure y_axis_max is at least as high as needed for annotations
-                if y_axis_max < base_max * 1.1:
-                    y_axis_max = base_max * 1.25
-                    # Recalculate ticks with the adjusted max
-                    tick_step = y_axis_max / 4
-                    y_axis_ticks = [0, tick_step, tick_step * 2, tick_step * 3, y_axis_max]
-                
-                print(f"DEBUG BREAKDOWN YEARLY: max_bar_height={max_bar_height}, max_annotation_y={max_annotation_y}, expected_max_annotation_y={expected_max_annotation_y}, base_max={base_max}, y_axis_max={y_axis_max}, y_axis_ticks={y_axis_ticks}")
+                print(f"DEBUG BREAKDOWN YEARLY: max_bar_height={max_bar_height}, max_annotation_y={max_annotation_y}, base_max={base_max}, y_axis_max={y_axis_max}, y_axis_ticks={y_axis_ticks}")
                 
                 # Verify all annotations are within Y-axis range
                 for i, ann in enumerate(annotations_list):
@@ -3631,7 +3636,6 @@ def register_callbacks(dash_app, server):
                 fig.update_layout(
                     xaxis_title="",
                     yaxis_title="Production Volume ('000 b/d)",
-                    title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                     xaxis=dict(
                         showgrid=False,  # Remove X-axis grid lines (match original)
                         gridcolor="#e0e0e0", 
@@ -3948,7 +3952,6 @@ def register_callbacks(dash_app, server):
                 
                 # Update layout
                 fig.update_layout(
-                    title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                     showlegend=False,
                     plot_bgcolor="white",
                     paper_bgcolor="white",
