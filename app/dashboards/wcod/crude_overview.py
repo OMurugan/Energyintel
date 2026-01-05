@@ -1480,7 +1480,6 @@ def create_layout(server=None):
         dcc.Store(id="last-clicked-stream-store", data=None),
         # Store to track map country selection
         dcc.Store(id="selected-country-map-store", data=None),
-        # Dummy store for navigation callback output
         dcc.Store(id="stream-navigation-dummy", data=None),
         # Custom CSS to style markdown links in DataTable to look like normal text
         html.Div(
@@ -1766,7 +1765,7 @@ def create_layout(server=None):
                         'padding': '4px 10px',
                         'borderRadius': '4px',
                         'cursor': 'pointer',
-                        'fontSize': '12px',
+                        'fontSize': '13px',
                         'margin': '0',
                         'display': 'inline-block'
                     }
@@ -1804,7 +1803,7 @@ def create_layout(server=None):
     
                             
                             style_cell={
-                                "fontSize": "11px",
+                                "fontSize": "12px",
                                 "fontFamily": "Arial",
                                 "whiteSpace": "normal",
                                 "color": "#1f3b6f",
@@ -2606,27 +2605,43 @@ def register_callbacks(dash_app, server):
         if button_ids:
             for button_id in button_ids:
                 if isinstance(button_id, dict) and "stream" in button_id:
-                    all_streams.append(button_id["stream"])
+                    all_streams.append(str(button_id["stream"]))
         
-        # Get current selection
-        current_selected = current_selected if current_selected else []
+        # Normalize clicked_stream to string
+        clicked_stream = str(clicked_stream) if clicked_stream else None
+        
+        print(f"DEBUG PROFILE BTN: Clicked='{clicked_stream}'")
+        print(f"DEBUG PROFILE BTN: Current selected count={len(current_selected) if current_selected else 0}")
+        print(f"DEBUG PROFILE BTN: All streams count={len(all_streams)}")
+
+        # Get current selection - normalize to strings
+        current_selected = [str(s) for s in current_selected] if current_selected else []
         current_set = set(current_selected)
         all_set = set(all_streams)
         
         # Determine if we're in default mode (all streams selected)
+        # Note: If current_selected is empty, it usually implies default mode in UI logic, 
+        # but here we want to return EXPLICIT list of all streams for "all selected" state.
         is_default_mode = (current_set == all_set and len(all_set) > 0) or len(current_set) == 0
+        
+        print(f"DEBUG PROFILE BTN: is_default_mode={is_default_mode}")
         
         # Toggle behavior:
         # - If in default mode (all selected): clicking a stream selects only that stream
         # - If one stream is selected: clicking the same stream returns to default (all selected)
         if is_default_mode:
             # Default mode: clicking any stream selects only that stream
+            print(f"DEBUG PROFILE BTN: Default mode -> Selecting only '{clicked_stream}'")
             return [clicked_stream]
         elif len(current_set) == 1 and clicked_stream in current_set:
             # One stream selected and clicking the same stream: return to default (all selected)
-            return sorted(all_streams) if all_streams else []
+            print(f"DEBUG PROFILE BTN: Single select match -> Resetting to ALL ({len(all_streams)} items)")
+            # Return sorted all_streams to explicitly select all
+            res = sorted(all_streams) if all_streams else []
+            return res
         else:
             # Clicking a different stream when one is already selected: select the clicked stream
+            print(f"DEBUG PROFILE BTN: Switching selection to '{clicked_stream}'")
             return [clicked_stream]
     
     # Clientside callback to navigate to stream profile URL and track last clicked stream
@@ -3173,7 +3188,6 @@ def register_callbacks(dash_app, server):
                     empty_df = pd.DataFrame({"year": [str(y) for y in range(2006, 2025)], "value": [0]*19})
                     fig = px.bar(empty_df, x="year", y="value", labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                     fig.update_layout(
-                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                         xaxis_title="Year",
                         yaxis_title="Production Volume ('000 b/d)",
                         barmode="stack",
@@ -3452,13 +3466,16 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                # Get year-level ProductionDataValue for annotations (single value per year)
-                # This is different from the bar chart values which are stream-level
-                year_production_values = YEAR_PRODUCTION_DATA_VALUE if YEAR_PRODUCTION_DATA_VALUE else {}
-                
-                print(f"DEBUG BREAKDOWN YEARLY: YEAR_PRODUCTION_DATA_VALUE type: {type(YEAR_PRODUCTION_DATA_VALUE)}")
-                print(f"DEBUG BREAKDOWN YEARLY: YEAR_PRODUCTION_DATA_VALUE content: {YEAR_PRODUCTION_DATA_VALUE}")
-                print(f"DEBUG BREAKDOWN YEARLY: year_production_values: {year_production_values}")
+                # Recalculate year-level production totals for the selected countries/regions
+                # This ensures annotations match the specific country data rather than global totals
+                year_production_values = {}
+                if not BAR_LONG_YEARLY.empty and "Country" in BAR_LONG_YEARLY.columns:
+                    # Filter by country (the resolved country list)
+                    country_totals = BAR_LONG_YEARLY[BAR_LONG_YEARLY["Country"].isin(country)].groupby("year")["value"].sum()
+                    year_production_values = {str(k): float(v) for k, v in country_totals.items() if pd.notna(v)}
+                    print(f"DEBUG BREAKDOWN YEARLY: Recalculated year_production_values for selected countries: {len(year_production_values)} years")
+                else:
+                    year_production_values = {}
                 print(f"DEBUG BREAKDOWN YEARLY: years_sorted: {years_sorted}")
                 
                 # Calculate max value for Y-axis scaling (use either ProductionDataValue or sum of bars)
@@ -3478,8 +3495,9 @@ def register_callbacks(dash_app, server):
                     stream_name = trace.name
                     # Build customdata array: [Country] for each data point
                     customdata_list = []
+                    
                     if len(trace.x) > 0:
-                        for year_val in trace.x:
+                        for point_idx, year_val in enumerate(trace.x):
                             # Match by Stream and year to get Country from agg_for_chart
                             matching_rows = agg_for_chart[
                                 (agg_for_chart["Stream"] == stream_name) & 
@@ -3520,7 +3538,14 @@ def register_callbacks(dash_app, server):
                         "<b>Crude:</b> %{fullData.name}<br>"
                         "<b>Year:</b> %{x}<extra></extra>"
                     )
+                    
+                    # Native Plotly Selection Styling
+                    trace.update(
+                        selected=dict(marker=dict(opacity=1.0)),
+                        unselected=dict(marker=dict(opacity=0.3))
+                    )
                     trace.marker = dict(line=dict(width=1, color='white'))
+                        
                     trace.width = None  # Let Plotly calculate equal widths automatically
                 
                 # Calculate max bar height first (needed for annotation positioning)
@@ -3631,9 +3656,13 @@ def register_callbacks(dash_app, server):
                         titlefont=dict(size=12, color="#2c3e50"),
                         tickmode='array',
                         tickvals=y_axis_ticks,
+                        zeroline=False,  # Remove zero line
                         ticktext=[f"{int(t):,}" for t in y_axis_ticks],
                         tickformat=',.0f'
                     ),
+                    clickmode='select',
+                    # Add annotations to layout
+                    annotations=annotations_list,
                     showlegend=False,
                     plot_bgcolor="white",
                     paper_bgcolor="white",
@@ -3641,8 +3670,7 @@ def register_callbacks(dash_app, server):
                     bargroupgap=0.0,
                     barmode="stack",
                     margin=dict(l=70, r=30, t=70, b=80),
-                    hovermode='closest',
-                    annotations=annotations_list  # Add annotations directly to layout
+                    hovermode='closest'
                 )
                 
                 print(f"DEBUG BREAKDOWN YEARLY: Added {len(annotations_list)} ProductionDataValue annotations to layout")
@@ -3751,31 +3779,30 @@ def register_callbacks(dash_app, server):
                 # Get available streams from the data
                 available_monthly_streams = sorted(agg["Stream"].dropna().unique().tolist()) if not agg.empty else []
                 
+                # Determine stream to highlight (if any)
                 # For monthly view: Always show all streams in the chart
                 # Use visual styling (opacity) to highlight selected stream and dim others
-                # Don't filter the data - keep all streams visible
-                selected_stream_for_highlight = None
+                highlight_stream = None
                 if profiled and len(profiled) > 0:
-                    # Check if all available streams are selected (default mode)
-                    profiled_set = set(profiled)
-                    available_set = set(available_monthly_streams)
+                    profiled_set = set(str(p) for p in profiled)
+                    available_set = set(str(s) for s in available_monthly_streams)
                     
                     # If all streams are selected, no highlighting needed (all at full opacity)
                     if profiled_set == available_set and len(available_set) > 0:
                         print(f"DEBUG BREAKDOWN MONTHLY: All streams selected (default mode), showing all streams at full opacity")
-                        selected_stream_for_highlight = None
+                        highlight_stream = None
                     elif len(profiled) == 1:
                         # Single stream selected: highlight this stream, dim others
-                        selected_stream_for_highlight = str(profiled[0]).strip()
-                        print(f"DEBUG BREAKDOWN MONTHLY: Single stream selected ({selected_stream_for_highlight}), will highlight this stream and dim others")
+                        highlight_stream = str(profiled[0]).strip()
+                        print(f"DEBUG BREAKDOWN MONTHLY: Single stream selected ({highlight_stream}), will highlight this stream and dim others")
                     else:
                         # Multiple streams selected (shouldn't happen, but handle it)
                         print(f"DEBUG BREAKDOWN MONTHLY: Multiple streams selected ({len(profiled)}), showing all at full opacity")
-                        selected_stream_for_highlight = None
+                        highlight_stream = None
                 else:
                     # If no stream selected, show all streams at full opacity (default mode)
                     print(f"DEBUG BREAKDOWN MONTHLY: No stream selected, showing all streams at full opacity (default mode)")
-                    selected_stream_for_highlight = None
+                    highlight_stream = None
                 
                 # If no rows or all values are zero, show a friendly message
                 if agg.empty or (agg["value"].fillna(0).sum() <= 0):
@@ -3859,13 +3886,26 @@ def register_callbacks(dash_app, server):
                         if not stream_color:
                             stream_color = get_stream_color(stream, year_streams, tab="monthly")
                         
+                        # Determine opacity based on highlight stream
+                        # If a stream is highlighted via legend/filter, dim all others
+                        opacity = 1.0
+                        if highlight_stream and stream != highlight_stream:
+                            opacity = 0.3
+                        
+                        # Current trace index will be len(fig.data) since we are about to add it
                         # Add bar trace for this stream
                         fig.add_trace(
                             go.Bar(
                                 x=stream_data["month"],
                                 y=stream_data["value"],
                                 name=stream,
-                                marker_color=stream_color,
+                                marker=dict(
+                                    color=stream_color,
+                                    line=dict(width=1, color='white'),
+                                    opacity=opacity
+                                ),
+                                selected=dict(marker=dict(opacity=1.0)),
+                                unselected=dict(marker=dict(opacity=0.3)),
                                 legendgroup=stream,
                                 showlegend=False,  # Hide legend since we have custom legend
                                 hovertemplate=(
@@ -4051,39 +4091,6 @@ def register_callbacks(dash_app, server):
                             "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
                         )
                         
-                        # Apply highlight/dimmed styling for monthly view
-                        try:
-                            if selected_stream_for_highlight:
-                                if stream_name == selected_stream_for_highlight:
-                                    # Selected stream: full opacity (highlighted)
-                                    target_opacity = 1.0
-                                else:
-                                    # Other streams: reduced opacity (dimmed)
-                                    target_opacity = 0.3
-                            else:
-                                # Default mode: all streams at full opacity
-                                target_opacity = 1.0
-                            
-                            # Apply opacity to trace
-                            trace.opacity = target_opacity
-                            
-                            # Also apply to marker if it exists
-                            if not hasattr(trace, 'marker') or trace.marker is None:
-                                trace.marker = {}
-                            if isinstance(trace.marker, dict):
-                                trace.marker['opacity'] = target_opacity
-                            else:
-                                # Plotly marker object
-                                try:
-                                    trace.marker.opacity = target_opacity
-                                except:
-                                    # Fallback: create new marker dict
-                                    trace.marker = {'opacity': target_opacity}
-                        except Exception as e:
-                            print(f"Error applying opacity to trace {stream_name}: {e}")
-                            # Continue without opacity modification
-                            pass
-                        
                         trace_idx += 1
                 
                 # Update Y-axis for all subplots (yaxis, yaxis2, yaxis3, etc.) with 5 evenly spaced ticks
@@ -4120,6 +4127,7 @@ def register_callbacks(dash_app, server):
                                        font=dict(size=14, color='#7f8c8d'))
                     fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
                 
+                fig.update_layout(clickmode='select')
                 return fig, title_text
         except Exception as e:
             print(f"Error in update_breakdown: {e}")
@@ -4892,3 +4900,4 @@ def create_crude_overview_dashboard(dash_app, server, url_base_pathname="/dash/c
     """Create the Crude Overview dashboard"""
     dash_app.layout = create_layout()
     register_callbacks(dash_app, server)
+
