@@ -1791,6 +1791,7 @@ def create_layout(server=None):
                             ] if not TABLE_DF_YEARLY.empty else [],
                             data=TABLE_DF_YEARLY.to_dict("records") if not TABLE_DF_YEARLY.empty else [],
                             page_action='none',
+                            fixed_rows={'headers': True},
                             markdown_options={"link_target": "_blank"},
                             style_table={
                                 "overflowX": "auto", 
@@ -4295,6 +4296,7 @@ def register_callbacks(dash_app, server):
                 })
             
             df_display = df[display_cols].copy()
+            df_display = df_display.fillna("")
             df_display = df_display.sort_values("CrudeOil", key=lambda s: s.astype(str).str.lower())
             
             if 'Year of YearReported' in df.columns:
