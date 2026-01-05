@@ -911,13 +911,13 @@ def create_layout(server):
                         },
                         style_cell={
                             "textAlign": "right",
-                            "padding": "4px 8px",
+                            "padding": "2px 8px",
                             "fontSize": "12px",
                             "fontFamily": "Arial, sans-serif",
                             "border": "1px solid #e0e0e0",
                             "whiteSpace": "normal",
                             "height": "auto",
-                            "minHeight": "25px",
+                            "minHeight": "20px",
                             "color": "#333333",
                         },
                         style_header={
@@ -928,7 +928,7 @@ def create_layout(server):
                             "border": "1px solid #d0d0d0",
                             "color": "#1f3263",
                             "textAlign": "right",
-                            "padding": "10px 12px",
+                            "padding": "4px 8px",
                             "position": "relative",
                         },
                         style_cell_conditional=[
