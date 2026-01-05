@@ -11,6 +11,16 @@ import numpy as np
 from datetime import datetime, date, timedelta
 from core.data_helpers import execute_query
 import dash.exceptions
+from .shared_map_utils import (
+    create_choropleth_map,
+    get_mapbox_config,
+    load_world_geojson,
+    handle_map_click_reset,
+    create_empty_map,
+    MAP_BACKGROUND_COLOR,
+    WORLD_CENTER,
+    WORLD_ZOOM
+)
 
 def load_assay_details(crude_value: str | None = None):
     """Load assay details data from DB for the selected crude (first row)."""
@@ -623,7 +633,7 @@ def load_production_exports(crude_value: str | None = None):
     return chart_data
 
 def load_port_details(crude_value: str | None = None):
-    """Load port details data from DB for the selected crude."""
+    """Load port details data from DB for the selected crude, supporting multiple ports."""
     fallback_rows = [
         ("Berths", "4"),
         ("Max Draft (meters)", "23.5"),
@@ -649,10 +659,10 @@ def load_port_details(crude_value: str | None = None):
         results = execute_query(query, {"crude_name": crude_name})
     except Exception as e:
         print(f"❌ Error loading port details from DB: {e}")
-        return {"label": fallback_label, "rows": fallback_rows}
+        return {"label": fallback_label, "rows": fallback_rows, "ports": [fallback_label]}
 
     if not results:
-        return {"label": fallback_label, "rows": fallback_rows}
+        return {"label": fallback_label, "rows": fallback_rows, "ports": [fallback_label]}
 
     df = pd.DataFrame(results)
     df["measure_name"] = df.get("measure_name", "").fillna("").astype(str).str.strip()
@@ -672,23 +682,62 @@ def load_port_details(crude_value: str | None = None):
     df["value"] = df.get("value", "").fillna("").astype(str).str.strip()
     df["PortName"] = df.get("PortName", "").fillna("").astype(str).str.strip()
 
-    port_label = fallback_label
-    port_names = df["PortName"][df["PortName"] != ""]
-    if not port_names.empty:
-        port_label = port_names.iloc[0]
+    # Get unique ports
+    unique_ports = df["PortName"][df["PortName"] != ""].unique().tolist()
+    
+    if not unique_ports:
+        return {"label": fallback_label, "rows": fallback_rows, "ports": [fallback_label]}
 
-    rows = []
-    for _, row in df.iterrows():
-        measure = row.get("measure_name", "")
-        val = row.get("value", "")
-        if measure:
-            rows.append((measure, val))
-
-    if not rows:
-        rows = fallback_rows
-        port_label = fallback_label
-
-    return {"label": port_label, "rows": rows}
+    # If only one port, use the original format for backward compatibility
+    if len(unique_ports) == 1:
+        port_label = unique_ports[0]
+        rows = []
+        port_df = df[df["PortName"] == port_label]
+        for _, row in port_df.iterrows():
+            measure = row.get("measure_name", "")
+            val = row.get("value", "")
+            if measure:
+                rows.append((measure, val))
+        
+        if not rows:
+            rows = fallback_rows
+            port_label = fallback_label
+        
+        return {"label": port_label, "rows": rows, "ports": [port_label]}
+    
+    # Multiple ports - create structured data for multi-column table
+    # Get all unique measures
+    all_measures = df["measure_name"][df["measure_name"] != ""].unique().tolist()
+    
+    # Create a structured format for multiple ports
+    port_data = {}
+    for port in unique_ports:
+        port_df = df[df["PortName"] == port]
+        port_data[port] = {}
+        for _, row in port_df.iterrows():
+            measure = row.get("measure_name", "")
+            val = row.get("value", "")
+            if measure:
+                port_data[port][measure] = val
+    
+    # Create rows with data for all ports
+    structured_rows = []
+    for measure in all_measures:
+        row_data = {"Measure": measure}
+        for port in unique_ports:
+            row_data[port] = port_data[port].get(measure, "")
+        structured_rows.append(row_data)
+    
+    # If no structured data, fall back to single port format
+    if not structured_rows:
+        return {"label": fallback_label, "rows": fallback_rows, "ports": [fallback_label]}
+    
+    return {
+        "label": "Port Details", 
+        "rows": structured_rows, 
+        "ports": unique_ports,
+        "is_multi_port": True
+    }
 
 def load_loading_ports(crude_value: str | None = None):
     """Load loading ports data for the map from DB."""
@@ -1181,31 +1230,11 @@ def create_production_chart(crude_value: str | None = None):
     return fig
 
 def create_map_chart(crude_value: str | None = None):
-    """Create loading ports map chart matching Tableau design - North America focus with orange triangular markers."""
+    """Create loading ports map chart with country-level interactions and proper port markers."""
     ports_data = load_loading_ports(crude_value)
-    fig = go.Figure()
     
     if not ports_data:
-        # Return empty figure focused on North America
-        fig.update_layout(
-            height=500,
-            # width=600, # Increased map width
-            margin=dict(l=0, r=0, t=0, b=0),
-            geo=dict(
-                projection_type="natural earth",
-                center=dict(lat=40, lon=-85),
-                scope="north america",
-                showland=True,
-                landcolor="rgb(243, 243, 243)",
-                showocean=True,
-                oceancolor="white",
-                showcountries=True,
-                countrycolor="rgb(200, 200, 200)",
-                lataxis=dict(range=[15, 75]),
-                lonaxis=dict(range=[-180, -50])
-            )
-        )
-        return fig
+        return create_empty_map("No loading ports data available", height=500)
     
     # Extract coordinates and data for hover
     lats = [port.get('latitude') for port in ports_data if port.get('latitude')]
@@ -1215,25 +1244,96 @@ def create_map_chart(crude_value: str | None = None):
     crudes = [port.get('crude', '') for port in ports_data]
     unique_countries = [c for c in dict.fromkeys(countries) if c]
     
-    if lats and lons:
-        # Shade all countries returned from the query
-        if unique_countries:
-            fig.add_trace(go.Choropleth(
-                locations=unique_countries,
-                z=[1] * len(unique_countries),
-                locationmode='country names',
-                colorscale=[[0, 'rgb(200, 230, 200)'], [1, 'rgb(200, 230, 200)']],
-                showscale=False,
-                geo='geo',
-                hoverinfo='skip',
-                marker_line_width=0,
-                marker_line_color='rgba(0,0,0,0)',
-                hovertemplate='<extra></extra>',
-                text='',
-                name=''
-            ))
+    if not (lats and lons):
+        return create_empty_map("No valid port coordinates available", height=500)
+    
+    # Use shared map configuration
+    use_mapbox, token, mapbox_layout = get_mapbox_config()
+    geojson = load_world_geojson()
+    
+    fig = go.Figure()
+    
+    # Add country choropleth layer for country-level interactions
+    if unique_countries:
+        # Create country data for choropleth
+        country_values = [1] * len(unique_countries)  # All countries have same value for uniform coloring
+        country_hover_text = [f"<b>{country}</b><br>Click to zoom to country" for country in unique_countries]
         
-        # Add scattergeo trace for ports with orange triangular markers
+        if use_mapbox and geojson:
+            # Get ISO codes for countries
+            from core.country_mappings import get_iso_code
+            country_isos = []
+            valid_countries = []
+            for country in unique_countries:
+                iso = get_iso_code(country)
+                if iso:
+                    country_isos.append(iso)
+                    valid_countries.append(country)
+            
+            if country_isos:
+                fig.add_trace(
+                    go.Choroplethmapbox(
+                        geojson=geojson,
+                        locations=country_isos,
+                        z=country_values[:len(country_isos)],
+                        featureidkey="id",
+                        colorscale=[[0, 'rgba(200, 230, 200, 0.6)'], [1, 'rgba(200, 230, 200, 0.6)']],
+                        showscale=False,
+                        hoverinfo="text",
+                        hovertext=[f"<b>{country}</b><br>Click to zoom to country" for country in valid_countries],
+                        marker_line_color="white",
+                        marker_line_width=1,
+                        marker_opacity=0.6,
+                        name="countries"
+                    )
+                )
+        else:
+            # Fallback to regular choropleth
+            from core.country_mappings import get_iso_code
+            country_isos = []
+            valid_countries = []
+            for country in unique_countries:
+                iso = get_iso_code(country)
+                if iso:
+                    country_isos.append(iso)
+                    valid_countries.append(country)
+            
+            if country_isos:
+                fig.add_trace(
+                    go.Choropleth(
+                        locations=country_isos,
+                        z=country_values[:len(country_isos)],
+                        locationmode='ISO-3',
+                        colorscale=[[0, 'rgba(200, 230, 200, 0.6)'], [1, 'rgba(200, 230, 200, 0.6)']],
+                        showscale=False,
+                        hoverinfo="text",
+                        hovertext=[f"<b>{country}</b><br>Click to zoom to country" for country in valid_countries],
+                        marker_line_width=1,
+                        marker_line_color='white',
+                        name="countries"
+                    )
+                )
+    
+    # Add port markers with proper red circles (changed from triangles)
+    if use_mapbox:
+        fig.add_trace(go.Scattermapbox(
+            lon=lons,
+            lat=lats,
+            text=port_names,
+            customdata=list(zip(countries, crudes, port_names)),
+            mode='markers',
+            marker=dict(
+                size=15,
+                color='red',  # Red color as requested
+                symbol='circle',  # Changed from triangle-up to circle
+                opacity=0.9
+            ),
+            name='Loading Ports',
+            hovertemplate='<b>Country:</b> %{customdata[0]}<br>' +
+                          '<b>Crude:</b> %{customdata[1]}<br>' +
+                          '<b>Loading Port:</b> %{customdata[2]}<extra></extra>'
+        ))
+    else:
         fig.add_trace(go.Scattergeo(
             lon=lons,
             lat=lats,
@@ -1242,8 +1342,8 @@ def create_map_chart(crude_value: str | None = None):
             mode='markers',
             marker=dict(
                 size=15,
-                color='#fe5000',
-                symbol='triangle-up',
+                color='red',  # Red color as requested
+                symbol='circle',  # Changed from triangle-up to circle
                 line=dict(width=1, color='white'),
                 opacity=0.9
             ),
@@ -1252,63 +1352,113 @@ def create_map_chart(crude_value: str | None = None):
                           '<b>Crude:</b> %{customdata[1]}<br>' +
                           '<b>Loading Port:</b> %{customdata[2]}<extra></extra>'
         ))
+    
+    # Add background click layer for reset functionality
+    from .shared_map_utils import add_background_click_layer
+    add_background_click_layer(fig, None, use_mapbox)
+    
+    # Calculate bounds for better view
+    lat_min, lat_max = min(lats), max(lats)
+    lon_min, lon_max = min(lons), max(lons)
+    
+    # Calculate center
+    center_lat = (lat_min + lat_max) / 2
+    center_lon = (lon_min + lon_max) / 2
+    
+    # Calculate dynamic zoom and center based on country (similar to country_profile.py)
+    lat_span = lat_max - lat_min
+    lon_span = lon_max - lon_min
+    max_span = max(lat_span, lon_span)
+    
+    # Dynamic zoom based on country size
+    if max_span > 30:
+        map_zoom = 1.2
+    elif max_span > 15:
+        map_zoom = 1.4
+    elif max_span > 8:
+        map_zoom = 1.8
+    elif max_span > 4:
+        map_zoom = 2.4
+    elif max_span > 2:
+        map_zoom = 2.8
+    else:
+        map_zoom = 3.4
+    
+    # Country-specific zoom overrides (based on the first country in the ports data)
+    if unique_countries:
+        selected_country = unique_countries[0]  # Use first country for zoom calculation
+        country_zoom_overrides = {
+            'Russia': 1.0, 'Canada': 0.9, 'United States': 1.0, 'Brazil': 1.2,
+            'Australia': 1.1, 'China': 1.1, 'Saudi Arabia': 1.7, 'Iran': 1.8,
+            'Norway': 2.1, 'United Kingdom': 2.5, 'Nigeria': 1.9, 'Venezuela': 1.8,
+            'Mexico': 1.5, 'Indonesia': 1.6, 'Libya': 2.1, 'Algeria': 1.8,
+            'Iraq': 2.2, 'Kuwait': 3.0, 'Qatar': 3.5, 'UAE': 2.7, 'Oman': 2.3
+        }
         
-        # Compute bounds based on data
-        lat_min, lat_max = min(lats), max(lats)
-        lon_min, lon_max = min(lons), max(lons)
+        if selected_country in country_zoom_overrides:
+            map_zoom = country_zoom_overrides[selected_country]
         
-        # Expand bounds slightly for context
-        lat_pad = max(5, (lat_max - lat_min) * 0.2)
-        lon_pad = max(5, (lon_max - lon_min) * 0.2)
-        lat_min -= lat_pad
-        lat_max += lat_pad
-        lon_min -= lon_pad
-        lon_max += lon_pad
-        center_lat = (lat_min + lat_max) / 2
-        center_lon = (lon_min + lon_max) / 2
+        # Adjust center for better visibility (similar to country_profile.py)
+        if selected_country in ['United States', 'Russia']:
+            adjusted_lat = center_lat + (lat_span * 0.30)
+        elif selected_country == 'Canada':
+            adjusted_lat = center_lat + (lat_span * 0.08)
+        elif lat_span > 25:
+            adjusted_lat = center_lat + (lat_span * 0.05)
+        elif lat_span > 15:
+            adjusted_lat = center_lat + (lat_span * 0.08)
+        elif lat_span > 8:
+            adjusted_lat = center_lat + (lat_span * 0.05)
+        elif lat_span > 4:
+            adjusted_lat = center_lat + (lat_span * 0.03)
+        else:
+            adjusted_lat = center_lat
         
-        fig.update_geos(
-            projection_type="natural earth",
-            center=dict(lat=center_lat, lon=center_lon),
-            scope="world",
-            showland=True,
-            landcolor="rgb(243, 243, 243)",
-            showocean=True,
-            oceancolor="white",
-            showcountries=True,
-            countrycolor="rgb(200, 200, 200)",
-            showlakes=True,
-            lakecolor="white",
-            lataxis=dict(range=[lat_min - 50, lat_max + 50]),  # Increased padding
-            lonaxis=dict(range=[lon_min - 100, lon_max + 60]),  # Increased padding
-            subunitcolor="rgb(200, 200, 200)",
-            bgcolor="white"
+        center_lat = adjusted_lat
+    
+    # Update mapbox layout with calculated center and zoom
+    if use_mapbox:
+        mapbox_layout.update({
+            "center": {"lat": center_lat, "lon": center_lon},
+            "zoom": map_zoom
+        })
+        
+        fig.update_layout(
+            height=500,
+            margin=dict(l=0, r=0, t=0, b=0),
+            mapbox=mapbox_layout,
+            showlegend=False,
+            plot_bgcolor=MAP_BACKGROUND_COLOR,
+            paper_bgcolor="white",
+            hovermode='closest'
         )
     else:
-        # Default North America view if no valid coordinates
-        fig.update_geos(
-            projection_type="natural earth",
-            center=dict(lat=40, lon=-85),
-            scope="north america",
-            showland=True,
-            landcolor="rgb(243, 243, 243)",
-            showocean=True,
-            oceancolor="white",
-            showcountries=True,
-            countrycolor="rgb(200, 200, 200)",
-            lataxis=dict(range=[15, 75]),
-            lonaxis=dict(range=[-180, -50])
+        fig.update_layout(
+            height=500,
+            margin=dict(l=0, r=0, t=0, b=0),
+            geo=dict(
+                projection_type="natural earth",
+                center=dict(lat=center_lat, lon=center_lon),
+                scope="world",
+                showland=True,
+                landcolor="rgb(243, 243, 243)",
+                showocean=True,
+                oceancolor=MAP_BACKGROUND_COLOR,  # Use shared white background
+                showcountries=True,
+                countrycolor="rgb(200, 200, 200)",
+                showlakes=True,
+                lakecolor=MAP_BACKGROUND_COLOR,  # Use shared white background
+                # Use calculated bounds with zoom consideration
+                lataxis=dict(range=[center_lat - (lat_span * (4 - map_zoom) / 2), center_lat + (lat_span * (4 - map_zoom) / 2)]),
+                lonaxis=dict(range=[center_lon - (lon_span * (4 - map_zoom) / 2), center_lon + (lon_span * (4 - map_zoom) / 2)]),
+                subunitcolor="rgb(200, 200, 200)",
+                bgcolor=MAP_BACKGROUND_COLOR
+            ),
+            showlegend=False,
+            plot_bgcolor=MAP_BACKGROUND_COLOR,
+            paper_bgcolor="white",
+            hovermode='closest'
         )
-    
-    fig.update_layout(
-        height=500,
-        # width=600, # Increased map width
-        margin=dict(l=0, r=0, t=0, b=0),
-        showlegend=False,
-        geo_bgcolor="white",
-        paper_bgcolor="white",
-        hovermode='closest'
-    )
     
     return fig
 
@@ -2120,9 +2270,37 @@ def register_callbacks(app):
             # Determine map visibility
             map_display_style = {'display': 'block'} if ports_data else {'display': 'none'}
 
-            # Determine port details table visibility
+            # Handle port details - support both single and multi-port formats
             port_details_rows_data = port_details_data.get("rows", [])
             port_details_display_style = {'display': 'block'} if port_details_rows_data else {'display': 'none'}
+            
+            # Check if this is multi-port data
+            is_multi_port = port_details_data.get("is_multi_port", False)
+            
+            if is_multi_port:
+                # Multi-port format: rows are already dictionaries with port columns
+                port_rows = port_details_rows_data
+                port_ports = port_details_data.get("ports", [])
+                
+                # Create columns: Measure + one column per port
+                port_columns = [
+                    {"name": "Measure", "id": "Measure", "header_style": {"textAlign": "left"}, "style": {"textAlign": "left"}}
+                ]
+                for port in port_ports:
+                    port_columns.append({
+                        "name": port, 
+                        "id": port, 
+                        "header_style": {"textAlign": "center"}, 
+                        "style": {"textAlign": "center"}
+                    })
+            else:
+                # Single port format: convert tuples to dictionaries (backward compatibility)
+                port_label = port_details_data.get("label", "Port Details")
+                port_rows = [{"Measure": r[0], port_label: r[1]} for r in port_details_rows_data]
+                port_columns = [
+                    {"name": "Measure", "id": "Measure", "header_style": {"textAlign": "left"}, "style": {"textAlign": "left"}},
+                    {"name": port_label, "id": port_label, "header_style": {"textAlign": "center"}, "style": {"textAlign": "center"}}
+                ]
 
             # Convert grouped data to flat rows for DataTable
             table_data = []
@@ -2143,13 +2321,6 @@ def register_callbacks(app):
             gravity_val = quality_specs[0][1] if len(quality_specs) > 0 else "28.40"
             sulfur_val = quality_specs[1][1] if len(quality_specs) > 1 else "2.17"
             tan_val = quality_specs[2][1] if len(quality_specs) > 2 else "0.48"
-
-            port_label = port_details_data.get("label", "Port Details")
-            port_rows = [{"Measure": r[0], port_label: r[1]} for r in port_details_rows_data]
-            port_columns = [
-                {"name": "Measure", "id": "Measure", "header_style": {"textAlign": "left"}, "style": {"textAlign": "left"}},
-                {"name": port_label, "id": port_label, "header_style": {"textAlign": "center"}, "style": {"textAlign": "center"}}
-            ]
 
             prod_text = producers_sellers[0][0] if producers_sellers else ""
             sell_text = producers_sellers[0][1] if producers_sellers else ""
@@ -2183,6 +2354,9 @@ def register_callbacks(app):
             {"name": "Measure", "id": "Measure"},
             {"name": "Port Details", "id": "Port Details"}
         ]
+        empty_map_style = {'display': 'none'}
+        empty_port_style = {'display': 'none'}
+        
         return (
             [],
             [],
@@ -2190,10 +2364,13 @@ def register_callbacks(app):
             "2.17",
             "0.48",
             "Low",
-            go.Figure(),
+            create_empty_map("No data available", height=500),
+            empty_map_style,
             empty_port_rows,
             empty_port_cols,
-            go.Figure(),
+            empty_port_style,
+            create_production_chart(),
+            "",
             "",
             "",
             "",
@@ -2286,11 +2463,19 @@ def register_callbacks(app):
         if n_clicks and selected_crude:
             port_details_data = load_port_details(selected_crude)
             rows = port_details_data.get("rows", [])
-            formatted_rows = []
-            for r in rows:
-                measure_name = " ".join([word.capitalize() for word in r[0].split('_')])
-                formatted_rows.append({"Measure": measure_name, port_details_data.get("label", "Value"): r[1]})
-            df = pd.DataFrame(formatted_rows)
+            is_multi_port = port_details_data.get("is_multi_port", False)
+            
+            if is_multi_port:
+                # Multi-port format: rows are already dictionaries
+                df = pd.DataFrame(rows)
+            else:
+                # Single port format: convert tuples to dictionaries
+                formatted_rows = []
+                for r in rows:
+                    measure_name = " ".join([word.capitalize() for word in r[0].split('_')])
+                    formatted_rows.append({"Measure": measure_name, port_details_data.get("label", "Value"): r[1]})
+                df = pd.DataFrame(formatted_rows)
+            
             return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Port_Details.csv")
         raise dash.exceptions.PreventUpdate
 
@@ -2306,6 +2491,130 @@ def register_callbacks(app):
             df = pd.DataFrame(producers_sellers, columns=["Producers", "Sellers", "Crude Name"])
             return dcc.send_data_frame(df.to_csv, filename=f"{selected_crude}_Sellers_Producers.csv")
         raise dash.exceptions.PreventUpdate
+    
+    # Separate map click callback for country-level zoom functionality
+    @app.callback(
+        Output('loading-ports-map', 'figure', allow_duplicate=True),
+        Input('loading-ports-map', 'clickData'),
+        State('crude-select', 'value'),
+        prevent_initial_call=True
+    )
+    def handle_map_click(click_data, selected_crude):
+        """Handle map clicks for country-level zoom and reset functionality."""
+        if not click_data:
+            return no_update
+        
+        # Get the current map figure
+        current_fig = create_map_chart(selected_crude)
+        
+        # Extract click information
+        point = click_data["points"][0]
+        
+        # Check if it's a background click (reset to world view)
+        is_background_click = False
+        clicked_country = None
+        
+        if "customdata" in point and point["customdata"]:
+            if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
+                if point["customdata"][0] == "__BACKGROUND_CLICK__":
+                    is_background_click = True
+                else:
+                    # This might be a port click, extract country from port data
+                    clicked_country = point["customdata"][0]  # Country is first element
+            elif point["customdata"] == "__BACKGROUND_CLICK__":
+                is_background_click = True
+        
+        # Check if it's a country choropleth click
+        if "hovertext" in point and point["hovertext"] and "Click to zoom to country" in point["hovertext"]:
+            # Extract country name from hover text
+            hovertext = point["hovertext"]
+            if "<b>" in hovertext and "</b>" in hovertext:
+                clicked_country = hovertext.split("<b>")[1].split("</b>")[0]
+        
+        # If background click or ocean click, reset to world view
+        if is_background_click or (not clicked_country and "lon" in point and "lat" in point):
+            # Return the default world view
+            return create_map_chart(selected_crude)
+        
+        # If a country was clicked, zoom to that country
+        if clicked_country:
+            # Get ports data for the selected crude
+            ports_data = load_loading_ports(selected_crude)
+            
+            # Filter ports for the clicked country
+            country_ports = [port for port in ports_data if port.get('country') == clicked_country]
+            
+            if country_ports:
+                # Calculate bounds for the country
+                country_lats = [port.get('latitude') for port in country_ports if port.get('latitude')]
+                country_lons = [port.get('longitude') for port in country_ports if port.get('longitude')]
+                
+                if country_lats and country_lons:
+                    lat_min, lat_max = min(country_lats), max(country_lats)
+                    lon_min, lon_max = min(country_lons), max(country_lons)
+                    
+                    # Add padding
+                    lat_pad = max(2, (lat_max - lat_min) * 0.3)
+                    lon_pad = max(2, (lon_max - lon_min) * 0.3)
+                    lat_min -= lat_pad
+                    lat_max += lat_pad
+                    lon_min -= lon_pad
+                    lon_max += lon_pad
+                    
+                    center_lat = (lat_min + lat_max) / 2
+                    center_lon = (lon_min + lon_max) / 2
+                    
+                    # Calculate appropriate zoom level
+                    lat_range = lat_max - lat_min
+                    lon_range = lon_max - lon_min
+                    max_range = max(lat_range, lon_range)
+                    
+                    if max_range < 5:
+                        zoom = 6
+                    elif max_range < 10:
+                        zoom = 5
+                    elif max_range < 20:
+                        zoom = 4
+                    else:
+                        zoom = 3
+                    
+                    # Update the figure with new center and zoom
+                    use_mapbox, token, mapbox_layout = get_mapbox_config()
+                    
+                    if use_mapbox:
+                        current_fig.update_layout(
+                            mapbox=dict(
+                                **mapbox_layout,
+                                center=dict(lat=center_lat, lon=center_lon),
+                                zoom=zoom
+                            )
+                        )
+                    else:
+                        current_fig.update_layout(
+                            geo=dict(
+                                projection_type="natural earth",
+                                center=dict(lat=center_lat, lon=center_lon),
+                                scope="world",
+                                showland=True,
+                                landcolor="rgb(243, 243, 243)",
+                                showocean=True,
+                                oceancolor=MAP_BACKGROUND_COLOR,
+                                showcountries=True,
+                                countrycolor="rgb(200, 200, 200)",
+                                showlakes=True,
+                                lakecolor=MAP_BACKGROUND_COLOR,
+                                lataxis=dict(range=[lat_min - 10, lat_max + 10]),
+                                lonaxis=dict(range=[lon_min - 20, lon_max + 20]),
+                                subunitcolor="rgb(200, 200, 200)",
+                                bgcolor=MAP_BACKGROUND_COLOR
+                            )
+                        )
+                    
+                    return current_fig
+        
+        # Default: return current figure unchanged
+        return no_update
+    
     @app.callback(
         [Output('crude-profile-sorting-controls', 'style'),
          Output('crude-profile-avg-text-box', 'style')],
@@ -2779,16 +3088,5 @@ def register_callbacks(app):
 # ------------------------------------------------------------------------------
 def create_crude_profile_dashboard(dash_app, server, url_base_pathname="/dash/crude-profile/"):
     """Create and configure the crude profile dashboard with grouped tables."""
-    # dash_app = dash.Dash(
-    #     __name__,
-    #     server=server,
-    #     url_base_pathname=url_base_pathname,
-    #     external_stylesheets=[
-    #         'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
-    #         'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
-    #     ],
-    #     suppress_callback_exceptions=True
-    # )
-    
     dash_app.layout = create_layout()
-    register_callbacks(dash_app, server)
+    register_callbacks(dash_app)

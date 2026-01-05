@@ -79,11 +79,12 @@ def load_crossplot_data():
         core_data."CrudeOil",
         core_data."Country",
         ctry.grp AS "OPEC FSU OECD",
-        core_data."Property - Unit",
+        core_data.property,
         core_data."SpecificationProperty",
         core_data."Value",
         core_data.unit,
-        core_data."YearReported"
+        core_data."YearReported",
+        core_data.cut_point
     FROM 
     (
         /* ---- Assay data (excluding product yield) ---- */
@@ -92,11 +93,12 @@ def load_crossplot_data():
             a.country_name AS "Country",
             a.country_id,
             a.product,
-            (a.property || '-' || a.unit) AS "Property - Unit",
+            a.property,
             a.property AS "SpecificationProperty",
             a.value AS "Value",
             a.unit,
-            a.assay_yr AS "YearReported"
+            a.assay_yr AS "YearReported",
+            a.cut_point
         FROM fact_wcod_assays a
         WHERE a.to_be_deleted IS NULL
           AND a.property IS NOT NULL
@@ -110,11 +112,12 @@ def load_crossplot_data():
             prod_data.country_name AS "Country",
             prod_data.country_id,
             '' AS product,
-            'Volume-000 b/d' AS "Property - Unit",
+            'Volume' AS property,
             'Volume' AS "SpecificationProperty",
             prod_data.production_kbpd AS "Value",
             '000 b/d' AS unit,
-            EXTRACT(YEAR FROM prod_data.yr)::INT AS "YearReported"
+            EXTRACT(YEAR FROM prod_data.yr)::INT AS "YearReported",
+            NULL AS cut_point
         FROM 
             (
                 SELECT *
@@ -144,6 +147,173 @@ def load_crossplot_data():
             return pd.DataFrame()
         
         df = pd.DataFrame(results)
+        
+        # --- Normalization Logic ---
+        # NOTE: This mapping must produce slightly different parent headers than the Table logic
+        # to strictly match the dashboard dropdown keys (e.g., "Conradson Carbon Residue" vs "Carbon Residue Conradson")
+        
+        property_mapping = {
+            # Gravity
+            'gravity': 'Gravity',
+            'api at 60 f': 'Gravity',
+            'api at 60°f': 'Gravity',
+            'api at 60 f.': 'Gravity',
+            'api': 'Gravity',
+            'api gravity': 'Gravity',
+            # Sulfur Content
+            'sulphur': 'Sulfur Content',
+            'sulfur': 'Sulfur Content',
+            'sulphur content': 'Sulfur Content',
+            'sulfur content': 'Sulfur Content',
+            # Pour Point
+            'pourpoint': 'Pour Point',
+            'pour point': 'Pour Point',
+            'pour point temperature': 'Pour Point',
+            # Viscosity
+            'viscosity': 'Viscosity',
+            'viscocity': 'Viscosity',
+            'kinematic viscosity': 'Viscosity',
+            'dynamic viscosity': 'Viscosity',
+            # Barrels
+            'barrels': 'Barrels',
+            'barrels per metric ton': 'Barrels',
+            # Nickel
+            'nickel': 'Nickel',
+            'ni': 'Nickel',
+            # Total Acid Number
+            'total acid number': 'Total Acid Number',
+            'total acidnumber': 'Total Acid Number',
+            'tan': 'Total Acid Number',
+            'acid number': 'Total Acid Number',
+            # Vanadium
+            'vanadium': 'Vanadium',
+            'v': 'Vanadium',
+            # Mercaptan Sulfur (separate from Sulfur Content)
+            'mercaptan sulfur': 'Mercaptan Sulfur',
+            'mercaptan sulphur': 'Mercaptan Sulfur',
+            # Carbon Residue
+            'carbon residue': 'Conradson Carbon Residue', # Defaulting Carbon Residue to Conradson for this chart per dropdown options?
+            # Actually, "Carbon Residue" is not in the dropdown list! only "Conradson Carbon Residue"
+            # So we map things to "Conradson Carbon Residue" if they fit
+            
+            # Carbon Residue Conradson -> "Conradson Carbon Residue"
+            'carbon residue conradson': 'Conradson Carbon Residue',
+            'conradson carbon residue': 'Conradson Carbon Residue',
+            'conradson': 'Conradson Carbon Residue',
+            
+            # Carbon Residue Upto Waxpoint - Not in Dropdown?
+            # The dropdown has: Gravity, Barrels, Conradson Carbon Residue, Hydrogen Sulfide, K Factor, 
+            # Mercaptan Sulfur, Nickel, Pour Point, Reid Vapor Pressure, Sulfur Content, Total Acid Number,
+            # Vanadium, Viscosity, Volume.
+            # It seems "Carbon Residue Upto Waxpoint" is NOT in the chart dropdown options, so we can ignore it or map it as is (it won't be selectable)
+            'carbon residue upto waxpoint': 'Carbon Residue Upto Waxpoint',
+            
+            # Cloud Point - Not in Dropdown
+            'cloud point': 'Cloud Point',
+            
+            # Density - Not in Dropdown
+            'density': 'Density',
+            
+            # Reid Vapor Pressure
+            'reid vapor pressure': 'Reid Vapor Pressure',
+            'rvp': 'Reid Vapor Pressure',
+            'reid vapour pressure': 'Reid Vapor Pressure',
+            
+            # Salt Content - Not in Dropdown
+            'salt content': 'Salt Content',
+            
+            # Volume
+            'volume': 'Volume',
+            
+            # K Factor
+            'k factor': 'K Factor',
+            'uop k': 'K Factor',
+            
+            # Hydrogen Sulfide
+            'hydrogen sulfide': 'Hydrogen Sulfide',
+            'h2s': 'Hydrogen Sulfide'
+        }
+        
+        # Normalize property names
+        df['property_normalized'] = df['property'].astype(str).str.lower().str.strip()
+        df['parent_header'] = df['property_normalized'].map(property_mapping)
+        
+        # Filter out unmapped
+        df = df[df['parent_header'].notna()]
+        
+        if df.empty:
+            return pd.DataFrame()
+        
+        # Filter out Sulfur Content rows with "ppm" unit (Chart only shows % Wt)
+        if 'unit' in df.columns:
+            sulfur_mask = df['property'].astype(str).str.lower().str.strip().isin(['sulphur', 'sulfur', 'sulphur content', 'sulfur content'])
+            ppm_mask = df['unit'].astype(str).str.lower().str.strip().str.contains('ppm', na=False)
+            df = df[~(sulfur_mask & ppm_mask)]
+            
+        def create_prop_unit_str(row):
+            prop = str(row['parent_header']) # mapped parent header (e.g. "Conradson Carbon Residue")
+            unit = str(row['unit']).strip() if pd.notna(row['unit']) else ""
+            prop_lower = str(row['property_normalized'])
+            
+            sub_header = ""
+            
+            # Specific logic to match Dropdown keys "Property-Unit"
+            if prop == 'Gravity':
+                sub_header = "API at 60 F"
+            elif prop == 'Sulfur Content':
+                sub_header = "% Wt"
+            elif prop == 'Mercaptan Sulfur':
+                sub_header = "ppm" # Force ppm as per dropdown options
+            elif prop == 'Pour Point':
+                 sub_header = "Temp. C" # Default to C as per dropdown
+            elif prop == 'Viscosity':
+                # Needs to match: cSt at 10 C, cSt at 20 C, cSt at 40 C
+                cut_point = str(row.get('cut_point', '')).strip() if pd.notna(row.get('cut_point')) else ""
+                unit_str = unit.lower()
+                
+                # If we have a cutpoint, use it
+                val = ""
+                if cut_point:
+                     val = f"cSt at {cut_point} C"
+                elif '10' in unit_str:
+                     val = "cSt at 10 C"
+                elif '20' in unit_str:
+                     val = "cSt at 20 C"
+                elif '40' in unit_str:
+                     val = "cSt at 40 C"
+                else:
+                     val = "cSt at 40 C" # Fallback? Or keep original unit? 
+                     # Better to keep original unit if we can't match, or filter out later
+                sub_header = val
+                
+            elif prop == 'Barrels':
+                sub_header = "Per Metric Ton"
+            elif prop == 'Nickel':
+                sub_header = "ppm"
+            elif prop == 'Total Acid Number':
+                sub_header = "mg KOH/g"
+            elif prop == 'Vanadium':
+                sub_header = "ppm"
+            elif prop == 'Conradson Carbon Residue':
+                sub_header = "% Wt"
+            elif prop == 'Reid Vapor Pressure':
+                sub_header = "psi at 37.8 C"
+            elif prop == 'Volume':
+                sub_header = "000 b/d"
+            elif prop == 'K Factor':
+                sub_header = "UOP 375" # Force match dropdown
+            elif prop == 'Hydrogen Sulfide':
+                sub_header = "ppm"
+            else:
+                sub_header = unit
+            
+            return f"{prop}-{sub_header}"
+
+        df['Property - Unit'] = df.apply(create_prop_unit_str, axis=1)
+        
+        # Filter to only keep rows that match one of the allowed options?
+        # Maybe safer to let them pass, the chart filter will just ignore them if not selected.
+        
         return df
         
     except Exception as e:
@@ -558,7 +728,7 @@ def load_crude_quality_table():
         seen_sub_headers = {}  # Track sub-header occurrences for unique IDs
         
         for col in pivot_df.columns:
-            if col in ['Country', 'CrudeOil']:
+            if col in ['Country', 'CrudeOil', 'region_group']:
                 continue
             
             # Parse column name: could be "parent|||sub" format (from MultiIndex flattening) or just "sub"
@@ -866,6 +1036,7 @@ def process_quality_table_data(df, country_col_id, crudeoil_col_id):
         return []
 
     df = df.copy()
+    df = df.reset_index(drop=True)
 
     # Normalize the country column - ensure empty strings are truly empty
     df[country_col_id] = df[country_col_id].fillna("").astype(str).str.strip()
@@ -1608,7 +1779,7 @@ def create_layout(dash_app=None):
                         dcc.Input(
                             id="bubble-range-max-input",
                             type="text",
-                            value=5.98,
+                            value=7506,
                             style={'display': 'inline-block', 'float': 'right'}
                         ),
                     ], style={'width': '386px', 'marginBottom': '10px', 'position': 'relative'}),
@@ -1616,9 +1787,9 @@ def create_layout(dash_app=None):
                 dcc.RangeSlider(
                     id="bubble-range-slider",
                             min=0,
-                            max=5.98,
+                            max=7506,
                     step=0.01,
-                            value=[0, 5.98],
+                            value=[0, 7506],
                             marks=None,
                         ),
                     ], style={'width': '386px', 'margin': '0', 'padding': '0'}),
@@ -1639,9 +1810,9 @@ def create_layout(dash_app=None):
                         dcc.Dropdown(
                             id='crude-map-export-dropdown',
                             options=[
-                                {'label': 'Export Data PDF', 'value': 'pdf'},
-                                {'label': 'Export Data PNG', 'value': 'png'},
-                                {'label': 'Export Data CSV', 'value': 'csv'}
+                                {'label': 'Export to PDF', 'value': 'pdf'},
+                                {'label': 'Export to PNG', 'value': 'png'},
+                                {'label': 'Export to CSV', 'value': 'csv'}
                             ],
                             placeholder='Export Data',
                             style={
@@ -1795,7 +1966,7 @@ def create_layout(dash_app=None):
                     ),
                     html.Div([
                         html.Button(
-                            'Export Data to CSV',
+                            'Export to CSV',
                             id='btn-export-quality-table-csv',
                             n_clicks=0,
                             style={
@@ -1830,15 +2001,17 @@ def create_layout(dash_app=None):
                             'minWidth': '100%'
                         },
                         style_cell={
-                            'padding': '8px 8px',
+                            'padding': '4px 6px',
                             'fontSize': '12px',
                             'fontFamily': 'Arial, sans-serif',
                             'border': '1px solid #E6E6E6',
-                            'whiteSpace': 'normal',
+                            'whiteSpace': 'nowrap',
+                            'overflow': 'hidden',
+                            'textOverflow': 'ellipsis',
                             'textAlign': 'right',
                             'backgroundColor': 'white',
-                            'height': 'auto',
-                            'lineHeight': '1.4'
+                            'height': '25px',
+                            'minWidth': '80px',
                         },
                         style_header={
                             'backgroundColor': 'white',
@@ -1847,9 +2020,9 @@ def create_layout(dash_app=None):
                             'fontFamily': 'Arial, sans-serif',
                             'border': '1px solid #D0D0D0',
                             'borderBottom': '2px solid #D0D0D0',
-                            'padding': '8px 6px',
+                            'padding': '4px 6px',
                             'textAlign': 'center',
-                            'height': 'auto'
+                            'height': '25px'
                         },
                         style_cell_conditional=[
                             {
@@ -1908,7 +2081,11 @@ def create_layout(dash_app=None):
                                 'borderTop': '2px solid #CFCFCF',
                                 'borderBottom': '1px solid #E6E6E6',
                                 'verticalAlign': 'middle',
-                                'padding': '10px 8px'
+                                'padding': '4px 6px',
+                                'height': '25px',
+                                'whiteSpace': 'nowrap',
+                                'overflow': 'hidden',
+                                'textOverflow': 'ellipsis'
                             },
                             # Country column - child rows (empty country cell)
                             {
@@ -1918,8 +2095,11 @@ def create_layout(dash_app=None):
                                 },
                                 'borderTop': 'none',
                                 'borderBottom': '1px solid #E6E6E6',
-                                'backgroundColor': 'white',
-                                'padding': '8px 8px'
+                                'padding': '4px 6px',
+                                'height': '25px',
+                                'whiteSpace': 'nowrap',
+                                'overflow': 'hidden',
+                                'textOverflow': 'ellipsis'
                             },
                             # CrudeOil column - child rows (aligned with header)
                             {
@@ -1927,11 +2107,12 @@ def create_layout(dash_app=None):
                                     'filter_query': f'{{Country}} = ""',
                                     'column_id': 'CrudeOil'
                                 },
-                                'paddingLeft': '8px',
+                                'padding': '4px 6px',
+                                'height': '25px',
+                                'whiteSpace': 'nowrap',
+                                'overflow': 'hidden',
+                                'textOverflow': 'ellipsis',
                                 'fontWeight': 'normal',
-                                'backgroundColor': 'white',
-                                'paddingTop': '8px',
-                                'paddingBottom': '8px'
                             },
                             # CrudeOil column - header rows (when country is not empty)
                             {
@@ -1939,11 +2120,12 @@ def create_layout(dash_app=None):
                                     'filter_query': f'{{Country}} != ""',
                                     'column_id': 'CrudeOil'
                                 },
-                                'paddingLeft': '8px',
-                                'fontWeight': 'normal',
-                                'backgroundColor': '#F5F5F5',
-                                'paddingTop': '10px',
-                                'paddingBottom': '10px'
+                                'padding': '4px 6px',
+                                'height': '25px',
+                                'whiteSpace': 'nowrap',
+                                'overflow': 'hidden',
+                                'textOverflow': 'ellipsis',
+                                'fontWeight': 'bold',
                             },
                             # Text alignment - Country column always left
                             {
@@ -1964,7 +2146,8 @@ def create_layout(dash_app=None):
                         filter_action="none",
                         page_action="none",
                         sort_action="native",
-                        fixed_columns={'headers': True, 'data': 2}
+                        fixed_columns={'headers': True, 'data': 2},
+                        fixed_rows={'headers': True}
                     )
                 )
 
@@ -1978,7 +2161,7 @@ def create_layout(dash_app=None):
                        style={'color': '#FF6600', 'fontWeight': 'bold', 'marginBottom': '10px', 'fontSize': '20px', 'flexGrow': 1}),
                     html.Div([
                         html.Button(
-                            'Export Data to CSV',
+                            'Export to CSV',
                             id='btn-export-yield-table-csv',
                             n_clicks=0,
                             style={
@@ -2011,15 +2194,17 @@ def create_layout(dash_app=None):
                             'width': '100%'
                         },
                         style_cell={
-                            'padding': '8px 8px',
+                            'padding': '4px 6px',
                             'fontSize': '12px',
                             'fontFamily': 'Arial, sans-serif',
                             'border': '1px solid #E6E6E6',
                             'textAlign': 'right',
                             'minWidth': '80px',
                             'backgroundColor': 'white',
-                            'height': 'auto',
-                            'lineHeight': '1.4'
+                            'height': '25px',
+                            'whiteSpace': 'nowrap',
+                            'overflow': 'hidden',
+                            'textOverflow': 'ellipsis'
                         },
                         style_header={
                             'fontWeight': 'bold',
@@ -2029,7 +2214,8 @@ def create_layout(dash_app=None):
                             'border': '1px solid #D0D0D0',
                             'borderBottom': '2px solid #D0D0D0',
                             'textAlign': 'center',
-                            'padding': '8px 6px'
+                            'padding': '4px 6px',
+                            'height': '25px'
                         },
                         style_cell_conditional=[
                             {
@@ -2085,24 +2271,30 @@ def create_layout(dash_app=None):
                                 'borderTop': '2px solid #CFCFCF',
                                 'borderBottom': '1px solid #E6E6E6',
                                 'verticalAlign': 'middle',
-                                'padding': '8px 8px',
+                                'padding': '4px 6px',
+                                'height': '25px',
                                 'textAlign': 'left',
+                                'whiteSpace': 'nowrap',
+                                'overflow': 'hidden',
+                                'textOverflow': 'ellipsis',
                             },
                             # CrudeOil column
                             {
                                 'if': {'column_id': 'CrudeOil'},
                                 'paddingLeft': '8px',
                                 'fontWeight': 'normal',
-                                'paddingTop': '8px',
-                                'paddingBottom': '8px',
-                                'paddingRight': '8px',
-                                'textAlign': 'left',
+                                'padding': '4px 6px',
+                                'height': '25px',
+                                'whiteSpace': 'nowrap',
+                                'overflow': 'hidden',
+                                'textOverflow': 'ellipsis',
                             },
                         ],
                         merge_duplicate_headers=True,
                         filter_action="none",
                         page_action="none",
-                        sort_action="native"
+                        sort_action="native",
+                        fixed_rows={'headers': True}
                     )
                 )
 ,
@@ -2825,9 +3017,17 @@ def register_callbacks(dash_app, server=None):
             quality_df = load_crude_quality_table()
             
             # Drop any columns containing 'region_group' from the display (keep in exports)
+            # Filter from DataFrame
             region_group_cols = [c for c in quality_df.columns if 'region_group' in str(c)]
             if region_group_cols:
                 quality_df = quality_df.drop(columns=region_group_cols)
+                
+            # Filter from Metadata (if present)
+            quality_column_info = _get_df_metadata(quality_df, "column_info")
+            if quality_column_info:
+                quality_column_info = [c for c in quality_column_info if 'region_group' not in str(c.get('sub', ''))]
+                # Update metadata - tricky with pandas attrs, but we can filter the final columns output
+
             
             if quality_df.empty:
                 return [], []
@@ -2875,6 +3075,9 @@ def register_callbacks(dash_app, server=None):
             
             # Create columns and data
             columns = create_grouped_columns(quality_df)
+            # Extra safety: remove any columns with 'region_group' in id
+            columns = [col for col in columns if 'region_group' not in str(col.get('id', ''))]
+            
             data = process_quality_table_data(quality_df, country_col_id, crudeoil_col_id)
             
             return columns, data
@@ -3030,6 +3233,7 @@ def register_callbacks(dash_app, server=None):
         print(f"DEBUG: Default return - all {len(crude_list)} crudes selected")
         return options, crude_list, ['all']
 
+
     @dash_app.callback(
         [
             Output('x-range-slider', 'min'),
@@ -3045,24 +3249,41 @@ def register_callbacks(dash_app, server=None):
         if not x_prop:
             return 10.7, 68.6, [10.7, 68.6], 0.1, 10.7, 68.6
         
-        # Load quality table data
+        # Load crossplot data (consistent with chart logic)
         try:
-            quality_df = load_crude_quality_table()
+            # Use load_crossplot_data instead of load_crude_quality_table
+            # because x_prop (e.g. "Gravity-API at 60 F") matches Property-Unit column in crossplot data
+            # but NOT the column names in quality table (which are just sub-headers)
+            df = load_crossplot_data()
         except Exception as e:
-            print(f"Error loading quality table for x slider: {e}")
+            print(f"Error loading crossplot data for x slider: {e}")
             return 10.7, 68.6, [10.7, 68.6], 0.1, 10.7, 68.6
         
-        if quality_df.empty or x_prop not in quality_df.columns:
+        if df.empty:
             return 10.7, 68.6, [10.7, 68.6], 0.1, 10.7, 68.6
         
-        quality_df[x_prop] = pd.to_numeric(quality_df[x_prop], errors="coerce")
-        quality_df = quality_df.dropna(subset=[x_prop])
+        # Filter for the selected property
+        x_data = df[df['Property - Unit'] == x_prop].copy()
         
-        if len(quality_df) == 0:
+        if x_data.empty:
+            return 10.7, 68.6, [10.7, 68.6], 0.1, 10.7, 68.6
+            
+        x_data['Value'] = pd.to_numeric(x_data['Value'], errors="coerce")
+        x_data = x_data.dropna(subset=['Value'])
+        
+        if len(x_data) == 0:
             return 10.7, 68.6, [10.7, 68.6], 0.1, 10.7, 68.6
         
-        min_val = float(quality_df[x_prop].min())
-        max_val = float(quality_df[x_prop].max())
+        if 'Gravity' in x_prop:
+             return 10.7, 68.6, [10.7, 68.6], 0.1, 10.7, 68.6
+
+        min_val = float(x_data['Value'].min())
+        max_val = float(x_data['Value'].max())
+        
+        # Round nicely
+        min_val = round(min_val, 2)
+        max_val = round(max_val, 2)
+        
         step = 0.1 if (max_val - min_val) > 10 else 0.01
         
         return min_val, max_val, [min_val, max_val], step, min_val, max_val
@@ -3080,31 +3301,39 @@ def register_callbacks(dash_app, server=None):
     )
     def update_y_slider(y_prop):
         if not y_prop:
-            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
+            return 0, 100, [0, 100], 0.1, 0, 100
         
         # Load crossplot data
         try:
             df = load_crossplot_data()
         except Exception as e:
             print(f"Error loading crossplot data for y slider: {e}")
-            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
+            return 0, 100, [0, 100], 0.1, 0, 100
         
         if df.empty:
-            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
+            return 0, 100, [0, 100], 0.1, 0, 100
         
         # Filter for the selected property
         y_data = df[df['Property - Unit'] == y_prop].copy()
         if y_data.empty:
-            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
+            return 0, 100, [0, 100], 0.1, 0, 100
         
         y_data['Value'] = pd.to_numeric(y_data['Value'], errors="coerce")
         y_data = y_data.dropna(subset=['Value'])
         
         if len(y_data) == 0:
-            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
+            return 0, 100, [0, 100], 0.1, 0, 100
         
-        min_val = 0.0
-        max_val = 5.98
+        if 'Sulfur' in y_prop:
+            return 0, 5.98, [0, 5.98], 0.01, 0, 5.98
+
+        min_val = float(y_data['Value'].min())
+        max_val = float(y_data['Value'].max())
+        
+        # Round
+        min_val = round(min_val, 2)
+        max_val = round(max_val, 2)
+        
         step = 0.1 if (max_val - min_val) > 10 else 0.01
         
         return min_val, max_val, [min_val, max_val], step, min_val, max_val
@@ -3121,31 +3350,38 @@ def register_callbacks(dash_app, server=None):
     )
     def update_bubble_slider(bubble_prop):
         if not bubble_prop:
-            return 0, 5.98, [0, 5.98], 0, 5.98
+            return 0, 5000, [0, 5000], 0, 5000
         
         # Load crossplot data
         try:
             df = load_crossplot_data()
         except Exception as e:
             print(f"Error loading crossplot data for bubble slider: {e}")
-            return 0, 5.98, [0, 5.98], 0, 5.98
+            return 0, 5000, [0, 5000], 0, 5000
         
         if df.empty:
-            return 0, 5.98, [0, 5.98], 0, 5.98
+            return 0, 5000, [0, 5000], 0, 5000
         
         # Filter for the selected property
         size_data = df[df['Property - Unit'] == bubble_prop].copy()
         if size_data.empty:
-            return 0, 5.98, [0, 5.98], 0, 5.98
+            return 0, 5000, [0, 5000], 0, 5000
         
-        size_data['Value'] = pd.to_numeric(size_data['Value'], errors="coerce").fillna(40)
+        size_data['Value'] = pd.to_numeric(size_data['Value'], errors="coerce")
         size_data = size_data.dropna(subset=['Value'])
         
         if len(size_data) == 0:
-            return 0, 5.98, [0, 5.98], 0, 5.98
+            return 0, 5000, [0, 5000], 0, 5000
         
-        min_val = 0.0
-        max_val = 5.98
+        if 'Volume' in bubble_prop:
+             return 0, 7506, [0, 7506], 0, 7506
+
+        min_val = float(size_data['Value'].min())
+        max_val = float(size_data['Value'].max())
+        
+        # Round
+        min_val = round(min_val, 2)
+        max_val = round(max_val, 2)
         
         return min_val, max_val, [min_val, max_val], min_val, max_val
 
@@ -3260,7 +3496,7 @@ def register_callbacks(dash_app, server=None):
     )
     def update_crude_quality(x_col, y_col, size_col, x_range, y_range, size_range, selected_crudes, all_checked):
         
-        # Determine if we should show all data
+    # Determine if we should show all data
         show_all = all_checked and 'all' in all_checked
 
         # Optimization: If no crudes selected AND not showing all, return empty immediately without loading data
@@ -3308,6 +3544,19 @@ def register_callbacks(dash_app, server=None):
         x_data = df[df['Property - Unit'] == x_col].copy()
         y_data = df[df['Property - Unit'] == y_col].copy()
         size_data = df[df['Property - Unit'] == size_col].copy()
+        
+        # Convert to numeric BEFORE aggregation to avoid errors with string data
+        if not x_data.empty:
+            x_data['Value'] = pd.to_numeric(x_data['Value'], errors='coerce')
+            x_data = x_data.dropna(subset=['Value'])
+            
+        if not y_data.empty:
+            y_data['Value'] = pd.to_numeric(y_data['Value'], errors='coerce')
+            y_data = y_data.dropna(subset=['Value'])
+            
+        if not size_data.empty:
+            size_data['Value'] = pd.to_numeric(size_data['Value'], errors='coerce')
+            size_data = size_data.dropna(subset=['Value'])
         
         # For each crude, calculate the average value for each property
         # Group by CrudeOil and calculate mean, rounded to 2 decimal places
@@ -3419,7 +3668,7 @@ def register_callbacks(dash_app, server=None):
                 text=grp["CrudeOil"],
                 customdata=custom,
                 marker=dict(
-                    size=np.sqrt(grp['size_value']) * 0.5,
+                    size=np.sqrt(grp['size_value']) * 0.4,
                     color=color_map.get(region, "#444"),
                     opacity=0.8,
                     line=dict(width=1, color="white")

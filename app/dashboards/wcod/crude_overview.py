@@ -27,6 +27,16 @@ import html as html_lib
 import json
 import urllib.request
 from core.data_helpers import execute_query
+from .shared_map_utils import (
+    create_choropleth_map,
+    get_mapbox_config,
+    load_world_geojson,
+    handle_map_click_reset,
+    create_empty_map,
+    MAP_BACKGROUND_COLOR,
+    WORLD_CENTER,
+    WORLD_ZOOM
+)
 
 # Define data paths
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'crude_overview')

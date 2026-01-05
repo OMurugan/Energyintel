@@ -13,6 +13,15 @@ import pandas as pd
 from core.data_helpers import execute_query
 from core.country_mappings import COUNTRY_TO_ISO, get_iso_code
 from config import Config
+from .shared_map_utils import (
+    create_choropleth_map, 
+    get_mapbox_config, 
+    load_world_geojson,
+    handle_map_click_reset,
+    create_empty_map,
+    MAP_BACKGROUND_COLOR as SHARED_MAP_BACKGROUND_COLOR,
+    MAP_LAND_COLOR as SHARED_MAP_LAND_COLOR
+)
 
 # Set Mapbox access token
 if Config.MAPBOX_ACCESS_TOKEN:
@@ -32,8 +41,8 @@ MAP_COLOR_SCALE = [
     (0.8, '#3d5580'),  # Darker - was #4f76a4
     (1.0, '#1f3f70')   # Keep darkest the same
 ]
-MAP_BACKGROUND_COLOR = '#d6e1eb'
-MAP_LAND_COLOR = '#f4f4f4'
+MAP_BACKGROUND_COLOR = SHARED_MAP_BACKGROUND_COLOR  # Use shared white background
+MAP_LAND_COLOR = SHARED_MAP_LAND_COLOR
 
 # Load data
 def load_imports_data(selected_year=2023):
@@ -383,236 +392,60 @@ def build_year_marks(years, max_marks=8):
 
 
 def create_imports_map_figure(df_map, single_selected_country, max_volume, selected_year):
-    """Create the imports map figure, using the same safe approach as projects_by_country.py"""
+    """Create the imports map figure using shared map utilities for consistency"""
     if df_map.empty:
-        map_fig = go.Figure()
-        map_fig.add_annotation(
-            text="No countries with valid data for map display",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5,
-            showarrow=False
-        )
-        map_fig.update_layout(height=550, plot_bgcolor='white', paper_bgcolor='white')
-        return map_fig
+        return create_empty_map("No countries with valid data for map display", height=550)
     
-    # Guard against bad coords to avoid client-side Mapbox layer errors
-    df = df_map.copy()
+    # Prepare data for the shared map utility
+    locations = df_map['ISO_Code'].astype(str).tolist()
+    z_values = df_map['Import_Volume'].tolist()
     
-    # Only attempt Mapbox rendering when a token looks valid; otherwise fall back
-    # to the non-Mapbox choropleth to avoid client-side "Mapbox error".
-    _mapbox_token = (getattr(Config, "MAPBOX_ACCESS_TOKEN", None) or "").strip()
-    has_mapbox_token = _mapbox_token.startswith("pk.")
-    use_mapbox_env = os.getenv("USE_MAPBOX_WCOD", "false").lower() in ("1", "true", "yes")
-    use_mapbox = (
-        has_mapbox_token
-        and (_load_world_geojson() is not None)
-        and use_mapbox_env
-    )
+    # Create hover text
+    hover_text = df_map.apply(
+        lambda row: f"<b>{row['Country_DB_Original']}</b><br>Import Volume: {row['Import_Volume']:,.0f}('000 b/d)<br>Year: {selected_year}<br>Click to select",
+        axis=1,
+    ).tolist()
     
-    print(f"Mapbox configuration: has_token={has_mapbox_token}, has_geojson={_load_world_geojson() is not None}, env_enabled={use_mapbox_env}, use_mapbox={use_mapbox}")
-    
-    # Load GeoJSON and coordinates
-    geojson = _load_world_geojson()
+    # Get country coordinates for labels
     all_countries_df = get_all_countries_with_coordinates()
+    countries_in_map = df_map['Country_DB_Original'].tolist()
+    countries_df = None
+    if not all_countries_df.empty:
+        countries_df = all_countries_df[all_countries_df['Country'].isin(countries_in_map)].copy()
     
-    # Preferred Mapbox path (with world geojson) for OSM base map + controls
-    world_center = {"lat": 24.0, "lon": 45.0}
-    map_center = world_center
-    map_zoom = 2.8  # Use consistent zoom level like projects_by_country.py
+    # Determine selection parameters
+    selected_iso = None
+    other_isos = None
+    if single_selected_country and single_selected_country in df_map['Country_DB_Original'].values:
+        selected_iso = df_map.loc[df_map['Country_DB_Original'] == single_selected_country, 'ISO_Code'].iloc[0]
+        other_isos = [iso for iso in locations if iso != selected_iso]
     
-    if geojson and use_mapbox:
-        try:
-            print("Attempting Mapbox choropleth rendering")
-            
-            # Create choropleth with import volume data
-            fig = go.Figure(
-                go.Choroplethmapbox(
-                    geojson=geojson,
-                    locations=df['ISO_Code'].astype(str).tolist(),
-                    z=df['Import_Volume'].tolist(),
-                    zmin=0,
-                    zmax=max_volume,
-                    featureidkey="id",  # world.geo.json uses ISO-3 in `id`
-                    colorscale=MAP_COLOR_SCALE,
-                    showscale=False,
-                    hoverinfo="text",
-                    hovertext=df.apply(
-                        lambda row: f"<b>{row['Country_DB_Original']}</b><br>Import Volume: {row['Import_Volume']:,.0f}('000 b/d)<br>Year: {selected_year}<br>Click to select",
-                        axis=1,
-                    ),
-                    marker_line_color="white",
-                    marker_line_width=0.6,
-                )
-            )
-            
-            # Add country labels for countries in the data
-            if not all_countries_df.empty:
-                countries_in_map = df['Country_DB_Original'].tolist()
-                valid_coords = all_countries_df[all_countries_df['Country'].isin(countries_in_map)].copy()
-                
-                if not valid_coords.empty:
-                    # Limit label density at low zoom so names stay readable
-                    max_labels = len(valid_coords)
-                    if map_zoom <= 2.8:
-                        max_labels = 40
-                    elif map_zoom <= 3.4:
-                        max_labels = 80
-                    
-                    coords_display = (
-                        valid_coords.sort_values("Country").head(max_labels)
-                        if max_labels < len(valid_coords)
-                        else valid_coords
-                    )
-                    
-                    fig.add_trace(
-                        go.Scattermapbox(
-                            lon=coords_display["Longitude"],
-                            lat=coords_display["Latitude"],
-                            mode="text",
-                            text=coords_display["Country"],
-                            textfont=dict(size=10, color="#2c3e50"),
-                            textposition="top center",
-                            hoverinfo="skip",
-                            showlegend=False,
-                        )
-                    )
-            
-            # Add selection outline for single selected country
-            if single_selected_country and single_selected_country in df['Country_DB_Original'].values:
-                sel_iso = df.loc[df['Country_DB_Original'] == single_selected_country, 'ISO_Code'].iloc[0]
-                fig.add_trace(
-                    go.Choroplethmapbox(
-                        geojson=geojson,
-                        locations=[sel_iso],
-                        z=[0],
-                        featureidkey="id",
-                        colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
-                        showscale=False,
-                        marker_line_color="#FF6B35",
-                        marker_line_width=2.5,
-                        hoverinfo="skip",
-                    )
-                )
-                # Reorder traces to put selection outline on top
-                if len(fig.data) > 1:
-                    fig.data = tuple(list(fig.data)[1:] + [fig.data[0]])
-            
-            mapbox_layout = dict(
-                style="carto-positron",
-                center=map_center,
-                zoom=map_zoom,
-                bearing=0,
-                pitch=0,
-            )
-            if has_mapbox_token:
-                mapbox_layout["accesstoken"] = _mapbox_token
-            
-            fig.update_layout(
-                margin=dict(l=20, r=20, t=20, b=80),
-                height=550,
-                mapbox=mapbox_layout,
-                hovermode="closest",
-                plot_bgcolor=MAP_BACKGROUND_COLOR,  # Set plot background to match
-                paper_bgcolor="white",
-                showlegend=False,
-                uirevision='imports-map'
-            )
-            
-            # Add copyright annotation
-            fig.add_annotation(
-                text="© 2025 Mapbox © OpenStreetMap",
-                xref="paper", yref="paper",
-                x=0.01, y=0.01,
-                showarrow=False,
-                font=dict(size=10, color='#666'),
-                bgcolor='rgba(255,255,255,0.8)',
-                bordercolor='rgba(255,255,255,0.8)'
-            )
-            
-            print("Mapbox choropleth created successfully")
-            return fig
-            
-        except Exception as exc:
-            print(f"Mapbox rendering failed; falling back to geo map. Error: {exc}")
-            import traceback
-            traceback.print_exc()
-    
-    # Fallback: geo-based choropleth (no Mapbox) if GeoJSON unavailable or Mapbox fails
-    print("Using fallback geo-based choropleth")
-    
-    fig = go.Figure(
-        go.Choropleth(
-            locations=df['ISO_Code'].astype(str).tolist(),
-            z=df['Import_Volume'].tolist(),
-            zmin=0,
-            zmax=max_volume,
-            locationmode="ISO-3",
-            colorscale=MAP_COLOR_SCALE,
-            showscale=False,
-            hoverinfo="text",
-            hovertext=df.apply(
-                lambda row: f"<b>{row['Country_DB_Original']}</b><br>Import Volume: {row['Import_Volume']:,.0f}('000 b/d)<br>Year: {selected_year}<br>Click to select",
-                axis=1,
-            ),
-            marker_line_color="white",
-            marker_line_width=0.7,
-        )
+    # Create the map using shared utilities
+    fig = create_choropleth_map(
+        locations=locations,
+        z_values=z_values,
+        colorscale=MAP_COLOR_SCALE,
+        hover_text=hover_text,
+        selected_country=single_selected_country,
+        selected_iso=selected_iso,
+        other_isos=other_isos,
+        countries_df=countries_df,
+        height=550,
+        zmin=0,
+        zmax=max_volume
     )
     
-    # Add country labels for fallback map
-    if not all_countries_df.empty:
-        countries_in_map = df['Country_DB_Original'].tolist()
-        valid_coords = all_countries_df[all_countries_df['Country'].isin(countries_in_map)].copy()
-        
-        if not valid_coords.empty:
-            # Limit label density
-            fallback_labels = valid_coords
-            if len(valid_coords) > 60:
-                fallback_labels = valid_coords.sort_values("Country").head(60)
-            
-            fig.add_trace(
-                go.Scattergeo(
-                    lon=fallback_labels["Longitude"],
-                    lat=fallback_labels["Latitude"],
-                    mode="text",
-                    text=fallback_labels["Country"],
-                    textfont=dict(size=10, color="#2c3e50"),
-                    textposition="top center",
-                    hoverinfo="skip",
-                    showlegend=False,
-                )
-            )
-    
-    # Always use world center - don't auto-center on selected countries
-    world_center_lat = 24.0
-    world_center_lon = 45.0
-    
+    # Add custom margin and UI revision for imports
     fig.update_layout(
         margin=dict(l=20, r=20, t=20, b=80),
-        height=550,
-        geo=dict(
-            showframe=False,
-            showcoastlines=True,
-            projection=dict(type="natural earth"),
-            center=dict(lat=world_center_lat, lon=world_center_lon),
-            bgcolor=MAP_BACKGROUND_COLOR,  # Add background color
-            showland=True,
-            landcolor=MAP_LAND_COLOR,  # Add land color
-            showocean=True,
-            oceancolor=MAP_BACKGROUND_COLOR,  # Add ocean color
-            showlakes=True,
-            lakecolor=MAP_BACKGROUND_COLOR,  # Add lake color
-            coastlinecolor='#cccccc',  # Add coastline color
-            coastlinewidth=0.5,
-        ),
-        plot_bgcolor=MAP_BACKGROUND_COLOR,  # Set plot background
-        paper_bgcolor='white',  # Keep paper background white
         uirevision='imports-map'
     )
     
-    # Add copyright annotation to match original styling
+    # Add copyright annotation
+    use_mapbox, _, _ = get_mapbox_config()
+    copyright_text = "© 2025 Mapbox © OpenStreetMap" if use_mapbox else "© 2025 Natural Earth"
     fig.add_annotation(
-        text="© 2025 Natural Earth",
+        text=copyright_text,
         xref="paper", yref="paper",
         x=0.01, y=0.01,
         showarrow=False,
@@ -620,25 +453,6 @@ def create_imports_map_figure(df_map, single_selected_country, max_volume, selec
         bgcolor='rgba(255,255,255,0.8)',
         bordercolor='rgba(255,255,255,0.8)'
     )
-    
-    # Add selection outline for single selected country in fallback mode
-    if single_selected_country and single_selected_country in df['Country_DB_Original'].values:
-        sel_iso = df.loc[df['Country_DB_Original'] == single_selected_country, 'ISO_Code'].iloc[0]
-        fig.add_trace(
-            go.Choropleth(
-                locations=[sel_iso],
-                z=[0],
-                locationmode="ISO-3",
-                colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
-                showscale=False,
-                marker_line_color="#FF6B35",
-                marker_line_width=2.5,
-                hoverinfo="skip",
-            )
-        )
-        # Reorder traces to put selection outline on top
-        if len(fig.data) > 1:
-            fig.data = tuple(list(fig.data)[1:] + [fig.data[0]])
     
     return fig
 
