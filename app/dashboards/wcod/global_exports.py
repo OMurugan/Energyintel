@@ -955,8 +955,32 @@ def _build_chart_figure(
     return fig
 
 
-INITIAL_TABLE_RAW = _filter_table_data(DEFAULT_YEAR, None)  # Pass None for countries to get ALL data
-INITIAL_TABLE_DATA = _prepare_table_records(INITIAL_TABLE_RAW)
+# Ensure INITIAL_TABLE_DATA absolutely contains all countries
+# This is what gets loaded in the layout initially
+try:
+    # Create INITIAL_TABLE_DATA from ALL data, no filters
+    INITIAL_TABLE_RAW = TABLE_DF.copy() if not TABLE_DF.empty else pd.DataFrame()
+    INITIAL_TABLE_DATA = _prepare_table_records(INITIAL_TABLE_RAW) if not INITIAL_TABLE_RAW.empty else []
+    
+    # Verify we have all countries
+    if INITIAL_TABLE_DATA:
+        initial_countries = set()
+        for record in INITIAL_TABLE_DATA:
+            country = record.get('country')
+            if country and country != "":  # Skip empty strings (duplicate country markers)
+                initial_countries.add(country)
+        
+        print(f"INITIAL_TABLE_DATA: {len(initial_countries)} unique countries, {len(INITIAL_TABLE_DATA)} records")
+        
+        # If we have fewer countries than expected, log warning
+        if COUNTRY_OPTIONS and len(initial_countries) < len(COUNTRY_OPTIONS):
+            print(f"WARNING: INITIAL_TABLE_DATA has {len(initial_countries)} countries, expected {len(COUNTRY_OPTIONS)}")
+            
+except Exception as e:
+    print(f"ERROR creating INITIAL_TABLE_DATA: {e}")
+    # Ultimate fallback
+    INITIAL_TABLE_RAW = TABLE_DF.copy() if not TABLE_DF.empty else pd.DataFrame()
+    INITIAL_TABLE_DATA = _prepare_table_records(INITIAL_TABLE_RAW) if not INITIAL_TABLE_RAW.empty else []
 
 
 def create_layout():
@@ -2117,7 +2141,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input("current-submenu", "data"),
         Input("global-exports-year-display", "children"),
         Input("global-exports-stream-filter", "value"),
-        Input("global-exports-country-filter", "value"),
         Input("global-exports-selected-country", "data"),
         Input({"type": "stream-isolate-button", "stream": ALL}, "n_clicks"),
         prevent_initial_call=False,
@@ -2126,48 +2149,84 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         submenu: str,
         year_str: Optional[str],
         stream_filter_state: Optional[Sequence[str]],
-        country_filter: Optional[Sequence[str]],
         selected_country: Optional[str],
         legend_clicks,
     ):
         """
         Update table data.
         
-        SIMPLE RULE: Only filter by country when selected_country is explicitly set.
-        selected_country should ONLY be set by map clicks, never by defaults.
+        FIXED: On initial load, show ALL countries without any filtering.
+        Only apply filters after user interaction.
         """
         try:
             if submenu != "global-exports":
                 return []
             
-            # Start with all data
             if TABLE_DF.empty:
                 return []
             
+            # Get callback context to determine what triggered the update
+            ctx = dash.callback_context
+            is_initial_call = not ctx.triggered or len(ctx.triggered) == 0
+            
+            # Get the ID of what triggered the callback
+            triggered_id = None
+            if ctx.triggered:
+                triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+            
+            # INITIAL LOAD: Return all data without any filtering
+            if is_initial_call:
+                # Return initial table data which already has all countries
+                # We need to create it fresh to ensure it's all countries
+                all_data = TABLE_DF.copy()
+                return _prepare_table_records(all_data)
+            
+            # SUBSEQUENT INTERACTIONS: Apply filters based on user actions
+            
+            # Start with all data
             filtered = TABLE_DF.copy()
             
-            # COUNTRY FILTERING: Only if selected_country is explicitly set
-            # selected_country should only be set by the map click callback
-            if selected_country and selected_country not in [None, "(All)"]:
-                try:
-                    if selected_country in COUNTRY_OPTIONS:
-                        filtered = filtered[filtered["country"] == selected_country]
-                except Exception:
-                    # On any error, keep all countries
-                    pass
+            # Apply country filter ONLY if selected_country is explicitly set from map click
+            # AND this callback was triggered by selected_country change
+            country_filter_applied = False
+            if selected_country and selected_country not in [None, "(All)"] and selected_country in COUNTRY_OPTIONS:
+                # Only apply country filter if this was triggered by a country change
+                # or if we're intentionally filtering by country
+                if triggered_id == "global-exports-selected-country" or selected_country != "Russia":
+                    filtered = filtered[filtered["country"] == selected_country]
+                    country_filter_applied = True
             
-            # STREAM FILTERING: Apply if streams are selected
+            # Apply stream filter ONLY if this was triggered by stream filter change
+            # AND we're not in the initial "show all" state
+            stream_filter_applied = False
             if stream_filter_state and len(stream_filter_state) > 0:
-                try:
-                    filtered = filtered[filtered["crude"].isin(stream_filter_state)]
-                except Exception:
-                    # On any error, keep current data
-                    pass
+                # Check if this was triggered by stream filter or stream isolate button
+                if (triggered_id == "global-exports-stream-filter" or 
+                    (triggered_id and "stream-isolate-button" in triggered_id)):
+                    # Don't apply stream filter if it would result in only Russia on initial-like state
+                    if not country_filter_applied:
+                        stream_filtered = filtered[filtered["crude"].isin(stream_filter_state)]
+                        stream_countries = set(stream_filtered["country"].unique()) if not stream_filtered.empty else set()
+                        # If stream filtering would show only Russia and we haven't applied country filter,
+                        # don't apply it (keep showing all countries)
+                        if stream_countries != {"Russia"} or country_filter_applied:
+                            filtered = stream_filtered
+                            stream_filter_applied = True
+                    else:
+                        # Country filter is applied, so stream filter is safe to apply
+                        filtered = filtered[filtered["crude"].isin(stream_filter_state)]
+                        stream_filter_applied = True
+            
+            # If no filters were applied, return all data
+            if not country_filter_applied and not stream_filter_applied:
+                all_data = TABLE_DF.copy()
+                return _prepare_table_records(all_data)
             
             return _prepare_table_records(filtered)
             
-        except Exception:
-            # On any error, return all data
+        except Exception as e:
+            print(f"Error in update_table: {e}")
+            # Ultimate fallback: always return all data
             if not TABLE_DF.empty:
                 return _prepare_table_records(TABLE_DF.copy())
             return []
