@@ -1026,8 +1026,7 @@ def load_table():
                 b.BSP_link AS profile_url,
                 EXTRACT(YEAR FROM a.yr) AS "YearReported",
                 a.production_kbpd AS "ProductionDataValue",
-                a.exports_kbpd AS "ExportDataValue",
-                a.ci_rank
+                a.exports_kbpd AS "ExportDataValue"
             FROM fact_wcod_crude a
             LEFT JOIN dim_country grp
                 ON a.country_id = grp.dim_country_id
@@ -1561,7 +1560,7 @@ def create_layout(server=None):
             ),
             html.Div([
                 html.Button(
-                    'Export Data',
+                    'Export Data to CSV',
                     id='btn-export-map-csv',
                     n_clicks=0,
                     style={
@@ -1662,7 +1661,7 @@ def create_layout(server=None):
                 ),
                 html.Div([
                     html.Button(
-                        'Export Data',
+                        'Export Data to CSV',
                         id='btn-export-chart-csv',
                         n_clicks=0,
                         style={
@@ -1757,7 +1756,7 @@ def create_layout(server=None):
             ),
             html.Div([
                 html.Button(
-                    'Export Data',
+                    'Export Data to CSV',
                     id='btn-export-table-csv',
                     n_clicks=0,
                     style={
@@ -1792,6 +1791,7 @@ def create_layout(server=None):
                             ] if not TABLE_DF_YEARLY.empty else [],
                             data=TABLE_DF_YEARLY.to_dict("records") if not TABLE_DF_YEARLY.empty else [],
                             page_action='none',
+                            fixed_rows={'headers': True},
                             markdown_options={"link_target": "_blank"},
                             style_table={
                                 "overflowX": "auto", 
@@ -1804,12 +1804,14 @@ def create_layout(server=None):
     
                             
                             style_cell={
-                                "fontSize": "13px",
+                                "fontSize": "11px",
                                 "fontFamily": "Arial",
                                 "whiteSpace": "normal",
                                 "color": "#1f3b6f",
                                 "minWidth": "90px",
-                                "textAlign": "right"
+                                "textAlign": "right",
+                                "padding": "2px",
+                                "height": "auto"
                             },
 
                             # Removed style_cell_conditional to keep all columns right-aligned
@@ -4296,6 +4298,7 @@ def register_callbacks(dash_app, server):
                 })
             
             df_display = df[display_cols].copy()
+            df_display = df_display.fillna("")
             df_display = df_display.sort_values("CrudeOil", key=lambda s: s.astype(str).str.lower())
             
             if 'Year of YearReported' in df.columns:
@@ -4334,8 +4337,16 @@ def register_callbacks(dash_app, server):
                         record[year_col] = ""
                         continue
                     try:
+                        val_str = str(value).strip().lower()
+                        if val_str == "nan" or val_str == "none" or val_str == "":
+                            record[year_col] = ""
+                            continue
+                            
                         numeric_value = float(str(value).replace(",", ""))
-                        record[year_col] = f"{numeric_value:,.0f}"
+                        if math.isnan(numeric_value):
+                             record[year_col] = ""
+                        else:
+                             record[year_col] = f"{numeric_value:,.0f}"
                     except (ValueError, TypeError):
                         record[year_col] = str(value)
                 link = None
@@ -4531,71 +4542,120 @@ def register_callbacks(dash_app, server):
         [State("crude-country-dropdown", "value"),
          State("production-year-dropdown", "value"),
          State("profiled-streams", "value"),
-         State("crude-main-tabs", "value")],
+         State("crude-main-tabs", "value"),
+         State("selected-country-map-store", "data")],
         prevent_initial_call=True
     )
-    def export_chart_data(n_clicks, country, production_years, profiled, tab):
+    def export_chart_data(n_clicks, country, production_years, profiled, tab, selected_country_map):
+        """
+        Export chart data to CSV based on the active tab (Yearly/Monthly) and applied filters.
+        Re-executes the query to fetch raw data (Long Format) as requested.
+        """
         print(f"DEBUG EXPORT CHART: Triggered. n_clicks={n_clicks}, tab={tab}")
         if n_clicks is None or n_clicks <= 0:
             return no_update
             
         try:
-            _ensure_data_loaded()
-            print("DEBUG EXPORT CHART: Data loaded.")
-            
-            country = _resolve_countries_selection(country)
+            # Map selection overrides dropdown if present
+            if selected_country_map:
+                country = [selected_country_map]
+            else:
+                country = _resolve_countries_selection(country)
+                
             print(f"DEBUG EXPORT CHART: Resolved country={country}")
             
             if tab is None:
                 tab = "yearly"
-                
-            df_export = pd.DataFrame()
-            filename = "crude_production_breakdown.csv"
             
+            # ==========================================
+            # YEARLY CHART EXPORT
+            # ==========================================
             if tab == "yearly":
-                df = BAR_LONG_YEARLY.copy()
-                print(f"DEBUG EXPORT CHART: Yearly mode. BAR_LONG_YEARLY empty? {df.empty}")
+                yearly_query = """
+            SELECT
+                a.country_name AS "Country",
+                a.crude_name AS "CrudeOil",
+                EXTRACT(YEAR FROM a.yr) AS "YearReported",
+                a.production_kbpd AS "ProductionDataValue",
+                a.exports_kbpd AS "ExportDataValue",
+                a.ci_rank
+            FROM fact_wcod_crude a
+            LEFT JOIN dim_country grp
+                ON a.country_id = grp.dim_country_id
+        """
+                rows = execute_query(yearly_query)
+                if not rows:
+                     print("DEBUG EXPORT CHART: No yearly data returned from query.")
+                     return no_update
+                
+                df = pd.DataFrame(rows)
+                df.columns = df.columns.str.strip()
+                
                 if not df.empty:
-                    # Filter by country
+                    # Filter by Country
                     if country:
-                        df = df[df["Country"].isin(country)]
+                         if "Country" in df.columns:
+                            df = df[df["Country"].isin(country)]
                     
-                    # Filter by Profiled Streams 
+                    # Filter by Profiled Streams
                     if profiled and len(profiled) > 0:
-                        df = df[df["Stream"].isin(profiled)]
+                        if "CrudeOil" in df.columns:
+                            df = df[df["CrudeOil"].isin(profiled)]
                     
-                    df_export = df
                     filename = "crude_production_breakdown_yearly.csv"
+                    print(f"DEBUG EXPORT CHART: Exporting {len(df)} rows to {filename}")
+                    return dcc.send_data_frame(df.to_csv, filename, index=False)
+            
+            # ==========================================
+            # MONTHLY CHART EXPORT
+            # ==========================================
             else:
-                # Monthly
-                df = BAR_LONG_MONTHLY.copy()
-                print(f"DEBUG EXPORT CHART: Monthly mode. BAR_LONG_MONTHLY empty? {df.empty}, production_years={production_years}")
+                monthly_query = """
+            SELECT  
+                EXTRACT(YEAR FROM date) AS "Year of Date",
+                TO_CHAR(date, 'FMMonth') AS "Month of Date",
+                country AS "Country",
+                stream_name AS "Stream Name",
+                value AS "Value"
+            FROM t_wcod_monthly_stream_production where stream_name not in ('Total')
+            ORDER BY date DESC, stream_name;
+        """
+                rows = execute_query(monthly_query)
+                if not rows:
+                     print("DEBUG EXPORT CHART: No monthly data returned from query.")
+                     return no_update
+                
+                df = pd.DataFrame(rows)
+                df.columns = df.columns.str.strip()
+                
                 if not df.empty:
-                    # Filter by country
+                    # Filter by Country
                     if country:
-                        df = df[df["Country"].isin(country)]
+                        if "Country" in df.columns:
+                            df = df[df["Country"].isin(country)]
                     
                     # Filter by Year (production-year-dropdown)
                     selected_years = _resolve_years_selection(production_years)
                     print(f"DEBUG EXPORT CHART: Selected years={selected_years}")
+                    
+                    # Default if no years selected
                     if not selected_years:
                         if PRODUCTION_YEARS:
                              selected_years = [int(PRODUCTION_YEARS[-1])]
                         else:
                              selected_years = [2024]
                     
-                    if "year" in df.columns:
-                        df = df[df["year"].astype(int).isin(selected_years)]
+                    if "Year of Date" in df.columns:
+                        # Convert to int for comparison
+                        df["year_int"] = pd.to_numeric(df["Year of Date"], errors="coerce").fillna(0).astype(int)
+                        df = df[df["year_int"].isin(selected_years)]
+                        df = df.drop(columns=["year_int"])
                     
-                    df_export = df
                     filename = "crude_production_breakdown_monthly.csv"
+                    print(f"DEBUG EXPORT CHART: Exporting {len(df)} rows to {filename}")
+                    return dcc.send_data_frame(df.to_csv, filename, index=False)
             
-            print(f"DEBUG EXPORT CHART: Exporting {len(df_export)} rows to {filename}")
-            if df_export.empty:
-                print("DEBUG EXPORT CHART: No data to export")
-                return no_update
-                
-            return dcc.send_data_frame(df_export.to_csv, filename, index=False)
+            return no_update
 
         except Exception as e:
             print(f"Error exporting chart data: {e}")
@@ -4606,22 +4666,203 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         Output("download-table-csv", "data"),
         Input("btn-export-table-csv", "n_clicks"),
-        State("crude-table", "data"),
+        [State("filter-stream", "value"),
+         State("filter-ci", "value"),
+         State("filter-api", "value"),
+         State("filter-sulfur", "value"),
+         State("crude-country-dropdown", "value"),
+         State("crude-main-tabs", "value"),
+         State("profiled-streams", "value"),
+         State("selected-country-map-store", "data"),
+         State("profiled-streams", "options")],
         prevent_initial_call=True
     )
-    def export_table_data(n_clicks, table_data):
-        print(f"DEBUG EXPORT TABLE: Triggered. n_clicks={n_clicks}")
+    def export_table_data(n_clicks, stream, ci, api, sulfur, country, tab, profiled_streams, selected_country_map, profiled_streams_options):
+        """
+        Export table data to CSV based on the active tab (Yearly/Monthly) and applied filters.
+        Re-executes the query to fetch raw data (Long Format) as requested.
+        """
+        print(f"DEBUG EXPORT TABLE: Triggered. n_clicks={n_clicks}, tab={tab}")
         if n_clicks is None or n_clicks <= 0:
             return no_update
         
-        if not table_data:
-             print("DEBUG EXPORT TABLE: No table data available")
-             return no_update
-
-        print(f"DEBUG EXPORT TABLE: Found {len(table_data)} rows.")
         try:
-            df = pd.DataFrame(table_data)
-            return dcc.send_data_frame(df.to_csv, "global_crude_production_breakdown.csv", index=False)
+            # Default to yearly if tab is None
+            if tab is None:
+                tab = "yearly"
+
+            # ==========================================
+            # YEARLY EXPORT
+            # ==========================================
+            if tab == "yearly":
+                yearly_query = """
+            SELECT
+                a.country_name AS "Country",
+                a.crude_name AS "CrudeOil",
+                b.BSP_link AS profile_url,
+                EXTRACT(YEAR FROM a.yr) AS "YearReported",
+                a.production_kbpd AS "ProductionDataValue",
+                a.exports_kbpd AS "ExportDataValue"
+            FROM fact_wcod_crude a
+            LEFT JOIN dim_country grp
+                ON a.country_id = grp.dim_country_id
+            LEFT JOIN fact_wcod_crude_bsp_links b
+                ON a.crude_id = b.crude_id
+            ORDER BY a.crude_name ASC;
+        """
+                rows = execute_query(yearly_query)
+                if not rows:
+                    print("DEBUG EXPORT TABLE: No yearly data returned from query.")
+                    return no_update
+                
+                df = pd.DataFrame(rows)
+                df.columns = df.columns.str.strip()
+                
+                # Apply Filters to Yearly Data
+                
+                # 1. Country Filter (Map selection only)
+                # Dropdown country filter is ignored for Yearly table (Global view), same as UI logic
+                if selected_country_map:
+                    if "Country" in df.columns:
+                        df = df[df["Country"] == selected_country_map]
+                
+                # 2. Text Search Filter (Stream Name)
+                if stream and str(stream).strip():
+                    stream_val = str(stream).strip()
+                    if "CrudeOil" in df.columns: # Query returns CrudeOil
+                        df = df[df["CrudeOil"].astype(str).str.contains(re.escape(stream_val), case=False, na=False)]
+                
+                # 3. Profiled Stream Filter (Checklist) - Only if text search is NOT active
+                if not (stream and str(stream).strip()):
+                    if profiled_streams and len(profiled_streams) == 1:
+                        selected_stream = profiled_streams[0]
+                        # Check availability logic similar to UI
+                        available_streams = [opt.get("value") for opt in (profiled_streams_options or []) if opt.get("value")]
+                        if available_streams and len(available_streams) > 1 and len(profiled_streams) < len(available_streams):
+                            if "CrudeOil" in df.columns:
+                                df = df[df["CrudeOil"] == selected_stream]
+                
+                filename = "global_crude_production_breakdown_yearly.csv"
+                
+                print(f"DEBUG EXPORT TABLE: Exporting {len(df)} rows to {filename}")
+                return dcc.send_data_frame(df.to_csv, filename, index=False)
+
+            # ==========================================
+            # MONTHLY EXPORT
+            # ==========================================
+            else:
+                monthly_query = """
+            SELECT     
+                c.crude_name AS "Crude",
+                c.ci_rank,
+                c.api,
+                c.sulfur_pct,
+                l.bsp_link AS profile_url,
+                EXTRACT(YEAR FROM a.date) AS "Year of Date",
+                TO_CHAR(a.date, 'FMMonth') AS "Month of Date",
+                a.value AS "Value"
+            FROM t_wcod_monthly_stream_production a
+
+            -- Latest crude master data
+            LEFT JOIN (
+                SELECT DISTINCT ON (crude_id) 
+                    crude_id,
+                    crude_name,
+                    ci_rank,
+                    api,
+                    sulfur_pct
+                FROM fact_wcod_crude
+                ORDER BY crude_id, yr DESC
+            ) c 
+                ON a.crude_id = c.crude_id
+
+            -- Profile URL
+            LEFT JOIN fact_wcod_crude_bsp_links l
+                ON a.crude_id = l.crude_id
+        """
+                rows = execute_query(monthly_query)
+                if not rows:
+                    print("DEBUG EXPORT TABLE: No monthly data returned from query.")
+                    return no_update
+
+                df = pd.DataFrame(rows)
+                df.columns = df.columns.str.strip()
+                
+                # Rename columns from query to match UI expectations if needed, but user asked for "same as query return values"
+                # The query returns: Crude, ci_rank, api, sulfur_pct, profile_url, Year of Date, Month of Date, Value
+                # Filter logic uses: CI Rank, API, Sulfur. Need to ensure mapping or adjust filter logic.
+                # Let's map for filtering purposes, but keep original for export if possible?
+                # Actually, the user wants "same header values" from query.
+                # So I should filter based on the query columns: ci_rank, api, sulfur_pct.
+                
+                # 1. Text Search Filter
+                if stream and str(stream).strip():
+                    stream_val = str(stream).strip()
+                    if "Crude" in df.columns:
+                        df = df[df["Crude"].astype(str).str.contains(re.escape(stream_val), case=False, na=False)]
+                
+                # 2. Metadata Filters (CI, API, Sulfur)
+                def sanitize(values):
+                    if not values: return []
+                    return [v for v in values if v and v not in ("(All)", "ALL")]
+
+                # CI Rank
+                ci_vals = sanitize(ci)
+                if ci_vals and "ci_rank" in df.columns:
+                    df = df[df["ci_rank"].isin(ci_vals)]
+                
+                # API
+                api_vals = sanitize(api)
+                if api_vals and "api" in df.columns:
+                     # Use helper classify_api_value
+                    df = df[df["api"].apply(lambda v: classify_api_value(v) in api_vals)]
+                
+                # Sulfur
+                sulfur_vals = sanitize(sulfur)
+                if sulfur_vals and "sulfur_pct" in df.columns:
+                    # Use helper classify_sulfur_value
+                    df = df[df["sulfur_pct"].apply(lambda v: classify_sulfur_value(v) in sulfur_vals)]
+                    
+                # 3. Country Filter 
+                # Note: Monthly query provided does NOT have a Country column! 
+                # The user's query: 
+                # SELECT c.crude_name AS "Crude", ... FROM t_wcod_monthly_stream_production a LEFT JOIN fact_wcod_crude c ...
+                # fact_wcod_crude has country_id, but the join in the user's snippet uses a subselect that DOES NOT select country_id/name.
+                # Subselect: SELECT DISTINCT ON (crude_id) crude_id, crude_name, ci_rank, api, sulfur_pct ...
+                # So the result of monthly_query DOES NOT HAVE COUNTRY info.
+                # However, the UI filter `filter_table` applies country filter to `TABLE_DF_MONTHLY`.
+                # `TABLE_DF_MONTHLY` comes from `load_table` -> `monthly_query` (lines 1101-1129 in file).
+                # Wait, looking at lines 1101-1129 in the file (Step 45), the existing `monthly_query` ALSO DOES NOT select Country.
+                # BUT `loading_table` function (checking Step 42/45 carefully)... 
+                # Ah, existing `load_table` logic constructs `monthly_df` WITHOUT country column initially?
+                # Let's check `_ensure_data_loaded` (Step 36). `COUNTRIES` are derived from `BAR_DF_YEARLY`/`BAR_DF_MONTHLY`.
+                # The `TABLE_DF_MONTHLY` seems to rely on `monthly_agg` and merges. 
+                # If the query doesn't return Country, how does the UI filter by Country?
+                # Looking at `filter_table` (Step 24, line 4253):
+                # `if "Country" in df.columns: df = df[df["Country"] == selected_country_map]`
+                # So `TABLE_DF_MONTHLY` MUST have a "Country" column.
+                # Let's check how `TABLE_DF_MONTHLY` gets Country.
+                # In `load_table` (Step 45), there is NO Country selected in `monthly_query`.
+                # Is it merged later? 
+                # Line 1089: `yearly_df["Country"] = ...` (For Yearly).
+                # For Monthly? I don't see it in the snippet 1100-1199.
+                # Maybe it's not there? 
+                # If `tbl_df_monthly` doesn't have Country, then filtering by country in `filter_table` would do nothing for it?
+                # Wait, line 4258: `if "Country" in df.columns: ...`
+                # If it's not there, it skips.
+                
+                # IMPORTANT: The user said "i want csv file of query returns".
+                # The user provided query for monthly DOES NOT include Country. 
+                # So I should NOT try to filter by Country if it's not in the query result, 
+                # AND I should not output Country column if it's not in the query.
+                # I will strictly follow the user's query columns.
+                # If the user wants country filtering, they would need to modify the query, 
+                # but they said "csv in same as query return values".
+                
+                filename = "crude_production_breakdown_monthly.csv"
+                print(f"DEBUG EXPORT TABLE: Exporting {len(df)} rows to {filename}")
+                return dcc.send_data_frame(df.to_csv, filename, index=False)
+
         except Exception as e:
             print(f"Error exporting table data: {e}")
             import traceback
