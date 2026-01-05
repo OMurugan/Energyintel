@@ -102,39 +102,47 @@ def _format_production_breakdown_title(country_selection):
     return f"Production Breakdown – {', '.join(first_three)} and {remaining_count} more"
 
 def _calculate_yaxis_ticks(max_value):
-    """Calculate 5 evenly spaced Y-axis ticks from 0 to max_value.
+    """Calculate nice round Y-axis ticks from 0 to max_value.
     
     Args:
         max_value: Maximum value for the Y-axis
     
     Returns:
-        Tuple of (y_axis_max, tick_values) where tick_values is a list of 5 evenly spaced values
+        Tuple of (y_axis_max, tick_values)
     """
     import math
-    
     if max_value <= 0:
-        # Default fallback
-        y_axis_max = 10000
-        tick_values = [0, 2500, 5000, 7500, 10000]
-        return y_axis_max, tick_values
+        return 10000, [0, 2500, 5000, 7500, 10000]
     
-    # Round up max_value to a nice round number for better readability
-    # Find the order of magnitude
-    order_of_magnitude = 10 ** math.floor(math.log10(max_value))
+    # We want roughly 5-7 parts (6-8 ticks)
+    # The user specifically requested 6 parts for 12,000 (steps of 2,000)
+    target_parts = 6
+    raw_step = max_value / target_parts
     
-    # Round up to next nice number (add 20% padding, then round up)
-    padded_max = max_value * 1.2
-    rounded_max = math.ceil(padded_max / order_of_magnitude) * order_of_magnitude
+    if raw_step == 0:
+        return 100, [0, 25, 50, 75, 100]
     
-    # If the rounded value is too small, try rounding to half order of magnitude
-    if rounded_max < padded_max:
-        rounded_max = math.ceil(padded_max / (order_of_magnitude * 0.5)) * (order_of_magnitude * 0.5)
+    magnitude = 10**math.floor(math.log10(raw_step))
+    normalized_step = raw_step / magnitude
     
-    y_axis_max = rounded_max
+    # Choose a nice step based on standard sets {1, 2, 2.5, 5, 10}
+    if normalized_step < 1.5: nice_step = 1
+    elif normalized_step < 2.25: nice_step = 2
+    elif normalized_step < 3: nice_step = 2.5
+    elif normalized_step < 7.5: nice_step = 5
+    else: nice_step = 10
     
-    # Create 5 evenly spaced ticks: 0, 1/4, 1/2, 3/4, 1 of max
-    tick_step = y_axis_max / 4
-    tick_values = [0, tick_step, tick_step * 2, tick_step * 3, y_axis_max]
+    actual_step = nice_step * magnitude
+    
+    # Calculate number of steps to cover max_value
+    num_steps = math.ceil(max_value / actual_step)
+    
+    # Ensure we have at least target_parts if possible (padding)
+    if num_steps < target_parts:
+        num_steps = target_parts
+        
+    y_axis_max = actual_step * num_steps
+    tick_values = [actual_step * i for i in range(num_steps + 1)]
     
     return y_axis_max, tick_values
 
@@ -1026,8 +1034,7 @@ def load_table():
                 b.BSP_link AS profile_url,
                 EXTRACT(YEAR FROM a.yr) AS "YearReported",
                 a.production_kbpd AS "ProductionDataValue",
-                a.exports_kbpd AS "ExportDataValue",
-                a.ci_rank
+                a.exports_kbpd AS "ExportDataValue"
             FROM fact_wcod_crude a
             LEFT JOIN dim_country grp
                 ON a.country_id = grp.dim_country_id
@@ -1481,7 +1488,6 @@ def create_layout(server=None):
         dcc.Store(id="last-clicked-stream-store", data=None),
         # Store to track map country selection
         dcc.Store(id="selected-country-map-store", data=None),
-        # Dummy store for navigation callback output
         dcc.Store(id="stream-navigation-dummy", data=None),
         # Custom CSS to style markdown links in DataTable to look like normal text
         html.Div(
@@ -1561,7 +1567,7 @@ def create_layout(server=None):
             ),
             html.Div([
                 html.Button(
-                    'Export Data',
+                    'Export Data to CSV',
                     id='btn-export-map-csv',
                     n_clicks=0,
                     style={
@@ -1662,7 +1668,7 @@ def create_layout(server=None):
                 ),
                 html.Div([
                     html.Button(
-                        'Export Data',
+                        'Export Data to CSV',
                         id='btn-export-chart-csv',
                         n_clicks=0,
                         style={
@@ -1690,7 +1696,16 @@ def create_layout(server=None):
                         dcc.Graph(
                             id="production-breakdown-chart", 
                             style={"height":"520px"},
-                            figure=go.Figure()  # Initialize with empty figure
+                            figure=go.Figure(),
+                            config={
+                                'displayModeBar': True,
+                                'displaylogo': False,
+                                'modeBarButtonsToRemove': [
+                                    'zoom2d', 'pan2d', 'select2d', 'lasso2d', 
+                                    'zoomIn2d', 'zoomOut2d', 'autoScale2d', 
+                                    'hoverClosestCartesian', 'hoverCompareCartesian'
+                                ]
+                            }
                         )
                     ],
                     style={"height":"520px"}
@@ -1729,7 +1744,7 @@ def create_layout(server=None):
                     ]
                 ),
                 html.Div([
-                    html.H6("Profiled Crude Oils", style={"marginBottom": "8px", "fontWeight": "bold", "color": "#2c3e50"}),
+                    html.H6("Profiled Crude Oils", style={"marginBottom": "6px", "fontWeight": "bold", "color": "#2c3e50", "fontSize": "12px",}),
                     # Hidden checklist to store values
                     dcc.Checklist(
                         id="profiled-streams", 
@@ -1739,14 +1754,16 @@ def create_layout(server=None):
                     ),
                     html.Div(id="profiled-streams-container", children=[])
                 ], style={
-                    "padding": "15px",
+            
+                    "padding": "12px",
                     "border": "1px solid #ddd",
                     "borderRadius": "4px",
                     "backgroundColor": "#f9f9f9",
-                    "maxHeight": "400px",
-                    "overflowY": "auto"
+                    "maxHeight": "330px",
+                    "overflowY": "auto",
+                    "fontSize": "10px",
                 })
-            ], className='col-md-2', style={'padding': '15px'})
+            ], className='col-md-2', style={'padding': '12px'})
         ], className='row'),
         html.Br(),
         html.Div([
@@ -1757,7 +1774,7 @@ def create_layout(server=None):
             ),
             html.Div([
                 html.Button(
-                    'Export Data',
+                    'Export Data to CSV',
                     id='btn-export-table-csv',
                     n_clicks=0,
                     style={
@@ -1767,7 +1784,7 @@ def create_layout(server=None):
                         'padding': '4px 10px',
                         'borderRadius': '4px',
                         'cursor': 'pointer',
-                        'fontSize': '12px',
+                        'fontSize': '13px',
                         'margin': '0',
                         'display': 'inline-block'
                     }
@@ -1792,6 +1809,7 @@ def create_layout(server=None):
                             ] if not TABLE_DF_YEARLY.empty else [],
                             data=TABLE_DF_YEARLY.to_dict("records") if not TABLE_DF_YEARLY.empty else [],
                             page_action='none',
+                            fixed_rows={'headers': True},
                             markdown_options={"link_target": "_blank"},
                             style_table={
                                 "overflowX": "auto", 
@@ -1804,12 +1822,14 @@ def create_layout(server=None):
     
                             
                             style_cell={
-                                "fontSize": "13px",
+                                "fontSize": "12px",
                                 "fontFamily": "Arial",
                                 "whiteSpace": "normal",
                                 "color": "#1f3b6f",
                                 "minWidth": "90px",
-                                "textAlign": "right"
+                                "textAlign": "right",
+                                "padding": "2px",
+                                "height": "auto"
                             },
 
                             # Removed style_cell_conditional to keep all columns right-aligned
@@ -2604,27 +2624,43 @@ def register_callbacks(dash_app, server):
         if button_ids:
             for button_id in button_ids:
                 if isinstance(button_id, dict) and "stream" in button_id:
-                    all_streams.append(button_id["stream"])
+                    all_streams.append(str(button_id["stream"]))
         
-        # Get current selection
-        current_selected = current_selected if current_selected else []
+        # Normalize clicked_stream to string
+        clicked_stream = str(clicked_stream) if clicked_stream else None
+        
+        print(f"DEBUG PROFILE BTN: Clicked='{clicked_stream}'")
+        print(f"DEBUG PROFILE BTN: Current selected count={len(current_selected) if current_selected else 0}")
+        print(f"DEBUG PROFILE BTN: All streams count={len(all_streams)}")
+
+        # Get current selection - normalize to strings
+        current_selected = [str(s) for s in current_selected] if current_selected else []
         current_set = set(current_selected)
         all_set = set(all_streams)
         
         # Determine if we're in default mode (all streams selected)
+        # Note: If current_selected is empty, it usually implies default mode in UI logic, 
+        # but here we want to return EXPLICIT list of all streams for "all selected" state.
         is_default_mode = (current_set == all_set and len(all_set) > 0) or len(current_set) == 0
+        
+        print(f"DEBUG PROFILE BTN: is_default_mode={is_default_mode}")
         
         # Toggle behavior:
         # - If in default mode (all selected): clicking a stream selects only that stream
         # - If one stream is selected: clicking the same stream returns to default (all selected)
         if is_default_mode:
             # Default mode: clicking any stream selects only that stream
+            print(f"DEBUG PROFILE BTN: Default mode -> Selecting only '{clicked_stream}'")
             return [clicked_stream]
         elif len(current_set) == 1 and clicked_stream in current_set:
             # One stream selected and clicking the same stream: return to default (all selected)
-            return sorted(all_streams) if all_streams else []
+            print(f"DEBUG PROFILE BTN: Single select match -> Resetting to ALL ({len(all_streams)} items)")
+            # Return sorted all_streams to explicitly select all
+            res = sorted(all_streams) if all_streams else []
+            return res
         else:
             # Clicking a different stream when one is already selected: select the clicked stream
+            print(f"DEBUG PROFILE BTN: Switching selection to '{clicked_stream}'")
             return [clicked_stream]
     
     # Clientside callback to navigate to stream profile URL and track last clicked stream
@@ -3171,7 +3207,6 @@ def register_callbacks(dash_app, server):
                     empty_df = pd.DataFrame({"year": [str(y) for y in range(2006, 2025)], "value": [0]*19})
                     fig = px.bar(empty_df, x="year", y="value", labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                     fig.update_layout(
-                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                         xaxis_title="Year",
                         yaxis_title="Production Volume ('000 b/d)",
                         barmode="stack",
@@ -3260,7 +3295,6 @@ def register_callbacks(dash_app, server):
                     empty_df = pd.DataFrame({"year": years_sorted, "value": [0]*len(years_sorted)})
                     fig = px.bar(empty_df, x="year", y="value", labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                     fig.update_layout(
-                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                         xaxis_title="Year",
                         yaxis_title="Production Volume ('000 b/d)",
                         barmode="stack",
@@ -3372,7 +3406,6 @@ def register_callbacks(dash_app, server):
                                          x=0.5, y=0.5, showarrow=False,
                                          font=dict(size=14, color='#7f8c8d'))
                         fig.update_layout(
-                            title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                             xaxis_title="Year",
                             yaxis_title="Production Volume ('000 b/d)",
                             plot_bgcolor="white",
@@ -3390,7 +3423,6 @@ def register_callbacks(dash_app, server):
                         fig = px.bar(empty_df, x="year", y="value", color="Stream", 
                                     labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                         fig.update_layout(
-                            title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                             xaxis_title="Year",
                             yaxis_title="Production Volume ('000 b/d)",
                             barmode="stack",
@@ -3441,7 +3473,6 @@ def register_callbacks(dash_app, server):
                     empty_df = pd.DataFrame({"year": years_sorted, "value": [0]*len(years_sorted)})
                     fig = px.bar(empty_df, x="year", y="value", labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                     fig.update_layout(
-                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                         xaxis_title="Year",
                         yaxis_title="Production Volume ('000 b/d)",
                         barmode="stack",
@@ -3450,13 +3481,16 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                # Get year-level ProductionDataValue for annotations (single value per year)
-                # This is different from the bar chart values which are stream-level
-                year_production_values = YEAR_PRODUCTION_DATA_VALUE if YEAR_PRODUCTION_DATA_VALUE else {}
-                
-                print(f"DEBUG BREAKDOWN YEARLY: YEAR_PRODUCTION_DATA_VALUE type: {type(YEAR_PRODUCTION_DATA_VALUE)}")
-                print(f"DEBUG BREAKDOWN YEARLY: YEAR_PRODUCTION_DATA_VALUE content: {YEAR_PRODUCTION_DATA_VALUE}")
-                print(f"DEBUG BREAKDOWN YEARLY: year_production_values: {year_production_values}")
+                # Recalculate year-level production totals for the selected countries/regions
+                # This ensures annotations match the specific country data rather than global totals
+                year_production_values = {}
+                if not BAR_LONG_YEARLY.empty and "Country" in BAR_LONG_YEARLY.columns:
+                    # Filter by country (the resolved country list)
+                    country_totals = BAR_LONG_YEARLY[BAR_LONG_YEARLY["Country"].isin(country)].groupby("year")["value"].sum()
+                    year_production_values = {str(k): float(v) for k, v in country_totals.items() if pd.notna(v)}
+                    print(f"DEBUG BREAKDOWN YEARLY: Recalculated year_production_values for selected countries: {len(year_production_values)} years")
+                else:
+                    year_production_values = {}
                 print(f"DEBUG BREAKDOWN YEARLY: years_sorted: {years_sorted}")
                 
                 # Calculate max value for Y-axis scaling (use either ProductionDataValue or sum of bars)
@@ -3476,8 +3510,9 @@ def register_callbacks(dash_app, server):
                     stream_name = trace.name
                     # Build customdata array: [Country] for each data point
                     customdata_list = []
+                    
                     if len(trace.x) > 0:
-                        for year_val in trace.x:
+                        for point_idx, year_val in enumerate(trace.x):
                             # Match by Stream and year to get Country from agg_for_chart
                             matching_rows = agg_for_chart[
                                 (agg_for_chart["Stream"] == stream_name) & 
@@ -3518,7 +3553,14 @@ def register_callbacks(dash_app, server):
                         "<b>Crude:</b> %{fullData.name}<br>"
                         "<b>Year:</b> %{x}<extra></extra>"
                     )
+                    
+                    # Native Plotly Selection Styling
+                    trace.update(
+                        selected=dict(marker=dict(opacity=1.0)),
+                        unselected=dict(marker=dict(opacity=0.3))
+                    )
                     trace.marker = dict(line=dict(width=1, color='white'))
+                        
                     trace.width = None  # Let Plotly calculate equal widths automatically
                 
                 # Calculate max bar height first (needed for annotation positioning)
@@ -3574,22 +3616,12 @@ def register_callbacks(dash_app, server):
                 print(f"DEBUG BREAKDOWN YEARLY: Created {len(annotations_list)} annotations, max Y: {max_annotation_y}")
                 
                 # Calculate Y-axis max to accommodate annotations
-                # Calculate expected max annotation Y position
-                expected_max_annotation_y = max_bar_height + (max_bar_height * 0.05) if max_bar_height > 0 else 0
-                # Use the larger of actual max annotation Y or expected, then add padding
-                # Ensure we have enough space - use at least 25% padding above the highest point
-                base_max = max(max_annotation_y, expected_max_annotation_y, max_bar_height)
-                # Recalculate Y-axis ticks based on the max value needed for annotations
+                # Use the larger of actual max annotation Y or highest bar height
+                base_max = max(max_annotation_y, max_bar_height)
+                # Recalculate Y-axis ticks based on the max value needed
                 y_axis_max, y_axis_ticks = _calculate_yaxis_ticks(base_max)
                 
-                # Ensure y_axis_max is at least as high as needed for annotations
-                if y_axis_max < base_max * 1.1:
-                    y_axis_max = base_max * 1.25
-                    # Recalculate ticks with the adjusted max
-                    tick_step = y_axis_max / 4
-                    y_axis_ticks = [0, tick_step, tick_step * 2, tick_step * 3, y_axis_max]
-                
-                print(f"DEBUG BREAKDOWN YEARLY: max_bar_height={max_bar_height}, max_annotation_y={max_annotation_y}, expected_max_annotation_y={expected_max_annotation_y}, base_max={base_max}, y_axis_max={y_axis_max}, y_axis_ticks={y_axis_ticks}")
+                print(f"DEBUG BREAKDOWN YEARLY: max_bar_height={max_bar_height}, max_annotation_y={max_annotation_y}, base_max={base_max}, y_axis_max={y_axis_max}, y_axis_ticks={y_axis_ticks}")
                 
                 # Verify all annotations are within Y-axis range
                 for i, ann in enumerate(annotations_list):
@@ -3604,7 +3636,6 @@ def register_callbacks(dash_app, server):
                 fig.update_layout(
                     xaxis_title="",
                     yaxis_title="Production Volume ('000 b/d)",
-                    title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                     xaxis=dict(
                         showgrid=False,  # Remove X-axis grid lines (match original)
                         gridcolor="#e0e0e0", 
@@ -3629,9 +3660,13 @@ def register_callbacks(dash_app, server):
                         titlefont=dict(size=12, color="#2c3e50"),
                         tickmode='array',
                         tickvals=y_axis_ticks,
+                        zeroline=False,  # Remove zero line
                         ticktext=[f"{int(t):,}" for t in y_axis_ticks],
                         tickformat=',.0f'
                     ),
+                    clickmode='select',
+                    # Add annotations to layout
+                    annotations=annotations_list,
                     showlegend=False,
                     plot_bgcolor="white",
                     paper_bgcolor="white",
@@ -3639,8 +3674,7 @@ def register_callbacks(dash_app, server):
                     bargroupgap=0.0,
                     barmode="stack",
                     margin=dict(l=70, r=30, t=70, b=80),
-                    hovermode='closest',
-                    annotations=annotations_list  # Add annotations directly to layout
+                    hovermode='closest'
                 )
                 
                 print(f"DEBUG BREAKDOWN YEARLY: Added {len(annotations_list)} ProductionDataValue annotations to layout")
@@ -3749,31 +3783,30 @@ def register_callbacks(dash_app, server):
                 # Get available streams from the data
                 available_monthly_streams = sorted(agg["Stream"].dropna().unique().tolist()) if not agg.empty else []
                 
+                # Determine stream to highlight (if any)
                 # For monthly view: Always show all streams in the chart
                 # Use visual styling (opacity) to highlight selected stream and dim others
-                # Don't filter the data - keep all streams visible
-                selected_stream_for_highlight = None
+                highlight_stream = None
                 if profiled and len(profiled) > 0:
-                    # Check if all available streams are selected (default mode)
-                    profiled_set = set(profiled)
-                    available_set = set(available_monthly_streams)
+                    profiled_set = set(str(p) for p in profiled)
+                    available_set = set(str(s) for s in available_monthly_streams)
                     
                     # If all streams are selected, no highlighting needed (all at full opacity)
                     if profiled_set == available_set and len(available_set) > 0:
                         print(f"DEBUG BREAKDOWN MONTHLY: All streams selected (default mode), showing all streams at full opacity")
-                        selected_stream_for_highlight = None
+                        highlight_stream = None
                     elif len(profiled) == 1:
                         # Single stream selected: highlight this stream, dim others
-                        selected_stream_for_highlight = str(profiled[0]).strip()
-                        print(f"DEBUG BREAKDOWN MONTHLY: Single stream selected ({selected_stream_for_highlight}), will highlight this stream and dim others")
+                        highlight_stream = str(profiled[0]).strip()
+                        print(f"DEBUG BREAKDOWN MONTHLY: Single stream selected ({highlight_stream}), will highlight this stream and dim others")
                     else:
                         # Multiple streams selected (shouldn't happen, but handle it)
                         print(f"DEBUG BREAKDOWN MONTHLY: Multiple streams selected ({len(profiled)}), showing all at full opacity")
-                        selected_stream_for_highlight = None
+                        highlight_stream = None
                 else:
                     # If no stream selected, show all streams at full opacity (default mode)
                     print(f"DEBUG BREAKDOWN MONTHLY: No stream selected, showing all streams at full opacity (default mode)")
-                    selected_stream_for_highlight = None
+                    highlight_stream = None
                 
                 # If no rows or all values are zero, show a friendly message
                 if agg.empty or (agg["value"].fillna(0).sum() <= 0):
@@ -3857,13 +3890,26 @@ def register_callbacks(dash_app, server):
                         if not stream_color:
                             stream_color = get_stream_color(stream, year_streams, tab="monthly")
                         
+                        # Determine opacity based on highlight stream
+                        # If a stream is highlighted via legend/filter, dim all others
+                        opacity = 1.0
+                        if highlight_stream and stream != highlight_stream:
+                            opacity = 0.3
+                        
+                        # Current trace index will be len(fig.data) since we are about to add it
                         # Add bar trace for this stream
                         fig.add_trace(
                             go.Bar(
                                 x=stream_data["month"],
                                 y=stream_data["value"],
                                 name=stream,
-                                marker_color=stream_color,
+                                marker=dict(
+                                    color=stream_color,
+                                    line=dict(width=1, color='white'),
+                                    opacity=opacity
+                                ),
+                                selected=dict(marker=dict(opacity=1.0)),
+                                unselected=dict(marker=dict(opacity=0.3)),
                                 legendgroup=stream,
                                 showlegend=False,  # Hide legend since we have custom legend
                                 hovertemplate=(
@@ -3906,7 +3952,6 @@ def register_callbacks(dash_app, server):
                 
                 # Update layout
                 fig.update_layout(
-                    title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                     showlegend=False,
                     plot_bgcolor="white",
                     paper_bgcolor="white",
@@ -4049,39 +4094,6 @@ def register_callbacks(dash_app, server):
                             "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
                         )
                         
-                        # Apply highlight/dimmed styling for monthly view
-                        try:
-                            if selected_stream_for_highlight:
-                                if stream_name == selected_stream_for_highlight:
-                                    # Selected stream: full opacity (highlighted)
-                                    target_opacity = 1.0
-                                else:
-                                    # Other streams: reduced opacity (dimmed)
-                                    target_opacity = 0.3
-                            else:
-                                # Default mode: all streams at full opacity
-                                target_opacity = 1.0
-                            
-                            # Apply opacity to trace
-                            trace.opacity = target_opacity
-                            
-                            # Also apply to marker if it exists
-                            if not hasattr(trace, 'marker') or trace.marker is None:
-                                trace.marker = {}
-                            if isinstance(trace.marker, dict):
-                                trace.marker['opacity'] = target_opacity
-                            else:
-                                # Plotly marker object
-                                try:
-                                    trace.marker.opacity = target_opacity
-                                except:
-                                    # Fallback: create new marker dict
-                                    trace.marker = {'opacity': target_opacity}
-                        except Exception as e:
-                            print(f"Error applying opacity to trace {stream_name}: {e}")
-                            # Continue without opacity modification
-                            pass
-                        
                         trace_idx += 1
                 
                 # Update Y-axis for all subplots (yaxis, yaxis2, yaxis3, etc.) with 5 evenly spaced ticks
@@ -4118,6 +4130,7 @@ def register_callbacks(dash_app, server):
                                        font=dict(size=14, color='#7f8c8d'))
                     fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
                 
+                fig.update_layout(clickmode='select')
                 return fig, title_text
         except Exception as e:
             print(f"Error in update_breakdown: {e}")
@@ -4296,6 +4309,7 @@ def register_callbacks(dash_app, server):
                 })
             
             df_display = df[display_cols].copy()
+            df_display = df_display.fillna("")
             df_display = df_display.sort_values("CrudeOil", key=lambda s: s.astype(str).str.lower())
             
             if 'Year of YearReported' in df.columns:
@@ -4334,8 +4348,16 @@ def register_callbacks(dash_app, server):
                         record[year_col] = ""
                         continue
                     try:
+                        val_str = str(value).strip().lower()
+                        if val_str == "nan" or val_str == "none" or val_str == "":
+                            record[year_col] = ""
+                            continue
+                            
                         numeric_value = float(str(value).replace(",", ""))
-                        record[year_col] = f"{numeric_value:,.0f}"
+                        if math.isnan(numeric_value):
+                             record[year_col] = ""
+                        else:
+                             record[year_col] = f"{numeric_value:,.0f}"
                     except (ValueError, TypeError):
                         record[year_col] = str(value)
                 link = None
@@ -4531,71 +4553,120 @@ def register_callbacks(dash_app, server):
         [State("crude-country-dropdown", "value"),
          State("production-year-dropdown", "value"),
          State("profiled-streams", "value"),
-         State("crude-main-tabs", "value")],
+         State("crude-main-tabs", "value"),
+         State("selected-country-map-store", "data")],
         prevent_initial_call=True
     )
-    def export_chart_data(n_clicks, country, production_years, profiled, tab):
+    def export_chart_data(n_clicks, country, production_years, profiled, tab, selected_country_map):
+        """
+        Export chart data to CSV based on the active tab (Yearly/Monthly) and applied filters.
+        Re-executes the query to fetch raw data (Long Format) as requested.
+        """
         print(f"DEBUG EXPORT CHART: Triggered. n_clicks={n_clicks}, tab={tab}")
         if n_clicks is None or n_clicks <= 0:
             return no_update
             
         try:
-            _ensure_data_loaded()
-            print("DEBUG EXPORT CHART: Data loaded.")
-            
-            country = _resolve_countries_selection(country)
+            # Map selection overrides dropdown if present
+            if selected_country_map:
+                country = [selected_country_map]
+            else:
+                country = _resolve_countries_selection(country)
+                
             print(f"DEBUG EXPORT CHART: Resolved country={country}")
             
             if tab is None:
                 tab = "yearly"
-                
-            df_export = pd.DataFrame()
-            filename = "crude_production_breakdown.csv"
             
+            # ==========================================
+            # YEARLY CHART EXPORT
+            # ==========================================
             if tab == "yearly":
-                df = BAR_LONG_YEARLY.copy()
-                print(f"DEBUG EXPORT CHART: Yearly mode. BAR_LONG_YEARLY empty? {df.empty}")
+                yearly_query = """
+            SELECT
+                a.country_name AS "Country",
+                a.crude_name AS "CrudeOil",
+                EXTRACT(YEAR FROM a.yr) AS "YearReported",
+                a.production_kbpd AS "ProductionDataValue",
+                a.exports_kbpd AS "ExportDataValue",
+                a.ci_rank
+            FROM fact_wcod_crude a
+            LEFT JOIN dim_country grp
+                ON a.country_id = grp.dim_country_id
+        """
+                rows = execute_query(yearly_query)
+                if not rows:
+                     print("DEBUG EXPORT CHART: No yearly data returned from query.")
+                     return no_update
+                
+                df = pd.DataFrame(rows)
+                df.columns = df.columns.str.strip()
+                
                 if not df.empty:
-                    # Filter by country
+                    # Filter by Country
                     if country:
-                        df = df[df["Country"].isin(country)]
+                         if "Country" in df.columns:
+                            df = df[df["Country"].isin(country)]
                     
-                    # Filter by Profiled Streams 
+                    # Filter by Profiled Streams
                     if profiled and len(profiled) > 0:
-                        df = df[df["Stream"].isin(profiled)]
+                        if "CrudeOil" in df.columns:
+                            df = df[df["CrudeOil"].isin(profiled)]
                     
-                    df_export = df
                     filename = "crude_production_breakdown_yearly.csv"
+                    print(f"DEBUG EXPORT CHART: Exporting {len(df)} rows to {filename}")
+                    return dcc.send_data_frame(df.to_csv, filename, index=False)
+            
+            # ==========================================
+            # MONTHLY CHART EXPORT
+            # ==========================================
             else:
-                # Monthly
-                df = BAR_LONG_MONTHLY.copy()
-                print(f"DEBUG EXPORT CHART: Monthly mode. BAR_LONG_MONTHLY empty? {df.empty}, production_years={production_years}")
+                monthly_query = """
+            SELECT  
+                EXTRACT(YEAR FROM date) AS "Year of Date",
+                TO_CHAR(date, 'FMMonth') AS "Month of Date",
+                country AS "Country",
+                stream_name AS "Stream Name",
+                value AS "Value"
+            FROM t_wcod_monthly_stream_production where stream_name not in ('Total')
+            ORDER BY date DESC, stream_name;
+        """
+                rows = execute_query(monthly_query)
+                if not rows:
+                     print("DEBUG EXPORT CHART: No monthly data returned from query.")
+                     return no_update
+                
+                df = pd.DataFrame(rows)
+                df.columns = df.columns.str.strip()
+                
                 if not df.empty:
-                    # Filter by country
+                    # Filter by Country
                     if country:
-                        df = df[df["Country"].isin(country)]
+                        if "Country" in df.columns:
+                            df = df[df["Country"].isin(country)]
                     
                     # Filter by Year (production-year-dropdown)
                     selected_years = _resolve_years_selection(production_years)
                     print(f"DEBUG EXPORT CHART: Selected years={selected_years}")
+                    
+                    # Default if no years selected
                     if not selected_years:
                         if PRODUCTION_YEARS:
                              selected_years = [int(PRODUCTION_YEARS[-1])]
                         else:
                              selected_years = [2024]
                     
-                    if "year" in df.columns:
-                        df = df[df["year"].astype(int).isin(selected_years)]
+                    if "Year of Date" in df.columns:
+                        # Convert to int for comparison
+                        df["year_int"] = pd.to_numeric(df["Year of Date"], errors="coerce").fillna(0).astype(int)
+                        df = df[df["year_int"].isin(selected_years)]
+                        df = df.drop(columns=["year_int"])
                     
-                    df_export = df
                     filename = "crude_production_breakdown_monthly.csv"
+                    print(f"DEBUG EXPORT CHART: Exporting {len(df)} rows to {filename}")
+                    return dcc.send_data_frame(df.to_csv, filename, index=False)
             
-            print(f"DEBUG EXPORT CHART: Exporting {len(df_export)} rows to {filename}")
-            if df_export.empty:
-                print("DEBUG EXPORT CHART: No data to export")
-                return no_update
-                
-            return dcc.send_data_frame(df_export.to_csv, filename, index=False)
+            return no_update
 
         except Exception as e:
             print(f"Error exporting chart data: {e}")
@@ -4606,22 +4677,203 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         Output("download-table-csv", "data"),
         Input("btn-export-table-csv", "n_clicks"),
-        State("crude-table", "data"),
+        [State("filter-stream", "value"),
+         State("filter-ci", "value"),
+         State("filter-api", "value"),
+         State("filter-sulfur", "value"),
+         State("crude-country-dropdown", "value"),
+         State("crude-main-tabs", "value"),
+         State("profiled-streams", "value"),
+         State("selected-country-map-store", "data"),
+         State("profiled-streams", "options")],
         prevent_initial_call=True
     )
-    def export_table_data(n_clicks, table_data):
-        print(f"DEBUG EXPORT TABLE: Triggered. n_clicks={n_clicks}")
+    def export_table_data(n_clicks, stream, ci, api, sulfur, country, tab, profiled_streams, selected_country_map, profiled_streams_options):
+        """
+        Export table data to CSV based on the active tab (Yearly/Monthly) and applied filters.
+        Re-executes the query to fetch raw data (Long Format) as requested.
+        """
+        print(f"DEBUG EXPORT TABLE: Triggered. n_clicks={n_clicks}, tab={tab}")
         if n_clicks is None or n_clicks <= 0:
             return no_update
         
-        if not table_data:
-             print("DEBUG EXPORT TABLE: No table data available")
-             return no_update
-
-        print(f"DEBUG EXPORT TABLE: Found {len(table_data)} rows.")
         try:
-            df = pd.DataFrame(table_data)
-            return dcc.send_data_frame(df.to_csv, "global_crude_production_breakdown.csv", index=False)
+            # Default to yearly if tab is None
+            if tab is None:
+                tab = "yearly"
+
+            # ==========================================
+            # YEARLY EXPORT
+            # ==========================================
+            if tab == "yearly":
+                yearly_query = """
+            SELECT
+                a.country_name AS "Country",
+                a.crude_name AS "CrudeOil",
+                b.BSP_link AS profile_url,
+                EXTRACT(YEAR FROM a.yr) AS "YearReported",
+                a.production_kbpd AS "ProductionDataValue",
+                a.exports_kbpd AS "ExportDataValue"
+            FROM fact_wcod_crude a
+            LEFT JOIN dim_country grp
+                ON a.country_id = grp.dim_country_id
+            LEFT JOIN fact_wcod_crude_bsp_links b
+                ON a.crude_id = b.crude_id
+            ORDER BY a.crude_name ASC;
+        """
+                rows = execute_query(yearly_query)
+                if not rows:
+                    print("DEBUG EXPORT TABLE: No yearly data returned from query.")
+                    return no_update
+                
+                df = pd.DataFrame(rows)
+                df.columns = df.columns.str.strip()
+                
+                # Apply Filters to Yearly Data
+                
+                # 1. Country Filter (Map selection only)
+                # Dropdown country filter is ignored for Yearly table (Global view), same as UI logic
+                if selected_country_map:
+                    if "Country" in df.columns:
+                        df = df[df["Country"] == selected_country_map]
+                
+                # 2. Text Search Filter (Stream Name)
+                if stream and str(stream).strip():
+                    stream_val = str(stream).strip()
+                    if "CrudeOil" in df.columns: # Query returns CrudeOil
+                        df = df[df["CrudeOil"].astype(str).str.contains(re.escape(stream_val), case=False, na=False)]
+                
+                # 3. Profiled Stream Filter (Checklist) - Only if text search is NOT active
+                if not (stream and str(stream).strip()):
+                    if profiled_streams and len(profiled_streams) == 1:
+                        selected_stream = profiled_streams[0]
+                        # Check availability logic similar to UI
+                        available_streams = [opt.get("value") for opt in (profiled_streams_options or []) if opt.get("value")]
+                        if available_streams and len(available_streams) > 1 and len(profiled_streams) < len(available_streams):
+                            if "CrudeOil" in df.columns:
+                                df = df[df["CrudeOil"] == selected_stream]
+                
+                filename = "global_crude_production_breakdown_yearly.csv"
+                
+                print(f"DEBUG EXPORT TABLE: Exporting {len(df)} rows to {filename}")
+                return dcc.send_data_frame(df.to_csv, filename, index=False)
+
+            # ==========================================
+            # MONTHLY EXPORT
+            # ==========================================
+            else:
+                monthly_query = """
+            SELECT     
+                c.crude_name AS "Crude",
+                c.ci_rank,
+                c.api,
+                c.sulfur_pct,
+                l.bsp_link AS profile_url,
+                EXTRACT(YEAR FROM a.date) AS "Year of Date",
+                TO_CHAR(a.date, 'FMMonth') AS "Month of Date",
+                a.value AS "Value"
+            FROM t_wcod_monthly_stream_production a
+
+            -- Latest crude master data
+            LEFT JOIN (
+                SELECT DISTINCT ON (crude_id) 
+                    crude_id,
+                    crude_name,
+                    ci_rank,
+                    api,
+                    sulfur_pct
+                FROM fact_wcod_crude
+                ORDER BY crude_id, yr DESC
+            ) c 
+                ON a.crude_id = c.crude_id
+
+            -- Profile URL
+            LEFT JOIN fact_wcod_crude_bsp_links l
+                ON a.crude_id = l.crude_id
+        """
+                rows = execute_query(monthly_query)
+                if not rows:
+                    print("DEBUG EXPORT TABLE: No monthly data returned from query.")
+                    return no_update
+
+                df = pd.DataFrame(rows)
+                df.columns = df.columns.str.strip()
+                
+                # Rename columns from query to match UI expectations if needed, but user asked for "same as query return values"
+                # The query returns: Crude, ci_rank, api, sulfur_pct, profile_url, Year of Date, Month of Date, Value
+                # Filter logic uses: CI Rank, API, Sulfur. Need to ensure mapping or adjust filter logic.
+                # Let's map for filtering purposes, but keep original for export if possible?
+                # Actually, the user wants "same header values" from query.
+                # So I should filter based on the query columns: ci_rank, api, sulfur_pct.
+                
+                # 1. Text Search Filter
+                if stream and str(stream).strip():
+                    stream_val = str(stream).strip()
+                    if "Crude" in df.columns:
+                        df = df[df["Crude"].astype(str).str.contains(re.escape(stream_val), case=False, na=False)]
+                
+                # 2. Metadata Filters (CI, API, Sulfur)
+                def sanitize(values):
+                    if not values: return []
+                    return [v for v in values if v and v not in ("(All)", "ALL")]
+
+                # CI Rank
+                ci_vals = sanitize(ci)
+                if ci_vals and "ci_rank" in df.columns:
+                    df = df[df["ci_rank"].isin(ci_vals)]
+                
+                # API
+                api_vals = sanitize(api)
+                if api_vals and "api" in df.columns:
+                     # Use helper classify_api_value
+                    df = df[df["api"].apply(lambda v: classify_api_value(v) in api_vals)]
+                
+                # Sulfur
+                sulfur_vals = sanitize(sulfur)
+                if sulfur_vals and "sulfur_pct" in df.columns:
+                    # Use helper classify_sulfur_value
+                    df = df[df["sulfur_pct"].apply(lambda v: classify_sulfur_value(v) in sulfur_vals)]
+                    
+                # 3. Country Filter 
+                # Note: Monthly query provided does NOT have a Country column! 
+                # The user's query: 
+                # SELECT c.crude_name AS "Crude", ... FROM t_wcod_monthly_stream_production a LEFT JOIN fact_wcod_crude c ...
+                # fact_wcod_crude has country_id, but the join in the user's snippet uses a subselect that DOES NOT select country_id/name.
+                # Subselect: SELECT DISTINCT ON (crude_id) crude_id, crude_name, ci_rank, api, sulfur_pct ...
+                # So the result of monthly_query DOES NOT HAVE COUNTRY info.
+                # However, the UI filter `filter_table` applies country filter to `TABLE_DF_MONTHLY`.
+                # `TABLE_DF_MONTHLY` comes from `load_table` -> `monthly_query` (lines 1101-1129 in file).
+                # Wait, looking at lines 1101-1129 in the file (Step 45), the existing `monthly_query` ALSO DOES NOT select Country.
+                # BUT `loading_table` function (checking Step 42/45 carefully)... 
+                # Ah, existing `load_table` logic constructs `monthly_df` WITHOUT country column initially?
+                # Let's check `_ensure_data_loaded` (Step 36). `COUNTRIES` are derived from `BAR_DF_YEARLY`/`BAR_DF_MONTHLY`.
+                # The `TABLE_DF_MONTHLY` seems to rely on `monthly_agg` and merges. 
+                # If the query doesn't return Country, how does the UI filter by Country?
+                # Looking at `filter_table` (Step 24, line 4253):
+                # `if "Country" in df.columns: df = df[df["Country"] == selected_country_map]`
+                # So `TABLE_DF_MONTHLY` MUST have a "Country" column.
+                # Let's check how `TABLE_DF_MONTHLY` gets Country.
+                # In `load_table` (Step 45), there is NO Country selected in `monthly_query`.
+                # Is it merged later? 
+                # Line 1089: `yearly_df["Country"] = ...` (For Yearly).
+                # For Monthly? I don't see it in the snippet 1100-1199.
+                # Maybe it's not there? 
+                # If `tbl_df_monthly` doesn't have Country, then filtering by country in `filter_table` would do nothing for it?
+                # Wait, line 4258: `if "Country" in df.columns: ...`
+                # If it's not there, it skips.
+                
+                # IMPORTANT: The user said "i want csv file of query returns".
+                # The user provided query for monthly DOES NOT include Country. 
+                # So I should NOT try to filter by Country if it's not in the query result, 
+                # AND I should not output Country column if it's not in the query.
+                # I will strictly follow the user's query columns.
+                # If the user wants country filtering, they would need to modify the query, 
+                # but they said "csv in same as query return values".
+                
+                filename = "crude_production_breakdown_monthly.csv"
+                print(f"DEBUG EXPORT TABLE: Exporting {len(df)} rows to {filename}")
+                return dcc.send_data_frame(df.to_csv, filename, index=False)
+
         except Exception as e:
             print(f"Error exporting table data: {e}")
             import traceback
@@ -4651,3 +4903,4 @@ def create_crude_overview_dashboard(dash_app, server, url_base_pathname="/dash/c
     """Create the Crude Overview dashboard"""
     dash_app.layout = create_layout()
     register_callbacks(dash_app, server)
+
