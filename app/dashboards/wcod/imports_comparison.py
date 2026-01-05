@@ -438,7 +438,8 @@ def create_imports_map_figure(df_map, single_selected_country, max_volume, selec
     # Add custom margin and UI revision for imports
     fig.update_layout(
         margin=dict(l=20, r=20, t=20, b=80),
-        uirevision='imports-map'
+        uirevision='imports-map',
+        mapbox_zoom=0.8
     )
     
     # Add copyright annotation

@@ -35,8 +35,7 @@ from .shared_map_utils import (
     handle_map_click_reset,
     create_empty_map,
     MAP_BACKGROUND_COLOR,
-    WORLD_CENTER,
-    WORLD_ZOOM
+    WORLD_CENTER
 )
 
 # Set Mapbox access token
@@ -237,7 +236,7 @@ else:
     CHART_MAX_YEAR = DEFAULT_YEAR or 0
 
 COUNTRY_OPTIONS = sorted(TABLE_DF["country"].unique().tolist()) if not TABLE_DF.empty else []
-DEFAULT_COUNTRY = ["(All)"]  # Default to show all countries instead of just Russia
+DEFAULT_COUNTRY = ["Russia"]  # Default country selection for UI, but table shows all countries until map click
 
 # Base stream configuration – explicit ordering and colors requested by design
 STREAM_DISPLAY = [
@@ -575,11 +574,12 @@ def _build_map_figure(
     selected_countries: Optional[Sequence[str]] = None
 ) -> go.Figure:
     if MAP_DF.empty:
-        return _empty_figure("No map data available")
+        return create_empty_map("No map data available")
+    
     normalized_year = _normalize_year(year)
     df = MAP_DF[MAP_DF["year"] == normalized_year].copy()
     if df.empty:
-        return _empty_figure("No data for the selected year")
+        return create_empty_map("No data for the selected year")
     
     # Filter by selected countries if provided
     # Note: selected_countries is already resolved (no "(All)" in it)
@@ -587,102 +587,85 @@ def _build_map_figure(
     if selected_countries is not None and "country" in df.columns:
         if isinstance(selected_countries, list) and len(selected_countries) == 0:
             # Empty list means no countries selected - return empty figure
-            return _empty_figure("No countries selected")
+            return create_empty_map("No countries selected")
         elif selected_countries:
             # Filter df by matching countries (case-insensitive)
             df_countries_normalized = df["country"].str.strip().str.lower()
             target_countries_normalized = {c.lower().strip(): c for c in selected_countries}
             mask = df_countries_normalized.isin(target_countries_normalized.keys())
             df = df[mask].copy()
-    max_value = df["value"].max() if not df.empty else None
-    fig = go.Figure(
-        data=[
-            go.Choropleth(
-                locations=df["country"],
-                z=df["value"],
-                locationmode="country names",
-                colorscale=MAP_COLOR_STEPS,
-                zmin=0,
-                zmax=max_value if max_value else None,
-                marker_line_color="#ffffff",
-                marker_line_width=0.5,
-                hovertemplate="<b>%{location}</b><br>Exports: %{z:,.0f} ’000 b/d<extra></extra>",
-                showscale=False,
-            )
-        ]
-    )
-    # Add country labels with density control to reduce overlap at wide zooms
+    
+    if df.empty:
+        return create_empty_map("No data for selected countries")
+    
+    # Prepare data for choropleth map using shared utilities
+    locations = []
+    z_values = []
+    hover_texts = []
+    
+    for _, row in df.iterrows():
+        country = row["country"]
+        value = row["value"]
+        
+        # Convert country name to ISO code for better mapping
+        iso_code = _iso_for_country(country)
+        if iso_code:
+            locations.append(iso_code)
+            z_values.append(value)
+            hover_texts.append(f"<b>{country}</b><br>Exports: {value:,.0f} '000 b/d")
+    
+    if not locations:
+        return create_empty_map("No valid country data found")
+    
+    # Prepare country labels data
     centroids = (
         df.groupby("country")[["lat", "lon"]]
         .mean()
         .reset_index()
         .dropna(subset=["lat", "lon"])
     )
-    label_cap = len(centroids)
-    if len(centroids) > 120:
-        label_cap = 40
-    elif len(centroids) > 80:
-        label_cap = 60
-    labels_df = (
-        centroids.sort_values("country")
-        .head(label_cap)
-    )
-    fig.add_trace(
-        go.Scattergeo(
-            lon=labels_df["lon"],
-            lat=labels_df["lat"],
-            mode="text",
-            text=labels_df["country"],
-            textfont=dict(size=8, color="#2c3e50"),
-            textposition="top center",
-            hoverinfo="skip",
-            showlegend=False,
-        )
-    )
-    fig.update_geos(
-        showframe=False,
-        showcoastlines=True,
-        showcountries=True,
-        projection_type="natural earth",
-        bgcolor="rgba(0,0,0,0)",
-        landcolor=MAP_LAND_COLOR,
-        countrycolor="#d0d0d0",
-        coastlinecolor="#d0d0d0",
-        oceancolor=MAP_BACKGROUND_COLOR,
-        # Use center and scale to match projects_by_country.py zoom level
-        center=dict(lat=24.0, lon=45.0),  # Same world center as projects_by_country.py
-        projection=dict(
-            scale=1.0,  # Adjusted to match zoom level 2.8 from projects_by_country.py
-        ),
-    )
-    fig.update_layout(
-        height=520,
-        paper_bgcolor=MAP_BACKGROUND_COLOR,
-        plot_bgcolor=MAP_BACKGROUND_COLOR,
-        # Reduce margins to minimize blank space - keep bottom margin for legend
-        margin=dict(l=0, r=0, t=5, b=5),  # Minimal margins
-        template="plotly_white",
-    )
+    
+    # Limit label density for readability
+    label_cap = min(len(centroids), 40 if len(centroids) > 120 else 60 if len(centroids) > 80 else len(centroids))
+    labels_df = centroids.sort_values("country").head(label_cap)
+    
+    # Rename columns to match expected format for shared utilities
+    if not labels_df.empty:
+        labels_df = labels_df.rename(columns={
+            "country": "Country",
+            "lat": "Latitude", 
+            "lon": "Longitude"
+        })
+    
+    # Determine selection highlighting
+    selected_iso = None
+    other_isos = None
     if highlight_country:
-        highlight_list = (
-            highlight_country
-            if isinstance(highlight_country, list)
-            else [highlight_country]
-        )
-        highlight_list = [c for c in highlight_list if c]
-        if highlight_list:
-            fig.add_trace(
-                go.Choropleth(
-                    locations=highlight_list,
-                    locationmode="country names",
-                    z=[max_value or 1] * len(highlight_list),
-                    colorscale=[[0, "#2f3f5c"], [1, "#2f3f5c"]],
-                    showscale=False,
-                    marker_line_color="#182238",
-                    marker_line_width=1.6,
-                    hoverinfo="skip",
-                )
-            )
+        selected_iso = _iso_for_country(highlight_country)
+        if selected_iso:
+            # Get all other countries for dimming
+            other_isos = [iso for iso in locations if iso != selected_iso]
+    
+    # Create the map using shared utilities for proper Mapbox integration
+    max_value = max(z_values) if z_values else None
+    fig = create_choropleth_map(
+        locations=locations,
+        z_values=z_values,
+        colorscale=MAP_COLOR_STEPS,
+        hover_text=hover_texts,
+        selected_country=highlight_country,
+        selected_iso=selected_iso,
+        other_isos=other_isos,
+        countries_df=labels_df if not labels_df.empty else None,
+        height=520,
+        zmin=0,
+        zmax=max_value
+    )
+    
+    # Set custom zoom level for global exports
+    if hasattr(fig.layout, 'mapbox') and fig.layout.mapbox:
+        fig.update_layout(mapbox_zoom=0.8)
+    
     return fig
 
 
@@ -967,6 +950,7 @@ def _build_chart_figure(
             font=dict(color="#1b365d", size=12, family="Lato, Arial, sans-serif"),
             bordercolor="#dfe3eb",
         ),
+        mapbox_zoom=0.8,
     )
     return fig
 
@@ -1396,7 +1380,7 @@ def create_layout():
                             html.Div([
                                 html.H4(
                                     id="global-exports-chart-title",
-                                    children="All Countries Annual Exports by Crude Stream",
+                                    children="All Annual Exports by Crude Stream",
                                     style={
                                         "color": "#fe5000",
                                         "textAlign": "center",
@@ -1827,56 +1811,67 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input("global-exports-map", "clickData"),
         State("global-exports-country-filter", "value"),
         State("global-exports-country-filter", "options"),
+        State("global-exports-selected-country", "data"),
         prevent_initial_call=True,
     )
-    def handle_map_click(click_data, current_filter, options):
-        """Handle map click to update country selection like in projects_by_country.py"""
-        if not click_data or not click_data.get("points"):
-            return no_update, no_update
-        
-        # Extract country name from click data
-        point = click_data["points"][0]
-        country = None
-        
-        # Use multiple fallback methods to extract country name (same as projects_by_country.py)
-        if "text" in point and point["text"]:
-            country = point["text"]
-        elif "hovertext" in point and point["hovertext"]:
-            hovertext = point["hovertext"]
-            if "<b>" in hovertext and "</b>" in hovertext:
-                country = hovertext.split("<b>")[1].split("</b>")[0]
-        elif "customdata" in point and point["customdata"]:
-            if isinstance(point["customdata"], list):
-                country = point["customdata"][0]
-            else:
-                country = point["customdata"]
-        elif "location" in point:
-            # For choropleth maps, location contains the country name
-            country = point["location"]
-        
-        if not country or not options:
+    def handle_map_click(click_data, current_filter, options, current_selected_country):
+        """Handle map click to update country selection using standardized behavior from shared_map_utils"""
+        if not click_data or not options:
             return no_update, no_update
         
         # Extract all country options (excluding "(All)")
         all_country_options = [opt["value"] for opt in options if opt["value"] != "(All)"]
-        if country not in all_country_options:
-            return no_update, no_update
         
-        # Get current selection and resolve it
-        current_filter = current_filter or []
-        resolved_countries = _resolve_countries(current_filter, all_country_options)
-        
-        # Apply the same logic as projects_by_country.py:
-        # If country is not currently in the resolved selection, select only this country
-        if country not in resolved_countries:
-            return [country], country
-        
-        # If this country is already the only one selected, expand to show all
-        if len(resolved_countries) == 1 and country in resolved_countries:
-            return ["(All)"] + all_country_options, None
+        # SPECIAL HANDLING FOR FIRST CLICK:
+        # If no country is currently selected (selected_country is None), 
+        # treat this as a first click from "all countries" state regardless of current_filter
+        if current_selected_country is None:
+            # This is the first map click - extract the clicked country and select it
+            point = click_data["points"][0]
+            clicked_country = None
+            is_background_click = False
             
-        # If multiple countries are selected and this one is clicked, select only this country
-        return [country], country
+            # Extract country from click data
+            if "customdata" in point and point["customdata"]:
+                if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
+                    if point["customdata"][0] == "__BACKGROUND_CLICK__":
+                        is_background_click = True
+                    else:
+                        clicked_country = point["customdata"][0]
+                elif point["customdata"] == "__BACKGROUND_CLICK__":
+                    is_background_click = True
+                else:
+                    clicked_country = point["customdata"]
+            
+            # Extract from other click data if needed
+            if not clicked_country and not is_background_click:
+                if "text" in point and point["text"]:
+                    clicked_country = point["text"]
+                elif "hovertext" in point and point["hovertext"]:
+                    hovertext = point["hovertext"]
+                    if "<b>" in hovertext and "</b>" in hovertext:
+                        clicked_country = hovertext.split("<b>")[1].split("</b>")[0]
+            
+            # Handle first click
+            if is_background_click:
+                # Background click on first interaction - keep showing all
+                return ["(All)"] + all_country_options, None
+            elif clicked_country and clicked_country in all_country_options:
+                # Valid country clicked - select it
+                return [clicked_country], clicked_country
+            else:
+                # Invalid click - keep showing all
+                return ["(All)"] + all_country_options, None
+        
+        # SUBSEQUENT CLICKS: Use the standard map click handler
+        updated_filter = handle_map_click_reset(click_data, current_filter, all_country_options)
+        
+        # Determine selected country for highlighting
+        selected_country = None
+        if updated_filter and len(updated_filter) == 1 and updated_filter[0] != "(All)":
+            selected_country = updated_filter[0]
+        
+        return updated_filter, selected_country
 
     @dash_app.callback(
         Output("global-exports-stream-filter", "options"),
@@ -1961,7 +1956,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     ):
         """Update stacked area chart."""
         # Default values
-        default_title = "All Countries Annual Exports by Crude Stream"
+        default_title = "All Annual Exports by Crude Stream"
         default_fig = _empty_figure("Loading chart...")
         
         try:
@@ -2041,45 +2036,42 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             except Exception:
                 fig = _empty_figure("Error loading chart data")
             
-            # Generate title
+            # Generate title based on country selection
             title = default_title
             try:
-                # On initial load, always use default title
-                if is_initial_call:
-                    title = default_title
-                elif countries and COUNTRY_OPTIONS and len(COUNTRY_OPTIONS) > 0:
-                    # Use resolved_countries from above if available, otherwise resolve again for title
-                    if resolved_countries is not None and len(resolved_countries) > 0:
-                        title_countries = resolved_countries
-                    elif resolved_countries is None:
-                        # All countries selected - use all for title
-                        title_countries = COUNTRY_OPTIONS
-                    else:
-                        # Resolve for title generation
-                        title_countries = _resolve_countries(countries, COUNTRY_OPTIONS)
-                    
-                    if len(title_countries) == 1:
-                        title = f"{title_countries[0]} Annual Exports by Crude Stream"
-                    elif len(title_countries) > 1:
-                        if len(title_countries) <= 3:
-                            country_names = ", ".join(title_countries)
-                        else:
-                            country_names = ", ".join(title_countries[:3]) + f" and {len(title_countries) - 3} more"
+                # Determine which countries are being displayed for title generation
+                # Use selected_country if available (from map clicks), otherwise use resolved_countries
+                if selected_country and selected_country not in [None, "(All)"]:
+                    # Map click selected a specific country
+                    title = f"{selected_country} Annual Exports by Crude Stream"
+                elif resolved_countries is not None and len(resolved_countries) > 0:
+                    # Specific countries selected via country filter
+                    if len(resolved_countries) == 1:
+                        title = f"{resolved_countries[0]} Annual Exports by Crude Stream"
+                    elif len(resolved_countries) <= 3:
+                        country_names = ", ".join(resolved_countries)
                         title = f"{country_names} Annual Exports by Crude Stream"
+                    else:
+                        country_names = ", ".join(resolved_countries[:3])
+                        remaining_count = len(resolved_countries) - 3
+                        title = f"{country_names} and {remaining_count} more Annual Exports by Crude Stream"
+                else:
+                    # All countries (default case)
+                    title = "All Annual Exports by Crude Stream"
             except Exception:
-                title = default_title
+                title = "All Annual Exports by Crude Stream"
             
             # Final validation - ensure we always return valid types
             if not isinstance(fig, go.Figure):
                 fig = default_fig
             if not isinstance(title, str) or not title:
-                title = default_title
+                title = "All Annual Exports by Crude Stream"
             
             # Double-check return values
             if not isinstance(fig, go.Figure):
                 fig = _empty_figure("Error: Invalid figure type")
             if not isinstance(title, str):
-                title = "All Countries Annual Exports by Crude Stream"
+                title = "All Annual Exports by Crude Stream"
             
             return fig, title
             
@@ -2089,12 +2081,12 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 error_fig = _empty_figure("Error loading chart")
                 if not isinstance(error_fig, go.Figure):
                     error_fig = go.Figure()
-                return error_fig, "All Countries Annual Exports by Crude Stream"
+                return error_fig, "All Annual Exports by Crude Stream"
             except Exception:
                 # Last resort - return minimal valid figure
                 minimal_fig = go.Figure()
                 minimal_fig.add_annotation(text="Error loading chart", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-                return minimal_fig, "All Countries Annual Exports by Crude Stream"
+                return minimal_fig, "All Annual Exports by Crude Stream"
 
     @dash_app.callback(
         Output("global-exports-stream-filter", "value", allow_duplicate=True),
@@ -2141,138 +2133,43 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         """
         Update table data.
         
-        Behavior:
-        - Initial load: Show ALL data (no filters applied)
-        - Legend click: Apply both country and stream filters
-        - Other changes: Show ALL data (ignore filters)
+        SIMPLE RULE: Only filter by country when selected_country is explicitly set.
+        selected_country should ONLY be set by map clicks, never by defaults.
         """
         try:
             if submenu != "global-exports":
                 return []
             
-            year_value = _parse_year_value(year_str)
-            
-            # Check if legend button was clicked (user interaction)
-            ctx = dash.callback_context
-            
-            # Check if this is truly an initial call (no triggers at all)
-            is_initial_call = not ctx.triggered or len(ctx.triggered) == 0
-            
-            # IMPORTANT: On initial load, ALWAYS show ALL data regardless of default country selection
-            if is_initial_call:
-                # Initial load - show ALL data (ignore any default country selection)
-                if TABLE_DF.empty:
-                    return []
-                return _prepare_table_records(TABLE_DF.copy())
-            
-            # Check for legend button clicks - must check actual n_clicks values
-            legend_clicked = False
-            if ctx.triggered and not is_initial_call and legend_clicks:
-                # Check if any legend button has n_clicks > 0 (actual click)
-                # legend_clicks is a list of n_clicks values for all legend buttons
-                for clicks in legend_clicks:
-                    if clicks is not None and clicks > 0:
-                        legend_clicked = True
-                        break
-            
-            # Check if map click triggered this callback (country selection from map)
-            map_clicked = False
-            country_filter_triggered = False
-            selected_country_triggered = False
-            
-            if ctx.triggered and not is_initial_call:
-                for trigger in ctx.triggered:
-                    trigger_id = trigger.get("prop_id", "")
-                    if "global-exports-country-filter" in trigger_id:
-                        country_filter_triggered = True
-                    elif "global-exports-selected-country" in trigger_id:
-                        selected_country_triggered = True
-                
-                # Map click is detected if either country filter or selected country was triggered
-                # AND we have a specific country selected (not "All")
-                if (country_filter_triggered or selected_country_triggered) and country_filter:
-                    if isinstance(country_filter, list) and len(country_filter) > 0:
-                        # Check if it's a specific country selection (not "All")
-                        if "(All)" not in country_filter or len(country_filter) == 1:
-                            map_clicked = True
-            
-            # IMPORTANT: Table behavior based on live source:
-            # - On initial load: show ALL data (no filters applied)
-            # - Legend click: apply ONLY stream filters (not country filters)
-            # - Map click (country selection): apply BOTH country AND stream filters
-            # - When specific country is selected: always apply country filter
-            
-            # Check if we have a specific country selected (not "All")
-            # BUT only apply filtering if there was an actual user interaction (map click or manual selection)
-            has_specific_country = False
-            user_interacted = False
-            
-            if country_filter and isinstance(country_filter, list):
-                if len(country_filter) == 1 and country_filter[0] != "(All)":
-                    has_specific_country = True
-                elif len(country_filter) > 1 and "(All)" not in country_filter:
-                    has_specific_country = True
-            
-            # Check if user actually interacted (not just initial load with default values)
-            if ctx.triggered and not is_initial_call:
-                user_interacted = True
-            
-            # If we have a specific country selected AND user interacted, apply country filter
-            if has_specific_country and user_interacted:
-                # Skip the "no interaction" check - we want to filter
-                pass
-            elif not legend_clicked and not map_clicked:
-                # No interaction or no specific country - show ALL data
-                if TABLE_DF.empty:
-                    return []
-                return _prepare_table_records(TABLE_DF.copy())
-            
-            # Legend was clicked OR map was clicked - apply filters
-            
+            # Start with all data
             if TABLE_DF.empty:
                 return []
             
-            # Check if stream filter contains all streams (reset state)
-            # If all streams are selected AND no map click, treat it as "no filter" and show all data
-            # But if map was clicked, we still need to apply country filter even with all streams
-            if stream_filter_state and not TABLE_DF.empty and not map_clicked:
-                all_available_streams = set(TABLE_DF["crude"].unique())
-                stream_filter_set = set(stream_filter_state)
-                if stream_filter_set == all_available_streams:
-                    # All streams selected AND no map click - show all data
-                    return _prepare_table_records(TABLE_DF.copy())
-            
-            # Start with all data
             filtered = TABLE_DF.copy()
             
-            # Apply country filter when we have a specific country selected AND user interacted
-            if (has_specific_country and user_interacted) and country_filter is not None:
+            # COUNTRY FILTERING: Only if selected_country is explicitly set
+            # selected_country should only be set by the map click callback
+            if selected_country and selected_country not in [None, "(All)"]:
                 try:
-                    resolved = _resolve_countries(country_filter, COUNTRY_OPTIONS)
-                    if "(All)" in country_filter and len(country_filter) > 1:
-                        # "(All)" + specific countries - use specific countries only
-                        resolved = [c for c in country_filter if c != "(All)"]
-                    
-                    if resolved and len(resolved) > 0:
-                        filtered = filtered[filtered["country"].isin(resolved)]
-                    else:
-                        # Empty selection - show no countries
-                        return []
+                    if selected_country in COUNTRY_OPTIONS:
+                        filtered = filtered[filtered["country"] == selected_country]
                 except Exception:
-                    # Error resolving countries - show all data
+                    # On any error, keep all countries
                     pass
             
-            # Apply stream filter (for both legend clicks and map clicks)
-            if stream_filter_state:
+            # STREAM FILTERING: Apply if streams are selected
+            if stream_filter_state and len(stream_filter_state) > 0:
                 try:
                     filtered = filtered[filtered["crude"].isin(stream_filter_state)]
                 except Exception:
-                    # Error filtering by streams - continue with current filtered data
+                    # On any error, keep current data
                     pass
             
             return _prepare_table_records(filtered)
+            
         except Exception:
-            # Return empty on any error
+            # On any error, return all data
+            if not TABLE_DF.empty:
+                return _prepare_table_records(TABLE_DF.copy())
             return []
 
     @dash_app.callback(
