@@ -2432,12 +2432,35 @@ def create_project_details_table(df):
 
     # Create columns configuration with display names and width constraints
     columns = []
+    width_styles = []
+
     for col in all_columns:
         display_name = display_name_map.get(col, col)
         col_def = {'name': display_name, 'id': col}
         if col in column_widths:
-            col_def['minWidth'] = column_widths[col]
-            col_def['maxWidth'] = column_widths[col]
+            width = column_widths[col]
+            width_styles.append({
+                'if': {'column_id': col},
+                'minWidth': width,
+                'width': width,
+                'maxWidth': width,
+            })
+        
+        # Right align numeric columns
+        numeric_cols_static = [
+            'Gas Reserves (mmboe)', 'Liquids Reserves (mmbbl)', 'Total Reserves (mmboe)',
+            'API', 'Sulfur', 'First Oil Year',
+            'Operator Share %', 'Partner1 Share %', 'Partner2 Share %', 
+            'Partner3 Share %', 'Partner4 Share %', 'Partner5 Share %'
+        ]
+        is_quarter = len(col) == 7 and col[4] == '_' and col[:4].isdigit() and col[5:] in ['Q1', 'Q2', 'Q3', 'Q4']
+        
+        if col in numeric_cols_static or is_quarter:
+             width_styles.append({
+                'if': {'column_id': col},
+                'textAlign': 'right'
+            })
+
         columns.append(col_def)
 
     # Prepare tooltip data for all columns
@@ -2452,8 +2475,8 @@ def create_project_details_table(df):
             
             val = val.strip()
             if val and val.lower() != 'nan' and val != 'None':
-                # Only show tooltip for long values (>25 chars) or Comments
-                if col == 'Comments' or len(val) > 25:
+                # Only show tooltip for long values (>14 chars) or Comments
+                if col == 'Comments' or len(val) > 14:
                     tip_row[col] = {'value': val, 'type': 'text'}
         tooltip_data.append(tip_row)
 
@@ -2463,6 +2486,7 @@ def create_project_details_table(df):
         data=table_data,
         tooltip_data=tooltip_data,
         tooltip_duration=None,
+        fixed_rows={'headers': True},
         style_table={
             'overflowX': 'auto',
             'overflowY': 'auto',
@@ -2505,6 +2529,7 @@ def create_project_details_table(df):
                 'backgroundColor': '#f9f9f9'
             }
         ],
+        style_cell_conditional=width_styles,
         sort_action='native',
         filter_action='native',
         css=[{
