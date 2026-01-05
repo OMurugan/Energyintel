@@ -102,48 +102,41 @@ def _format_production_breakdown_title(country_selection):
     return f"Production Breakdown – {', '.join(first_three)} and {remaining_count} more"
 
 def _calculate_yaxis_ticks(max_value):
-    """
-    Calculate Y-axis ticks dividing the range into 5 parts based on max value.
-    Returns (y_axis_max, y_axis_ticks)
+    """Calculate 5 evenly spaced Y-axis ticks from 0 to max_value.
+    
+    Args:
+        max_value: Maximum value for the Y-axis
+    
+    Returns:
+        Tuple of (y_axis_max, tick_values) where tick_values is a list of 5 evenly spaced values
     """
     import math
     
     if max_value <= 0:
-        return 100, [0, 20, 40, 60, 80, 100]
-        
-    # Calculate step size to get exactly 5 intervals (6 ticks including 0)
-    # Target: 0, 1*step, 2*step, ... 5*step
-    # where 5*step >= max_value
+        # Default fallback
+        y_axis_max = 10000
+        tick_values = [0, 2500, 5000, 7500, 10000]
+        return y_axis_max, tick_values
     
-    raw_step = max_value / 5
+    # Round up max_value to a nice round number for better readability
+    # Find the order of magnitude
+    order_of_magnitude = 10 ** math.floor(math.log10(max_value))
     
-    # Calculate magnitude of the step
-    magnitude = 10 ** math.floor(math.log10(raw_step)) if raw_step > 0 else 1
-    normalized_step = raw_step / magnitude
+    # Round up to next nice number (add 20% padding, then round up)
+    padded_max = max_value * 1.2
+    rounded_max = math.ceil(padded_max / order_of_magnitude) * order_of_magnitude
     
-    # Round up to a nice number: 1, 2, 2.5, 5, 10
-    if normalized_step <= 1:
-        step = 1 * magnitude
-    elif normalized_step <= 2:
-        step = 2 * magnitude
-    elif normalized_step <= 2.5:
-        step = 2.5 * magnitude
-    elif normalized_step <= 5:
-        step = 5 * magnitude
-    else:
-        step = 10 * magnitude
-        
-    # Ensure step is an integer for cleaner look if magnitude >= 1
-    if step >= 1:
-        step = int(step)
-        
-    # Calculate max axis value (5 * step)
-    y_axis_max = step * 5
+    # If the rounded value is too small, try rounding to half order of magnitude
+    if rounded_max < padded_max:
+        rounded_max = math.ceil(padded_max / (order_of_magnitude * 0.5)) * (order_of_magnitude * 0.5)
     
-    # Generate ticks
-    y_axis_ticks = [step * i for i in range(6)]
+    y_axis_max = rounded_max
     
-    return y_axis_max, y_axis_ticks
+    # Create 5 evenly spaced ticks: 0, 1/4, 1/2, 3/4, 1 of max
+    tick_step = y_axis_max / 4
+    tick_values = [0, tick_step, tick_step * 2, tick_step * 3, y_axis_max]
+    
+    return y_axis_max, tick_values
 
 def _resolve_years_selection(selected):
     """Normalize year selection; expand '(All)' to full list."""
@@ -1024,10 +1017,6 @@ def load_table():
     monthly_df = pd.DataFrame()
     year_to_month_cols = {}
     
-    # Raw dataframes for export
-    yearly_raw_export = pd.DataFrame()
-    monthly_raw_export = pd.DataFrame()
-    
     try:
         # Load yearly table data from DB
         yearly_query = """
@@ -1049,21 +1038,7 @@ def load_table():
         if yearly_rows:
             yearly_raw = pd.DataFrame(yearly_rows)
             yearly_raw.columns = yearly_raw.columns.str.strip()
-            
-            # Capture raw export data immediately (before renaming profile_url if strict, 
-            # but user query has profile_url alias so it's fine). 
-            # However, code below renames "BSP link" to "profile_url".
-            # The query ALREADY constructs "profile_url" alias. 
-            # Let's check if the previous code was handling potential missing alias or just safeguard.
-            # Query has: b.BSP_link AS profile_url. So column IS "profile_url".
-            # The existing code had: if "BSP link" in yearly_raw.columns...
-            # This implies maybe sometimes execute_query returns original column names? 
-            # Or maybe the alias isn't respected by some driver? 
-            # In any case, we want exactly what "query returns".
-            
-            yearly_raw_export = yearly_raw.copy()
-            
-            # Normalize optional column names for INTERNAL use
+            # Normalize optional column names
             if "BSP link" in yearly_raw.columns and "profile_url" not in yearly_raw.columns:
                 yearly_raw = yearly_raw.rename(columns={"BSP link": "profile_url"})
             yearly_raw["YearReported"] = pd.to_numeric(yearly_raw.get("YearReported"), errors="coerce")
@@ -1118,8 +1093,10 @@ def load_table():
                     .set_index("CrudeOil")["Country"]
                 )
                 yearly_df["Country"] = yearly_df["CrudeOil"].map(country_map)
+                print(f"DEBUG LOAD: yearly_df columns: {yearly_df.columns.tolist()} (rows: {len(yearly_df)})")
             
         # Load monthly table data
+        # Load monthly table data from DB
         monthly_query = """
             SELECT     
                 c.crude_name AS "Crude",
@@ -1129,8 +1106,7 @@ def load_table():
                 l.bsp_link AS profile_url,
                 EXTRACT(YEAR FROM a.date) AS "Year of Date",
                 TO_CHAR(a.date, 'FMMonth') AS "Month of Date",
-                a.value AS "Value",
-                a.country AS "_internal_country"
+                a.value AS "Value"
             FROM t_wcod_monthly_stream_production a
 
             -- Latest crude master data
@@ -1154,8 +1130,6 @@ def load_table():
         if monthly_rows:
             monthly_raw = pd.DataFrame(monthly_rows)
             monthly_raw.columns = monthly_raw.columns.str.strip()
-            
-            monthly_raw_export = monthly_raw.copy()
             
             # Normalize columns
             monthly_raw = monthly_raw.rename(columns={
@@ -1252,17 +1226,7 @@ def load_table():
                 year_to_month_cols = fallback_year_to_month_cols
                 print(f"DEBUG: Table fallback from BAR_LONG_MONTHLY after error ({len(monthly_df)} rows, {len(year_to_month_cols)} years)")
     
-    # Final cleanup to remove 'nan' strings and NaNs
-    if not yearly_df.empty:
-        yearly_df = yearly_df.fillna("")
-        # Replace string "nan" if it leaked through string conversions
-        yearly_df = yearly_df.replace(to_replace=r'(?i)^nan$', value="", regex=True)
-        
-    if not monthly_df.empty:
-        monthly_df = monthly_df.fillna("")
-        monthly_df = monthly_df.replace(to_replace=r'(?i)^nan$', value="", regex=True)
-
-    return yearly_df, monthly_df, year_to_month_cols, yearly_raw_export, monthly_raw_export
+    return yearly_df, monthly_df, year_to_month_cols
 
 # Global variables for lazy loading - initialized to empty DataFrames
 BAR_DF_YEARLY = pd.DataFrame()
@@ -1274,8 +1238,6 @@ MAP_YEARLY_LONG = pd.DataFrame()
 MAP_MONTHLY_LONG = pd.DataFrame()
 TABLE_DF_YEARLY = pd.DataFrame()
 TABLE_DF_MONTHLY = pd.DataFrame()
-TABLE_RAW_YEARLY = pd.DataFrame()
-TABLE_RAW_MONTHLY = pd.DataFrame()
 YEAR_TO_MONTH_COLS = {}
 YEARLY_GRADES_DF = pd.DataFrame()
 MONTHLY_GRADES_DF = pd.DataFrame()
@@ -1288,7 +1250,6 @@ def _ensure_data_loaded():
     global BAR_DF_MONTHLY, BAR_LONG_MONTHLY
     global MAP_YEARLY_LONG, MAP_MONTHLY_LONG
     global TABLE_DF_YEARLY, TABLE_DF_MONTHLY, YEAR_TO_MONTH_COLS
-    global TABLE_RAW_YEARLY, TABLE_RAW_MONTHLY
     global YEARLY_GRADES_DF, MONTHLY_GRADES_DF
     global COUNTRIES, STREAMS, YEARS_YEARLY, YEARS_MONTHLY, YEARS
     global CI_OPTIONS, API_OPTIONS, SULFUR_OPTIONS
@@ -1301,7 +1262,7 @@ def _ensure_data_loaded():
         BAR_DF_YEARLY, BAR_LONG_YEARLY, YEAR_PRODUCTION_DATA_VALUE = load_yearly_bar()
         BAR_DF_MONTHLY, BAR_LONG_MONTHLY = load_monthly_bar()
         MAP_YEARLY_LONG, MAP_MONTHLY_LONG = load_map_data()
-        TABLE_DF_YEARLY, TABLE_DF_MONTHLY, YEAR_TO_MONTH_COLS, TABLE_RAW_YEARLY, TABLE_RAW_MONTHLY = load_table()
+        TABLE_DF_YEARLY, TABLE_DF_MONTHLY, YEAR_TO_MONTH_COLS = load_table()
         YEARLY_GRADES_DF, MONTHLY_GRADES_DF = load_grades_data()
         
         # Initialize derived variables
@@ -1599,7 +1560,7 @@ def create_layout(server=None):
             ),
             html.Div([
                 html.Button(
-                    'Export Data to CSV',
+                    'Export Data',
                     id='btn-export-map-csv',
                     n_clicks=0,
                     style={
@@ -1700,7 +1661,7 @@ def create_layout(server=None):
                 ),
                 html.Div([
                     html.Button(
-                        'Export Data to CSV',
+                        'Export Data',
                         id='btn-export-chart-csv',
                         n_clicks=0,
                         style={
@@ -1728,12 +1689,7 @@ def create_layout(server=None):
                         dcc.Graph(
                             id="production-breakdown-chart", 
                             style={"height":"520px"},
-                            figure=go.Figure(),  # Initialize with empty figure
-                            config={
-                                'displayModeBar': True,
-                                'displaylogo': False,
-                                'modeBarButtons': [['toImage', 'resetViews']] 
-                            }
+                            figure=go.Figure()  # Initialize with empty figure
                         )
                     ],
                     style={"height":"520px"}
@@ -1800,7 +1756,7 @@ def create_layout(server=None):
             ),
             html.Div([
                 html.Button(
-                    'Export Data to CSV',
+                    'Export Data',
                     id='btn-export-table-csv',
                     n_clicks=0,
                     style={
@@ -1835,7 +1791,6 @@ def create_layout(server=None):
                             ] if not TABLE_DF_YEARLY.empty else [],
                             data=TABLE_DF_YEARLY.to_dict("records") if not TABLE_DF_YEARLY.empty else [],
                             page_action='none',
-                            fixed_rows={'headers': True},  # Freeze headers
                             markdown_options={"link_target": "_blank"},
                             style_table={
                                 "overflowX": "auto", 
@@ -1853,8 +1808,7 @@ def create_layout(server=None):
                                 "whiteSpace": "normal",
                                 "color": "#1f3b6f",
                                 "minWidth": "90px",
-                                "textAlign": "right",
-                                "padding": "5px"  # Reduced padding for thinner rows
+                                "textAlign": "right"
                             },
 
                             # Removed style_cell_conditional to keep all columns right-aligned
@@ -3216,7 +3170,7 @@ def register_callbacks(dash_app, server):
                     empty_df = pd.DataFrame({"year": [str(y) for y in range(2006, 2025)], "value": [0]*19})
                     fig = px.bar(empty_df, x="year", y="value", labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                     fig.update_layout(
-                        # title removed
+                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                         xaxis_title="Year",
                         yaxis_title="Production Volume ('000 b/d)",
                         barmode="stack",
@@ -3305,7 +3259,7 @@ def register_callbacks(dash_app, server):
                     empty_df = pd.DataFrame({"year": years_sorted, "value": [0]*len(years_sorted)})
                     fig = px.bar(empty_df, x="year", y="value", labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                     fig.update_layout(
-                        # title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
+                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                         xaxis_title="Year",
                         yaxis_title="Production Volume ('000 b/d)",
                         barmode="stack",
@@ -3417,7 +3371,7 @@ def register_callbacks(dash_app, server):
                                          x=0.5, y=0.5, showarrow=False,
                                          font=dict(size=14, color='#7f8c8d'))
                         fig.update_layout(
-                            # title removed
+                            title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                             xaxis_title="Year",
                             yaxis_title="Production Volume ('000 b/d)",
                             plot_bgcolor="white",
@@ -3435,7 +3389,7 @@ def register_callbacks(dash_app, server):
                         fig = px.bar(empty_df, x="year", y="value", color="Stream", 
                                     labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                         fig.update_layout(
-                            # title removed
+                            title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                             xaxis_title="Year",
                             yaxis_title="Production Volume ('000 b/d)",
                             barmode="stack",
@@ -3486,7 +3440,7 @@ def register_callbacks(dash_app, server):
                     empty_df = pd.DataFrame({"year": years_sorted, "value": [0]*len(years_sorted)})
                     fig = px.bar(empty_df, x="year", y="value", labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
                     fig.update_layout(
-                        # title removed
+                        title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                         xaxis_title="Year",
                         yaxis_title="Production Volume ('000 b/d)",
                         barmode="stack",
@@ -3578,16 +3532,12 @@ def register_callbacks(dash_app, server):
                 year_to_index = {year: idx for idx, year in enumerate(years_sorted)}
                 
                 for year in years_sorted:
-                    param_production_value = year_production_values.get(year)
-                    # Prefer sum of bars (displayed data) to ensure visual consistency
-                    # Fallback to ProductionDataValue only if sum is 0
-                    bar_sum = year_totals_dict.get(year, 0)
-                    if bar_sum > 0:
-                        production_value = bar_sum
-                    else:
-                        production_value = param_production_value
+                    # Prefer ProductionDataValue, fallback to sum of bars
+                    production_value = year_production_values.get(year)
+                    print(f"DEBUG BREAKDOWN YEARLY: Year {year} - ProductionDataValue: {production_value}, Sum of bars: {year_totals_dict.get(year, 0)}")
                     
-                    print(f"DEBUG BREAKDOWN YEARLY: Year {year} - Bar Sum: {bar_sum}, ProductionDataValue (ignored if bar>0): {param_production_value}, Final Value: {production_value}")
+                    if production_value is None or production_value == 0:
+                        production_value = year_totals_dict.get(year, 0)
                     
                     # Always show annotation if we have a value (either ProductionDataValue or sum)
                     if production_value > 0:
@@ -3631,6 +3581,13 @@ def register_callbacks(dash_app, server):
                 # Recalculate Y-axis ticks based on the max value needed for annotations
                 y_axis_max, y_axis_ticks = _calculate_yaxis_ticks(base_max)
                 
+                # Ensure y_axis_max is at least as high as needed for annotations
+                if y_axis_max < base_max * 1.1:
+                    y_axis_max = base_max * 1.25
+                    # Recalculate ticks with the adjusted max
+                    tick_step = y_axis_max / 4
+                    y_axis_ticks = [0, tick_step, tick_step * 2, tick_step * 3, y_axis_max]
+                
                 print(f"DEBUG BREAKDOWN YEARLY: max_bar_height={max_bar_height}, max_annotation_y={max_annotation_y}, expected_max_annotation_y={expected_max_annotation_y}, base_max={base_max}, y_axis_max={y_axis_max}, y_axis_ticks={y_axis_ticks}")
                 
                 # Verify all annotations are within Y-axis range
@@ -3646,7 +3603,7 @@ def register_callbacks(dash_app, server):
                 fig.update_layout(
                     xaxis_title="",
                     yaxis_title="Production Volume ('000 b/d)",
-                    title=None, # title removed
+                    title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                     xaxis=dict(
                         showgrid=False,  # Remove X-axis grid lines (match original)
                         gridcolor="#e0e0e0", 
@@ -3948,7 +3905,7 @@ def register_callbacks(dash_app, server):
                 
                 # Update layout
                 fig.update_layout(
-                    # title removed
+                    title=dict(text=title_text, font=dict(color="#d35400", size=18, family="Arial, sans-serif"), x=0.5, xanchor="center", y=0.98),
                     showlegend=False,
                     plot_bgcolor="white",
                     paper_bgcolor="white",
@@ -4595,32 +4552,29 @@ def register_callbacks(dash_app, server):
             filename = "crude_production_breakdown.csv"
             
             if tab == "yearly":
-                df = BAR_DF_YEARLY.copy()
-                print(f"DEBUG EXPORT CHART: Yearly mode. BAR_DF_YEARLY empty? {df.empty}")
+                df = BAR_LONG_YEARLY.copy()
+                print(f"DEBUG EXPORT CHART: Yearly mode. BAR_LONG_YEARLY empty? {df.empty}")
                 if not df.empty:
                     # Filter by country
                     if country:
-                        if "Country" in df.columns:
-                            df = df[df["Country"].isin(country)]
+                        df = df[df["Country"].isin(country)]
                     
                     # Filter by Profiled Streams 
                     if profiled and len(profiled) > 0:
-                        if "CrudeOil" in df.columns:
-                            df = df[df["CrudeOil"].isin(profiled)]
+                        df = df[df["Stream"].isin(profiled)]
                     
                     df_export = df
                     filename = "crude_production_breakdown_yearly.csv"
             else:
                 # Monthly
-                df = BAR_DF_MONTHLY.copy()
-                print(f"DEBUG EXPORT CHART: Monthly mode. BAR_DF_MONTHLY empty? {df.empty}, production_years={production_years}")
+                df = BAR_LONG_MONTHLY.copy()
+                print(f"DEBUG EXPORT CHART: Monthly mode. BAR_LONG_MONTHLY empty? {df.empty}, production_years={production_years}")
                 if not df.empty:
                     # Filter by country
                     if country:
-                        if "Country" in df.columns:
-                            df = df[df["Country"].isin(country)]
+                        df = df[df["Country"].isin(country)]
                     
-                    # Filter by Year
+                    # Filter by Year (production-year-dropdown)
                     selected_years = _resolve_years_selection(production_years)
                     print(f"DEBUG EXPORT CHART: Selected years={selected_years}")
                     if not selected_years:
@@ -4629,17 +4583,11 @@ def register_callbacks(dash_app, server):
                         else:
                              selected_years = [2024]
                     
-                    if "Year of Date" in df.columns:
-                        df = df[pd.to_numeric(df["Year of Date"], errors='coerce').astype("Int64").isin(selected_years)]
+                    if "year" in df.columns:
+                        df = df[df["year"].astype(int).isin(selected_years)]
                     
                     df_export = df
                     filename = "crude_production_breakdown_monthly.csv"
-                    
-                    # Ensure specific headers order if possible for consistency
-                    desired_order = ["Year of Date", "Month of Date", "Stream Name", "Country", "Value"]
-                    existing_cols = [c for c in desired_order if c in df_export.columns]
-                    if len(existing_cols) == len(desired_order):
-                        df_export = df_export[desired_order]
             
             print(f"DEBUG EXPORT CHART: Exporting {len(df_export)} rows to {filename}")
             if df_export.empty:
@@ -4657,119 +4605,203 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         Output("download-table-csv", "data"),
         Input("btn-export-table-csv", "n_clicks"),
-        [State("crude-country-dropdown", "value"),
-         State("production-year-dropdown", "value"),
-         State("crude-main-tabs", "value"),
-         State("filter-stream", "value"),
+        [State("filter-stream", "value"),
          State("filter-ci", "value"),
          State("filter-api", "value"),
-         State("filter-sulfur", "value")],
+         State("filter-sulfur", "value"),
+         State("crude-country-dropdown", "value"),
+         State("crude-main-tabs", "value"),
+         State("profiled-streams", "value"),
+         State("selected-country-map-store", "data"),
+         State("profiled-streams", "options")],
         prevent_initial_call=True
     )
-    def export_table_data(n_clicks, country, production_years, tab, stream_filter, ci_filter, api_filter, sulfur_filter):
-        print(f"DEBUG EXPORT TABLE: Triggered. n_clicks={n_clicks}")
+    def export_table_data(n_clicks, stream, ci, api, sulfur, country, tab, profiled_streams, selected_country_map, profiled_streams_options):
+        """
+        Export table data to CSV based on the active tab (Yearly/Monthly) and applied filters.
+        Re-executes the query to fetch raw data (Long Format) as requested.
+        """
+        print(f"DEBUG EXPORT TABLE: Triggered. n_clicks={n_clicks}, tab={tab}")
         if n_clicks is None or n_clicks <= 0:
             return no_update
         
         try:
-            _ensure_data_loaded()
-            
-            country = _resolve_countries_selection(country)
+            # Default to yearly if tab is None
             if tab is None:
                 tab = "yearly"
-            
-            df_export = pd.DataFrame()
-            filename = "global_crude_production_breakdown.csv"
-            
-            # Export raw data (flat) matching query headers, filtered by current view
-            
+
+            # ==========================================
+            # YEARLY EXPORT
+            # ==========================================
             if tab == "yearly":
-                # Use strict raw dataframe
-                df = TABLE_RAW_YEARLY.copy()
-                if not df.empty:
-                    if country:
-                        if "Country" in df.columns:
-                            df = df[df["Country"].isin(country)]
-                            
-                    if stream_filter and str(stream_filter).strip():
-                        val = str(stream_filter).strip()
-                        # Yearly query alias is "CrudeOil"
-                        if "CrudeOil" in df.columns:
-                            df = df[df["CrudeOil"].astype(str).str.contains(re.escape(val), case=False, na=False)]
-                            
-                    df_export = df
-                    filename = "global_crude_production_yearly.csv"
+                yearly_query = """
+            SELECT
+                a.country_name AS "Country",
+                a.crude_name AS "CrudeOil",
+                b.BSP_link AS profile_url,
+                EXTRACT(YEAR FROM a.yr) AS "YearReported",
+                a.production_kbpd AS "ProductionDataValue",
+                a.exports_kbpd AS "ExportDataValue"
+            FROM fact_wcod_crude a
+            LEFT JOIN dim_country grp
+                ON a.country_id = grp.dim_country_id
+            LEFT JOIN fact_wcod_crude_bsp_links b
+                ON a.crude_id = b.crude_id
+            ORDER BY a.crude_name ASC;
+        """
+                rows = execute_query(yearly_query)
+                if not rows:
+                    print("DEBUG EXPORT TABLE: No yearly data returned from query.")
+                    return no_update
+                
+                df = pd.DataFrame(rows)
+                df.columns = df.columns.str.strip()
+                
+                # Apply Filters to Yearly Data
+                
+                # 1. Country Filter (Map selection only)
+                # Dropdown country filter is ignored for Yearly table (Global view), same as UI logic
+                if selected_country_map:
+                    if "Country" in df.columns:
+                        df = df[df["Country"] == selected_country_map]
+                
+                # 2. Text Search Filter (Stream Name)
+                if stream and str(stream).strip():
+                    stream_val = str(stream).strip()
+                    if "CrudeOil" in df.columns: # Query returns CrudeOil
+                        df = df[df["CrudeOil"].astype(str).str.contains(re.escape(stream_val), case=False, na=False)]
+                
+                # 3. Profiled Stream Filter (Checklist) - Only if text search is NOT active
+                if not (stream and str(stream).strip()):
+                    if profiled_streams and len(profiled_streams) == 1:
+                        selected_stream = profiled_streams[0]
+                        # Check availability logic similar to UI
+                        available_streams = [opt.get("value") for opt in (profiled_streams_options or []) if opt.get("value")]
+                        if available_streams and len(available_streams) > 1 and len(profiled_streams) < len(available_streams):
+                            if "CrudeOil" in df.columns:
+                                df = df[df["CrudeOil"] == selected_stream]
+                
+                filename = "global_crude_production_breakdown_yearly.csv"
+                
+                print(f"DEBUG EXPORT TABLE: Exporting {len(df)} rows to {filename}")
+                return dcc.send_data_frame(df.to_csv, filename, index=False)
+
+            # ==========================================
+            # MONTHLY EXPORT
+            # ==========================================
             else:
-                # Monthly
-                df = TABLE_RAW_MONTHLY.copy()
-                if not df.empty:
-                    # Filter Country using the hidden column we added
-                    if country:
-                        if "_internal_country" in df.columns:
-                            df = df[df["_internal_country"].isin(country)]
-                            
-                    selected_years = _resolve_years_selection(production_years)
-                    if not selected_years:
-                         if PRODUCTION_YEARS: selected_years = [int(PRODUCTION_YEARS[-1])]
-                         else: selected_years = [2024]
-                    
-                    if "Year of Date" in df.columns:
-                        df = df[pd.to_numeric(df["Year of Date"], errors='coerce').astype("Int64").isin(selected_years)]
-                        
-                    # Filter Stream Name (Text Match) - alias "Crude"
-                    if stream_filter and str(stream_filter).strip():
-                        val = str(stream_filter).strip()
-                        if "Crude" in df.columns:
-                            df = df[df["Crude"].astype(str).str.contains(re.escape(val), case=False, na=False)]
-                    
-                    # Apply Metadata Filters (CI/API/Sulfur)
-                    # "ci_rank", "API", "Sulfur" (checking load_table renames/aliases)
-                    # User's query: c.ci_rank, c.api, c.sulfur_pct
-                    # load_table rename: "ci_rank" -> "CI Rank", "api" -> "API", "sulfur_pct" -> "Sulfur" is ONLY for the visual table processing
-                    # BUT we captured `monthly_raw_export` BEFORE renames!
-                    # So `TABLE_RAW_MONTHLY` columns are: "Crude", "ci_rank", "api", "sulfur_pct", "profile_url", "Year of Date", "Month of Date", "Value", "_internal_country"
-                    
-                    # So filters should use snake_case
-                    def sanitize(values):
-                        if not values: return []
-                        return [v for v in values if v and v not in ("(All)", "ALL")]
+                monthly_query = """
+            SELECT     
+                c.crude_name AS "Crude",
+                c.ci_rank,
+                c.api,
+                c.sulfur_pct,
+                l.bsp_link AS profile_url,
+                EXTRACT(YEAR FROM a.date) AS "Year of Date",
+                TO_CHAR(a.date, 'FMMonth') AS "Month of Date",
+                a.value AS "Value"
+            FROM t_wcod_monthly_stream_production a
 
-                    ci_vals = sanitize(ci_filter)
-                    if ci_vals and "ci_rank" in df.columns:
-                        df = df[df["ci_rank"].isin(ci_vals)]
-                        
-                    api_vals = sanitize(api_filter)
-                    if api_vals and "api" in df.columns:
-                         try:
-                             df = df[df["api"].apply(lambda v: classify_api_value(v) in api_vals)]
-                         except:
-                             pass
-                             
-                    sulfur_vals = sanitize(sulfur_filter)
-                    if sulfur_vals and "sulfur_pct" in df.columns:
-                        try:
-                            df = df[df["sulfur_pct"].apply(lambda v: classify_sulfur_value(v) in sulfur_vals)]
-                        except:
-                            pass
-                            
-                    df_export = df
-                    filename = "global_crude_production_monthly.csv"
-                    
-                    # Drop internal country column
-                    if "_internal_country" in df_export.columns:
-                        df_export = df_export.drop(columns=["_internal_country"])
-                    
-                    desired_order = ["Crude", "ci_rank", "api", "sulfur_pct", "profile_url", "Year of Date", "Month of Date", "Value"]
-                    existing_cols = [c for c in desired_order if c in df_export.columns]
-                    if len(existing_cols) == len(desired_order):
-                        df_export = df_export[desired_order]
+            -- Latest crude master data
+            LEFT JOIN (
+                SELECT DISTINCT ON (crude_id) 
+                    crude_id,
+                    crude_name,
+                    ci_rank,
+                    api,
+                    sulfur_pct
+                FROM fact_wcod_crude
+                ORDER BY crude_id, yr DESC
+            ) c 
+                ON a.crude_id = c.crude_id
 
-            if df_export.empty:
-                print("DEBUG EXPORT TABLE: No data to export")
-                return no_update
+            -- Profile URL
+            LEFT JOIN fact_wcod_crude_bsp_links l
+                ON a.crude_id = l.crude_id
+        """
+                rows = execute_query(monthly_query)
+                if not rows:
+                    print("DEBUG EXPORT TABLE: No monthly data returned from query.")
+                    return no_update
 
-            print(f"DEBUG EXPORT TABLE: Exporting {len(df_export)} rows")
-            return dcc.send_data_frame(df_export.to_csv, filename, index=False)
+                df = pd.DataFrame(rows)
+                df.columns = df.columns.str.strip()
+                
+                # Rename columns from query to match UI expectations if needed, but user asked for "same as query return values"
+                # The query returns: Crude, ci_rank, api, sulfur_pct, profile_url, Year of Date, Month of Date, Value
+                # Filter logic uses: CI Rank, API, Sulfur. Need to ensure mapping or adjust filter logic.
+                # Let's map for filtering purposes, but keep original for export if possible?
+                # Actually, the user wants "same header values" from query.
+                # So I should filter based on the query columns: ci_rank, api, sulfur_pct.
+                
+                # 1. Text Search Filter
+                if stream and str(stream).strip():
+                    stream_val = str(stream).strip()
+                    if "Crude" in df.columns:
+                        df = df[df["Crude"].astype(str).str.contains(re.escape(stream_val), case=False, na=False)]
+                
+                # 2. Metadata Filters (CI, API, Sulfur)
+                def sanitize(values):
+                    if not values: return []
+                    return [v for v in values if v and v not in ("(All)", "ALL")]
+
+                # CI Rank
+                ci_vals = sanitize(ci)
+                if ci_vals and "ci_rank" in df.columns:
+                    df = df[df["ci_rank"].isin(ci_vals)]
+                
+                # API
+                api_vals = sanitize(api)
+                if api_vals and "api" in df.columns:
+                     # Use helper classify_api_value
+                    df = df[df["api"].apply(lambda v: classify_api_value(v) in api_vals)]
+                
+                # Sulfur
+                sulfur_vals = sanitize(sulfur)
+                if sulfur_vals and "sulfur_pct" in df.columns:
+                    # Use helper classify_sulfur_value
+                    df = df[df["sulfur_pct"].apply(lambda v: classify_sulfur_value(v) in sulfur_vals)]
+                    
+                # 3. Country Filter 
+                # Note: Monthly query provided does NOT have a Country column! 
+                # The user's query: 
+                # SELECT c.crude_name AS "Crude", ... FROM t_wcod_monthly_stream_production a LEFT JOIN fact_wcod_crude c ...
+                # fact_wcod_crude has country_id, but the join in the user's snippet uses a subselect that DOES NOT select country_id/name.
+                # Subselect: SELECT DISTINCT ON (crude_id) crude_id, crude_name, ci_rank, api, sulfur_pct ...
+                # So the result of monthly_query DOES NOT HAVE COUNTRY info.
+                # However, the UI filter `filter_table` applies country filter to `TABLE_DF_MONTHLY`.
+                # `TABLE_DF_MONTHLY` comes from `load_table` -> `monthly_query` (lines 1101-1129 in file).
+                # Wait, looking at lines 1101-1129 in the file (Step 45), the existing `monthly_query` ALSO DOES NOT select Country.
+                # BUT `loading_table` function (checking Step 42/45 carefully)... 
+                # Ah, existing `load_table` logic constructs `monthly_df` WITHOUT country column initially?
+                # Let's check `_ensure_data_loaded` (Step 36). `COUNTRIES` are derived from `BAR_DF_YEARLY`/`BAR_DF_MONTHLY`.
+                # The `TABLE_DF_MONTHLY` seems to rely on `monthly_agg` and merges. 
+                # If the query doesn't return Country, how does the UI filter by Country?
+                # Looking at `filter_table` (Step 24, line 4253):
+                # `if "Country" in df.columns: df = df[df["Country"] == selected_country_map]`
+                # So `TABLE_DF_MONTHLY` MUST have a "Country" column.
+                # Let's check how `TABLE_DF_MONTHLY` gets Country.
+                # In `load_table` (Step 45), there is NO Country selected in `monthly_query`.
+                # Is it merged later? 
+                # Line 1089: `yearly_df["Country"] = ...` (For Yearly).
+                # For Monthly? I don't see it in the snippet 1100-1199.
+                # Maybe it's not there? 
+                # If `tbl_df_monthly` doesn't have Country, then filtering by country in `filter_table` would do nothing for it?
+                # Wait, line 4258: `if "Country" in df.columns: ...`
+                # If it's not there, it skips.
+                
+                # IMPORTANT: The user said "i want csv file of query returns".
+                # The user provided query for monthly DOES NOT include Country. 
+                # So I should NOT try to filter by Country if it's not in the query result, 
+                # AND I should not output Country column if it's not in the query.
+                # I will strictly follow the user's query columns.
+                # If the user wants country filtering, they would need to modify the query, 
+                # but they said "csv in same as query return values".
+                
+                filename = "crude_production_breakdown_monthly.csv"
+                print(f"DEBUG EXPORT TABLE: Exporting {len(df)} rows to {filename}")
+                return dcc.send_data_frame(df.to_csv, filename, index=False)
+
         except Exception as e:
             print(f"Error exporting table data: {e}")
             import traceback
