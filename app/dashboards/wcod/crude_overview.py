@@ -1560,7 +1560,7 @@ def create_layout(server=None):
             ),
             html.Div([
                 html.Button(
-                    'Export Data',
+                    'Export Data to CSV',
                     id='btn-export-map-csv',
                     n_clicks=0,
                     style={
@@ -1661,7 +1661,7 @@ def create_layout(server=None):
                 ),
                 html.Div([
                     html.Button(
-                        'Export Data',
+                        'Export Data to CSV',
                         id='btn-export-chart-csv',
                         n_clicks=0,
                         style={
@@ -1756,7 +1756,7 @@ def create_layout(server=None):
             ),
             html.Div([
                 html.Button(
-                    'Export Data',
+                    'Export Data to CSV',
                     id='btn-export-table-csv',
                     n_clicks=0,
                     style={
@@ -4530,71 +4530,120 @@ def register_callbacks(dash_app, server):
         [State("crude-country-dropdown", "value"),
          State("production-year-dropdown", "value"),
          State("profiled-streams", "value"),
-         State("crude-main-tabs", "value")],
+         State("crude-main-tabs", "value"),
+         State("selected-country-map-store", "data")],
         prevent_initial_call=True
     )
-    def export_chart_data(n_clicks, country, production_years, profiled, tab):
+    def export_chart_data(n_clicks, country, production_years, profiled, tab, selected_country_map):
+        """
+        Export chart data to CSV based on the active tab (Yearly/Monthly) and applied filters.
+        Re-executes the query to fetch raw data (Long Format) as requested.
+        """
         print(f"DEBUG EXPORT CHART: Triggered. n_clicks={n_clicks}, tab={tab}")
         if n_clicks is None or n_clicks <= 0:
             return no_update
             
         try:
-            _ensure_data_loaded()
-            print("DEBUG EXPORT CHART: Data loaded.")
-            
-            country = _resolve_countries_selection(country)
+            # Map selection overrides dropdown if present
+            if selected_country_map:
+                country = [selected_country_map]
+            else:
+                country = _resolve_countries_selection(country)
+                
             print(f"DEBUG EXPORT CHART: Resolved country={country}")
             
             if tab is None:
                 tab = "yearly"
-                
-            df_export = pd.DataFrame()
-            filename = "crude_production_breakdown.csv"
             
+            # ==========================================
+            # YEARLY CHART EXPORT
+            # ==========================================
             if tab == "yearly":
-                df = BAR_LONG_YEARLY.copy()
-                print(f"DEBUG EXPORT CHART: Yearly mode. BAR_LONG_YEARLY empty? {df.empty}")
+                yearly_query = """
+            SELECT
+                a.country_name AS "Country",
+                a.crude_name AS "CrudeOil",
+                EXTRACT(YEAR FROM a.yr) AS "YearReported",
+                a.production_kbpd AS "ProductionDataValue",
+                a.exports_kbpd AS "ExportDataValue",
+                a.ci_rank
+            FROM fact_wcod_crude a
+            LEFT JOIN dim_country grp
+                ON a.country_id = grp.dim_country_id
+        """
+                rows = execute_query(yearly_query)
+                if not rows:
+                     print("DEBUG EXPORT CHART: No yearly data returned from query.")
+                     return no_update
+                
+                df = pd.DataFrame(rows)
+                df.columns = df.columns.str.strip()
+                
                 if not df.empty:
-                    # Filter by country
+                    # Filter by Country
                     if country:
-                        df = df[df["Country"].isin(country)]
+                         if "Country" in df.columns:
+                            df = df[df["Country"].isin(country)]
                     
-                    # Filter by Profiled Streams 
+                    # Filter by Profiled Streams
                     if profiled and len(profiled) > 0:
-                        df = df[df["Stream"].isin(profiled)]
+                        if "CrudeOil" in df.columns:
+                            df = df[df["CrudeOil"].isin(profiled)]
                     
-                    df_export = df
                     filename = "crude_production_breakdown_yearly.csv"
+                    print(f"DEBUG EXPORT CHART: Exporting {len(df)} rows to {filename}")
+                    return dcc.send_data_frame(df.to_csv, filename, index=False)
+            
+            # ==========================================
+            # MONTHLY CHART EXPORT
+            # ==========================================
             else:
-                # Monthly
-                df = BAR_LONG_MONTHLY.copy()
-                print(f"DEBUG EXPORT CHART: Monthly mode. BAR_LONG_MONTHLY empty? {df.empty}, production_years={production_years}")
+                monthly_query = """
+            SELECT  
+                EXTRACT(YEAR FROM date) AS "Year of Date",
+                TO_CHAR(date, 'FMMonth') AS "Month of Date",
+                country AS "Country",
+                stream_name AS "Stream Name",
+                value AS "Value"
+            FROM t_wcod_monthly_stream_production where stream_name not in ('Total')
+            ORDER BY date DESC, stream_name;
+        """
+                rows = execute_query(monthly_query)
+                if not rows:
+                     print("DEBUG EXPORT CHART: No monthly data returned from query.")
+                     return no_update
+                
+                df = pd.DataFrame(rows)
+                df.columns = df.columns.str.strip()
+                
                 if not df.empty:
-                    # Filter by country
+                    # Filter by Country
                     if country:
-                        df = df[df["Country"].isin(country)]
+                        if "Country" in df.columns:
+                            df = df[df["Country"].isin(country)]
                     
                     # Filter by Year (production-year-dropdown)
                     selected_years = _resolve_years_selection(production_years)
                     print(f"DEBUG EXPORT CHART: Selected years={selected_years}")
+                    
+                    # Default if no years selected
                     if not selected_years:
                         if PRODUCTION_YEARS:
                              selected_years = [int(PRODUCTION_YEARS[-1])]
                         else:
                              selected_years = [2024]
                     
-                    if "year" in df.columns:
-                        df = df[df["year"].astype(int).isin(selected_years)]
+                    if "Year of Date" in df.columns:
+                        # Convert to int for comparison
+                        df["year_int"] = pd.to_numeric(df["Year of Date"], errors="coerce").fillna(0).astype(int)
+                        df = df[df["year_int"].isin(selected_years)]
+                        df = df.drop(columns=["year_int"])
                     
-                    df_export = df
                     filename = "crude_production_breakdown_monthly.csv"
+                    print(f"DEBUG EXPORT CHART: Exporting {len(df)} rows to {filename}")
+                    return dcc.send_data_frame(df.to_csv, filename, index=False)
             
-            print(f"DEBUG EXPORT CHART: Exporting {len(df_export)} rows to {filename}")
-            if df_export.empty:
-                print("DEBUG EXPORT CHART: No data to export")
-                return no_update
-                
-            return dcc.send_data_frame(df_export.to_csv, filename, index=False)
+            return no_update
 
         except Exception as e:
             print(f"Error exporting chart data: {e}")
