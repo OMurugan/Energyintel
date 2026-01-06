@@ -23,11 +23,11 @@ MAP_LAND_COLOR = "#f4f4f4"  # Light gray for land areas
 MAP_COASTLINE_COLOR = "#cccccc"  # Light gray for coastlines
 MAP_COUNTRY_BORDER_COLOR = "white"  # White country borders
 MAP_SELECTION_COLOR = "#4A4A4A"  # Dark gray for selection highlights
-MAP_SELECTION_WIDTH = 3  # Selection border width
+MAP_SELECTION_WIDTH = 2  # Selection border width
 
-# World map settings - professional zoom level and positioning
-WORLD_CENTER = {"lat": 20.0, "lon": 0.0}  # Centered world view
-WORLD_ZOOM = 1.8  # Optimal zoom for world overview
+# World map settings - optimized for carto-positron style
+WORLD_CENTER = {"lat": 15.0, "lon": 0.0}  # Slightly lower center for better world view
+WORLD_ZOOM = 1.2  # Lower zoom for better world overview with carto-positron
 
 # Lazily loaded global geojson
 _world_geojson = None
@@ -67,30 +67,35 @@ def get_mapbox_config() -> tuple[bool, str | None, dict]:
     logger.info(f"Mapbox token configured: {has_mapbox_token}")
     logger.info(f"GeoJSON data loaded: {geojson is not None}")
     
-    # Use Mapbox if we have a valid token and geojson
-    use_mapbox = has_mapbox_token and geojson is not None
+    # Use Mapbox rendering if we have GeoJSON data (even without token for carto-positron)
+    use_mapbox = geojson is not None
     
-    if not has_mapbox_token:
-        logger.warning("No valid Mapbox token - using geo fallback")
     if not geojson:
         logger.warning("No GeoJSON data - using geo fallback")
+    elif not has_mapbox_token:
+        logger.info("Using Mapbox with carto-positron (no token required)")
+    else:
+        logger.info("Using Mapbox with light style (token available)")
     
     logger.info(f"Map rendering mode: {'Mapbox' if use_mapbox else 'Geo fallback'}")
     
+    # Optimized settings for carto-positron style (no token required)
     mapbox_layout = {
-        "style": "carto-positron",  # White background style as fallback
+        "style": "carto-positron",  # Free style that works without token
         "center": WORLD_CENTER,
         "zoom": WORLD_ZOOM,
         "bearing": 0,
         "pitch": 0,
+        "uirevision": "mapbox_config",  # Preserve UI state
     }
     
+    # Only use token-based features if we have a valid token
     if has_mapbox_token:
         mapbox_layout["accesstoken"] = _mapbox_token
-        # Use Mapbox light style with proper fallback
+        # Use light style with token, but keep carto-positron as fallback
         mapbox_layout["style"] = "light"
-        # Add additional Mapbox-specific settings for better reliability
-        mapbox_layout["uirevision"] = "mapbox"  # Preserve UI state
+        # Adjust zoom slightly for light style
+        mapbox_layout["zoom"] = WORLD_ZOOM + 0.3
     
     return use_mapbox, _mapbox_token, mapbox_layout
 
