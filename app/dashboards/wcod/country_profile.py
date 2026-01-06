@@ -692,6 +692,18 @@ def create_layout():
                     dcc.Graph(
                         id='world-map-chart',
                         figure=initial_map,
+                        config={
+                            'displaylogo': False,
+                            'modeBarButtonsToRemove': [
+                                'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 
+                                'autoScale2d', 'resetScale2d', 'hoverClosestCartesian', 
+                                'hoverCompareCartesian', 'toggleSpikelines', 
+                                'zoom2d', 'resetViews', 'toggleHover',
+                                'zoomInMapbox', 'zoomOutMapbox', 'panMapbox', 
+                                'selectMapbox', 'lassoMapbox'
+                            ],
+                            'displayModeBar': True
+                        },
                         style={
                             'height': 'calc(85vh - 180px)',
                             'width': '100vw',  # Changed to viewport width
@@ -1704,7 +1716,10 @@ def create_production_table(country_name, time_period='Yearly'):
                     'id': col_id,
                     'type': 'numeric',
                     'format': {'specifier': ',.0f'},
-                    'sortable': False
+                    'sortable': False,
+                    'minWidth': '110px',
+                    'width': '110px',
+                    'maxWidth': '110px'
                 })
         
         columns.extend(date_cols)
@@ -1792,6 +1807,7 @@ def create_production_table(country_name, time_period='Yearly'):
         sort_action='native',
         sort_mode='single',
         sort_by=[{'column_id': 'Crude', 'direction': 'asc'}],
+        fixed_columns={'headers': True, 'data': 1},
         style_cell={
             'textAlign': 'right',
             'fontFamily': 'Arial, sans-serif',
@@ -1825,12 +1841,10 @@ def create_production_table(country_name, time_period='Yearly'):
             },
             {
                 'if': {'filter_query': '{Crude} = Total'},
-                'fontWeight': 'bold',
                 'backgroundColor': 'white'
             },
             {
                 'if': {'filter_query': '{Crude} = Total', 'row_index': 'odd'},
-                'fontWeight': 'bold',
                 'backgroundColor': '#f8f9fa'
             }
         ],
@@ -1839,7 +1853,9 @@ def create_production_table(country_name, time_period='Yearly'):
                 'if': {'column_id': 'Crude'},
                 'textAlign': 'left',
                 'fontWeight': '500',
-                'minWidth': '200px'
+                'minWidth': '180px',
+                'width': '180px',
+                'maxWidth': '180px'
             }
         ],
         style_header_conditional=[
@@ -1857,8 +1873,8 @@ def create_production_table(country_name, time_period='Yearly'):
             'border': '1px solid #dee2e6',
             'borderRadius': '4px',
             'backgroundColor': 'white',
-            'width': '100%',
-            'maxWidth': '100%'  # Added this line
+            'minWidth': '100%',
+            'width': '100%'
         },
         tooltip_data=[
             {
@@ -2005,7 +2021,6 @@ def create_port_details_table(country_name):
         row_data = {
             'Port Name': port_name,
             'Coordinates': format_cell_value(coordinates),
-            'Port Value': format_cell_value(row.get('port_value', '')),
             'Berths': format_cell_value(row.get('berths', '')),
             'Max Draft': format_cell_value(row.get('max_draft', '')),
             'Max length': format_cell_value(row.get('max_length', '')),
@@ -2020,7 +2035,6 @@ def create_port_details_table(country_name):
     columns = [
         {'name': 'Port Name', 'id': 'Port Name', 'type': 'text'},
         {'name': 'Coordinates', 'id': 'Coordinates', 'type': 'text'},
-        {'name': 'Port Value', 'id': 'Port Value', 'type': 'numeric'},
         {'name': 'Berths', 'id': 'Berths', 'type': 'text'},
         {'name': 'Max Draft', 'id': 'Max Draft', 'type': 'text'},
         {'name': 'Max length', 'id': 'Max length', 'type': 'text'},
@@ -2037,8 +2051,8 @@ def create_port_details_table(country_name):
         style_cell={
             'textAlign': 'left',
             'fontFamily': 'Arial, sans-serif',
-            'fontSize': '13px',
-            'padding': '12px',
+            'fontSize': '12px', # Reduced from 13px
+            'padding': '5px', # Reduced from 10px for thinner rows
             'border': '1px solid #dee2e6',
             'whiteSpace': 'normal',
             'height': 'auto'
@@ -2068,6 +2082,18 @@ def create_port_details_table(country_name):
                 'if': {'state': 'selected'},
                 'backgroundColor': '#e1f0ff',
                 'border': '1px solid #3390ff'
+            }
+        ],
+        style_cell_conditional=[
+            {
+                'if': {'column_id': 'Port Name'},
+                'width': '180px',
+                'maxWidth': '180px',
+            },
+            {
+                'if': {'column_id': 'Coordinates'},
+                'width': '180px',
+                'maxWidth': '180px',
             }
         ],
         page_action='none',
