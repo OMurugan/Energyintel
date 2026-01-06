@@ -2007,14 +2007,19 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     @dash_app.callback(
         Output("projects-country-filter", "value", allow_duplicate=True),
         Input({"type": "country-legend", "value": ALL}, "n_clicks"),
-        State("projects-country-filter", "value"),
+        [
+            State("projects-country-filter", "value"),
+            State("projects-group-filter", "value"),
+            State("projects-chart-group-filter", "value"),
+        ],
         prevent_initial_call=True,
     )
-    def toggle_country_from_legend(n_clicks_list, current_values):
-        """Toggle countries via legend blocks with updated behavior."""
+    def toggle_country_from_legend(n_clicks_list, current_values, group_filter, chart_group_filter):
+        """Toggle countries via legend blocks with group filtering."""
         ctx = callback_context
         if not ctx.triggered:
             return dash.no_update
+        
         trigger = ctx.triggered[0]["prop_id"].split(".")[0]
         try:
             trigger_id = json.loads(trigger)
@@ -2028,27 +2033,58 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         all_countries = _ordered_countries()
         current_values = current_values or []
         
+        # Apply group filtering to determine which countries are actually available
+        group_set = set(group_filter or DEFAULT_GROUPS)
+        chart_group_set = set(chart_group_filter or DEFAULT_GROUPS)
+        allowed_groups = group_set.intersection(chart_group_set)
+        
+        map_data = load_map_data()
+        filtered_countries_set = set(
+            map_data[map_data["Group"].isin(allowed_groups)]["Country"].tolist()
+        )
+        
+        # If clicked country is not in filtered set, do nothing
+        if country not in filtered_countries_set:
+            return dash.no_update
+        
         # Resolve current selection (handle "(All)" case)
         resolved_countries = _resolve_countries(current_values, all_countries)
         
         # Check if only this country is currently selected
         if len(resolved_countries) == 1 and country in resolved_countries:
-            # If clicking the same active country, reset to show all countries
-            new_values = ["(All)"] + all_countries
+            # If clicking the same active country, reset to show all filtered countries
+            new_values = ["(All)"] + sorted(filtered_countries_set)
         else:
             # Otherwise, select only this country
             new_values = [country]
         
         return new_values
 
+    # In the update_country_legend_styles callback, add the group filters as inputs:
     @dash_app.callback(
         Output({"type": "country-legend", "value": ALL}, "style"),
-        Input("projects-country-filter", "value"),
+        [
+            Input("projects-country-filter", "value"),
+            Input("projects-group-filter", "value"),
+            Input("projects-chart-group-filter", "value"),
+        ],
     )
-    def update_country_legend_styles(selected_countries):
-        """Dim legend items that are not selected."""
+    def update_country_legend_styles(selected_countries, group_filter, chart_group_filter):
+        """Dim legend items that are not selected and hide those filtered out by group."""
         all_countries = _ordered_countries()
         selected_set = set(_resolve_countries(selected_countries, all_countries))
+        
+        # Apply same group filtering logic as the map
+        group_set = set(group_filter or DEFAULT_GROUPS)
+        chart_group_set = set(chart_group_filter or DEFAULT_GROUPS)
+        allowed_groups = group_set.intersection(chart_group_set)
+        
+        # Get map data and filter by allowed groups
+        map_data = load_map_data()
+        filtered_countries_set = set(
+            map_data[map_data["Group"].isin(allowed_groups)]["Country"].tolist()
+        )
+        
         base_style = {
             "display": "flex",
             "alignItems": "center",
@@ -2064,15 +2100,21 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         styles = []
         for country in all_countries:
             is_selected = country in selected_set
-            styles.append(
-                {
-                    **base_style,
-                    "backgroundColor": "#eef2ff" if is_selected else "#ffffff",
-                    "borderColor": "#4e79a7" if is_selected else "#e0e0e0",
-                    "fontWeight": "600" if is_selected else "400",
-                    "opacity": 1.0 if is_selected else 0.35,
-                }
-            )
+            is_filtered_by_group = country in filtered_countries_set
+            
+            if not is_filtered_by_group:
+                # Hide countries filtered out by group selection
+                styles.append({**base_style, "display": "none"})
+            else:
+                styles.append(
+                    {
+                        **base_style,
+                        "backgroundColor": "#eef2ff" if is_selected else "#ffffff",
+                        "borderColor": "#4e79a7" if is_selected else "#e0e0e0",
+                        "fontWeight": "600" if is_selected else "400",
+                        "opacity": 1.0 if is_selected else 0.35,
+                    }
+                )
         return styles
 
     @dash_app.callback(
