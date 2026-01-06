@@ -105,7 +105,27 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
         company_pc_case = "a.operator_pc AS company_pc"
     
     query = f"""
-    WITH base AS (
+    WITH all_countries AS (
+        SELECT DISTINCT c.country_long_name AS country
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
+        WHERE a.include = TRUE
+            AND c.country_long_name IS NOT NULL
+            AND TRIM(c.country_long_name) != ''
+    ),
+    all_periods AS (
+        SELECT 2025 AS year, 'Q1' AS quarter UNION ALL SELECT 2025, 'Q2' UNION ALL SELECT 2025, 'Q3' UNION ALL SELECT 2025, 'Q4' UNION ALL
+        SELECT 2026, 'Q1' UNION ALL SELECT 2026, 'Q2' UNION ALL SELECT 2026, 'Q3' UNION ALL SELECT 2026, 'Q4' UNION ALL
+        SELECT 2027, 'Q1' UNION ALL SELECT 2027, 'Q2' UNION ALL SELECT 2027, 'Q3' UNION ALL SELECT 2027, 'Q4' UNION ALL
+        SELECT 2028, 'Q1' UNION ALL SELECT 2028, 'Q2' UNION ALL SELECT 2028, 'Q3' UNION ALL SELECT 2028, 'Q4' UNION ALL
+        SELECT 2029, 'Q1' UNION ALL SELECT 2029, 'Q2' UNION ALL SELECT 2029, 'Q3' UNION ALL SELECT 2029, 'Q4'
+    ),
+    skeleton AS (
+        SELECT c.country, p.year, p.quarter
+        FROM all_countries c
+        CROSS JOIN all_periods p
+    ),
+    base AS (
         SELECT
             a.project_id,
             a.project_name,
@@ -149,68 +169,77 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
                 ('2029_Q1', "2029_Q1"), ('2029_Q2', "2029_Q2"),
                 ('2029_Q3', "2029_Q3"), ('2029_Q4', "2029_Q4")
         ) AS t(qtr, value)
+    ),
+    aggregated AS (
+        SELECT
+            year_of_period,
+            quarter_of_period,
+            country,
+            SUM((production_value * company_pc) / 100.0) AS value_company
+        FROM unpvt
+        GROUP BY 1, 2, 3
     )
     SELECT
-        year_of_period AS "Year of Period",
-        quarter_of_period AS "Quarter of Period",
-        country AS "Country",
-        SUM((production_value * company_pc) / 100.0) AS value_company,
+        s.year AS "Year of Period",
+        s.quarter AS "Quarter of Period",
+        s.country AS "Country",
+        COALESCE(a.value_company, 0) AS value_company,
         CASE
-            WHEN country = 'Algeria' THEN '#a0cbe8'
-            WHEN country = 'Angola' THEN '#4e79a7'
-            WHEN country = 'Argentina' THEN '#f28e2b'
-            WHEN country = 'Australia' THEN '#ffbe7d'
-            WHEN country = 'Azerbaijan' THEN '#8cd17d'
-            WHEN country = 'Brazil' THEN '#d7b5a6'
-            WHEN country = 'Brunei' THEN '#f1ce63'
-            WHEN country = 'Cameroon' THEN '#e15759'
-            WHEN country = 'Canada' THEN '#86bcb6'
-            WHEN country = 'China' THEN '#79706e'
-            WHEN country = 'Cote d''Ivoire' THEN '#d37295'
-            WHEN country = 'Denmark' THEN '#d37295'
-            WHEN country = 'Egypt' THEN '#b07aa1'
-            WHEN country = 'Gabon' THEN '#d4a6c8'
-            WHEN country = 'Ghana' THEN '#9d7660'
-            WHEN country = 'Guyana' THEN '#76b7b2'
-            WHEN country = 'India' THEN '#76b7b2'
-            WHEN country = 'Indonesia' THEN '#4e79a7'
-            WHEN country = 'Iran' THEN '#a0cbe8'
-            WHEN country = 'Iraq' THEN '#9c755f'
-            WHEN country = 'Kazakhstan' THEN '#59a14f'
-            WHEN country = 'Kuwait' THEN '#b6992d'
-            WHEN country = 'Libya' THEN '#76b7b2'
-            WHEN country = 'Malaysia' THEN '#86bcb6'
-            WHEN country = 'Mexico' THEN '#76b7b2'
-            WHEN country = 'Namibia' THEN '#79706e'
-            WHEN country = 'Neutral Zone' THEN '#79706e'
-            WHEN country = 'Niger' THEN '#bab0ac'
-            WHEN country = 'Nigeria' THEN '#59a14f'
-            WHEN country = 'Norway' THEN '#b07aa1'
-            WHEN country = 'Oman' THEN '#9c755f'
-            WHEN country = 'Qatar' THEN '#4e79a7'
-            WHEN country = 'Russia' THEN '#4e79a7'
-            WHEN country = 'Saudi Arabia' THEN '#8cd17d'
-            WHEN country = 'Senegal' THEN '#f28e2b'
-            WHEN country = 'Suriname' THEN '#bab0ac'
-            WHEN country = 'Thailand' THEN '#f1ce63'
-            WHEN country = 'Trinidad and Tobago' THEN '#f1ce63'
-            WHEN country = 'Turkey' THEN '#8cd17d'
-            WHEN country = 'Turkmenistan' THEN '#8cd17d'
-            WHEN country = 'Uganda' THEN '#e15759'
-            WHEN country = 'United Arab Emirates' THEN '#edc948'
-            WHEN country = 'United Kingdom' THEN '#b07aa1'
-            WHEN country = 'United States' THEN '#ff9da7'
-            WHEN country = 'Vietnam' THEN '#499894'
+            WHEN s.country = 'Algeria' THEN '#a0cbe8'
+            WHEN s.country = 'Angola' THEN '#4e79a7'
+            WHEN s.country = 'Argentina' THEN '#f28e2b'
+            WHEN s.country = 'Australia' THEN '#ffbe7d'
+            WHEN s.country = 'Azerbaijan' THEN '#8cd17d'
+            WHEN s.country = 'Brazil' THEN '#d7b5a6'
+            WHEN s.country = 'Brunei' THEN '#f1ce63'
+            WHEN s.country = 'Cameroon' THEN '#e15759'
+            WHEN s.country = 'Canada' THEN '#86bcb6'
+            WHEN s.country = 'China' THEN '#79706e'
+            WHEN s.country = 'Cote d''Ivoire' THEN '#d37295'
+            WHEN s.country = 'Denmark' THEN '#d37295'
+            WHEN s.country = 'Egypt' THEN '#b07aa1'
+            WHEN s.country = 'Gabon' THEN '#d4a6c8'
+            WHEN s.country = 'Ghana' THEN '#9d7660'
+            WHEN s.country = 'Guyana' THEN '#76b7b2'
+            WHEN s.country = 'India' THEN '#76b7b2'
+            WHEN s.country = 'Indonesia' THEN '#4e79a7'
+            WHEN s.country = 'Iran' THEN '#a0cbe8'
+            WHEN s.country = 'Iraq' THEN '#9c755f'
+            WHEN s.country = 'Kazakhstan' THEN '#59a14f'
+            WHEN s.country = 'Kuwait' THEN '#b6992d'
+            WHEN s.country = 'Libya' THEN '#76b7b2'
+            WHEN s.country = 'Malaysia' THEN '#86bcb6'
+            WHEN s.country = 'Mexico' THEN '#76b7b2'
+            WHEN s.country = 'Namibia' THEN '#79706e'
+            WHEN s.country = 'Neutral Zone' THEN '#79706e'
+            WHEN s.country = 'Niger' THEN '#bab0ac'
+            WHEN s.country = 'Nigeria' THEN '#59a14f'
+            WHEN s.country = 'Norway' THEN '#b07aa1'
+            WHEN s.country = 'Oman' THEN '#9c755f'
+            WHEN s.country = 'Qatar' THEN '#4e79a7'
+            WHEN s.country = 'Russia' THEN '#4e79a7'
+            WHEN s.country = 'Saudi Arabia' THEN '#8cd17d'
+            WHEN s.country = 'Senegal' THEN '#f28e2b'
+            WHEN s.country = 'Suriname' THEN '#bab0ac'
+            WHEN s.country = 'Thailand' THEN '#f1ce63'
+            WHEN s.country = 'Trinidad and Tobago' THEN '#f1ce63'
+            WHEN s.country = 'Turkey' THEN '#8cd17d'
+            WHEN s.country = 'Turkmenistan' THEN '#8cd17d'
+            WHEN s.country = 'Uganda' THEN '#e15759'
+            WHEN s.country = 'United Arab Emirates' THEN '#edc948'
+            WHEN s.country = 'United Kingdom' THEN '#b07aa1'
+            WHEN s.country = 'United States' THEN '#ff9da7'
+            WHEN s.country = 'Vietnam' THEN '#499894'
             ELSE NULL
         END AS "Country Color"
-    FROM unpvt
-    GROUP BY
-        year_of_period,
-        quarter_of_period,
-        country
+    FROM skeleton s
+    LEFT JOIN aggregated a ON s.country = a.country 
+        AND s.year = a.year_of_period 
+        AND s.quarter = a.quarter_of_period
     ORDER BY
-        country,
-        quarter_of_period;
+        s.country,
+        s.year,
+        s.quarter;
     """
     
     try:
@@ -1379,7 +1408,9 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
             'yanchor': 'top',
             'font': {'size': 18, 'family': 'Arial, sans-serif', 'color': '#FF8C42'}
         },
-        margin=dict(l=0, r=0, t=50, b=10) # Adjust top margin for title
+        margin=dict(l=0, r=0, t=50, b=10), # Adjust top margin for title
+        mapbox_zoom=0.9,
+        mapbox_style="carto-positron"
     )
     
     # Add copyright annotation at bottom left
@@ -1550,9 +1581,15 @@ def create_layout():
                         }
                     )
                 ], style={'width': '100%', 'display': 'block', 'height': '25px', 'marginBottom': '15px', 'marginTop': '15px'}),
-                dcc.Graph(
-                    id='projects-company-bar-chart',
-                    style={'height': '520px', 'marginBottom': '30px'}
+                dcc.Loading(
+                    id="loading-projects-company-bar-chart",
+                    type="default",
+                    color="#fe5000",
+                    style={'padding': '20px'},
+                    children=dcc.Graph(
+                        id='projects-company-bar-chart',
+                        style={'height': '520px', 'marginBottom': '30px'}
+                    )
                 ),
                 html.Div([
                     html.Div([
@@ -1575,12 +1612,18 @@ def create_layout():
                             }
                         )
                     ], style={'width': '100%', 'display': 'block', 'height': '25px', 'marginBottom': '15px', 'marginTop': '15px'}),
-                    dcc.Graph(
-                        id='projects-company-map',
-                        style={
-                            'height': '520px',
-                            'width': '100%'
-                        }
+                    dcc.Loading(
+                        id="loading-projects-company-map",
+                        type="default",
+                        color="#fe5000",
+                        style={'padding': '20px'},
+                        children=dcc.Graph(
+                            id='projects-company-map',
+                            style={
+                                'height': '520px',
+                                'width': '100%'
+                            }
+                        )
                     ),
                     html.Div([
                         html.Div(id='year-of-period-container', children=[
@@ -1837,6 +1880,8 @@ def create_layout():
             dcc.Loading(
                 id="loading-projects-company-table",
                 type="default",
+                color="#fe5000",
+                style={'padding': '20px'},
                 children=dash_table.DataTable(
                     id='projects-company-table',
                     columns=[],
