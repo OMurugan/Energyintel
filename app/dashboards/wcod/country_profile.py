@@ -1581,17 +1581,17 @@ def create_empty_map():
                 x=0.5, y=0.5, showarrow=False,
                 font=dict(size=16, color='#7f8c8d')
             ),
-            # dict(
-            #     text="© 2025 Mapbox © OpenStreetMap",
-            #     xref="paper", yref="paper",
-            #     x=0.01, y=0.01,
-            #     xanchor="left", yanchor="bottom",
-            #     showarrow=False,
-            #     font=dict(size=10, color='#666666'),
-            #     bgcolor='rgba(255,255,255,0.7)',
-            #     bordercolor='rgba(255,255,255,0.7)',
-            #     borderwidth=1
-            # )
+            dict(
+                text="© 2025 Mapbox © OpenStreetMap",
+                xref="paper", yref="paper",
+                x=0.01, y=0.01,
+                xanchor="left", yanchor="bottom",
+                showarrow=False,
+                font=dict(size=10, color='#666666'),
+                bgcolor='rgba(255,255,255,0.7)',
+                bordercolor='rgba(255,255,255,0.7)',
+                borderwidth=1
+            )
         ]
     )
     

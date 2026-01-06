@@ -2019,22 +2019,22 @@ def create_layout(server=None):
                     "backgroundColor": "white"
                 }, children=[
                     dcc.Graph(id="loading-ports-map", figure=map_fig, config={"displayModeBar": False}),
-                        html.Div([
-                            html.A("© 2025 Mapbox", href="https://www.mapbox.com/about/maps", target="_blank", style={
-                                "color": "#666",
-                                "textDecoration": "none"
-                            }),
-                            " ",
-                            html.A("© OpenStreetMap", href="https://www.openstreetmap.org/about", target="_blank", style={
-                                "color": "#666",
-                                "textDecoration": "none"
-                            })
-                        ], style={
-                            "fontSize": "10px",
-                            "color": "#666",
-                            "marginTop": "5px",
-                            "textAlign": "left"
-                        })
+                        # html.Div([
+                        #     html.A("© 2025 Mapbox", href="https://www.mapbox.com/about/maps", target="_blank", style={
+                        #         "color": "#666",
+                        #         "textDecoration": "none"
+                        #     }),
+                        #     " ",
+                        #     html.A("© OpenStreetMap", href="https://www.openstreetmap.org/about", target="_blank", style={
+                        #         "color": "#666",
+                        #         "textDecoration": "none"
+                        #     })
+                        # ], style={
+                        #     "fontSize": "10px",
+                        #     "color": "#666",
+                        #     "marginTop": "5px",
+                        #     "textAlign": "left"
+                        # })
                     ]),
                 ]),
                 
