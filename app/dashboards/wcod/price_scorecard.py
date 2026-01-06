@@ -745,13 +745,13 @@ def register_callbacks(dash_app, server):
                     {
                         'if': {'column_id': 'Year'},
                         'textAlign': 'left',
-                        'fontWeight': 'normal',
+                        'fontWeight': 'bold',
                         'color': '#1b365d'
                     },
                     {
                         'if': {'column_id': 'Month'},
                         'textAlign': 'left',
-                        'fontWeight': 'normal',
+                        'fontWeight': 'bold',
                         'color': '#1b365d'
                     }
                 ] + [
@@ -766,28 +766,28 @@ def register_callbacks(dash_app, server):
                     {
                         'if': {'header_index': 0},
                         'backgroundColor': 'white',
-                        'fontWeight': 'bold',
+                        'fontWeight': '900',
                         'textAlign': 'center',
                         'color': '#ff6600'
                     },
                     {
                         'if': {'header_index': 1},
                         'backgroundColor': 'white',
-                        'fontWeight': 'bold',
+                        'fontWeight': '900',
                         'textAlign': 'center',
                         'color': '#1b365d'
                     },
                     {
                         'if': {'header_index': 2},
                         'backgroundColor': 'white',
-                        'fontWeight': 'bold',
+                        'fontWeight': '900',
                         'textAlign': 'center',
                         'color': '#1b365d'
                     },
                     {
                         'if': {'header_index': 3},
                         'backgroundColor': 'white',
-                        'fontWeight': 'normal',
+                        'fontWeight': '900',
                         'textAlign': 'center',
                         'color': '#1b365d'
                     }
@@ -799,15 +799,59 @@ def register_callbacks(dash_app, server):
                 css=[
                     {
                         'selector': 'tbody tr:nth-child(odd) td',
-                        'rule': 'background-color: #f0f0f0 !important;'
+                        'rule': 'background-color: #f0f0f0 !important; color: #1b365d !important;'
                     },
                     {
                         'selector': 'tbody tr:nth-child(even) td',
-                        'rule': 'background-color: white !important;'
+                        'rule': 'background-color: white !important; color: #1b365d !important;'
+                    },
+                    {
+                        'selector': 'tbody tr:nth-child(odd) td[data-dash-column="Year"], tbody tr:nth-child(even) td[data-dash-column="Year"]',
+                        'rule': 'font-weight: bold !important; color: #1b365d !important;'
+                    },
+                    {
+                        'selector': 'tbody tr:nth-child(odd) td[data-dash-column="Month"], tbody tr:nth-child(even) td[data-dash-column="Month"]',
+                        'rule': 'font-weight: bold !important; color: #1b365d !important;'
                     },
                     {
                         'selector': '.dash-table-tooltip',
                         'rule': 'display: none'
+                    },
+                    {
+                        'selector': '#price-scorecard-table thead tr:nth-child(1) th',
+                        'rule': 'font-weight: 900 !important; text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor !important;'
+                    },
+                    {
+                        'selector': '#price-scorecard-table thead tr:nth-child(2) th',
+                        'rule': 'font-weight: 900 !important; text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor !important;'
+                    },
+                    {
+                        'selector': '#price-scorecard-table thead tr:nth-child(3) th',
+                        'rule': 'font-weight: 900 !important; text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor !important;'
+                    },
+                    {
+                        'selector': '#price-scorecard-table th[data-dash-column="Year"]',
+                        'rule': 'font-weight: 900 !important; text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor !important;'
+                    },
+                    {
+                        'selector': '#price-scorecard-table th[data-dash-column="Month"]',
+                        'rule': 'font-weight: 900 !important; text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor !important;'
+                    },
+                    {
+                        'selector': '#price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Year"]',
+                        'rule': 'font-weight: 900 !important; text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor !important;'
+                    },
+                    {
+                        'selector': '#price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Month"]',
+                        'rule': 'font-weight: 900 !important; text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor !important;'
+                    },
+                    {
+                        'selector': '#price-scorecard-table thead th[data-dash-column="Year"]',
+                        'rule': 'font-weight: 900 !important; text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor !important;'
+                    },
+                    {
+                        'selector': '#price-scorecard-table thead th[data-dash-column="Month"]',
+                        'rule': 'font-weight: 900 !important; text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor !important;'
                     },
                     {
                         'selector': '#price-scorecard-table .dash-spreadsheet-container th',
@@ -836,6 +880,14 @@ def register_callbacks(dash_app, server):
                     {
                         'selector': '#price-scorecard-table .dash-spreadsheet-container.row-selection-active tbody tr.row-selected td.row-cell-selected',
                         'rule': 'opacity: 1 !important; background-color: #b3d9ff !important; color: #1b365d !important; font-weight: 600 !important; border: none !important;'
+                    },
+                    {
+                        'selector': '#price-scorecard-table td[data-dash-column="Year"]',
+                        'rule': 'font-weight: bold !important;'
+                    },
+                    {
+                        'selector': '#price-scorecard-table td[data-dash-column="Month"]',
+                        'rule': 'font-weight: bold !important;'
                     }
                 ]
             )
