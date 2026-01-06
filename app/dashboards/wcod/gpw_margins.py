@@ -1475,7 +1475,11 @@ def create_layout():
                             ),
                         ], className='col-md-6', style={'padding': '5px 15px'})
                     ], className='row')
-                ], className='col-md-12', style={'margin': '0', 'padding': '0'}),
+                ], className='col-md-10', style={'margin': '0', 'padding': '0'}),
+                
+                # Empty column to maintain layout (filters shown in section above)
+                html.Div([
+                ], className='col-md-2', style={'padding': '0px 15px'}),
             ], className='row')
         ], style={'padding': '0px 5px', 'marginBottom': '0px', 'marginTop': '0px'}),
         
