@@ -1759,7 +1759,7 @@ def create_layout(server=None):
                     "border": "1px solid #ddd",
                     "borderRadius": "4px",
                     "backgroundColor": "#f9f9f9",
-                    "maxHeight": "330px",
+                    "maxHeight": "350px",
                     "overflowY": "auto",
                     "fontSize": "10px",
                 })
@@ -1828,7 +1828,7 @@ def create_layout(server=None):
                                 "color": "#1f3b6f",
                                 "minWidth": "90px",
                                 "textAlign": "right",
-                                "padding": "2px",
+                                "padding": "1px",
                                 "height": "auto"
                             },
 
@@ -1840,7 +1840,8 @@ def create_layout(server=None):
                                 "textAlign": "center",
                                 "fontWeight": "bold",
                                 "backgroundColor": "white",
-                                "color": "#1f3b6f"
+                                "color": "#1f3b6f",
+                                "padding": "4px"
                             },
 
 
