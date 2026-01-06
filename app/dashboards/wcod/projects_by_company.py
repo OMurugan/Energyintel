@@ -1534,7 +1534,7 @@ def create_layout():
             html.Div([
                 html.Div([
                      html.Button(
-                        'Download Chart CSV',
+                        'Export to CSV',
                         id='projects-company-btn-download-chart',
                         n_clicks=0,
                         style={
@@ -1557,7 +1557,7 @@ def create_layout():
                 html.Div([
                     html.Div([
                          html.Button(
-                            'Download Map CSV',
+                            'Export to CSV',
                             id='projects-company-btn-download-map',
                             n_clicks=0,
                             style={
@@ -1819,7 +1819,7 @@ def create_layout():
                     }
                 ),
                 html.Button(
-                    'Download Table CSV',
+                    'Export to CSV',
                     id='projects-company-btn-download-table',
                     n_clicks=0,
                     style={
@@ -1843,6 +1843,7 @@ def create_layout():
                     data=[],
                     tooltip_data=[],
                     tooltip_duration=None,
+                    fixed_rows={'headers': True},
                     page_action='none',
                     sort_action='native',
                     filter_action='native',  # Native filtering shows filter inputs below headers
@@ -1864,16 +1865,16 @@ def create_layout():
                         'fontSize': '12px',
                         'border': '1px solid #ddd',
                         'backgroundColor': '#fff',
-                        'fontFamily': 'Georgia, serif',
-                        'color': '#333333'
+                        'fontFamily': 'Lato, sans-serif',
+                        'color': 'rgb(27, 54, 93)'
                     },
                     style_header={
-                        'backgroundColor': '#ffffff',
+                        'backgroundColor': '#f8f9fa',
                         'fontWeight': 'bold',
-                        'fontFamily': 'Georgia, serif',
-                        'color': '#333333',
+                        'fontFamily': 'Lato, sans-serif',
+                        'color': 'rgb(27, 54, 93)',
                         'border': '1px solid #ddd',
-                        'textAlign': 'left',
+                        'textAlign': 'center',
                         'whiteSpace': 'nowrap',
                         'height': 'auto',
                         'position': 'relative'
@@ -1881,8 +1882,8 @@ def create_layout():
                     style_data={
                         'border': '1px solid #ddd',
                         'whiteSpace': 'nowrap',
-                        'fontFamily': 'Georgia, serif',
-                        'color': '#333333'
+                        'fontFamily': 'Lato, sans-serif',
+                        'color': 'rgb(27, 54, 93)'
                     },
                     style_data_conditional=[
                         {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'},
@@ -1897,7 +1898,7 @@ def create_layout():
                     ],
                     css=[{
                         'selector': '.dash-table-tooltip',
-                        'rule': 'font-size: 10px !important; font-family: Georgia, serif !important; color: #333333 !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
+                        'rule': 'font-size: 10px !important; font-family: Lato, sans-serif !important; color: rgb(27, 54, 93) !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
                     }, {
                         'selector': '.dash-table-container .row:last-child',
                         'rule': 'display: none !important;'
@@ -2145,7 +2146,8 @@ def register_callbacks(dash_app, server):
          Output('projects-company-table', 'tooltip_data'),
          Output('projects-company-table', 'columns'),
          Output('projects-company-table-data-full', 'data', allow_duplicate=True),
-         Output('projects-company-table-tooltip-full', 'data', allow_duplicate=True)],
+         Output('projects-company-table-tooltip-full', 'data', allow_duplicate=True),
+         Output('projects-company-table', 'style_cell_conditional')],
         [Input('company-filter', 'value'),
          Input('likely-to-go-filter', 'value'),
          Input('selected-countries-store', 'data')],
@@ -2189,7 +2191,7 @@ def register_callbacks(dash_app, server):
             tooltip_full = tooltip_full or []
         
         if not data_full:
-            return [], [], [], dash.no_update, dash.no_update
+            return [], [], [], dash.no_update, dash.no_update, []
         
         df = pd.DataFrame(data_full)
         
@@ -2198,7 +2200,7 @@ def register_callbacks(dash_app, server):
             df = df[df['Country'].isin(selected_countries)]
         
         if df.empty:
-            return [], [], [], dash.no_update, dash.no_update
+            return [], [], [], dash.no_update, dash.no_update, []
         
         # Find likely-go-ahead column
         likely_col = None
@@ -2249,7 +2251,7 @@ def register_callbacks(dash_app, server):
             df = pd.DataFrame()
         
         if df.empty:
-            return [], [], [], dash.no_update, dash.no_update
+            return [], [], [], dash.no_update, dash.no_update, []
         
         # Preserve all available columns; order them similar to projects_by_time
         base_priority = [
@@ -2382,14 +2384,41 @@ def register_callbacks(dash_app, server):
         ]
         
         columns = []
+        width_styles = []
         for col in available_cols:
             display_name = display_name_map.get(col, col)
             col_def = {'name': display_name, 'id': col}
             if col in column_widths:
-                col_def['minWidth'] = column_widths[col]
-                col_def['maxWidth'] = column_widths[col]
+                width = column_widths[col]
+                width_styles.append({
+                    'if': {'column_id': col},
+                    'minWidth': width,
+                    'width': width,
+                    'maxWidth': width,
+                })
             elif col in quarter_cols:
-                col_def['minWidth'] = '85px'
+                width_styles.append({
+                    'if': {'column_id': col},
+                    'minWidth': '85px',
+                    'width': '85px',
+                    'maxWidth': '85px',
+                })
+            
+            # Right align numeric columns
+            numeric_cols_static = [
+                'Gas Reserves (mmboe)', 'Liquids Reserves (mmbbl)', 'Total Reserves (mmboe)',
+                'API', 'Sulfur', 'First Oil Year',
+                'Operator Share %', 'Partner1 Share %', 'Partner2 Share %', 
+                'Partner3 Share %', 'Partner4 Share %', 'Partner5 Share %'
+            ]
+            
+            # Quarters are already in quarter_cols list in this file
+            if col in numeric_cols_static or col in quarter_cols:
+                 width_styles.append({
+                    'if': {'column_id': col},
+                    'textAlign': 'right'
+                })
+
             columns.append(col_def)
         
         df = df.fillna('')
@@ -2398,15 +2427,20 @@ def register_callbacks(dash_app, server):
         tooltip_data = []
         for idx, row in enumerate(data):
             tip_row = {}
-            comment_val = original_comments.iloc[idx] if idx < len(original_comments) else ''
-            if pd.notna(comment_val):
-                comment_str = str(comment_val).strip()
-                if comment_str and comment_str.lower() != 'nan':
-                    tip_row['Comments'] = {'value': comment_str, 'type': 'text'}
+            for col in available_cols:
+                if col == 'Comments':
+                     comment_val = original_comments.iloc[idx] if idx < len(original_comments) else ''
+                     val = str(comment_val).strip() if pd.notna(comment_val) else ''
+                else:
+                     val = str(row.get(col, '')).strip()
+                
+                if val and val.lower() != 'nan' and val != 'None':
+                     if col == 'Comments' or len(val) > 14:
+                          tip_row[col] = {'value': val, 'type': 'text'}
             tooltip_data.append(tip_row)
         
         # Return table data and updated full data store
-        return data, tooltip_data, columns, data_full, tooltip_full
+        return data, tooltip_data, columns, data_full, tooltip_full, width_styles
     
     # Add A/Z hover sort UI on selected headers (matches projects_latest behavior)
     dash_app.clientside_callback(

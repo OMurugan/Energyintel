@@ -891,10 +891,10 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
         id='refined-products-table',
         columns=[
             {"name": "Product", "id": "Product", "presentation": "markdown"},
-            {"name": "Cut Points (°C)", "id": "Cut Points (°C)", "presentation": "markdown"},
-            {"name": "Property", "id": "Property", "presentation": "markdown"},
-            {"name": "Unit", "id": "Unit", "presentation": "markdown"},
-            {"name": "Value", "id": "Value", "presentation": "markdown"},
+            {"name": "Cut Points (°C)", "id": "Cut Points (°C)"},
+            {"name": "Property", "id": "Property"},
+            {"name": "Unit", "id": "Unit"},
+            {"name": "Value", "id": "Value"},
         ],
         data=table_data,
         style_table={
@@ -910,29 +910,34 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
         },
         style_cell={
             "border": "1px solid #ddd",
-            "paddingLeft": "6px",
-            "paddingRight": "0px",
-            "marginTop": "4px",
-            "fontSize": "8pt",
+            "padding": "2px 8px",
+            "fontSize": "11px",
             "textAlign": "left",
             "backgroundColor": "white",
             "fontFamily": "Arial, sans-serif",
             "whiteSpace": "normal",
             "height": "auto",
-            "minHeight": "35px",
+            "minHeight": "20px",
             "verticalAlign": "middle",            
         },
         style_header={
             "backgroundColor": "#f5f5f5",
             "fontWeight": "bold",
-            "fontSize": "9pt",
+            "fontSize": "12px",
             "border": "1px solid #ddd",
-            "padding": "6px",
+            "padding": "4px 8px",
             "textAlign": "left",
             "position": "static", # Make header sticky
             "top": "0",
             "zIndex": "10",
         },
+        style_header_conditional=[
+            {
+                "if": {"column_id": "Value"},
+                "textAlign": "right",
+                "paddingRight": "0px",
+            }
+        ],
         style_data={
             "whiteSpace": "normal",
             "height": "auto"
@@ -980,6 +985,12 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
                 "fontWeight": "normal",
                 "color": "#1f3263",
                 "maxWidth": "56px",
+            },
+            # Value column right alignment
+            {
+                "if": {"column_id": "Value"},
+                "textAlign": "right",
+                "paddingRight": "0px",
             },
         ],
         css=[
@@ -1053,8 +1064,8 @@ def create_grouped_assay_table(crude_value: str | None = None):
         data=assay_data,
         columns=[
             {"name": "Property", "id": "Property", "presentation": "markdown", "minWidth": "80px", "maxWidth": "120px"},
-            {"name": "Unit", "id": "Unit", "presentation": "markdown", "minWidth": "50px", "maxWidth": "80px"}, 
-            {"name": "Value", "id": "Value", "presentation": "markdown", "minWidth": "50px", "maxWidth": "70px"}
+            {"name": "Unit", "id": "Unit", "minWidth": "50px", "maxWidth": "80px"}, 
+            {"name": "Value", "id": "Value", "minWidth": "50px", "maxWidth": "70px"}
         ],
         style_table={
             "overflowX": "auto",
@@ -1066,29 +1077,34 @@ def create_grouped_assay_table(crude_value: str | None = None):
         },
         style_cell={
             "textAlign": "left",
-            "paddingLeft": "6px",
-            "paddingRight": "0px",
-            "marginTop": "4px",
-            "fontSize": "8pt",
+            "padding": "2px 8px",
+            "fontSize": "11px",
             "fontFamily": "Arial, sans-serif",
             "border": "1px solid #e0e0e0",
             "whiteSpace": "normal",
             "height": "auto",
-            "minHeight": "35px",
+            "minHeight": "20px",
             "color": "#333333",
             "verticalAlign": "middle",
         },
         style_header={
             "backgroundColor": "#f2f2f2",
             "fontWeight": "bold",
-            "fontSize": "9pt",
+            "fontSize": "12px",
             "fontFamily": "Arial, sans-serif",
             "border": "1px solid #d0d0d0",
             "color": "#1b365d",
             "textAlign": "left",
-            "padding": "6px",
+            "padding": "4px 8px",
             "position": "relative",
         },
+        style_header_conditional=[
+            {
+                "if": {"column_id": "Value"},
+                "textAlign": "right",
+                "paddingRight": "0px",
+            }
+        ],
         style_cell_conditional=[
             {
                 "if": {"column_id": "Property"},
@@ -1098,9 +1114,7 @@ def create_grouped_assay_table(crude_value: str | None = None):
                 "maxWidth": "120px",
                 "backgroundColor": "#FFFFFF",
                 "borderRight": "2px solid #ccc",
-                "paddingLeft": "6px",
-                "paddingRight": "0px",
-                "marginTop": "4px",
+                "padding": "2px 8px",
                 "color": "#1b365d",
             },
             {
@@ -1110,13 +1124,15 @@ def create_grouped_assay_table(crude_value: str | None = None):
                 "maxWidth": "80px",
                 "backgroundColor": "#FFFFFF",
                 "borderRight": "1px solid #ddd",
+                "padding": "2px 8px",
             },
             {
                 "if": {"column_id": "Value"},
-                "textAlign": "left",
+                "textAlign": "right",
                 "minWidth": "50px",
                 "maxWidth": "70px",
                 "backgroundColor": "#FFFFFF",
+                "padding": "2px 0px",
             },
         ],
         style_data_conditional=[
@@ -1142,6 +1158,7 @@ def create_grouped_assay_table(crude_value: str | None = None):
                 'selector': '#assay-table .dash-cell',
                 'rule': 'width: auto !important;'
             },
+            # Force right alignment for markdown content in Value column (Removed)
             {
                 'selector': '.dash-cell[data-dash-column="Property"]:empty',
                 'rule': '''
@@ -1911,7 +1928,7 @@ def create_layout(server=None):
                                 "paddingBottom": "5px",
                                 "textAlign": "center"
                             }),
-                            html.Button("Export CSV", id='export-mars-assay-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                            html.Button("Export to CSV", id='export-mars-assay-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                                 'color': '#2c3e50',
                                 'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                         ]),
@@ -1935,7 +1952,7 @@ def create_layout(server=None):
                                 "paddingBottom": "5px",
                                 "textAlign": "center"
                             }),
-                            html.Button("Export CSV", id='export-refined-products-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                            html.Button("Export to CSV", id='export-refined-products-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                                 'color': '#2c3e50',
                                 'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                         ]),
@@ -1960,7 +1977,7 @@ def create_layout(server=None):
                             "paddingBottom": "5px",
                             "textAlign": "center"
                         }),
-                        html.Button("Export CSV", id='export-production-exports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        html.Button("Export to CSV", id='export-production-exports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                             'color': '#2c3e50',
                             'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                     ]),
@@ -1985,7 +2002,7 @@ def create_layout(server=None):
                         "paddingBottom": "5px",
                         "textAlign": "center"
                     }),
-                    html.Button("Export CSV", id='export-loading-ports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                    html.Button("Export to CSV", id='export-loading-ports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                         'color': '#2c3e50',
                         'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                 ]),
@@ -2038,7 +2055,7 @@ def create_layout(server=None):
                         "paddingBottom": "5px",
                         "textAlign": "center"
                     }),
-                    html.Button("Export CSV", id='export-port-details-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                    html.Button("Export to CSV", id='export-port-details-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                         'color': '#2c3e50',
                         'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                 ]),
@@ -2067,24 +2084,22 @@ def create_layout(server=None):
                         },
                         style_cell={
                             "border": "1px solid #ddd",
-                            "paddingLeft": "6px",
-                            "paddingRight": "0px",
-                            "marginTop": "4px",
-                            "fontSize": "8pt", # Consistent with other tables
+                            "padding": "2px 8px",
+                            "fontSize": "12px",
                             "textAlign": "left",
                             "backgroundColor": "white",
                             "fontFamily": "Arial, sans-serif",
                             "whiteSpace": "normal",
                             "height": "auto",
-                            "minHeight": "35px", # Consistent with other tables
+                            "minHeight": "20px",
                             "verticalAlign": "middle",
                         },
                         style_header={
                             "backgroundColor": "#f5f5f5",
                             "fontWeight": "bold",
-                            "fontSize": "9pt", # Consistent with other tables
+                            "fontSize": "12px",
                             "border": "1px solid #ddd",
-                            "padding": "6px",
+                            "padding": "4px 8px",
                             "textAlign": "left", # Default to left, then override conditionally
                             "position": "static", # Make header sticky
                             "top": "0",
@@ -2102,7 +2117,8 @@ def create_layout(server=None):
                             },
                             {
                                 "if": {"column_id": port_details_label},
-                                "textAlign": "center",
+                                "textAlign": "right",
+                                "paddingRight": "0px",
                             },
                         ],
                         style_data_conditional=[
@@ -2117,10 +2133,12 @@ def create_layout(server=None):
                                 "borderRight": "2px solid #ccc",
                                 "maxWidth": "150px", # Example max-width, adjust as needed
                                 "textAlign": "left",
+                                "padding": "2px 8px",
                             },
                             {
                                 "if": {"column_id": port_details_label},
-                                "textAlign": "center",
+                                "textAlign": "right",
+                                "padding": "2px 0px",
                             },
                         ],
                         css=[
@@ -2154,7 +2172,7 @@ def create_layout(server=None):
                             "paddingBottom": "5px",
                             "textAlign": "center"
                         }),
-                        html.Button("Export CSV", id='export-sellers-producers-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        html.Button("Export to CSV", id='export-sellers-producers-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                             'color': '#2c3e50',
                             'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                     ]),

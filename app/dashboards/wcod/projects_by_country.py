@@ -661,7 +661,7 @@ def create_layout():
                                                 color="#fe5000",
                                                 children=[
                                                     html.Button(
-                                                        "Export CSV",
+                                                        "Export to CSV",
                                                         id="export-projects-map-btn",
                                                         n_clicks=0,
                                                         style={
@@ -740,7 +740,7 @@ def create_layout():
                                                 color="#fe5000",
                                                 children=[
                                                     html.Button(
-                                                        "Export CSV",
+                                                        "Export to CSV",
                                                         id="export-projects-chart-btn",
                                                         n_clicks=0,
                                                         style={
@@ -1104,7 +1104,7 @@ def create_layout():
                                 color="#fe5000",
                                 children=[
                                     html.Button(
-                                        "Export CSV",
+                                        "Export to CSV",
                                         id="export-projects-table-btn",
                                         n_clicks=0,
                                         style={
@@ -1137,6 +1137,7 @@ def create_layout():
                                 id="projects-country-table",
                                 columns=[],  # Columns will be dynamically generated in callback
                                 data=[],
+                                fixed_rows={'headers': True},
                                 page_action="none",
                                 sort_action="native",
                                 filter_action="native",
@@ -1146,11 +1147,16 @@ def create_layout():
                                     "maxHeight": "600px",
                                 },
                                 style_cell={
-                                    "fontFamily": "Arial, sans-serif",
-                                    "fontSize": "12px",
-                                    "padding": "6px",
-                                    "whiteSpace": "normal",
-                                    "height": "auto",
+                                    'textAlign': 'left',
+                                    'padding': '8px',
+                                    'fontSize': '12px',
+                                    'fontFamily': 'Lato, sans-serif',
+                                    'color': 'rgb(27, 54, 93)',
+                                    'whiteSpace': 'nowrap',
+                                    'height': 'auto',
+                                    'overflow': 'hidden',
+                                    'textOverflow': 'ellipsis',
+                                    'maxWidth': '180px'
                                 },
                                 style_cell_conditional=[
                                     {
@@ -1163,13 +1169,39 @@ def create_layout():
                                     }
                                 ],
                                 style_header={
-                                    "backgroundColor": "#f5f6fa",
-                                    "fontWeight": "600",
+                                    'backgroundColor': '#f8f9fa',
+                                    'fontWeight': 'bold',
+                                    'fontFamily': 'Lato, sans-serif',
+                                    'color': 'rgb(27, 54, 93)',
+                                    'border': '1px solid #ddd',
+                                    'textAlign': 'center'
                                 },
+                                style_data={
+                                    'border': '1px solid #ddd',
+                                    'whiteSpace': 'nowrap',
+                                    'fontFamily': 'Lato, sans-serif',
+                                    'color': 'rgb(27, 54, 93)',
+                                    'overflow': 'hidden',
+                                    'textOverflow': 'ellipsis'
+                                },
+                                style_data_conditional=[
+                                    {
+                                        'if': {'row_index': 'odd'},
+                                        'backgroundColor': '#f9f9f9'
+                                    }
+                                ],
                                 css=[
                                     {
                                         "selector": ".dash-table-tooltip",
-                                        "rule": "font-size: 10px !important; font-family: Arial, sans-serif !important; color: #1b2838 !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;",
+                                        "rule": "font-size: 10px !important; font-family: Lato, sans-serif !important; color: rgb(27, 54, 93) !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;",
+                                    },
+                                    {
+                                        "selector": ".dash-table-container .row:last-child",
+                                        "rule": "display: none !important;",
+                                    },
+                                    {
+                                        "selector": ".previous-page, .next-page, .first-page, .last-page, .page-number, .page-number--current",
+                                        "rule": "display: none !important;",
                                     }
                                 ],
                             )
@@ -1918,8 +1950,13 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         
         # Priority 1: Handle explicit "(All)" checkbox clicks
         if "(All)" in removed and "(All)" in previous_set and not added:
-            # User explicitly unchecked "(All)" only - clear everything
-            return [], []
+            # Check if this is a direct "(All)" uncheck vs a selection change
+            # If only "(All)" was removed and nothing else changed, it's a direct uncheck
+            individual_removed = removed - {"(All)"}
+            if not individual_removed:
+                # User explicitly unchecked "(All)" only - clear everything
+                return [], []
+            # Otherwise, this is a selection change (like from map click), continue processing
             
         if "(All)" in added and "(All)" not in previous_set and len(added) == 1:
             # User explicitly checked "(All)" only - select everything
@@ -1950,8 +1987,8 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 result = individual_countries
                 return result, result
             
-            # Otherwise keep current individual selections
-            result = individual_countries
+            # Otherwise keep current selections (including "(All)" if it was already there)
+            result = selected
             return result, result
         
         # No changes detected - return current state
@@ -2240,10 +2277,15 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             all_countries = base_df["Country"].tolist()
             selected_countries = _resolve_countries(country_filter, all_countries)
             
-            # For MAP DISPLAY: Show ALL countries that match group filters
-            # Don't filter by selected countries - we want to show all countries on the map
-            # Only filter by group to match the group filter selection
-            filtered_df = base_df[base_df["Group"].isin(allowed_groups)]
+            # Check if no countries are selected - show empty map
+            if not selected_countries:
+                return _empty_figure("No countries selected. Please select at least one country to view the map.")
+            
+            # Filter by both group and country selection for map display
+            filtered_df = base_df[
+                (base_df["Group"].isin(allowed_groups)) & 
+                (base_df["Country"].isin(selected_countries))
+            ]
             
             # Determine if a single country is selected for highlighting
             selected_country = None
@@ -2301,6 +2343,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             Output("projects-country-table", "data"),
             Output("projects-country-table", "columns"),
             Output("projects-country-table", "tooltip_data"),
+            Output("projects-country-table", "style_cell_conditional"),
         ],
         [
             Input("projects-country-filter", "value"),
@@ -2317,7 +2360,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         
         if df.empty:
             logger.warning("Table data is empty after loading")
-            return [], [], []
+            return [], [], [], []
         
         groups = group_filter or DEFAULT_GROUPS
         likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
@@ -2328,11 +2371,11 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
         )
         if not chart_group_set:
-            return [], [], []
+            return [], [], [], []
 
         allowed_groups = group_set.intersection(chart_group_set)
         if not allowed_groups:
-            return [], [], []
+            return [], [], [], []
         
         # Get available countries from the dataframe
         if "Country" in df.columns:
@@ -2376,12 +2419,17 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             df = df.drop(columns=["likely_goahead_normalized"], errors="ignore")
         
         # Filter by country - use the resolved countries from country filter
-        if "Country" in df.columns and selected_countries:
-            df = df[df["Country"].isin(selected_countries)]
+        if "Country" in df.columns:
+            if not selected_countries:
+                # No countries selected - return empty dataframe
+                df = df.iloc[0:0]  # Return empty dataframe with same structure
+            else:
+                # Filter by selected countries
+                df = df[df["Country"].isin(selected_countries)]
         
         if df.empty:
             logger.warning("Table data is empty after filtering")
-            return [], [], []
+            return [], [], [], []
 
         quarter_columns = [
             "2024_Q1", "2024_Q2", "2024_Q3", "2024_Q4",
@@ -2455,7 +2503,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         
         if not available_columns:
             logger.warning("No available columns found for table display")
-            return []
+            return [], [], [], []
         
         display_df = df[available_columns].copy()
         
@@ -2532,13 +2580,48 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             'Sulfur': '80px'
         }
         
+        # Base styles for Comments column
+        style_cell_conditional = [
+            {
+                "if": {"column_id": "Comments"},
+                "whiteSpace": "nowrap",
+                "overflow": "hidden",
+                "textOverflow": "ellipsis",
+                "height": "auto",
+                "textAlign": "left",
+            }
+        ]
+
         columns = []
         for col in available_columns:
             display_name = display_name_map.get(col, col)
             col_def = {'name': display_name, 'id': col}
+            
+            # Move width definitions to style_cell_conditional
             if col in column_widths:
-                col_def['minWidth'] = column_widths[col]
-                col_def['maxWidth'] = column_widths[col]
+                width = column_widths[col]
+                style_cell_conditional.append({
+                    'if': {'column_id': col},
+                    'minWidth': width,
+                    'width': width,
+                    'maxWidth': width,
+                })
+            
+            # Right align numeric columns
+            numeric_cols_static = [
+                'Gas Reserves (mmboe)', 'Liquids Reserves (mmbbl)', 'Total Reserves (mmboe)',
+                'API', 'Sulfur', 'First Oil Year',
+                'Operator Share %', 'Partner1 Share %', 'Partner2 Share %', 
+                'Partner3 Share %', 'Partner4 Share %', 'Partner5 Share %'
+            ]
+            is_quarter = len(col) == 7 and col[4] == '_' and col[:4].isdigit() and col[5:] in ['Q1', 'Q2', 'Q3', 'Q4']
+            
+            if col in numeric_cols_static or is_quarter:
+                    style_cell_conditional.append({
+                    'if': {'column_id': col},
+                    'textAlign': 'right'
+                })
+
             columns.append(col_def)
         
         # Create tooltip_data for Comments column
@@ -2553,10 +2636,18 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                         'value': original_comment,
                         'type': 'text'
                     }
+            
+            # Add tooltips for truncated columns (len > 14)
+            for col, val in row.items():
+                if col != 'Comments':
+                    val_str = str(val).strip()
+                    if val_str and val_str.lower() != 'nan' and len(val_str) > 14:
+                        tooltip_row[col] = {'value': val_str, 'type': 'text'}
+                        
             tooltip_data.append(tooltip_row)
         
         logger.info(f"Returning {len(display_df)} rows to table")
-        return data, columns, tooltip_data
+        return data, columns, tooltip_data, style_cell_conditional
 
     # CSV Export Callbacks
     @dash_app.callback(

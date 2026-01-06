@@ -874,7 +874,7 @@ def create_layout(server):
             html.Div([
                 html.Div([
                     html.Button(
-                        "Export Data CSV",
+                        "Export to CSV",
                         id="crude-comparison-export-btn",
                         n_clicks=0,
                         style={
@@ -910,14 +910,14 @@ def create_layout(server):
                             "position": "relative",
                         },
                         style_cell={
-                            "textAlign": "center",
-                            "padding": "8px 12px",
-                            "fontSize": "11px",
+                            "textAlign": "right",
+                            "padding": "2px 8px",
+                            "fontSize": "12px",
                             "fontFamily": "Arial, sans-serif",
                             "border": "1px solid #e0e0e0",
                             "whiteSpace": "normal",
                             "height": "auto",
-                            "minHeight": "35px",
+                            "minHeight": "20px",
                             "color": "#333333",
                         },
                         style_header={
@@ -927,8 +927,8 @@ def create_layout(server):
                             "fontFamily": "Arial, sans-serif",
                             "border": "1px solid #d0d0d0",
                             "color": "#1f3263",
-                            "textAlign": "center",
-                            "padding": "10px 12px",
+                            "textAlign": "right",
+                            "padding": "4px 8px",
                             "position": "relative",
                         },
                         style_cell_conditional=[
@@ -954,7 +954,7 @@ def create_layout(server):
                             {
                                 "if": {"header": True, "column_id": [str(year) for year in range(2007, 2025)]},
                                 "color": "#1f3263",
-                                "textAlign": "center",
+                                "textAlign": "right",
                             },
                         ],
                         style_data_conditional=[
@@ -977,7 +977,7 @@ def create_layout(server):
                             {
                                 "if": {"column_id": [str(year) for year in range(2007, 2025)]},
                                 "color": "#333333",
-                                "textAlign": "center",
+                                "textAlign": "right",
                             },
                         ],
                         css=[
@@ -1017,7 +1017,7 @@ def create_layout(server):
                                 'selector': '.dash-header[data-dash-column*="20"]',
                                 'rule': '''
                                     color: #1f3263 !important;
-                                    text-align: center !important;
+                                    text-align: right !important;
                                     font-weight: bold !important;
                                 '''
                             },

@@ -1344,9 +1344,9 @@ def create_layout():
                             dcc.Dropdown(
                                 id='gpw-dashboard-export-dropdown',
                                 options=[
-                                    {'label': 'Export Dashboard PDF', 'value': 'pdf'},
-                                    {'label': 'Export Dashboard PNG', 'value': 'png'},
-                                    {'label': 'Gross Product Worth Raw Data CSV', 'value': 'raw_data_csv'}
+                                    {'label': 'Export to PDF', 'value': 'pdf'},
+                                    {'label': 'Export to PNG', 'value': 'png'},
+                                    {'label': 'Export to CSV', 'value': 'raw_data_csv'}
                                 ],
                                 placeholder='Export Data',
                                 style={
@@ -1561,7 +1561,7 @@ def create_layout():
                         ),
                         html.Div(
                             html.Button(
-                                'Download Incremental Margins CSV',
+                                'Export to CSV',
                                 id='gpw-incremental-margins-export-button',
                                 n_clicks=0,
                                 style={
@@ -1660,7 +1660,7 @@ def create_layout():
                             ),
                             html.Div([ # Existing div for button
                                 html.Button(
-                                    'Export Data Table to CSV',
+                                    'Export to CSV',
                                     id='btn-export-gpw-data-table-csv',
                                     n_clicks=0,
                                     style={

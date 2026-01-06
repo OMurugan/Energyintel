@@ -474,9 +474,9 @@ def create_layout():
                         dcc.Dropdown(
                             id='dashboard-export-dropdown',
                             options=[
-                                {'label': 'Export Data PDF', 'value': 'pdf'},
-                                {'label': 'Export Data PNG', 'value': 'png'},
-                                {'label': 'Export Data CSV', 'value': 'raw_chart_csv'}
+                                {'label': 'Export to PDF', 'value': 'pdf'},
+                                {'label': 'Export to PNG', 'value': 'png'},
+                                {'label': 'Export to CSV', 'value': 'raw_chart_csv'}
                             ],
                     placeholder='Export Data',
                             style={
@@ -675,7 +675,7 @@ def create_layout():
                     ),
                     html.Div([ # Existing div for button
                         html.Button(
-                            'Export Data to CSV',
+                            'Export to CSV',
                             id='btn-export-raw-table-csv',
                             n_clicks=0,
                             style={

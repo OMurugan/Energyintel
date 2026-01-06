@@ -7,6 +7,7 @@ from dash import dcc, html, Input, Output, callback, dash_table, State, no_updat
 import re
 from core.data_helpers import execute_query
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 def get_current_monday_date():
     """Returns the date of the current week's Monday in 'Week of Month Day, Year' format."""
@@ -218,9 +219,13 @@ def load_all_projects_data():
     return df
 
 
-# Load dataframes globally once from the database
-df_latest_updates = load_latest_updates_data()
-df_projects_table = load_all_projects_data()
+@lru_cache(maxsize=1)
+def get_latest_updates_data():
+    return load_latest_updates_data()
+
+@lru_cache(maxsize=1)
+def get_all_projects_data():
+    return load_all_projects_data()
 
 
 def create_layout():
@@ -290,7 +295,7 @@ def create_layout():
                 
                 html.Div([
                     html.Button(
-                        'Export Data to CSV',
+                        'Export to CSV',
                         id='btn-export-latest-updates-csv',
                         n_clicks=0,
                         style={
@@ -300,7 +305,7 @@ def create_layout():
                             'padding': '8px 15px',
                             'borderRadius': '4px',
                             'cursor': 'pointer',
-                            'fontSize': '13px',
+                            'fontSize': '12px',
                             'margin': '0',
                             'display': 'inline-block'
                         }
@@ -375,8 +380,8 @@ def create_layout():
                             {"name": "Project Status", "id": "Project Status", "presentation": "markdown"},
                             {"name": "First Oil", "id": "First Oil", "presentation": "markdown"},
                             {"name": "Click on the link below to go to the relevant article", "id": "Click on the link below to go to the relevant article", "presentation": "markdown"}
-                        ] if df_latest_updates is not None else [],
-                        data=df_latest_updates.to_dict('records') if df_latest_updates is not None else [],
+                        ],
+                        data=[], # Initial empty data, loaded by callback
                         style_table={
                             'overflowX': 'auto',
                             'overflowY': 'hidden',
@@ -414,7 +419,7 @@ def create_layout():
                             'borderTop': '1px solid #999999',
                             'borderLeft': '1px solid #999999',
                             'padding': '3px 5px',
-                            'textAlign': 'left',
+                            'textAlign': 'center',
                             'whiteSpace': 'normal',
                             'height': 'auto',
                             'position': 'relative',
@@ -476,7 +481,7 @@ def create_layout():
             ),
             html.Div([
                 html.Button(
-                    'Export Data to CSV',
+                    'Export to CSV',
                     id='btn-export-all-projects-csv',
                     n_clicks=0,
                     style={
@@ -505,8 +510,8 @@ def create_layout():
                             {"name": "Likely Go-ahead", "id": "Likely Go-ahead", "presentation": "markdown"},
                             {"name": "Country", "id": "Country", "presentation": "markdown"},
                             {"name": "Click on the link below to go to the relevant article", "id": "Click on the link below to go to the relevant article", "presentation": "markdown"}
-                        ] if df_projects_table is not None else [],
-                        data=df_projects_table.to_dict('records') if df_projects_table is not None else [],
+                        ],
+                        data=[], # Initial empty data, loaded by callback
                         fixed_rows={'headers': True},
                         style_table={
                             'overflowX': 'auto',
@@ -546,7 +551,7 @@ def create_layout():
                             'borderTop': '1px solid #999999',
                             'borderLeft': '1px solid #999999',
                             'padding': '3px 5px',
-                            'textAlign': 'left',
+                            'textAlign': 'center',
                             'whiteSpace': 'normal',
                             'height': 'auto',
                             'position': 'relative',
@@ -611,6 +616,10 @@ def register_callbacks(dash_app, server):
         prevent_initial_call=False
     )
     def update_dashboard_data(selected_values, previous_values):
+        # Load data on demand
+        df_latest_updates = get_latest_updates_data()
+        df_projects_table = get_all_projects_data()
+
         if selected_values is None:
             current_values = []
         else:

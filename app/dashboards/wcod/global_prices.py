@@ -307,7 +307,7 @@ def create_layout():
                 "Daily Crude Spot Prices ($/bbl)",
                 style={
                     'textAlign': 'center', # Center the title
-                    'marginTop': '0px',
+                    'marginTop': '10px',
                     'fontSize': '20px',
                     'fontWeight': 'bold',
                     'color': '#fe5000',
@@ -317,19 +317,21 @@ def create_layout():
             # Export button and download component
             html.Div([
                 html.Button(
-                    "Export Data Table to CSV",
+                    "Export to CSV",
                     id='btn-export-global-prices-data-table-csv',
                     n_clicks=0,
                     style={
-                        'margin': '10px 0',
-                        'padding': '10px 20px',
-                        'fontSize': '14px',
-                        'fontWeight': 'bold',
-                        'color': '#1b365d',
-                        'backgroundColor': '#f8f9fa',
-                        'border': '1px solid #dee2e6',
-                        'borderRadius': '5px',
-                        'cursor': 'pointer'
+                        'marginTop': '10px',
+                        'marginRight': '20px',
+                        "backgroundColor": "white",
+                        "color": "#2c3e50",
+                        "border": "1px solid #dee2e6",
+                        "padding": "6px 12px",
+                        "borderRadius": "4px",
+                        "cursor": "pointer",
+                        "fontSize": "12px",
+                        "fontWeight": "normal",
+                        'cursor': 'pointer',
                     }
                 ),
                 dcc.Download(id="download-global-prices-data-table-csv"),

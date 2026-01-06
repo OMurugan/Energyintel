@@ -113,7 +113,7 @@ def create_layout():
         html.Div([
             html.Div([
                 html.Button(
-                    "Export Data CSV",
+                    "Export to CSV",
                     id="price-scorecard-export-btn",
                     n_clicks=0,
                     style={
@@ -717,8 +717,7 @@ def register_callbacks(dash_app, server):
                     'whiteSpace': 'normal',
                     'height': 'auto',
                     'fontSize': '11px',
-                    'border': 'none',  # Remove borders by default (will be overridden for headers)
-                    'backgroundColor': 'white',
+                    'border': '1px solid #E6E6E6',
                     'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif',
                     'color': '#1b365d'  # Apply color to all table fonts
                 },
@@ -736,7 +735,7 @@ def register_callbacks(dash_app, server):
                     'color': '#1b365d'  # Apply color to all header fonts
                 },
                 style_data={
-                    'border': 'none',  # Remove data cell borders only
+                    'border': '1px solid #E6E6E6',
                     'padding': '6px 8px',
                     'fontSize': '11px',
                     'fontFamily': '"Benton Sans Low-DPI", Arial, Helvetica, sans-serif',
@@ -744,61 +743,53 @@ def register_callbacks(dash_app, server):
                 },
                 style_data_conditional=([
                     {
-                        'if': {'row_index': 'odd'},
-                        'backgroundColor': '#f9f9f9'
-                    },
-                    {
-                        'if': {'row_index': 'even'},
-                        'backgroundColor': 'white'
-                    },
-                    {
                         'if': {'column_id': 'Year'},
                         'textAlign': 'left',
                         'fontWeight': 'normal',
-                        'color': '#1b365d'  # Apply color to Year column
+                        'color': '#1b365d'
                     },
                     {
                         'if': {'column_id': 'Month'},
                         'textAlign': 'left',
                         'fontWeight': 'normal',
-                        'color': '#1b365d'  # Apply color to Month column
+                        'color': '#1b365d'
                     }
                 ] + [
                     {
                         'if': {'column_id': f'col_{i}'},
-                        'textAlign': 'center',
+                        'textAlign': 'right',
                         'fontWeight': 'normal',
-                        'color': '#1b365d'  # Apply color to data columns
+                        'color': '#1b365d'
                     } for i in range(num_cols_to_use)
-                ] + year_boundary_styles),  # Add borders only at year boundaries
+                ] + year_boundary_styles),
                 style_header_conditional=[
                     {
                         'if': {'header_index': 0},
                         'backgroundColor': 'white',
                         'fontWeight': 'bold',
                         'textAlign': 'center',
-                        'color': '#ff6600'  # Orange color for Level 1 header
+                        'color': '#ff6600'
                     },
                     {
                         'if': {'header_index': 1},
                         'backgroundColor': 'white',
                         'fontWeight': 'bold',
                         'textAlign': 'center',
-                        'color': '#1b365d'  # Apply color to Level 2 header
+                        'color': '#1b365d'
                     },
                     {
                         'if': {'header_index': 2},
                         'backgroundColor': 'white',
                         'fontWeight': 'bold',
                         'textAlign': 'center',
-                        'color': '#1b365d'  # Apply color to Level 3 header
+                        'color': '#1b365d'
                     },
                     {
                         'if': {'header_index': 3},
                         'backgroundColor': 'white',
-                        'fontWeight': 'normal',  # Regular weight for Level 4 header
+                        'fontWeight': 'normal',
                         'textAlign': 'center',
-                        'color': '#1b365d'  # Apply color to Level 4 header
+                        'color': '#1b365d'
                     }
                 ],
                 fixed_rows={'headers': True},
@@ -806,6 +797,14 @@ def register_callbacks(dash_app, server):
                 sort_action='native',
                 filter_action='none',
                 css=[
+                    {
+                        'selector': 'tbody tr:nth-child(odd) td',
+                        'rule': 'background-color: #f0f0f0 !important;'
+                    },
+                    {
+                        'selector': 'tbody tr:nth-child(even) td',
+                        'rule': 'background-color: white !important;'
+                    },
                     {
                         'selector': '.dash-table-tooltip',
                         'rule': 'display: none'

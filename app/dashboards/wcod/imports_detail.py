@@ -286,7 +286,7 @@ def create_layout():
                     'color': '#fe5000',
                     'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif'
                 }),
-                html.Button("Export CSV", id='export-imports-by-region-btn', n_clicks=0, style={
+                html.Button("Export to CSV", id='export-imports-by-region-btn', n_clicks=0, style={
                     'marginLeft': '12px',
                     'backgroundColor': 'white',
                     'color': '#2c3e50',
@@ -317,7 +317,7 @@ def create_layout():
                     'color': '#fe5000',
                     'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif'
                 }),
-                html.Button("Export CSV", id='export-imports-by-country-btn', n_clicks=0, style={
+                html.Button("Export to CSV", id='export-imports-by-country-btn', n_clicks=0, style={
                     'marginLeft': '12px',
                     'backgroundColor': 'white',
                     'color': '#2c3e50',
@@ -335,7 +335,7 @@ def create_layout():
         html.Div([
             html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
                 html.H4(id='imports-table-title', children="Japan Crude Oil Imports by Region and Country", className='imports-table-title', style={'color': '#fe5000', 'textAlign': 'center','fontSize': '21px', 'fontWeight': 'bold'}),
-                html.Button("Export CSV", id='export-imports-detail-btn', n_clicks=0, style={
+                html.Button("Export to CSV", id='export-imports-detail-btn', n_clicks=0, style={
                     'marginLeft': '12px',
                     'backgroundColor': 'white',
                     'color': '#2c3e50',

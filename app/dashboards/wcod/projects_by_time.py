@@ -355,7 +355,7 @@ def create_layout():
                            style={'marginBottom': '10px', 'fontSize': '16px', 'fontWeight': 'bold', 'fontFamily': 'Lato, sans-serif', 'color': '#fe5000', 'flexGrow': 1}),
                     html.Div([
                         html.Button(
-                            'Export Data to CSV',
+                            'Export to CSV',
                             id='btn-export-projects-chart-csv',
                             n_clicks=0,
                             style={
@@ -433,7 +433,7 @@ def create_layout():
                 html.H4("Project Details", style={'marginBottom': '0px', 'fontSize': '16px', 'fontWeight': 'bold', 'fontFamily': 'Lato, sans-serif', 'color': '#fe5000', 'flexGrow': 1}),
                 html.Div([
                     html.Button(
-                        'Export Data to CSV',
+                        'Export to CSV',
                         id='btn-export-projects-table-csv',
                         n_clicks=0,
                         style={
@@ -454,6 +454,7 @@ def create_layout():
                 type="default",
                 children=dash_table.DataTable(
                     id='projects-time-table',
+                    fixed_rows={'headers': True},
                     style_table={
                         'overflowX': 'auto',
                         'overflowY': 'auto',
@@ -842,7 +843,8 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         [Output('projects-time-table', 'data'),
          Output('projects-time-table', 'columns'),
-         Output('projects-time-table', 'tooltip_data')],
+         Output('projects-time-table', 'tooltip_data'),
+         Output('projects-time-table', 'style_cell_conditional')],
         [Input('current-submenu', 'data'),
          Input('projects-time-selection', 'data'),
          Input('likely-filter', 'value')],
@@ -852,10 +854,10 @@ def register_callbacks(dash_app, server):
         """Update projects table"""
         try:
             if submenu != 'projects-time':
-                return [], [], []
+                return [], [], [], []
             df = load_table_data()
             if df.empty:
-                return [], [], []
+                return [], [], [], []
             
             if selected_region and isinstance(selected_region, dict):
                 sel_reg = selected_region.get('region')
@@ -954,7 +956,7 @@ def register_callbacks(dash_app, server):
             available_cols = [col for col in display_cols if col in df.columns]
             
             if not available_cols:
-                return [], [], []
+                return [], [], [], []
             
             df = df[available_cols].copy()
             
@@ -1024,12 +1026,39 @@ def register_callbacks(dash_app, server):
             }
             
             columns = []
+            
+            # Additional style_cell_conditional for widths
+            width_styles = []
+            
             for col in available_cols:
                 display_name = display_name_map.get(col, col)
                 col_def = {'name': display_name, 'id': col}
+                
+                # Move width definitions to style_cell_conditional
                 if col in column_widths:
-                    col_def['minWidth'] = column_widths[col]
-                    col_def['maxWidth'] = column_widths[col]
+                    width = column_widths[col]
+                    width_styles.append({
+                        'if': {'column_id': col},
+                        'minWidth': width,
+                        'width': width,
+                        'maxWidth': width,
+                    })
+
+                # Right align numeric columns
+                numeric_cols_static = [
+                    'Gas Reserves (mmboe)', 'Liquids Reserves (mmbbl)', 'Total Reserves (mmboe)',
+                    'API', 'Sulfur', 'First Oil Year',
+                    'Operator Share %', 'Partner1 Share %', 'Partner2 Share %', 
+                    'Partner3 Share %', 'Partner4 Share %', 'Partner5 Share %'
+                ]
+                is_quarter = len(col) == 7 and col[4] == '_' and col[:4].isdigit() and col[5:] in ['Q1', 'Q2', 'Q3', 'Q4']
+                
+                if col in numeric_cols_static or is_quarter:
+                     width_styles.append({
+                        'if': {'column_id': col},
+                        'textAlign': 'right'
+                    })
+                
                 columns.append(col_def)
             
             df = df.fillna('')
@@ -1048,18 +1077,18 @@ def register_callbacks(dash_app, server):
                         
                     val = val.strip()
                     if val and val.lower() != 'nan' and val != 'None':
-                        # Only show tooltip for long values (>25 chars) or Comments
-                        if col == 'Comments' or len(val) > 25:
+                        # Only show tooltip for long values (>10 chars) or Comments
+                        if col == 'Comments' or len(val) > 14:
                             tooltip_row[col] = {
                                 'value': val,
                                 'type': 'text'
                             }
                 tooltip_data.append(tooltip_row)
             
-            return data, columns, tooltip_data
+            return data, columns, tooltip_data, width_styles
         except Exception as e:
             traceback.print_exc()
-            return [], [], []
+            return [], [], [], []
 
     @dash_app.callback(
         Output('download-projects-time-chart-csv', 'data'),
