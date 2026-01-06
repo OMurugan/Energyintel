@@ -27,6 +27,7 @@ import html as html_lib
 import json
 import urllib.request
 from core.data_helpers import execute_query
+from core.country_mappings import get_iso_code
 from .shared_map_utils import (
     create_choropleth_map,
     get_mapbox_config,
@@ -2191,45 +2192,7 @@ def register_callbacks(dash_app, server):
             available_streams = []
             stream_to_url = {}  # Map stream name to profile_url
             
-            if tab == "yearly" or tab is None:
-                # Fetch yearly grades dynamically from DB - pass all resolved countries
-                country_df = get_yearly_grades_for_country(resolved_countries)
-                if not country_df.empty and "Stream" in country_df.columns:
-                    # Extract link if available (profile_url or BSP link)
-                    # Check all possible column name variations
-                    link_col = None
-                    possible_cols = ["profile_url", "Profile URL", "Profile_URL", "profile-url", "Profile-URL", 
-                                     "BSP link", "BSP Link", "BSP_link", "BSP_link", "bsp_link", "Bsp_link"]
-                    for col in possible_cols:
-                        if col in country_df.columns:
-                            link_col = col
-                            print(f"DEBUG: Found link column '{col}' in yearly data")
-                            break
-                    
-                    # Also check case-insensitive
-                    if not link_col:
-                        for col in country_df.columns:
-                            if col.lower().replace(" ", "_").replace("-", "_") in ["profile_url", "bsp_link"]:
-                                link_col = col
-                                print(f"DEBUG: Found link column '{col}' (case-insensitive match) in yearly data")
-                                break
-                    
-                    if link_col:
-                        print(f"DEBUG: Using link column '{link_col}' for yearly streams")
-                        for _, row in country_df.iterrows():
-                            stream = str(row["Stream"]).strip() if pd.notna(row["Stream"]) else None
-                            url_val = row[link_col]
-                            url = str(url_val).strip() if pd.notna(url_val) and str(url_val).strip() else None
-                            if stream and url and url != "nan" and url != "None":
-                                stream_to_url[stream] = url
-                                print(f"DEBUG: Stored URL for stream '{stream}': {url}")
-                    else:
-                        print(f"DEBUG: No link column found in yearly data. Available columns: {list(country_df.columns)}")
-                    
-                    country_streams = country_df["Stream"].dropna().unique().tolist()
-                    available_streams = order_streams_list(country_streams, tab="yearly")
-                    print(f"DEBUG: Yearly streams for {resolved_countries}: {len(available_streams)} streams (from DB)")
-            else:
+            if tab == "monthly" or tab is None:
                 # Load monthly grades dynamically for all selected countries - pass all resolved countries
                 country_df = get_monthly_grades_for_country(resolved_countries)
                 if not country_df.empty and "Stream" in country_df.columns:
@@ -2282,22 +2245,48 @@ def register_callbacks(dash_app, server):
                             seen.add(stream)
                     available_streams = ordered
                     print(f"DEBUG: Monthly streams for {selected_country}: {len(available_streams)} streams (ordered by MONTHLY_STREAM_COLOR_ORDER)")
+            else:
+                # Fetch yearly grades dynamically from DB - pass all resolved countries
+                country_df = get_yearly_grades_for_country(resolved_countries)
+                if not country_df.empty and "Stream" in country_df.columns:
+                    # Extract link if available (profile_url or BSP link)
+                    # Check all possible column name variations
+                    link_col = None
+                    possible_cols = ["profile_url", "Profile URL", "Profile_URL", "profile-url", "Profile-URL", 
+                                     "BSP link", "BSP Link", "BSP_link", "BSP_link", "bsp_link", "Bsp_link"]
+                    for col in possible_cols:
+                        if col in country_df.columns:
+                            link_col = col
+                            print(f"DEBUG: Found link column '{col}' in yearly data")
+                            break
+                    
+                    # Also check case-insensitive
+                    if not link_col:
+                        for col in country_df.columns:
+                            if col.lower().replace(" ", "_").replace("-", "_") in ["profile_url", "bsp_link"]:
+                                link_col = col
+                                print(f"DEBUG: Found link column '{col}' (case-insensitive match) in yearly data")
+                                break
+                    
+                    if link_col:
+                        print(f"DEBUG: Using link column '{link_col}' for yearly streams")
+                        for _, row in country_df.iterrows():
+                            stream = str(row["Stream"]).strip() if pd.notna(row["Stream"]) else None
+                            url_val = row[link_col]
+                            url = str(url_val).strip() if pd.notna(url_val) and str(url_val).strip() else None
+                            if stream and url and url != "nan" and url != "None":
+                                stream_to_url[stream] = url
+                                print(f"DEBUG: Stored URL for stream '{stream}': {url}")
+                    else:
+                        print(f"DEBUG: No link column found in yearly data. Available columns: {list(country_df.columns)}")
+                    
+                    country_streams = country_df["Stream"].dropna().unique().tolist()
+                    available_streams = order_streams_list(country_streams, tab="yearly")
+                    print(f"DEBUG: Yearly streams for {resolved_countries}: {len(available_streams)} streams (from DB)")
+
             
             # Fallback: enrich profile URLs from Production Breakdown tables if missing
-            if tab == "yearly" or tab is None:
-                link_col = next((col for col in ["profile_url", "BSP link"] if col in TABLE_DF_YEARLY.columns), None)
-                if link_col and not TABLE_DF_YEARLY.empty:
-                    table_url_map = (
-                        TABLE_DF_YEARLY[["CrudeOil", link_col]]
-                        .dropna(subset=["CrudeOil", link_col])
-                        .drop_duplicates(subset=["CrudeOil"])
-                        .set_index("CrudeOil")[link_col]
-                        .to_dict()
-                    )
-                    for stream in available_streams:
-                        if stream not in stream_to_url and stream in table_url_map:
-                            stream_to_url[stream] = table_url_map[stream]
-            else:
+            if tab == "monthly" or tab is None:
                 link_col = next((col for col in ["profile_url", "BSP link"] if col in TABLE_DF_MONTHLY.columns), None)
                 if link_col and not TABLE_DF_MONTHLY.empty:
                     table_url_map = (
@@ -2310,14 +2299,23 @@ def register_callbacks(dash_app, server):
                     for stream in available_streams:
                         if stream not in stream_to_url and stream in table_url_map:
                             stream_to_url[stream] = table_url_map[stream]
+            else:
+                link_col = next((col for col in ["profile_url", "BSP link"] if col in TABLE_DF_YEARLY.columns), None)
+                if link_col and not TABLE_DF_YEARLY.empty:
+                    table_url_map = (
+                        TABLE_DF_YEARLY[["CrudeOil", link_col]]
+                        .dropna(subset=["CrudeOil", link_col])
+                        .drop_duplicates(subset=["CrudeOil"])
+                        .set_index("CrudeOil")[link_col]
+                        .to_dict()
+                    )
+                    for stream in available_streams:
+                        if stream not in stream_to_url and stream in table_url_map:
+                            stream_to_url[stream] = table_url_map[stream]
     
             # If no streams from grades CSV, fall back to all streams from bar data
             if not available_streams:
-                if tab == "yearly" or tab is None:
-                    if not BAR_LONG_YEARLY.empty and "Stream" in BAR_LONG_YEARLY.columns:
-                        country_data = BAR_LONG_YEARLY[BAR_LONG_YEARLY["Country"].isin(country)]
-                        available_streams = order_streams_list(country_data["Stream"].dropna().unique().tolist(), tab="yearly")
-                else:
+                if tab == "monthly" or tab is None:
                     if not BAR_LONG_MONTHLY.empty and "Stream" in BAR_LONG_MONTHLY.columns:
                         country_data = BAR_LONG_MONTHLY[BAR_LONG_MONTHLY["Country"].isin(country)]
                         # For monthly, use exact order from MONTHLY_STREAM_COLOR_ORDER
@@ -2334,6 +2332,10 @@ def register_callbacks(dash_app, server):
                                 ordered.append(stream)
                                 seen.add(stream)
                         available_streams = ordered
+                else:
+                    if not BAR_LONG_YEARLY.empty and "Stream" in BAR_LONG_YEARLY.columns:
+                        country_data = BAR_LONG_YEARLY[BAR_LONG_YEARLY["Country"].isin(country)]
+                        available_streams = order_streams_list(country_data["Stream"].dropna().unique().tolist(), tab="yearly")
             
             # Create options with profile_url stored in the option dict
             options = []
@@ -2757,7 +2759,24 @@ def register_callbacks(dash_app, server):
             return no_update
             
         if click_data and click_data.get("points"):
-            clicked_country = click_data["points"][0].get("location")
+            point = click_data["points"][0]
+            
+            # Check for background click (ocean/empty area)
+            if "customdata" in point and point["customdata"]:
+                cdata = point["customdata"]
+                if (isinstance(cdata, list) and len(cdata) > 0 and cdata[0] == "__BACKGROUND_CLICK__") or \
+                   (isinstance(cdata, str) and cdata == "__BACKGROUND_CLICK__"):
+                    return None
+            
+            # Try to get country name from customdata first (standardized map)
+            clicked_country = None
+            if "customdata" in point and point["customdata"]:
+                clicked_country = point["customdata"][0]
+            
+            # Fallback to location (might be ISO or name)
+            if not clicked_country:
+                clicked_country = point.get("location")
+                
             if clicked_country:
                 # Toggle logic: if already selected, reset to None
                 if clicked_country == current_selected:
@@ -2791,7 +2810,7 @@ def register_callbacks(dash_app, server):
         if selected_year is None:
             selected_year = 2024  # Default to 2024 for yearly filter
         if tab is None:
-            tab = "yearly"
+            tab = "monthly"
         
         try:
             if tab == "yearly":
@@ -2867,12 +2886,29 @@ def register_callbacks(dash_app, server):
             traceback.print_exc()
             agg = pd.DataFrame(columns=["Country", "value"])
         
-        # Add year/period for tooltip
+        # Add year/period for tooltip and ISO codes for map
         if not agg.empty:
             if tab == "yearly":
                 agg["Year"] = str(selected_year)
             else:
                 agg["Year"] = str(selected_year_month)
+            
+            # Add iso_alpha for standardized map
+            agg["iso_alpha"] = agg["GeoCountry"].apply(get_iso_code)
+            
+            # Create hover text matching design (gray labels, bold values)
+            if tab == "yearly":
+                agg["hover_text"] = agg.apply(lambda row: (
+                    f"<span style='color: #7f7f7f;'>Country:</span> <span style='font-weight: bold; color: #000;'>{row['Country']}</span><br>"
+                    f"<span style='color: #7f7f7f;'>Production Volume:</span> <span style='font-weight: bold; color: #000;'>{row['value']:,.0f} ('000 b/d)</span><br>"
+                    f"<span style='color: #7f7f7f;'>Year:</span> <span style='font-weight: bold; color: #000;'>{row['Year']}</span>"
+                ), axis=1)
+            else:
+                agg["hover_text"] = agg.apply(lambda row: (
+                    f"<span style='color: #7f7f7f;'>Date:</span> <span style='font-weight: bold; color: #000;'>{row['Year']}</span><br>"
+                    f"<span style='color: #7f7f7f;'>Country:</span> <span style='font-weight: bold; color: #000;'>{row['Country']}</span><br>"
+                    f"<span style='color: #7f7f7f;'>Production Volume:</span> <span style='font-weight: bold; color: #000;'>{row['value']:,.0f} ('000 b/d)</span>"
+                ), axis=1)
         
         if agg.empty:
             fig = go.Figure()
@@ -2880,208 +2916,86 @@ def register_callbacks(dash_app, server):
             fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
             return fig
         
-        # Dynamically scale the color range to the data so the map colors
-        # match the production bar scale for the selected period.
+        # Identify selected ISOs for highlighting
+        selected_iso = None
+        other_isos = None
+        if selected_country_map:
+            selected_iso = get_iso_code(selected_country_map)
+            other_isos = [iso for iso in agg["iso_alpha"].tolist() if iso and iso != selected_iso]
+
+        # Dynamically scale the color range to the data
         max_val = agg["value"].max() if "value" in agg.columns and len(agg) > 0 else 0
         if pd.isna(max_val) or max_val <= 0:
-            max_val = 1000  # sensible fallback to keep the scale visible
-        color_max = float(max_val) * 1.05  # small headroom
-        # Pick a reasonable tick step based on the max value
+            max_val = 1000
+        color_max = float(max_val) * 1.05
         tick_step = max(500, round((color_max / 6) / 500) * 500)
         if tick_step == 0:
             tick_step = 500
         
-        # Try Mapbox choropleth; fall back to geo-based choropleth if GeoJSON missing.
-        geojson = _load_countries_geojson()
-        main_opacity = 0.3 if selected_country_map else 1.0
-        
-        if geojson:
-            fig = px.choropleth_mapbox(
-                agg,
-                geojson=geojson,
-                locations="GeoCountry",
-                featureidkey="properties.name",
-                color="value",
-                color_continuous_scale="Blues",
-                labels={"value": "Production ('000 b/d)"},
-                custom_data=["Country", "Year"],
-                range_color=[0, color_max],
-                mapbox_style="open-street-map",
-                center={"lat": 20, "lon": 0},
-                zoom=1,
-                opacity=main_opacity
-            )
-            fig.update_traces(
-                hovertemplate=(
-                    "<span style='color: #7f7f7f;'>Country:</span> <span style='font-weight: bold; color: #000;'>%{customdata[0]}</span><br>"
-                    "<span style='color: #7f7f7f;'>Production Volume:</span> <span style='font-weight: bold; color: #000;'>%{z:,.0f} ('000 b/d)</span><br>"
-                    "<span style='color: #7f7f7f;'>Year:</span> <span style='font-weight: bold; color: #000;'>%{customdata[1]}</span>"
-                    "<extra></extra>"
-                ) if tab == "yearly" else (
-                    "<span style='color: #7f7f7f;'>Date:</span> <span style='font-weight: bold; color: #000;'>%{customdata[1]}</span><br>"
-                    "<span style='color: #7f7f7f;'>Country:</span> <span style='font-weight: bold; color: #000;'>%{customdata[0]}</span><br>"
-                    "<span style='color: #7f7f7f;'>Production Volume:</span> <span style='font-weight: bold; color: #000;'>%{z:,.0f} ('000 b/d)</span>"
-                    "<extra></extra>"
-                )
-            )
-            
-            if selected_country_map:
-                sel_df = agg[agg["GeoCountry"] == selected_country_map]
-                if not sel_df.empty:
-                    fig.add_trace(
-                        go.Choroplethmapbox(
-                            geojson=geojson,
-                            locations=sel_df["GeoCountry"],
-                            featureidkey="properties.name",
-                            z=sel_df["value"],
-                            colorscale="Blues",
-                            zmin=0, zmax=color_max,
-                            showscale=False,
-                            marker=dict(opacity=1.0, line=dict(color="#FF6B35", width=3)),
-                            hovertemplate=fig.data[0].hovertemplate,
-                            customdata=sel_df[["Country", "Year"]].values
-                        )
-                    )
-
-            fig.update_layout(
-                margin=dict(l=10, r=10, t=10, b=80),
-                height=500,
-                coloraxis_colorbar=dict(
-                    title=dict(text="Production<br>('000 b/d)", font=dict(size=12)),
-                    tickfont=dict(size=10),
-                    orientation="h",
-                    x=0.5,
-                    xanchor="center",
-                    y=-0.12,
-                    yanchor="top",
-                    len=0.7,
-                    thickness=20,
-                    outlinewidth=0,
-                    bordercolor="white",
-                    bgcolor="rgba(255,255,255,0)",
-                    tickmode="linear",
-                    tickformat=",",
-                    tick0=0,
-                    dtick=tick_step,
-                    showticklabels=True,
-                    ticks="outside"
-                ),
-                template="plotly_white",
-                autosize=True,
-                hoverlabel=dict(
-                    bgcolor="white",
-                    bordercolor="#ccc",
-                    font=dict(family="Arial", size=13, color="black"),
-                    align="left"
-                )
-            )
-        else:
-            fig = px.choropleth(
-                agg, 
-                locations="GeoCountry", 
-                locationmode="country names", 
-                color="value",
-                projection="natural earth", 
-                color_continuous_scale="Blues",
-                labels={"value":"Production ('000 b/d)"},
-                custom_data=["Country", "Year"],
-                range_color=[0, color_max],
-                opacity=main_opacity
-            )
-            fig.update_traces(
-                hovertemplate=(
-                    "<span style='color: #7f7f7f;'>Country:</span> <span style='font-weight: bold; color: #000;'>%{customdata[0]}</span><br>"
-                    "<span style='color: #7f7f7f;'>Production Volume:</span> <span style='font-weight: bold; color: #000;'>%{z:,.0f} ('000 b/d)</span><br>"
-                    "<span style='color: #7f7f7f;'>Year:</span> <span style='font-weight: bold; color: #000;'>%{customdata[1]}</span>"
-                    "<extra></extra>"
-                ) if tab == "yearly" else (
-                    "<span style='color: #7f7f7f;'>Date:</span> <span style='font-weight: bold; color: #000;'>%{customdata[1]}</span><br>"
-                    "<span style='color: #7f7f7f;'>Country:</span> <span style='font-weight: bold; color: #000;'>%{customdata[0]}</span><br>"
-                    "<span style='color: #7f7f7f;'>Production Volume:</span> <span style='font-weight: bold; color: #000;'>%{z:,.0f} ('000 b/d)</span>"
-                    "<extra></extra>"
-                )
-            )
-            
-            if selected_country_map:
-                sel_df = agg[agg["GeoCountry"] == selected_country_map]
-                if not sel_df.empty:
-                    fig.add_trace(
-                        go.Choropleth(
-                            locations=sel_df["GeoCountry"],
-                            locationmode="country names",
-                            z=sel_df["value"],
-                            colorscale="Blues",
-                            zmin=0, zmax=color_max,
-                            showscale=False,
-                            marker=dict(opacity=1.0, line=dict(color="#FF6B35", width=3)),
-                            hovertemplate=fig.data[0].hovertemplate,
-                            customdata=sel_df[["Country", "Year"]].values
-                        )
-                    )
-
-            fig.update_layout(
-                margin=dict(l=10,r=10,t=10,b=80),
-                height=500,
-                geo=dict(
-                    bgcolor="white",
-                    showframe=False,
-                    showcoastlines=True,
-                    projection_type="natural earth",
-                    projection=dict(
-                        type="natural earth",
-                        scale=1.0,
-                        rotation=dict(lon=0, lat=0)
-                    ),
-                    lonaxis=dict(range=[-180, 180], showgrid=False),
-                    lataxis=dict(range=[-90, 90], showgrid=False),
-                    center=dict(lon=0, lat=0),
-                    visible=True,
-                    domain=dict(x=[0, 1], y=[0, 1]),
-                    showland=True,
-                    showocean=True,
-                    showlakes=True,
-                    showrivers=False,
-                    coastlinewidth=0.5,
-                    countrywidth=0.5
-                ),
-                coloraxis_colorbar=dict(
-                    title=dict(text="Production<br>('000 b/d)", font=dict(size=12)),
-                    tickfont=dict(size=10),
-                    orientation="h",
-                    x=0.5,
-                    xanchor="center",
-                    y=-0.12,
-                    yanchor="top",
-                    len=0.7,
-                    thickness=20,
-                    outlinewidth=0,
-                    bordercolor="white",
-                    bgcolor="rgba(255,255,255,0)",
-                    tickmode="linear",
-                    tickformat=",",
-                    tick0=0,
-                    dtick=tick_step,
-                    showticklabels=True,
-                    ticks="outside"
-                ),
-                template="plotly_white",
-                autosize=True,
-                hoverlabel=dict(
-                    bgcolor="white",
-                    bordercolor="#ccc",
-                    font=dict(family="Arial", size=13, color="black"),
-                    align="left"
-                )
-            )
-        fig.update_geos(
-            resolution=50,
-            showcountries=True,
-            countrycolor="lightgray",
-            coastlinecolor="lightgray",
-            landcolor="white",
-            lakecolor="white",
-            oceancolor="white"
+        # Use standardized map creation
+        fig = create_choropleth_map(
+            locations=agg["iso_alpha"].tolist(),
+            z_values=agg["value"].tolist(),
+            colorscale="Blues",
+            hover_text=agg["hover_text"].tolist(),
+            selected_country=selected_country_map,
+            selected_iso=selected_iso,
+            other_isos=other_isos,
+            height=500,
+            zmin=0,
+            zmax=color_max
         )
+
+        # Restore the production bar (coloraxis_colorbar) and add customdata for click handling
+        # Store Country name at idx 0 and ISO at idx 1
+        # Use coloraxis='coloraxis' to link with layout settings
+        fig.update_traces(
+            showscale=True, 
+            coloraxis='coloraxis',
+            customdata=agg[["Country", "iso_alpha"]].values,
+            selector=dict(name="countries")
+        )
+        
+        fig.update_layout(
+            margin=dict(l=10, r=10, t=10, b=80),
+            coloraxis=dict(
+                colorscale="Blues",
+                showscale=True,
+                colorbar=dict(
+                    title=dict(text="Production<br>('000 b/d)", font=dict(size=12)),
+                    tickfont=dict(size=10),
+                    orientation="h",
+                    x=0.5,
+                    xanchor="center",
+                    y=-0.12,
+                    yanchor="top",
+                    len=0.7,
+                    thickness=20,
+                    outlinewidth=0,
+                    bordercolor="white",
+                    bgcolor="rgba(255,255,255,0)",
+                    tickmode="linear",
+                    tickformat=",",
+                    tick0=0,
+                    dtick=tick_step,
+                    showticklabels=True,
+                    ticks="outside"
+                )
+            ),
+            hoverlabel=dict(
+                bgcolor="white",
+                bordercolor="#ccc",
+                font=dict(family="Arial", size=13, color="black"),
+                align="left"
+            )
+        )
+        # Apply requested zoom level
+        if "mapbox" in fig.layout:
+            fig.layout.mapbox.zoom = 0.8
+        elif "geo" in fig.layout:
+            # For geo-style maps, we can adjust the projection scale
+            fig.layout.geo.projection.scale = 0.8
+            
         return fig
     
     @dash_app.callback(
@@ -3128,7 +3042,7 @@ def register_callbacks(dash_app, server):
             if year is None:
                 year = int(YEARS[-1]) if YEARS else 2024
             if tab is None:
-                tab = "yearly"
+                tab = "monthly"
             
             # Handle country - ensure it's a list and resolve "(All)" if present
             resolved_countries = _resolve_countries_selection(original_country_selection)
@@ -4201,7 +4115,7 @@ def register_callbacks(dash_app, server):
         
         # Set defaults if None
         if tab is None:
-            tab = "yearly"
+            tab = "monthly"
         
         if tab == "yearly":
             df = TABLE_DF_YEARLY.copy()
@@ -4521,7 +4435,7 @@ def register_callbacks(dash_app, server):
         try:
             # Default to yearly map if tab is None
             if tab is None:
-                tab = "yearly"
+                tab = "monthly"
                 
             if tab == "yearly":
                 print("DEBUG: Exporting YEARLY map data (raw_export=True)")
@@ -4577,7 +4491,7 @@ def register_callbacks(dash_app, server):
             print(f"DEBUG EXPORT CHART: Resolved country={country}")
             
             if tab is None:
-                tab = "yearly"
+                tab = "monthly"
             
             # ==========================================
             # YEARLY CHART EXPORT
@@ -4701,7 +4615,7 @@ def register_callbacks(dash_app, server):
         try:
             # Default to yearly if tab is None
             if tab is None:
-                tab = "yearly"
+                tab = "monthly"
 
             # ==========================================
             # YEARLY EXPORT
