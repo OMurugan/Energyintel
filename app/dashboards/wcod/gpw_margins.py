@@ -908,8 +908,7 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
         {
             'name': ['', '', 'Date'],
             'id': 'DateStr',
-            'type': 'text',
-            'style_cell': {'fontWeight': 'bold'}
+            'type': 'text'
         }
     ]
     
@@ -1069,180 +1068,8 @@ def create_layout():
         dcc.Store(id='gpw-selected-tech-type-store', data=None),
 
         # CSS styling for rc-slider using dcc.Markdown
-        html.Div(
-            dcc.Markdown(
-                """
-                <style>
-                /* === RC-Slider Styling for Date Range === */
-                .rc-slider-handle-1 {
-                    width: 10px !important;
-                    height: 14px !important;
-                    background: #FFFFFF !important;
-                    border: 2px solid #6E6E6E !important;
-                    border-radius: 0 7px 7px 0 !important;
-                    margin-top: -6px !important;
-                    box-shadow: none !important;
-                }
-                .rc-slider-handle-2 {
-                    width: 10px !important;
-                    height: 14px !important;
-                    background: #FFFFFF !important;
-                    border: 2px solid #6E6E6E !important;
-                    border-radius: 7px 0 0 7px !important;
-                    margin-top: -6px !important;
-                    box-shadow: none !important;
-                }
-                .rc-slider-handle {
-                    width: 10px !important;
-                    height: 14px !important;
-                    background-color: #FFFFFF !important;
-                    border: 2px solid #6E6E6E !important;
-                    margin-top: -6px !important;
-                    box-shadow: none !important;
-                    cursor: pointer !important;
-                }
-                .rc-slider-handle:hover {
-                    border-color: #4D4D4D !important;
-                }
-                .rc-slider-handle:active {
-                    border-color: #3A3A3A !important;
-                }
-                .rc-slider-track,
-                .rc-slider-track,
-                .rc-slider-track-1,
-                .rc-slider-track-2,
-                div[class*="rc-slider-track"] {
-                    background: #6E6E6E !important; /* Dark gray for the active range (Start to End) */
-                    height: 4px !important;
-                }
-                .rc-slider-rail {
-                    background: #D3D3D3 !important; /* Light gray for the inactive range (Min to Start) */
-                    height: 4px !important;
-                }
-                /* Date range input fields */
-                #gpw-date-range-min-input,
-                #gpw-date-range-max-input {
-                    border: none !important;
-                    background: transparent !important;
-                    padding: 0 !important;
-                    font-size: 12px !important;
-                    color: #1b365d !important;
-                    width: auto !important;
-                    min-width: 80px !important;
-                    max-width: 150px !important;
-                    height: 18px !important;
-                    line-height: 18px !important;
-                    outline: none !important;
-                    box-shadow: none !important;
-                    top: 0 !important;
-                    vertical-align: top !important;
-                    margin: 0 !important;
-                }
-                #gpw-date-range-min-input {
-                    left: 0 !important;
-                    text-align: left !important;
-                }
-                #gpw-date-range-max-input {
-                    text-align: right !important;
-                    float: right !important;
-                    margin-right: 0 !important;
-                    padding-right: 0 !important;
-                    cursor: default !important;
-                    pointer-events: none !important;
-                }
-                #gpw-date-range-min-input:hover {
-                    border: 1px solid #ccc !important;
-                    background: #ffffff !important;
-                    padding: 1px 3px !important;
-                }
-                #gpw-date-range-min-input:focus {
-                    border: 1px solid #999 !important;
-                    background: #ffffff !important;
-                    padding: 1px 3px !important;
-                }
-                #gpw-date-range-max-input:hover,
-                #gpw-date-range-max-input:focus {
-                    border: 0px solid #dee2e6 !important;
-                    background: unset !important;
-                    padding: 0 !important;
-                }
-                div[id*="date-range-slider"] {
-                    margin-left: 0 !important;
-                    padding-left: 0 !important;
-                    margin-right: 0 !important;
-                    padding-right: 0 !important;
-                }
-                .rc-slider {
-                    margin-left: 0 !important;
-                    padding-left: 0 !important;
-                    margin-right: 0 !important;
-                    padding-right: 0 !important;
-                    width: 100% !important;
-                    box-sizing: border-box !important;
-                }
-                .rc-slider-rail {
-                    margin-left: 0 !important;
-                    margin-right: 0 !important;
-                    width: 100% !important;
-                    box-sizing: border-box !important;
-                }
-                /* Single slider handle styling */
-                div[id*="date-range-slider"] .rc-slider-handle {
-                    cursor: grab !important;
-                }
-                div[id*="date-range-slider"] .rc-slider-handle:active {
-                    cursor: grabbing !important;
-                }
-                
-                /* DataTable Tooltip Font Size */
-                #gpw-data-table .dash-table-tooltip,
-                .dash-table-tooltip {
-                    font-size: 12px !important;
-                }
-                
-                /* DataTable Column and Row Selection Styling */
-                #gpw-data-table .dash-spreadsheet-container {
-                    cursor: pointer;
-                    transition: background-color 0.2s ease;
-                }
-                #gpw-data-table .dash-spreadsheet-container th.column-selected {
-                    background-color: #b3d9ff !important;
-                    color: #1b365d !important;
-                    font-weight: bold !important;
-                }
-                #gpw-data-table .dash-spreadsheet-container td.column-cell-selected {
-                    background-color: #b3d9ff !important;
-                    border: none !important;
-                    font-weight: 600 !important;
-                    color: #1b365d !important;
-                    opacity: 1 !important;
-                }
-                #gpw-data-table .dash-spreadsheet-container td.row-cell-selected {
-                    background-color: #b3d9ff !important;
-                    border: none !important;
-                    font-weight: 600 !important;
-                    color: #1b365d !important;
-                    opacity: 1 !important;
-                }
-                #gpw-data-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="DateStr"]):not(.column-cell-selected) {
-                    opacity: 0.3 !important;
-                }
-                #gpw-data-table .dash-spreadsheet-container.row-selection-active tbody tr:not(.row-selected) td:not([data-dash-column="DateStr"]) {
-                    opacity: 0.3 !important;
-                }
-                #gpw-data-table .dash-spreadsheet-container.row-selection-active tbody tr.row-selected td.row-cell-selected {
-                    opacity: 1 !important;
-                    background-color: #b3d9ff !important;
-                    color: #1b365d !important;
-                    font-weight: 600 !important;
-                    border: none !important;
-                }
-                </style>
-                """,
-                dangerously_allow_html=True
-            ),
-            style={"display": "none"}
-        ),
+        # CSS styling for rc-slider moved to assets/wcod_global.css
+        html.Div(style={"display": "none"}),
         html.Div([
             html.H2(
                 "Gross Product Worth and Margins",
@@ -1285,12 +1112,12 @@ def create_layout():
                             ),
                         ], style={'width': '100%', 'marginBottom': '2px', 'position': 'relative'}),
                         html.Div([
-                            dcc.RangeSlider(
+                            dcc.Slider(
                                 id="gpw-date-range-slider",
                                 min=0,
                                 max=max(len(DATE_LIST) - 1, 0) if DATE_LIST else 0,
                                 step=1,
-                                value=[DEFAULT_START_INDEX, DEFAULT_END_INDEX],
+                                value=DEFAULT_START_INDEX,
                                 marks=None,
                             ),
                         ], style={'width': '100%', 'margin': '0', 'padding': '0'}),
@@ -1911,14 +1738,17 @@ def register_callbacks(dash_app, server):
         ],
         [Input('gpw-date-range-slider', 'value')]
     )
-    def update_date_labels(slider_range):
-        """Update date labels based on range slider value."""
-        if not slider_range or not isinstance(slider_range, list) or len(slider_range) < 2:
+    def update_date_labels(slider_val):
+        """Update date labels based on slider value."""
+        if slider_val is None:
             return _format_date_for_display(DEFAULT_START_DATE), _format_date_for_display(DEFAULT_END_DATE)
         
-        start_idx, end_idx = slider_range
+        # If it's still a list (during transition/fallback), take the first element
+        start_idx = slider_val[0] if isinstance(slider_val, list) else slider_val
         start_date = _index_to_date(start_idx)
-        end_date = _index_to_date(end_idx)
+        
+        # End date is always the latest date in the list
+        end_date = DATE_LIST[-1] if DATE_LIST else DEFAULT_END_DATE
         
         return _format_date_for_display(start_date), _format_date_for_display(end_date)
 
@@ -2343,13 +2173,13 @@ def register_callbacks(dash_app, server):
         # Initialize table tooltips
         table_tooltips = []
         
-        # Parse dates from slider (range value [start, end])
-        if date_slider_value and isinstance(date_slider_value, list) and len(date_slider_value) >= 2:
-            start_date = _index_to_date(date_slider_value[0])
-            end_date = _index_to_date(date_slider_value[1])
+        # Parse dates from slider (start date is variable, end date is fixed to latest)
+        if date_slider_value is not None:
+            start_idx = date_slider_value[0] if isinstance(date_slider_value, list) else date_slider_value
+            start_date = _index_to_date(start_idx)
+            end_date = DATE_LIST[-1] if DATE_LIST else DEFAULT_END_DATE
         else:
-            # Fallback for old slider value or empty
-            start_date = _index_to_date(date_slider_value) if date_slider_value is not None else DEFAULT_START_DATE
+            start_date = DEFAULT_START_DATE
             end_date = DEFAULT_END_DATE
         
         # Load available crudes and tech types for the current region
@@ -2581,7 +2411,7 @@ def register_callbacks(dash_app, server):
             gpw_hydro_title,
             margins_catalytic_title,
             margins_hydro_title,
-            html.H3(table_title, style={'color': '#fe5000', 'fontSize': 20}),
+            table_title,
             gpw_title,
             margins_title,
             tech_type_options,
@@ -2618,10 +2448,6 @@ def register_callbacks(dash_app, server):
         
         # Process all triggers - normalization should handle all value changes
         # The sync callback will handle legend->filter sync separately
-        
-        
-        
-        
         value_list = list(value) if value else []
         previous_list = list(previous_value) if previous_value and isinstance(previous_value, (list, tuple)) else []
         
