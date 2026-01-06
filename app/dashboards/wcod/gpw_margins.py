@@ -1022,12 +1022,17 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
         filtered_tooltip_data.append(filtered_tooltip_row)
     
     styles_data_conditional = [
+        # Alternating row colors (striping)
+        {
+            'if': {'row_index': 'odd'},
+            'backgroundColor': '#f0f0f0'
+        },
         # Always make the DateStr column bold as requested
         {
             'if': {'column_id': 'DateStr'},
             'fontWeight': 'bold',
             'color': '#000000',
-            'textAlign': 'center'
+            'textAlign': 'left'
         }
     ]
     
@@ -1543,18 +1548,13 @@ def create_layout():
                                     'textAlign': 'left',
                                     'fontWeight': 'bold',
                                     'minWidth': '80px',
-                                    'backgroundColor': '#f8f9fa',
                                     'fontSize': '13px' # Adjusted font size for DateStr column
                                 }
                             ],
                             style_data_conditional=[
                                 {
                                     'if': {'row_index': 'odd'},
-                                    'backgroundColor': '#f9fbfd'
-                                },
-                                {
-                                    'if': {'filter_query': '{DateStr} != ""'},
-                                    'backgroundColor': 'white'
+                                    'backgroundColor': '#f0f0f0'
                                 }
                             ],
                             merge_duplicate_headers=True,
@@ -1564,44 +1564,52 @@ def create_layout():
                             tooltip_duration=None,
                             css=[
                                 {
+                                    'selector': 'tbody tr:nth-child(odd) td',
+                                    'rule': 'background-color: #f0f0f0 !important;'
+                                },
+                                {
+                                    'selector': 'tbody tr:nth-child(even) td',
+                                    'rule': 'background-color: white !important;'
+                                },
+                                {
                                     'selector': '#gpw-data-table .dash-table-tooltip',
                                     'rule': 'font-size: 12px !important;'
                                 },
                                 {
                                     'selector': '.dash-table-tooltip',
                                     'rule': 'font-size: 12px !important;'
-                                    },
-                                    {
-                                        'selector': '#gpw-data-table .dash-spreadsheet-container',
-                                        'rule': 'cursor: pointer; transition: background-color 0.2s ease;'
-                                    },
-                                    {
-                                        'selector': '#gpw-data-table .dash-spreadsheet-container th.column-selected',
-                                        'rule': 'background-color: #b3d9ff !important; color: #1b365d !important; font-weight: bold !important;'
-                                    },
-                                    {
-                                        'selector': '#gpw-data-table .dash-spreadsheet-container td.column-cell-selected',
-                                        'rule': 'background-color: #b3d9ff !important; border: none !important; font-weight: 600 !important; color: #1b365d !important; opacity: 1 !important;'
-                                    },
-                                    {
-                                        'selector': '#gpw-data-table .dash-spreadsheet-container td.row-cell-selected',
-                                        'rule': 'background-color: #b3d9ff !important; border: none !important; font-weight: 600 !important; color: #1b365d !important; opacity: 1 !important;'
-                                    },
-                                    {
-                                        'selector': '#gpw-data-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="DateStr"]):not(.column-cell-selected)',
-                                        'rule': 'opacity: 0.3 !important;'
-                                    },
-                                    {
-                                        'selector': '#gpw-data-table .dash-spreadsheet-container.row-selection-active tbody tr:not(.row-selected) td',
-                                        'rule': 'opacity: 0.3 !important;'
-                                    },
-                                    {
-                                        'selector': '#gpw-data-table .dash-spreadsheet-container.row-selection-active tbody tr.row-selected td.row-cell-selected',
-                                        'rule': 'opacity: 1 !important; background-color: #b3d9ff !important; color: #1b365d !important; font-weight: 600 !important; border: none !important;'
-                                    }
-                                ]
+                                },
+                                {
+                                    'selector': '#gpw-data-table .dash-spreadsheet-container',
+                                    'rule': 'cursor: pointer; transition: background-color 0.2s ease;'
+                                },
+                                {
+                                    'selector': '#gpw-data-table .dash-spreadsheet-container th.column-selected',
+                                    'rule': 'background-color: #b3d9ff !important; color: #1b365d !important; font-weight: bold !important;'
+                                },
+                                {
+                                    'selector': '#gpw-data-table .dash-spreadsheet-container td.column-cell-selected',
+                                    'rule': 'background-color: #b3d9ff !important; border: none !important; font-weight: 600 !important; color: #1b365d !important; opacity: 1 !important;'
+                                },
+                                {
+                                    'selector': '#gpw-data-table .dash-spreadsheet-container td.row-cell-selected',
+                                    'rule': 'background-color: #b3d9ff !important; border: none !important; font-weight: 600 !important; color: #1b365d !important; opacity: 1 !important;'
+                                },
+                                {
+                                    'selector': '#gpw-data-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="DateStr"]):not(.column-cell-selected)',
+                                    'rule': 'opacity: 0.3 !important;'
+                                },
+                                {
+                                    'selector': '#gpw-data-table .dash-spreadsheet-container.row-selection-active tbody tr:not(.row-selected) td',
+                                    'rule': 'opacity: 0.3 !important;'
+                                },
+                                {
+                                    'selector': '#gpw-data-table .dash-spreadsheet-container.row-selection-active tbody tr.row-selected td.row-cell-selected',
+                                    'rule': 'opacity: 1 !important; background-color: #b3d9ff !important; color: #1b365d !important; font-weight: 600 !important; border: none !important;'
+                                }
+                            ]
                             )
-                            )
+                        )
                         ]
                     )
                 ], className='col-md-10', style={'padding': '15px'}),
