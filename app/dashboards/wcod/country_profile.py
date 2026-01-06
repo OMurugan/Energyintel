@@ -1747,8 +1747,9 @@ def create_production_table(country_name, time_period='Yearly'):
                     'type': 'numeric',
                     'format': {'specifier': ',.0f'},
                     'sortable': False,
-                    'minWidth': '100px',
-                    'width': '100px'
+                    'minWidth': '110px',
+                    'width': '110px',
+                    'maxWidth': '110px'
                 })
         
         columns.extend(date_cols)
