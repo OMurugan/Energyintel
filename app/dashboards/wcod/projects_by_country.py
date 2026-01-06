@@ -1950,8 +1950,13 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         
         # Priority 1: Handle explicit "(All)" checkbox clicks
         if "(All)" in removed and "(All)" in previous_set and not added:
-            # User explicitly unchecked "(All)" only - clear everything
-            return [], []
+            # Check if this is a direct "(All)" uncheck vs a selection change
+            # If only "(All)" was removed and nothing else changed, it's a direct uncheck
+            individual_removed = removed - {"(All)"}
+            if not individual_removed:
+                # User explicitly unchecked "(All)" only - clear everything
+                return [], []
+            # Otherwise, this is a selection change (like from map click), continue processing
             
         if "(All)" in added and "(All)" not in previous_set and len(added) == 1:
             # User explicitly checked "(All)" only - select everything
@@ -1982,8 +1987,8 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 result = individual_countries
                 return result, result
             
-            # Otherwise keep current individual selections
-            result = individual_countries
+            # Otherwise keep current selections (including "(All)" if it was already there)
+            result = selected
             return result, result
         
         # No changes detected - return current state
@@ -2272,10 +2277,15 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             all_countries = base_df["Country"].tolist()
             selected_countries = _resolve_countries(country_filter, all_countries)
             
-            # For MAP DISPLAY: Show ALL countries that match group filters
-            # Don't filter by selected countries - we want to show all countries on the map
-            # Only filter by group to match the group filter selection
-            filtered_df = base_df[base_df["Group"].isin(allowed_groups)]
+            # Check if no countries are selected - show empty map
+            if not selected_countries:
+                return _empty_figure("No countries selected. Please select at least one country to view the map.")
+            
+            # Filter by both group and country selection for map display
+            filtered_df = base_df[
+                (base_df["Group"].isin(allowed_groups)) & 
+                (base_df["Country"].isin(selected_countries))
+            ]
             
             # Determine if a single country is selected for highlighting
             selected_country = None
@@ -2409,8 +2419,13 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             df = df.drop(columns=["likely_goahead_normalized"], errors="ignore")
         
         # Filter by country - use the resolved countries from country filter
-        if "Country" in df.columns and selected_countries:
-            df = df[df["Country"].isin(selected_countries)]
+        if "Country" in df.columns:
+            if not selected_countries:
+                # No countries selected - return empty dataframe
+                df = df.iloc[0:0]  # Return empty dataframe with same structure
+            else:
+                # Filter by selected countries
+                df = df[df["Country"].isin(selected_countries)]
         
         if df.empty:
             logger.warning("Table data is empty after filtering")
