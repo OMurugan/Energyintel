@@ -22,6 +22,16 @@ from plotly.subplots import make_subplots
 from config import Config
 from core.data_helpers import execute_query
 from core.country_mappings import COUNTRY_TO_ISO, get_iso_code
+from .shared_map_utils import (
+    create_choropleth_map,
+    get_mapbox_config,
+    load_world_geojson,
+    handle_map_click_reset,
+    create_empty_map,
+    MAP_BACKGROUND_COLOR,
+    WORLD_CENTER,
+    WORLD_ZOOM
+)
 
 # Set up logging first
 logger = logging.getLogger(__name__)
@@ -42,7 +52,6 @@ map_df = pd.DataFrame()
 chart_df = pd.DataFrame()
 table_df = pd.DataFrame()
 country_colors = {}
-world_geojson = None
 
 # Mapbox token (optional) with enhanced error handling
 try:
@@ -128,24 +137,6 @@ def _ordered_countries() -> list[str]:
     return sorted(load_map_data()["Country"].tolist())
 
 
-def _load_world_geojson() -> dict | None:
-    """Load a lightweight world GeoJSON once, with a short timeout fallback."""
-    global world_geojson
-    if world_geojson is not None:
-        return world_geojson
-    url = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json"
-    try:
-        logger.info("Loading world GeoJSON data...")
-        with urlopen(url, timeout=10) as resp:  # Increased timeout for server environments
-            world_geojson = json.load(resp)
-        logger.info(f"Successfully loaded GeoJSON with {len(world_geojson.get('features', []))} countries")
-    except Exception as e:
-        logger.warning(f"Failed to load world GeoJSON: {e}")
-        logger.info("Maps will fall back to built-in geo projection")
-        world_geojson = None
-    return world_geojson
-
-
 def _normalize_country_name(name: str | None) -> str:
     """Return ASCII/English-friendly country name."""
     if name is None:
@@ -191,25 +182,6 @@ def _quarter_components(quarter_str: str) -> tuple[int, int]:
                 year = 0
     return year, q_num
 
-
-def _empty_figure(message: str, height: int = 420) -> go.Figure:
-    fig = go.Figure()
-    fig.add_annotation(
-        text=message,
-        xref="paper",
-        yref="paper",
-        x=0.5,
-        y=0.5,
-        showarrow=False,
-        font=dict(size=14, color="#444"),
-    )
-    fig.update_layout(
-        height=height,
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        margin=dict(l=0, r=0, t=0, b=0),
-    )
-    return fig
 
 def _build_match_expression(df_subset: pd.DataFrame, color_map: dict[str, str]):
     """
@@ -1249,7 +1221,7 @@ def _create_fallback_map(df: pd.DataFrame, selected_country: str | None) -> go.F
             marker_size = 15
             marker_color = color
             marker_line_color = "#4A4A4A"
-            marker_line_width = 3
+            marker_line_width = 2
             hover_text = f"<b>{country}</b><br>Group: {group}<br>Click to reset view"
         else:
             # Regular country
@@ -1305,352 +1277,73 @@ def _create_fallback_map(df: pd.DataFrame, selected_country: str | None) -> go.F
 
 
 def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.Figure:
-    """Create a map figure with choropleth fills matching the live source."""
+    """Create a map figure using shared map utilities."""
     if filtered_df.empty:
-        return _empty_figure("No countries match the selected filters.", height=520)
+        return create_empty_map("No countries match the selected filters.", height=520)
 
     df = filtered_df.copy()
     # Guard against bad coords to avoid client-side Mapbox layer errors
     df = df.dropna(subset=["Latitude", "Longitude"])
     if df.empty:
-        return _empty_figure("No valid country data for mapping.", height=520)
+        return create_empty_map("No valid country data for mapping.", height=520)
 
     if "iso_alpha" not in df.columns:
         df["iso_alpha"] = df["Country"].apply(_iso_for_country)
     df = df.dropna(subset=["iso_alpha"])
     if df.empty:
-        return _empty_figure("No valid country data for mapping.", height=520)
+        return create_empty_map("No valid country data for mapping.", height=520)
 
-    # Get Mapbox token and geojson
-    _mapbox_token = (getattr(Config, "MAPBOX_ACCESS_TOKEN", None) or "").strip()
-    has_mapbox_token = _mapbox_token.startswith("pk.")
-    geojson = _load_world_geojson()
+    # Prepare data for choropleth map
+    locations = df["iso_alpha"].tolist()
     
-    # Log configuration status
-    logger.info(f"Mapbox token available: {has_mapbox_token}")
-    logger.info(f"GeoJSON data available: {geojson is not None}")
-    
-    # Use Mapbox if available, otherwise fall back to geo
-    use_mapbox = has_mapbox_token and geojson is not None
-    logger.info(f"Using Mapbox rendering: {use_mapbox}")
-
-    # Color per group; selection outlined separately
-    color_map = {}
-    for _, row in df.iterrows():
-        country = row["Country"]
-        group = row["Group"]
-        color_map[country] = GROUP_COLORS.get(group, "#888")
-
-    # World map settings - professional zoom level and positioning
-    world_center = {"lat": 20.0, "lon": 0.0}  # More centered world view
-    map_zoom = 1.2  # Lower zoom for better world overview
-
-    if use_mapbox and geojson:
-        try:
-            # Mapbox choropleth approach
-            group_code = df["Group"].map({"Non-OPEC-Plus": 0, "OPEC-Plus": 1}).fillna(0)
-            fig = go.Figure()
-            
-            # Add main choropleth layer
-            def generate_hover_text(row):
-                country = row['Country']
-                group = row['Group']
-                if selected_country and country == selected_country:
-                    return f"<b>{country}</b><br>Group: {group}<br>Click to reset view"
-                else:
-                    return f"<b>{country}</b><br>Group: {group}<br>Click to select"
-            
-            fig.add_trace(
-                go.Choroplethmapbox(
-                    geojson=geojson,
-                    locations=df["iso_alpha"],
-                    z=group_code,
-                    zmin=0,
-                    zmax=1,
-                    featureidkey="id",  # world.geo.json uses ISO-3 in `id`
-                    colorscale=[
-                        [0, GROUP_COLORS.get("Non-OPEC-Plus", "#7194b9")],
-                        [1, GROUP_COLORS.get("OPEC-Plus", "#f5a555")],
-                    ],
-                    showscale=False,
-                    hoverinfo="text",
-                    hovertext=df.apply(generate_hover_text, axis=1),
-                    marker_line_color="white",
-                    marker_line_width=0.8,
-                    marker_opacity=0.8,  # Further reduce opacity to make text more visible
-                    name="countries"
-                )
-            )
-            
-            # Add invisible background layer for empty area clicks (ocean areas)
-            fig.add_trace(
-                go.Scattermapbox(
-                    lon=[-180, 180, 180, -180, -180],
-                    lat=[-85, -85, 85, 85, -85],
-                    mode="lines",
-                    line=dict(color="rgba(0,0,0,0)", width=0),
-                    fill="toself",
-                    fillcolor="rgba(255,255,255,0.01)",  # Nearly transparent white for better click detection
-                    hoverinfo="text",
-                    hovertext="Click to reset view" if selected_country else "Click anywhere to reset view",
-                    customdata=["__BACKGROUND_CLICK__"],
-                    showlegend=False,
-                    name="background"
-                )
-            )
-            
-            # Add country labels
-            centroids = (
-                df.groupby("Country")[["Latitude", "Longitude"]]
-                .mean()
-                .reset_index()
-                .dropna(subset=["Latitude", "Longitude"])
-            )
-            if not centroids.empty:
-                # Limit label density at low zoom so names stay readable
-                max_labels = len(centroids)
-                if map_zoom <= 2.8:
-                    max_labels = 40
-                elif map_zoom <= 3.4:
-                    max_labels = 80
-                centroids_display = (
-                    centroids.sort_values("Country").head(max_labels)
-                    if max_labels < len(centroids)
-                    else centroids
-                )
-                # Add single text layer with good contrast and readability
-                fig.add_trace(
-                    go.Scattermapbox(
-                        lon=centroids_display["Longitude"],
-                        lat=centroids_display["Latitude"],
-                        mode="text",
-                        text=centroids_display["Country"],
-                        textfont=dict(
-                            size=11, 
-                            color="#2c3e50",  # Dark blue-gray for good contrast
-                            family="system-ui, -apple-system, sans-serif"
-                        ),
-                        textposition="middle center",
-                        hoverinfo="skip",
-                        showlegend=False,
-                        name="labels"
-                    )
-                )
-
-            # Add selection highlight if a country is selected
-            if selected_country and selected_country in df["Country"].values:
-                sel_iso = df.loc[df["Country"] == selected_country, "iso_alpha"].iloc[0]
-                
-                # Add dimming overlay for all countries EXCEPT the selected one
-                other_countries = df[df["Country"] != selected_country]["iso_alpha"].tolist()
-                if other_countries:
-                    fig.add_trace(
-                        go.Choroplethmapbox(
-                            geojson=geojson,
-                            locations=other_countries,
-                            z=[0] * len(other_countries),
-                            featureidkey="id",
-                            colorscale=[[0, "rgba(255,255,255,0.8)"], [1, "rgba(255,255,255,0.8)"]],
-                            showscale=False,
-                            hoverinfo="text",
-                            hovertext=["Click to reset view" for _ in other_countries],
-                            marker_line_color="rgba(200,200,200,0.3)",
-                            marker_line_width=0.5,
-                            name="inactive_countries"
-                        )
-                    )
-                
-                # Add orange border highlight for selected country (keep it fully active)
-                fig.add_trace(
-                    go.Choroplethmapbox(
-                        geojson=geojson,
-                        locations=[sel_iso],
-                        z=[0],
-                        featureidkey="id",
-                        colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
-                        showscale=False,
-                        marker_line_color="#4A4A4A",
-                        marker_line_width=3,
-                        hoverinfo="text",
-                        hovertext=f"<b>{selected_country}</b><br>Click to reset view",
-                        name="selected_country_border"
-                    )
-                )
-
-            mapbox_layout = dict(
-                style="carto-positron",  # White background style
-                center=world_center,
-                zoom=map_zoom,
-                bearing=0,
-                pitch=0,
-            )
-            if has_mapbox_token:
-                mapbox_layout["accesstoken"] = _mapbox_token
-                mapbox_layout["style"] = "light"  # Use light style with token (also white background)
-
-            fig.update_layout(
-                margin=dict(l=0, r=0, t=0, b=0),
-                height=520,
-                mapbox=mapbox_layout,
-                hovermode="closest",
-                plot_bgcolor="white",  # Set ocean/background color to white
-                paper_bgcolor="white",
-                showlegend=False,
-                # Add better zoom and pan controls
-                dragmode="pan",
-            )
-            return fig
-        except Exception as exc:
-            logger.error(f"Mapbox rendering failed; falling back to geo map. Error: {exc}")
-            import traceback
-            logger.error(f"Full traceback: {traceback.format_exc()}")
-            # Continue to geo fallback below
-
-    # Fallback: geo-based choropleth (no Mapbox) if GeoJSON unavailable or token missing
+    # Create z-values based on group (for coloring)
     group_code = df["Group"].map({"Non-OPEC-Plus": 0, "OPEC-Plus": 1}).fillna(0)
-    fig = go.Figure()
+    z_values = group_code.tolist()
     
-    # Add main choropleth layer
-    def generate_hover_text_geo(row):
+    # Create colorscale matching the group colors
+    colorscale = [
+        [0, GROUP_COLORS.get("Non-OPEC-Plus", "#7194b9")],
+        [1, GROUP_COLORS.get("OPEC-Plus", "#f5a555")],
+    ]
+    
+    # Generate hover text
+    def generate_hover_text(row):
         country = row['Country']
         group = row['Group']
         if selected_country and country == selected_country:
-            return f"<b>{country}</b><br>Group: {group}<br>Click to reset view"
+            return f"<b>{country}</b> (Active)<br>Group: {group}<br>Click to reset view"
+        elif selected_country:
+            return f"<b>{country}</b> (Inactive)<br>Group: {group}<br>Click to reset view"
         else:
             return f"<b>{country}</b><br>Group: {group}<br>Click to select"
     
-    fig.add_trace(
-        go.Choropleth(
-            locations=df["iso_alpha"],
-            z=group_code,
-            zmin=0,
-            zmax=1,
-            locationmode="ISO-3",
-            colorscale=[
-                [0, GROUP_COLORS.get("Non-OPEC-Plus", "#7194b9")],
-                [1, GROUP_COLORS.get("OPEC-Plus", "#f5a555")],
-            ],
-            showscale=False,
-            hoverinfo="text",
-            hovertext=df.apply(generate_hover_text_geo, axis=1),
-            marker_line_color="white",
-            marker_line_width=0.7,
-            marker_opacity=0.8,  # Further reduce opacity to make text more visible
-            name="countries"
-        )
-    )
+    hover_text = df.apply(generate_hover_text, axis=1).tolist()
     
-    # Add invisible background layer for ocean clicks in geo map
-    fig.add_trace(
-        go.Scattergeo(
-            lon=[-180, 180, 180, -180, -180],
-            lat=[-85, -85, 85, 85, -85],
-            mode="lines",
-            line=dict(color="rgba(0,0,0,0)", width=0),
-            fill="toself",
-            fillcolor="rgba(255,255,255,0.01)",  # Nearly transparent white for click detection
-            hoverinfo="text",
-            hovertext="Click to reset view" if selected_country else "Click anywhere to reset view",
-            customdata=["__BACKGROUND_CLICK__"],
-            showlegend=False,
-            name="background"
-        )
-    )
-    
-    # Add country labels for geo map
-    centroids = (
-        df.groupby("Country")[["Latitude", "Longitude"]]
-        .mean()
-        .reset_index()
-    )
-    # Limit label density at low zoom so names stay readable
-    fallback_labels = centroids
-    if len(centroids) > 60:
-        fallback_labels = centroids.sort_values("Country").head(60)
-    # Add single text layer with good contrast and readability
-    fig.add_trace(
-        go.Scattergeo(
-            lon=fallback_labels["Longitude"],
-            lat=fallback_labels["Latitude"],
-            mode="text",
-            text=fallback_labels["Country"],
-            textfont=dict(
-                size=12, 
-                color="#2c3e50",  # Dark blue-gray for good contrast
-                family="system-ui, -apple-system, sans-serif"
-            ),
-            textposition="middle center",
-            hoverinfo="skip",
-            showlegend=False,
-            opacity=1.0,
-            name="labels"
-        )
-    )
-    
-    # Add selection highlight for geo map
+    # Prepare selection highlighting data
+    selected_iso = None
+    other_isos = None
     if selected_country and selected_country in df["Country"].values:
-        sel_iso = df.loc[df["Country"] == selected_country, "iso_alpha"].iloc[0]
-        
-        # Add dimming overlay for all countries EXCEPT the selected one
-        other_countries = df[df["Country"] != selected_country]["iso_alpha"].tolist()
-        if other_countries:
-            fig.add_trace(
-                go.Choropleth(
-                    locations=other_countries,
-                    z=[0] * len(other_countries),
-                    locationmode="ISO-3",
-                    colorscale=[[0, "rgba(255,255,255,0.8)"], [1, "rgba(255,255,255,0.8)"]],
-                    showscale=False,
-                    hoverinfo="text",
-                    hovertext=["Click to reset view" for _ in other_countries],
-                    marker_line_color="rgba(200,200,200,0.3)",
-                    marker_line_width=0.5,
-                    name="inactive_countries"
-                )
-            )
-        
-        # Add orange border highlight for selected country
-        fig.add_trace(
-            go.Choropleth(
-                locations=[sel_iso],
-                z=[0],
-                locationmode="ISO-3",
-                colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
-                showscale=False,
-                marker_line_color="#4A4A4A",
-                marker_line_width=3,
-                hoverinfo="text",
-                hovertext=f"<b>{selected_country}</b><br>Click to reset view",
-                name="selected_country_border"
-            )
-        )
-
-    # Use consistent center and zoom regardless of selection
-    fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0),
+        selected_iso = df.loc[df["Country"] == selected_country, "iso_alpha"].iloc[0]
+        other_isos = df[df["Country"] != selected_country]["iso_alpha"].tolist()
+    
+    # Prepare country coordinates for labels
+    countries_df = df[["Country", "Latitude", "Longitude"]].copy()
+    
+    # Create the map using shared utilities
+    fig = create_choropleth_map(
+        locations=locations,
+        z_values=z_values,
+        colorscale=colorscale,
+        hover_text=hover_text,
+        selected_country=selected_country,
+        selected_iso=selected_iso,
+        other_isos=other_isos,
+        countries_df=countries_df,
         height=520,
-        geo=dict(
-            showframe=False,
-            showcoastlines=True,
-            projection=dict(type="natural earth"),
-            center=dict(lat=world_center["lat"], lon=world_center["lon"]),
-            # Clean background styling with white ocean color
-            showland=True,
-            landcolor="rgb(250, 250, 250)",  # Very light gray background
-            coastlinecolor="rgb(220, 220, 220)",
-            showocean=True,
-            oceancolor="white",  # White ocean background
-            showlakes=True,
-            lakecolor="white",  # Match ocean color
-            showrivers=False,
-        ),
-        plot_bgcolor="white",  # Set plot background to white
-        paper_bgcolor="white",
-        showlegend=False,
-        # Add better zoom and pan controls
-        dragmode="pan",
+        zmin=0,
+        zmax=1
     )
-
+    
     return fig
         
 
@@ -1676,7 +1369,7 @@ def _chart_figure(
 
     if selected_country:
         if not _allowed(selected_country):
-            return _empty_figure("Selected country is filtered out by group selection.")
+            return create_empty_map("Selected country is filtered out by group selection.")
         country_df = df[df["Country"] == selected_country].copy()
         title = f"Capacity Additions — {selected_country}"
     else:
@@ -1684,7 +1377,7 @@ def _chart_figure(
         title = "Capacity Additions — Selected Countries"
 
     if country_df.empty:
-        return _empty_figure("No chart data for the selected filters.")
+        return create_empty_map("No chart data for the selected filters.")
 
     # Aggregate once per Country/Quarter to avoid duplicate bars per quarter
     country_df = (
@@ -1950,8 +1643,13 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         
         # Priority 1: Handle explicit "(All)" checkbox clicks
         if "(All)" in removed and "(All)" in previous_set and not added:
-            # User explicitly unchecked "(All)" only - clear everything
-            return [], []
+            # Check if this is a direct "(All)" uncheck vs a selection change
+            # If only "(All)" was removed and nothing else changed, it's a direct uncheck
+            individual_removed = removed - {"(All)"}
+            if not individual_removed:
+                # User explicitly unchecked "(All)" only - clear everything
+                return [], []
+            # Otherwise, this is a selection change (like from map click), continue processing
             
         if "(All)" in added and "(All)" not in previous_set and len(added) == 1:
             # User explicitly checked "(All)" only - select everything
@@ -1982,8 +1680,8 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 result = individual_countries
                 return result, result
             
-            # Otherwise keep current individual selections
-            result = individual_countries
+            # Otherwise keep current selections (including "(All)" if it was already there)
+            result = selected
             return result, result
         
         # No changes detected - return current state
@@ -1994,14 +1692,19 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     @dash_app.callback(
         Output("projects-country-filter", "value", allow_duplicate=True),
         Input({"type": "country-legend", "value": ALL}, "n_clicks"),
-        State("projects-country-filter", "value"),
+        [
+            State("projects-country-filter", "value"),
+            State("projects-group-filter", "value"),
+            State("projects-chart-group-filter", "value"),
+        ],
         prevent_initial_call=True,
     )
-    def toggle_country_from_legend(n_clicks_list, current_values):
-        """Toggle countries via legend blocks with updated behavior."""
+    def toggle_country_from_legend(n_clicks_list, current_values, group_filter, chart_group_filter):
+        """Toggle countries via legend blocks with group filtering."""
         ctx = callback_context
         if not ctx.triggered:
             return dash.no_update
+        
         trigger = ctx.triggered[0]["prop_id"].split(".")[0]
         try:
             trigger_id = json.loads(trigger)
@@ -2015,27 +1718,58 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         all_countries = _ordered_countries()
         current_values = current_values or []
         
+        # Apply group filtering to determine which countries are actually available
+        group_set = set(group_filter or DEFAULT_GROUPS)
+        chart_group_set = set(chart_group_filter or DEFAULT_GROUPS)
+        allowed_groups = group_set.intersection(chart_group_set)
+        
+        map_data = load_map_data()
+        filtered_countries_set = set(
+            map_data[map_data["Group"].isin(allowed_groups)]["Country"].tolist()
+        )
+        
+        # If clicked country is not in filtered set, do nothing
+        if country not in filtered_countries_set:
+            return dash.no_update
+        
         # Resolve current selection (handle "(All)" case)
         resolved_countries = _resolve_countries(current_values, all_countries)
         
         # Check if only this country is currently selected
         if len(resolved_countries) == 1 and country in resolved_countries:
-            # If clicking the same active country, reset to show all countries
-            new_values = ["(All)"] + all_countries
+            # If clicking the same active country, reset to show all filtered countries
+            new_values = ["(All)"] + sorted(filtered_countries_set)
         else:
             # Otherwise, select only this country
             new_values = [country]
         
         return new_values
 
+    # In the update_country_legend_styles callback, add the group filters as inputs:
     @dash_app.callback(
         Output({"type": "country-legend", "value": ALL}, "style"),
-        Input("projects-country-filter", "value"),
+        [
+            Input("projects-country-filter", "value"),
+            Input("projects-group-filter", "value"),
+            Input("projects-chart-group-filter", "value"),
+        ],
     )
-    def update_country_legend_styles(selected_countries):
-        """Dim legend items that are not selected."""
+    def update_country_legend_styles(selected_countries, group_filter, chart_group_filter):
+        """Dim legend items that are not selected and hide those filtered out by group."""
         all_countries = _ordered_countries()
         selected_set = set(_resolve_countries(selected_countries, all_countries))
+        
+        # Apply same group filtering logic as the map
+        group_set = set(group_filter or DEFAULT_GROUPS)
+        chart_group_set = set(chart_group_filter or DEFAULT_GROUPS)
+        allowed_groups = group_set.intersection(chart_group_set)
+        
+        # Get map data and filter by allowed groups
+        map_data = load_map_data()
+        filtered_countries_set = set(
+            map_data[map_data["Group"].isin(allowed_groups)]["Country"].tolist()
+        )
+        
         base_style = {
             "display": "flex",
             "alignItems": "center",
@@ -2051,15 +1785,21 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         styles = []
         for country in all_countries:
             is_selected = country in selected_set
-            styles.append(
-                {
-                    **base_style,
-                    "backgroundColor": "#eef2ff" if is_selected else "#ffffff",
-                    "borderColor": "#4e79a7" if is_selected else "#e0e0e0",
-                    "fontWeight": "600" if is_selected else "400",
-                    "opacity": 1.0 if is_selected else 0.35,
-                }
-            )
+            is_filtered_by_group = country in filtered_countries_set
+            
+            if not is_filtered_by_group:
+                # Hide countries filtered out by group selection
+                styles.append({**base_style, "display": "none"})
+            else:
+                styles.append(
+                    {
+                        **base_style,
+                        "backgroundColor": "#eef2ff" if is_selected else "#ffffff",
+                        "borderColor": "#4e79a7" if is_selected else "#e0e0e0",
+                        "fontWeight": "600" if is_selected else "400",
+                        "opacity": 1.0 if is_selected else 0.35,
+                    }
+                )
         return styles
 
     @dash_app.callback(
@@ -2142,9 +1882,15 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
                 if point["customdata"][0] == "__BACKGROUND_CLICK__":
                     is_background_click = True
+                elif point["customdata"][0] == "__INACTIVE_LAYER__":
+                    # Treat inactive layer clicks as background clicks (reset to all countries)
+                    is_background_click = True
                 else:
                     country = point["customdata"][0]
             elif point["customdata"] == "__BACKGROUND_CLICK__":
+                is_background_click = True
+            elif point["customdata"] == "__INACTIVE_LAYER__":
+                # Treat inactive layer clicks as background clicks (reset to all countries)
                 is_background_click = True
             else:
                 country = point["customdata"]
@@ -2206,20 +1952,19 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             # If clicked country is not in our data, treat as background click
             return ["(All)"] + all_countries
         
-        # Enhanced behavior for map interactions:
-        # BEHAVIOR 1: If clicking the same selected country again, reset to show all countries
-        # BEHAVIOR 2: If clicking anywhere else on the map (outside the selected country), reset to show all countries
+        # Enhanced behavior for map interactions with active/inactive layers:
+        # BEHAVIOR 1: Clicking background/ocean resets to show all countries
+        # BEHAVIOR 2: When a country is selected (active), clicking inactive areas OR the active country resets to all countries
         
         # Check if we currently have exactly one country selected
         if len(resolved_countries) == 1:
             selected_country = resolved_countries[0]
             
-            # BEHAVIOR 1: If clicking on the same selected country, reset to all countries
+            # If clicking on the same selected country (active country), reset to all countries
             if country == selected_country:
                 return ["(All)"] + all_countries
             
-            # BEHAVIOR 2: If clicking on any other country when one is selected, reset to all countries
-            # This implements: "clicking anywhere else on the map should reset the view"
+            # If clicking on any other country (inactive layer), reset to all countries
             else:
                 return ["(All)"] + all_countries
         
@@ -2254,7 +1999,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             # Check if likely filter is empty (no options selected)
             likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
             if not likely_values:  # If no likely options selected, return empty map
-                return _empty_figure("No data available. Please select at least one option from 'Likely To Go Ahead' filter.")
+                return create_empty_map("No data available. Please select at least one option from 'Likely To Go Ahead' filter.", height=520)
             
             # Apply same group filtering logic as chart (intersection of both group filters)
             group_set = set(group_filter or DEFAULT_GROUPS)
@@ -2262,32 +2007,38 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
             )
             if not chart_group_set:
-                return _empty_figure("Select at least one group to see the map.")
+                return create_empty_map("Select at least one group to see the map.", height=520)
 
             allowed_groups = group_set.intersection(chart_group_set)
             if not allowed_groups:
-                return _empty_figure("Selected groups are filtered out.")
+                return create_empty_map("Selected groups are filtered out.")
             
             base_df = load_map_data()
             all_countries = base_df["Country"].tolist()
             selected_countries = _resolve_countries(country_filter, all_countries)
             
-            # For MAP DISPLAY: Show ALL countries that match group filters
-            # Don't filter by selected countries - we want to show all countries on the map
-            # Only filter by group to match the group filter selection
+            # Check if no countries are selected - show empty map
+            if not selected_countries:
+                return create_empty_map("No countries selected. Please select at least one country to view the map.", height=520)
+            
+            # For the map display, we need ALL countries data to show active/inactive layers
+            # Filter by group only, not by country selection
             filtered_df = base_df[base_df["Group"].isin(allowed_groups)]
             
             # Determine if a single country is selected for highlighting
             selected_country = None
             if len(selected_countries) == 1:
                 selected_country = selected_countries[0]
+                # Ensure the selected country is in the filtered data
+                if selected_country not in filtered_df["Country"].values:
+                    return create_empty_map(f"Selected country '{selected_country}' is not available in the current group filter.", height=520)
             
             return _map_figure(filtered_df, selected_country)
         except Exception as e:
             print(f"Error updating projects-country-map: {e}")
             import traceback
             traceback.print_exc()
-            return _empty_figure("Map error. Please check data sources.", height=520)
+            return create_empty_map("Map error. Please check data sources.", height=520)
 
     @dash_app.callback(
         Output("projects-country-chart", "figure"),
@@ -2305,18 +2056,18 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         # Check if likely filter is empty (no options selected)
         likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
         if not likely_values:  # If no likely options selected, return empty chart
-            return _empty_figure("No data available. Please select at least one option from 'Likely To Go Ahead' filter.")
+            return create_empty_map("No data available. Please select at least one option from 'Likely To Go Ahead' filter.")
         
         group_set = set(group_filter or DEFAULT_GROUPS)
         chart_group_set = (
             set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
         )
         if not chart_group_set:
-            return _empty_figure("Select at least one group to see the chart.")
+            return create_empty_map("Select at least one group to see the chart.")
 
         allowed_groups = group_set.intersection(chart_group_set)
         if not allowed_groups:
-            return _empty_figure("Selected groups are filtered out.")
+            return create_empty_map("Selected groups are filtered out.")
 
         all_countries = load_map_data()["Country"].tolist()
         selected_countries = _resolve_countries(country_filter, all_countries)
@@ -2409,8 +2160,13 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             df = df.drop(columns=["likely_goahead_normalized"], errors="ignore")
         
         # Filter by country - use the resolved countries from country filter
-        if "Country" in df.columns and selected_countries:
-            df = df[df["Country"].isin(selected_countries)]
+        if "Country" in df.columns:
+            if not selected_countries:
+                # No countries selected - return empty dataframe
+                df = df.iloc[0:0]  # Return empty dataframe with same structure
+            else:
+                # Filter by selected countries
+                df = df[df["Country"].isin(selected_countries)]
         
         if df.empty:
             logger.warning("Table data is empty after filtering")
