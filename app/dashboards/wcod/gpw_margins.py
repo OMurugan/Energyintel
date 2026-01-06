@@ -1224,7 +1224,6 @@ def create_layout():
                                 type="default",
                                 color="#fe5000",
                                 children=dcc.Graph(id='gpw-catalytic-cracking-chart',
-                                style={'height': '550px'},
                                 config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False})
                             ),
                         ], className='col-md-6', style={'padding': '5px 15px'}),
@@ -1250,7 +1249,6 @@ def create_layout():
                                 type="default",
                                 color="#fe5000",
                                 children=dcc.Graph(id='gpw-hydroskimming-chart',
-                                style={'height': '550px'},
                                 config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False})
                             ),
                         ], className='col-md-6', style={'padding': '0px 15px'})
@@ -1444,7 +1442,6 @@ def create_layout():
                                 type="default",
                                 color="#fe5000",
                                 children=dcc.Graph(id='gpw-incremental-catalytic-chart',
-                                    style={'height': '550px'},
                                     config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False})
                             ),
                         ], className='col-md-6', style={'padding': '5px 15px'}),
@@ -1470,7 +1467,6 @@ def create_layout():
                                 type="default",
                                 color="#fe5000",
                                 children=dcc.Graph(id='gpw-incremental-hydroskimming-chart',
-                                    style={'height': '550px'},
                                     config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False})
                             ),
                         ], className='col-md-6', style={'padding': '5px 15px'})
