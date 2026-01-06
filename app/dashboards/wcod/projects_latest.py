@@ -252,7 +252,7 @@ def create_layout():
             # "Click here to search for key Articles" link
             html.A(
                 "Click here to search for key Articles",
-                href="https://www.energyintel.com/search?text=upstream%20projects",
+                href="https://www.energyintel.com/search?q=&f0=&from=&to=&f6=00000179-1307-d997-a97f-1357bf2a0000&sourceObj=",
                 target="_blank",
                 style={
                     'color': '#1155cc',
