@@ -1081,7 +1081,8 @@ def create_layout():
                 style={
                     'color': '#fe5000',
                     'textAlign': 'center',
-                    'marginBottom': '5px',
+                    'marginBottom': '0px',
+                    'marginTop': '10px',
                     'fontSize': '24px',
                     'fontWeight': 'bold'
                 }
@@ -1153,7 +1154,7 @@ def create_layout():
                 'marginBottom': '0px',
                 'borderRadius': '5px'
             })
-        ], style={'padding': '0px 20px 0px 20px'}),
+        ], style={'padding': '0px 5px 0px 5px', 'marginTop': '0px'}),
         
         # Gross Product Worth Section
         html.Div([
@@ -1166,7 +1167,8 @@ def create_layout():
                             style={
                                 'color': '#fe5000',
                                 'textAlign': 'center',
-                                'marginBottom': '5px',
+                                'marginBottom': '2px',
+                                'marginTop': '0px',
                                 'fontSize': '16px',
                                 'fontWeight': 'bold',
                                 'flexGrow': 1 # Allow title to take available space
@@ -1204,13 +1206,14 @@ def create_layout():
                                     id='gpw-catalytic-cracking-chart-title',
                                     children="Catalytic Cracking",
                                     style={
-                                        'color': '#1b365d',
-                                        'textAlign': 'center',
-                                        'marginBottom': '8px',
-                                        'fontSize': '16px',
-                                        'fontWeight': 'bold',
-                                        'flexGrow': 1
-                                    }
+                                    'color': '#1b365d',
+                                    'textAlign': 'center',
+                                    'marginBottom': '8px',
+                                    'marginTop': '0px',
+                                    'fontSize': '16px',
+                                    'fontWeight': 'bold',
+                                    'flexGrow': 1
+                                }
                                 ),
                                 dcc.Download(id={'type': 'download-chart-content', 'index': 'gpw-catalytic-cracking-pdf'}),
                                 dcc.Download(id={'type': 'download-chart-content', 'index': 'gpw-catalytic-cracking-png'}),
@@ -1235,6 +1238,7 @@ def create_layout():
                                         'color': '#1b365d',
                                         'textAlign': 'center',
                                         'marginBottom': '8px',
+                                        'marginTop': '0px',
                                         'fontSize': '16px',
                                         'fontWeight': 'bold',
                                         'flexGrow': 1
@@ -1264,39 +1268,41 @@ def create_layout():
                             'marginBottom': '8px'
                         }
                     ),
-                    dcc.Checklist(
-                        id='gpw-crude-filter',
-                        options=[{'label': 'ALL', 'value': 'ALL'}] + _crude_filter_options(CRUDES),
-                        value=['ALL'] + CRUDES.copy() if CRUDES else ['ALL'],
-                        style={
-                            'display': 'flex',
-                            'flexDirection': 'column',
-                            'gap': '2px',
-                            'marginTop': '2px',
-                            'marginBottom': '20px',
-                        },
-                        labelStyle={
-                            'display': 'flex',
-                            'alignItems': 'center',
-                            'gap': '2px',
-                            'padding': '2px 2px',
-                            'borderRadius': '4px',
-                            'border': '0px solid #dfe3eb',
-                            'backgroundColor': '#ffffff',
-                            'width': '100%',
-                            'boxShadow': '0 1px 2px rgba(0,0,0,0.05)',
-                            'cursor': 'pointer',
-                            'transition': 'background-color 0.2s ease',
-                            'userSelect': 'none',
-                            'fontSize': '12px',
-                        },
-                        inputStyle={
-                            'marginRight': '12px',
-                            'width': '18px',
-                            'height': '18px',
-                            'cursor': 'pointer',
-                        },
-                    ),
+                    html.Div([
+                        dcc.Checklist(
+                            id='gpw-crude-filter',
+                            options=[{'label': 'ALL', 'value': 'ALL'}] + _crude_filter_options(CRUDES),
+                            value=['ALL'] + CRUDES.copy() if CRUDES else ['ALL'],
+                            style={
+                                'display': 'flex',
+                                'flexDirection': 'column',
+                                'gap': '2px',
+                                'marginTop': '2px',
+                                'marginBottom': '0px',
+                            },
+                            labelStyle={
+                                'display': 'flex',
+                                'alignItems': 'center',
+                                'gap': '2px',
+                                'padding': '2px 2px',
+                                'borderRadius': '4px',
+                                'border': '0px solid #dfe3eb',
+                                'backgroundColor': '#ffffff',
+                                'width': '100%',
+                                'boxShadow': '0 1px 2px rgba(0,0,0,0.05)',
+                                'cursor': 'pointer',
+                                'transition': 'background-color 0.2s ease',
+                                'userSelect': 'none',
+                                'fontSize': '12px',
+                            },
+                            inputStyle={
+                                'marginRight': '12px',
+                                'width': '18px',
+                                'height': '18px',
+                                'cursor': 'pointer',
+                            },
+                        ),
+                    ], style={'maxHeight': '180px', 'overflowY': 'auto', 'marginBottom': '5px', 'padding': '5px', 'backgroundColor': 'white', 'borderRadius': '4px', 'border': '1px solid #eee'}),
                     
                     html.Label(
                         "Refining Complexity",
@@ -1304,43 +1310,45 @@ def create_layout():
                             'fontWeight': 'bold',
                             'color': '#2c3e50',
                             'fontSize': '14px',
-                            'marginBottom': '8px',
-                            'marginTop': '10px'
+                            'marginBottom': '4px',
+                            'marginTop': '5px'
                         }
                     ),
-                    dcc.Checklist(
-                        id='gpw-refining-complexity-filter',
-                        options=[],
-                        value=[],
-                        style={
-                            'display': 'flex',
-                            'flexDirection': 'column',
-                            'gap': '2px',
-                            'marginTop': '2px',
-                            'marginBottom': '20px',
-                        },
-                        labelStyle={
-                            'display': 'flex',
-                            'alignItems': 'center',
-                            'gap': '2px',
-                            'padding': '2px 2px',
-                            'borderRadius': '4px',
-                            'border': '0px solid #dfe3eb',
-                            'backgroundColor': '#ffffff',
-                            'width': '100%',
-                            'boxShadow': '0 1px 2px rgba(0,0,0,0.05)',
-                            'cursor': 'pointer',
-                            'transition': 'background-color 0.2s ease',
-                            'userSelect': 'none',
-                            'fontSize': '12px',
-                        },
-                        inputStyle={
-                            'marginRight': '12px',
-                            'width': '18px',
-                            'height': '18px',
-                            'cursor': 'pointer',
-                        },
-                    ),
+                    html.Div([
+                        dcc.Checklist(
+                            id='gpw-refining-complexity-filter',
+                            options=[],
+                            value=[],
+                            style={
+                                'display': 'flex',
+                                'flexDirection': 'column',
+                                'gap': '2px',
+                                'marginTop': '2px',
+                                'marginBottom': '0px',
+                            },
+                            labelStyle={
+                                'display': 'flex',
+                                'alignItems': 'center',
+                                'gap': '2px',
+                                'padding': '2px 2px',
+                                'borderRadius': '4px',
+                                'border': '0px solid #dfe3eb',
+                                'backgroundColor': '#ffffff',
+                                'width': '100%',
+                                'boxShadow': '0 1px 2px rgba(0,0,0,0.05)',
+                                'cursor': 'pointer',
+                                'transition': 'background-color 0.2s ease',
+                                'userSelect': 'none',
+                                'fontSize': '12px',
+                            },
+                            inputStyle={
+                                'marginRight': '12px',
+                                'width': '18px',
+                                'height': '18px',
+                                'cursor': 'pointer',
+                            },
+                        ),
+                    ], style={'maxHeight': '100px', 'overflowY': 'auto', 'marginBottom': '5px', 'padding': '5px', 'backgroundColor': 'white', 'borderRadius': '4px', 'border': '1px solid #eee'}),
                     
                     html.Label(
                         "Crude",
@@ -1349,12 +1357,14 @@ def create_layout():
                             'fontWeight': 'bold',
                             'color': '#2c3e50',
                             'fontSize': '12px',
-                            'marginBottom': '8px',
-                            'marginTop': '10px'
+                            'marginBottom': '4px',
+                            'marginTop': '5px'
                         }
                     ),
                     # Crude Legend with row click selection (no checkboxes)
-                    html.Div([], id='gpw-crude-legend-container'),
+                    html.Div([
+                        html.Div([], id='gpw-crude-legend-container'),
+                    ], style={'maxHeight': '180px', 'overflowY': 'auto', 'padding': '5px', 'backgroundColor': 'white', 'borderRadius': '4px', 'border': '1px solid #eee'}),
                     # Hidden checklist to store selected values
                     dcc.Checklist(
                         id='gpw-crude-legend',
@@ -1363,16 +1373,15 @@ def create_layout():
                         style={'display': 'none'}
                     ),
                 ], className='col-md-2', style={
-                    'padding': '15px 20px',
+                    'padding': '10px 15px',
                     'border': '0px solid #dfe3eb',
                     'borderRadius': '6px',
                     'backgroundColor': '#f8f9fb',
-                    'height': '100%',
                     'boxShadow': '0 2px 6px rgba(0,0,0,0.05)',
                     'marginLeft': '0',
                 }),
             ], className='row')
-        ], style={'padding': '0px 20px', 'marginBottom': '5px'}),
+        ], style={'padding': '0px 5px', 'marginBottom': '0px', 'marginTop': '0px'}),
         
         # Incremental Margins Section
         html.Div([
@@ -1385,7 +1394,8 @@ def create_layout():
                             style={
                                 'color': '#fe5000',
                                 'textAlign': 'left',
-                                'marginBottom': '10px',
+                                'marginBottom': '0px',
+                                'marginTop': '0px',
                                 'fontSize': '16px',
                                 'fontWeight': 'bold',
                                 'flexGrow': 1
@@ -1421,7 +1431,8 @@ def create_layout():
                                 style={
                                     'color': '#1b365d',
                                     'textAlign': 'center',
-                                    'marginBottom': '5px',
+                                    'marginBottom': '0px',
+                                    'marginTop': '0px',
                                     'fontSize': '16px',
                                     'fontWeight': 'bold'
                                 }
@@ -1446,7 +1457,8 @@ def create_layout():
                                     style={
                                         'color': '#1b365d',
                                         'textAlign': 'center',
-                                        'marginBottom': '5px',
+                                        'marginBottom': '0px',
+                                        'marginTop': '0px',
                                         'fontSize': '16px',
                                         'fontWeight': 'bold',
                                         'flexGrow': 1
@@ -1463,13 +1475,9 @@ def create_layout():
                             ),
                         ], className='col-md-6', style={'padding': '5px 15px'})
                     ], className='row')
-                ], className='col-md-10', style={'padding': '5px 15px'}),
-                
-                # Empty column to maintain layout (filters already shown above)
-                html.Div([
-                ], className='col-md-2', style={'padding': '0px 15px'}),
+                ], className='col-md-12', style={'margin': '0', 'padding': '0'}),
             ], className='row')
-        ], style={'padding': '0px 20px', 'marginBottom': '0px'}),
+        ], style={'padding': '0px 5px', 'marginBottom': '0px', 'marginTop': '0px'}),
         
         # Data Table Section
         html.Div([
@@ -1485,6 +1493,7 @@ def create_layout():
                                     'color': '#1b365d',
                                     'textAlign': 'center',
                                     'marginBottom': '5px',
+                                    'marginTop': '0px',
                                     'fontSize': '16px',
                                     'fontWeight': 'bold',
                                     'flexGrow': 1 # Allow title to take available space
@@ -1522,7 +1531,9 @@ def create_layout():
                                 'overflowY': 'auto',
                                 'maxHeight': '600px',
                                 'backgroundColor': 'white',
-                                'border': '1px solid #dee2e6'
+                                'border': '1px solid #dee2e6',
+                                'width': '100%',
+                                'minWidth': '100%'
                             },
                             style_cell={
                                 'textAlign': 'right',
@@ -1612,13 +1623,9 @@ def create_layout():
                         )
                         ]
                     )
-                ], className='col-md-10', style={'padding': '15px'}),
-                
-                # Empty column to maintain layout (filters already shown above)
-                html.Div([
-                ], className='col-md-2', style={'padding': '15px'}),
+                ], className='col-md-12', style={'padding': '15px'}),
             ], className='row')
-        ], style={'padding': '20px', 'marginBottom': '30px'}),
+        ], style={'padding': '0px 5px', 'marginBottom': '0px', 'marginTop': '0px'}),
         
         # Store selected column for highlighting
         dcc.Store(id='gpw-selected-column', data=None),
@@ -1628,7 +1635,7 @@ def create_layout():
         
         # Hidden anchor for clientside callback to enhance data table
         html.Div(id='gpw-table-enhancer-anchor', style={'display': 'none'})
-    ], className='tab-content', style={'backgroundColor': '#f8f9fa', 'minHeight': '100vh'})
+    ], className='tab-content', style={'backgroundColor': '#f8f9fa', 'minHeight': '100vh', 'padding': '10px 0px'})
 
 
 def register_callbacks(dash_app, server):
