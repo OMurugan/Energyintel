@@ -1852,7 +1852,7 @@ def create_production_table(country_name, time_period='Yearly'):
             {
                 'if': {'column_id': 'Crude'},
                 'textAlign': 'left',
-                'fontWeight': '500',
+                'fontWeight': '600',
                 'minWidth': '180px',
                 'width': '180px',
                 'maxWidth': '180px'
@@ -2089,6 +2089,7 @@ def create_port_details_table(country_name):
                 'if': {'column_id': 'Port Name'},
                 'width': '180px',
                 'maxWidth': '180px',
+                'fontWeight': '800',
             },
             {
                 'if': {'column_id': 'Coordinates'},
