@@ -1249,7 +1249,7 @@ def _create_fallback_map(df: pd.DataFrame, selected_country: str | None) -> go.F
             marker_size = 15
             marker_color = color
             marker_line_color = "#4A4A4A"
-            marker_line_width = 3
+            marker_line_width = 2
             hover_text = f"<b>{country}</b><br>Group: {group}<br>Click to reset view"
         else:
             # Regular country
@@ -1356,7 +1356,9 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
                 country = row['Country']
                 group = row['Group']
                 if selected_country and country == selected_country:
-                    return f"<b>{country}</b><br>Group: {group}<br>Click to reset view"
+                    return f"<b>{country}</b> (Active)<br>Group: {group}<br>Click to reset view"
+                elif selected_country:
+                    return f"<b>{country}</b> (Inactive)<br>Group: {group}<br>Click to reset view"
                 else:
                     return f"<b>{country}</b><br>Group: {group}<br>Click to select"
             
@@ -1441,7 +1443,7 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
             if selected_country and selected_country in df["Country"].values:
                 sel_iso = df.loc[df["Country"] == selected_country, "iso_alpha"].iloc[0]
                 
-                # Add dimming overlay for all countries EXCEPT the selected one
+                # Add dimming overlay for all countries EXCEPT the selected one (inactive layer)
                 other_countries = df[df["Country"] != selected_country]["iso_alpha"].tolist()
                 if other_countries:
                     fig.add_trace(
@@ -1450,17 +1452,18 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
                             locations=other_countries,
                             z=[0] * len(other_countries),
                             featureidkey="id",
-                            colorscale=[[0, "rgba(255,255,255,0.8)"], [1, "rgba(255,255,255,0.8)"]],
+                            colorscale=[[0, "rgba(255,255,255,0.7)"], [1, "rgba(255,255,255,0.7)"]],  # More pronounced dimming
                             showscale=False,
                             hoverinfo="text",
-                            hovertext=["Click to reset view" for _ in other_countries],
-                            marker_line_color="rgba(200,200,200,0.3)",
+                            hovertext=[f"Inactive layer<br>Click to reset view" for _ in other_countries],
+                            customdata=["__INACTIVE_LAYER__" for _ in other_countries],  # Mark as inactive layer
+                            marker_line_color="rgba(200,200,200,0.5)",
                             marker_line_width=0.5,
                             name="inactive_countries"
                         )
                     )
                 
-                # Add orange border highlight for selected country (keep it fully active)
+                # Add enhanced border highlight for selected country (active layer)
                 fig.add_trace(
                     go.Choroplethmapbox(
                         geojson=geojson,
@@ -1469,10 +1472,11 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
                         featureidkey="id",
                         colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
                         showscale=False,
-                        marker_line_color="#4A4A4A",
-                        marker_line_width=3,
+                        marker_line_color="#4A4A4A",  # Orange highlight for active country
+                        marker_line_width=2,  # Thicker border for better visibility
                         hoverinfo="text",
-                        hovertext=f"<b>{selected_country}</b><br>Click to reset view",
+                        hovertext=f"<b>{selected_country}</b> (Active)<br>Click to reset view",
+                        customdata=[selected_country],  # Keep country name for click handling
                         name="selected_country_border"
                     )
                 )
@@ -1515,7 +1519,9 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
         country = row['Country']
         group = row['Group']
         if selected_country and country == selected_country:
-            return f"<b>{country}</b><br>Group: {group}<br>Click to reset view"
+            return f"<b>{country}</b> (Active)<br>Group: {group}<br>Click to reset view"
+        elif selected_country:
+            return f"<b>{country}</b> (Inactive)<br>Group: {group}<br>Click to reset view"
         else:
             return f"<b>{country}</b><br>Group: {group}<br>Click to select"
     
@@ -1591,7 +1597,7 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
     if selected_country and selected_country in df["Country"].values:
         sel_iso = df.loc[df["Country"] == selected_country, "iso_alpha"].iloc[0]
         
-        # Add dimming overlay for all countries EXCEPT the selected one
+        # Add dimming overlay for all countries EXCEPT the selected one (inactive layer)
         other_countries = df[df["Country"] != selected_country]["iso_alpha"].tolist()
         if other_countries:
             fig.add_trace(
@@ -1599,17 +1605,18 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
                     locations=other_countries,
                     z=[0] * len(other_countries),
                     locationmode="ISO-3",
-                    colorscale=[[0, "rgba(255,255,255,0.8)"], [1, "rgba(255,255,255,0.8)"]],
+                    colorscale=[[0, "rgba(255,255,255,0.7)"], [1, "rgba(255,255,255,0.7)"]],  # More pronounced dimming
                     showscale=False,
                     hoverinfo="text",
-                    hovertext=["Click to reset view" for _ in other_countries],
-                    marker_line_color="rgba(200,200,200,0.3)",
+                    hovertext=[f"Inactive layer<br>Click to reset view" for _ in other_countries],
+                    customdata=["__INACTIVE_LAYER__" for _ in other_countries],  # Mark as inactive layer
+                    marker_line_color="rgba(200,200,200,0.5)",
                     marker_line_width=0.5,
                     name="inactive_countries"
                 )
             )
         
-        # Add orange border highlight for selected country
+        # Add enhanced border highlight for selected country (active layer)
         fig.add_trace(
             go.Choropleth(
                 locations=[sel_iso],
@@ -1617,10 +1624,11 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None) -> go.F
                 locationmode="ISO-3",
                 colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
                 showscale=False,
-                marker_line_color="#4A4A4A",
-                marker_line_width=3,
+                marker_line_color="#4A4A4A",  # Orange highlight for active country
+                marker_line_width=2,  # Thicker border for better visibility
                 hoverinfo="text",
-                hovertext=f"<b>{selected_country}</b><br>Click to reset view",
+                hovertext=f"<b>{selected_country}</b> (Active)<br>Click to reset view",
+                customdata=[selected_country],  # Keep country name for click handling
                 name="selected_country_border"
             )
         )
@@ -2147,9 +2155,15 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
                 if point["customdata"][0] == "__BACKGROUND_CLICK__":
                     is_background_click = True
+                elif point["customdata"][0] == "__INACTIVE_LAYER__":
+                    # Treat inactive layer clicks as background clicks (reset to all countries)
+                    is_background_click = True
                 else:
                     country = point["customdata"][0]
             elif point["customdata"] == "__BACKGROUND_CLICK__":
+                is_background_click = True
+            elif point["customdata"] == "__INACTIVE_LAYER__":
+                # Treat inactive layer clicks as background clicks (reset to all countries)
                 is_background_click = True
             else:
                 country = point["customdata"]
@@ -2211,20 +2225,19 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             # If clicked country is not in our data, treat as background click
             return ["(All)"] + all_countries
         
-        # Enhanced behavior for map interactions:
-        # BEHAVIOR 1: If clicking the same selected country again, reset to show all countries
-        # BEHAVIOR 2: If clicking anywhere else on the map (outside the selected country), reset to show all countries
+        # Enhanced behavior for map interactions with active/inactive layers:
+        # BEHAVIOR 1: Clicking background/ocean resets to show all countries
+        # BEHAVIOR 2: When a country is selected (active), clicking inactive areas OR the active country resets to all countries
         
         # Check if we currently have exactly one country selected
         if len(resolved_countries) == 1:
             selected_country = resolved_countries[0]
             
-            # BEHAVIOR 1: If clicking on the same selected country, reset to all countries
+            # If clicking on the same selected country (active country), reset to all countries
             if country == selected_country:
                 return ["(All)"] + all_countries
             
-            # BEHAVIOR 2: If clicking on any other country when one is selected, reset to all countries
-            # This implements: "clicking anywhere else on the map should reset the view"
+            # If clicking on any other country (inactive layer), reset to all countries
             else:
                 return ["(All)"] + all_countries
         
@@ -2281,16 +2294,17 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             if not selected_countries:
                 return _empty_figure("No countries selected. Please select at least one country to view the map.")
             
-            # Filter by both group and country selection for map display
-            filtered_df = base_df[
-                (base_df["Group"].isin(allowed_groups)) & 
-                (base_df["Country"].isin(selected_countries))
-            ]
+            # For the map display, we need ALL countries data to show active/inactive layers
+            # Filter by group only, not by country selection
+            filtered_df = base_df[base_df["Group"].isin(allowed_groups)]
             
             # Determine if a single country is selected for highlighting
             selected_country = None
             if len(selected_countries) == 1:
                 selected_country = selected_countries[0]
+                # Ensure the selected country is in the filtered data
+                if selected_country not in filtered_df["Country"].values:
+                    return _empty_figure(f"Selected country '{selected_country}' is not available in the current group filter.")
             
             return _map_figure(filtered_df, selected_country)
         except Exception as e:

@@ -665,6 +665,11 @@ def build_monthly_table_from_bar(bar_long_monthly):
                     "July", "August", "September", "October", "November", "December"]
     
     table_df = pd.DataFrame({"Crude": streams})
+    # Add Country metadata if available in bar data
+    if "Country" in group.columns:
+        country_map = group.drop_duplicates(subset=["Stream"]).set_index("Stream")["Country"]
+        table_df["Country"] = table_df["Crude"].map(country_map)
+        
     table_df.set_index("Crude", inplace=True)
     year_to_month_cols = {}
     new_columns = {}
@@ -1108,6 +1113,7 @@ def load_table():
         # Load monthly table data from DB
         monthly_query = """
             SELECT     
+                a.country_name AS "Country",
                 c.crude_name AS "Crude",
                 c.ci_rank,
                 c.api,
@@ -1162,7 +1168,7 @@ def load_table():
                     .sum()
                 )
                 
-                metadata_cols = ["Crude", "CI Rank", "API", "Sulfur", "profile_url"]
+                metadata_cols = ["Crude", "Country", "CI Rank", "API", "Sulfur", "profile_url"]
                 available_metadata = [col for col in metadata_cols if col in monthly_raw.columns]
                 
                 if available_metadata:
@@ -1489,6 +1495,8 @@ def create_layout(server=None):
         dcc.Store(id="last-clicked-stream-store", data=None),
         # Store to track map country selection
         dcc.Store(id="selected-country-map-store", data=None),
+        # Store to track if map selection should filter the table
+        dcc.Store(id="table-map-filter-active-store", data=True),
         dcc.Store(id="stream-navigation-dummy", data=None),
         # Custom CSS to style markdown links in DataTable to look like normal text
         html.Div(
@@ -1760,7 +1768,7 @@ def create_layout(server=None):
                     "border": "1px solid #ddd",
                     "borderRadius": "4px",
                     "backgroundColor": "#f9f9f9",
-                    "maxHeight": "330px",
+                    "maxHeight": "350px",
                     "overflowY": "auto",
                     "fontSize": "10px",
                 })
@@ -1829,7 +1837,7 @@ def create_layout(server=None):
                                 "color": "#1f3b6f",
                                 "minWidth": "90px",
                                 "textAlign": "right",
-                                "padding": "2px",
+                                "padding": "1px",
                                 "height": "auto"
                             },
 
@@ -1841,7 +1849,8 @@ def create_layout(server=None):
                                 "textAlign": "center",
                                 "fontWeight": "bold",
                                 "backgroundColor": "white",
-                                "color": "#1f3b6f"
+                                "color": "#1f3b6f",
+                                "padding": "4px"
                             },
 
 
@@ -2163,10 +2172,11 @@ def register_callbacks(dash_app, server):
          Input("crude-main-tabs", "value"),
          Input("crude-year-dropdown", "value"),
          Input("crude-year-month-dropdown", "value"),
-         Input("current-submenu", "data")],
+         Input("current-submenu", "data"),
+         Input("selected-country-map-store", "data")],
         prevent_initial_call=False
     )
-    def update_profiled_streams_options(country, tab, year, year_month, current_submenu):
+    def update_profiled_streams_options(country, tab, year, year_month, current_submenu, selected_country_map):
         """Update profiled streams options based on selected country and tab using grades CSV files"""
         # Only load data if page is active
         if current_submenu != 'crude-overview':
@@ -2177,7 +2187,11 @@ def register_callbacks(dash_app, server):
         
         try:
             # Handle country - ensure it's a list
-            resolved_countries = _resolve_countries_selection(country)
+            # Map selection overrides dropdown if present
+            if selected_country_map:
+                resolved_countries = [selected_country_map]
+            else:
+                resolved_countries = _resolve_countries_selection(country)
             # If no countries selected, return empty options
             if not resolved_countries:
                 print(f"DEBUG update_profiled_streams_options: No countries selected, returning empty options")
@@ -2746,16 +2760,26 @@ def register_callbacks(dash_app, server):
             return {"display": "none"}, {"display": "block"}, {"display": "block"}
     
     @dash_app.callback(
-        Output("selected-country-map-store", "data"),
-        [Input("crude-map", "clickData")],
+        [Output("selected-country-map-store", "data"),
+         Output("table-map-filter-active-store", "data")],
+        [Input("crude-map", "clickData"),
+         Input("crude-main-tabs", "value")],
         [State("selected-country-map-store", "data"),
+         State("table-map-filter-active-store", "data"),
          State("current-submenu", "data")],
-        prevent_initial_call=True
+        prevent_initial_call=False
     )
-    def update_selected_country_map(click_data, current_selected, submenu):
+    def update_selected_country_map(click_data, tab_value, current_selected, current_active, submenu):
         """Update country selection from map click, toggle if clicked again"""
+        from dash import ctx
         if submenu != 'crude-overview':
-            return no_update
+            return no_update, no_update
+            
+        triggered_id = ctx.triggered_id
+        
+        # Don't reset selection when switching tabs - allow persistence
+        if triggered_id == "crude-main-tabs":
+            return no_update, no_update
             
         if click_data and click_data.get("points"):
             point = click_data["points"][0]
@@ -2765,7 +2789,7 @@ def register_callbacks(dash_app, server):
                 cdata = point["customdata"]
                 if (isinstance(cdata, list) and len(cdata) > 0 and cdata[0] == "__BACKGROUND_CLICK__") or \
                    (isinstance(cdata, str) and cdata == "__BACKGROUND_CLICK__"):
-                    return None
+                    return None, True
             
             # Try to get country name from customdata first (standardized map)
             clicked_country = None
@@ -2777,11 +2801,18 @@ def register_callbacks(dash_app, server):
                 clicked_country = point.get("location")
                 
             if clicked_country:
-                # Toggle logic: if already selected, reset to None
+                # Toggle logic: if already selected, toggle the table filter active state
+                # but KEEP the country selection for barchart and legend
                 if clicked_country == current_selected:
-                    return None
-                return clicked_country
-        return current_selected
+                    # If it was already selected, toggle the active state for the table
+                    # current_active is a boolean from the store
+                    new_active = not current_active
+                    return current_selected, new_active
+                
+                # New country selected: set it and make table filter active
+                return clicked_country, True
+                
+        return current_selected, current_active
     
     @dash_app.callback(
         Output("crude-map", "figure"),
@@ -4093,11 +4124,12 @@ def register_callbacks(dash_app, server):
          Input("crude-main-tabs", "value"),
          Input("profiled-streams", "value"),
          Input("selected-country-map-store", "data"),
+         Input("table-map-filter-active-store", "data"),
          Input("current-submenu", "data")],
         [State("profiled-streams", "options")],
         prevent_initial_call=False
     )
-    def filter_table(stream, ci, api, sulfur, year, year_month, country, tab, profiled_streams, selected_country_map, current_submenu, profiled_streams_options):
+    def filter_table(stream, ci, api, sulfur, year, year_month, country, tab, profiled_streams, selected_country_map, table_map_filter_active, current_submenu, profiled_streams_options):
         """Filter and update data table - only loads data when page is active"""
         # Only load data if page is active
         if current_submenu != 'crude-overview':
@@ -4106,8 +4138,8 @@ def register_callbacks(dash_app, server):
         # Ensure data is loaded
         _ensure_data_loaded()
         
-        # Map selection overrides dropdown if present
-        if selected_country_map:
+        # Map selection overrides dropdown if present AND active for table
+        if selected_country_map and table_map_filter_active:
             country = [selected_country_map]
         else:
             country = _resolve_countries_selection(country)
@@ -4175,7 +4207,7 @@ def register_callbacks(dash_app, server):
         # 4. Country Filter
         # Map selection applies to both tabs
         # Dropdown country filter only applies to monthly tab (Yearly is "Global" by default from dropdown)
-        if selected_country_map:
+        if selected_country_map and table_map_filter_active:
             # Map selection overrides everything - apply to both tabs
             if "Country" in df.columns:
                 df = df[df["Country"] == selected_country_map]
@@ -4599,10 +4631,11 @@ def register_callbacks(dash_app, server):
          State("crude-main-tabs", "value"),
          State("profiled-streams", "value"),
          State("selected-country-map-store", "data"),
+         State("table-map-filter-active-store", "data"),
          State("profiled-streams", "options")],
         prevent_initial_call=True
     )
-    def export_table_data(n_clicks, stream, ci, api, sulfur, country, tab, profiled_streams, selected_country_map, profiled_streams_options):
+    def export_table_data(n_clicks, stream, ci, api, sulfur, country, tab, profiled_streams, selected_country_map, table_map_filter_active, profiled_streams_options):
         """
         Export table data to CSV based on the active tab (Yearly/Monthly) and applied filters.
         Re-executes the query to fetch raw data (Long Format) as requested.
@@ -4647,7 +4680,7 @@ def register_callbacks(dash_app, server):
                 
                 # 1. Country Filter (Map selection only)
                 # Dropdown country filter is ignored for Yearly table (Global view), same as UI logic
-                if selected_country_map:
+                if selected_country_map and table_map_filter_active:
                     if "Country" in df.columns:
                         df = df[df["Country"] == selected_country_map]
                 
