@@ -295,7 +295,7 @@ def create_layout():
                 
                 html.Div([
                     html.Button(
-                        'Export Data to CSV',
+                        'Export to CSV',
                         id='btn-export-latest-updates-csv',
                         n_clicks=0,
                         style={
@@ -305,7 +305,7 @@ def create_layout():
                             'padding': '8px 15px',
                             'borderRadius': '4px',
                             'cursor': 'pointer',
-                            'fontSize': '13px',
+                            'fontSize': '12px',
                             'margin': '0',
                             'display': 'inline-block'
                         }
@@ -481,7 +481,7 @@ def create_layout():
             ),
             html.Div([
                 html.Button(
-                    'Export Data to CSV',
+                    'Export to CSV',
                     id='btn-export-all-projects-csv',
                     n_clicks=0,
                     style={

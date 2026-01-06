@@ -1928,7 +1928,7 @@ def create_layout(server=None):
                                 "paddingBottom": "5px",
                                 "textAlign": "center"
                             }),
-                            html.Button("Export Data to CSV", id='export-mars-assay-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                            html.Button("Export to CSV", id='export-mars-assay-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                                 'color': '#2c3e50',
                                 'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                         ]),
@@ -1952,7 +1952,7 @@ def create_layout(server=None):
                                 "paddingBottom": "5px",
                                 "textAlign": "center"
                             }),
-                            html.Button("Export Data to CSV", id='export-refined-products-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                            html.Button("Export to CSV", id='export-refined-products-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                                 'color': '#2c3e50',
                                 'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                         ]),
@@ -1977,7 +1977,7 @@ def create_layout(server=None):
                             "paddingBottom": "5px",
                             "textAlign": "center"
                         }),
-                        html.Button("Export Data to CSV", id='export-production-exports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        html.Button("Export to CSV", id='export-production-exports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                             'color': '#2c3e50',
                             'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                     ]),
@@ -2002,7 +2002,7 @@ def create_layout(server=None):
                         "paddingBottom": "5px",
                         "textAlign": "center"
                     }),
-                    html.Button("Export Data to CSV", id='export-loading-ports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                    html.Button("Export to CSV", id='export-loading-ports-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                         'color': '#2c3e50',
                         'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                 ]),
@@ -2055,7 +2055,7 @@ def create_layout(server=None):
                         "paddingBottom": "5px",
                         "textAlign": "center"
                     }),
-                    html.Button("Export Data to CSV", id='export-port-details-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                    html.Button("Export to CSV", id='export-port-details-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                         'color': '#2c3e50',
                         'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                 ]),
@@ -2172,7 +2172,7 @@ def create_layout(server=None):
                             "paddingBottom": "5px",
                             "textAlign": "center"
                         }),
-                        html.Button("Export Data to CSV", id='export-sellers-producers-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
+                        html.Button("Export to CSV", id='export-sellers-producers-btn', n_clicks=0, style={'marginLeft': '12px', 'backgroundColor': 'white',
                             'color': '#2c3e50',
                             'border': '1px solid #dee2e6', 'padding': '6px 10px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'})
                     ]),

@@ -1534,7 +1534,7 @@ def create_layout():
             html.Div([
                 html.Div([
                      html.Button(
-                        'Download Chart CSV',
+                        'Export to CSV',
                         id='projects-company-btn-download-chart',
                         n_clicks=0,
                         style={
@@ -1557,7 +1557,7 @@ def create_layout():
                 html.Div([
                     html.Div([
                          html.Button(
-                            'Download Map CSV',
+                            'Export to CSV',
                             id='projects-company-btn-download-map',
                             n_clicks=0,
                             style={
@@ -1819,7 +1819,7 @@ def create_layout():
                     }
                 ),
                 html.Button(
-                    'Download Table CSV',
+                    'Export to CSV',
                     id='projects-company-btn-download-table',
                     n_clicks=0,
                     style={

@@ -1020,7 +1020,7 @@ def create_layout():
                             },
                         ),
                         html.Button(
-                            "Export CSV",
+                            "Export to CSV",
                             id='export-global-exports-map-btn',
                             n_clicks=0,
                             style={
@@ -1414,7 +1414,7 @@ def create_layout():
                                     },
                                 ),
                                 html.Button(
-                                    "Export CSV",
+                                    "Export to CSV",
                                     id='export-russia-exports-btn',
                                     n_clicks=0,
                                     style={
@@ -1510,7 +1510,7 @@ def create_layout():
                             },
                         ),                    
                         html.Button(
-                            "Export CSV",
+                            "Export to CSV",
                             id='export-annual-exports-btn',
                             n_clicks=0,
                             style={

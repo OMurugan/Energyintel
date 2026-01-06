@@ -510,7 +510,7 @@ def create_layout():
                 color="#d35400",
                 children=[
                     html.Button(
-                        "Export CSV",
+                        "Export to CSV",
                         id='export-global-imports-btn',
                         n_clicks=0,
                         style={
@@ -815,7 +815,7 @@ def create_layout():
                     color="#d35400",
                     children=[
                         html.Button(
-                            "Export CSV",
+                            "Export to CSV",
                             id='export-annual-imports-btn',
                             n_clicks=0,
                             style={
@@ -863,7 +863,7 @@ def create_layout():
                     color="#d35400",
                     children=[
                         html.Button(
-                            "Export CSV",
+                            "Export to CSV",
                             id='export-matrix-imports-btn',
                             n_clicks=0,
                             style={

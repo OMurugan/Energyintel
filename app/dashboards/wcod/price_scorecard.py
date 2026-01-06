@@ -113,7 +113,7 @@ def create_layout():
         html.Div([
             html.Div([
                 html.Button(
-                    "Export Data CSV",
+                    "Export to CSV",
                     id="price-scorecard-export-btn",
                     n_clicks=0,
                     style={
