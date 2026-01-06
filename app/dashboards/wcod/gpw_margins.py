@@ -1182,9 +1182,9 @@ def create_layout():
                                     {'label': 'Export to PNG', 'value': 'png'},
                                     {'label': 'Export to CSV', 'value': 'raw_data_csv'}
                                 ],
-                                placeholder='Export Data',
+                                placeholder='Export',
                                 style={
-                                    'width': '250px',
+                                    'width': '120px',
                                     'marginRight': '10px',
                                     'fontSize': '13px',
                                     'color': '#2c3e50',
@@ -1192,7 +1192,7 @@ def create_layout():
                                 },
                                 clearable=False
                             ),
-                            style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'paddingRight': '15px'}
+                            style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'paddingRight': '10px'}
                         ),
                     ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'width': '100%', 'padding': '0 15px'}),
                     dcc.Download(id="gpw-download-dashboard-content"),
