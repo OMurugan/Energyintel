@@ -1261,6 +1261,10 @@ def create_map_chart(crude_value: str | None = None):
     crudes = [port.get('crude', '') for port in ports_data]
     unique_countries = [c for c in dict.fromkeys(countries) if c]
     
+    # Prepare ISO mapping for scatter markers and country identification
+    from core.country_mappings import get_iso_code
+    port_isos = [get_iso_code(c) or "" for c in countries]
+    
     if not (lats and lons):
         return create_empty_map("No valid port coordinates available", height=500)
     
@@ -1297,7 +1301,8 @@ def create_map_chart(crude_value: str | None = None):
                         colorscale=[[0, 'rgba(200, 230, 200, 0.6)'], [1, 'rgba(200, 230, 200, 0.6)']],
                         showscale=False,
                         hoverinfo="text",
-                        hovertext=[f"<b>{country}</b><br>Click to zoom to country" for country in valid_countries],
+                        hovertext=[f"Country: {country}" for country in valid_countries],
+                        customdata=country_isos,
                         marker_line_color="white",
                         marker_line_width=1,
                         marker_opacity=0.6,
@@ -1324,7 +1329,8 @@ def create_map_chart(crude_value: str | None = None):
                         colorscale=[[0, 'rgba(200, 230, 200, 0.6)'], [1, 'rgba(200, 230, 200, 0.6)']],
                         showscale=False,
                         hoverinfo="text",
-                        hovertext=[f"<b>{country}</b><br>Click to zoom to country" for country in valid_countries],
+                        hovertext=[f"Country: {country}" for country in valid_countries],
+                        customdata=country_isos,
                         marker_line_width=1,
                         marker_line_color='white',
                         name="countries"
@@ -1337,7 +1343,7 @@ def create_map_chart(crude_value: str | None = None):
             lon=lons,
             lat=lats,
             text=port_names,
-            customdata=list(zip(countries, crudes, port_names)),
+            customdata=list(zip(countries, crudes, port_names, port_isos)),
             mode='markers',
             marker=dict(
                 size=15,
@@ -1355,7 +1361,7 @@ def create_map_chart(crude_value: str | None = None):
             lon=lons,
             lat=lats,
             text=port_names,
-            customdata=list(zip(countries, crudes, port_names)),
+            customdata=list(zip(countries, crudes, port_names, port_isos)),
             mode='markers',
             marker=dict(
                 size=15,
@@ -1432,6 +1438,7 @@ def create_map_chart(crude_value: str | None = None):
             adjusted_lat = center_lat
         
         center_lat = adjusted_lat
+    
     
     # Update mapbox layout with calculated center and zoom
     if use_mapbox:
@@ -2018,7 +2025,12 @@ def create_layout(server=None):
                     "margin": "10px 0",
                     "backgroundColor": "white"
                 }, children=[
-                    dcc.Graph(id="loading-ports-map", figure=map_fig, config={"displayModeBar": False}),
+                    dcc.Graph(
+                        id="loading-ports-map", 
+                        figure=map_fig, 
+                        config={"displayModeBar": False},
+                        clear_on_unhover=True
+                    ),
                         html.Div([
                             html.A("© 2025 Mapbox", href="https://www.mapbox.com/about/maps", target="_blank", style={
                                 "color": "#666",
@@ -2543,11 +2555,9 @@ def register_callbacks(app):
                 is_background_click = True
         
         # Check if it's a country choropleth click
-        if "hovertext" in point and point["hovertext"] and "Click to zoom to country" in point["hovertext"]:
+        if "hovertext" in point and point["hovertext"] and point["hovertext"].startswith("Country: "):
             # Extract country name from hover text
-            hovertext = point["hovertext"]
-            if "<b>" in hovertext and "</b>" in hovertext:
-                clicked_country = hovertext.split("<b>")[1].split("</b>")[0]
+            clicked_country = point["hovertext"].replace("Country: ", "").strip()
         
         # If background click or ocean click, reset to world view
         if is_background_click or (not clicked_country and "lon" in point and "lat" in point):
@@ -2632,6 +2642,92 @@ def register_callbacks(app):
         
         # Default: return current figure unchanged
         return no_update
+    
+    app.clientside_callback(
+        """
+        function(hoverData, fig) {
+            if (!fig || !fig.data) return null;
+            
+            // Create a deep copy of the figure to modify
+            let newFig = JSON.parse(JSON.stringify(fig));
+            
+            // 1. Identify trace and hovered ISO BEFORE filtering (to keep curveNumber valid)
+            let hoveredISO = null;
+            if (hoverData && hoverData.points && hoverData.points.length > 0) {
+                let point = hoverData.points[0];
+                let curveIdx = point.curveNumber;
+                let trace = fig.data[curveIdx]; // Use ORIGINAL fig.data to ensure index is correct
+                
+                if (trace) {
+                    // Case 1: Hovering over choropleth (country area)
+                    if (trace.name === 'countries' && point.customdata) {
+                        hoveredISO = point.customdata;
+                    } 
+                    // Case 2: Hovering over Scatter (port marker)
+                    else if (trace.name === 'Loading Ports' && point.customdata && Array.isArray(point.customdata)) {
+                        // Scatter customdata is [country, crude, port, ISO]
+                        hoveredISO = point.customdata[3];
+                    }
+                }
+            }
+            
+            // 2. Remove any existing highlight traces
+            newFig.data = newFig.data.filter(t => t && t.name !== 'hover_highlight');
+            
+            // 3. If no active country hover, return the cleaned figure
+            if (!hoveredISO || hoveredISO === '__BACKGROUND_CLICK__') {
+                return newFig;
+            }
+            
+            // 4. Find countries trace to copy geojson/locationmode
+            let countriesTrace = newFig.data.find(t => t && t.name === 'countries');
+            if (countriesTrace) {
+                let isMapbox = !!newFig.layout.mapbox;
+                let highlightTrace;
+
+                if (isMapbox) {
+                    highlightTrace = {
+                        type: 'choroplethmapbox',
+                        geojson: countriesTrace.geojson,
+                        locations: [hoveredISO],
+                        z: [1],
+                        featureidkey: countriesTrace.featureidkey || 'id',
+                        colorscale: [[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
+                        showscale: false,
+                        marker: {
+                            line: { color: 'black', width: 3 },
+                            opacity: 1
+                        },
+                        hoverinfo: 'skip',
+                        name: 'hover_highlight'
+                    };
+                } else {
+                    highlightTrace = {
+                        type: 'choropleth',
+                        locationmode: countriesTrace.locationmode || 'ISO-3',
+                        locations: [hoveredISO],
+                        z: [1],
+                        colorscale: [[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
+                        showscale: false,
+                        marker: {
+                            line: { color: 'black', width: 3 }
+                        },
+                        hoverinfo: 'skip',
+                        name: 'hover_highlight'
+                    };
+                }
+                newFig.data.push(highlightTrace);
+            }
+            
+            return newFig;
+        }
+        """,
+        Output('loading-ports-map', 'figure', allow_duplicate=True),
+        Input('loading-ports-map', 'hoverData'),
+        State('loading-ports-map', 'figure'),
+        prevent_initial_call=True
+    )
+
     
     @app.callback(
         [Output('crude-profile-sorting-controls', 'style'),
