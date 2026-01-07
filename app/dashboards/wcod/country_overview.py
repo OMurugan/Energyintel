@@ -784,6 +784,12 @@ def create_layout():
                     data= [],
                     columns=DATA_TABLE_COLUMNS,
                     page_action='none',
+                    css=[
+                        {
+                            'selector': '.dash-spreadsheet td[data-dash-column="Country"] a',
+                            'rule': 'color: #1b365d !important;'
+                        }
+                    ],
                     style_cell={
                         'textAlign': 'right',
                         'padding': '0px 2px',
@@ -1290,14 +1296,14 @@ def register_callbacks(dash_app, server):
 
 
     @callback(
-        Output('exports-ranking-chart', 'figure', allow_duplicate=True),
+        Output('exports-ranking-chart', 'figure'),
         [Input('current-submenu', 'data'),
          Input('selected-country-store', 'data'),
          Input('time-dimension-visibility', 'data')],
-        prevent_initial_call='initial_duplicate'
+        prevent_initial_call=False
     )
     def update_ranking_chart(submenu, selected_country, time_visibility):
-        """Update ranking chart with highlighting"""
+        """Update ranking chart with highlighting and time dimensions"""
         if submenu != 'country-overview':
             return go.Figure()
         
@@ -1430,21 +1436,6 @@ def register_callbacks(dash_app, server):
 
         return dash.no_update, dash.no_update, click_counter
 
-    @callback(
-        Output('exports-ranking-chart', 'figure', allow_duplicate=True),
-        Input('selected-country-store', 'data'),
-        State('current-submenu', 'data'),
-        prevent_initial_call='initial_duplicate'
-    )
-    def update_chart_highlight(selected_country, submenu):
-        """Update chart highlighting based on selected country"""
-        if submenu != 'country-overview':
-            return dash.no_update
-        
-        # Load data to get the latest bar_chart_data and LATEST_YEAR
-        _, _, _, _, _, _LATEST_YEAR, _LATEST_QUARTER, _LATEST_MONTH, _LATEST_DAY = get_country_overview_data()
-
-        return create_ranking_chart(selected_country=selected_country, year_value=_LATEST_YEAR, quarter_value=_LATEST_QUARTER, month_value=_LATEST_MONTH, day_value=_LATEST_DAY)
 
     @callback(
         Output('oil-data-table', 'style_data_conditional', allow_duplicate=True),
