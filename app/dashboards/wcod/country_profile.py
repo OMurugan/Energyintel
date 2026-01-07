@@ -1804,6 +1804,7 @@ def create_port_details_table(country_name):
                 'if': {'column_id': 'Port Name'},
                 'width': '180px',
                 'maxWidth': '180px',
+                'fontWeight': 'bold'
             },
             {
                 'if': {'column_id': 'Coordinates'},
