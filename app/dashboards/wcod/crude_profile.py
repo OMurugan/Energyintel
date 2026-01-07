@@ -1301,7 +1301,8 @@ def create_map_chart(crude_value: str | None = None):
                         colorscale=[[0, 'rgba(200, 230, 200, 0.6)'], [1, 'rgba(200, 230, 200, 0.6)']],
                         showscale=False,
                         hoverinfo="text",
-                        hovertext=[f"Country: {country}" for country in valid_countries],
+                        hovertext=[f"Country: <b>{country}</b>" for country in valid_countries],
+                        hoverlabel=dict(bgcolor="white", font_size=13, font_color="#333", bordercolor="#ccc", font_family="Arial"),
                         customdata=country_isos,
                         marker_line_color="white",
                         marker_line_width=1,
@@ -1329,7 +1330,8 @@ def create_map_chart(crude_value: str | None = None):
                         colorscale=[[0, 'rgba(200, 230, 200, 0.6)'], [1, 'rgba(200, 230, 200, 0.6)']],
                         showscale=False,
                         hoverinfo="text",
-                        hovertext=[f"Country: {country}" for country in valid_countries],
+                        hovertext=[f"Country: <b>{country}</b>" for country in valid_countries],
+                        hoverlabel=dict(bgcolor="white", font_size=13, font_color="#333", bordercolor="#ccc", font_family="Arial"),
                         customdata=country_isos,
                         marker_line_width=1,
                         marker_line_color='white',
@@ -1352,9 +1354,16 @@ def create_map_chart(crude_value: str | None = None):
                 opacity=0.9
             ),
             name='Loading Ports',
-            hovertemplate='<b>Country:</b> %{customdata[0]}<br>' +
-                          '<b>Crude:</b> %{customdata[1]}<br>' +
-                          '<b>Loading Port:</b> %{customdata[2]}<extra></extra>'
+            hovertemplate='Country: <b>%{customdata[0]}</b><br>' +
+                          'Crude: <b>%{customdata[1]}</b><br>' +
+                          'Loading Port: <b>%{customdata[2]}</b><extra></extra>',
+            hoverlabel=dict(
+                bgcolor="white",
+                font_size=13,
+                font_color="#333",
+                bordercolor="#ccc",
+                font_family="Arial"
+            )
         ))
     else:
         fig.add_trace(go.Scattergeo(
@@ -1371,9 +1380,16 @@ def create_map_chart(crude_value: str | None = None):
                 opacity=0.9
             ),
             name='Loading Ports',
-            hovertemplate='<b>Country:</b> %{customdata[0]}<br>' +
-                          '<b>Crude:</b> %{customdata[1]}<br>' +
-                          '<b>Loading Port:</b> %{customdata[2]}<extra></extra>'
+            hovertemplate='Country: <b>%{customdata[0]}</b><br>' +
+                          'Crude: <b>%{customdata[1]}</b><br>' +
+                          'Loading Port: <b>%{customdata[2]}</b><extra></extra>',
+            hoverlabel=dict(
+                bgcolor="white",
+                font_size=13,
+                font_color="#333",
+                bordercolor="#ccc",
+                font_family="Arial"
+            )
         ))
     
     # Add background click layer for reset functionality
