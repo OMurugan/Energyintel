@@ -82,7 +82,7 @@ def create_layout():
                     'border': '2px solid #ff6600',  # Orange border
                     'color': '#0066cc',  # Blue text
                     'fontSize': '15px',
-                    'fontWeight': 'normal',
+                    'fontWeight': 'bold',
                     'fontFamily': 'Arial, sans-serif',
                     'width': '380px',
                     'textAlign': 'center',
@@ -94,7 +94,7 @@ def create_layout():
             )
         ], style={
             'marginBottom': '30px',
-            'textAlign': 'left'
+            'textAlign': 'center'
         }),
         # Title - left-aligned, orange-brown, serif font
         html.H3("PIW SCORECARD -- COSTS TO REFINERS OF KEY FORMULA PRICED CRUDE OILS IN PRIMARY WORLD MARKETS ($/bbl)", 
@@ -102,12 +102,12 @@ def create_layout():
         style={
             'marginBottom': '20px', 
             'fontSize': '16px', 
-            'fontWeight': 'normal',
-            'textAlign': 'left',
+            'fontWeight': 'bold',
+            'textAlign': 'start',
             'color': '#cc6600',  # Orange-brown color
             'fontFamily': 'Times New Roman, serif',
             'padding': '0',
-            'margin': '0 0 20px 0'
+            'margin': '0px 55px 20px'
         }),
         # Export button
         html.Div([
@@ -194,7 +194,9 @@ def _load_sql_data_cached(type_filter_value):
             b.region AS region,
             a.price AS price,
             a.delivery_to AS deliveryto,
-            a.point_of_sale AS "Point Of Sale"
+            a.point_of_sale AS "Point Of Sale",
+            EXTRACT(DAY FROM a.date)::int AS day_num,
+            CONCAT('Q', EXTRACT(QUARTER FROM a.date)::int) AS quarter
         FROM fact_wcod_prices a
         LEFT JOIN dim_country b
             ON a.crude_country_id = b.dim_country_id
@@ -235,6 +237,8 @@ def load_sql_data(type_filter='Cost to Refiners'):
         df = df.dropna(subset=['date']).copy()  # Use copy to avoid SettingWithCopyWarning
         df['Year'] = df['date'].dt.year.astype(str)
         df['Month'] = df['date'].dt.strftime('%B')
+        df['Day'] = df['day_num'].astype(str)
+        df['Quarter'] = df['quarter'].astype(str)
         
         # Fill NaN values once for all columns to avoid repeated operations
         fill_cols = ['region', 'country', 'crude', 'Point Of Sale', 'deliveryto']
@@ -287,11 +291,11 @@ def load_sql_data(type_filter='Cost to Refiners'):
         ordered_column_keys = unique_combinations['column_key'].tolist()
         
         # Optimized pivot: use groupby + unstack for better performance on large datasets
-        # First, ensure we have unique (Year, Month, column_key) combinations
-        df_pivot = df.groupby(['Year', 'Month', 'column_key'])['price'].first().reset_index()
+        # First, ensure we have unique (Year, Quarter, Month, Day, column_key) combinations
+        df_pivot = df.groupby(['Year', 'Quarter', 'Month', 'Day', 'column_key'])['price'].first().reset_index()
         
         # Pivot using unstack for better performance
-        pivot_df = df_pivot.set_index(['Year', 'Month', 'column_key'])['price'].unstack(fill_value=None).reset_index()
+        pivot_df = df_pivot.set_index(['Year', 'Quarter', 'Month', 'Day', 'column_key'])['price'].unstack(fill_value=None).reset_index()
         
         # Ensure all column keys are present (add missing ones as None columns)
         missing_keys = set(ordered_column_keys) - set(pivot_df.columns)
@@ -299,17 +303,19 @@ def load_sql_data(type_filter='Cost to Refiners'):
             pivot_df[key] = None
         
         # Reorder columns efficiently - build list once
-        reordered_cols = ['Year', 'Month'] + [key for key in ordered_column_keys if key in pivot_df.columns]
+        reordered_cols = ['Year', 'Quarter', 'Month', 'Day'] + [key for key in ordered_column_keys if key in pivot_df.columns]
         pivot_df = pivot_df[reordered_cols]
         
         # Rename columns to col_0, col_1, etc. for consistency with existing code
-        value_cols_final = [col for col in pivot_df.columns if col not in ['Year', 'Month']]
+        value_cols_final = [col for col in pivot_df.columns if col not in ['Year', 'Quarter', 'Month', 'Day']]
         col_mapping = dict(zip(value_cols_final, [f'col_{i}' for i in range(len(value_cols_final))]))
         pivot_df = pivot_df.rename(columns=col_mapping)
         
-        # Ensure Year and Month are strings, convert value columns to numeric in one pass
+        # Ensure Year, Quarter, Month, Day are strings, convert value columns to numeric in one pass
         pivot_df['Year'] = pivot_df['Year'].astype(str)
+        pivot_df['Quarter'] = pivot_df['Quarter'].astype(str)
         pivot_df['Month'] = pivot_df['Month'].astype(str)
+        pivot_df['Day'] = pivot_df['Day'].astype(str)
         
         # Convert value columns to numeric efficiently
         value_cols_to_convert = [c for c in pivot_df.columns if c.startswith('col_')]
@@ -335,9 +341,12 @@ def build_column_structure(delivery_locations, countries, crude_types, pricing_t
     """Build column structure with proper hierarchy"""
     columns = []
     
-    # First two columns: Year and Month
-    columns.append({'name': ['', '', '', 'Year'], 'id': 'Year'})
-    columns.append({'name': ['', '', '', 'Month'], 'id': 'Month'})
+    # First four columns: Year, Quarter, Month, Day
+    # Use zero-width characters to ensure proper alignment in multi-level headers
+    columns.append({'name': ['\u200B', '\u200B', '\u200B', 'Year'], 'id': 'Year'})
+    columns.append({'name': ['\u200C', '\u200C', '\u200C', 'Quarter'], 'id': 'Quarter'})
+    columns.append({'name': ['\u200D', '\u200D', '\u200D', 'Month'], 'id': 'Month'})
+    columns.append({'name': ['\u200E', '\u200E', '\u200E', 'Day'], 'id': 'Day'})
     
     max_len = max(len(delivery_locations), len(countries), len(crude_types), len(pricing_terms))
     
@@ -455,69 +464,77 @@ def build_column_structure(delivery_locations, countries, crude_types, pricing_t
 
 def format_data_for_table(data_df, num_value_cols):
     """Format data for dash_table with proper sorting"""
-    # Create records
-    records = []
-    
-    # Month order for descending sort
-    months_order = ['December', 'November', 'October', 'September', 'August', 'July', 'June', 'May', 'April', 'March', 'February', 'January']
-    
-    # Track row indices for year boundaries
+    # Track row indices for year and quarter boundaries
     year_boundary_rows = []
     current_row_index = 0
+    records = []
     
-    # Group by year and sort
-    for year in sorted(data_df['Year'].unique(), reverse=True):
-        year_data = data_df[data_df['Year'] == year].copy()
+    # Sort data by Year (desc), Month (desc), Day (desc)
+    # Define month order for sorting
+    month_mapping = {
+        'January': 1, 'February': 2, 'March': 3, 'April': 4,
+        'May': 5, 'June': 6, 'July': 7, 'August': 8,
+        'September': 9, 'October': 10, 'November': 11, 'December': 12
+    }
+    
+    data_df = data_df.copy()
+    data_df['MonthNum'] = data_df['Month'].map(month_mapping)
+    data_df['YearInt'] = pd.to_numeric(data_df['Year'], errors='coerce')
+    data_df['DayInt'] = pd.to_numeric(data_df['Day'], errors='coerce')
+    
+    sorted_df = data_df.sort_values(['YearInt', 'MonthNum', 'DayInt'], ascending=[False, False, False])
+    
+    current_year = None
+    current_quarter = None
+    current_month = None
+    
+    for _, row in sorted_df.iterrows():
+        year = row['Year']
+        quarter = row['Quarter']
+        month = row['Month']
+        day = row['Day']
         
-        # Sort months in descending order (December to January)
-        year_data['Month'] = pd.Categorical(
-            year_data['Month'], 
-            categories=months_order, 
-            ordered=True
-        )
-        year_data = year_data.sort_values('Month', ascending=True)  # ascending=True because categories are already in descending order
+        # Format year to remove decimal
+        try:
+            year_val = str(int(float(year)))
+        except:
+            year_val = str(year)
+            
+        record = {
+            'Year': year_val if year_val != current_year else None,
+            'Quarter': quarter if (year_val != current_year or quarter != current_quarter) else None,
+            'Month': month if (year_val != current_year or quarter != current_quarter or month != current_month) else None,
+            'Day': day,
+            'Year_Quarter_Month_Day': f"{year_val}_{quarter}_{month}_{day}"
+        }
         
-        # Show year only in the first row of each year group, empty for others
-        for idx, (_, row) in enumerate(year_data.iterrows()):
-            # Format year to remove decimal (e.g., 2025.0 -> 2025)
-            year_value = ''
-            if idx == 0:
-                try:
-                    # Convert to float first to handle string "2025.0", then to int to remove decimal
-                    year_value = str(int(float(row['Year'])))
-                except (ValueError, TypeError):
-                    # If conversion fails, use original value as string and remove .0 if present
-                    year_str = str(row['Year'])
-                    year_value = year_str.replace('.0', '') if year_str.endswith('.0') else year_str
+        current_year = year_val
+        current_quarter = quarter
+        current_month = month
             
-            record = {
-                'Year': year_value,  # Show year only in first row of group, formatted without decimal
-                'Month': row['Month']
-            }
-            
-            # Add value columns
-            for i in range(num_value_cols):
-                col_id = f'col_{i}'
-                if col_id in row:
-                    value = row[col_id]
-                    if pd.notna(value) and value != '':
-                        try:
-                            record[col_id] = f'{float(value):.2f}'
-                        except (ValueError, TypeError):
-                            record[col_id] = ''
-                    else:
+        # Add value columns
+        for i in range(num_value_cols):
+            col_id = f'col_{i}'
+            if col_id in row:
+                value = row[col_id]
+                if pd.notna(value) and value != '':
+                    try:
+                        record[col_id] = f'{float(value):.2f}'
+                    except (ValueError, TypeError):
                         record[col_id] = ''
                 else:
                     record[col_id] = ''
+            else:
+                record[col_id] = ''
+        
+        # Track the last row of each year group for border styling - using a simple check
+        # Let's just use a simple approach: if Year is not None, it's a boundary.
+        if record['Year'] is not None and current_row_index > 0:
+            year_boundary_rows.append(current_row_index - 1)
+        
+        records.append(record)
+        current_row_index += 1
             
-            records.append(record)
-            
-            # Track the last row of each year group for border styling
-            if idx == len(year_data) - 1:
-                year_boundary_rows.append(current_row_index)
-            
-            current_row_index += 1
-    
     return records, year_boundary_rows
 
 
@@ -673,10 +690,10 @@ def register_callbacks(dash_app, server):
             
             # If we have more columns defined than data columns, trim the columns
             if num_value_cols > actual_num_cols:
-                # Keep Year, Month, and only the columns we have data for
+                # Keep Year, Quarter, Month, Day, and only the columns we have data for
                 value_columns = [c for c in columns if c['id'].startswith('col_')]
                 columns_to_keep = value_columns[:actual_num_cols]
-                columns = [c for c in columns if c['id'] in ['Year', 'Month']] + columns_to_keep
+                columns = [c for c in columns if c['id'] in ['Year', 'Quarter', 'Month', 'Day']] + columns_to_keep
             
             # Format data
             data, year_boundary_rows = format_data_for_table(data_df, num_cols_to_use)
@@ -749,7 +766,19 @@ def register_callbacks(dash_app, server):
                         'color': '#1b365d'
                     },
                     {
+                        'if': {'column_id': 'Quarter'},
+                        'textAlign': 'left',
+                        'fontWeight': 'bold',
+                        'color': '#1b365d'
+                    },
+                    {
                         'if': {'column_id': 'Month'},
+                        'textAlign': 'left',
+                        'fontWeight': 'bold',
+                        'color': '#1b365d'
+                    },
+                    {
+                        'if': {'column_id': 'Day'},
                         'textAlign': 'left',
                         'fontWeight': 'bold',
                         'color': '#1b365d'
@@ -810,7 +839,7 @@ def register_callbacks(dash_app, server):
                         'rule': 'color: #1b365d !important;'
                     },
                     {
-                        'selector': 'tbody td[data-dash-column="Year"], tbody td[data-dash-column="Month"]',
+                        'selector': 'tbody td[data-dash-column="Year"], tbody td[data-dash-column="Quarter"], tbody td[data-dash-column="Month"], tbody td[data-dash-column="Day"]',
                         'rule': 'font-weight: bold !important; color: #1b365d !important;'
                     },
                     {
@@ -834,15 +863,15 @@ def register_callbacks(dash_app, server):
                         'rule': 'font-weight: 900 !important; text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor !important; color: #1b365d !important;'
                     },
                     {
-                        'selector': '#price-scorecard-table th[data-dash-column="Year"], #price-scorecard-table th[data-dash-column="Month"]',
+                        'selector': '#price-scorecard-table th[data-dash-column="Year"], #price-scorecard-table th[data-dash-column="Quarter"], #price-scorecard-table th[data-dash-column="Month"], #price-scorecard-table th[data-dash-column="Day"]',
                         'rule': 'font-weight: 900 !important; text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor !important; color: #1b365d !important; text-align: center !important;'
                     },
                     {
-                        'selector': '#price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Year"], #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Month"]',
+                        'selector': '#price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Year"], #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Quarter"], #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Month"], #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Day"]',
                         'rule': 'font-weight: 900 !important; text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor !important; color: #1b365d !important; text-align: center !important;'
                     },
                     {
-                        'selector': '#price-scorecard-table thead th[data-dash-column="Year"], #price-scorecard-table thead th[data-dash-column="Month"]',
+                        'selector': '#price-scorecard-table thead th[data-dash-column="Year"], #price-scorecard-table thead th[data-dash-column="Quarter"], #price-scorecard-table thead th[data-dash-column="Month"], #price-scorecard-table thead th[data-dash-column="Day"]',
                         'rule': 'font-weight: 900 !important; text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor !important; color: #1b365d !important; text-align: center !important;'
                     },
                     {
@@ -862,7 +891,7 @@ def register_callbacks(dash_app, server):
                         'rule': 'background-color: #b3d9ff !important; border: none !important; font-weight: bold !important; color: #1b365d !important; opacity: 1 !important;'
                     },
                     {
-                        'selector': '#price-scorecard-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="Year"]):not([data-dash-column="Month"]):not(.column-cell-selected)',
+                        'selector': '#price-scorecard-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"]):not(.column-cell-selected)',
                         'rule': 'opacity: 0.3 !important;'
                     },
                     {
@@ -936,18 +965,74 @@ def register_callbacks(dash_app, server):
         """
         function(_id) {
             try {
-                // Initialize global state if not exists
+                // Custom CSS for Quarter and Day column toggling
+                const styleId = 'price-scorecard-table-toggle-styles';
+                if (!document.getElementById(styleId)) {
+                    const style = document.createElement('style');
+                    style.id = styleId;
+                    style.textContent = `
+                        /* Toggle columns: Quarter and Day hidden by default */
+                        #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Quarter"],
+                        #price-scorecard-table .dash-spreadsheet-container td[data-dash-column="Quarter"],
+                        #price-scorecard-table .dash-spreadsheet-container th[data-dash-column="Day"],
+                        #price-scorecard-table .dash-spreadsheet-container td[data-dash-column="Day"] {
+                            display: none !important; width: 0 !important; min-width: 0 !important; max-width: 0 !important;
+                            padding: 0 !important; margin: 0 !important; border: none !important;
+                            overflow: hidden !important; visibility: hidden !important;
+                        }
+                        #price-scorecard-table .dash-spreadsheet-container.year-expanded th[data-dash-column="Quarter"],
+                        #price-scorecard-table .dash-spreadsheet-container.year-expanded td[data-dash-column="Quarter"] {
+                            display: table-cell !important; width: auto !important; min-width: 60px !important;
+                            max-width: none !important; padding: 6px 10px !important; margin: 0 !important;
+                            border: 1px solid #e6e6e6 !important; overflow: visible !important; visibility: visible !important;
+                        }
+                        #price-scorecard-table .dash-spreadsheet-container.month-expanded th[data-dash-column="Day"],
+                        #price-scorecard-table .dash-spreadsheet-container.month-expanded td[data-dash-column="Day"] {
+                            display: table-cell !important; width: auto !important; min-width: 50px !important;
+                            max-width: none !important; padding: 6px 10px !important; margin: 0 !important;
+                            border: 1px solid #e6e6e6 !important; overflow: visible !important; visibility: visible !important;
+                        }
+                        /* Quarter collapsed: hide Month and Day even if expanded */
+                        #price-scorecard-table .dash-spreadsheet-container.year-expanded.quarter-collapsed th[data-dash-column="Month"],
+                        #price-scorecard-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Month"],
+                        #price-scorecard-table .dash-spreadsheet-container.year-expanded.quarter-collapsed th[data-dash-column="Day"],
+                        #price-scorecard-table .dash-spreadsheet-container.year-expanded.quarter-collapsed td[data-dash-column="Day"] {
+                            display: none !important; width: 0 !important; padding: 0 !important; border: none !important;
+                        }
+
+                        /* Toggle buttons: match global_prices.py style */
+                        .year-header-toggle, .month-header-toggle, .quarter-header-toggle {
+                            display: none; margin-left: 6px; width: 16px; height: 16px; line-height: 14px;
+                            text-align: center; font-size: 12px; font-weight: normal; color: #505050;
+                            border: 1px solid #d0d0d0; border-radius: 2px; background-color: #ffffff;
+                            user-select: none; cursor: pointer; vertical-align: middle; flex-shrink: 0;
+                            box-sizing: border-box; transition: all 0.15s ease; font-family: Arial, sans-serif;
+                        }
+                        th[data-dash-column="Year"]:hover .year-header-toggle,
+                        th[data-dash-column="Month"]:hover .month-header-toggle,
+                        th[data-dash-column="Quarter"]:hover .quarter-header-toggle {
+                            display: inline-block;
+                        }
+                        .year-header-toggle:hover, .month-header-toggle:hover, .quarter-header-toggle:hover {
+                            color: #333333; border-color: #a0a0a0; background-color: #f0f0f0;
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+
                 if (!window.priceScorecardState) {
                     window.priceScorecardState = {
-                        selectedColumnId: null,
-                        selectedRowIndex: null,
-                        lastTableSignature: null
+                        selectedColumnId: null, selectedRowIndex: null, lastTableSignature: null,
+                        isYearExpanded: false, isMonthExpanded: false, isQuarterCollapsed: false
                     };
+                } else {
+                    if (window.priceScorecardState.isYearExpanded === undefined) window.priceScorecardState.isYearExpanded = false;
+                    if (window.priceScorecardState.isMonthExpanded === undefined) window.priceScorecardState.isMonthExpanded = false;
+                    if (window.priceScorecardState.isQuarterCollapsed === undefined) window.priceScorecardState.isQuarterCollapsed = false;
                 }
                 
                 function clearAllColumnSelections(spreadsheet) {
                     if (!spreadsheet) return;
-                    // Clear only selected column headers and cells
                     const selectedHeaders = spreadsheet.querySelectorAll('th.column-selected');
                     selectedHeaders.forEach(header => {
                         header.classList.remove('column-selected');
@@ -966,37 +1051,36 @@ def register_callbacks(dash_app, server):
                         cell.style.removeProperty('opacity');
                     });
                     
-                    // Reset opacity for all non-selected cells if column selection was active
                     if (spreadsheet.classList.contains('column-selection-active')) {
-                        const allDataCells = spreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Year"]):not([data-dash-column="Month"])');
+                        const allDataCells = spreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"])');
                         allDataCells.forEach(cell => {
                             cell.style.removeProperty('opacity');
                         });
                     }
-                    
                     spreadsheet.classList.remove('column-selection-active');
                 }
                 
                 function clearAllRowSelections(spreadsheet) {
                     if (!spreadsheet) return;
-                    
                     const selectedRows = spreadsheet.querySelectorAll('tr.row-selected');
-                    selectedRows.forEach(row => {
-                        row.classList.remove('row-selected');
-                    });
+                    selectedRows.forEach(row => { row.classList.remove('row-selected'); });
                     
-                    const selectedCells = spreadsheet.querySelectorAll('td.row-cell-selected, th.row-cell-selected');
-                    selectedCells.forEach(cell => {
+                    const cellsWithProperties = spreadsheet.querySelectorAll('td.row-cell-selected, th.row-cell-selected');
+                    cellsWithProperties.forEach(cell => {
                         cell.classList.remove('row-cell-selected');
                         cell.style.removeProperty('background-color');
                         cell.style.removeProperty('border');
                         cell.style.removeProperty('font-weight');
                         cell.style.removeProperty('color');
+                    });
+
+                    // Reset opacity for ALL cells to return to normal state
+                    const allTableCells = spreadsheet.querySelectorAll('td, th');
+                    allTableCells.forEach(cell => {
                         cell.style.removeProperty('opacity');
                     });
-                    
+
                     spreadsheet.classList.remove('row-selection-active');
-                    
                     if (window.priceScorecardState) {
                         window.priceScorecardState.selectedYear = null;
                         window.priceScorecardState.selectedRowIndex = null;
@@ -1007,67 +1091,109 @@ def register_callbacks(dash_app, server):
                     const text = cell.textContent || cell.innerText || '';
                     return text.trim();
                 }
-                
+
+                function addToggleIcon(cell, iconClass, isExpanded, onClickHandler) {
+                    const existingIcon = cell.querySelector('.' + iconClass);
+                    if (existingIcon) {
+                        existingIcon.textContent = isExpanded ? '−' : '+';
+                        return existingIcon;
+                    }
+                    const icon = document.createElement('span');
+                    icon.className = iconClass;
+                    icon.textContent = isExpanded ? '−' : '+';
+                    cell.appendChild(icon);
+                    icon.addEventListener('click', (e) => { e.stopPropagation(); onClickHandler(); });
+                    return icon;
+                }
+
+                function toggleYearExpand() {
+                    const spreadsheet = document.querySelector('#price-scorecard-table .dash-spreadsheet-container');
+                    if (!spreadsheet) return;
+                    window.priceScorecardState.isYearExpanded = !window.priceScorecardState.isYearExpanded;
+                    if (window.priceScorecardState.isYearExpanded) {
+                        spreadsheet.classList.add('year-expanded');
+                    } else {
+                        spreadsheet.classList.remove('year-expanded');
+                        window.priceScorecardState.isQuarterCollapsed = false;
+                        spreadsheet.classList.remove('quarter-collapsed');
+                    }
+                    enhanceTable();
+                }
+
+                function toggleQuarterCollapse() {
+                    const spreadsheet = document.querySelector('#price-scorecard-table .dash-spreadsheet-container');
+                    if (!spreadsheet) return;
+                    window.priceScorecardState.isQuarterCollapsed = !window.priceScorecardState.isQuarterCollapsed;
+                    if (window.priceScorecardState.isQuarterCollapsed) spreadsheet.classList.add('quarter-collapsed');
+                    else spreadsheet.classList.remove('quarter-collapsed');
+                    enhanceTable();
+                }
+
+                function toggleMonthExpand() {
+                    const spreadsheet = document.querySelector('#price-scorecard-table .dash-spreadsheet-container');
+                    if (!spreadsheet) return;
+                    window.priceScorecardState.isMonthExpanded = !window.priceScorecardState.isMonthExpanded;
+                    if (window.priceScorecardState.isMonthExpanded) spreadsheet.classList.add('month-expanded');
+                    else spreadsheet.classList.remove('month-expanded');
+                    enhanceTable();
+                }
+
                 function enhanceTable() {
                     const tableEl = document.getElementById('price-scorecard-table');
-                    if (!tableEl) {
-                        return;
-                    }
-                    
+                    if (!tableEl) return;
                     const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
-                    if (!spreadsheet) {
-                        return;
-                    }
+                    if (!spreadsheet) return;
                     
-                    // Check if headers exist
                     const headers = spreadsheet.querySelectorAll('th[data-dash-column]');
-                    if (headers.length === 0) {
-                        return;
-                    }
+                    if (headers.length === 0) return;
                     
-                    // Create a hash of the table structure to detect changes
-                    // Use the first few header texts and column count as a signature
                     let tableSignature = '';
                     const topRow = spreadsheet.querySelector('thead tr');
                     if (topRow) {
                         const topHeaders = Array.from(topRow.querySelectorAll('th')).slice(0, 5);
                         tableSignature = topHeaders.map(h => h.textContent.trim()).join('|') + '|' + headers.length;
-                    } else {
-                        tableSignature = headers.length.toString();
-                    }
+                    } else tableSignature = headers.length.toString();
                     
-                    // Check if table structure has changed (new table rendered)
                     const signatureChanged = window.priceScorecardState.lastTableSignature !== tableSignature;
                     if (signatureChanged) {
-                        // Table was re-rendered, reset enhanced flag and clear handlers
                         spreadsheet.dataset.priceScorecardEnhanced = 'false';
-                        
-                        // Remove old click handler
                         if (spreadsheet._priceScorecardClickHandler) {
                             spreadsheet.removeEventListener('click', spreadsheet._priceScorecardClickHandler, true);
                             spreadsheet._priceScorecardClickHandler = null;
                         }
-                        
-                        // Clear selections
                         clearAllColumnSelections(spreadsheet);
                         clearAllRowSelections(spreadsheet);
-                        
                         window.priceScorecardState.lastTableSignature = tableSignature;
-                        window.priceScorecardState.selectedColumnId = null;
-                        window.priceScorecardState.selectedRowIndex = null;
-                        window.priceScorecardState.selectedYear = null;
                     }
                     
-                    // Skip if already enhanced (but only if signature hasn't changed)
                     if (spreadsheet.dataset.priceScorecardEnhanced === 'true' && !signatureChanged) {
+                        // Just update icon text if already enhanced
+                        const yearToggle = spreadsheet.querySelector('.year-header-toggle');
+                        if (yearToggle) yearToggle.textContent = window.priceScorecardState.isYearExpanded ? '−' : '+';
+                        const monthToggle = spreadsheet.querySelector('.month-header-toggle');
+                        if (monthToggle) monthToggle.textContent = window.priceScorecardState.isMonthExpanded ? '−' : '+';
                         return;
                     }
                     
-                    // If signature changed or not enhanced, proceed with enhancement
-                    
                     spreadsheet.dataset.priceScorecardEnhanced = 'true';
+
+                    // Initialize Year Toggle
+                    const yearHeaders = Array.from(spreadsheet.querySelectorAll('th[data-dash-column="Year"]'));
+                    const yearHeader = yearHeaders.find(h => h.textContent.trim().includes('Year')) || yearHeaders[yearHeaders.length - 1];
+                    if (yearHeader) addToggleIcon(yearHeader, 'year-header-toggle', window.priceScorecardState.isYearExpanded, toggleYearExpand);
+
+                    // Initialize Quarter Toggle (only if Year is expanded)
+                    if (window.priceScorecardState.isYearExpanded) {
+                        const quarterHeaders = Array.from(spreadsheet.querySelectorAll('th[data-dash-column="Quarter"]'));
+                        const quarterHeader = quarterHeaders.find(h => h.textContent.trim().includes('Quarter')) || quarterHeaders[quarterHeaders.length - 1];
+                        if (quarterHeader) addToggleIcon(quarterHeader, 'quarter-header-toggle', window.priceScorecardState.isQuarterCollapsed, toggleQuarterCollapse);
+                    }
+
+                    // Initialize Month Toggle
+                    const monthHeaders = Array.from(spreadsheet.querySelectorAll('th[data-dash-column="Month"]'));
+                    const monthHeader = monthHeaders.find(h => h.textContent.trim().includes('Month')) || monthHeaders[monthHeaders.length - 1];
+                    if (monthHeader) addToggleIcon(monthHeader, 'month-header-toggle', window.priceScorecardState.isMonthExpanded, toggleMonthExpand);
                     
-                    // Remove any existing click handler to avoid duplicates
                     if (spreadsheet._priceScorecardClickHandler) {
                         spreadsheet.removeEventListener('click', spreadsheet._priceScorecardClickHandler, true);
                     }
@@ -1105,10 +1231,35 @@ def register_callbacks(dash_app, server):
                             // Get header text for debugging
                             const headerText = header.textContent.trim();
                             
-                            // Skip Year and Month columns
-                            if (columnId === 'Year' || columnId === 'Month') {
-                                return;
+                            // Handle Year header toggle
+                            if (columnId === 'Year') {
+                                const toggleBtn = event.target.closest('.year-header-toggle');
+                                if (toggleBtn) {
+                                    toggleYearExpand();
+                                    return;
+                                }
                             }
+                            
+                            // Handle Quarter header toggle
+                            if (columnId === 'Quarter') {
+                                const toggleBtn = event.target.closest('.quarter-header-toggle');
+                                if (toggleBtn) {
+                                    toggleQuarterCollapse();
+                                    return;
+                                }
+                            }
+
+                            // Handle Month header toggle
+                            if (columnId === 'Month') {
+                                const toggleBtn = event.target.closest('.month-header-toggle');
+                                if (toggleBtn) {
+                                    toggleMonthExpand();
+                                    return;
+                                }
+                            }
+                            
+                            // Skip hierarchy columns for selection logic
+                            if (['Year', 'Quarter', 'Month', 'Day'].includes(columnId)) return;
                             
                             // Check if this exact header level is already selected BEFORE clearing
                             const headerRow = header.closest('tr');
@@ -1657,7 +1808,7 @@ def register_callbacks(dash_app, server):
                                         clickedSpreadsheet.classList.add('column-selection-active');
                                         
                                         // Dim other columns
-                                        const allDataCells = clickedSpreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Year"]):not([data-dash-column="Month"])');
+                                        const allDataCells = clickedSpreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Year"]):not([data-dash-column="Quarter"]):not([data-dash-column="Month"]):not([data-dash-column="Day"])');
                                         allDataCells.forEach(cell => {
                                             const cellColId = cell.getAttribute('data-dash-column');
                                             if (!columnIds.has(cellColId)) {
@@ -1671,343 +1822,96 @@ def register_callbacks(dash_app, server):
                             return false; // Prevent default
                         }
                         
-                        // Handle row highlighting when clicking on Year cell
-                        const yearCell = event.target.closest('td[data-dash-column="Year"]');
-                        if (yearCell) {
+                        // Handle row highlighting when clicking on hierarchy cells
+                        const hierarchyCell = event.target.closest('td[data-dash-column="Year"], td[data-dash-column="Quarter"], td[data-dash-column="Month"], td[data-dash-column="Day"]');
+                        if (hierarchyCell) {
                             event.stopPropagation();
+                            const columnId = hierarchyCell.getAttribute('data-dash-column');
+                            const cellValue = getCellValue(hierarchyCell);
+                            const row = hierarchyCell.closest('tr');
+                            if (!row) return;
                             
-                            // Clear column selections first
-                            clearAllColumnSelections(clickedSpreadsheet);
-                            clearAllRowSelections(clickedSpreadsheet);
-                            if (window.priceScorecardState) {
-                                window.priceScorecardState.selectedColumnId = null;
-                            }
-                            
-                            // Get the year value
-                            const yearValue = getCellValue(yearCell);
-                            
-                            if (yearValue) {
-                                // Check if this year is already selected
-                                if (window.priceScorecardState && window.priceScorecardState.selectedYear === yearValue) {
-                                    // Deselect year - clear all row selections
-                                    clearAllRowSelections(clickedSpreadsheet);
-                                    if (window.priceScorecardState) {
-                                        window.priceScorecardState.selectedYear = null;
-                                        window.priceScorecardState.selectedRowIndex = null;
-                                    }
-                                } else {
-                                    // Clear any previous selection
-                                    clearAllRowSelections(clickedSpreadsheet);
-                                    
-                                    // Find all rows with this year and highlight them
-                                    const allDataRows = clickedSpreadsheet.querySelectorAll('tbody tr');
-                                    let currentYear = null;
-                                    
-                                    allDataRows.forEach(row => {
-                                        const rowYearCell = row.querySelector('td[data-dash-column="Year"]');
-                                        if (rowYearCell) {
-                                            const cellValue = getCellValue(rowYearCell);
-                                            if (cellValue && cellValue.trim() !== '') {
-                                                currentYear = cellValue;
-                                            }
-                                        }
-                                        
-                                        if (currentYear === yearValue) {
-                                            const allRowCells = row.querySelectorAll('td');
-                                            allRowCells.forEach(c => {
-                                                const colId = c.getAttribute('data-dash-column');
-                                                if (colId !== 'Month') {
-                                                    c.classList.add('row-cell-selected');
-                                                    c.style.backgroundColor = '#b3d9ff';
-                                                    c.style.fontWeight = '600';
-                                                    c.style.color = '#1b365d';
-                                                    c.style.opacity = '1';
-                                                }
-                                            });
-                                            row.classList.add('row-selected');
-                                        }
-                                    });
-                                    
-                                    if (window.priceScorecardState) {
-                                        window.priceScorecardState.selectedYear = yearValue;
-                                        window.priceScorecardState.selectedRowIndex = null;
-                                    }
-                                }
-                            }
-                            return false; 
-                        }
-                        
-                        // Handle row highlighting when clicking on Month cell
-                        const monthCell = event.target.closest('td[data-dash-column="Month"]');
-                        if (monthCell) {
-                            event.stopPropagation();
-                            
-                            // Clear column selections first
+                            const rowIndex = row.getAttribute('data-dash-row') || Array.from(row.parentNode.children).indexOf(row).toString();
+
                             clearAllColumnSelections(clickedSpreadsheet);
                             
-                            // Increment selection counter to invalidate old callbacks
-                            if (!window.priceScorecardState) {
-                                window.priceScorecardState = {};
+                            if (window.priceScorecardState && window.priceScorecardState.selectedRowIndex === (columnId + '_' + rowIndex + '_' + cellValue)) {
+                                clearAllRowSelections(clickedSpreadsheet);
+                                window.priceScorecardState.selectedRowIndex = null;
+                                return;
                             }
-                            window.priceScorecardState.selectionCounter = (window.priceScorecardState.selectionCounter || 0) + 1;
-                            const currentSelectionCounter = window.priceScorecardState.selectionCounter;
-                            
-                            // Clear ALL cells with row-cell-selected class (most comprehensive)
-                            const allHighlightedCells = clickedSpreadsheet.querySelectorAll('td.row-cell-selected');
-                            allHighlightedCells.forEach(c => {
-                                c.classList.remove('row-cell-selected');
-                                c.style.removeProperty('background-color');
-                                c.style.removeProperty('border');
-                                c.style.removeProperty('font-weight');
-                                c.style.removeProperty('color');
-                                c.style.removeProperty('opacity');
-                                c.style.removeProperty('filter');
-                                c.style.backgroundColor = '';
-                                c.style.border = '';
-                                c.style.fontWeight = '';
-                                c.style.color = '';
-                                c.style.opacity = '';
-                            });
-                            
-                            // Clear ALL previously selected rows (find by class, not just state)
-                            const allSelectedRows = clickedSpreadsheet.querySelectorAll('tbody tr.row-selected');
-                            allSelectedRows.forEach(prevRow => {
-                                const prevRowCells = prevRow.querySelectorAll('td');
-                                prevRowCells.forEach(c => {
-                                    c.classList.remove('row-cell-selected');
-                                    // Force remove all styles with !important
-                                    c.style.removeProperty('background-color');
-                                    c.style.removeProperty('border');
-                                    c.style.removeProperty('font-weight');
-                                    c.style.removeProperty('color');
-                                    c.style.removeProperty('opacity');
-                                    c.style.removeProperty('filter');
-                                    // Set to empty to override any !important styles
-                                    c.style.backgroundColor = '';
-                                    c.style.border = '';
-                                    c.style.fontWeight = '';
-                                    c.style.color = '';
-                                    c.style.opacity = '';
-                                });
-                                prevRow.classList.remove('row-selected');
-                            });
-                            
-                            // Also clear by state if available (fallback)
-                            if (window.priceScorecardState && window.priceScorecardState.selectedRowIndex !== null) {
-                                const prevRowIndex = window.priceScorecardState.selectedRowIndex;
-                                // Try multiple ways to find the row
-                                let prevRow = clickedSpreadsheet.querySelector(`tbody tr[data-dash-row="${prevRowIndex}"]`);
-                                if (!prevRow) {
-                                    // Try by position
-                                    const tbody = clickedSpreadsheet.querySelector('tbody');
-                                    if (tbody) {
-                                        const allRows = Array.from(tbody.querySelectorAll('tr'));
-                                        const rowPos = parseInt(prevRowIndex);
-                                        if (!isNaN(rowPos) && rowPos >= 0 && rowPos < allRows.length) {
-                                            prevRow = allRows[rowPos];
-                                        }
-                                    }
-                                }
-                                if (prevRow) {
-                                    const prevRowCells = prevRow.querySelectorAll('td');
-                                    prevRowCells.forEach(c => {
-                                        c.classList.remove('row-cell-selected');
-                                        c.style.removeProperty('background-color');
-                                        c.style.removeProperty('border');
-                                        c.style.removeProperty('font-weight');
-                                        c.style.removeProperty('color');
-                                        c.style.removeProperty('opacity');
-                                        c.style.removeProperty('filter');
-                                        c.style.backgroundColor = '';
-                                        c.style.border = '';
-                                        c.style.fontWeight = '';
-                                        c.style.color = '';
-                                        c.style.opacity = '';
-                                    });
-                                    prevRow.classList.remove('row-selected');
-                                }
-                            }
-                            
-                            // Clear all row selections (comprehensive cleanup)
+
                             clearAllRowSelections(clickedSpreadsheet);
                             
-                            // Force reset ALL rows to normal state (no dimming, no highlighting)
-                            const allDataRows = clickedSpreadsheet.querySelectorAll('tbody tr');
-                            allDataRows.forEach(r => {
-                                const rowCells = r.querySelectorAll('td');
-                                rowCells.forEach(c => {
-                                    // Remove all classes and styles
-                                    c.classList.remove('row-cell-selected');
-                                    // Remove all inline styles
-                                    c.style.removeProperty('background-color');
-                                    c.style.removeProperty('border');
-                                    c.style.removeProperty('font-weight');
-                                    c.style.removeProperty('color');
-                                    c.style.removeProperty('opacity');
-                                    c.style.removeProperty('filter');
-                                    // Set to empty to clear any remaining styles
-                                    c.style.backgroundColor = '';
-                                    c.style.border = '';
-                                    c.style.fontWeight = '';
-                                    c.style.color = '';
-                                    c.style.opacity = '';
-                                });
-                                r.classList.remove('row-selected');
-                            });
+                            const allRows = Array.from(clickedSpreadsheet.querySelectorAll('tbody tr'));
+                            const currentRowIndex = allRows.indexOf(row);
                             
-                            // Remove row-selection-active class
-                            clickedSpreadsheet.classList.remove('row-selection-active');
-                            
-                            // Clear state BEFORE applying new selection
-                            if (window.priceScorecardState) {
-                                window.priceScorecardState.selectedColumnId = null;
-                                window.priceScorecardState.selectedRowIndex = null; // Clear previous selection
-                            }
-                            
-                            // Get the row containing this Month cell BEFORE requestAnimationFrame
-                            const row = monthCell.closest('tr');
-                            if (!row) {
-                                return false;
-                            }
-                            
-                            let rowIndex = row.getAttribute('data-dash-row');
-                                
-                            // Fallback: if no data-dash-row, use row position
-                            if (!rowIndex) {
-                                const tbody = row.closest('tbody');
-                                if (tbody) {
-                                    const allRows = Array.from(tbody.querySelectorAll('tr'));
-                                    const rowPosition = allRows.indexOf(row);
-                                    rowIndex = rowPosition.toString();
+                            let startIndex = currentRowIndex;
+                            let firstLabelCell = hierarchyCell;
+
+                            // Find start index (look up to find the non-empty label cell)
+                            if (cellValue === "") {
+                                for (let i = currentRowIndex; i >= 0; i--) {
+                                    const cell = allRows[i].querySelector(`td[data-dash-column="${columnId}"]`);
+                                    if (getCellValue(cell) !== "") {
+                                        startIndex = i;
+                                        firstLabelCell = cell;
+                                        break;
+                                    }
                                 }
                             }
                             
-                            
-                            // Check if this row is already selected
-                            if (window.priceScorecardState && window.priceScorecardState.selectedRowIndex === rowIndex) {
-                                // Deselect row
-                                clearAllRowSelections(clickedSpreadsheet);
-                                if (window.priceScorecardState) {
-                                    window.priceScorecardState.selectedRowIndex = null;
+                            // Find end index (look down to find the row before the next label)
+                            let endIndex = allRows.length - 1;
+                            for (let i = startIndex + 1; i < allRows.length; i++) {
+                                const val = getCellValue(allRows[i].querySelector(`td[data-dash-column="${columnId}"]`));
+                                if (val !== "") {
+                                    endIndex = i - 1;
+                                    break;
                                 }
-                            } else {
-                                // Clear any previous row selection
-                                clearAllRowSelections(clickedSpreadsheet);
-                                    
-                                // Get all cells directly from the row element
-                                // This ensures we get ALL cells in the row
-                                const allRowCells = Array.from(row.querySelectorAll('td'));
-                                
-                                // Highlight Month and data columns, but NOT Year
-                                let highlightedCount = 0;
-                                allRowCells.forEach((c, index) => {
-                                    const colId = c.getAttribute('data-dash-column');
-                                    if (colId === 'Year') {
-                                        // Year column: keep at normal state, don't highlight
-                                        c.classList.remove('row-cell-selected');
-                                        c.style.backgroundColor = '';
-                                        c.style.border = '';
-                                        c.style.fontWeight = '';
-                                        c.style.color = '';
-                                        c.style.opacity = '1';
-                                        c.style.removeProperty('filter');
-                                    } else {
-                                        // Month and data columns: highlight with bright blue
+                            }
+
+                            targetRows = allRows.slice(startIndex, endIndex + 1);
+
+                            targetRows.forEach(r => {
+                                r.classList.add('row-selected');
+                                r.querySelectorAll('td').forEach(c => {
+                                    const cColId = c.getAttribute('data-dash-column');
+                                    // Highlight data cells
+                                    if (!['Year', 'Quarter', 'Month', 'Day'].includes(cColId)) {
                                         c.classList.add('row-cell-selected');
-                                        // Apply inline styles with !important to ensure visibility
                                         c.style.setProperty('background-color', '#b3d9ff', 'important');
-                                        c.style.setProperty('border', 'none', 'important');
                                         c.style.setProperty('font-weight', '600', 'important');
-                                        c.style.setProperty('color', '#1b365d', 'important');
                                         c.style.setProperty('opacity', '1', 'important');
-                                        // Remove any conflicting styles that might dim the cell
-                                        c.style.removeProperty('filter');
-                                        highlightedCount++;
                                     }
-                                });
-                                
-                                
-                                // Add row-selected class to row element
-                                row.classList.add('row-selected');
-                                
-                                // Dim other rows first
-                                const allDataRows = clickedSpreadsheet.querySelectorAll('tbody tr');
-                                allDataRows.forEach((r, rPos) => {
-                                    const rIndex = r.getAttribute('data-dash-row') || rPos.toString();
-                                    if (rIndex !== rowIndex) {
-                                        // Dim all cells in other rows
-                                        const rowCells = r.querySelectorAll('td');
-                                        rowCells.forEach(c => {
-                                            c.style.setProperty('opacity', '0.3', 'important');
-                                        });
-                                    }
-                                });
-                                
-                                // Now add row-selection-active class
-                                clickedSpreadsheet.classList.add('row-selection-active');
-                                
-                                // Force selected row to be bright (apply again to ensure it overrides any CSS)
-                                const selectedRowCells = row.querySelectorAll('td');
-                                selectedRowCells.forEach(c => {
-                                    const colId = c.getAttribute('data-dash-column');
-                                    if (colId !== 'Year') {
-                                        // Force Month and data cells to be bright with !important
-                                        c.style.setProperty('opacity', '1', 'important');
+                                    // Highlight the specific label cell that spans this group
+                                    if (c === firstLabelCell) {
+                                        c.classList.add('row-cell-selected');
                                         c.style.setProperty('background-color', '#b3d9ff', 'important');
-                                        c.style.setProperty('color', '#1b365d', 'important');
-                                        c.style.setProperty('font-weight', '600', 'important');
-                                        c.style.setProperty('border', 'none', 'important');
-                                        c.style.removeProperty('filter');
-                                    } else {
-                                        // Year column: normal state
+                                        c.style.setProperty('font-weight', 'bold', 'important');
                                         c.style.setProperty('opacity', '1', 'important');
-                                        c.style.setProperty('background-color', '', 'important');
-                                        c.style.setProperty('color', '', 'important');
-                                        c.style.setProperty('font-weight', '', 'important');
                                     }
                                 });
-                                
-                                // Use requestAnimationFrame to ensure styles are applied after any Dash updates
-                                const selectionCounterForCallback = currentSelectionCounter;
-                                requestAnimationFrame(() => {
-                                    // Check selection counter to ensure this is still the current selection
-                                    const currentCounter = window.priceScorecardState && window.priceScorecardState.selectionCounter;
-                                    const currentSelectedRowIndex = window.priceScorecardState && window.priceScorecardState.selectedRowIndex;
-                                    
-                                    // Only apply if this is still the current selection (counter matches and row index matches)
-                                    if (currentCounter === selectionCounterForCallback && 
-                                        currentSelectedRowIndex === rowIndex && 
-                                        row.classList.contains('row-selected')) {
-                                        const selectedRowCells = row.querySelectorAll('td');
-                                        selectedRowCells.forEach(c => {
-                                            const colId = c.getAttribute('data-dash-column');
-                                            if (colId !== 'Year' && c.classList.contains('row-cell-selected')) {
-                                                // Force bright styles one more time
-                                                c.style.setProperty('opacity', '1', 'important');
-                                                c.style.setProperty('background-color', '#b3d9ff', 'important');
-                                                c.style.setProperty('color', '#1b365d', 'important');
-                                                c.style.setProperty('font-weight', '600', 'important');
-                                                c.style.setProperty('border', 'none', 'important');
-                                            }
-                                        });
-                                    }
-                                });
-                                
-                                if (window.priceScorecardState) {
-                                    window.priceScorecardState.selectedRowIndex = rowIndex;
+                            });
+
+                            // Dim other rows
+                            allRows.forEach(r => {
+                                if (!r.classList.contains('row-selected')) {
+                                    r.querySelectorAll('td').forEach(c => c.style.setProperty('opacity', '0.3', 'important'));
                                 }
-                            }
-                            return false;
+                            });
+                            clickedSpreadsheet.classList.add('row-selection-active');
+                            window.priceScorecardState.selectedRowIndex = columnId + '_' + rowIndex + '_' + cellValue;
+                            return;
                         }
                         
                         // If clicking on a data cell, clear column and row selections
                         const cell = event.target.closest('td[data-dash-column]');
                         if (cell) {
                             const columnId = cell.getAttribute('data-dash-column');
-                            if (columnId && columnId !== 'Year' && columnId !== 'Month') {
+                            if (columnId && !['Year', 'Quarter', 'Month', 'Day'].includes(columnId)) {
                                 clearAllColumnSelections(clickedSpreadsheet);
                                 clearAllRowSelections(clickedSpreadsheet);
-                                
                                 if (window.priceScorecardState) {
                                     window.priceScorecardState.selectedColumnId = null;
                                     window.priceScorecardState.selectedRowIndex = null;
