@@ -2779,7 +2779,7 @@ def register_callbacks(dash_app, server):
     # Clientside callback to navigate to stream profile URL and track last clicked stream
     clientside_callback(
         """
-        function(button_clicks, button_ids, profile_urls, last_clicked_stream) {
+        function(button_clicks, button_ids, profile_urls, last_clicked_stream, current_selected) {
             if (!window.dash_clientside) {
                 return null;
             }
@@ -2791,42 +2791,102 @@ def register_callbacks(dash_app, server):
             
             // Find which button was clicked
             const triggered = window.dash_clientside.callback_context.triggered[0];
-            if (!triggered) {
+            if (!triggered || !triggered.prop_id) {
+                console.log('No trigger detected');
                 return null;
             }
             
-            // Parse the triggered_id to get the stream name
-            // Format: '{"type":"stream-button","stream":"Arco"}.n_clicks'
+            // CRITICAL: Ensure this only runs if a button was actually clicked.
+            // Pattern-matching callbacks can trigger when buttons are added to the layout (Input ALL).
+            // We check if any of the buttons have n_clicks > 0.
+            if (!button_clicks || !button_clicks.some(click => click && click > 0)) {
+                console.log('🚫 SKIPPING - No genuine button clicks detected (all n_clicks <= 0)');
+                return null;
+            }
+            
+            // Parse the triggered_id to get the stream name and validate the click
             try {
                 const jsonPart = triggered.prop_id.split('.')[0];
                 const buttonId = JSON.parse(jsonPart);
                 const clickedStream = buttonId.stream;
                 
-                console.log('Button clicked for stream:', clickedStream);
-                console.log('Last clicked stream:', last_clicked_stream);
+                // Find the corresponding button click count for the triggered stream
+                let clickCount = 0;
+                if (button_ids && button_clicks) {
+                    for (let i = 0; i < button_ids.length; i++) {
+                        if (button_ids[i].stream === clickedStream) {
+                            clickCount = button_clicks[i] || 0;
+                            break;
+                        }
+                    }
+                }
                 
-                // Check if this is the same stream as last clicked - if so, don't navigate
-                // We compare against the last_clicked_stream from the store
-                if (clickedStream === last_clicked_stream) {
-                    console.log('Same stream clicked again, skipping navigation');
+                console.log('Button clicked for stream:', clickedStream, 'click count:', clickCount);
+                
+                // Only proceed if this specific button has been clicked (click count > 0)
+                if (clickCount <= 0) {
+                    console.log('🚫 SKIPPING - Clicked stream has no genuine clicks (click count <= 0)');
                     return null;
                 }
                 
-                console.log('Available profile URLs:', Object.keys(profile_urls));
+                console.log('Current selected streams:', current_selected);
+                console.log('Last clicked stream:', last_clicked_stream);
                 
-                if (clickedStream && profile_urls[clickedStream]) {
-                    const profileUrl = profile_urls[clickedStream];
-                    if (profileUrl && profileUrl !== 'nan' && profileUrl !== 'None' && profileUrl.trim() !== '') {
-                        console.log('Navigating to', profileUrl, 'for stream', clickedStream);
-                        // Open in new tab
-                        window.open(profileUrl, '_blank');
-                        // Return the clicked stream so it becomes the new last_clicked_stream
-                        return clickedStream;
+                // Mirror the exact server-side logic to determine if stream will be selected
+                const allStreams = button_ids.map(id => id.stream);
+                const currentSelectedSet = new Set(current_selected || []);
+                const allStreamsSet = new Set(allStreams);
+                
+                // Determine if we're in default mode (matches server-side logic exactly)
+                const isDefaultMode = (currentSelectedSet.size === allStreamsSet.size && 
+                                     [...currentSelectedSet].every(s => allStreamsSet.has(s))) || 
+                                     currentSelectedSet.size === 0;
+                
+                let willBeSelected = false;
+                
+                if (isDefaultMode) {
+                    // Default mode: clicking any stream selects only that stream -> SELECTION
+                    willBeSelected = true;
+                    console.log('Default mode detected - clicking will SELECT stream');
+                } else if (currentSelectedSet.size === 1 && currentSelectedSet.has(clickedStream)) {
+                    // One stream selected and clicking the same stream: return to default -> DESELECTION
+                    willBeSelected = false;
+                    console.log('Single stream selected, clicking same stream - will DESELECT (return to all)');
+                } else {
+                    // Clicking a different stream when one is already selected -> SELECTION
+                    willBeSelected = true;
+                    console.log('Switching to different stream - will SELECT new stream');
+                }
+                
+                console.log('Will stream be selected?', willBeSelected);
+                console.log('Is different from last navigation?', clickedStream !== last_clicked_stream);
+                
+                // Only navigate if:
+                // 1. The stream will be SELECTED (not deselected)
+                // 2. It's different from the last navigation (prevent duplicate navigation)
+                if (willBeSelected && clickedStream !== last_clicked_stream) {
+                    console.log('Available profile URLs:', Object.keys(profile_urls));
+                    
+                    if (clickedStream && profile_urls[clickedStream]) {
+                        const profileUrl = profile_urls[clickedStream];
+                        if (profileUrl && profileUrl !== 'nan' && profileUrl !== 'None' && profileUrl.trim() !== '') {
+                            console.log('✅ NAVIGATING to', profileUrl, 'for stream', clickedStream);
+                            // Open in new tab
+                            window.open(profileUrl, '_blank');
+                            // Return the clicked stream so it becomes the new last_clicked_stream
+                            return clickedStream;
+                        } else {
+                            console.log('❌ Invalid URL for stream', clickedStream, ':', profileUrl);
+                        }
                     } else {
-                        console.log('Invalid URL for stream', clickedStream, ':', profileUrl);
+                        console.log('❌ No URL found for stream:', clickedStream);
                     }
                 } else {
-                    console.log('No URL found for stream:', clickedStream);
+                    if (!willBeSelected) {
+                        console.log('🚫 SKIPPING navigation - stream will be DESELECTED');
+                    } else {
+                        console.log('🚫 SKIPPING navigation - same as last navigation');
+                    }
                 }
             } catch (e) {
                 console.error('Error parsing button click:', e);
@@ -2839,7 +2899,8 @@ def register_callbacks(dash_app, server):
         [Input({"type": "stream-button", "stream": ALL}, "n_clicks")],
         [State({"type": "stream-button", "stream": ALL}, "id"),
          State("stream-profile-urls-store", "data"),
-         State("last-clicked-stream-store", "data")]
+         State("last-clicked-stream-store", "data"),
+         State("profiled-streams", "value")]
     )
     
     @dash_app.callback(
