@@ -1003,7 +1003,7 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
     
     # Always show ALL countries in the chart (not just selected ones)
     # Selected countries will be highlighted, non-selected will be greyed out but still visible
-    all_countries_in_data = [c for c in original_df['Country'].unique().tolist() if pd.notna(c) and str(c).strip()]
+    all_countries_in_data = [str(c).strip() for c in original_df['Country'].unique().tolist() if pd.notna(c) and str(c).strip()]
     
     # Always use the full original data - don't filter countries out
     # Instead, we'll apply opacity to non-selected countries in the chart rendering
@@ -1037,7 +1037,7 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
     countries_with_zeros_only = []
     
     for country in all_countries_in_data:
-        country_data = df[df['Country'] == country]
+        country_data = df[df['Country'].astype(str).str.strip() == country]
         if not country_data.empty and country_data['value_company'].sum() > 0:
             countries_with_data.append(country)
         else:
@@ -1062,24 +1062,27 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
     
     # Add a trace for each country
     for country in countries:
+        # Normalize comparison
+        stripped_country = str(country).strip()
+        
         # Always use the full df (which has Period column already created)
         # All countries are shown, but non-selected ones will be greyed out
-        country_data = df[df['Country'] == country]
+        country_data = df[df['Country'].astype(str).str.strip() == stripped_country]
         # Get color from query result if available, otherwise fallback to get_country_color (same pattern as projects_by_country.py)
         if not country_data.empty and 'Country Color' in country_data.columns:
             base_color = country_data['Country Color'].iloc[0] if pd.notna(country_data['Country Color'].iloc[0]) else get_country_color(country)
         else:
             base_color = get_country_color(country)
         
-        # Check if this country is selected (highlighted)
-        # If no countries are selected (empty list), show all countries normally (not greyed out)
-        # If countries are selected, only those are highlighted, others are greyed out
-        if len(selected_countries) == 0:
+        # Normalize selected list for comparison
+        clean_selected = [str(sc).strip() for sc in selected_countries if sc]
+        
+        if not clean_selected:
             # No countries selected: show all countries normally
             is_selected = True
         else:
             # Some countries selected: only those are highlighted
-            is_selected = country in selected_countries
+            is_selected = stripped_country in clean_selected
         
         highlight_year_int = None
         highlight_quarter_label = None
@@ -1138,7 +1141,7 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
                 marker_colors.append(base_color)
             else:
                 # Dim non-matched segments
-                marker_colors.append(apply_opacity_to_color(base_color, 0.18))
+                marker_colors.append(apply_opacity_to_color(base_color, 0.15))
             
             # Apply black border to the matched segment if country is selected
             if show_borders and is_matched_period:
@@ -1148,11 +1151,9 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
                 marker_line_widths.append(0)
                 marker_line_colors.append('rgba(0,0,0,0)')
         
-        # Determine overall opacity for the trace
-        # Non-selected countries should be very dim to match the reference image
         if not is_selected: 
             # Non-selected countries: greyed out but still visible
-            trace_opacity = 0.15  # Slightly more dim for better contrast
+            trace_opacity = 0.12 # Even more dim to ensure selection pops
         else:
             # Selected countries: full opacity (or minimal for zero values to maintain hover)
             trace_opacity = 1.0 if any(v > 0 for v in values) else 0.01
@@ -1389,8 +1390,8 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     other_isos = None
     if selected_countries and len(selected_countries) == 1:
         # Standard map highlights one country
-        selected_country = selected_countries[0]
-        selected_row = country_totals[country_totals['Country'] == selected_country]
+        selected_country = str(selected_countries[0]).strip()
+        selected_row = country_totals[country_totals['Country'].astype(str).str.strip() == selected_country]
         if not selected_row.empty:
             selected_iso = selected_row.iloc[0]['iso_alpha']
             other_isos = [iso for iso in locations if iso != selected_iso]
@@ -2087,15 +2088,15 @@ def register_callbacks(dash_app, server):
     )
     def update_country_styles(selected_countries):
         """Update country item styles based on store"""
-        selected_countries = selected_countries or []
+        selected_countries = [str(sc).strip() for sc in (selected_countries or []) if sc]
         styles = []
         for country in legend_countries:
+            stripped_country = str(country).strip()
             # If no countries are selected, show all countries normally (not greyed out)
-            # If countries are selected, only those are highlighted, others are greyed out
-            if len(selected_countries) == 0:
-                is_selected = True  # Show all normally when none selected
+            if not selected_countries:
+                is_selected = True
             else:
-                is_selected = country in selected_countries
+                is_selected = stripped_country in selected_countries
             
             country_color = get_country_color(country)
             # Selected countries get a subtle background highlight. Non-selected countries are greyed out but still visible.
