@@ -728,10 +728,13 @@ def build_monthly_table_from_bar(bar_long_monthly):
                     "July", "August", "September", "October", "November", "December"]
     
     table_df = pd.DataFrame({"Crude": streams})
-    # Add Country metadata if available in bar data
-    if "Country" in group.columns:
-        country_map = group.drop_duplicates(subset=["Stream"]).set_index("Stream")["Country"]
+    # Add Country metadata if available in original bar data (before groupby)
+    if "Country" in df.columns:
+        country_map = df.drop_duplicates(subset=["Stream"]).set_index("Stream")["Country"]
         table_df["Country"] = table_df["Crude"].map(country_map)
+        print(f"DEBUG FALLBACK: Added Country column to monthly table from BAR_LONG_MONTHLY, {len(table_df)} rows")
+    else:
+        print(f"DEBUG FALLBACK: No Country column found in BAR_LONG_MONTHLY, available columns: {df.columns.tolist()}")
         
     table_df.set_index("Crude", inplace=True)
     year_to_month_cols = {}
@@ -1176,7 +1179,7 @@ def load_table():
         # Load monthly table data from DB
         monthly_query = """
             SELECT     
-                a.country_name AS "Country",
+                a.country AS "Country",
                 c.crude_name AS "Crude",
                 c.ci_rank,
                 c.api,
@@ -1236,6 +1239,7 @@ def load_table():
                 
                 if available_metadata:
                     monthly_df = monthly_raw[available_metadata].drop_duplicates(subset=["Crude"]).copy()
+                    print(f"DEBUG LOAD: monthly_df columns after metadata: {monthly_df.columns.tolist()} (rows: {len(monthly_df)})")
                 else:
                     monthly_df = pd.DataFrame({"Crude": monthly_raw["Crude"].dropna().unique()})
                 
@@ -1559,7 +1563,7 @@ def create_layout(server=None):
         # Store to track map country selection
         dcc.Store(id="selected-country-map-store", data=None),
         # Store to track if map selection should filter the table
-        dcc.Store(id="table-map-filter-active-store", data=True),
+        dcc.Store(id="table-map-filter-active-store", data=False),
         dcc.Store(id="stream-navigation-dummy", data=None),
         # Custom CSS to style markdown links in DataTable to look like normal text
         html.Div(
@@ -3770,6 +3774,7 @@ def register_callbacks(dash_app, server):
             else:
                 # Monthly view: simplified and robust stacked bars
                 print(f"DEBUG BREAKDOWN MONTHLY: production_years={production_years}, country={country}")
+                print(f"DEBUG BREAKDOWN MONTHLY: original_country_selection={original_country_selection}")
                 
                 # Default country/year handling
                 if not country:
@@ -4343,9 +4348,9 @@ def register_callbacks(dash_app, server):
 
 
         # 4. Country Filter
-        # Map selection applies to both tabs
-        # Dropdown country filter only applies to monthly tab (Yearly is "Global" by default from dropdown)
-        print(f"DEBUG FILTER_TABLE: selected_country_map={selected_country_map}, table_map_filter_active={table_map_filter_active}, tab={tab}")
+        # Map selection applies to both tabs when active
+        # For Monthly tab, dropdown country filter applies when map selection is not active
+        print(f"DEBUG FILTER_TABLE: selected_country_map={selected_country_map}, table_map_filter_active={table_map_filter_active}, tab={tab}, country={country}")
         if selected_country_map and table_map_filter_active:
             # Map selection overrides everything - apply to both tabs
             # Ensure we use the full country name, not ISO code
@@ -4353,12 +4358,21 @@ def register_callbacks(dash_app, server):
             if "Country" in df.columns:
                 df = df[df["Country"] == country_name]
                 print(f"DEBUG FILTER_TABLE: Applied map selection filter for {tab} tab: {country_name} (from {selected_country_map}), rows after filter: {len(df)}")
-        elif tab == "monthly" and country and country != ['ALL']:
-            # Dropdown country filter only for monthly when no map selection
+        elif selected_country_map and not table_map_filter_active:
+            # Map country is selected but table filter is inactive (user clicked same country twice)
+            # Show all data in table while keeping chart/legend filtered
+            print(f"DEBUG FILTER_TABLE: Map country selected ({selected_country_map}) but table filter inactive, showing all data: {len(df)} rows")
+        elif tab == "monthly" and country and country != ['ALL'] and not table_map_filter_active:
+            # Dropdown country filter only for monthly when:
+            # 1. No map selection is active (table_map_filter_active is False)
+            # 2. Country is explicitly selected (not None and not ['ALL'])
+            # This prevents filtering on initial load but allows dropdown filtering after user interaction
             resolved_countries = _resolve_countries_selection(country)
-            if "Country" in df.columns:
+            if resolved_countries and "Country" in df.columns:
                 df = df[df["Country"].isin(resolved_countries)]
                 print(f"DEBUG FILTER_TABLE: Applied dropdown country filter for monthly tab: {resolved_countries}, rows after filter: {len(df)}")
+            else:
+                print(f"DEBUG FILTER_TABLE: No valid countries to filter for monthly tab, showing all data: {len(df)} rows")
         else:
             print(f"DEBUG FILTER_TABLE: No country filter applied for {tab} tab, showing all data: {len(df)} rows")
         
