@@ -784,6 +784,12 @@ def create_layout():
                     data= [],
                     columns=DATA_TABLE_COLUMNS,
                     page_action='none',
+                    css=[
+                        {
+                            'selector': '.dash-spreadsheet td[data-dash-column="Country"] a',
+                            'rule': 'color: #1b365d !important;'
+                        }
+                    ],
                     style_cell={
                         'textAlign': 'right',
                         'padding': '0px 2px',
@@ -874,7 +880,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
     # exports_col = f'Exports_{LATEST_YEAR}'
     # production_col = f'Production_{LATEST_YEAR}'
 
-    chart_columns = ['Country', 'Exports_Value', 'Production_Value']
+    chart_columns = ['Country', 'Exports_Value', 'Production_Value', 'Profile_URL']
     
     sorted_df = bar_chart_data[chart_columns].sort_values('Exports_Value', ascending=True).copy()
     if sorted_df.empty:
@@ -891,30 +897,8 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
     country_list_original = sorted_df['Country'].astype(str).str.strip().tolist()
     
     # Build y-axis labels with time dimensions if visible
+    # width/xshift calculation will happen in the annotation loop
     country_list = country_list_original.copy()
-    if time_visibility:
-        # year_value = LATEST_YEAR # Now passed as parameter
-        # quarter_value = 4 # Now passed as parameter
-        # month_value = "December" # Now passed as parameter
-        # day_value = 31 # Now passed as parameter
-        
-        y_labels = []
-        for country in country_list_original:
-            label_parts = [country]
-            if time_visibility.get('Year', True) and year_value:
-                label_parts.append(str(year_value))
-            if time_visibility.get('Quarter', False) and quarter_value:
-                label_parts.append(f"{quarter_value}")
-            if time_visibility.get('Month', False) and month_value:
-                label_parts.append(month_value)
-            if time_visibility.get('Day', False) and day_value:
-                label_parts.append(f"{day_value}")
-            y_labels.append("   ".join(label_parts))
-        
-        # Use enhanced labels if any time dimension is visible
-        if any([time_visibility.get('Year', True), time_visibility.get('Quarter', False),
-                time_visibility.get('Month', False), time_visibility.get('Day', False)]):
-            country_list = y_labels
 
     # For color matching, use original country names
     export_colors = ['#0075A8' if country == selected_country else 'rgb(0, 117, 168)' for country in country_list_original]
@@ -927,12 +911,6 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
         )
         if time_visibility and time_visibility.get('Year', True) and year_value:
             hovertemplate_production += f'<span style="color:#999999;">Year:</span> <span style="color:#0075A8;">{year_value}</span><br>'
-        if time_visibility and time_visibility.get('Quarter', False) and quarter_value:
-            hovertemplate_production += f'<span style="color:#999999;">Quarter:</span> <span style="color:#0075A8;">{quarter_value}</span><br>'
-        if time_visibility and time_visibility.get('Month', False) and month_value:
-            hovertemplate_production += f'<span style="color:#999999;">Month:</span> <span style="color:#0075A8;">{month_value}</span><br>'
-        if time_visibility and time_visibility.get('Day', False) and day_value:
-            hovertemplate_production += f'<span style="color:#999999;">Day:</span> <span style="color:#0075A8;">{day_value}</span><br>'
         hovertemplate_production += '<extra></extra>'
 
         fig.add_trace(go.Bar(
@@ -960,12 +938,6 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
     )
     if time_visibility and time_visibility.get('Year', True) and year_value:
         hovertemplate_exports += f'<span style="color:#999999;">Year:</span> <span style="color:#0075A8;">{year_value}</span><br>'
-    if time_visibility and time_visibility.get('Quarter', False) and quarter_value:
-        hovertemplate_exports += f'<span style="color:#999999;">Quarter:</span> <span style="color:#0075A8;">{quarter_value}</span><br>'
-    if time_visibility and time_visibility.get('Month', False) and month_value:
-        hovertemplate_exports += f'<span style="color:#999999;">Month:</span> <span style="color:#0075A8;">{month_value}</span><br>'
-    if time_visibility and time_visibility.get('Day', False) and day_value:
-        hovertemplate_exports += f'<span style="color:#999999;">Day:</span> <span style="color:#0075A8;">{day_value}</span><br>'
     hovertemplate_exports += '<extra></extra>'
 
     fig.add_trace(go.Bar(
@@ -1038,15 +1010,15 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
         yaxis=dict(
             categoryorder='array',
             categoryarray=country_list,
-            tickfont=dict(size=11, family='Arial, sans-serif', color='#1b365d'),
+            showticklabels=False,
+            ticks='',
             showline=True,
             linecolor='#e0e0e0',  # Light gray color
             linewidth=1,
             side='left',
             type='category',
             tickmode='array',
-            tickvals=country_list,
-            ticktext=country_list
+            tickvals=country_list
         ),
         plot_bgcolor='white',
         paper_bgcolor='white',
@@ -1064,6 +1036,67 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
             )
         )
     )
+
+    # Add left-aligned annotations for y-axis labels in columnar format
+    widths = {'Country': 100, 'Year': 45, 'Quarter': 35, 'Month': 65, 'Day': 30}
+    
+    # Determine which dimensions are visible
+    active_dims = ['Country'] # Always show country
+    if time_visibility:
+        if time_visibility.get('Year', True): active_dims.append('Year')
+        if time_visibility.get('Quarter', False): active_dims.append('Quarter')
+        if time_visibility.get('Month', False): active_dims.append('Month')
+        if time_visibility.get('Day', False): active_dims.append('Day')
+    else:
+        # Default if no time_visibility provided
+        active_dims.append('Year')
+
+    # Calculate x-shifts (from right to left, starting 10px from y-axis)
+    x_shifts = {}
+    current_x = -10
+    profile_urls = sorted_df['Profile_URL'].tolist()
+    for dim in reversed(active_dims):
+        x_shifts[dim] = current_x - widths[dim]
+        current_x -= (widths[dim] + 3) # 3px gap between columns
+
+    for i, country in enumerate(country_list_original):
+        for dim in active_dims:
+            text = ""
+            if dim == 'Country':
+                profile_url = profile_urls[i]
+                if profile_url:
+                    text = f"<b><a href='{profile_url}' target='_blank' style='color:#1b365d; text-decoration: underline;'>{country}</a></b>"
+                else:
+                    text = f"<b><span style='text-decoration: underline;'>{country}</span></b>"
+            elif dim == 'Year':
+                text = str(year_value)
+                if profile_url:
+                    text = f"<a href='{profile_url}' target='_blank' style='color:#1b365d; text-decoration: none;'>{text}</a>"
+            elif dim == 'Quarter':
+                text = f"{quarter_value}" if quarter_value else ""
+                if text and profile_url:
+                    text = f"<a href='{profile_url}' target='_blank' style='color:#1b365d; text-decoration: none;'>{text}</a>"
+            elif dim == 'Month':
+                text = month_value
+                if text and profile_url:
+                    text = f"<a href='{profile_url}' target='_blank' style='color:#1b365d; text-decoration: none;'>{text}</a>"
+            elif dim == 'Day':
+                text = str(day_value)
+                if text and profile_url:
+                    text = f"<a href='{profile_url}' target='_blank' style='color:#1b365d; text-decoration: none;'>{text}</a>"
+            
+            if text:
+                fig.add_annotation(
+                    text=text,
+                    x=0,
+                    y=i,
+                    xref='paper',
+                    yref='y',
+                    xanchor='left',
+                    showarrow=False,
+                    xshift=x_shifts[dim],
+                    font=dict(size=11, family='Arial, sans-serif', color='#1b365d')
+                )
 
     # Add horizontal lines after each country
     shapes = []
@@ -1290,14 +1323,14 @@ def register_callbacks(dash_app, server):
 
 
     @callback(
-        Output('exports-ranking-chart', 'figure', allow_duplicate=True),
+        Output('exports-ranking-chart', 'figure'),
         [Input('current-submenu', 'data'),
          Input('selected-country-store', 'data'),
          Input('time-dimension-visibility', 'data')],
-        prevent_initial_call='initial_duplicate'
+        prevent_initial_call=False
     )
     def update_ranking_chart(submenu, selected_country, time_visibility):
-        """Update ranking chart with highlighting"""
+        """Update ranking chart with highlighting and time dimensions"""
         if submenu != 'country-overview':
             return go.Figure()
         
@@ -1430,21 +1463,6 @@ def register_callbacks(dash_app, server):
 
         return dash.no_update, dash.no_update, click_counter
 
-    @callback(
-        Output('exports-ranking-chart', 'figure', allow_duplicate=True),
-        Input('selected-country-store', 'data'),
-        State('current-submenu', 'data'),
-        prevent_initial_call='initial_duplicate'
-    )
-    def update_chart_highlight(selected_country, submenu):
-        """Update chart highlighting based on selected country"""
-        if submenu != 'country-overview':
-            return dash.no_update
-        
-        # Load data to get the latest bar_chart_data and LATEST_YEAR
-        _, _, _, _, _, _LATEST_YEAR, _LATEST_QUARTER, _LATEST_MONTH, _LATEST_DAY = get_country_overview_data()
-
-        return create_ranking_chart(selected_country=selected_country, year_value=_LATEST_YEAR, quarter_value=_LATEST_QUARTER, month_value=_LATEST_MONTH, day_value=_LATEST_DAY)
 
     @callback(
         Output('oil-data-table', 'style_data_conditional', allow_duplicate=True),
