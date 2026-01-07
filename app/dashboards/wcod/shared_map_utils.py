@@ -114,7 +114,7 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
                 mode="lines",
                 line=dict(color="rgba(0,0,0,0)", width=0),
                 fill="toself",
-                fillcolor="rgba(255,255,255,0.01)",  # Nearly transparent white
+                fillcolor="rgba(255,255,255,0.05)",  # Nearly transparent white
                 hoverinfo="text",
                 hovertext=hover_text,
                 customdata=["__BACKGROUND_CLICK__"],
@@ -130,7 +130,7 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
                 mode="lines",
                 line=dict(color="rgba(0,0,0,0)", width=0),
                 fill="toself",
-                fillcolor="rgba(255,255,255,0.01)",  # Nearly transparent white
+                fillcolor="rgba(255,255,255,0.05)",  # Nearly transparent white
                 hoverinfo="text",
                 hovertext=hover_text,
                 customdata=["__BACKGROUND_CLICK__"],

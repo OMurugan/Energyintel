@@ -757,6 +757,7 @@ def create_layout():
                             ],
                             'displayModeBar': True
                         },
+                        clear_on_unhover=True,
                         style={
                             'height': 'calc(85vh - 180px)',
                             'width': '100vw',  # Changed to viewport width
@@ -3770,24 +3771,20 @@ def register_callbacks(dash_app, server):
                 
                 if (trace) {
                     // Case 0: Hovering over background (ocean)
-                    // Check trace name or special customdata identifier
                     let isBackground = (trace.name === 'background') || 
-                                       (point.customdata && point.customdata[0] === '__BACKGROUND_CLICK__') ||
-                                       (point.customdata === '__BACKGROUND_CLICK__');
+                                       (point.customdata && (point.customdata[0] === '__BACKGROUND_CLICK__' || point.customdata === '__BACKGROUND_CLICK__'));
 
                     if (isBackground) {
                         hoveredISO = '__BACKGROUND_HOVER__';
                     }
                     // Case 1: Hovering over choropleth (country area)
                     else if (trace.name === 'countries') {
-                        // Handle customdata as string or array
                         let cd = point.customdata;
                         let extractedISO = (typeof cd === 'string' ? cd : (Array.isArray(cd) && cd.length > 0 ? cd[0] : null));
                         hoveredISO = point.location || extractedISO;
                     } 
                     // Case 2: Hovering over Scatter (port marker)
                     else if (trace.name && trace.name.startsWith('Loading Ports') && point.customdata && Array.isArray(point.customdata)) {
-                        // Scatter customdata is [profile_url, ISO]
                         if (point.customdata.length >= 2) {
                             hoveredISO = point.customdata[1];
                         }
