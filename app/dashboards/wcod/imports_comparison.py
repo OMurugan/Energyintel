@@ -396,6 +396,26 @@ def create_imports_map_figure(df_map, single_selected_country, max_volume, selec
     if df_map.empty:
         return create_empty_map("No countries with valid data for map display", height=550)
     
+    # Store original country names BEFORE normalization for ISO code lookup
+    df_map['Country_DB_Original'] = df_map['Country'].copy()
+    
+    # Store normalized country names for display
+    df_map['Country_Original'] = df_map['Country'].apply(normalize_country_name)
+    
+    # Ensure country names are normalized for map compatibility
+    df_map['Country'] = df_map['Country'].apply(normalize_country_name)
+    
+    # Create mapping from country names to ISO-3 codes using _iso_for_country function
+    df_map['ISO_Code'] = df_map['Country_DB_Original'].apply(_iso_for_country)
+    
+    # Filter out any countries without valid ISO-3 codes
+    df_map = df_map.dropna(subset=['ISO_Code']).copy()
+    
+    # Ensure ISO codes are strings and exactly 3 characters
+    if not df_map.empty:
+        df_map['ISO_Code'] = df_map['ISO_Code'].astype(str)
+        df_map = df_map[df_map['ISO_Code'].str.len() == 3].copy()
+    
     # Prepare data for the shared map utility
     locations = df_map['ISO_Code'].astype(str).tolist()
     z_values = df_map['Import_Volume'].tolist()
@@ -413,12 +433,29 @@ def create_imports_map_figure(df_map, single_selected_country, max_volume, selec
     if not all_countries_df.empty:
         countries_df = all_countries_df[all_countries_df['Country'].isin(countries_in_map)].copy()
     
-    # Determine selection parameters
+    # Determine selection parameters - CRITICAL FIX HERE
     selected_iso = None
     other_isos = None
-    if single_selected_country and single_selected_country in df_map['Country_DB_Original'].values:
-        selected_iso = df_map.loc[df_map['Country_DB_Original'] == single_selected_country, 'ISO_Code'].iloc[0]
-        other_isos = [iso for iso in locations if iso != selected_iso]
+    
+    if single_selected_country:
+        # First, try to find the selected country in our dataframe
+        # We need to handle potential normalization differences
+        normalized_selected = normalize_country_name(single_selected_country)
+        
+        # Look for the country in various name fields
+        country_match = None
+        if single_selected_country in df_map['Country_DB_Original'].values:
+            country_match = single_selected_country
+        elif normalized_selected in df_map['Country'].values:
+            # Find the original name for this normalized name
+            matching_row = df_map[df_map['Country'] == normalized_selected]
+            if not matching_row.empty:
+                country_match = matching_row['Country_DB_Original'].iloc[0]
+        
+        if country_match and country_match in df_map['Country_DB_Original'].values:
+            selected_iso = df_map.loc[df_map['Country_DB_Original'] == country_match, 'ISO_Code'].iloc[0]
+            other_isos = [iso for iso in locations if iso != selected_iso]
+            print(f"Map selection: {country_match} (ISO: {selected_iso}), dimming {len(other_isos)} other countries")
     
     # Create the map using shared utilities
     fig = create_choropleth_map(

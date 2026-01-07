@@ -53,6 +53,69 @@ COUNTRY_NAME_MAPPING = {
     "Dubai": "United Arab Emirates",
     "Congo (Brazzaville)": "Republic of the Congo",
 }
+
+# ISO code to country name mapping for map clicks
+ISO_TO_COUNTRY_MAPPING = {
+    "USA": "United States",
+    "BRA": "Brazil", 
+    "RUS": "Russia",
+    "SAU": "Saudi Arabia",
+    "IRQ": "Iraq",
+    "IRN": "Iran",
+    "ARE": "United Arab Emirates",
+    "KWT": "Kuwait",
+    "VEN": "Venezuela",
+    "NGA": "Nigeria",
+    "AGO": "Angola",
+    "NOR": "Norway",
+    "KAZ": "Kazakhstan",
+    "CAN": "Canada",
+    "CHN": "China",
+    "MEX": "Mexico",
+    "GBR": "United Kingdom",
+    "DZA": "Algeria",
+    "LBY": "Libya",
+    "OMN": "Oman",
+    "QAT": "Qatar",
+    "AZE": "Azerbaijan",
+    "EGY": "Egypt",
+    "MYS": "Malaysia",
+    "IDN": "Indonesia",
+    "IND": "India",
+    "THA": "Thailand",
+    "VNM": "Vietnam",
+    "ARG": "Argentina",
+    "COL": "Colombia",
+    "ECU": "Ecuador",
+    "TTO": "Trinidad and Tobago",
+    "GHA": "Ghana",
+    "GAB": "Gabon",
+    "GNQ": "Equatorial Guinea",
+    "COG": "Congo (Brazzaville)",
+    "TCD": "Chad",
+    "SDN": "Sudan",
+    "SSD": "South Sudan",
+    "YEM": "Yemen",
+    "SYR": "Syria",
+    "TUN": "Tunisia",
+    "DNK": "Denmark",
+    "AUS": "Australia",
+    "PNG": "Papua New Guinea",
+    "BRN": "Brunei",
+}
+
+def _map_iso_to_country_name(iso_or_name):
+    """Map ISO code to full country name, or return the name if it's already a full name."""
+    if not iso_or_name:
+        return iso_or_name
+    
+    # If it's already a full country name, return as-is
+    if len(str(iso_or_name)) > 3:
+        return str(iso_or_name)
+    
+    # Try to map ISO code to country name
+    iso_code = str(iso_or_name).upper()
+    return ISO_TO_COUNTRY_MAPPING.get(iso_code, iso_or_name)
 def _resolve_countries_selection(selected):
     """Normalize country selection; expand '(All)' to full list."""
     if selected is None:
@@ -1901,7 +1964,7 @@ def create_layout(server=None):
             ], className='col-md-10', style={'padding': '15px', 'minHeight': '400px'}),
             html.Div([
                 html.Label("Stream Name"),
-                dcc.Input(id="filter-stream", type="text", placeholder="Stream Name"),
+                dcc.Input(id="filter-stream", type="text", placeholder="Stream Name", style={"width": "100%"}),
                 html.Br(), html.Br(),
                 html.Div([
                     html.Label("CI Rank", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
@@ -2036,14 +2099,43 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         Output("crude-country-dropdown", "value", allow_duplicate=True),
         Input("crude-map", "clickData"),
+        State("selected-country-map-store", "data"),
+        State("table-map-filter-active-store", "data"),
         prevent_initial_call=True
     )
-    def update_country_from_map(clickData):
-        """Update country dropdown when map is clicked"""
+    def update_country_from_map(clickData, current_selected_country, table_map_filter_active):
+        """Update country dropdown when map is clicked - but only for new country selections"""
         if clickData and clickData.get("points"):
-            clicked_country = clickData["points"][0].get("location")
+            point = clickData["points"][0]
+            
+            # Check for background click (ocean/empty area)
+            if "customdata" in point and point["customdata"]:
+                cdata = point["customdata"]
+                if (isinstance(cdata, list) and len(cdata) > 0 and cdata[0] == "__BACKGROUND_CLICK__") or \
+                   (isinstance(cdata, str) and cdata == "__BACKGROUND_CLICK__"):
+                    return no_update
+            
+            # Try to get country name from customdata first (standardized map)
+            clicked_country = None
+            if "customdata" in point and point["customdata"]:
+                clicked_country = point["customdata"][0]
+            
+            # Fallback to location (might be ISO or name)
+            if not clicked_country:
+                clicked_country = point.get("location")
+                
             if clicked_country:
-                return [clicked_country]
+                # Map ISO code to full country name if needed
+                clicked_country = _map_iso_to_country_name(clicked_country)
+                
+                # Only update dropdown for NEW country selections
+                # If clicking the same country again, don't change the dropdown
+                if clicked_country != current_selected_country:
+                    print(f"DEBUG: Map clicked, updating dropdown to: {clicked_country}")
+                    return [clicked_country]
+                else:
+                    print(f"DEBUG: Same country clicked ({clicked_country}), keeping dropdown unchanged")
+                    return no_update
         return no_update
     
     @dash_app.callback(
@@ -2173,10 +2265,11 @@ def register_callbacks(dash_app, server):
          Input("crude-year-dropdown", "value"),
          Input("crude-year-month-dropdown", "value"),
          Input("current-submenu", "data"),
-         Input("selected-country-map-store", "data")],
+         Input("selected-country-map-store", "data"),
+         Input("table-map-filter-active-store", "data")],
         prevent_initial_call=False
     )
-    def update_profiled_streams_options(country, tab, year, year_month, current_submenu, selected_country_map):
+    def update_profiled_streams_options(country, tab, year, year_month, current_submenu, selected_country_map, table_map_filter_active):
         """Update profiled streams options based on selected country and tab using grades CSV files"""
         # Only load data if page is active
         if current_submenu != 'crude-overview':
@@ -2187,8 +2280,8 @@ def register_callbacks(dash_app, server):
         
         try:
             # Handle country - ensure it's a list
-            # Map selection overrides dropdown if present
-            if selected_country_map:
+            # Map selection overrides dropdown if present AND active
+            if selected_country_map and table_map_filter_active:
                 resolved_countries = [selected_country_map]
             else:
                 resolved_countries = _resolve_countries_selection(country)
@@ -2801,15 +2894,20 @@ def register_callbacks(dash_app, server):
                 clicked_country = point.get("location")
                 
             if clicked_country:
+                # Map ISO code to full country name if needed
+                clicked_country = _map_iso_to_country_name(clicked_country)
+                
                 # Toggle logic: if already selected, toggle the table filter active state
                 # but KEEP the country selection for barchart and legend
                 if clicked_country == current_selected:
                     # If it was already selected, toggle the active state for the table
                     # current_active is a boolean from the store
                     new_active = not current_active
+                    print(f"DEBUG MAP CLICK: Same country clicked ({clicked_country}), toggling table_map_filter_active from {current_active} to {new_active}")
                     return current_selected, new_active
                 
                 # New country selected: set it and make table filter active
+                print(f"DEBUG MAP CLICK: New country selected ({clicked_country}), setting table_map_filter_active to True")
                 return clicked_country, True
                 
         return current_selected, current_active
@@ -2821,10 +2919,11 @@ def register_callbacks(dash_app, server):
          Input("crude-country-dropdown", "value"),
          Input("crude-main-tabs", "value"),
          Input("selected-country-map-store", "data"),
+         Input("table-map-filter-active-store", "data"),
          Input("current-submenu", "data")],
         prevent_initial_call=False
     )
-    def update_map(selected_year, selected_year_month, selected_countries, tab, selected_country_map, current_submenu):
+    def update_map(selected_year, selected_year_month, selected_countries, tab, selected_country_map, table_map_filter_active, current_submenu):
         """Update world map based on filters - only loads data when page is active"""
         # Only load data if page is active
         if current_submenu != 'crude-overview':
@@ -2946,12 +3045,18 @@ def register_callbacks(dash_app, server):
             fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
             return fig
         
-        # Identify selected ISOs for highlighting
+        # Identify selected ISOs for highlighting - only when table_map_filter_active is True
         selected_iso = None
         other_isos = None
-        if selected_country_map:
+        map_selected_country = None
+        if selected_country_map and table_map_filter_active:
+            # Only highlight when the map filter is active for the table
             selected_iso = get_iso_code(selected_country_map)
             other_isos = [iso for iso in agg["iso_alpha"].tolist() if iso and iso != selected_iso]
+            map_selected_country = selected_country_map
+            print(f"DEBUG MAP: Highlighting country {selected_country_map} (table_map_filter_active=True)")
+        else:
+            print(f"DEBUG MAP: No highlighting (selected_country_map={selected_country_map}, table_map_filter_active={table_map_filter_active})")
 
         # Dynamically scale the color range to the data
         max_val = agg["value"].max() if "value" in agg.columns and len(agg) > 0 else 0
@@ -2968,7 +3073,7 @@ def register_callbacks(dash_app, server):
             z_values=agg["value"].tolist(),
             colorscale="Blues",
             hover_text=agg["hover_text"].tolist(),
-            selected_country=selected_country_map,
+            selected_country=map_selected_country,
             selected_iso=selected_iso,
             other_isos=other_isos,
             height=500,
@@ -2985,6 +3090,33 @@ def register_callbacks(dash_app, server):
             customdata=agg[["Country", "iso_alpha"]].values,
             selector=dict(name="countries")
         )
+        
+        # Ensure all traces have proper customdata for consistent click handling
+        # This is important for selection highlight traces
+        if map_selected_country:
+            # Find the selected country's data for customdata
+            selected_country_data = agg[agg["Country"] == map_selected_country]
+            if not selected_country_data.empty:
+                selected_customdata = [[map_selected_country, selected_iso]]
+                
+                # Update selection highlight traces with proper customdata
+                for trace in fig.data:
+                    if trace.name in ["selected_country_border", "inactive_countries"]:
+                        # Set customdata for selection traces to ensure consistent click handling
+                        if trace.name == "selected_country_border":
+                            trace.customdata = selected_customdata
+                        elif trace.name == "inactive_countries" and hasattr(trace, 'locations'):
+                            # For inactive countries, set customdata for each location
+                            inactive_customdata = []
+                            for iso in trace.locations:
+                                # Find the country name for this ISO
+                                country_match = agg[agg["iso_alpha"] == iso]
+                                if not country_match.empty:
+                                    country_name = country_match.iloc[0]["Country"]
+                                    inactive_customdata.append([country_name, iso])
+                                else:
+                                    inactive_customdata.append([iso, iso])  # Fallback
+                            trace.customdata = inactive_customdata
         
         fig.update_layout(
             margin=dict(l=10, r=10, t=10, b=80),
@@ -3038,10 +3170,11 @@ def register_callbacks(dash_app, server):
          Input("profiled-streams", "value"),
          Input("crude-main-tabs", "value"),
          Input("selected-country-map-store", "data"),
+         Input("table-map-filter-active-store", "data"),
          Input("current-submenu", "data")],
         prevent_initial_call=False
     )
-    def update_breakdown(country, year, year_month, production_years, profiled, tab, selected_country_map, current_submenu):
+    def update_breakdown(country, year, year_month, production_years, profiled, tab, selected_country_map, table_map_filter_active, current_submenu):
         """Update production breakdown chart - only loads data when page is active"""
         # Only load data if page is active
         if current_submenu != 'crude-overview':
@@ -3064,10 +3197,15 @@ def register_callbacks(dash_app, server):
                           "July", "August", "September", "October", "November", "December"]
             
             # Handle map selection - update country selection
-            if selected_country_map:
+            # Only use map selection if table_map_filter_active is True
+            # This allows the chart to keep using dropdown selection when user clicks same country again
+            if selected_country_map and table_map_filter_active:
                 country = [selected_country_map]
                 original_country_selection = [selected_country_map]
-                print(f"DEBUG: Map selection active, country={selected_country_map}")
+                print(f"DEBUG: Map selection active for chart, country={selected_country_map}")
+            elif selected_country_map and not table_map_filter_active:
+                # Map selection exists but is not active for table - chart should use dropdown selection
+                print(f"DEBUG: Map selection inactive for chart, using dropdown selection: {country}")
             
             if year is None:
                 year = int(YEARS[-1]) if YEARS else 2024
@@ -4207,24 +4345,27 @@ def register_callbacks(dash_app, server):
         # 4. Country Filter
         # Map selection applies to both tabs
         # Dropdown country filter only applies to monthly tab (Yearly is "Global" by default from dropdown)
+        print(f"DEBUG FILTER_TABLE: selected_country_map={selected_country_map}, table_map_filter_active={table_map_filter_active}, tab={tab}")
         if selected_country_map and table_map_filter_active:
             # Map selection overrides everything - apply to both tabs
+            # Ensure we use the full country name, not ISO code
+            country_name = _map_iso_to_country_name(selected_country_map)
             if "Country" in df.columns:
-                df = df[df["Country"] == selected_country_map]
+                df = df[df["Country"] == country_name]
+                print(f"DEBUG FILTER_TABLE: Applied map selection filter for {tab} tab: {country_name} (from {selected_country_map}), rows after filter: {len(df)}")
         elif tab == "monthly" and country and country != ['ALL']:
             # Dropdown country filter only for monthly when no map selection
             resolved_countries = _resolve_countries_selection(country)
             if "Country" in df.columns:
                 df = df[df["Country"].isin(resolved_countries)]
+                print(f"DEBUG FILTER_TABLE: Applied dropdown country filter for monthly tab: {resolved_countries}, rows after filter: {len(df)}")
+        else:
+            print(f"DEBUG FILTER_TABLE: No country filter applied for {tab} tab, showing all data: {len(df)} rows")
         
-        # Filter by CI Rank, API, Sulfur (only for monthly)
+        # Additional metadata filters (only for monthly)
         if tab == "monthly":
-            if ci and "CI Rank" in df.columns:
-                df = df[df["CI Rank"].isin(ci)]
-            if api and "API" in df.columns:
-                df = df[df["API"].apply(lambda v: classify_api_value(v) in api)]
-            if sulfur and "Sulfur" in df.columns:
-                df = df[df["Sulfur"].apply(lambda v: classify_sulfur_value(v) in sulfur)]
+            # These were duplicated above, removing the duplicate
+            pass
         
         if tab == "yearly":
             display_metadata_cols = ["Crude"]
