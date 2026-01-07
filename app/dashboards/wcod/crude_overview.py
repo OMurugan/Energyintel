@@ -2154,15 +2154,39 @@ def register_callbacks(dash_app, server):
             return no_update, no_update
         
         _ensure_data_loaded()
-        years = PRODUCTION_YEARS if PRODUCTION_YEARS else []
+        all_years = PRODUCTION_YEARS if PRODUCTION_YEARS else []
         
-        # Sort years in ascending order for display (PRODUCTION_YEARS is in descending order)
-        years_ascending = sorted(years) if years else []
+        # Limit to recent 5 years (2021-2025) as per live source requirements
+        current_year = 2025  # Based on live source data availability
+        recent_years_range = list(range(current_year - 4, current_year + 1))  # 2021, 2022, 2023, 2024, 2025
+        
+        # Filter to only include years that exist in data AND are in the recent 5 years range
+        available_recent_years = [y for y in all_years if y in recent_years_range]
+        
+        # If no years available in recent range, fall back to recent 5 years from available data
+        if not available_recent_years and all_years:
+            # Take the 5 most recent years from available data
+            sorted_years = sorted(all_years, reverse=True)
+            available_recent_years = sorted_years[:5]
+        
+        # Sort years in ascending order for display
+        years_ascending = sorted(available_recent_years) if available_recent_years else []
+        
+        print(f"DEBUG PRODUCTION YEARS: All available years: {sorted(all_years) if all_years else []}")
+        print(f"DEBUG PRODUCTION YEARS: Filtered to recent 5 years: {years_ascending}")
         
         options = [{"label": "(All)", "value": "(All)"}] + [{"label": str(y), "value": y} for y in years_ascending]
-        # Default to the two most recent years (e.g., 2024, 2025)
-        # Use integer values to match the option values
-        default_value = PRODUCTION_YEAR_DEFAULT if PRODUCTION_YEAR_DEFAULT else []
+        
+        # Default to the two most recent years from the filtered list
+        if len(years_ascending) >= 2:
+            default_value = sorted(years_ascending, reverse=True)[:2]  # Most recent 2 years
+        elif len(years_ascending) == 1:
+            default_value = [years_ascending[0]]
+        else:
+            default_value = []
+        
+        print(f"DEBUG PRODUCTION YEARS: Default selection: {default_value}")
+        
         return options, default_value
     
     @dash_app.callback(
@@ -2664,7 +2688,7 @@ def register_callbacks(dash_app, server):
                 "fontSize": "12px",
                 "verticalAlign": "middle",
                 "backgroundColor": bg_color,
-                "padding": "6px 10px",  # Reduced padding to make bars thinner
+                "padding": "2px 5px",  # Reduced padding to make bars thinner
                 "borderRadius": "0px",  # No border radius to match fig2
                 "display": "block",
                 "width": "100%",  # Reduced width from 100% to make bars thinner
@@ -3847,15 +3871,25 @@ def register_callbacks(dash_app, server):
                 resolved_years = _resolve_years_selection(production_years)
                 if resolved_years:
                     selected_years = [str(y) for y in resolved_years]
+                    print(f"DEBUG BREAKDOWN MONTHLY: Selected years={selected_years}, countries={country}")
                 else:
-                    # default to latest two years if available, else 2024/2025
-                    if not BAR_LONG_MONTHLY.empty and "year" in BAR_LONG_MONTHLY.columns:
-                        latest_years = sorted(BAR_LONG_MONTHLY["year"].astype(int).unique(), reverse=True)[:2]
-                        selected_years = [str(y) for y in latest_years] if latest_years else ["2024", "2025"]
-                    else:
-                        selected_years = ["2024", "2025"]
-                
-                print(f"DEBUG BREAKDOWN MONTHLY: Selected years={selected_years}, countries={country}")
+                    # No years selected - show empty chart instead of defaulting
+                    print(f"DEBUG BREAKDOWN MONTHLY: No years selected, showing empty chart")
+                    fig = go.Figure()
+                    fig.add_annotation(
+                        text="No years selected. Please select at least one year from 'Year of Date' filter.",
+                        xref="paper", yref="paper",
+                        x=0.5, y=0.5, showarrow=False,
+                        font=dict(size=14, color='#7f8c8d')
+                    )
+                    fig.update_layout(
+                        height=360,
+                        plot_bgcolor='white',
+                        paper_bgcolor='white',
+                        xaxis=dict(showgrid=False, showticklabels=False),
+                        yaxis=dict(showgrid=False, showticklabels=False)
+                    )
+                    return fig, title_text
                 
                 if BAR_LONG_MONTHLY.empty or "year" not in BAR_LONG_MONTHLY.columns:
                     fig = go.Figure()
