@@ -851,6 +851,9 @@ def create_world_map(selected_country=None):
     
     fig = go.Figure()
     
+    # Add background click layer first so it's behind all other traces
+    add_background_click_layer(fig, selected_country, use_mapbox)
+    
     if selected_country:
         # For selected country, show individual ports and highlight the country
         port_cols = ['Port Name', 'latitude', 'longitude', 'port_value']
@@ -888,8 +891,10 @@ def create_world_map(selected_country=None):
                     featureidkey="id",
                     hoverinfo='text',
                     text=[selected_country], 
+                    customdata=[country_iso],
                     marker_line_width=0,
-                    marker_line_color='rgba(0,0,0,0)'
+                    marker_line_color='rgba(0,0,0,0)',
+                    name='countries'
                 ))
             else:
                 fig.add_trace(go.Choropleth(
@@ -900,8 +905,10 @@ def create_world_map(selected_country=None):
                     showscale=False,
                     hoverinfo='text',
                     text=[selected_country], 
+                    customdata=[country_iso],
                     marker_line_width=0,
-                    marker_line_color='rgba(0,0,0,0)'
+                    marker_line_color='rgba(0,0,0,0)',
+                    name='countries'
                 ))
         
         # PERFORMANCE OPTIMIZATION: Simplified hover text generation
@@ -934,7 +941,8 @@ def create_world_map(selected_country=None):
             bucket["color"].append(marker_color)
             bucket["hover"].append(enhanced_hover_text[idx])
             profile_url = f"/wcod/country-profile?country={port_row['country_long_name']}"
-            bucket["custom"].append([profile_url])
+            iso_code = get_iso_code(port_row['country_long_name'])
+            bucket["custom"].append([profile_url, iso_code])
 
         # Add port traces
         if ports_by_symbol:
@@ -954,7 +962,7 @@ def create_world_map(selected_country=None):
                         customdata=data_bucket["custom"],
                         hovertemplate="%{text}<extra></extra>",
                         showlegend=False,
-                        name=f"ports-{symbol_key}"
+                        name=f"Loading Ports-{symbol_key}"
                     ))
                 else:
                     fig.add_trace(go.Scattergeo(
@@ -971,7 +979,7 @@ def create_world_map(selected_country=None):
                         customdata=data_bucket["custom"],
                         hovertemplate="%{text}<extra></extra>",
                         showlegend=False,
-                        name=f"ports-{symbol_key}"
+                        name=f"Loading Ports-{symbol_key}"
                     ))
         
         # Add country name label
@@ -1080,9 +1088,11 @@ def create_world_map(selected_country=None):
                 showscale=False,
                 hoverinfo="text",
                 hovertext=all_countries_df["country_long_name"],
+                customdata=all_countries_df["iso_alpha"],
                 marker_line_color="white",
                 marker_line_width=0.5,
-                opacity=0.5
+                opacity=0.5,
+                name='countries'
             ))
         else:
             fig.add_trace(go.Choropleth(
@@ -1093,9 +1103,11 @@ def create_world_map(selected_country=None):
                 showscale=False,
                 hoverinfo="text",
                 hovertext=all_countries_df["country_long_name"],
+                customdata=all_countries_df["iso_alpha"],
                 marker_line_color="white",
                 marker_line_width=0.5,
-                opacity=0.5
+                opacity=0.5,
+                name='countries'
             ))
         
         # Add country labels - limit for performance
@@ -1167,338 +1179,6 @@ def create_world_map(selected_country=None):
     
     return fig
     
-    # Group by country to get port counts and locations
-    if selected_country:
-        # For selected country, show individual ports and highlight the country
-        # Include country_long_name and Port if available (already consolidated during data loading)
-        port_cols = ['Port Name', 'latitude', 'longitude', 'port_value'] # Added 'port_value' here
-        if 'country_long_name' in filtered_map.columns:
-            port_cols.append('country_long_name')
-        # Port column may not exist in database, so check before adding
-        if 'Port' in filtered_map.columns:
-            port_cols.append('Port')
-        # Add profile_url to port_cols to enable customdata for hovertemplate
-        if 'profile_url' in filtered_map.columns:
-            port_cols.append('profile_url')
-        port_data = filtered_map[port_cols].copy()
-
-        # Force latitude and longitude to numeric and drop NaNs
-        port_data['latitude'] = pd.to_numeric(port_data['latitude'], errors='coerce')
-        port_data['longitude'] = pd.to_numeric(port_data['longitude'], errors='coerce')
-        port_data = port_data.dropna(subset=['latitude', 'longitude'])
-        
-        # Normalize port_value as per ChatGPT's suggestion (applied once to the DataFrame)
-        # port_data['port_value'] = port_data['port_value'].fillna(1)
-        # port_data.loc[port_data['port_value'] <= 0, 'port_value'] = 1
-        # port_data['port_value'] = port_data['port_value'] * 4   # Force visible size
-
-        # Filter out rows with empty Port Name
-        port_data = port_data[
-            (port_data['Port Name'].astype(str).str.strip() != '') &
-            (port_data['Port Name'].astype(str).str.strip().str.lower() != 'nan')
-        ].copy()
-        if port_data.empty:
-            return create_empty_map()
-        
-        fig = go.Figure()
-        
-        # Get ISO code for selected country
-        country_iso = get_iso_code(selected_country)
-        
-        # Add Choroplethmapbox (country fill) if ISO code exists
-        if country_iso:
-            # Load geojson for reliable choropleth rendering
-            geojson = _load_world_geojson()
-            
-            # Add Choroplethmapbox (country fill) first
-            if geojson:
-                # Use geojson with featureidkey="id" for reliable country matching
-                fig.add_trace(go.Choroplethmapbox(
-                    geojson=geojson,
-                    locations=[country_iso],
-                    z=[1],
-                    colorscale=[[0, 'rgba(142, 153, 208, 1)'], [1, 'rgba(142, 153, 208, 1)']],
-                    showscale=False,
-                    featureidkey="id",
-                    hoverinfo='text',
-                    text=[selected_country], 
-                    marker_line_width=0,
-                    marker_line_color='rgba(0,0,0,0)'
-                ))
-            else:
-                # Fallback to built-in country data if geojson fails to load
-                fig.add_trace(go.Choroplethmapbox(
-                    locations=[country_iso],
-                    z=[1],
-                    colorscale=[[0, 'rgba(142, 153, 208, 1)'], [1, 'rgba(142, 153, 208, 1)']],
-                    showscale=False,
-                    featureidkey="properties.iso_a3",
-                    hoverinfo='text',
-                    text=[selected_country], 
-                    marker_line_width=0,
-                    marker_line_color='rgba(0,0,0,0)'
-                ))
-        
-        # Bucket ports by symbol to ensure reliable rendering per symbol type
-        # Ports should be rendered regardless of whether ISO code exists
-        ports_by_symbol = {}
-        print(f"DEBUG: Processing {len(port_data)} port rows")
-        for _, port_row in port_data.iterrows():
-            port_value = port_row['port_value']
-            # Map symbol and a modest size so markers don't overwhelm the map
-            # Use built-in Plotly symbols (no sprite) for reliability
-            if port_value == 171:
-                symbol, marker_size, marker_color = 'circle', 14, '#fe5000'
-            elif port_value == 513:
-                symbol, marker_size, marker_color = '+', 14, '#1f77b4'   # plus symbol
-            elif port_value == 342:
-                symbol, marker_size, marker_color = 'square', 14, '#2ca02c'
-            else:
-                symbol, marker_size, marker_color = 'circle', 14, '#6c757d'
-
-            bucket = ports_by_symbol.setdefault(symbol, {"lat": [], "lon": [], "name": [], "size": [], "custom": [], "color": []})
-            bucket["lat"].append(port_row['latitude'])
-            bucket["lon"].append(port_row['longitude'])
-            bucket["name"].append(port_row['Port Name'])
-            bucket["size"].append(marker_size)
-            bucket["color"].append(marker_color)
-            profile_url = f"/wcod/country-profile?country={port_row['country_long_name']}"
-            bucket["custom"].append([profile_url])
-
-        print(f"DEBUG: ports_by_symbol keys: {list(ports_by_symbol.keys())}, total ports: {sum(len(bucket['lat']) for bucket in ports_by_symbol.values())}")
-        
-        if ports_by_symbol:
-            # Add one trace per symbol to avoid per-point symbol issues
-            for symbol_key, data_bucket in ports_by_symbol.items():
-                print(f"DEBUG: Adding trace for symbol '{symbol_key}' with {len(data_bucket['lat'])} ports")
-                
-                # Prepare enhanced hover data for each port
-                enhanced_hover_text = []
-                for i, port_name in enumerate(data_bucket["name"]):
-                    # Direct hover text for performance
-                    hover_lines = [f"<b>Port Name:</b> {port_name}"]
-                    
-                    # # Add port details if available
-                    # if port_details:
-                    #     for measure, value in port_details.items():
-                    #         if measure and value and str(value).strip():
-                    #             # Format measure names for display
-                    #             display_measure = measure.replace('_', ' ').title()
-                    #             if 'bbl' in measure.lower():
-                    #                 display_measure = display_measure.replace('Bbl', 'bbl')
-                    #             elif 'dwt' in measure.lower():
-                    #                 display_measure = display_measure.replace('Dwt', 'dwt')
-                    #             hover_lines.append(f"<b>{display_measure}:</b> {value}")
-                    
-                    # # Add coordinates
-                    # lat_val = data_bucket["lat"][i]
-                    # lon_val = data_bucket["lon"][i]
-                    # hover_lines.append(f"<b>Coordinates:</b> {lat_val:.4f}, {lon_val:.4f}")
-                    
-                    enhanced_hover_text.append("<br>".join(hover_lines))
-                
-                fig.add_trace(go.Scattermapbox(
-                    lat=data_bucket["lat"],
-                    lon=data_bucket["lon"],
-                    mode='markers',
-                    marker=dict(
-                        size=data_bucket["size"],
-                        color=data_bucket["color"],
-                        opacity=0.9,
-                        symbol='circle'
-                    ),
-                    text=enhanced_hover_text,
-                    customdata=data_bucket["custom"],
-                    hovertemplate="%{text}<extra></extra>",
-                    showlegend=False,
-                    name=f"ports-{symbol_key}"  # Add name for click detection
-                ))
-        else:
-            print("DEBUG: No ports to display - ports_by_symbol is empty")
-        
-        # Add country name label for the selected country (if selected_country is not None)
-        # Ensure this trace is only added when selected_country is present
-        if selected_country:
-            map_center_lat = port_data['latitude'].mean() if not port_data.empty else filtered_map['latitude'].mean()
-            map_center_lon = port_data['longitude'].mean() if not port_data.empty else filtered_map['longitude'].mean()
-
-            # Guard against NaN centers to avoid Mapbox layout errors
-            if pd.isna(map_center_lat) or pd.isna(map_center_lon):
-                return create_empty_map()
-
-            fig.add_trace(go.Scattermapbox(
-                lat=[map_center_lat],
-                lon=[map_center_lon],
-                mode='text',
-                text=[selected_country],
-                textfont=dict(size=12, color="black"), # Removed 'weight="bold"'
-                textposition="middle center",
-                hoverinfo='skip',
-                showlegend=False
-            ))
-
-        title_text = f"{selected_country} Production"
-        
-        # Calculate dynamic zoom and center based on country's geographic extent
-        map_center_lat = filtered_map['latitude'].mean()
-        map_center_lon = filtered_map['longitude'].mean()
-        
-        if pd.isna(map_center_lat) or pd.isna(map_center_lon):
-            # Fallback to default world view center if data is missing
-            map_center = dict(lat=22.0, lon=0.0)
-            map_zoom = 1.2
-        else:
-            # Calculate the geographic extent of the country's ports
-            lat_min, lat_max = filtered_map['latitude'].min(), filtered_map['latitude'].max()
-            lon_min, lon_max = filtered_map['longitude'].min(), filtered_map['longitude'].max()
-            
-            # Calculate the span of coordinates
-            lat_span = lat_max - lat_min
-            lon_span = lon_max - lon_min
-            
-            # Determine zoom level based on geographic extent
-            # Adjusted for reduced map height - need lower zoom levels to fit countries
-            max_span = max(lat_span, lon_span)
-            
-            if max_span > 30:  # Very large countries (e.g., Russia, Canada, USA)
-                map_zoom = 1.2
-            elif max_span > 15:  # Large countries (e.g., Brazil, Australia)
-                map_zoom = 1.4
-            elif max_span > 8:   # Medium countries (e.g., Saudi Arabia, Iran)
-                map_zoom = 1.8
-            elif max_span > 4:   # Smaller countries (e.g., Norway, UK)
-                map_zoom = 2.4
-            elif max_span > 2:   # Small countries (e.g., UAE, Kuwait)
-                map_zoom = 2.8
-            else:                # Very small countries or single port locations
-                map_zoom = 3.4
-            
-            # Country-specific zoom adjustments for reduced map height
-            country_zoom_overrides = {
-                'Russia': 1.0,  # Further reduced to show full northern Russia
-                'Canada': 0.9,
-                'United States': 1.0,  # Further reduced to show full Alaska
-                'Brazil': 1.2,
-                'Australia': 1.1,
-                'China': 1.1,
-                'Saudi Arabia': 1.7,
-                'Iran': 1.8,
-                'Norway': 2.1,
-                'United Kingdom': 2.5,
-                'Nigeria': 1.9,
-                'Venezuela': 1.8,
-                'Mexico': 1.5,
-                'Indonesia': 1.6,
-                'Libya': 2.1,
-                'Algeria': 1.8,
-                'Iraq': 2.2,
-                'Kuwait': 3.0,
-                'Qatar': 3.5,
-                'UAE': 2.7,
-                'Oman': 2.3,
-                'Angola': 2.1,
-                'Ecuador': 2.5,
-                'Gabon': 2.7,
-                'Ghana': 2.9,
-                'Guyana': 2.6,
-                'Kazakhstan': 1.3,
-                'Malaysia': 2.1,
-                'Brunei': 3.3,
-                'Chad': 2.2,
-                'Colombia': 1.9,
-                'Congo (Brazzaville)': 2.5,
-                'Denmark': 2.7,
-                'Egypt': 2.1,
-                'Equatorial Guinea': 3.0,
-                'Papua New Guinea': 2.4,
-                'South Sudan': 2.3,
-                'Sudan': 2.0,
-                'Syria': 2.5,
-                'Turkmenistan': 2.1,
-                'Vietnam': 2.2,
-                'Yemen': 2.4,
-                'Abu Dhabi': 3.3,
-                'Dubai': 3.5,
-                'Neutral Zone': 3.4
-            }
-            
-            # Apply country-specific override if available
-            if selected_country in country_zoom_overrides:
-                map_zoom = country_zoom_overrides[selected_country]
-            
-            # Adjust center for reduced map height - ensure northern parts are visible
-            # Move large countries slightly south to show their northern regions
-            if selected_country == 'United States':
-                # For US, move south to show Alaska completely
-                adjusted_lat = map_center_lat + (lat_span * 0.30)  # Move south to show Alaska
-            elif selected_country == 'Russia':
-                # For Russia, move south to show northern Russia
-                adjusted_lat = map_center_lat + (lat_span * 0.30)  # Move south to show northern Russia
-            elif selected_country == 'Canada':
-                # For Canada, also move slightly south to show northern territories
-                adjusted_lat = map_center_lat + (lat_span * 0.08)  # Move south for northern visibility
-            elif lat_span > 25:  # Very large countries - move south to use bottom space
-                adjusted_lat = map_center_lat + (lat_span * 0.05)  # Move south to show northern parts
-            elif lat_span > 15:  # Large countries - moderate south adjustment
-                adjusted_lat = map_center_lat + (lat_span * 0.08)  # Move south for better fit
-            elif lat_span > 8:  # Medium countries - slight south adjustment
-                adjusted_lat = map_center_lat + (lat_span * 0.05)
-            elif lat_span > 4:  # Smaller countries - minimal south adjustment
-                adjusted_lat = map_center_lat + (lat_span * 0.03)
-            else:  # Small countries - use geographic center
-                adjusted_lat = map_center_lat
-            
-            map_center = dict(lat=adjusted_lat, lon=map_center_lon)
-    else:
-        # For all countries, show a choropleth map of all countries
-        # Use px.choropleth_mapbox for simpler all-country view
-        all_countries_df = numeric_map[['country_long_name']].drop_duplicates().dropna().copy()
-        all_countries_df['iso_alpha'] = all_countries_df['country_long_name'].apply(get_iso_code)
-        all_countries_df = all_countries_df.dropna(subset=['iso_alpha'])
-        
-        fig = px.choropleth_mapbox(all_countries_df,
-                            locations="iso_alpha",
-                            color="country_long_name", # Use country name for color to differentiate countries
-                            color_continuous_scale="Viridis",
-                            featureidkey="properties.iso_a3",
-                            mapbox_style="carto-positron", # Default style for all countries
-                            zoom=1.2, center={"lat": 22.0, "lon": 0.0},
-                            opacity=0.5,
-                            hover_name="country_long_name" # Display country name on hover
-                        )
-        
-        title_text = 'World Crude Oil Ports by Country'
-        map_zoom = 1.5 # Adjusted for reduced map height
-        map_center = dict(lat=10.0, lon=0.0)  # Moved south to utilize bottom space better
-
-        # Add country name labels with density control to avoid overlap at wide zooms
-        country_centroids = (
-            numeric_map.groupby('country_long_name')[['latitude', 'longitude']]
-            .mean()
-            .reset_index()
-            .dropna(subset=['latitude', 'longitude'])
-        )
-        label_cap = len(country_centroids)
-        if len(country_centroids) > 120:
-            label_cap = 40
-        elif len(country_centroids) > 80:
-            label_cap = 60
-        labels_df = (
-            country_centroids.sort_values('country_long_name')
-            .head(label_cap)
-        )
-
-        fig.add_trace(go.Scattermapbox(
-            lat=labels_df['latitude'],
-            lon=labels_df['longitude'],
-            mode='text',
-            text=labels_df['country_long_name'],
-            textfont=dict(size=9, color="#2c3e50"),
-            textposition="top center",
-            hoverinfo='skip',
-            showlegend=False
-        ))
-        
     mapbox_layout = dict(
         style="carto-positron",  # Prefer custom sprite style, fallback inside helper
         center=map_center, # Dynamic center
@@ -1548,6 +1228,10 @@ def create_world_map(selected_country=None):
 def create_empty_map():
     """Create an empty world map when no data is available"""
     fig = go.Figure()
+    
+    # Add background click layer first
+    from .shared_map_utils import add_background_click_layer
+    add_background_click_layer(fig, None, True)
     
     fig.update_layout(
         title={
@@ -1882,7 +1566,7 @@ def create_production_table(country_name, time_period='Yearly'):
             {
                 'if': {'column_id': 'Crude'},
                 'textAlign': 'left',
-                'fontWeight': '500',
+                'fontWeight': 'bold',
                 'minWidth': '180px',
                 'width': '180px',
                 'maxWidth': '180px'
@@ -3278,21 +2962,6 @@ def register_callbacks(dash_app, server):
                 transition: stroke 0.15s ease-in-out, stroke-width 0.15s ease-in-out;
                 cursor: pointer !important;
             }
-            #world-map-chart .plotly .choroplethlayer path:hover {
-                stroke: #1a1a1a !important;
-                stroke-width: 2.5px !important;
-            }
-            /* Additional selector for Mapbox choropleth paths */
-            #world-map-chart .plotly svg path[fill]:not(.scattergeo path):not(.scatterlayer path):hover {
-                stroke: #1a1a1a !important;
-                stroke-width: 2.5px !important;
-            }
-            /* Hide country border when port is being hovered */
-            #world-map-chart.port-hovering .plotly .choroplethlayer path:hover {
-                stroke: none !important;
-                stroke-width: 0 !important;
-                pointer-events: none !important;
-            }
             #world-map-chart .plotly .scattergeo .points path {
                 pointer-events: auto !important;
                 cursor: pointer;
@@ -3309,13 +2978,6 @@ def register_callbacks(dash_app, server):
                 cursor: pointer !important;
                 transition: all 0.2s ease !important;
             }
-            #world-map-chart .plotly .scattermapbox .points circle:hover {
-                stroke: #fe5000 !important;
-                stroke-width: 3px !important;
-                filter: brightness(1.3) !important;
-                r: 8 !important;
-            }
-            /* Hide X and Y axis lines on map */
             #world-map-chart .plotly .xaxis,
             #world-map-chart .plotly .yaxis,
             #world-map-chart .plotly .xaxis line,
@@ -4081,7 +3743,7 @@ def register_callbacks(dash_app, server):
             setupZoomLimits();
             initProductionTableEnhancements();
             setupPortHoverEffects();
-            setupCountryHoverEffects();
+            // setupCountryHoverEffects(); // Disabled in favor of consistent clientside callback
             
             return window.dash_clientside.no_update;
         }
@@ -4089,6 +3751,115 @@ def register_callbacks(dash_app, server):
         Output('css-injection-placeholder', 'children'),
         Input('css-injection-placeholder', 'id'),
         prevent_initial_call=False
+    )
+
+    dash_app.clientside_callback(
+        """
+        function(hoverData, fig) {
+            if (!fig || !fig.data) return null;
+            
+            // Create a deep copy of the figure to modify
+            let newFig = JSON.parse(JSON.stringify(fig));
+            
+            // 1. Identify hovered ISO
+            let hoveredISO = null;
+            if (hoverData && hoverData.points && hoverData.points.length > 0) {
+                let point = hoverData.points[0];
+                let curveIdx = point.curveNumber;
+                let trace = fig.data[curveIdx];
+                
+                if (trace) {
+                    // Case 0: Hovering over background (ocean)
+                    // Check trace name or special customdata identifier
+                    let isBackground = (trace.name === 'background') || 
+                                       (point.customdata && point.customdata[0] === '__BACKGROUND_CLICK__') ||
+                                       (point.customdata === '__BACKGROUND_CLICK__');
+
+                    if (isBackground) {
+                        hoveredISO = '__BACKGROUND_HOVER__';
+                    }
+                    // Case 1: Hovering over choropleth (country area)
+                    else if (trace.name === 'countries') {
+                        // Handle customdata as string or array
+                        let cd = point.customdata;
+                        let extractedISO = (typeof cd === 'string' ? cd : (Array.isArray(cd) && cd.length > 0 ? cd[0] : null));
+                        hoveredISO = point.location || extractedISO;
+                    } 
+                    // Case 2: Hovering over Scatter (port marker)
+                    else if (trace.name && trace.name.startsWith('Loading Ports') && point.customdata && Array.isArray(point.customdata)) {
+                        // Scatter customdata is [profile_url, ISO]
+                        if (point.customdata.length >= 2) {
+                            hoveredISO = point.customdata[1];
+                        }
+                    }
+                }
+            }
+            
+            // 2. Remove any existing highlight traces
+            newFig.data = newFig.data.filter(t => t && t.name !== 'hover_highlight');
+            
+            // 3. If no active country hover, return the cleaned figure
+            if (!hoveredISO || hoveredISO === '__BACKGROUND_CLICK__' || hoveredISO === '__BACKGROUND_HOVER__') {
+                return newFig;
+            }
+            
+            // 4. Find reference trace to copy geojson/locationmode
+            // Prefer the main 'countries' trace, or any choropleth trace
+            let refTrace = newFig.data.find(t => t && t.name === 'countries') || 
+                           newFig.data.find(t => t && (t.type === 'choroplethmapbox' || t.type === 'choropleth'));
+            
+            if (refTrace && hoveredISO) {
+                let isMapbox = refTrace.type === 'choroplethmapbox';
+                let highlightTrace;
+
+                if (isMapbox) {
+                    highlightTrace = {
+                        type: 'choroplethmapbox',
+                        geojson: refTrace.geojson,
+                        locations: [hoveredISO],
+                        z: [1],
+                        featureidkey: refTrace.featureidkey || 'id',
+                        colorscale: [[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
+                        showscale: false,
+                        marker: {
+                            line: {
+                                color: 'black',
+                                width: 3
+                            },
+                            opacity: 1
+                        },
+                        hoverinfo: 'skip',
+                        name: 'hover_highlight'
+                    };
+                } else {
+                    highlightTrace = {
+                        type: 'choropleth',
+                        locations: [hoveredISO],
+                        locationmode: refTrace.locationmode || 'ISO-3',
+                        z: [1],
+                        colorscale: [[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
+                        showscale: false,
+                        marker: {
+                            line: {
+                                color: 'black',
+                                width: 3
+                            },
+                            opacity: 1
+                        },
+                        hoverinfo: 'skip',
+                        name: 'hover_highlight'
+                    };
+                }
+                newFig.data.push(highlightTrace);
+            }
+            
+            return newFig;
+        }
+        """,
+        Output('world-map-chart', 'figure', allow_duplicate=True),
+        [Input('world-map-chart', 'hoverData')],
+        [State('world-map-chart', 'figure')],
+        prevent_initial_call=True
     )
 
     # Port click callback for enhanced interaction
