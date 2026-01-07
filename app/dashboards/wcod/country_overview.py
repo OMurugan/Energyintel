@@ -880,7 +880,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
     # exports_col = f'Exports_{LATEST_YEAR}'
     # production_col = f'Production_{LATEST_YEAR}'
 
-    chart_columns = ['Country', 'Exports_Value', 'Production_Value']
+    chart_columns = ['Country', 'Exports_Value', 'Production_Value', 'Profile_URL']
     
     sorted_df = bar_chart_data[chart_columns].sort_values('Exports_Value', ascending=True).copy()
     if sorted_df.empty:
@@ -1054,6 +1054,7 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
     # Calculate x-shifts (from right to left, starting 10px from y-axis)
     x_shifts = {}
     current_x = -10
+    profile_urls = sorted_df['Profile_URL'].tolist()
     for dim in reversed(active_dims):
         x_shifts[dim] = current_x - widths[dim]
         current_x -= (widths[dim] + 3) # 3px gap between columns
@@ -1061,7 +1062,12 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
     for i, country in enumerate(country_list_original):
         for dim in active_dims:
             text = ""
-            if dim == 'Country': text = country
+            if dim == 'Country':
+                profile_url = profile_urls[i]
+                if profile_url:
+                    text = f"<b><a href='{profile_url}' target='_blank' style='color:#1b365d; text-decoration: underline;'>{country}</a></b>"
+                else:
+                    text = f"<b><span style='text-decoration: underline;'>{country}</span></b>"
             elif dim == 'Year': text = str(year_value)
             elif dim == 'Quarter': text = f"{quarter_value}" if quarter_value else ""
             elif dim == 'Month': text = month_value
