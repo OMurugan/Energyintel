@@ -91,147 +91,94 @@ def load_map_data():
         if not map_df.empty:
             return map_df
 
-    if not map_df.empty:
-        return map_df
-    
     try:
-        # Query map data from database
+        # PERFORMANCE OPTIMIZATION: Simplified query without expensive JOINs
+        # Load basic country and port data separately for better performance
         map_query = """
-        WITH original_query AS (
-            SELECT
-                A."country_id",
-                A."country_long_name",
-                CASE
-                    WHEN A."country_long_name" = 'Abu Dhabi' THEN 'https://www.energyintel.com/wcod/country-profile/abu-dhabi'
-                    WHEN A."country_long_name" = 'Algeria' THEN 'https://www.energyintel.com/wcod/country-profile/algeria'
-                    WHEN A."country_long_name" = 'Angola' THEN 'https://www.energyintel.com/wcod/country-profile/angola'
-                    WHEN A."country_long_name" = 'Argentina' THEN 'https://www.energyintel.com/wcod/country-profile/argentina'
-                    WHEN A."country_long_name" = 'Australia' THEN 'https://www.energyintel.com/wcod/country-profile/australia'
-                    WHEN A."country_long_name" = 'Azerbaijan' THEN 'https://www.energyintel.com/wcod/country-profile/azerbaijan'
-                    WHEN A."country_long_name" = 'Brazil' THEN 'https://www.energyintel.com/wcod/country-profile/brazil'
-                    WHEN A."country_long_name" = 'Brunei' THEN 'https://www.energyintel.com/wcod/country-profile/brunei'
-                    WHEN A."country_long_name" = 'Canada' THEN 'https://www.energyintel.com/wcod/country-profile/canada'
-                    WHEN A."country_long_name" = 'Chad' THEN 'https://www.energyintel.com/wcod/country-profile/chad'
-                    WHEN A."country_long_name" = 'China' THEN 'https://www.energyintel.com/wcod/country-profile/china'
-                    WHEN A."country_long_name" = 'Colombia' THEN 'https://www.energyintel.com/wcod/country-profile/colombia'
-                    WHEN A."country_long_name" = 'Congo (Brazzaville)' THEN 'https://www.energyintel.com/wcod/country-profile/republic-of-the-congo'
-                    WHEN A."country_long_name" = 'Denmark' THEN 'https://www.energyintel.com/wcod/country-profile/denmark'
-                    WHEN A."country_long_name" = 'Dubai' THEN 'https://www.energyintel.com/wcod/country-profile/dubai'
-                    WHEN A."country_long_name" = 'Ecuador' THEN 'https://www.energyintel.com/wcod/country-profile/ecuador'
-                    WHEN A."country_long_name" = 'Egypt' THEN 'https://www.energyintel.com/wcod/country-profile/egypt'
-                    WHEN A."country_long_name" = 'Equatorial Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/equatorial-guinea'
-                    WHEN A."country_long_name" = 'Gabon' THEN 'https://www.energyintel.com/wcod/country-profile/gabon'
-                    WHEN A."country_long_name" = 'Ghana' THEN 'https://www.energyintel.com/wcod/country-profile/ghana'
-                    WHEN A."country_long_name" = 'Guyana' THEN 'https://www.energyintel.com/wcod/country-profile/guyana'
-                    WHEN A."country_long_name" = 'Indonesia' THEN 'https://www.energyintel.com/wcod/country-profile/indonesia'
-                    WHEN A."country_long_name" = 'Iran' THEN 'https://www.energyintel.com/wcod/country-profile/iran'
-                    WHEN A."country_long_name" = 'Iraq' THEN 'https://www.energyintel.com/wcod/country-profile/iraq'
-                    WHEN A."country_long_name" = 'Kazakhstan' THEN 'https://www.energyintel.com/wcod/country-profile/kazakhstan'
-                    WHEN A."country_long_name" = 'Kuwait' THEN 'https://www.energyintel.com/wcod/country-profile/kuwait'
-                    WHEN A."country_long_name" = 'Libya' THEN 'https://www.energyintel.com/wcod/country-profile/libya'
-                    WHEN A."country_long_name" = 'Malaysia' THEN 'https://www.energyintel.com/wcod/country-profile/malaysia'
-                    WHEN A."country_long_name" = 'Mexico' THEN 'https://www.energyintel.com/wcod/country-profile/mexico'
-                    WHEN A."country_long_name" = 'Neutral Zone' THEN 'https://www.energyintel.com/wcod/country-profile/neutral-zone'
-                    WHEN A."country_long_name" = 'Nigeria' THEN 'https://www.energyintel.com/wcod/country-profile/nigeria'
-                    WHEN A."country_long_name" = 'Norway' THEN 'https://www.energyintel.com/wcod/country-profile/norway'
-                    WHEN A."country_long_name" = 'Oman' THEN 'https://www.energyintel.com/wcod/country-profile/oman'
-                    WHEN A."country_long_name" = 'Papua New Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/papua-new-guinea'
-                    WHEN A."country_long_name" = 'Qatar' THEN 'https://www.energyintel.com/wcod/country-profile/qatar'
-                    WHEN A."country_long_name" = 'Russia' THEN 'https://www.energyintel.com/wcod/country-profile/russia'
-                    WHEN A."country_long_name" = 'Saudi Arabia' THEN 'https://www.energyintel.com/wcod/country-profile/saudi-arabia'
-                    WHEN A."country_long_name" = 'South Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/south-sudan'
-                    WHEN A."country_long_name" = 'Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/sudan'
-                    WHEN A."country_long_name" = 'Syria' THEN 'https://www.energyintel.com/wcod/country-profile/syria'
-                    WHEN A."country_long_name" = 'Turkmenistan' THEN 'https://www.energyintel.com/wcod/country-profile/turkmenistan'
-                    WHEN A."country_long_name" = 'United Kingdom' THEN 'https://www.energyintel.com/wcod/country-profile/united-kingdom'
-                    WHEN A."country_long_name" = 'United States' THEN 'https://www.energyintel.com/wcod/country-profile/united-states'
-                    WHEN A."country_long_name" = 'Venezuela' THEN 'https://www.energyintel.com/wcod/country-profile/venezuela'
-                    WHEN A."country_long_name" = 'Vietnam' THEN 'https://www.energyintel.com/wcod/country-profile/vietnam'
-                    WHEN A."country_long_name" = 'Yemen' THEN 'https://www.energyintel.com/wcod/country-profile/yemen'
-                    ELSE NULL
-                END AS profile_url,
-                P."port_name",
-                P."latitude",
-                P."longitude",
-                P."coordinates",
-                P."measure_name",
-                P."value",
-                A."yr",
-                A."output",
-                A."exports",
-                A."reserves"
-            FROM fact_wcod_country A
-            LEFT JOIN fact_wcod_port P
-                ON P."country_id" = A."country_id"
-            WHERE A."country_long_name" IS NOT NULL
-            AND A."to_be_deleted" IS NULL
-        ),
-        port_counts AS (
-            SELECT
-                country_id,
-                country_long_name,
-                port_name,
-                COUNT(*) AS port_value
-            FROM original_query
-            GROUP BY
-                country_id,
-                country_long_name,
-                port_name
-        )
-        SELECT
-            o.country_id,
-            o.country_long_name,
-            o.profile_url,
-            o.port_name,
-            o.latitude,
-            o.longitude,
-            o.coordinates,
-            o.measure_name,
-            o.value,
-            o.yr,
-            o.output,
-            o.exports,
-            o.reserves,
-            pc.port_value
-        FROM original_query o
-        LEFT JOIN port_counts pc
-            ON  o.country_id = pc.country_id
-            AND o.port_name  = pc.port_name
-        WHERE o.latitude IS NOT NULL
-          AND o.longitude IS NOT NULL;
+        SELECT DISTINCT
+            A."country_id",
+            A."country_long_name",
+            CASE
+                WHEN A."country_long_name" = 'Abu Dhabi' THEN 'https://www.energyintel.com/wcod/country-profile/abu-dhabi'
+                WHEN A."country_long_name" = 'Algeria' THEN 'https://www.energyintel.com/wcod/country-profile/algeria'
+                WHEN A."country_long_name" = 'Angola' THEN 'https://www.energyintel.com/wcod/country-profile/angola'
+                WHEN A."country_long_name" = 'Argentina' THEN 'https://www.energyintel.com/wcod/country-profile/argentina'
+                WHEN A."country_long_name" = 'Australia' THEN 'https://www.energyintel.com/wcod/country-profile/australia'
+                WHEN A."country_long_name" = 'Azerbaijan' THEN 'https://www.energyintel.com/wcod/country-profile/azerbaijan'
+                WHEN A."country_long_name" = 'Brazil' THEN 'https://www.energyintel.com/wcod/country-profile/brazil'
+                WHEN A."country_long_name" = 'Brunei' THEN 'https://www.energyintel.com/wcod/country-profile/brunei'
+                WHEN A."country_long_name" = 'Canada' THEN 'https://www.energyintel.com/wcod/country-profile/canada'
+                WHEN A."country_long_name" = 'Chad' THEN 'https://www.energyintel.com/wcod/country-profile/chad'
+                WHEN A."country_long_name" = 'China' THEN 'https://www.energyintel.com/wcod/country-profile/china'
+                WHEN A."country_long_name" = 'Colombia' THEN 'https://www.energyintel.com/wcod/country-profile/colombia'
+                WHEN A."country_long_name" = 'Congo (Brazzaville)' THEN 'https://www.energyintel.com/wcod/country-profile/republic-of-the-congo'
+                WHEN A."country_long_name" = 'Denmark' THEN 'https://www.energyintel.com/wcod/country-profile/denmark'
+                WHEN A."country_long_name" = 'Dubai' THEN 'https://www.energyintel.com/wcod/country-profile/dubai'
+                WHEN A."country_long_name" = 'Ecuador' THEN 'https://www.energyintel.com/wcod/country-profile/ecuador'
+                WHEN A."country_long_name" = 'Egypt' THEN 'https://www.energyintel.com/wcod/country-profile/egypt'
+                WHEN A."country_long_name" = 'Equatorial Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/equatorial-guinea'
+                WHEN A."country_long_name" = 'Gabon' THEN 'https://www.energyintel.com/wcod/country-profile/gabon'
+                WHEN A."country_long_name" = 'Ghana' THEN 'https://www.energyintel.com/wcod/country-profile/ghana'
+                WHEN A."country_long_name" = 'Guyana' THEN 'https://www.energyintel.com/wcod/country-profile/guyana'
+                WHEN A."country_long_name" = 'Indonesia' THEN 'https://www.energyintel.com/wcod/country-profile/indonesia'
+                WHEN A."country_long_name" = 'Iran' THEN 'https://www.energyintel.com/wcod/country-profile/iran'
+                WHEN A."country_long_name" = 'Iraq' THEN 'https://www.energyintel.com/wcod/country-profile/iraq'
+                WHEN A."country_long_name" = 'Kazakhstan' THEN 'https://www.energyintel.com/wcod/country-profile/kazakhstan'
+                WHEN A."country_long_name" = 'Kuwait' THEN 'https://www.energyintel.com/wcod/country-profile/kuwait'
+                WHEN A."country_long_name" = 'Libya' THEN 'https://www.energyintel.com/wcod/country-profile/libya'
+                WHEN A."country_long_name" = 'Malaysia' THEN 'https://www.energyintel.com/wcod/country-profile/malaysia'
+                WHEN A."country_long_name" = 'Mexico' THEN 'https://www.energyintel.com/wcod/country-profile/mexico'
+                WHEN A."country_long_name" = 'Neutral Zone' THEN 'https://www.energyintel.com/wcod/country-profile/neutral-zone'
+                WHEN A."country_long_name" = 'Nigeria' THEN 'https://www.energyintel.com/wcod/country-profile/nigeria'
+                WHEN A."country_long_name" = 'Norway' THEN 'https://www.energyintel.com/wcod/country-profile/norway'
+                WHEN A."country_long_name" = 'Oman' THEN 'https://www.energyintel.com/wcod/country-profile/oman'
+                WHEN A."country_long_name" = 'Papua New Guinea' THEN 'https://www.energyintel.com/wcod/country-profile/papua-new-guinea'
+                WHEN A."country_long_name" = 'Qatar' THEN 'https://www.energyintel.com/wcod/country-profile/qatar'
+                WHEN A."country_long_name" = 'Russia' THEN 'https://www.energyintel.com/wcod/country-profile/russia'
+                WHEN A."country_long_name" = 'Saudi Arabia' THEN 'https://www.energyintel.com/wcod/country-profile/saudi-arabia'
+                WHEN A."country_long_name" = 'South Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/south-sudan'
+                WHEN A."country_long_name" = 'Sudan' THEN 'https://www.energyintel.com/wcod/country-profile/sudan'
+                WHEN A."country_long_name" = 'Syria' THEN 'https://www.energyintel.com/wcod/country-profile/syria'
+                WHEN A."country_long_name" = 'Turkmenistan' THEN 'https://www.energyintel.com/wcod/country-profile/turkmenistan'
+                WHEN A."country_long_name" = 'United Kingdom' THEN 'https://www.energyintel.com/wcod/country-profile/united-kingdom'
+                WHEN A."country_long_name" = 'United States' THEN 'https://www.energyintel.com/wcod/country-profile/united-states'
+                WHEN A."country_long_name" = 'Venezuela' THEN 'https://www.energyintel.com/wcod/country-profile/venezuela'
+                WHEN A."country_long_name" = 'Vietnam' THEN 'https://www.energyintel.com/wcod/country-profile/vietnam'
+                WHEN A."country_long_name" = 'Yemen' THEN 'https://www.energyintel.com/wcod/country-profile/yemen'
+                ELSE NULL
+            END AS profile_url,
+            A."yr",
+            A."output",
+            A."exports",
+            A."reserves"
+        FROM fact_wcod_country A
+        WHERE A."country_long_name" IS NOT NULL
+        AND A."to_be_deleted" IS NULL
+        ORDER BY A."country_long_name"
+        LIMIT 1000;
         """
         
         # Execute query and convert to DataFrame
         map_results = execute_query(map_query)
-        # print(f"DEBUG: load_map_data: map_results length: {len(map_results)}") # Temporarily commented out to prevent TypeError
-
         map_df = pd.DataFrame(map_results)
-        # print(f"DEBUG: load_map_data: map_df after creation - shape: {map_df.shape}, columns: {map_df.columns.tolist()}")
-        # print(f"DEBUG: load_map_data: map_df head:\n{map_df.head()}")
         
         if not map_df.empty:
             # Clean and standardize column names
             map_df.columns = map_df.columns.str.strip()
             
-            # Rename port_name to Port Name for compatibility with existing code
-            if 'port_name' in map_df.columns:
-                map_df['Port Name'] = map_df['port_name'].astype(str).str.strip()
-            
             # Ensure country_long_name is properly formatted
             if 'country_long_name' in map_df.columns:
                 map_df['country_long_name'] = map_df['country_long_name'].astype(str).str.strip()
             
-            print(f"Loaded map data with {len(map_df)} records from database")
+            print(f"Loaded basic map data with {len(map_df)} records from database")
         else:
             map_df = pd.DataFrame()
             print("Warning: No map data loaded from database")
             
     except Exception as e:
-        # print(f"ERROR: load_map_data failed: {e}") # Keep this for critical errors
-        # import traceback # Keep this for critical errors
-        # traceback.print_exc() # Keep this for critical errors
         # Silently handle missing database tables - app can work with CSV data
         map_df = pd.DataFrame()
+        print(f"Error loading map data: {e}")
     
     return map_df
 
@@ -355,34 +302,33 @@ def load_production_data():
     
     return monthly_prod_df, country_list, default_country
 
-def load_port_data():
-    """Load port data from database - called only when needed"""
-    global port_df
-    if not port_df.empty:
-        return port_df
-
-    # Prevent duplicate concurrent loads on first paint
-    with _port_lock:
-        if not port_df.empty:
-            return port_df
+def load_port_data_for_country(country_name):
+    """Load port data for a specific country - called only when needed"""
+    if not country_name:
+        return pd.DataFrame()
     
     try:
-        # Query port data from database
+        # PERFORMANCE OPTIMIZATION: Load port data only for the selected country
         port_query = """
         SELECT
-            P."port_id",
             P."port_name",
             P."country_id",
             P."latitude",
             P."longitude",
             P."coordinates",
             P."measure_name",
-            P."value"
+            P."value",
+            COUNT(*) OVER (PARTITION BY P."port_name") AS port_value
         FROM fact_wcod_port P
+        INNER JOIN fact_wcod_country C ON P."country_id" = C."country_id"
+        WHERE C."country_long_name" = :country_name
+        AND P."latitude" IS NOT NULL
+        AND P."longitude" IS NOT NULL
+        ORDER BY P."port_name"
         """
         
         # Execute query and convert to DataFrame
-        port_results = execute_query(port_query)
+        port_results = execute_query(port_query, {'country_name': country_name})
         port_df = pd.DataFrame(port_results)
         
         if not port_df.empty:
@@ -393,16 +339,15 @@ def load_port_data():
             if 'port_name' in port_df.columns:
                 port_df['Port Name'] = port_df['port_name'].astype(str).str.strip()
             
-            print(f"Loaded port data with {len(port_df)} records from database")
+            print(f"Loaded port data for {country_name}: {len(port_df)} records")
         else:
             port_df = pd.DataFrame()
-            print("Warning: No port data loaded from database")
+            
+        return port_df
             
     except Exception as e:
-        # Silently handle missing database tables
-        port_df = pd.DataFrame()
-    
-    return port_df
+        print(f"Error loading port data for {country_name}: {e}")
+        return pd.DataFrame()
 
 def load_key_figures_data():
     """Load key figures data from database - called only when needed"""
@@ -575,12 +520,14 @@ def _ensure_production_data_loaded():
 # Create the layout for the Country Profile page
 def create_layout():
     """Create the Country Profile layout with filters and world map"""
-    # Note: Data will be loaded lazily when page is accessed via callbacks
-    # Create country options from map data (may be empty initially)
-    country_options = [{'label': country, 'value': country} for country in country_list] if country_list else []
+    # PERFORMANCE FIX: Don't load any data during layout creation
+    # All data will be loaded lazily via callbacks when the page is accessed
     
-    # Initialize map with empty map (data will load when page is accessed)
-    initial_map = create_empty_map()
+    # Start with empty country options - will be populated by callback
+    country_options = []
+    
+    # Initialize with empty map - will be populated by callback
+    initial_map = create_empty_map("Loading map data...")
 
     # Initial profile URL
     initial_profile_url = "#"
@@ -633,9 +580,9 @@ def create_layout():
                             dcc.Dropdown(
                                 id='country-select-profile',
                                 options=country_options,
-                                value=default_country,
+                                value=None,  # Start with no selection
                                 clearable=False,
-                                placeholder="Select a country...",
+                                placeholder="Loading countries...",
                                 style=dropdown_style
                             )
                         ], style={'minWidth': '200px', 'marginRight': '20px'}),
@@ -788,7 +735,21 @@ def create_layout():
             fullscreen=False,
             overlay_style={'backgroundColor': 'rgba(248, 249, 250, 0.8)'},
             children=[
-                html.Div(id='country-profile-content', style={'padding': '0px 0px', 'background': '#f8f9fa'})
+                html.Div(
+                    id='country-profile-content', 
+                    children=[
+                        html.Div(
+                            "Loading country profile data...",
+                            style={
+                                'padding': '40px 20px',
+                                'textAlign': 'center',
+                                'color': '#666',
+                                'fontSize': '16px'
+                            }
+                        )
+                    ],
+                    style={'padding': '0px 0px', 'background': '#f8f9fa'}
+                )
             ]
         )
     ])
@@ -820,32 +781,31 @@ def create_world_map(selected_country=None):
     if map_df.empty:
         return create_empty_map("No map data available")
     
-    # Work with numeric latitude/longitude only to avoid NaN/invalid geometries
-    numeric_map = map_df.copy()
-    numeric_map['latitude'] = pd.to_numeric(numeric_map.get('latitude'), errors='coerce')
-    numeric_map['longitude'] = pd.to_numeric(numeric_map.get('longitude'), errors='coerce')
-    numeric_map = numeric_map.dropna(subset=['latitude', 'longitude'])
-    if numeric_map.empty:
-        return create_empty_map("No valid coordinate data available")
-
-    # Filter by selected country if provided
-    if selected_country and 'country_long_name' in numeric_map.columns:
-        print(f"DEBUG: Selected country for map: {selected_country}")
-        filtered_map = numeric_map[numeric_map['country_long_name'].astype(str).str.strip() == str(selected_country).strip()].copy()
+    # PERFORMANCE OPTIMIZATION: Load port data only for selected country
+    if selected_country:
+        # Load port data specifically for this country
+        port_data_for_country = load_port_data_for_country(selected_country)
+        
+        if port_data_for_country.empty:
+            # If no port data, show country highlight only
+            return create_country_only_map(selected_country)
+        
+        # Use the country-specific port data
+        filtered_map = port_data_for_country.copy()
+        filtered_map['country_long_name'] = selected_country  # Add country name for consistency
     else:
-        print("DEBUG: No country selected for map, showing all countries.")
-        filtered_map = numeric_map.copy()
-
+        # For all countries view, use basic country data from map_df
+        filtered_map = map_df.copy()
+    
+    # Work with numeric latitude/longitude only to avoid NaN/invalid geometries
+    if 'latitude' in filtered_map.columns and 'longitude' in filtered_map.columns:
+        filtered_map['latitude'] = pd.to_numeric(filtered_map.get('latitude'), errors='coerce')
+        filtered_map['longitude'] = pd.to_numeric(filtered_map.get('longitude'), errors='coerce')
+        filtered_map = filtered_map.dropna(subset=['latitude', 'longitude'])
+    
     if filtered_map.empty:
-        print(f"DEBUG: filtered_map is empty for {selected_country}. Returning empty map.")
-        return create_empty_map(f"No data available for {selected_country}")
-    
-    # Ensure required columns exist
-    required_cols = ['Port Name', 'latitude', 'longitude']
-    if not all(col in filtered_map.columns for col in required_cols):
-        print(f"DEBUG: Missing required columns in filtered_map: {required_cols}. Returning empty map.")
-        return create_empty_map("Missing required data columns")
-    
+        return create_empty_map(f"No coordinate data available for {selected_country}" if selected_country else "No coordinate data available")
+
     # Use shared map configuration
     use_mapbox, token, mapbox_layout = get_mapbox_config()
     geojson = load_world_geojson()
@@ -857,27 +817,18 @@ def create_world_map(selected_country=None):
     
     if selected_country:
         # For selected country, show individual ports and highlight the country
-        port_cols = ['Port Name', 'latitude', 'longitude', 'port_value']
-        if 'country_long_name' in filtered_map.columns:
-            port_cols.append('country_long_name')
-        if 'Port' in filtered_map.columns:
-            port_cols.append('Port')
-        if 'profile_url' in filtered_map.columns:
-            port_cols.append('profile_url')
-        
-        port_data = filtered_map[port_cols].copy()
-        port_data['latitude'] = pd.to_numeric(port_data['latitude'], errors='coerce')
-        port_data['longitude'] = pd.to_numeric(port_data['longitude'], errors='coerce')
-        port_data = port_data.dropna(subset=['latitude', 'longitude'])
+        if 'Port Name' not in filtered_map.columns and 'port_name' in filtered_map.columns:
+            filtered_map['Port Name'] = filtered_map['port_name'].astype(str).str.strip()
         
         # Filter out rows with empty Port Name
-        port_data = port_data[
-            (port_data['Port Name'].astype(str).str.strip() != '') &
-            (port_data['Port Name'].astype(str).str.strip().str.lower() != 'nan')
-        ].copy()
+        if 'Port Name' in filtered_map.columns:
+            filtered_map = filtered_map[
+                (filtered_map['Port Name'].astype(str).str.strip() != '') &
+                (filtered_map['Port Name'].astype(str).str.strip().str.lower() != 'nan')
+            ].copy()
         
-        if port_data.empty:
-            return create_empty_map(f"No port data available for {selected_country}")
+        if filtered_map.empty:
+            return create_country_only_map(selected_country)
         
         # Get ISO code for selected country and add country highlight
         country_iso = get_iso_code(selected_country)
@@ -912,41 +863,39 @@ def create_world_map(selected_country=None):
                     name='countries'
                 ))
         
-        # PERFORMANCE OPTIMIZATION: Simplified hover text generation
-        # Pre-generate all hover texts in batch instead of calling function for each port
-        enhanced_hover_text = []
-        for _, port_row in port_data.iterrows():
-            port_name = port_row['Port Name']
-            # Simplified hover - just show port name for better performance
-            hover_text = f"<b>Port Name:</b> {port_name}"
-            enhanced_hover_text.append(hover_text)
-        
-        # Add ports by symbol type - optimized grouping
-        ports_by_symbol = {}
-        for idx, (_, port_row) in enumerate(port_data.iterrows()):
-            port_value = port_row['port_value']
-            if port_value == 171:
-                symbol, marker_size, marker_color = 'circle', 14, '#fe5000'
-            elif port_value == 513:
-                symbol, marker_size, marker_color = '+', 14, '#1f77b4'
-            elif port_value == 342:
-                symbol, marker_size, marker_color = 'square', 14, '#2ca02c'
-            else:
-                symbol, marker_size, marker_color = 'circle', 14, '#6c757d'
+        # Add ports with simplified hover text for better performance
+        if 'Port Name' in filtered_map.columns:
+            enhanced_hover_text = []
+            for _, port_row in filtered_map.iterrows():
+                port_name = port_row['Port Name']
+                hover_text = f"<b>Port Name:</b> {port_name}"
+                enhanced_hover_text.append(hover_text)
+            
+            # Group ports by symbol type for better rendering
+            ports_by_symbol = {}
+            for idx, (_, port_row) in enumerate(filtered_map.iterrows()):
+                port_value = port_row.get('port_value', 1)
+                if port_value == 171:
+                    symbol, marker_size, marker_color = 'circle', 14, '#fe5000'
+                elif port_value == 513:
+                    symbol, marker_size, marker_color = '+', 14, '#1f77b4'
+                elif port_value == 342:
+                    symbol, marker_size, marker_color = 'square', 14, '#2ca02c'
+                else:
+                    symbol, marker_size, marker_color = 'circle', 14, '#6c757d'
 
-            bucket = ports_by_symbol.setdefault(symbol, {"lat": [], "lon": [], "name": [], "size": [], "custom": [], "color": [], "hover": []})
-            bucket["lat"].append(port_row['latitude'])
-            bucket["lon"].append(port_row['longitude'])
-            bucket["name"].append(port_row['Port Name'])
-            bucket["size"].append(marker_size)
-            bucket["color"].append(marker_color)
-            bucket["hover"].append(enhanced_hover_text[idx])
-            profile_url = f"/wcod/country-profile?country={port_row['country_long_name']}"
-            iso_code = get_iso_code(port_row['country_long_name'])
-            bucket["custom"].append([profile_url, iso_code])
+                bucket = ports_by_symbol.setdefault(symbol, {"lat": [], "lon": [], "name": [], "size": [], "custom": [], "color": [], "hover": []})
+                bucket["lat"].append(port_row['latitude'])
+                bucket["lon"].append(port_row['longitude'])
+                bucket["name"].append(port_row['Port Name'])
+                bucket["size"].append(marker_size)
+                bucket["color"].append(marker_color)
+                bucket["hover"].append(enhanced_hover_text[idx])
+                profile_url = f"/wcod/country-profile?country={port_row['country_long_name']}"
+                iso_code = get_iso_code(port_row['country_long_name'])
+                bucket["custom"].append([profile_url, iso_code])
 
-        # Add port traces
-        if ports_by_symbol:
+            # Add port traces
             for symbol_key, data_bucket in ports_by_symbol.items():
                 if use_mapbox:
                     fig.add_trace(go.Scattermapbox(
@@ -984,9 +933,9 @@ def create_world_map(selected_country=None):
                     ))
         
         # Add country name label
-        if selected_country:
-            map_center_lat = port_data['latitude'].mean() if not port_data.empty else filtered_map['latitude'].mean()
-            map_center_lon = port_data['longitude'].mean() if not port_data.empty else filtered_map['longitude'].mean()
+        if selected_country and not filtered_map.empty:
+            map_center_lat = filtered_map['latitude'].mean()
+            map_center_lon = filtered_map['longitude'].mean()
 
             if not (pd.isna(map_center_lat) or pd.isna(map_center_lon)):
                 if use_mapbox:
@@ -1013,62 +962,66 @@ def create_world_map(selected_country=None):
                     ))
         
         # Calculate dynamic zoom and center
-        map_center_lat = filtered_map['latitude'].mean()
-        map_center_lon = filtered_map['longitude'].mean()
-        
-        if pd.isna(map_center_lat) or pd.isna(map_center_lon):
+        if not filtered_map.empty:
+            map_center_lat = filtered_map['latitude'].mean()
+            map_center_lon = filtered_map['longitude'].mean()
+            
+            if pd.isna(map_center_lat) or pd.isna(map_center_lon):
+                map_center = WORLD_CENTER
+                map_zoom = WORLD_ZOOM
+            else:
+                lat_min, lat_max = filtered_map['latitude'].min(), filtered_map['latitude'].max()
+                lon_min, lon_max = filtered_map['longitude'].min(), filtered_map['longitude'].max()
+                lat_span = lat_max - lat_min
+                lon_span = lon_max - lon_min
+                max_span = max(lat_span, lon_span)
+                
+                # Dynamic zoom based on country size
+                if max_span > 30:
+                    map_zoom = 1.2
+                elif max_span > 15:
+                    map_zoom = 1.4
+                elif max_span > 8:
+                    map_zoom = 1.8
+                elif max_span > 4:
+                    map_zoom = 2.4
+                elif max_span > 2:
+                    map_zoom = 2.8
+                else:
+                    map_zoom = 3.4
+                
+                # Country-specific zoom overrides
+                country_zoom_overrides = {
+                    'Russia': 1.0, 'Canada': 0.9, 'United States': 1.0, 'Brazil': 1.2,
+                    'Australia': 1.1, 'China': 1.1, 'Saudi Arabia': 1.7, 'Iran': 1.8,
+                    'Norway': 2.1, 'United Kingdom': 2.5, 'Nigeria': 1.9, 'Venezuela': 1.8,
+                    'Mexico': 1.5, 'Indonesia': 1.6, 'Libya': 2.1, 'Algeria': 1.8,
+                    'Iraq': 2.2, 'Kuwait': 3.0, 'Qatar': 3.5, 'UAE': 2.7, 'Oman': 2.3
+                }
+                
+                if selected_country in country_zoom_overrides:
+                    map_zoom = country_zoom_overrides[selected_country]
+                
+                # Adjust center for better visibility
+                if selected_country in ['United States', 'Russia']:
+                    adjusted_lat = map_center_lat + (lat_span * 0.30)
+                elif selected_country == 'Canada':
+                    adjusted_lat = map_center_lat + (lat_span * 0.08)
+                elif lat_span > 25:
+                    adjusted_lat = map_center_lat + (lat_span * 0.05)
+                elif lat_span > 15:
+                    adjusted_lat = map_center_lat + (lat_span * 0.08)
+                elif lat_span > 8:
+                    adjusted_lat = map_center_lat + (lat_span * 0.05)
+                elif lat_span > 4:
+                    adjusted_lat = map_center_lat + (lat_span * 0.03)
+                else:
+                    adjusted_lat = map_center_lat
+                
+                map_center = dict(lat=adjusted_lat, lon=map_center_lon)
+        else:
             map_center = WORLD_CENTER
             map_zoom = WORLD_ZOOM
-        else:
-            lat_min, lat_max = filtered_map['latitude'].min(), filtered_map['latitude'].max()
-            lon_min, lon_max = filtered_map['longitude'].min(), filtered_map['longitude'].max()
-            lat_span = lat_max - lat_min
-            lon_span = lon_max - lon_min
-            max_span = max(lat_span, lon_span)
-            
-            # Dynamic zoom based on country size
-            if max_span > 30:
-                map_zoom = 1.2
-            elif max_span > 15:
-                map_zoom = 1.4
-            elif max_span > 8:
-                map_zoom = 1.8
-            elif max_span > 4:
-                map_zoom = 2.4
-            elif max_span > 2:
-                map_zoom = 2.8
-            else:
-                map_zoom = 3.4
-            
-            # Country-specific zoom overrides
-            country_zoom_overrides = {
-                'Russia': 1.0, 'Canada': 0.9, 'United States': 1.0, 'Brazil': 1.2,
-                'Australia': 1.1, 'China': 1.1, 'Saudi Arabia': 1.7, 'Iran': 1.8,
-                'Norway': 2.1, 'United Kingdom': 2.5, 'Nigeria': 1.9, 'Venezuela': 1.8,
-                'Mexico': 1.5, 'Indonesia': 1.6, 'Libya': 2.1, 'Algeria': 1.8,
-                'Iraq': 2.2, 'Kuwait': 3.0, 'Qatar': 3.5, 'UAE': 2.7, 'Oman': 2.3
-            }
-            
-            if selected_country in country_zoom_overrides:
-                map_zoom = country_zoom_overrides[selected_country]
-            
-            # Adjust center for better visibility
-            if selected_country in ['United States', 'Russia']:
-                adjusted_lat = map_center_lat + (lat_span * 0.30)
-            elif selected_country == 'Canada':
-                adjusted_lat = map_center_lat + (lat_span * 0.08)
-            elif lat_span > 25:
-                adjusted_lat = map_center_lat + (lat_span * 0.05)
-            elif lat_span > 15:
-                adjusted_lat = map_center_lat + (lat_span * 0.08)
-            elif lat_span > 8:
-                adjusted_lat = map_center_lat + (lat_span * 0.05)
-            elif lat_span > 4:
-                adjusted_lat = map_center_lat + (lat_span * 0.03)
-            else:
-                adjusted_lat = map_center_lat
-            
-            map_center = dict(lat=adjusted_lat, lon=map_center_lon)
         
         # Update mapbox layout with calculated center and zoom
         mapbox_layout.update({"center": map_center, "zoom": map_zoom})
@@ -1179,6 +1132,57 @@ def create_world_map(selected_country=None):
     )
     
     return fig
+
+
+def create_country_only_map(selected_country):
+    """Create a map showing only the country highlight without ports"""
+    use_mapbox, token, mapbox_layout = get_mapbox_config()
+    geojson = load_world_geojson()
+    
+    fig = go.Figure()
+    
+    # Get ISO code for selected country and add country highlight
+    country_iso = get_iso_code(selected_country)
+    if country_iso and geojson:
+        if use_mapbox:
+            fig.add_trace(go.Choroplethmapbox(
+                geojson=geojson,
+                locations=[country_iso],
+                z=[1],
+                colorscale=[[0, 'rgba(142, 153, 208, 1)'], [1, 'rgba(142, 153, 208, 1)']],
+                showscale=False,
+                featureidkey="id",
+                hoverinfo='text',
+                text=[selected_country], 
+                marker_line_width=0,
+                marker_line_color='rgba(0,0,0,0)'
+            ))
+        else:
+            fig.add_trace(go.Choropleth(
+                locations=[country_iso],
+                z=[1],
+                locationmode="ISO-3",
+                colorscale=[[0, 'rgba(142, 153, 208, 1)'], [1, 'rgba(142, 153, 208, 1)']],
+                showscale=False,
+                hoverinfo='text',
+                text=[selected_country], 
+                marker_line_width=0,
+                marker_line_color='rgba(0,0,0,0)'
+            ))
+    
+    # Use world center with moderate zoom
+    mapbox_layout.update({"center": WORLD_CENTER, "zoom": 2.0})
+    
+    # Apply standard layout
+    apply_standard_layout(fig, use_mapbox, mapbox_layout, height=None)
+    
+    fig.update_layout(
+        title=None,
+        autosize=True,
+        hovermode='closest'
+    )
+    
+    return fig
     
     mapbox_layout = dict(
         style="carto-positron",  # Prefer custom sprite style, fallback inside helper
@@ -1226,7 +1230,7 @@ def create_world_map(selected_country=None):
     
     return fig
 
-def create_empty_map():
+def create_empty_map(message="No data available"):
     """Create an empty world map when no data is available"""
     fig = go.Figure()
     
@@ -1273,7 +1277,7 @@ def create_empty_map():
         ),
         annotations=[
             dict(
-                text="No data available.",
+                text=message,
                 xref="paper", yref="paper",
                 x=0.5, y=0.5, showarrow=False,
                 font=dict(size=16, color='#7f8c8d')
@@ -1334,24 +1338,24 @@ def get_production_data(country_name, time_period='Yearly'):
 
 
 def get_port_details(country_name):
-    """Get port-specific details from global map_df, filtered by country"""
-    if map_df.empty:
+    """Get port-specific details from database, filtered by country"""
+    if not country_name:
         return pd.DataFrame()
 
-    # Filter by country name
-    country_data = map_df[map_df['country_long_name'].astype(str).str.strip() == str(country_name).strip()].copy()
-
-    if country_data.empty:
+    # PERFORMANCE OPTIMIZATION: Load port data specifically for this country
+    port_data_for_country = load_port_data_for_country(country_name)
+    
+    if port_data_for_country.empty:
         return pd.DataFrame()
 
-    # Ensure required columns exist, including 'port_value'
+    # Ensure required columns exist
     required_cols = ['port_name', 'coordinates', 'measure_name', 'value', 'port_value']
-    if not all(col in country_data.columns for col in required_cols):
-        print(f"DEBUG: Missing required columns in country_data for port details: {required_cols}. Available: {country_data.columns.tolist()}")
+    if not all(col in port_data_for_country.columns for col in required_cols):
+        print(f"DEBUG: Missing required columns in port data for {country_name}: {required_cols}. Available: {port_data_for_country.columns.tolist()}")
         return pd.DataFrame()
     
     # Clean and prepare the data
-    port_data = country_data[required_cols].copy()
+    port_data = port_data_for_country[required_cols].copy()
     port_data['Port Name'] = port_data['port_name'].astype(str).str.strip()
     port_data['Coordinates'] = port_data['coordinates'].astype(str).str.strip()
     
@@ -2209,27 +2213,48 @@ def register_callbacks(dash_app, server):
         """Update country profile content based on selection"""
         # Only load data when this page is active
         if current_submenu != 'country-profile':
-            return html.Div("Please select a country", style={'padding': '20px', 'textAlign': 'center'}), None
+            return html.Div(
+                "Loading country profile...",
+                style={'padding': '40px 20px', 'textAlign': 'center', 'color': '#666', 'fontSize': '16px'}
+            ), None
         
-        # Load data only if not already loaded (lazy loading optimization)
-        if map_df.empty:
-            load_map_data()
-        if monthly_prod_df.empty:
-            _ensure_production_data_loaded()
+        # Show loading message immediately if no country selected yet
+        if not selected_country:
+            return html.Div(
+                "Loading country data...",
+                style={'padding': '40px 20px', 'textAlign': 'center', 'color': '#666', 'fontSize': '16px'}
+            ), None
+        
+        # PERFORMANCE FIX: Load data only when needed, not during layout creation
+        try:
+            # Load basic map data if not already loaded
+            if map_df.empty:
+                load_map_data()
+            
+            # Load production data if not already loaded
+            if monthly_prod_df.empty:
+                _ensure_production_data_loaded()
+        except Exception as e:
+            print(f"Error loading data: {e}")
+            return html.Div(
+                f"Error loading data for {selected_country}. Please try again.",
+                style={'padding': '40px 20px', 'textAlign': 'center', 'color': '#d32f2f', 'fontSize': '16px'}
+            ), selected_country
         
         # Determine which country is selected
-        country_name = selected_country or default_country
+        country_name = selected_country
         
         # Use default time period if not provided
         if not time_period:
             time_period = 'Monthly'
         
-        # If map was clicked, we could update selection (for now, use dropdown value)
-        if not country_name:
-            return html.Div("Please select a country", style={'padding': '20px', 'textAlign': 'center'}), None
-        
         # Create profile URL
         profile_url = get_profile_url_for_country(country_name)
+        
+        # Check if production data is available for this country
+        production_data = get_production_data(country_name, 'Monthly')
+        has_production_data = not production_data.empty
+        production_title = f"{country_name} Production" if has_production_data else "None"
         
         sections = [
             # Key Figures Table (always present, conditionally hidden)
@@ -2268,7 +2293,7 @@ def register_callbacks(dash_app, server):
                     html.Div([
                         html.Div([
                             html.H5(
-                                f"{country_name} Production",
+                                production_title,
                                 style={
                                     'color': '#fe5000',
                                     'fontWeight': '600',
@@ -2321,11 +2346,6 @@ def register_callbacks(dash_app, server):
             )
         ]
         
-        # Conditional display handled by a separate callback
-        # return html.Div([
-        #     # html.Div([], style={'padding': '20px 30px', 'background': 'white', 'borderBottom': '1px solid #e0e0e0'}),
-        #     *sections
-        # ]), country_name
         return html.Div([
             sections[0], # Key Figures
             sections[1], # Production
@@ -2363,21 +2383,14 @@ def register_callbacks(dash_app, server):
     def update_world_map(selected_country, current_submenu):
         """Update world map when country selection changes or page loads"""
         if current_submenu != 'country-profile':
-            # print(f"DEBUG: update_world_map: current_submenu is {current_submenu}, returning empty map.")
-            return create_empty_map()
+            return create_empty_map("Loading map...")
         
-        # Load data only if not already loaded (performance optimization)
+        # PERFORMANCE FIX: Load data only when needed
         if map_df.empty:
             load_map_data()
 
-        # Ensure port data is loaded (if not already in map_df)
-        global port_df
-        if port_df.empty:
-            load_port_data()
-        
-        # Use selected country or default
-        country = selected_country or default_country
-        # print(f"DEBUG: update_world_map: Selected country for map is '{country}'.")
+        # Use selected country or show loading
+        country = selected_country
         
         try:
             return create_world_map(country)
@@ -2385,7 +2398,7 @@ def register_callbacks(dash_app, server):
             print(f"Error updating world map: {e}")
             import traceback
             traceback.print_exc()
-            return create_empty_map()
+            return create_empty_map("Error loading map data")
     
     @dash_app.callback(
         Output('time-period-store', 'data'),
@@ -2419,26 +2432,41 @@ def register_callbacks(dash_app, server):
     
     @dash_app.callback(
         [Output('country-select-profile', 'options'),
-         Output('country-select-profile', 'value')],
+         Output('country-select-profile', 'value'),
+         Output('country-select-profile', 'placeholder')],
         Input('current-submenu', 'data'),
         prevent_initial_call=False
     )
     def update_country_dropdown(current_submenu):
         """Update country dropdown options when page is accessed and data is loaded"""
         if current_submenu != 'country-profile':
-            return [], None
+            return [], None, "Loading countries..."
         
-        # Ensure data is loaded
-        load_map_data()
-        _ensure_production_data_loaded()
-        
-        # Create country options from loaded data
-        country_options = [{'label': country, 'value': country} for country in country_list] if country_list else []
-        
-        # Set default value if not already set
-        default_val = default_country if default_country else (country_list[0] if country_list else None)
-        
-        return country_options, default_val
+        # PERFORMANCE FIX: Load data asynchronously only when page is accessed
+        try:
+            # Load basic map data to get country list
+            load_map_data()
+            
+            # Get unique countries from map data
+            if not map_df.empty and 'country_long_name' in map_df.columns:
+                countries = sorted(map_df['country_long_name'].dropna().unique().tolist())
+                countries = [str(c).strip() for c in countries if c and str(c).strip() and str(c).strip() != 'nan']
+            else:
+                # Fallback: try to get countries from production data
+                _ensure_production_data_loaded()
+                countries = country_list if country_list else []
+            
+            # Create country options
+            country_options = [{'label': country, 'value': country} for country in countries]
+            
+            # Set default value
+            default_val = 'United States' if 'United States' in countries else (countries[0] if countries else None)
+            
+            return country_options, default_val, "Select a country..."
+            
+        except Exception as e:
+            print(f"Error loading country dropdown: {e}")
+            return [], None, "Error loading countries"
     
     # Export production CSV (uses get_production_data)
     @dash_app.callback(
