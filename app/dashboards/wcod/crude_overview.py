@@ -4362,18 +4362,11 @@ def register_callbacks(dash_app, server):
             # Map country is selected but table filter is inactive (user clicked same country twice)
             # Show all data in table while keeping chart/legend filtered
             print(f"DEBUG FILTER_TABLE: Map country selected ({selected_country_map}) but table filter inactive, showing all data: {len(df)} rows")
-        elif tab == "monthly" and country and country != ['ALL'] and not table_map_filter_active:
-            # Dropdown country filter only for monthly when:
-            # 1. No map selection is active (table_map_filter_active is False)
-            # 2. Country is explicitly selected (not None and not ['ALL'])
-            # This prevents filtering on initial load but allows dropdown filtering after user interaction
-            resolved_countries = _resolve_countries_selection(country)
-            if resolved_countries and "Country" in df.columns:
-                df = df[df["Country"].isin(resolved_countries)]
-                print(f"DEBUG FILTER_TABLE: Applied dropdown country filter for monthly tab: {resolved_countries}, rows after filter: {len(df)}")
-            else:
-                print(f"DEBUG FILTER_TABLE: No valid countries to filter for monthly tab, showing all data: {len(df)} rows")
         else:
+            # No map selection active or table filter inactive
+            # For initial load: always show all data regardless of dropdown selection
+            # For monthly tab: only apply dropdown filter if user has interacted with map before
+            # This prevents filtering on initial load with default dropdown values
             print(f"DEBUG FILTER_TABLE: No country filter applied for {tab} tab, showing all data: {len(df)} rows")
         
         # Additional metadata filters (only for monthly)
