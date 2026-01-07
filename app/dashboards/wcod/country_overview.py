@@ -1068,10 +1068,22 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
                     text = f"<b><a href='{profile_url}' target='_blank' style='color:#1b365d; text-decoration: underline;'>{country}</a></b>"
                 else:
                     text = f"<b><span style='text-decoration: underline;'>{country}</span></b>"
-            elif dim == 'Year': text = str(year_value)
-            elif dim == 'Quarter': text = f"{quarter_value}" if quarter_value else ""
-            elif dim == 'Month': text = month_value
-            elif dim == 'Day': text = str(day_value)
+            elif dim == 'Year':
+                text = str(year_value)
+                if profile_url:
+                    text = f"<a href='{profile_url}' target='_blank' style='color:#1b365d; text-decoration: none;'>{text}</a>"
+            elif dim == 'Quarter':
+                text = f"{quarter_value}" if quarter_value else ""
+                if text and profile_url:
+                    text = f"<a href='{profile_url}' target='_blank' style='color:#1b365d; text-decoration: none;'>{text}</a>"
+            elif dim == 'Month':
+                text = month_value
+                if text and profile_url:
+                    text = f"<a href='{profile_url}' target='_blank' style='color:#1b365d; text-decoration: none;'>{text}</a>"
+            elif dim == 'Day':
+                text = str(day_value)
+                if text and profile_url:
+                    text = f"<a href='{profile_url}' target='_blank' style='color:#1b365d; text-decoration: none;'>{text}</a>"
             
             if text:
                 fig.add_annotation(
