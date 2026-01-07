@@ -410,7 +410,7 @@ def _build_global_prices_table(table_data, table_columns):
                 'border': '1px solid #dee2e6',
                 'padding': '8px 10px',
                 'fontFamily': 'Arial, sans-serif',
-                'fontSize': '12px',
+                'fontSize': '13px',
                 'color': '#1b365d',
                 'position': 'sticky',
                 'top': 0,
@@ -506,21 +506,24 @@ def _build_global_prices_table(table_data, table_columns):
                     'backgroundColor': '#f8f9fa',
                     'fontWeight': 'bold',
                     'textAlign': 'center',
-                    'color': '#1b365d'
+                    'color': '#1b365d',
+                    'fontSize': '14px'
                 },
                 {
                     'if': {'header_index': 1},
                     'backgroundColor': '#f8f9fa',
                     'fontWeight': 'bold',
                     'textAlign': 'center',
-                    'color': '#1b365d'
+                    'color': '#1b365d',
+                    'fontSize': '13px'
                 },
                 {
                     'if': {'header_index': 2},
                     'backgroundColor': '#f8f9fa',
-                    'fontWeight': 'normal',
+                    'fontWeight': 'bold',
                     'textAlign': 'center',
-                    'color': '#1b365d'
+                    'color': '#1b365d',
+                    'fontSize': '13px'
                 }
             ],
             css=[
@@ -879,41 +882,33 @@ def register_callbacks(dash_app, server):
                 function clearAllRowSelections(spreadsheet) {
                     if (!spreadsheet) return;
                     
-                    // Clear all row cells - remove classes and all inline styles
-                    const allRowCells = spreadsheet.querySelectorAll('td.row-cell-selected');
-                    allRowCells.forEach(cell => {
-                        cell.classList.remove('row-cell-selected');
-                        cell.style.removeProperty('background-color');
-                        cell.style.removeProperty('border');
-                        cell.style.removeProperty('font-weight');
-                        cell.style.removeProperty('color');
-                        cell.style.removeProperty('opacity');
-                        cell.style.removeProperty('filter');
-                    });
-                    
-                    // Also clear any cells that might have been highlighted but don't have the class
-                    const allDataRows = spreadsheet.querySelectorAll('tbody tr');
-                    allDataRows.forEach(r => {
-                        const rowCells = r.querySelectorAll('td');
-                        rowCells.forEach(c => {
-                            c.classList.remove('row-cell-selected');
-                            c.style.removeProperty('background-color');
-                            c.style.removeProperty('border');
-                            c.style.removeProperty('font-weight');
-                            c.style.removeProperty('color');
-                            c.style.removeProperty('opacity');
-                            c.style.removeProperty('filter');
-                        });
-                    });
-                    
                     // Clear row-selected class from row elements
                     const allSelectedRows = spreadsheet.querySelectorAll('tr.row-selected');
-                    allSelectedRows.forEach(r => {
-                        r.classList.remove('row-selected');
+                    allSelectedRows.forEach(r => r.classList.remove('row-selected'));
+                    
+                    // Clear classes and specific styles from highlighted cells
+                    const highlightedCells = spreadsheet.querySelectorAll('td.row-cell-selected, th.row-cell-selected');
+                    highlightedCells.forEach(c => {
+                        c.classList.remove('row-cell-selected');
+                        c.style.removeProperty('background-color');
+                        c.style.removeProperty('border');
+                        c.style.removeProperty('font-weight');
+                        c.style.removeProperty('color');
+                    });
+                    
+                    // Reset opacity for ALL cells to return to normal state
+                    const allCells = spreadsheet.querySelectorAll('td, th');
+                    allCells.forEach(c => {
+                        c.style.removeProperty('opacity');
+                        c.style.removeProperty('filter');
                     });
                     
                     // Remove row selection active class
                     spreadsheet.classList.remove('row-selection-active');
+                    if (window.globalPricesState) {
+                        window.globalPricesState.selectedYear = null;
+                        window.globalPricesState.selectedRowIndex = null;
+                    }
                 }
 
                 function enhanceTable() {
@@ -1892,249 +1887,94 @@ def register_callbacks(dash_app, server):
                             return false; // Prevent default
                         }
                     
-                        // Handle row highlighting when clicking on Year cell
-                        const yearCell = event.target.closest('td[data-dash-column="Year"]');
-                        if (yearCell) {
+                        // Handle row highlighting when clicking on hierarchy cells (Year, Quarter, Month, Day)
+                        const hierarchyCell = event.target.closest('td[data-dash-column="Year"], td[data-dash-column="Quarter"], td[data-dash-column="Month"], td[data-dash-column="Day"]');
+                        if (hierarchyCell) {
                             event.stopPropagation();
                             
-                            // Clear column selections first
-                            clearAllColumnSelections(clickedSpreadsheet);
-                            clearAllRowSelections(clickedSpreadsheet);
-                            if (window.globalPricesState) {
-                                window.globalPricesState.selectedColumnId = null;
+                            const columnId = hierarchyCell.getAttribute('data-dash-column');
+                            const row = hierarchyCell.closest('tr');
+                            if (!row) return;
+                            
+                            const cellValue = getCellValue(hierarchyCell);
+                            const rowIndex = row.getAttribute('data-dash-row') || Array.from(row.parentNode.children).indexOf(row);
+                            
+                            const selectionKey = columnId + '_' + rowIndex + '_' + cellValue;
+                            
+                            if (window.globalPricesState && window.globalPricesState.selectedRowIndex === selectionKey) {
+                                clearAllRowSelections(clickedSpreadsheet);
+                                if (window.globalPricesState) window.globalPricesState.selectedRowIndex = null;
+                                return;
                             }
                             
-                            // Get the year value
-                            const yearValue = getCellValue(yearCell);
+                            clearAllColumnSelections(clickedSpreadsheet);
+                            clearAllRowSelections(clickedSpreadsheet);
                             
-                            if (yearValue) {
-                                // Check if this year is already selected
-                                if (window.globalPricesState && window.globalPricesState.selectedYear === yearValue) {
-                                    // Deselect year - clear all row selections
-                                    clearAllRowSelections(clickedSpreadsheet);
-                                    if (window.globalPricesState) {
-                                        window.globalPricesState.selectedYear = null;
-                                        window.globalPricesState.selectedRowIndex = null;
-                                    }
-                                } else {
-                                    // Clear any previous selection
-                                    clearAllRowSelections(clickedSpreadsheet);
-                                    
-                                    // Find all rows with this year and highlight them
-                                    const allDataRows = Array.from(clickedSpreadsheet.querySelectorAll('tbody tr'));
-                                    let currentYear = null; // Track current year as we iterate
-                                    
-                                    allDataRows.forEach((row) => {
-                                        // Find Year cell in this row
-                                        const rowYearCell = row.querySelector('td[data-dash-column="Year"]');
-                                        let rowYearValue = null;
-                                        
-                                        if (rowYearCell) {
-                                            const cellValue = getCellValue(rowYearCell);
-                                            if (cellValue && cellValue.trim() !== '') {
-                                                rowYearValue = cellValue;
-                                                currentYear = cellValue;
-                                            } else {
-                                                rowYearValue = currentYear;
-                                            }
-                                        } else {
-                                            rowYearValue = currentYear;
-                                        }
-                                        
-                                        // Check if this row matches the selected year
-                                        if (rowYearValue === yearValue) {
-                                            // This row matches the selected year - highlight Year and data cells, but NOT Quarter, Month, Day
-                                            const allRowCells = Array.from(row.querySelectorAll('td'));
-                                            allRowCells.forEach(c => {
-                                                const colId = c.getAttribute('data-dash-column');
-                                                if (colId === 'Quarter' || colId === 'Month' || colId === 'Day') {
-                                                    // Quarter, Month, Day cells: keep at normal state
-                                                    c.classList.remove('row-cell-selected');
-                                                    c.style.backgroundColor = '';
-                                                    c.style.border = '';
-                                                    c.style.fontWeight = '';
-                                                    c.style.color = '';
-                                                    c.style.opacity = '1';
-                                                    c.style.removeProperty('filter');
-                                                } else {
-                                                    // Year and data columns: highlight
-                                                    c.classList.add('row-cell-selected');
-                                                    c.style.backgroundColor = '#b3d9ff';
-                                                    c.style.border = 'none';
-                                                    c.style.fontWeight = '600';
-                                                    c.style.color = '#1b365d';
-                                                    c.style.opacity = '1';
-                                                    c.style.removeProperty('filter');
-                                                }
-                                            });
-                                            row.classList.add('row-selected');
-                                        }
-                                    });
-                                    
-                                    // Ensure all cells in non-selected rows are at normal opacity
-                                    allDataRows.forEach((row) => {
-                                        if (!row.classList.contains('row-selected')) {
-                                            const rowCells = row.querySelectorAll('td');
-                                            rowCells.forEach(c => {
-                                                c.style.opacity = '1';
-                                            });
-                                        }
-                                    });
-                                    
-                                    if (window.globalPricesState) {
-                                        window.globalPricesState.selectedYear = yearValue;
-                                        window.globalPricesState.selectedRowIndex = null;
+                            const allRows = Array.from(clickedSpreadsheet.querySelectorAll('tbody tr'));
+                            const currentRowIndex = allRows.indexOf(row);
+                            
+                            let startIndex = currentRowIndex;
+                            let firstLabelCell = hierarchyCell;
+
+                            // Find start index (look up to find the non-empty label cell for this group)
+                            if (cellValue === "") {
+                                for (let i = currentRowIndex; i >= 0; i--) {
+                                    const cell = allRows[i].querySelector(`td[data-dash-column="${columnId}"]`);
+                                    if (cell && getCellValue(cell) !== "") {
+                                        startIndex = i;
+                                        firstLabelCell = cell;
+                                        break;
                                     }
                                 }
                             }
-                            return false; // Prevent default
-                        }
-                        
-                        // Handle row highlighting when clicking on Month cell
-                        const monthCell = event.target.closest('td[data-dash-column="Month"]');
-                        if (monthCell) {
-                            event.stopPropagation();
                             
-                            // Clear column selections first
-                            clearAllColumnSelections(clickedSpreadsheet);
-                            
-                            // Clear ALL cells with row-cell-selected class
-                            const allHighlightedCells = clickedSpreadsheet.querySelectorAll('td.row-cell-selected');
-                            allHighlightedCells.forEach(c => {
-                                c.classList.remove('row-cell-selected');
-                                c.style.removeProperty('background-color');
-                                c.style.removeProperty('border');
-                                c.style.removeProperty('font-weight');
-                                c.style.removeProperty('color');
-                                c.style.removeProperty('opacity');
-                                c.style.removeProperty('filter');
-                            });
-                            
-                            // Clear ALL previously selected rows
-                            const allSelectedRows = clickedSpreadsheet.querySelectorAll('tbody tr.row-selected');
-                            allSelectedRows.forEach(prevRow => {
-                                const prevRowCells = prevRow.querySelectorAll('td');
-                                prevRowCells.forEach(c => {
-                                    c.classList.remove('row-cell-selected');
-                                    c.style.removeProperty('background-color');
-                                    c.style.removeProperty('border');
-                                    c.style.removeProperty('font-weight');
-                                    c.style.removeProperty('color');
-                                    c.style.removeProperty('opacity');
-                                    c.style.removeProperty('filter');
-                                });
-                                prevRow.classList.remove('row-selected');
-                            });
-                            
-                            // Clear all row selections
-                            clearAllRowSelections(clickedSpreadsheet);
-                            
-                            // Clear state BEFORE applying new selection
-                            if (window.globalPricesState) {
-                                window.globalPricesState.selectedColumnId = null;
-                                window.globalPricesState.selectedRowIndex = null;
-                            }
-                            
-                            // Get the row containing this Month cell
-                            const row = monthCell.closest('tr');
-                            if (!row) {
-                                return false;
-                            }
-                            
-                            let rowIndex = row.getAttribute('data-dash-row');
-                            
-                            // Fallback: if no data-dash-row, use row position
-                            if (!rowIndex) {
-                                const tbody = row.closest('tbody');
-                                if (tbody) {
-                                    const allRows = Array.from(tbody.querySelectorAll('tr'));
-                                    const rowPosition = allRows.indexOf(row);
-                                    rowIndex = rowPosition.toString();
+                            // Find end index (look down to find the last row of this group)
+                            let endIndex = allRows.length - 1;
+                            for (let i = startIndex + 1; i < allRows.length; i++) {
+                                const rowCell = allRows[i].querySelector(`td[data-dash-column="${columnId}"]`);
+                                if (rowCell && getCellValue(rowCell) !== "") {
+                                    endIndex = i - 1;
+                                    break;
                                 }
                             }
-                            
-                            // Check if this row is already selected
-                            if (window.globalPricesState && window.globalPricesState.selectedRowIndex === rowIndex) {
-                                // Deselect row
-                                clearAllRowSelections(clickedSpreadsheet);
-                                if (window.globalPricesState) {
-                                    window.globalPricesState.selectedRowIndex = null;
-                                }
-                            } else {
-                                // Clear any previous row selection
-                                clearAllRowSelections(clickedSpreadsheet);
-                                
-                                // Get all cells directly from the row element
-                                const allRowCells = Array.from(row.querySelectorAll('td'));
-                                
-                                // Highlight Month and data columns, but NOT Year, Quarter, Day
-                                allRowCells.forEach((c) => {
-                                    const colId = c.getAttribute('data-dash-column');
-                                    if (colId === 'Year' || colId === 'Quarter' || colId === 'Day') {
-                                        // Year, Quarter, Day columns: keep at normal state
-                                        c.classList.remove('row-cell-selected');
-                                        c.style.backgroundColor = '';
-                                        c.style.border = '';
-                                        c.style.fontWeight = '';
-                                        c.style.color = '';
-                                        c.style.opacity = '1';
-                                        c.style.removeProperty('filter');
-                                    } else {
-                                        // Month and data columns: highlight with bright blue
+
+                            const targetRows = allRows.slice(startIndex, endIndex + 1);
+
+                            targetRows.forEach(r => {
+                                r.classList.add('row-selected');
+                                r.querySelectorAll('td').forEach(c => {
+                                    const cColId = c.getAttribute('data-dash-column');
+                                    // Highlight data cells
+                                    if (!['Year', 'Quarter', 'Month', 'Day'].includes(cColId)) {
                                         c.classList.add('row-cell-selected');
                                         c.style.setProperty('background-color', '#b3d9ff', 'important');
-                                        c.style.setProperty('border', 'none', 'important');
                                         c.style.setProperty('font-weight', '600', 'important');
                                         c.style.setProperty('color', '#1b365d', 'important');
                                         c.style.setProperty('opacity', '1', 'important');
-                                        c.style.removeProperty('filter');
                                     }
-                                });
-                                
-                                // Add row-selected class to row element
-                                row.classList.add('row-selected');
-                                
-                                // Dim other rows first
-                                const allDataRows = clickedSpreadsheet.querySelectorAll('tbody tr');
-                                allDataRows.forEach((r) => {
-                                    const rIndex = r.getAttribute('data-dash-row') || Array.from(allDataRows).indexOf(r).toString();
-                                    if (rIndex !== rowIndex) {
-                                        // Dim all cells in other rows
-                                        const rowCells = r.querySelectorAll('td');
-                                        rowCells.forEach(c => {
-                                            c.style.setProperty('opacity', '0.3', 'important');
-                                        });
-                                    }
-                                });
-                                
-                                // Now add row-selection-active class
-                                clickedSpreadsheet.classList.add('row-selection-active');
-                                
-                                // Force selected row to be bright
-                                const selectedRowCells = row.querySelectorAll('td');
-                                selectedRowCells.forEach(c => {
-                                    const colId = c.getAttribute('data-dash-column');
-                                    if (colId !== 'Year' && colId !== 'Quarter' && colId !== 'Day') {
-                                        c.style.setProperty('opacity', '1', 'important');
+                                    // Highlight the specific hierarchy label cell that represents this group
+                                    if (c === firstLabelCell) {
+                                        c.classList.add('row-cell-selected');
                                         c.style.setProperty('background-color', '#b3d9ff', 'important');
+                                        c.style.setProperty('font-weight', 'bold', 'important');
                                         c.style.setProperty('color', '#1b365d', 'important');
-                                        c.style.setProperty('font-weight', '600', 'important');
-                                        c.style.setProperty('border', 'none', 'important');
-                                        c.style.removeProperty('filter');
-                                    } else {
-                                        // Year, Quarter, Day columns: normal state
                                         c.style.setProperty('opacity', '1', 'important');
-                                        c.style.setProperty('background-color', '', 'important');
-                                        c.style.setProperty('color', '', 'important');
-                                        c.style.setProperty('font-weight', '', 'important');
                                     }
                                 });
-                                
-                                if (window.globalPricesState) {
-                                    window.globalPricesState.selectedRowIndex = rowIndex;
+                            });
+
+                            // Dim other rows
+                            allRows.forEach(r => {
+                                if (!r.classList.contains('row-selected')) {
+                                    r.querySelectorAll('td').forEach(c => c.style.setProperty('opacity', '0.3', 'important'));
                                 }
+                            });
+                            
+                            clickedSpreadsheet.classList.add('row-selection-active');
+                            if (window.globalPricesState) {
+                                window.globalPricesState.selectedRowIndex = selectionKey;
                             }
-                            return false;
+                            return;
                         }
                         
                         // If clicking on a data cell, clear column and row selections
