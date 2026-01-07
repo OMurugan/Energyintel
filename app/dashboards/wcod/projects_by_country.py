@@ -1120,12 +1120,14 @@ def create_layout():
                                 },
                                 style_cell={
                                     'textAlign': 'left',
-                                    'padding': '8px',
-                                    'fontSize': '12px',
+                                    'padding': '1px 4px',
+                                    'fontSize': '11px',
                                     'fontFamily': 'Lato, sans-serif',
                                     'color': 'rgb(27, 54, 93)',
                                     'whiteSpace': 'nowrap',
-                                    'height': 'auto',
+                                    'height': '22px',
+                                    'minHeight': '22px',
+                                    'lineHeight': '1.1',
                                     'overflow': 'hidden',
                                     'textOverflow': 'ellipsis',
                                     'maxWidth': '180px'
@@ -1136,7 +1138,7 @@ def create_layout():
                                         "whiteSpace": "nowrap",
                                         "overflow": "hidden",
                                         "textOverflow": "ellipsis",
-                                        "height": "auto",
+                                        "height": "22px",
                                         "textAlign": "left",
                                     }
                                 ],
@@ -1146,7 +1148,10 @@ def create_layout():
                                     'fontFamily': 'Lato, sans-serif',
                                     'color': 'rgb(27, 54, 93)',
                                     'border': '1px solid #ddd',
-                                    'textAlign': 'center'
+                                    'textAlign': 'center',
+                                    'height': '25px',
+                                    'minHeight': '25px',
+                                    'padding': '1px 4px'
                                 },
                                 style_data={
                                     'border': '1px solid #ddd',
@@ -1174,6 +1179,18 @@ def create_layout():
                                     {
                                         "selector": ".previous-page, .next-page, .first-page, .last-page, .page-number, .page-number--current",
                                         "rule": "display: none !important;",
+                                    },
+                                    {
+                                        "selector": ".dash-spreadsheet-container .dash-spreadsheet-inner tr",
+                                        "rule": "min-height: 22px !important; height: 22px !important;"
+                                    },
+                                    {
+                                        "selector": ".dash-spreadsheet-container .dash-spreadsheet-inner td",
+                                        "rule": "min-height: 22px !important; height: 22px !important; padding: 1px 4px !important; line-height: 22px !important;"
+                                    },
+                                    {
+                                        "selector": ".dash-filter input",
+                                        "rule": "height: 18px !important; padding: 0 4px !important; font-size: 10px !important;"
                                     }
                                 ],
                             )
@@ -1456,6 +1473,7 @@ def _chart_figure(
         range=[0, 1000],
         tick0=0,
         dtick=200,
+        tickformat='d',
         secondary_y=False,
     )
     # Keep secondary axis tall enough so the running-sum line is not clipped.
@@ -1466,6 +1484,7 @@ def _chart_figure(
         range=[0, secondary_max],
         tick0=0,
         dtick=2000,
+        tickformat='d',
         secondary_y=True,
     )
 
@@ -1978,11 +1997,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input("projects-country-filter", "value"),
     )
     def render_selected_country_label(countries):
-        all_countries = load_map_data()["Country"].tolist()
-        resolved = _resolve_countries(countries, all_countries)
-        if len(resolved) == 1:
-            return f"Selected country: {resolved[0]}"
-        return f"{len(resolved)} countries selected"
+        return "" # Removed "X countries selected" label as requested
 
     @dash_app.callback(
         Output("projects-country-map", "figure"),
@@ -2328,7 +2343,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 "whiteSpace": "nowrap",
                 "overflow": "hidden",
                 "textOverflow": "ellipsis",
-                "height": "auto",
+                "height": "22px",
                 "textAlign": "left",
             }
         ]

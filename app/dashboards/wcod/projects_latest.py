@@ -275,7 +275,7 @@ def create_layout():
                 'alignItems': 'flex-start',
                 'marginBottom': '8px',
             }, children=[
-                # Title section
+                # Title section (Left)
                 html.Div(children=[
                     html.H3(
                         f"List of Updated Projects- {get_current_monday_date()}",
@@ -293,76 +293,84 @@ def create_layout():
                     ),
                 ]),
                 
-                html.Div([
-                    html.Button(
-                        'Export to CSV',
-                        id='btn-export-latest-updates-csv',
-                        n_clicks=0,
-                        style={
-                            'backgroundColor': 'white',
-                            'color': '#2c3e50',
-                            'border': '1px solid #dee2e6',
-                            'padding': '8px 15px',
-                            'borderRadius': '4px',
-                            'cursor': 'pointer',
-                            'fontSize': '12px',
-                            'margin': '0',
-                            'display': 'inline-block'
-                        }
-                    ),
-                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'padding': '0'}),
-
-                # Filter container for "Likely To Go Ahead"
+                # Right side container (Filter + Export button stacked)
                 html.Div(style={
-                    'backgroundColor': 'white',
-                    'padding': '6px 8px',
-                    'border': '1px solid #cccccc',
-                    'borderRadius': '0',
-                    'boxShadow': 'none',
-                    'minWidth': '170px',
-                    'marginLeft': '16px',
-                    'flexShrink': '0',
+                    'display': 'flex',
+                    'flexDirection': 'column',
+                    'alignItems': 'flex-end',
+                    'gap': '10px'
                 }, children=[
-                    html.Label(
-                        "Likely To Go Ahead",
-                        style={
-                            'display': 'block',
-                            'marginBottom': '4px',
-                            'fontSize': '12px',
-                            'fontWeight': 'normal',
-                            'color': '#000000',
-                            'fontFamily': 'Times New Roman, Times, serif',
-                            'whiteSpace': 'nowrap',
-                        }
-                    ),
-                    dcc.Checklist(
-                        id='filter-go-ahead',
-                        options=[
-                            {'label': '(All)', 'value': 'All'},
-                            {'label': '', 'value': ''},
-                            {'label': 'N', 'value': 'N'},
-                            {'label': 'Uncertain', 'value': 'Uncertain'},
-                            {'label': 'Y', 'value': 'Y'},
-                        ],
-                        value=['Y'],  # Default: Y is checked
-                        inline=False,
-                        style={
-                            'fontSize': '12px',
-                            'fontFamily': 'Times New Roman, Times, serif',
-                            'color': '#000000',
-                        },
-                        labelStyle={
-                            'display': 'flex',
-                            'alignItems': 'center',
-                            'marginBottom': '2px',
-                        },
-                        inputStyle={
-                            'marginRight': '5px',
-                            'marginTop': '0',
-                            'marginBottom': '0',
-                        }
-                    ),
-                    dcc.Store(id='filter-go-ahead-previous', data=['Y'])
+                    # Filter container for "Likely To Go Ahead"
+                    html.Div(style={
+                        'backgroundColor': 'white',
+                        'padding': '6px 8px',
+                        'border': '1px solid #cccccc',
+                        'borderRadius': '0',
+                        'boxShadow': 'none',
+                        'minWidth': '170px',
+                        'flexShrink': '0',
+                    }, children=[
+                        html.Label(
+                            "Likely To Go Ahead",
+                            style={
+                                'display': 'block',
+                                'marginBottom': '4px',
+                                'fontSize': '12px',
+                                'fontWeight': 'normal',
+                                'color': '#000000',
+                                'fontFamily': 'Times New Roman, Times, serif',
+                                'whiteSpace': 'nowrap',
+                            }
+                        ),
+                        dcc.Checklist(
+                            id='filter-go-ahead',
+                            options=[
+                                {'label': '(All)', 'value': 'All'},
+                                {'label': '', 'value': ''},
+                                {'label': 'N', 'value': 'N'},
+                                {'label': 'Uncertain', 'value': 'Uncertain'},
+                                {'label': 'Y', 'value': 'Y'},
+                            ],
+                            value=['Y'],  # Default: Y is checked
+                            inline=False,
+                            style={
+                                'fontSize': '12px',
+                                'fontFamily': 'Times New Roman, Times, serif',
+                                'color': '#000000',
+                            },
+                            labelStyle={
+                                'display': 'flex',
+                                'alignItems': 'center',
+                                'marginBottom': '2px',
+                            },
+                            inputStyle={
+                                'marginRight': '5px',
+                                'marginTop': '0',
+                                'marginBottom': '0',
+                            }
+                        ),
+                        dcc.Store(id='filter-go-ahead-previous', data=['Y'])
+                    ]),
+
+                    # Export button container
+                    html.Div([
+                        html.Button(
+                            'Export to CSV',
+                            id='btn-export-latest-updates-csv',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white',
+                                'color': '#2c3e50',
+                                'border': '1px solid #dee2e6',
+                                'padding': '6px 12px',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontSize': '12px',
+                                'margin': '0',
+                                'display': 'inline-block'
+                            }
+                        ),
+                    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'padding': '0'}),
                 ])
             ]),
             
@@ -395,8 +403,8 @@ def create_layout():
                         },
                         style_cell={
                             'textAlign': 'left',
-                            'padding': '2px 5px',
-                            'fontSize': '12px',
+                            'padding': '1px 4px',
+                            'fontSize': '11px',
                             'fontFamily': 'Times New Roman, Times, serif',
                             'color': '#000000',
                             'borderBottom': '1px solid #cccccc',
@@ -407,6 +415,9 @@ def create_layout():
                             'textOverflow': 'ellipsis',
                             'minWidth': '90px',
                             'maxWidth': '260px',
+                            'height': '22px',
+                            'minHeight': '22px',
+                            'lineHeight': '1.1',
                         },
                         style_header={
                             'backgroundColor': '#d9d9d9',
@@ -418,10 +429,11 @@ def create_layout():
                             'borderRight': '1px solid #999999',
                             'borderTop': '1px solid #999999',
                             'borderLeft': '1px solid #999999',
-                            'padding': '3px 5px',
+                            'padding': '1px 4px',
                             'textAlign': 'center',
                             'whiteSpace': 'normal',
-                            'height': 'auto',
+                            'height': '25px',
+                            'minHeight': '25px',
                             'position': 'relative',
                         },
                         style_data_conditional=[
@@ -455,6 +467,12 @@ def create_layout():
                         css=[{
                             'selector': '.dash-cell div.dash-cell-value',
                             'rule': 'display: inline; white-space: normal;'
+                        }, {
+                            'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner tr',
+                            'rule': 'min-height: 22px !important; height: 22px !important;'
+                        }, {
+                            'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner td',
+                            'rule': 'min-height: 22px !important; height: 22px !important; padding: 1px 4px !important; line-height: 22px !important;'
                         }],
                         sort_action="none",
                         filter_action="none",
@@ -527,8 +545,8 @@ def create_layout():
                         },
                         style_cell={
                             'textAlign': 'left',
-                            'padding': '2px 5px',
-                            'fontSize': '12px',
+                            'padding': '1px 4px',
+                            'fontSize': '11px',
                             'fontFamily': 'Times New Roman, Times, serif',
                             'color': '#000000',
                             'borderBottom': '1px solid #cccccc',
@@ -539,6 +557,9 @@ def create_layout():
                             'textOverflow': 'ellipsis',
                             'minWidth': '90px',
                             'maxWidth': '320px',
+                            'height': '22px',
+                            'minHeight': '22px',
+                            'lineHeight': '1.1',
                         },
                         style_header={
                             'backgroundColor': '#d9d9d9',
@@ -550,10 +571,11 @@ def create_layout():
                             'borderRight': '1px solid #999999',
                             'borderTop': '1px solid #999999',
                             'borderLeft': '1px solid #999999',
-                            'padding': '3px 5px',
+                            'padding': '1px 4px',
                             'textAlign': 'center',
                             'whiteSpace': 'normal',
-                            'height': 'auto',
+                            'height': '25px',
+                            'minHeight': '25px',
                             'position': 'relative',
                         },
                         style_data_conditional=[
@@ -587,6 +609,12 @@ def create_layout():
                         css=[{
                             'selector': '.dash-cell div.dash-cell-value',
                             'rule': 'display: inline; white-space: normal;'
+                        }, {
+                            'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner tr',
+                            'rule': 'min-height: 22px !important; height: 22px !important;'
+                        }, {
+                            'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner td',
+                            'rule': 'min-height: 22px !important; height: 22px !important; padding: 1px 4px !important; line-height: 22px !important;'
                         }],
                         filter_action="none",
                         page_action="none",

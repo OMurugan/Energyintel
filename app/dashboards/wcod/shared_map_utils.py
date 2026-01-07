@@ -170,9 +170,9 @@ def add_country_labels(fig: go.Figure, countries_df, use_mapbox: bool = True, ma
                 mode="text",
                 text=display_df["Country"],
                 textfont=dict(
-                    size=11, 
+                    size=11,
                     color="#2c3e50",  # Dark blue-gray for good contrast
-                    family="system-ui, -apple-system, sans-serif"
+                    family="Open Sans Regular, Arial Unicode MS Regular"
                 ),
                 textposition="middle center",
                 hoverinfo="skip",
@@ -191,7 +191,7 @@ def add_country_labels(fig: go.Figure, countries_df, use_mapbox: bool = True, ma
                 textfont=dict(
                     size=12, 
                     color="#2c3e50",  # Dark blue-gray for good contrast
-                    family="system-ui, -apple-system, sans-serif"
+                    family="Open Sans Regular, Arial Unicode MS Regular"
                 ),
                 textposition="middle center",
                 hoverinfo="skip",

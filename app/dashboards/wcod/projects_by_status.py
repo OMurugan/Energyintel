@@ -2444,6 +2444,7 @@ def create_project_details_table(df):
                 'minWidth': width,
                 'width': width,
                 'maxWidth': width,
+                'height': '22px',
             })
         
         # Right align numeric columns
@@ -2497,12 +2498,14 @@ def create_project_details_table(df):
         },
         style_cell={
             'textAlign': 'left',
-            'padding': '8px',
-            'fontSize': '12px',
+            'padding': '1px 4px',
+            'fontSize': '11px',
             'fontFamily': 'Lato, sans-serif',
             'color': 'rgb(27, 54, 93)',
             'whiteSpace': 'nowrap',
-            'height': 'auto',
+            'height': '22px',
+            'minHeight': '22px',
+            'lineHeight': '1.1',
             'overflow': 'hidden',
             'textOverflow': 'ellipsis',
             'maxWidth': '180px'
@@ -2513,7 +2516,10 @@ def create_project_details_table(df):
             'fontFamily': 'Lato, sans-serif',
             'color': 'rgb(27, 54, 93)',
             'border': '1px solid #ddd',
-            'textAlign': 'center'
+            'textAlign': 'center',
+            'height': '25px',
+            'minHeight': '25px',
+            'padding': '1px 4px'
         },
         style_data={
             'border': '1px solid #ddd',
@@ -2541,6 +2547,15 @@ def create_project_details_table(df):
         }, {
             'selector': '.previous-page, .next-page, .first-page, .last-page, .page-number, .page-number--current',
             'rule': 'display: none !important;'
+        }, {
+            'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner tr',
+            'rule': 'min-height: 22px !important; height: 22px !important;'
+        }, {
+            'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner td',
+            'rule': 'min-height: 22px !important; height: 22px !important; padding: 1px 4px !important; line-height: 22px !important;'
+        }, {
+            'selector': '.dash-filter input',
+            'rule': 'height: 18px !important; padding: 0 4px !important; font-size: 10px !important;'
         }]
     )
     
