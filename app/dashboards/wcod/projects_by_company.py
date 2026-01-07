@@ -1176,22 +1176,22 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
         xaxis=dict(
             title='',
             tickangle=0,
-            showgrid=True,
-            gridcolor='#e0e0e0',
+            showgrid=False, # Removed centered grid lines to place them between bars instead
             tickfont=dict(size=11, color='#2c3e50'),
             tickmode='array',
             tickvals=periods,
             ticktext=[p.split(' ')[1] for p in periods],  # Show only quarters (Q1, Q2, etc.)
             categoryorder='array',
-            categoryarray=periods
+            categoryarray=periods,
+            range=[-0.5, 19.5] # Ensure full coverage for boundaries
         ),
         yaxis=dict(
             title="'000 b/d",
             showgrid=True,
             gridcolor='#e0e0e0',
             tickfont=dict(size=11, color='#2c3e50'),
-            range=[-5, y_max + 5],
-            dtick=10,
+            range=[-2, y_max + 15], # slightly larger to match Image 1 scale
+            dtick=20, # Match Image 1 grid and ticks
             titlefont=dict(size=12, color='#2c3e50')
         ),
         showlegend=False,  # Hide legend in chart - using sidebar legend instead
@@ -1206,6 +1206,27 @@ def create_stacked_bar_chart(df, selected_company="Exxon Mobil", selected_countr
                 color='#000000'
             )
         )
+    )
+    
+    # Add vertical grey lines to separate years (every 4 quarters) to match Image 1
+    # This keeps only the 'outer' lines for each year group and removes internal quarter dividers
+    for i in range(0, 21, 4):
+        boundary = i - 0.5
+        fig.add_shape(
+            type='line',
+            x0=boundary, x1=boundary,
+            y0=0, y1=1.08, # Extends into the year label header area
+            xref='x', yref='paper',
+            line=dict(color='#bdbdbd', width=1)
+        )
+    
+    # Add a top border line across the year labels area
+    fig.add_shape(
+        type='line',
+        x0=-0.5, x1=19.5,
+        y0=1.08, y1=1.08,
+        xref='x', yref='paper',
+        line=dict(color='#bdbdbd', width=1)
     )
     
     # Add year annotations above quarter groups for full 2025–2029 span
@@ -1550,9 +1571,25 @@ def create_layout():
                         }
                     )
                 ], style={'width': '100%', 'display': 'block', 'height': '25px', 'marginBottom': '15px', 'marginTop': '15px'}),
-                dcc.Graph(
-                    id='projects-company-bar-chart',
-                    style={'height': '520px', 'marginBottom': '30px'}
+                dcc.Loading(
+                    id="loading-projects-company-bar-chart",
+                    type="dot",
+                    color="#FF8C42",
+                    style={'display': 'block', 'minHeight': '520px'},
+                    children=[
+                        dcc.Graph(
+                            id='projects-company-bar-chart',
+                            style={'height': '520px', 'marginBottom': '30px'},
+                            config={
+                                'displayModeBar': True,
+                                'displaylogo': False,
+                                'modeBarButtonsToRemove': [
+                                    'zoom2d', 'pan2d', 'select2d', 'lasso2d', 
+                                    'zoomIn2d', 'zoomOut2d', 'autoScale2d'
+                                ]
+                            }
+                        ),
+                    ]
                 ),
                 html.Div([
                     html.Div([
@@ -1575,12 +1612,28 @@ def create_layout():
                             }
                         )
                     ], style={'width': '100%', 'display': 'block', 'height': '25px', 'marginBottom': '15px', 'marginTop': '15px'}),
-                    dcc.Graph(
-                        id='projects-company-map',
-                        style={
-                            'height': '520px',
-                            'width': '100%'
-                        }
+                    dcc.Loading(
+                        id="loading-projects-company-map",
+                        type="dot",
+                        color="#FF8C42",
+                        children=[
+                            dcc.Graph(
+                                id='projects-company-map',
+                                style={
+                                    'height': '520px',
+                                    'width': '100%'
+                                },
+                                config={
+                                    'displayModeBar': True,
+                                    'displaylogo': False,
+                                    'modeBarButtonsToRemove': [
+                                        'lasso2d', 'select2d', 'zoom2d', 'pan2d',
+                                        'zoomIn2d', 'zoomOut2d', 'autoScale2d',
+                                        'zoomInMapbox', 'zoomOutMapbox', 'panMapbox'
+                                    ]
+                                }
+                            ),
+                        ]
                     ),
                     html.Div([
                         html.Div(id='year-of-period-container', children=[
@@ -1836,7 +1889,8 @@ def create_layout():
             ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginBottom': '15px'}),
             dcc.Loading(
                 id="loading-projects-company-table",
-                type="default",
+                type="dot",
+                color="#FF8C42",
                 children=dash_table.DataTable(
                     id='projects-company-table',
                     columns=[],
@@ -1856,13 +1910,15 @@ def create_layout():
                     },
                     style_cell={
                         'textAlign': 'left',
-                        'padding': '8px',
+                        'padding': '1px 4px',
                         'whiteSpace': 'nowrap',
-                        'height': 'auto',
+                        'height': '22px',
+                        'minHeight': '22px',
+                        'lineHeight': '1.1',
                         'overflow': 'hidden',
                         'textOverflow': 'ellipsis',
                         'maxWidth': '180px',
-                        'fontSize': '12px',
+                        'fontSize': '11px',
                         'border': '1px solid #ddd',
                         'backgroundColor': '#fff',
                         'fontFamily': 'Lato, sans-serif',
@@ -1876,7 +1932,9 @@ def create_layout():
                         'border': '1px solid #ddd',
                         'textAlign': 'center',
                         'whiteSpace': 'nowrap',
-                        'height': 'auto',
+                        'height': '25px',
+                        'minHeight': '25px',
+                        'padding': '1px 4px',
                         'position': 'relative'
                     },
                     style_data={
@@ -1892,7 +1950,7 @@ def create_layout():
                             'whiteSpace': 'nowrap',
                             'overflow': 'hidden',
                             'textOverflow': 'ellipsis',
-                            'height': 'auto',
+                            'height': '22px',
                             'textAlign': 'left'
                         }
                     ],
@@ -1905,6 +1963,15 @@ def create_layout():
                     }, {
                         'selector': '.previous-page, .next-page, .first-page, .last-page, .page-number, .page-number--current',
                         'rule': 'display: none !important;'
+                    }, {
+                        'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner tr',
+                        'rule': 'min-height: 22px !important; height: 22px !important;'
+                    }, {
+                        'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner td',
+                        'rule': 'min-height: 22px !important; height: 22px !important; padding: 1px 4px !important; line-height: 22px !important;'
+                    }, {
+                        'selector': '.dash-filter input',
+                        'rule': 'height: 18px !important; padding: 0 4px !important; font-size: 10px !important;'
                     }]
                 )
             )
@@ -2395,6 +2462,7 @@ def register_callbacks(dash_app, server):
                     'minWidth': width,
                     'width': width,
                     'maxWidth': width,
+                    'height': '22px'
                 })
             elif col in quarter_cols:
                 width_styles.append({
