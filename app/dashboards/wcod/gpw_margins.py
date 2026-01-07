@@ -1030,39 +1030,28 @@ def _prepare_data_table(df: pd.DataFrame, start_date, end_date, region, selected
         # Always make the DateStr column bold as requested
         {
             'if': {'column_id': 'DateStr'},
-            'fontWeight': 'bold',
-            'color': '#000000',
-            'textAlign': 'left'
+            'fontFamily': 'Arial, sans-serif',
+            'fontSize': '13px',
+            'fontWeight': '600',
+            'color': 'rgb(44, 62, 80)',
+            'textAlign': 'left',
+            'minWidth': '180px',
+            'width': '180px',
+            'maxWidth': '180px',
+            'whiteSpace': 'normal'
         }
     ]
+    # Removed the legacy python-side highlighting logic in favor of JS client-side logic
     
-    if highlight_crude:
-        # All columns except DateStr should be dimmed by default when highlighting is active
-        non_highlighted_cols = [col['id'] for col in filtered_columns if col['id'] != 'DateStr']
-        styles_data_conditional.append({
-            'if': {'column_id': non_highlighted_cols},
-            'color': '#aaaaaa',  # Slightly darker gray for better visibility
-            'opacity': 0.5       # Increased opacity for "disabled" look
-        })
-
-        for data_type in DATA_TYPES:
-            for tech_type in TECH_TYPES:
-                # Construct the column ID for the highlighted crude
-                col_id = f"{data_type}_{tech_type}_{highlight_crude}".replace(' ', '_').replace('/', '_')
-                styles_data_conditional.append({
-                    'if': {'column_id': col_id},
-                    'backgroundColor': '#fffde7',  # Subtler yellow highlight (Lemon Chiffon variant)
-                    'color': '#000000',           # Ensure text remains black/visible
-                    'fontWeight': 'bold',         # Make the highlighted column text bold
-                    'border': '1px solid #3498db'  # Consistent blue border
-                })
+    
+    return filtered_columns, filtered_data, filtered_tooltip_data, styles_data_conditional
     
     return filtered_columns, filtered_data, filtered_tooltip_data, styles_data_conditional
 
 
 def create_layout():
     """Create the GPW Margins layout with filters and charts."""
-    return html.Div([
+    return html.Div(children=[
         # Store to track initial load state
         dcc.Store(id='gpw-initial-load', data=True),
         dcc.Store(id='gpw-crude-filter-previous', data=None),
@@ -1182,7 +1171,7 @@ def create_layout():
                                     {'label': 'Export to PNG', 'value': 'png'},
                                     {'label': 'Export to CSV', 'value': 'raw_data_csv'}
                                 ],
-                                placeholder='Export',
+                                placeholder='Export to CSV',
                                 style={
                                     'width': '120px',
                                     'marginRight': '10px',
@@ -1391,7 +1380,7 @@ def create_layout():
                             children="NWE - Incremental Margins ($/bbl)",
                             style={
                                 'color': '#fe5000',
-                                'textAlign': 'left',
+                                'textAlign': 'center',
                                 'marginBottom': '0px',
                                 'marginTop': '0px',
                                 'fontSize': '16px',
@@ -1557,9 +1546,14 @@ def create_layout():
                                 {
                                     'if': {'column_id': 'DateStr'},
                                     'textAlign': 'left',
-                                    'fontWeight': 'bold',
-                                    'minWidth': '80px',
-                                    'fontSize': '13px' # Adjusted font size for DateStr column
+                                    'fontFamily': 'Arial, sans-serif',
+                                    'fontSize': '13px',
+                                    'fontWeight': '600',
+                                    'color': 'rgb(44, 62, 80)',
+                                    'minWidth': '180px',
+                                    'width': '180px',
+                                    'maxWidth': '180px',
+                                    'whiteSpace': 'normal'
                                 }
                             ],
                             style_data_conditional=[
@@ -1585,6 +1579,10 @@ def create_layout():
                                 {
                                     'selector': '#gpw-data-table .dash-table-tooltip',
                                     'rule': 'font-size: 12px !important;'
+                                },
+                                {
+                                    'selector': '.dash-spreadsheet-container td[data-dash-column="DateStr"]',
+                                    'rule': 'font-weight: bold !important; color: rgb(44, 62, 80) !important; font-family: Arial, sans-serif !important; font-size: 13px !important;'
                                 },
                                 {
                                     'selector': '.dash-table-tooltip',
@@ -1634,8 +1632,14 @@ def create_layout():
         html.Div(id='gpw-table-dummy-output', style={'display': 'none'}),
         
         # Hidden anchor for clientside callback to enhance data table
-        html.Div(id='gpw-table-enhancer-anchor', style={'display': 'none'})
-    ], className='tab-content', style={'backgroundColor': '#f8f9fa', 'minHeight': '100vh', 'padding': '10px 0px'})
+        html.Div(id='gpw-table-enhancer-anchor', style={'display': 'none'}),
+        
+         # Clientside script for table enhancements
+        html.Script(
+            id='gpw-clientside-script',
+            children=''
+        )
+    ], className='tab-content', style={'backgroundColor': '#f8f9fa', 'minHeight': '100vh', 'padding': '10px 0px', 'overflowX': 'hidden', 'width': '100%'})
 
 
 def register_callbacks(dash_app, server):
@@ -1663,6 +1667,52 @@ def register_callbacks(dash_app, server):
         """
         function(_trigger) {
             try {
+                // Determine style ID for this specific table to avoid conflicts
+                const styleId = 'gpw-data-table-css';
+                
+                // Inject CSS if not already present
+                if (!document.getElementById(styleId)) {
+                    const style = document.createElement('style');
+                    style.id = styleId;
+                    style.type = 'text/css';
+                    style.innerHTML = `
+#gpw-data-table .dash-spreadsheet-container {
+    cursor: pointer;
+}
+#gpw-data-table .dash-spreadsheet-container td {
+    transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+/* Ensure header cells have pointer cursor */
+#gpw-data-table .dash-spreadsheet-container th {
+    cursor: pointer !important;
+    transition: background-color 0.2s ease;
+}
+/* Highlighted column header */
+#gpw-data-table .dash-spreadsheet-container th.column-selected {
+    background-color: #0075A8 !important;
+    color: white !important;
+    font-weight: bold;
+}
+/* Highlighted column cells */
+#gpw-data-table .dash-spreadsheet-container td.column-cell-selected {
+    background-color: #b3d9ff !important;
+    border: none !important;
+    font-weight: 600;
+    color: #1b365d !important;
+    opacity: 1 !important;
+}
+/* Dim non-selected cells when a column is selected */
+#gpw-data-table .dash-spreadsheet-container.column-selection-active td:not([data-dash-column="DateStr"]):not(.column-cell-selected) {
+    opacity: 0.3 !important;
+}
+/* Preserve DateStr column visibility */
+#gpw-data-table .dash-spreadsheet-container td[data-dash-column="DateStr"] {
+    opacity: 1 !important;
+}
+                    `;
+                    document.head.appendChild(style);
+                }
+
                 setTimeout(function() {
                     const table = document.querySelector('#gpw-data-table');
                     if (!table) return;
@@ -1670,69 +1720,213 @@ def register_callbacks(dash_app, server):
                     const container = table.querySelector('.dash-spreadsheet-container');
                     if (!container) return;
                     
-                    let selectedTechType = null;
+                    // Reset state if table structure changes
+                    if (!window.gpwMarginsState) {
+                        window.gpwMarginsState = {
+                            selectedColumnId: null
+                        };
+                    }
                     
-                    const headers = container.querySelectorAll('th[data-dash-column]');
-                    headers.forEach(function(header) {
-                        const columnId = header.getAttribute('data-dash-column');
-                        if (!columnId || columnId === 'DateStr') return;
+                    // Remove old click handler to prevent duplicates
+                    if (container._gpwClickHandler) {
+                        container.removeEventListener('click', container._gpwClickHandler, true);
+                    }
+                    
+                    function clearAllColumnSelections(spreadsheet) {
+                        if (!spreadsheet) return;
+                        // Clear all column headers
+                        const allHeaders = spreadsheet.querySelectorAll('th.column-selected');
+                        allHeaders.forEach(header => {
+                            header.classList.remove('column-selected');
+                            header.style.removeProperty('background-color');
+                            header.style.removeProperty('color');
+                            header.style.removeProperty('font-weight');
+                        });
                         
-                        const headerIndex = header.getAttribute('data-dash-header-index');
-                        if (headerIndex !== '1') return;
+                        // Clear all column cells
+                        const allColumnCells = spreadsheet.querySelectorAll('td.column-cell-selected');
+                        allColumnCells.forEach(cell => {
+                            cell.classList.remove('column-cell-selected');
+                            cell.style.removeProperty('background-color');
+                            cell.style.removeProperty('border');
+                            cell.style.removeProperty('font-weight');
+                            cell.style.removeProperty('color');
+                            cell.style.removeProperty('opacity');
+                        });
                         
-                        header.style.cursor = 'pointer';
+                        // Remove column selection active class
+                        spreadsheet.classList.remove('column-selection-active');
                         
-                        header.addEventListener('click', function(e) {
-                            e.stopPropagation();
-                            
-                            const parts = columnId.split('_');
-                            if (parts.length < 3) return;
-                            
-                            const dataType = parts[0];
-                            let techType = parts[1];
-                            if (parts.length > 3 && (parts[1] === 'Catalytic' || parts[1] === 'Fluid')) {
-                                techType = parts[1] + '_' + parts[2];
+                        // Reset opacity for all data cells
+                        const allDataCells = spreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="DateStr"])');
+                        allDataCells.forEach(cell => {
+                            cell.style.removeProperty('opacity');
+                        });
+                    }
+
+                    // Click handler
+                    container._gpwClickHandler = function(event) {
+                        // Find clicked header
+                        let header = event.target.closest('th[data-dash-column]');
+                        
+                        // If checking via thead
+                        if (!header) {
+                            const thead = event.target.closest('thead');
+                            if (thead) {
+                                const allHeaders = thead.querySelectorAll('th[data-dash-column]');
+                                for (let h of allHeaders) {
+                                    if (h.contains(event.target) || h === event.target) {
+                                        header = h;
+                                        break;
+                                    }
+                                }
                             }
+                        }
+                        
+                        // If header clicked
+                        if (header) {
+                            event.stopPropagation();
                             
-                            const clickedKey = dataType + '_' + techType;
-                            
-                            if (selectedTechType === clickedKey) {
-                                selectedTechType = null;
-                                container.classList.remove('column-selection-active');
-                                
-                                headers.forEach(function(h) {
-                                    h.classList.remove('column-selected');
-                                });
-                                container.querySelectorAll('td').forEach(function(cell) {
-                                    cell.classList.remove('column-cell-selected');
-                                });
+                            const columnId = header.getAttribute('data-dash-column');
+                            // Skip DateStr column
+                            if (!columnId || columnId === 'DateStr') return;
+
+                            // Handle selection/deselection
+                            if (window.gpwMarginsState.selectedColumnId === columnId) {
+                                // Deselect
+                                clearAllColumnSelections(container);
+                                window.gpwMarginsState.selectedColumnId = null;
                             } else {
-                                selectedTechType = clickedKey;
+                                // Select new column
+                                clearAllColumnSelections(container);
+                                window.gpwMarginsState.selectedColumnId = columnId;
+                                
                                 container.classList.add('column-selection-active');
                                 
-                                headers.forEach(function(h) {
-                                    h.classList.remove('column-selected');
-                                });
-                                container.querySelectorAll('td').forEach(function(cell) {
-                                    cell.classList.remove('column-cell-selected');
-                                });
+                                // Highlight specific header and all headers in the same column stack
+                                // For simplicity, we just highlight the clicked header and matching data cells
+                                // But to be robust like global_prices, we should handle colspans (TechType -> Crudes)
                                 
-                                headers.forEach(function(h) {
-                                    const colId = h.getAttribute('data-dash-column');
-                                    if (colId && colId.startsWith(clickedKey)) {
-                                        h.classList.add('column-selected');
+                                // Logic to determine which columns to highlight based on hierarchy
+                                // columnId format: DataType_TechType_Crude
+                                // Note: TechType might be "Catalytic_Cracking" (underscore) or simple string
+                                
+                                // Find all headers that start with the same prefix as this columnId?
+                                // Actually, simpler approach first:
+                                // 1. Identify which level header was clicked
+                                // 2. If bottom level (Crude), highlight just that column
+                                // 3. If mid level (TechType), highlight all Crudes under it
+                                
+                                // To know the level, we can check row index or just check coverage
+                                const headers = container.querySelectorAll('th[data-dash-column]');
+                                
+                                // Naive identification of "group":
+                                // If I click "Catalytic Cracking", I want all FCC columns to highlight
+                                
+                                // Let's use the text content and colspan to identify groups
+                                const headerText = header.innerText || header.textContent;
+                                const colspan = parseInt(header.getAttribute('colspan') || '1');
+                                
+                                const columnsToHighlight = new Set();
+                                
+                                if (colspan > 1) {
+                                    // It's a group header (DataType or TechType)
+                                    // We need to find all bottom-level columns that are "under" this header
+                                    // This is tricky without row/col index maths, but we can infer from column ID patterns
+                                    
+                                    // Parse the column ID to guess the group prefix
+                                    // The columnId on a merged header is usually just one of the underlying columns, 
+                                    // so we can't rely solely on it for the prefix.
+                                    
+                                    // Alternative: Match by text content!
+                                    // "Catalytic Cracking" -> find all columns where Tech Type is "Catalytic Cracking"
+                                    // "GPW" -> find all columns where Data Type is "GPW"
+                                    
+                                    // Determine if it is Tech Type or Data Type based on text
+                                    const isDataType = ['GPW', 'Refining Margin'].includes(headerText.trim());
+                                    // Tech types usually match what's in the ID, but normalized
+                                    
+                                    if (isDataType) {
+                                        // Highlight all columns starting with this data type
+                                        const typePrefix = headerText.trim() === 'GPW' ? 'GPW_' : 'Refining_Margin_';
+                                        
+                                        container.querySelectorAll('th[data-dash-column]').forEach(h => {
+                                            const cId = h.getAttribute('data-dash-column');
+                                            if (cId && cId.startsWith(typePrefix)) {
+                                                h.classList.add('column-selected');
+                                                columnsToHighlight.add(cId);
+                                            }
+                                        });
+                                    } else {
+                                        // Assume Tech Type or Crude
+                                        // Tech Type check: e.g. "Catalytic Cracking"
+                                        // Construct a regex or substring search
+                                        // TechTypes in ID are underscored: Catalytic_Cracking
+                                        const techTypePart = headerText.trim().replace(/ /g, '_');
+                                        
+                                        // We need to be careful: "Catalytic Cracking" is in ID as ..._Catalytic_Cracking_...
+                                        // Regex: .*_TechType_.*
+                                        
+                                        container.querySelectorAll('th[data-dash-column]').forEach(h => {
+                                            const cId = h.getAttribute('data-dash-column');
+                                            // Check if cId contains the tech type part in the middle
+                                            // GPW_Catalytic_Cracking_Arab_Light -> contains _Catalytic_Cracking_
+                                            if (cId && cId.includes('_' + techTypePart + '_')) {
+                                                h.classList.add('column-selected');
+                                                columnsToHighlight.add(cId);
+                                            }
+                                        });
                                     }
-                                });
+                                } else {
+                                    // Single column (Crude level)
+                                    header.classList.add('column-selected');
+                                    columnsToHighlight.add(columnId);
+                                    
+                                    // Also try to highlight the parents? 
+                                    // For now, just the column itself is fine or parents too if we can find them
+                                    // Finding exact parents is hard without traversing up.
+                                }
                                 
-                                container.querySelectorAll('td[data-dash-column]').forEach(function(cell) {
-                                    const colId = cell.getAttribute('data-dash-column');
-                                    if (colId && colId.startsWith(clickedKey)) {
+                                // Apply highlighting to all data cells for the identified columns
+                                columnsToHighlight.forEach(cId => {
+                                    const cells = container.querySelectorAll(`td[data-dash-column="${cId}"]`);
+                                    cells.forEach(cell => {
                                         cell.classList.add('column-cell-selected');
-                                    }
+                                    });
+                                    
+                                    // Also ensure headers for these columns are highlighted (if not already)
+                                    const colsHeaders = container.querySelectorAll(`th[data-dash-column="${cId}"]`);
+                                    colsHeaders.forEach(h => h.classList.add('column-selected'));
                                 });
                             }
-                        });
-                    });
+                        } else {
+                            // Clicked outside headers - clear selection
+                            // We rely on the container click, so if it bubbling from a non-header inside container:
+                            // We can deselect if desired, or keep selection. Global Prices deselects on outside click.
+                            // Let's keep it simple: clicking data cells doesn't clear, only clicking headers toggles.
+                            // Clicking outside table clears (handled by global listener if we add one).
+                        }
+                    };
+                    
+                    container.addEventListener('click', container._gpwClickHandler, true);
+                    
+                    // Cleanup on outside click
+                     if (!window.gpwOutsideClickHandler) {
+                        window.gpwOutsideClickHandler = function(event) {
+                            const tableEl = document.getElementById('gpw-data-table');
+                            if (!tableEl) return;
+                            const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                            if (!spreadsheet) return;
+                            
+                            if (!spreadsheet.contains(event.target)) {
+                                clearAllColumnSelections(spreadsheet);
+                                if (window.gpwMarginsState) {
+                                    window.gpwMarginsState.selectedColumnId = null;
+                                }
+                            }
+                        };
+                        document.addEventListener('click', window.gpwOutsideClickHandler);
+                    }
                 }, 100);
             } catch (error) {
                 console.error('Tech type header click error:', error);
