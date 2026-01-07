@@ -395,8 +395,8 @@ def create_layout():
                         },
                         style_cell={
                             'textAlign': 'left',
-                            'padding': '2px 5px',
-                            'fontSize': '12px',
+                            'padding': '1px 4px',
+                            'fontSize': '11px',
                             'fontFamily': 'Times New Roman, Times, serif',
                             'color': '#000000',
                             'borderBottom': '1px solid #cccccc',
@@ -407,6 +407,9 @@ def create_layout():
                             'textOverflow': 'ellipsis',
                             'minWidth': '90px',
                             'maxWidth': '260px',
+                            'height': '22px',
+                            'minHeight': '22px',
+                            'lineHeight': '1.1',
                         },
                         style_header={
                             'backgroundColor': '#d9d9d9',
@@ -418,10 +421,11 @@ def create_layout():
                             'borderRight': '1px solid #999999',
                             'borderTop': '1px solid #999999',
                             'borderLeft': '1px solid #999999',
-                            'padding': '3px 5px',
+                            'padding': '1px 4px',
                             'textAlign': 'center',
                             'whiteSpace': 'normal',
-                            'height': 'auto',
+                            'height': '25px',
+                            'minHeight': '25px',
                             'position': 'relative',
                         },
                         style_data_conditional=[
@@ -455,6 +459,12 @@ def create_layout():
                         css=[{
                             'selector': '.dash-cell div.dash-cell-value',
                             'rule': 'display: inline; white-space: normal;'
+                        }, {
+                            'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner tr',
+                            'rule': 'min-height: 22px !important; height: 22px !important;'
+                        }, {
+                            'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner td',
+                            'rule': 'min-height: 22px !important; height: 22px !important; padding: 1px 4px !important; line-height: 22px !important;'
                         }],
                         sort_action="none",
                         filter_action="none",
@@ -527,8 +537,8 @@ def create_layout():
                         },
                         style_cell={
                             'textAlign': 'left',
-                            'padding': '2px 5px',
-                            'fontSize': '12px',
+                            'padding': '1px 4px',
+                            'fontSize': '11px',
                             'fontFamily': 'Times New Roman, Times, serif',
                             'color': '#000000',
                             'borderBottom': '1px solid #cccccc',
@@ -539,6 +549,9 @@ def create_layout():
                             'textOverflow': 'ellipsis',
                             'minWidth': '90px',
                             'maxWidth': '320px',
+                            'height': '22px',
+                            'minHeight': '22px',
+                            'lineHeight': '1.1',
                         },
                         style_header={
                             'backgroundColor': '#d9d9d9',
@@ -550,10 +563,11 @@ def create_layout():
                             'borderRight': '1px solid #999999',
                             'borderTop': '1px solid #999999',
                             'borderLeft': '1px solid #999999',
-                            'padding': '3px 5px',
+                            'padding': '1px 4px',
                             'textAlign': 'center',
                             'whiteSpace': 'normal',
-                            'height': 'auto',
+                            'height': '25px',
+                            'minHeight': '25px',
                             'position': 'relative',
                         },
                         style_data_conditional=[
@@ -587,6 +601,12 @@ def create_layout():
                         css=[{
                             'selector': '.dash-cell div.dash-cell-value',
                             'rule': 'display: inline; white-space: normal;'
+                        }, {
+                            'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner tr',
+                            'rule': 'min-height: 22px !important; height: 22px !important;'
+                        }, {
+                            'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner td',
+                            'rule': 'min-height: 22px !important; height: 22px !important; padding: 1px 4px !important; line-height: 22px !important;'
                         }],
                         filter_action="none",
                         page_action="none",
