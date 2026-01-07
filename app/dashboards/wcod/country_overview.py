@@ -897,30 +897,8 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
     country_list_original = sorted_df['Country'].astype(str).str.strip().tolist()
     
     # Build y-axis labels with time dimensions if visible
+    # width/xshift calculation will happen in the annotation loop
     country_list = country_list_original.copy()
-    if time_visibility:
-        # year_value = LATEST_YEAR # Now passed as parameter
-        # quarter_value = 4 # Now passed as parameter
-        # month_value = "December" # Now passed as parameter
-        # day_value = 31 # Now passed as parameter
-        
-        y_labels = []
-        for country in country_list_original:
-            label_parts = [country]
-            if time_visibility.get('Year', True) and year_value:
-                label_parts.append(str(year_value))
-            if time_visibility.get('Quarter', False) and quarter_value:
-                label_parts.append(f"{quarter_value}")
-            if time_visibility.get('Month', False) and month_value:
-                label_parts.append(month_value)
-            if time_visibility.get('Day', False) and day_value:
-                label_parts.append(f"{day_value}")
-            y_labels.append("   ".join(label_parts))
-        
-        # Use enhanced labels if any time dimension is visible
-        if any([time_visibility.get('Year', True), time_visibility.get('Quarter', False),
-                time_visibility.get('Month', False), time_visibility.get('Day', False)]):
-            country_list = y_labels
 
     # For color matching, use original country names
     export_colors = ['#0075A8' if country == selected_country else 'rgb(0, 117, 168)' for country in country_list_original]
@@ -933,12 +911,6 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
         )
         if time_visibility and time_visibility.get('Year', True) and year_value:
             hovertemplate_production += f'<span style="color:#999999;">Year:</span> <span style="color:#0075A8;">{year_value}</span><br>'
-        if time_visibility and time_visibility.get('Quarter', False) and quarter_value:
-            hovertemplate_production += f'<span style="color:#999999;">Quarter:</span> <span style="color:#0075A8;">{quarter_value}</span><br>'
-        if time_visibility and time_visibility.get('Month', False) and month_value:
-            hovertemplate_production += f'<span style="color:#999999;">Month:</span> <span style="color:#0075A8;">{month_value}</span><br>'
-        if time_visibility and time_visibility.get('Day', False) and day_value:
-            hovertemplate_production += f'<span style="color:#999999;">Day:</span> <span style="color:#0075A8;">{day_value}</span><br>'
         hovertemplate_production += '<extra></extra>'
 
         fig.add_trace(go.Bar(
@@ -966,12 +938,6 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
     )
     if time_visibility and time_visibility.get('Year', True) and year_value:
         hovertemplate_exports += f'<span style="color:#999999;">Year:</span> <span style="color:#0075A8;">{year_value}</span><br>'
-    if time_visibility and time_visibility.get('Quarter', False) and quarter_value:
-        hovertemplate_exports += f'<span style="color:#999999;">Quarter:</span> <span style="color:#0075A8;">{quarter_value}</span><br>'
-    if time_visibility and time_visibility.get('Month', False) and month_value:
-        hovertemplate_exports += f'<span style="color:#999999;">Month:</span> <span style="color:#0075A8;">{month_value}</span><br>'
-    if time_visibility and time_visibility.get('Day', False) and day_value:
-        hovertemplate_exports += f'<span style="color:#999999;">Day:</span> <span style="color:#0075A8;">{day_value}</span><br>'
     hovertemplate_exports += '<extra></extra>'
 
     fig.add_trace(go.Bar(
@@ -1044,15 +1010,15 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
         yaxis=dict(
             categoryorder='array',
             categoryarray=country_list,
-            tickfont=dict(size=11, family='Arial, sans-serif', color='#1b365d'),
+            showticklabels=False,
+            ticks='',
             showline=True,
             linecolor='#e0e0e0',  # Light gray color
             linewidth=1,
             side='left',
             type='category',
             tickmode='array',
-            tickvals=country_list,
-            ticktext=country_list
+            tickvals=country_list
         ),
         plot_bgcolor='white',
         paper_bgcolor='white',
@@ -1070,6 +1036,49 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
             )
         )
     )
+
+    # Add left-aligned annotations for y-axis labels in columnar format
+    widths = {'Country': 100, 'Year': 45, 'Quarter': 35, 'Month': 65, 'Day': 30}
+    
+    # Determine which dimensions are visible
+    active_dims = ['Country'] # Always show country
+    if time_visibility:
+        if time_visibility.get('Year', True): active_dims.append('Year')
+        if time_visibility.get('Quarter', False): active_dims.append('Quarter')
+        if time_visibility.get('Month', False): active_dims.append('Month')
+        if time_visibility.get('Day', False): active_dims.append('Day')
+    else:
+        # Default if no time_visibility provided
+        active_dims.append('Year')
+
+    # Calculate x-shifts (from right to left, starting 10px from y-axis)
+    x_shifts = {}
+    current_x = -10
+    for dim in reversed(active_dims):
+        x_shifts[dim] = current_x - widths[dim]
+        current_x -= (widths[dim] + 3) # 3px gap between columns
+
+    for i, country in enumerate(country_list_original):
+        for dim in active_dims:
+            text = ""
+            if dim == 'Country': text = country
+            elif dim == 'Year': text = str(year_value)
+            elif dim == 'Quarter': text = f"{quarter_value}" if quarter_value else ""
+            elif dim == 'Month': text = month_value
+            elif dim == 'Day': text = str(day_value)
+            
+            if text:
+                fig.add_annotation(
+                    text=text,
+                    x=0,
+                    y=i,
+                    xref='paper',
+                    yref='y',
+                    xanchor='left',
+                    showarrow=False,
+                    xshift=x_shifts[dim],
+                    font=dict(size=11, family='Arial, sans-serif', color='#1b365d')
+                )
 
     # Add horizontal lines after each country
     shapes = []
