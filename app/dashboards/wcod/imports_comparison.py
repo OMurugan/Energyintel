@@ -612,12 +612,8 @@ def create_layout():
                             config={
                                 'displayModeBar': True,
                                 'displaylogo': False,
-                                # Geo-specific controls (home/reset + zoom)
-                                'modeBarButtonsToAdd': [
-                                    'zoomInGeo',
-                                    'zoomOutGeo',
-                                    'resetGeo',
-                                    'resetScale2d'  # home-style reset icon
+                                'modeBarButtons': [
+                                    ['toImage', 'resetScale2d']
                                 ],
                                 'scrollZoom': True,
                                 'doubleClick': 'reset'
