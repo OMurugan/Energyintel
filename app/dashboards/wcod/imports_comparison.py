@@ -784,7 +784,7 @@ def create_layout():
                         'marginRight': '6px',
                         'width': '16px',
                         'height': '16px',
-                            'accentColor': '#1a4a83',
+                            'accentColor': '#2c3e50',
                             'verticalAlign': 'middle'
                     },
                     labelStyle={
@@ -795,8 +795,8 @@ def create_layout():
                             'paddingLeft': '2px',
                             'fontSize': '12px',
                             'lineHeight': '16px',
-                            'color': '#1a4a83',
-                            'fontWeight': 'bold'
+                            'color': '#2c3e50',
+                            'fontWeight': 'normal'
                     }
                     )
                 ], style={
