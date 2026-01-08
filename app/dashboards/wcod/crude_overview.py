@@ -1606,6 +1606,7 @@ def create_layout(server=None):
         dcc.Tabs(
             id="crude-main-tabs", 
             value="monthly", 
+            content_style={"display": "none"},
             children=[
                 dcc.Tab(
                     label="Yearly", 
@@ -1646,13 +1647,13 @@ def create_layout(server=None):
             ], 
             persistence=True, 
             persistence_type="session", 
-            style={"marginBottom": "10px", "display": "flex", "justifyContent": "center"}
+            style={"marginBottom": "0px", "paddingBottom": "0px", "display": "flex", "justifyContent": "center"}
         ),
-        # html.Br(),
+        html.Br(),
         html.Div([
             html.H4(
                 "World Crude Production*", 
-                style={"color":"#d35400", "textAlign":"center", "marginTop":"10px", "marginBottom": "0px", "flexGrow": 1}
+                style={"color":"#d35400", "textAlign":"center", "marginTop":"0px", "marginBottom": "0px", "flexGrow": 1}
             ),
             html.Div([
                 html.Button(
@@ -1672,7 +1673,7 @@ def create_layout(server=None):
                     }
                 ),
             ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'position': 'absolute', 'right': '15px', 'top': '10px'})
-        ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'position': 'relative', 'width': '100%'}),
+        ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'position': 'relative', 'width': '100%', 'marginTop': '0px', 'paddingTop': '0px'}),
         dcc.Download(id="download-map-csv"),
         html.Hr(),
 
