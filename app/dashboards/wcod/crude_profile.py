@@ -189,7 +189,7 @@ def _load_crude_assay_df(crude_value: str | None = None) -> pd.DataFrame:
         LEFT JOIN fact_wcod_crude c 
                ON a.crude_id = c.crude_id
         WHERE a.to_be_deleted IS NULL
-          AND a.crude_name = :crude_name
+          AND a.crude_name = :crude_name AND a.product = 'Crude Oil'
     """
 
     try:
@@ -935,7 +935,7 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
             {
                 "if": {"column_id": "Value"},
                 "textAlign": "right",
-                "paddingRight": "0px",
+                "paddingRight": "8px",
             }
         ],
         style_data={
@@ -990,7 +990,7 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
             {
                 "if": {"column_id": "Value"},
                 "textAlign": "right",
-                "paddingRight": "0px",
+                "padding": "2px 8px",
             },
         ],
         css=[
@@ -1102,7 +1102,7 @@ def create_grouped_assay_table(crude_value: str | None = None):
             {
                 "if": {"column_id": "Value"},
                 "textAlign": "right",
-                "paddingRight": "0px",
+                "paddingRight": "8px",
             }
         ],
         style_cell_conditional=[
@@ -1132,7 +1132,7 @@ def create_grouped_assay_table(crude_value: str | None = None):
                 "minWidth": "50px",
                 "maxWidth": "70px",
                 "backgroundColor": "#FFFFFF",
-                "padding": "2px 0px",
+                "padding": "2px 8px",
             },
         ],
         style_data_conditional=[
@@ -1210,6 +1210,7 @@ def create_production_chart(crude_value: str | None = None):
         width=0.5,
         hovertemplate='Year: <span style="color:#1b365d;"><b>%{x}</b></span><br>Production: <span style="color:#1b365d;"><b>%{y:.2f} (000 b/d)</b></span><extra></extra>'
     ))
+
     
     # Crude Exports as orange circular data points (scatter)
     fig.add_trace(go.Scatter(
@@ -1273,6 +1274,10 @@ def create_map_chart(crude_value: str | None = None):
     geojson = load_world_geojson()
     
     fig = go.Figure()
+    
+    # Add background click layer for reset functionality and to capture hover events over ocean
+    from .shared_map_utils import add_background_click_layer
+    add_background_click_layer(fig, None, use_mapbox)
     
     # Add country choropleth layer for country-level interactions
     if unique_countries:
@@ -1392,9 +1397,6 @@ def create_map_chart(crude_value: str | None = None):
             )
         ))
     
-    # Add background click layer for reset functionality
-    from .shared_map_utils import add_background_click_layer
-    add_background_click_layer(fig, None, use_mapbox)
     
     # Calculate bounds for better view
     lat_min, lat_max = min(lats), max(lats)
@@ -2041,7 +2043,7 @@ def create_layout(server=None):
                     "margin": "10px 0",
                     "backgroundColor": "white"
                 }, children=[
-                    dcc.Graph(id="loading-ports-map", figure=map_fig, config={"displayModeBar": False}),
+                    dcc.Graph(id="loading-ports-map", figure=map_fig, clear_on_unhover=True, config={"displayModeBar": False}),
                         # html.Div([
                         #     html.A("© 2025 Mapbox", href="https://www.mapbox.com/about/maps", target="_blank", style={
                         #         "color": "#666",
@@ -2141,7 +2143,7 @@ def create_layout(server=None):
                             {
                                 "if": {"column_id": port_details_label},
                                 "textAlign": "right",
-                                "paddingRight": "0px",
+                                "paddingRight": "8px",
                             },
                         ],
                         style_data_conditional=[
@@ -2161,7 +2163,7 @@ def create_layout(server=None):
                             {
                                 "if": {"column_id": port_details_label},
                                 "textAlign": "right",
-                                "padding": "2px 0px",
+                                "padding": "2px 8px",
                             },
                         ],
                         css=[
