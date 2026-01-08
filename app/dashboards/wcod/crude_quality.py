@@ -2075,7 +2075,7 @@ def create_layout(dash_app=None):
                             },
                             {
                                 'if': {'row_index': 'even'},
-                                'backgroundColor': '#ffffff'
+                                'backgroundColor': '#f5f5f5'
                             },
                             # Country column styling - header rows (non-empty)
                             {
@@ -2274,7 +2274,7 @@ def create_layout(dash_app=None):
                             },
                             {
                                 'if': {'row_index': 'even'},
-                                'backgroundColor': '#ffffff'
+                                'backgroundColor': '#f5f5f5'
                             },
                             # Country column
                             {
