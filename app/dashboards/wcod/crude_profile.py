@@ -935,7 +935,7 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
             {
                 "if": {"column_id": "Value"},
                 "textAlign": "right",
-                "paddingRight": "0px",
+                "paddingRight": "8px",
             }
         ],
         style_data={
@@ -990,7 +990,7 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
             {
                 "if": {"column_id": "Value"},
                 "textAlign": "right",
-                "paddingRight": "0px",
+                "padding": "2px 8px",
             },
         ],
         css=[
@@ -1102,7 +1102,7 @@ def create_grouped_assay_table(crude_value: str | None = None):
             {
                 "if": {"column_id": "Value"},
                 "textAlign": "right",
-                "paddingRight": "0px",
+                "paddingRight": "8px",
             }
         ],
         style_cell_conditional=[
@@ -1132,7 +1132,7 @@ def create_grouped_assay_table(crude_value: str | None = None):
                 "minWidth": "50px",
                 "maxWidth": "70px",
                 "backgroundColor": "#FFFFFF",
-                "padding": "2px 0px",
+                "padding": "2px 8px",
             },
         ],
         style_data_conditional=[
@@ -2143,7 +2143,7 @@ def create_layout(server=None):
                             {
                                 "if": {"column_id": port_details_label},
                                 "textAlign": "right",
-                                "paddingRight": "0px",
+                                "paddingRight": "8px",
                             },
                         ],
                         style_data_conditional=[
@@ -2163,7 +2163,7 @@ def create_layout(server=None):
                             {
                                 "if": {"column_id": port_details_label},
                                 "textAlign": "right",
-                                "padding": "2px 0px",
+                                "padding": "2px 8px",
                             },
                         ],
                         css=[
