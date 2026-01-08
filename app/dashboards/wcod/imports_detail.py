@@ -239,6 +239,7 @@ def create_layout():
     
     return html.Div([
         dcc.Store(id='selected-year-store', data=2023),  # Store selected year from chart click
+        
         dcc.Store(id='selected-country-store', data=default_country),  # Store selected country
         dcc.Store(id='imports-expand-store', data={'years': [], 'quarters': []}),  # Track header expansion state
         dcc.Store(id='imports-time-visibility', data={'Year': True, 'Quarter': False, 'Month': False, 'Day': False}),
@@ -531,16 +532,19 @@ def create_layout():
         # Source and Footer (Static content)
         html.Div([
             html.Div([
-                html.P("Source: Energy Intelligence", style={'fontSize': '11px', 'marginBottom': '5px'})
+                html.P([html.Strong("Source:"), " Energy Intelligence"], style={'fontSize': '11px', 'marginBottom': '5px'})
             ]),
             html.Div([
-                html.P("EIA Data is through June 2025", style={'fontSize': '11px', 'marginBottom': '2px'}),
-                html.P("Energy Intelligence Data is through July 2025", style={'fontSize': '11px', 'marginBottom': '2px'}),
-                html.P("OECD Data is through July 2025", style={'fontSize': '11px', 'marginBottom': '2px'}),
-                html.P("Russian Imports Data is through August 2022", style={'fontSize': '11px', 'marginBottom': '2px'}),
-                html.P("South Korea trade data source: KNOC", style={'fontSize': '11px', 'marginBottom': '2px'}),
+                html.A("EIA Data is through June 2025", className="source-link", href="#"),
+                html.Br(),
+                html.A("Energy Intelligence Data is through July 2025", className="source-link", href="#"),
+                html.Br(),
+                html.A("OECD Data is through July 2025", className="source-link", href="#"),
+                html.Br(),
+                html.A("Russian Imports Data is through August 2022", className="source-link", href="#"),
+                html.P("South Korea trade data source: KNOC", style={'fontSize': '11px', 'marginTop': '10px', 'marginBottom': '2px'}),
                 html.P("Countries: Select jurisdictions are included under countries for data presentation purposes.", style={'fontSize': '11px', 'marginBottom': '2px'})
-            ])
+            ], className="source-container")
         ], style={'marginTop': '20px', 'fontSize': '11px', 'color': '#666'})
     ], className='tab-content', style={'padding': '20px'})
 
