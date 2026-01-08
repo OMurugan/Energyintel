@@ -1172,13 +1172,15 @@ def register_callbacks(dash_app, server):
                     const header = e.target.closest('th[data-dash-column]');
                     if (header) {
                         const columnId = header.getAttribute('data-dash-column');
-                        // ONLY highlight columns that start with 'Y|' (Year columns)
-                        if (columnId && columnId.startsWith('Y|')) {
+                        // Highlight columns that start with dynamic prefixes
+                        const validPrefixes = ['Y|', 'Q|', 'M|', 'D|'];
+                        if (columnId && validPrefixes.some(p => columnId.startsWith(p))) {
                             const input = document.getElementById('selected-column-hidden-input');
                             if (input) {
+                                // Dispatch both events to ensure Dash picks it up
                                 input.value = columnId;
+                                input.dispatchEvent(new Event('input', { bubbles: true }));
                                 input.dispatchEvent(new Event('change', { bubbles: true }));
-                                e.stopPropagation();
                             }
                         }
                     }
@@ -1483,6 +1485,12 @@ def register_callbacks(dash_app, server):
                     clicked_exporter = table_data[row_idx].get('_ExporterFull')
                     if clicked_exporter:
                         new_exporter = None if current_exporter == clicked_exporter else clicked_exporter
+                
+                # Column selection via cell click (Year, Quarter, Month, Day columns)
+                valid_prefixes = ['Y|', 'Q|', 'M|', 'D|']
+                if any(col_id.startswith(p) for p in valid_prefixes):
+                    new_column = None if current_column == col_id else col_id
+                
                 pass
             elif row_idx == -1:
                 pass
