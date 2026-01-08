@@ -1580,6 +1580,17 @@ def create_layout(server=None):
                         color: #000000 !important;
                         text-decoration: none !important;
                     }
+                    .tab-content {
+                        padding: 0px !important;
+                    }
+                    .jsx-4017309047.tab-content {
+                        display: none !important;
+                        padding: 0px !important;
+                    }
+                    div[class*="jsx-"][class*="tab-content"] {
+                        display: none !important;
+                        padding: 0px !important;
+                    }
                 </style>
                 """,
                 dangerously_allow_html=True
@@ -1635,9 +1646,9 @@ def create_layout(server=None):
             ], 
             persistence=True, 
             persistence_type="session", 
-            style={"marginBottom": "20px", "display": "flex", "justifyContent": "center"}
+            style={"marginBottom": "10px", "display": "flex", "justifyContent": "center"}
         ),
-        html.Br(),
+        # html.Br(),
         html.Div([
             html.H4(
                 "World Crude Production*", 
@@ -1892,7 +1903,7 @@ def create_layout(server=None):
                             style_table={
                                 "overflowX": "auto", 
                                 "overflowY": "auto", 
-                                "minHeight": "400px",
+                                "minHeight": "600px",
                                 "maxHeight": "600px",
                                 "height": "auto"
                             },
