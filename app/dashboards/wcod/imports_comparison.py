@@ -954,10 +954,11 @@ def create_layout():
                 children=[
                     html.Div(
                         id='imports-annual-table-container',
-                        children=[]
+                        children=[],
+                        style={'minHeight': '430px'}
                     )
                 ],
-                style={'minHeight': '430px'}  # Match the table height
+                style={'minHeight': '430px'}
             ),
             html.Div([
                 html.P(
@@ -1003,10 +1004,10 @@ def create_layout():
                     html.Div(
                         id='imports-matrix-table-container',
                         children=[],
-                        style={'marginTop': '10px'}
+                        style={'marginTop': '10px', 'minHeight': '520px'}
                     )
                 ],
-                style={'minHeight': '520px'}  # Match the matrix table height
+                style={'minHeight': '520px'}
             ),
             html.Div(
                 id='imports-footnotes',
@@ -1722,7 +1723,7 @@ def register_callbacks(dash_app, server):
         quarters = set(tuple(q) for q in state.get('quarters', []))
         
         if not active_cell or active_cell.get('row') != -1:
-            return state
+            return dash.no_update
         
         col_id = active_cell.get('column_id') or ''
         parts = col_id.split('|')
@@ -1863,13 +1864,26 @@ def register_callbacks(dash_app, server):
 #imports-annual-table .dash-spreadsheet-container.imports-selection-active td:not([data-dash-column="Importer"]),
 #imports-matrix-table .dash-spreadsheet-container.imports-selection-active td:not([data-dash-column="Exporter"]) {
     opacity: 0.18;
-    transition: opacity 0.2s ease-in-out;
+    transition: opacity 0.1s ease-in-out;
 }
 #imports-annual-table .dash-spreadsheet-container.imports-selection-active td.imports-cell-selected,
 #imports-matrix-table .dash-spreadsheet-container.imports-selection-active td.imports-cell-selected,
 #imports-annual-table .dash-spreadsheet-container.imports-selection-active td.imports-row-selected,
-#imports-matrix-table .dash-spreadsheet-container.imports-selection-active td.imports-row-selected {
+#imports-matrix-table .dash-spreadsheet-container.imports-selection-active td.imports-row-selected,
+#imports-annual-table .dash-spreadsheet-container.imports-selection-active td.imports-column-selected,
+#imports-matrix-table .dash-spreadsheet-container.imports-selection-active td.imports-column-selected {
     opacity: 1 !important;
+}
+#imports-annual-table .dash-spreadsheet-container td.imports-column-selected,
+#imports-matrix-table .dash-spreadsheet-container td.imports-column-selected {
+    background-color: #e6f1ff !important;
+    color: #102a43 !important;
+}
+#imports-annual-table .dash-spreadsheet-container th.imports-column-label-selected,
+#imports-matrix-table .dash-spreadsheet-container th.imports-column-label-selected {
+    background-color: #ffd9d7 !important;
+    color: white !important;
+    font-weight: 600 !important;
 }
 #imports-annual-table .dash-spreadsheet-container td.imports-cell-selected,
 #imports-matrix-table .dash-spreadsheet-container td.imports-cell-selected {
@@ -1895,7 +1909,7 @@ def register_callbacks(dash_app, server):
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background-color: #fe5000;
+    background-color: #ffd9d7;
     margin-right: 8px;
     position: relative;
     top: -1px;
@@ -1906,7 +1920,7 @@ def register_callbacks(dash_app, server):
 }
 #imports-footnotes .footnote-item {
     cursor: pointer;
-    transition: color 0.2s ease, opacity 0.2s ease, background-color 0.2s ease;
+    transition: color 0.1s ease, opacity 0.1s ease;
     padding: 2px 0;
 }
 #imports-footnotes .footnote-item:hover {
@@ -1934,24 +1948,14 @@ def register_callbacks(dash_app, server):
                 ];
 
                 function resetSelectionClasses(spreadsheet) {
-                    if (!spreadsheet) {
-                        return;
-                    }
-                    spreadsheet.querySelectorAll('.imports-cell-selected').forEach(function(cell) {
-                        cell.classList.remove('imports-cell-selected');
-                    });
-                    spreadsheet.querySelectorAll('.imports-row-selected').forEach(function(cell) {
-                        cell.classList.remove('imports-row-selected');
-                    });
-                    spreadsheet.querySelectorAll('.imports-row-label-selected').forEach(function(cell) {
-                        cell.classList.remove('imports-row-label-selected');
+                    if (!spreadsheet) return;
+                    spreadsheet.querySelectorAll('.imports-cell-selected, .imports-row-selected, .imports-row-label-selected, .imports-column-selected, .imports-column-label-selected').forEach(function(el) {
+                        el.classList.remove('imports-cell-selected', 'imports-row-selected', 'imports-row-label-selected', 'imports-column-selected', 'imports-column-label-selected');
                     });
                 }
 
                 function clearSelection(spreadsheet) {
-                    if (!spreadsheet) {
-                        return;
-                    }
+                    if (!spreadsheet) return;
                     resetSelectionClasses(spreadsheet);
                     spreadsheet.classList.remove('imports-selection-active');
                     spreadsheet.dataset.selectedKey = '';
@@ -1967,53 +1971,71 @@ def register_callbacks(dash_app, server):
                     });
                 }
 
+                function highlightEntireColumn(spreadsheet, columnId) {
+                    const colCells = spreadsheet.querySelectorAll('td[data-dash-column=\"' + columnId + '\"]');
+                    colCells.forEach(function(colCell) {
+                        colCell.classList.add('imports-column-selected');
+                    });
+                    const headers = spreadsheet.querySelectorAll('th[data-dash-column=\"' + columnId + '\"]');
+                    headers.forEach(function(header) {
+                        header.classList.add('imports-column-label-selected');
+                    });
+                }
+
                 function enhanceTable(tableId, labelColumn) {
                     const tableEl = document.getElementById(tableId);
-                    if (!tableEl) {
-                        return;
-                    }
+                    if (!tableEl) return;
                     const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
-                    if (!spreadsheet || spreadsheet.dataset.importsSelectionBound === 'true') {
-                        return;
-                    }
+                    if (!spreadsheet || spreadsheet.dataset.importsSelectionBound === 'true') return;
                     spreadsheet.dataset.importsSelectionBound = 'true';
                     spreadsheet.dataset.selectedKey = '';
 
                     spreadsheet.addEventListener('click', function(event) {
                         const cell = event.target.closest('td[data-dash-row]');
-                        if (!cell) {
-                            return;
-                        }
-                        const columnId = cell.getAttribute('data-dash-column');
-                        const rowIndex = cell.getAttribute('data-dash-row');
-                        if (!columnId || rowIndex === null) {
-                            return;
-                        }
+                        const header = event.target.closest('th[data-dash-column]');
 
-                        const rowKey = 'row-' + rowIndex;
-                        const cellKey = rowIndex + '-' + columnId;
-
-                        if (columnId === labelColumn) {
-                            if (spreadsheet.dataset.selectedKey === rowKey) {
+                        if (header) {
+                            const columnId = header.getAttribute('data-dash-column');
+                            if (!columnId || columnId === labelColumn) return;
+                            const colKey = 'col-' + columnId;
+                            if (spreadsheet.dataset.selectedKey === colKey) {
                                 clearSelection(spreadsheet);
-                                return;
+                            } else {
+                                spreadsheet.dataset.selectedKey = colKey;
+                                spreadsheet.classList.add('imports-selection-active');
+                                resetSelectionClasses(spreadsheet);
+                                highlightEntireColumn(spreadsheet, columnId);
                             }
-                            spreadsheet.dataset.selectedKey = rowKey;
-                            spreadsheet.classList.add('imports-selection-active');
-                            resetSelectionClasses(spreadsheet);
-                            highlightEntireRow(spreadsheet, rowIndex, labelColumn);
                             return;
                         }
 
-                        if (spreadsheet.dataset.selectedKey === cellKey) {
-                            clearSelection(spreadsheet);
-                            return;
-                        }
+                        if (cell) {
+                            const columnId = cell.getAttribute('data-dash-column');
+                            const rowIndex = cell.getAttribute('data-dash-row');
+                            if (!columnId || rowIndex === null) return;
+                            const rowKey = 'row-' + rowIndex;
+                            const cellKey = rowIndex + '-' + columnId;
 
-                        spreadsheet.dataset.selectedKey = cellKey;
-                        spreadsheet.classList.add('imports-selection-active');
-                        resetSelectionClasses(spreadsheet);
-                        cell.classList.add('imports-cell-selected');
+                            if (columnId === labelColumn) {
+                                if (spreadsheet.dataset.selectedKey === rowKey) {
+                                    clearSelection(spreadsheet);
+                                } else {
+                                    spreadsheet.dataset.selectedKey = rowKey;
+                                    spreadsheet.classList.add('imports-selection-active');
+                                    resetSelectionClasses(spreadsheet);
+                                    highlightEntireRow(spreadsheet, rowIndex, labelColumn);
+                                }
+                            } else {
+                                if (spreadsheet.dataset.selectedKey === cellKey) {
+                                    clearSelection(spreadsheet);
+                                } else {
+                                    spreadsheet.dataset.selectedKey = cellKey;
+                                    spreadsheet.classList.add('imports-selection-active');
+                                    resetSelectionClasses(spreadsheet);
+                                    cell.classList.add('imports-cell-selected');
+                                }
+                            }
+                        }
                     });
                 }
 
