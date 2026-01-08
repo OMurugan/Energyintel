@@ -429,9 +429,16 @@ def create_imports_map_figure(df_map, single_selected_country, max_volume, selec
     locations = df_map['ISO_Code'].astype(str).tolist()
     z_values = df_map['Import_Volume'].tolist()
     
-    # Create hover text
+    # Create hover text with structured format matching the requested design
+    # Using monospaced font for labels to ensure perfect alignment and adding extra br/nbsp for padding
     hover_text = df_map.apply(
-        lambda row: f"<b>{row['Country_DB_Original']}</b><br>Import Volume: {row['Import_Volume']:,.0f}('000 b/d)<br>Year: {selected_year}<br>Click to select",
+        lambda row: (
+            f"&nbsp;<br>"   # Top padding
+            f"&nbsp;&nbsp;<span style='color: #666666; font-family: monospace;'>Importer:      </span><b>{row['Country_DB_Original']}</b>&nbsp;&nbsp;<br>"
+            f"&nbsp;&nbsp;<span style='color: #666666; font-family: monospace;'>Year:          </span><b>{selected_year}</b>&nbsp;&nbsp;<br>"
+            f"&nbsp;&nbsp;<span style='color: #666666; font-family: monospace;'>Traded Volume: </span><b>{row['Import_Volume']:,.0f}('000 b/d)</b>&nbsp;&nbsp;"
+            f"<br>&nbsp;"  # Bottom padding
+        ),
         axis=1,
     ).tolist()
     
@@ -485,8 +492,24 @@ def create_imports_map_figure(df_map, single_selected_country, max_volume, selec
     fig.update_layout(
         margin=dict(l=20, r=20, t=20, b=80),
         uirevision='imports-map',
-        mapbox_zoom=0.8
+        mapbox_zoom=0.8,
+        hoverlabel=dict(
+            bgcolor="white",
+            bordercolor="#cccccc",
+            font=dict(
+                family="Arial, sans-serif",
+                size=12,
+                color="black"
+            ),
+            align="left",
+            namelength=0  # Hide trace name
+        )
     )
+    
+    # Ensure only the main data trace shows the custom tooltip
+    for trace in fig.data:
+        if trace.name != "countries":
+            trace.hoverinfo = 'skip'
     
     # Add copyright annotation
     use_mapbox, _, _ = get_mapbox_config()
