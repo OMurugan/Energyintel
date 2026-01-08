@@ -2,11 +2,12 @@
 Imports - Country Detail View
 Detailed imports data by country
 """
-from dash import dcc, html, Input, Output, callback, State, dash_table
+from dash import dcc, html, Input, Output, callback, State, dash_table, ALL, ClientsideFunction, clientside_callback
 import dash
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
+import json
 from core.data_helpers import execute_query
 
 
@@ -241,9 +242,16 @@ def create_layout():
         dcc.Store(id='selected-country-store', data=default_country),  # Store selected country
         dcc.Store(id='imports-expand-store', data={'years': [], 'quarters': []}),  # Track header expansion state
         dcc.Store(id='imports-time-visibility', data={'Year': True, 'Quarter': False, 'Month': False, 'Day': False}),
+        dcc.Store(id='selected-region-store', data=None),  # Store selected region from legend click
+        dcc.Store(id='selected-crude-store', data=None),   # Store selected crude from legend click
+        dcc.Store(id='selected-exporter-store', data=None), # Store selected exporter for table highlighting
+        dcc.Store(id='selected-column-store', data=None), # Store selected column for table highlighting
         dcc.Download(id="download-imports-by-region-csv"),
         dcc.Download(id="download-imports-by-country-csv"),
         dcc.Download(id="download-imports-detail-csv"),
+        
+        # Hidden trigger for column selection from clientside
+        dcc.Input(id='selected-column-hidden-input', type='hidden', value=''),
         
         # Country Selector
         html.Div([
@@ -297,8 +305,22 @@ def create_layout():
                     'fontSize': '12px'
                 })
             ]),
-            dcc.Graph(id='imports-by-region-chart')
-        ], style={'marginBottom': '30px'}),
+            dcc.Graph(id='imports-by-region-chart'),
+            # Custom Legend for Imports by Region
+            html.Div(id='imports-by-region-legend', style={
+                'display': 'flex',
+                'flexDirection': 'column',
+                'position': 'absolute',
+                'right': '20px',
+                'top': '60px',
+                'width': '160px',
+                'backgroundColor': 'rgba(255,255,255,0.8)',
+                'border': '1px solid #d3d3d3',
+                'borderRadius': '4px',
+                'padding': '10px',
+                'zIndex': '10'
+            })
+        ], style={'marginBottom': '30px', 'position': 'relative'}),
         
         # Instruction text
         html.Div([
@@ -310,13 +332,7 @@ def create_layout():
         
         # Second Chart: Imports by Country for Selected Year
         html.Div([
-            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
-                html.Div(id='imports-by-country-chart-title', style={
-                    'fontSize': '21px',
-                    'fontWeight': 'bold',
-                    'color': '#fe5000',
-                    'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif'
-                }),
+            html.Div(style={'display': 'flex', 'justifyContent': 'flex-end', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
                 html.Button("Export to CSV", id='export-imports-by-country-btn', n_clicks=0, style={
                     'marginLeft': '12px',
                     'backgroundColor': 'white',
@@ -328,8 +344,24 @@ def create_layout():
                     'fontSize': '12px'
                 })
             ]),
-            dcc.Graph(id='imports-by-country-chart')
-        ], style={'marginBottom': '30px'}),
+            dcc.Graph(id='imports-by-country-chart'),
+            # Custom Legend for Imports by Country
+            html.Div(id='imports-by-country-legend', style={
+                'display': 'flex',
+                'flexDirection': 'column',
+                'position': 'absolute',
+                'right': '20px',
+                'top': '60px',
+                'width': '180px',
+                'maxHeight': '400px',
+                'overflowY': 'auto',
+                'backgroundColor': 'rgba(255,255,255,0.8)',
+                'border': '1px solid #d3d3d3',
+                'borderRadius': '4px',
+                'padding': '10px',
+                'zIndex': '10'
+            })
+        ], style={'marginBottom': '30px', 'position': 'relative'}),
         
         # Table: Detailed Imports Data
         html.Div([
@@ -453,6 +485,10 @@ def create_layout():
                     {
                         'selector': '.dash-header .column-header--sort',
                         'rule': 'white-space: pre-line !important; line-height: 1.2 !important;'
+                    },
+                    {
+                        'selector': '.dash-spreadsheet-container th',
+                        'rule': 'cursor: pointer !important;'
                     }
                 ],
                 style_data_conditional=[
@@ -509,7 +545,7 @@ def create_layout():
     ], className='tab-content', style={'padding': '20px'})
 
 
-def create_imports_by_region_chart(selected_country='Japan'):
+def create_imports_by_region_chart(selected_country='Japan', selected_region=None):
     """Create stacked bar chart showing imports by region over time"""
     df = load_imports_by_region_data(selected_country)
     _, color_map = load_legend_data()
@@ -549,11 +585,18 @@ def create_imports_by_region_chart(selected_country='Japan'):
             else:
                 volumes.append(0)
         
+        # Determine opacity based on selection
+        if selected_region is None or selected_region == region:
+            opacity = 1.0
+        else:
+            opacity = 0.25  # Dim other regions
+            
         fig.add_trace(go.Bar(
             x=years,
             y=volumes,
             name=region,
             marker_color=color_map.get(region, '#CCCCCC'),
+            opacity=opacity,
             hovertemplate=f'Region: {region}<br>Year: %{{x}}<br>Import Volume: %{{y:,.0f}} (\'000 b/d)<extra></extra>',
             selected=dict(marker=dict(opacity=1.0)),  # Selected bars remain fully opaque
             unselected=dict(marker=dict(opacity=0.3))
@@ -666,22 +709,7 @@ def create_imports_by_region_chart(selected_country='Japan'):
         paper_bgcolor='white',
         margin=dict(l=60, r=200, t=60, b=50),
         clickmode='select',  # Only selection, no event callbacks
-        legend=dict(
-            orientation='v',
-            yanchor='top',
-            y=1,
-            xanchor='left',
-            x=1.02,
-            font={
-                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
-                'size': 11,
-                'color': '#333333'
-            },
-            bgcolor='rgba(255,255,255,0.8)',
-            bordercolor='#d3d3d3',
-            borderwidth=1,
-            traceorder='reversed' # Ensure legend order is reversed from trace order for ascending display
-        ),
+        showlegend=False,  # Disable native legend
         hovermode='closest',
         hoverlabel=dict(
             bgcolor='white',
@@ -692,14 +720,13 @@ def create_imports_by_region_chart(selected_country='Japan'):
                 color='#000000'
             ),
             align='left'
-        ),
-        legend_traceorder='reversed' # Ensure legend order is reversed from trace order for ascending display
+        )
     )
     
     return fig
 
 
-def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'):
+def create_imports_by_country_chart(selected_year=2023, selected_country='Japan', selected_crude=None):
     """Create stacked bar chart showing imports by country for selected year, broken down by crude"""
     df = load_imports_by_country_crude_data(selected_country, selected_year)
     
@@ -717,11 +744,7 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
     exporters = exporter_totals.index.tolist()
     
     # Calculate max value for dynamic y-axis - use maximum total sum per exporter (total bar height)
-    # Example: Saudi Arabia = 965, UAE = 843, Kuwait = 190.5 -> max = 965
     max_value = exporter_totals.max() if not exporter_totals.empty else 100
-    # For 4 tick marks (0, interval, 2*interval, 3*interval), calculate interval from max
-    # Example: max 965 -> divide by 3 = 321.67, round to nice number 250 or 300
-    # Result: ticks at 0, 250, 500, 750 or 0, 300, 600, 900
     import math
     # Calculate approximate interval for 4 ticks (divide max by 3)
     approx_interval = max_value / 3
@@ -738,7 +761,6 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
         tick_interval = round(approx_interval / 250) * 250
     
     # Calculate y-axis max: round max up to next multiple of tick_interval to cover all data
-    # This ensures range covers the data while ticks are at nice intervals
     yaxis_max = math.ceil(max_value / tick_interval) * tick_interval
     
     # Define exact color mapping for each crude type
@@ -792,20 +814,14 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
     
     # Get unique crudes from data
     available_crudes = df_grouped['Crude'].unique().tolist()
-
     # Separate 'Other' crude and sort the rest alphabetically
-    other_crude = 'Other'
     crudes = sorted(available_crudes)
-    
     print(f"Crudes order for chart: {crudes}")
     
-    # Reverse the crudes list to change stacking order (bottom to top: Other -> ... -> Al-Shaheen)
+    # Reverse the crudes list to change stacking order
     crudes.reverse()
     
     fig = go.Figure()
-    
-    # Store volumes for each crude to calculate cumulative positions for text labels
-    crude_volumes_dict = {}
     
     # Add a trace for each crude
     for crude in crudes:
@@ -822,24 +838,28 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
         if sum(volumes) > 0:
             # Format year as "01-01-YYYY" for hover tooltip
             year_str = f"01-01-{actual_year}"
-            # Use rgba format for crudes not in color map (Other crudes)
-            # Convert #1f77b400 to rgba(31, 119, 180, 0.25) - semi-transparent blue
-            # Note: 00 in hex alpha = 0 (fully transparent), using 0.25 for visibility
             crude_color = crude_color_map.get(crude, 'rgba(31, 119, 180, 1)')
+            
+            # Determine opacity based on selection
+            if selected_crude is None or selected_crude == crude:
+                opacity = 1.0
+            else:
+                opacity = 0.25  # Dim other crudes
+                
             fig.add_trace(go.Bar(
                 x=exporters,
                 y=volumes,
                 name=crude,
                 marker_color=crude_color,
+                opacity=opacity,
                 hovertemplate=f'Crude: {crude}<br>Year: {year_str}<br>Traded Volume: %{{y:,.1f}}(\'000 b/d)<extra></extra>',
-                text=[f'{v:,.1f}' if v >= 10 else '' for v in volumes],  # Show value if >= 10
+                text=[f'{v:,.1f}' if v >= 10 else '' for v in volumes],
                 textposition='inside',
-                textangle=-90,  # Rotate text vertically
+                textangle=-90,
                 textfont=dict(size=10, color='#000000'),
-                selected=dict(marker=dict(opacity=1.0)),  # Selected bars remain fully opaque
-                unselected=dict(marker=dict(opacity=0.3))  # Unselected bars are dimmed
+                selected=dict(marker=dict(opacity=1.0)),
+                unselected=dict(marker=dict(opacity=0.3))
             ))
-            crude_volumes_dict[crude] = volumes
     
     # Update layout
     fig.update_layout(
@@ -855,76 +875,39 @@ def create_imports_by_country_chart(selected_year=2023, selected_country='Japan'
             'pad': {'t': 10, 'b': 20}
         },
         xaxis=dict(
-            title={
-                'text': "",
-                'font': {
-                    'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
-                    'size': 13,
-                    'color': '#333333'
-                }
-            },
-            tickfont={
-                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
-                'size': 10,
-                'color': '#666666'
-            },
-            tickangle=-90,  # Horizontal labels
-            showgrid=False,  # Remove vertical grid lines to avoid square boxes
-            showline=True,  # Show the axis line
+            title={'text': "", 'font': {'family': '"Benton Sans", "Arial", "Helvetica", sans-serif', 'size': 13, 'color': '#333333'}},
+            tickfont={'family': '"Benton Sans", "Arial", "Helvetica", sans-serif', 'size': 10, 'color': '#666666'},
+            tickangle=-90,
+            showgrid=False,
+            showline=True,
             linecolor='#d3d3d3',
             linewidth=1,
-            mirror=True  # Show axis line on all sides
+            mirror=True
         ),
         yaxis=dict(
-            title={
-                'text': "",
-                'font': {
-                    'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
-                    'size': 13,
-                    'color': '#333333'
-                }
-            },
-            tickfont={
-                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
-                'size': 11,
-                'color': '#666666'
-            },
-            range=[0, max(yaxis_max, max_value)],  # Dynamic range covering all data
+            title={'text': "", 'font': {'family': '"Benton Sans", "Arial", "Helvetica", sans-serif', 'size': 13, 'color': '#333333'}},
+            tickfont={'family': '"Benton Sans", "Arial", "Helvetica", sans-serif', 'size': 11, 'color': '#666666'},
+            range=[0, max(yaxis_max, max_value)],
             tickmode='linear',
             tick0=0,
-            dtick=tick_interval,  # Dynamic tick interval - will show ticks at 0, interval, 2*interval, etc.
-            tickvals=[0, tick_interval, tick_interval * 2, tick_interval * 3],  # Explicitly set 4 tick values
+            dtick=tick_interval,
+            tickvals=[0, tick_interval, tick_interval * 2, tick_interval * 3],
             gridcolor='#e0e0e0',
             gridwidth=1,
-            showgrid=False,  # Remove horizontal grid lines
-            showline=True,  # Show the axis line
+            showgrid=False,
+            showline=True,
             linecolor='#d3d3d3',
             linewidth=1,
-            mirror=True  # Show axis line on all sides
+            mirror=True
         ),
         barmode='stack',
         height=520,
         plot_bgcolor='white',
         paper_bgcolor='white',
         margin=dict(l=60, r=200, t=60, b=100),
-        clickmode='select',  # Only selection, no event callbacks
-        legend=dict(
-            orientation='v',
-            yanchor='top',
-            y=1,
-            xanchor='left',
-            x=1.02,
-            font={
-                'family': '"Benton Sans", "Arial", "Helvetica", sans-serif',
-                'size': 10,
-                'color': '#333333'
-            },
-            bgcolor='rgba(255,255,255,0.8)',
-            bordercolor='#d3d3d3',
-            borderwidth=1,
-            traceorder='reversed' # Ensure legend order matches trace order
-        ),
-        hovermode='closest',  # Show only the hovered segment
+        clickmode='select',
+        showlegend=False,  # Disable native legend
+        hovermode='closest',
         hoverlabel=dict(
             bgcolor='white',
             bordercolor='#999999',
@@ -1052,6 +1035,7 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
             'Exporter': str(key[1]) if key[1] is not None else '',
             'Company': str(key[2]) if key[2] is not None else '',
             'Crude': str(key[3]) if key[3] is not None else '',
+            '_ExporterFull': str(key[1]).strip() if key[1] is not None else '', # Full exporter name for highlighting
             '_year': {},
             '_quarter': {},
             '_month': {},
@@ -1074,7 +1058,8 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
             'Exporting Region': rec['Exporting Region'],
             'Exporter': rec['Exporter'],
             'Company': rec['Company'],
-            'Crude': rec['Crude']
+            'Crude': rec['Crude'],
+            '_ExporterFull': rec['_ExporterFull']
         }
         for year in years:
             q_def, m_def, d_def = year_defaults.get(year, ('', '', ''))
@@ -1143,18 +1128,115 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
 def register_callbacks(dash_app, server):
     """Register all callbacks for Imports - Country Detail"""
     
+    # Clientside callback to handle header clicks and CSS-based highlighting
+    dash_app.clientside_callback(
+        """
+        function(selected_column, table_data) {
+            const tableEl = document.getElementById('imports-detail-table');
+            if (!tableEl) return window.dash_clientside.no_update;
+            
+            const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+            if (!spreadsheet) return window.dash_clientside.no_update;
+
+            // 1. Inject CSS if not present
+            const styleId = 'imports-detail-table-custom-highlighting';
+            if (!document.getElementById(styleId)) {
+                const style = document.createElement('style');
+                style.id = styleId;
+                style.innerHTML = `
+                    #imports-detail-table .dash-spreadsheet-container.column-highlight-active td {
+                        opacity: 0.3;
+                        transition: opacity 0.2s;
+                    }
+                    #imports-detail-table .dash-spreadsheet-container.column-highlight-active td.column-highlighted {
+                        opacity: 1 !important;
+                        background-color: #e7f3ff !important;
+                    }
+                    #imports-detail-table .dash-spreadsheet-container th.column-header-highlighted {
+                        background-color: #3366cc !important;
+                        color: white !important;
+                        font-weight: bold !important;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+
+            // 2. Add header click listener once
+            if (spreadsheet.dataset.headerListenerAdded !== 'true') {
+                spreadsheet.dataset.headerListenerAdded = 'true';
+                spreadsheet.addEventListener('click', function(e) {
+                    const header = e.target.closest('th[data-dash-column]');
+                    if (header) {
+                        const columnId = header.getAttribute('data-dash-column');
+                        // ONLY highlight columns that start with 'Y|' (Year columns)
+                        if (columnId && columnId.startsWith('Y|')) {
+                            const input = document.getElementById('selected-column-hidden-input');
+                            if (input) {
+                                input.value = columnId;
+                                input.dispatchEvent(new Event('change', { bubbles: true }));
+                                e.stopPropagation();
+                            }
+                        }
+                    }
+                });
+            }
+
+            // 3. Update CSS classes based on selected_column
+            // Clear existing highlights
+            spreadsheet.classList.remove('column-highlight-active');
+            spreadsheet.querySelectorAll('.column-highlighted').forEach(el => el.classList.remove('column-highlighted'));
+            spreadsheet.querySelectorAll('.column-header-highlighted').forEach(el => el.classList.remove('column-header-highlighted'));
+
+            if (selected_column) {
+                spreadsheet.classList.add('column-highlight-active');
+                
+                // Highlight header
+                const header = spreadsheet.querySelector(`th[data-dash-column="${selected_column}"]`);
+                if (header) header.classList.add('column-header-highlighted');
+
+                // Highlight all cells in that column
+                const cells = spreadsheet.querySelectorAll(`td[data-dash-column="${selected_column}"]`);
+                cells.forEach(cell => cell.classList.add('column-highlighted'));
+            }
+
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('selected-column-hidden-input', 'style'), # Dummy output
+        [Input('selected-column-store', 'data'),
+         Input('imports-detail-table', 'data')],
+        prevent_initial_call=False
+    )
+    
+    @callback(
+        Output('selected-column-store', 'data', allow_duplicate=True),
+        Input('selected-column-hidden-input', 'value'),
+        [State('selected-column-store', 'data')],
+        prevent_initial_call=True
+    )
+    def update_selected_column_from_input(new_val, current_column):
+        """Update selected-column-store when the hidden input value is changed from clientside"""
+        if not new_val:
+            return dash.no_update
+        
+        # Toggle selection if same column is clicked
+        if current_column == new_val:
+            return None
+        return new_val
+
     @callback(
         [Output('imports-by-region-chart', 'figure'),
          Output('imports-by-region-chart-title', 'children')],
         [Input('importing-country-select', 'value'),
-         Input('current-submenu', 'data')],
+         Input('current-submenu', 'data'),
+         Input('selected-region-store', 'data')],
         prevent_initial_call=False
     )
-    def update_imports_by_region(selected_country, submenu):
+    def update_imports_by_region(selected_country, submenu, selected_region):
         """Update imports by region chart"""
         if submenu != 'imports-detail':
             return go.Figure(), ""
-        fig = create_imports_by_region_chart(selected_country)
+        fig = create_imports_by_region_chart(selected_country, selected_region)
         title = f"{selected_country}'s Crude Imports by Exporting Region"
         # Ensure the figure is valid and has data
         if fig and len(fig.data) > 0:
@@ -1162,35 +1244,39 @@ def register_callbacks(dash_app, server):
         return go.Figure(), title
     
     @callback(
-        [Output('imports-by-country-chart', 'figure'),
-         Output('imports-by-country-chart-title', 'children')],
+        Output('imports-by-country-chart', 'figure'),
         [Input('importing-country-select', 'value'),
          Input('current-submenu', 'data'),
-         State('selected-year-store', 'data')]
+         Input('selected-year-store', 'data'),
+         Input('selected-crude-store', 'data')],
+        prevent_initial_call=False
     )
-    def update_imports_by_country(selected_country, submenu, current_year):
+    def update_imports_by_country(selected_country, submenu, current_year, selected_crude):
         """Update imports by country chart based on country selection"""
         if submenu != 'imports-detail':
-            return go.Figure(), ""
+            return go.Figure()
         
         # Use current year (default 2023) - chart 1 clicks no longer affect chart 2
         selected_year = current_year if current_year else 2023
         
-        fig = create_imports_by_country_chart(selected_year, selected_country)
-        title = f"{selected_country}'s Crude Imports by Country - {selected_year}"
-        return fig, title
+        fig = create_imports_by_country_chart(selected_year, selected_country, selected_crude)
+        return fig
     
     @callback(
         [Output('imports-detail-table', 'data'),
          Output('imports-detail-table', 'columns'),
          Output('imports-detail-table', 'hidden_columns'),
-         Output('imports-table-title', 'children')],
+         Output('imports-table-title', 'children'),
+         Output('imports-detail-table', 'style_data_conditional'),
+         Output('imports-detail-table', 'style_header_conditional')],
         [Input('importing-country-select', 'value'),
          Input('current-submenu', 'data'),
          Input('imports-expand-store', 'data'),
-         Input('imports-time-visibility', 'data')]
+         Input('imports-time-visibility', 'data'),
+         Input('selected-exporter-store', 'data'),
+         Input('selected-column-store', 'data')]
     )
-    def update_imports_table(selected_country, submenu, expand_state, time_visibility):
+    def update_imports_table(selected_country, submenu, expand_state, time_visibility, selected_exporter, selected_column):
         """Update imports detail table"""
         if submenu != 'imports-detail':
             # Return empty but valid structures
@@ -1200,7 +1286,7 @@ def register_callbacks(dash_app, server):
                 {'name': 'Company', 'id': 'Company'},
                 {'name': 'Crude', 'id': 'Crude'}
             ]
-            return [], empty_columns, [], ""
+            return [], empty_columns, [], "", [], []
         try:
             data, columns, hidden = create_imports_table(selected_country, expand_state, time_visibility)
             # Ensure data and columns are lists
@@ -1279,7 +1365,74 @@ def register_callbacks(dash_app, server):
                 ]
             
             title = f"{selected_country} Crude Oil Imports by Region and Country"
-            return cleaned_data, cleaned_columns, hidden, title
+            
+            # Dynamic styles for row highlighting
+            style_data_conditional = [
+                {
+                    'if': {'row_index': 'odd'},
+                    'backgroundColor': '#fafafa'
+                },
+                {
+                    'if': {'filter_query': '{Exporting Region} = Total'},
+                    'fontWeight': '600',
+                    'backgroundColor': '#f0f0f0'
+                },
+                # Ensure first four columns are left-aligned
+                {
+                    'if': {'column_id': 'Exporting Region'},
+                    'textAlign': 'left', 'minWidth': '150px', 'width': '150px', 'maxWidth': '150px'
+                },
+                {
+                    'if': {'column_id': 'Exporter'},
+                    'textAlign': 'left', 'minWidth': '150px', 'width': '150px', 'maxWidth': '150px'
+                },
+                {
+                    'if': {'column_id': 'Company'},
+                    'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '120px'
+                },
+                {
+                    'if': {'column_id': 'Crude'},
+                    'textAlign': 'left', 'minWidth': '150px', 'width': '150px', 'maxWidth': '150px'
+                },
+                # Override default active/selected cell background colors (the "pink" issue)
+                {
+                    'if': {'state': 'active'},
+                    'backgroundColor': 'transparent', # Use transparent so underlying highlight shows through
+                    'border': '1px solid #e0e0e0'
+                },
+                {
+                    'if': {'state': 'selected'},
+                    'backgroundColor': 'transparent',
+                    'border': '1px solid #e0e0e0'
+                }
+            ]
+            
+            if selected_exporter:
+                # Highlight rows with the selected exporter
+                style_data_conditional.extend([
+                    {
+                        'if': {
+                            'filter_query': f'{{_ExporterFull}} = "{selected_exporter}"'
+                        },
+                        'backgroundColor': '#e7f3ff'
+                    },
+                    {
+                        'if': {
+                            'filter_query': f'{{_ExporterFull}} = "{selected_exporter}"',
+                            'column_id': 'Exporter'
+                        },
+                        'backgroundColor': '#3366cc',
+                        'color': 'white !important',
+                        'fontWeight': 'bold'
+                    }
+                ])
+            
+            
+            # Header styles
+            style_header_conditional = []
+                
+                
+            return cleaned_data, cleaned_columns, hidden, title, style_data_conditional, style_header_conditional
         except Exception as e:
             print(f"Error updating imports table: {e}")
             import traceback
@@ -1291,46 +1444,71 @@ def register_callbacks(dash_app, server):
                 {'name': 'Company', 'id': 'Company'},
                 {'name': 'Crude', 'id': 'Crude'}
             ]
-            return [], empty_columns, [], ""
+            return [], empty_columns, [], "", [], []
 
     @callback(
-        Output('imports-expand-store', 'data'),
-        Input('imports-detail-table', 'active_cell'),
-        State('imports-expand-store', 'data'),
+        [Output('selected-exporter-store', 'data'),
+         Output('selected-column-store', 'data'),
+         Output('imports-expand-store', 'data'),
+         Output('imports-detail-table', 'active_cell')],
+        [Input('imports-detail-table', 'active_cell')],
+        [State('imports-detail-table', 'data'),
+         State('selected-exporter-store', 'data'),
+         State('selected-column-store', 'data'),
+         State('imports-expand-store', 'data')],
         prevent_initial_call=True
     )
-    def toggle_header_expansion(active_cell, state):
-        """Toggle expansion for year/quarter headers via header clicks."""
-        state = state or {'years': [], 'quarters': []}
-        years = set(state.get('years', []))
-        quarters = set(tuple(q) for q in state.get('quarters', []))
-        
-        if not active_cell or active_cell.get('row') != -1:
-            return state
-        
+    def handle_table_interaction(active_cell, table_data, current_exporter, current_column, expand_state):
+        """Unified handler for row selection, column selection and header expansion."""
+        if not active_cell or not table_data:
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+            
         col_id = active_cell.get('column_id') or ''
-        parts = col_id.split('|')
-        if not parts:
-            return state
+        row_idx = active_cell.get('row')
         
-        if parts[0] == 'Y' and len(parts) >= 2:
-            year = parts[1]
-            if year in years:
-                years.remove(year)
-                quarters = {q for q in quarters if q[0] != year}
-            else:
-                years.add(year)
-        elif parts[0] == 'Q' and len(parts) >= 3:
-            key = (parts[1], parts[2])
-            if key in quarters:
-                quarters.remove(key)
-            else:
-                quarters.add(key)
+        new_exporter = current_exporter
+        new_column = current_column
+        new_expand_state = expand_state or {'years': [], 'quarters': []}
         
-        return {
-            'years': sorted(years, reverse=True),
-            'quarters': sorted(list(quarters), reverse=True)
-        }
+        # 1. Handle Selection
+        if row_idx is not None:
+            if row_idx >= 0 and row_idx < len(table_data):
+                # Body cell click
+                if col_id in ['Exporting Region', 'Exporter', 'Company', 'Crude']:
+                    # Row selection
+                    clicked_exporter = table_data[row_idx].get('_ExporterFull')
+                    if clicked_exporter:
+                        new_exporter = None if current_exporter == clicked_exporter else clicked_exporter
+                pass
+            elif row_idx == -1:
+                pass
+
+        # 2. Handle Expansion (Year/Quarter columns)
+        if '|' in col_id:
+            parts = col_id.split('|')
+            years = set(new_expand_state.get('years', []))
+            quarters = set(tuple(q) for q in new_expand_state.get('quarters', []))
+            
+            if parts[0] == 'Y' and len(parts) >= 2:
+                year = parts[1]
+                if year in years:
+                    years.remove(year)
+                    quarters = {q for q in quarters if q[0] != year}
+                else:
+                    years.add(year)
+            elif parts[0] == 'Q' and len(parts) >= 3:
+                key = (parts[1], parts[2])
+                if key in quarters:
+                    quarters.remove(key)
+                else:
+                    quarters.add(key)
+            
+            new_expand_state = {
+                'years': sorted(years, reverse=True),
+                'quarters': sorted(list(quarters), reverse=True)
+            }
+
+        return new_exporter, new_column, new_expand_state, None # Always reset active_cell to allow re-clicking
     
     # Button icons and styles reflecting time visibility state
     @callback(
@@ -1433,6 +1611,224 @@ def register_callbacks(dash_app, server):
         vis['Day'] = not vis.get('Day', False)
         return vis
     
+
+    @callback(
+        Output('imports-by-region-legend', 'children'),
+        [Input('importing-country-select', 'value'),
+         Input('current-submenu', 'data')]
+    )
+    def populate_region_legend(selected_country, submenu):
+        """Populate custom legend with region items"""
+        if submenu != 'imports-detail':
+            return []
+        
+        regions, color_map = load_legend_data()
+        # Sort regions alphabetically but keep 'Others' at the end
+        sorted_regions = sorted([r for r in regions if r != 'Others']) + (['Others'] if 'Others' in regions else [])
+        
+        legend_items = []
+        for region in sorted_regions:
+            color = color_map.get(region, '#808080')
+            legend_items.append(
+                html.Div(
+                    id={'type': 'region-legend-item', 'index': region},
+                    children=[
+                        html.Div(style={
+                            'width': '12px',
+                            'height': '12px',
+                            'backgroundColor': color,
+                            'marginRight': '8px',
+                            'borderRadius': '2px',
+                            'flexShrink': '0'
+                        }),
+                        html.Span(region, style={
+                            'fontSize': '11px',
+                            'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                            'color': '#333333'
+                        })
+                    ],
+                    style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'marginBottom': '4px',
+                        'padding': '2px 5px',
+                        'cursor': 'pointer',
+                        'borderRadius': '3px',
+                        'transition': 'background-color 0.2s'
+                    }
+                )
+            )
+        return legend_items
+
+    @callback(
+        Output('selected-region-store', 'data'),
+        [Input({'type': 'region-legend-item', 'index': ALL}, 'n_clicks')],
+        [State('selected-region-store', 'data')],
+        prevent_initial_call=True
+    )
+    def toggle_region_selection(n_clicks, current_selection):
+        """Toggle region selection on legend click"""
+        ctx = dash.callback_context
+        if not ctx.triggered or not any(n_clicks):
+            return current_selection
+        
+        triggered_id = json.loads(ctx.triggered[0]['prop_id'].split('.')[0])
+        clicked_region = triggered_id['index']
+        
+        if current_selection == clicked_region:
+            return None  # Deselect if clicking the same region
+        return clicked_region
+
+    @callback(
+        Output({'type': 'region-legend-item', 'index': ALL}, 'style'),
+        [Input('selected-region-store', 'data')],
+        [State({'type': 'region-legend-item', 'index': ALL}, 'id')]
+    )
+    def update_region_legend_styles(selected_region, ids):
+        """Update styles of legend items based on selection"""
+        styles = []
+        for item_id in ids:
+            region = item_id['index']
+            base_style = {
+                'display': 'flex',
+                'alignItems': 'center',
+                'marginBottom': '4px',
+                'padding': '2px 5px',
+                'cursor': 'pointer',
+                'borderRadius': '3px',
+                'transition': 'background-color 0.2s'
+            }
+            if selected_region == region:
+                base_style['backgroundColor'] = '#f0f0f0'
+                base_style['fontWeight'] = 'bold'
+            elif selected_region is not None:
+                base_style['opacity'] = '0.5'
+            
+            styles.append(base_style)
+        return styles
+
+    @callback(
+        Output('imports-by-country-legend', 'children'),
+        [Input('importing-country-select', 'value'),
+         Input('selected-year-store', 'data'),
+         Input('current-submenu', 'data')]
+    )
+    def populate_crude_legend(selected_country, selected_year, submenu):
+        """Populate custom legend with crude items"""
+        if submenu != 'imports-detail':
+            return []
+        
+        df = load_imports_by_country_crude_data(selected_country, selected_year)
+        if df.empty:
+            return []
+            
+        # Get unique crudes and sort alphabetically
+        available_crudes = sorted(df['Crude'].unique().tolist())
+        
+        # Color map for crudes (same as in create_imports_by_country_chart)
+        crude_color_map = {
+            'Al-Shaheen': '#2ca02c', 'Arab Extra Light': '#ff9896', 'Arab Heavy': '#9467bd',
+            'Arab Light': '#c5b0d5', 'Arab Medium': '#c49c94', 'Arab Super Light': '#f7b6d2',
+            'Bach Ho': '#d62728', 'Banoco Arab Medium': '#c7c7c7', 'Champion': '#7f7f7f',
+            'Clifhead': '#c7c7c7', 'Cossack': '#8c564b', 'Das Blend': '#2ca02c',
+            'Deodorized Field Condensate': '#98df8a', 'Dubai': '#ff9896', 'Ichthys Condensate': '#7f7f7f',
+            'Isthmus': '#c7c7c7', 'Ketapang': '#c7c7c7', 'Khafji': '#d62728',
+            'Kikeh': '#dbdb8d', 'Kuwait': '#8c564b', 'Kuwait Super Light': '#f7b6d2',
+            'Lalang': '#1f77b4', 'Mares Blend': '#aec7e8', 'Mars Blend': '#ff7f0e',
+            'Mubarras Blend': '#1f77b4', 'Murban': '#aec7e8', 'Napo': '#98df8a',
+            'Nile Blend Sudan': '#d62728', 'Oman': '#8c564b', 'Oriente': '#ff9896',
+            'Pyrenees': '#c49c94', 'Qatar Land': '#c7c7c7', 'Qatar Low Sulphur Condensate': '#bcbd22',
+            'Qatar Marine': '#dbdb8d', 'Ruby': '#f7b6d2', 'Sakhalin Blend': '#ff9896',
+            'Sepat': '#bcbd22', 'Seria Light': '#17becf', 'Stag': '#9edae5',
+            'Thang Long': '#ffbb78', 'Umm Lulu': '#bcbd22', 'Upper Zakum': '#9edae5',
+            'Wandoo': '#2ca02c', 'West Texas Intermediate': '#aec7e8', 'West Texas Light': '#ff7f0e'
+        }
+        
+        legend_items = []
+        for crude in available_crudes:
+            color = crude_color_map.get(crude, 'rgba(31, 119, 180, 1)')
+            legend_items.append(
+                html.Div(
+                    id={'type': 'crude-legend-item', 'index': crude},
+                    children=[
+                        html.Div(style={
+                            'width': '10px',
+                            'height': '10px',
+                            'backgroundColor': color,
+                            'marginRight': '8px',
+                            'borderRadius': '2px',
+                            'flexShrink': '0'
+                        }),
+                        html.Span(crude, style={
+                            'fontSize': '10px',
+                            'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                            'color': '#333333',
+                            'whiteSpace': 'nowrap',
+                            'overflow': 'hidden',
+                            'textOverflow': 'ellipsis'
+                        })
+                    ],
+                    style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'marginBottom': '2px',
+                        'padding': '1px 3px',
+                        'cursor': 'pointer',
+                        'borderRadius': '2px',
+                        'transition': 'background-color 0.2s'
+                    },
+                    title=crude
+                )
+            )
+        return legend_items
+
+    @callback(
+        Output('selected-crude-store', 'data'),
+        [Input({'type': 'crude-legend-item', 'index': ALL}, 'n_clicks')],
+        [State('selected-crude-store', 'data')],
+        prevent_initial_call=True
+    )
+    def toggle_crude_selection(n_clicks, current_selection):
+        """Toggle crude selection on legend click"""
+        ctx = dash.callback_context
+        if not ctx.triggered or not any(n_clicks):
+            return current_selection
+        
+        triggered_id = json.loads(ctx.triggered[0]['prop_id'].split('.')[0])
+        clicked_crude = triggered_id['index']
+        
+        if current_selection == clicked_crude:
+            return None  # Deselect
+        return clicked_crude
+
+    @callback(
+        Output({'type': 'crude-legend-item', 'index': ALL}, 'style'),
+        [Input('selected-crude-store', 'data')],
+        [State({'type': 'crude-legend-item', 'index': ALL}, 'id')]
+    )
+    def update_crude_legend_styles(selected_crude, ids):
+        """Update styles of crude legend items based on selection"""
+        styles = []
+        for item_id in ids:
+            crude = item_id['index']
+            base_style = {
+                'display': 'flex',
+                'alignItems': 'center',
+                'marginBottom': '2px',
+                'padding': '1px 3px',
+                'cursor': 'pointer',
+                'borderRadius': '2px',
+                'transition': 'background-color 0.2s'
+            }
+            if selected_crude == crude:
+                base_style['backgroundColor'] = '#f0f0f0'
+                base_style['fontWeight'] = 'bold'
+            elif selected_crude is not None:
+                base_style['opacity'] = '0.5'
+            
+            styles.append(base_style)
+        return styles
+
     @callback(
         Output('download-imports-by-region-csv', 'data'),
         Input('export-imports-by-region-btn', 'n_clicks'),
@@ -1440,7 +1836,7 @@ def register_callbacks(dash_app, server):
         prevent_initial_call=True
     )
     def export_imports_by_region_csv(n_clicks, selected_country):
-        #\"\"\"Export imports by region data to CSV\"\"\"
+        """Export imports by region data to CSV"""
         if n_clicks and selected_country:
             df = load_imports_by_region_data(selected_country)
             if not df.empty:

@@ -2485,18 +2485,18 @@ def register_callbacks(dash_app, server):
                         country_data = BAR_LONG_YEARLY[BAR_LONG_YEARLY["Country"].isin(country)]
                         available_streams = order_streams_list(country_data["Stream"].dropna().unique().tolist(), tab="yearly")
             
-            # Create options with profile_url stored in the option dict
+            # Create options - only include label and value (profile_url is handled separately)
             options = []
             for s in available_streams:
                 opt = {"label": s, "value": s}
-                if s in stream_to_url:
-                    opt["profile_url"] = stream_to_url[s]
+                # Note: profile_url is stored in stream_to_url dict and handled by the stream-profile-urls-store
                 options.append(opt)
             
             # Default: select all streams (default mode - no filtering)
             default_value = available_streams[:]
             
             print(f"DEBUG: Returning {len(options)} options and {len(default_value)} default values (all selected by default)")
+            print(f"DEBUG: Profile URLs will be handled by update_profiled_streams_with_colors callback")
             return options, default_value
             
         except Exception as e:
@@ -2533,16 +2533,86 @@ def register_callbacks(dash_app, server):
         [Input("profiled-streams", "value"),
          Input("profiled-streams", "options"),
          Input("production-breakdown-chart", "figure"),
-         Input("crude-main-tabs", "value")],
+         Input("crude-main-tabs", "value"),
+         Input("crude-country-dropdown", "value"),
+         Input("selected-country-map-store", "data"),
+         Input("table-map-filter-active-store", "data")],
         prevent_initial_call=False
     )
-    def update_profiled_streams_with_colors(selected_streams, stream_options, chart_figure, active_tab):
+    def update_profiled_streams_with_colors(selected_streams, stream_options, chart_figure, active_tab, country, selected_country_map, table_map_filter_active):
         """Create clickable stream buttons with highlight/dimmed selection - no checkboxes"""
         _ensure_color_maps()
         if not stream_options:
-            return html.Div("No streams available")
+            return html.Div("No streams available"), {}
         
         selected_streams = selected_streams if selected_streams else []
+        
+        # Get profile URLs for the streams
+        profile_urls_dict = {}
+        
+        # Handle country - ensure it's a list
+        # Map selection overrides dropdown if present AND active
+        if selected_country_map and table_map_filter_active:
+            resolved_countries = [selected_country_map]
+        else:
+            resolved_countries = _resolve_countries_selection(country)
+        
+        if resolved_countries:
+            # Get profile URLs from the same data source as the options callback
+            if active_tab == "monthly" or active_tab is None:
+                # Load monthly grades dynamically for all selected countries
+                country_df = get_monthly_grades_for_country(resolved_countries)
+                if not country_df.empty and "Stream" in country_df.columns:
+                    # Extract link if available (profile_url or BSP link)
+                    link_col = None
+                    possible_cols = ["profile_url", "Profile URL", "Profile_URL", "profile-url", "Profile-URL", 
+                                     "BSP link", "BSP Link", "BSP_link", "BSP_link", "bsp_link", "Bsp_link"]
+                    for col in possible_cols:
+                        if col in country_df.columns:
+                            link_col = col
+                            break
+                    
+                    # Also check case-insensitive
+                    if not link_col:
+                        for col in country_df.columns:
+                            if col.lower().replace(" ", "_").replace("-", "_") in ["profile_url", "bsp_link"]:
+                                link_col = col
+                                break
+                    
+                    if link_col:
+                        for _, row in country_df.iterrows():
+                            stream = str(row["Stream"]).strip() if pd.notna(row["Stream"]) else None
+                            url_val = row[link_col]
+                            url = str(url_val).strip() if pd.notna(url_val) and str(url_val).strip() else None
+                            if stream and url and url != "nan" and url != "None":
+                                profile_urls_dict[stream] = url
+            else:
+                # Fetch yearly grades dynamically from DB
+                country_df = get_yearly_grades_for_country(resolved_countries)
+                if not country_df.empty and "Stream" in country_df.columns:
+                    # Extract link if available (profile_url or BSP link)
+                    link_col = None
+                    possible_cols = ["profile_url", "Profile URL", "Profile_URL", "profile-url", "Profile-URL", 
+                                     "BSP link", "BSP Link", "BSP_link", "BSP_link", "bsp_link", "Bsp_link"]
+                    for col in possible_cols:
+                        if col in country_df.columns:
+                            link_col = col
+                            break
+                    
+                    # Also check case-insensitive
+                    if not link_col:
+                        for col in country_df.columns:
+                            if col.lower().replace(" ", "_").replace("-", "_") in ["profile_url", "bsp_link"]:
+                                link_col = col
+                                break
+                    
+                    if link_col:
+                        for _, row in country_df.iterrows():
+                            stream = str(row["Stream"]).strip() if pd.notna(row["Stream"]) else None
+                            url_val = row[link_col]
+                            url = str(url_val).strip() if pd.notna(url_val) and str(url_val).strip() else None
+                            if stream and url and url != "nan" and url != "None":
+                                profile_urls_dict[stream] = url
         
         # Get all available streams from options
         all_available_streams = [opt["value"] for opt in stream_options] if stream_options else []
@@ -2594,7 +2664,6 @@ def register_callbacks(dash_app, server):
         # Create clickable stream buttons with highlight/dimmed states
         stream_items = []
         selected_set = set(selected_streams) if selected_streams else set()
-        profile_urls_dict = {}  # Store profile URLs for navigation
         
         # Helper function to dim a color (reduce opacity/brightness)
         def dim_color(color_hex, opacity=0.3):
@@ -2618,9 +2687,9 @@ def register_callbacks(dash_app, server):
             else:
                 stream = ""
             is_selected = stream in selected_set
-            profile_url = opt.get("profile_url")  # Get profile_url from options
+            profile_url = profile_urls_dict.get(stream)  # Get from our fetched profile URLs
             
-            # Store profile URL for navigation
+            # Store profile URL for navigation (it's already in the dict, but ensure it's there)
             if profile_url:
                 profile_urls_dict[stream] = profile_url
             

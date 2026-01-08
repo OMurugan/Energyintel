@@ -633,10 +633,10 @@ def create_layout(server):
                 html.Label(
                     "Select Export/Production",
                     style={
-                        "fontSize": "20px",
-                        "color": "#d65a00",
+                        "fontSize": "16px",
+                        "color": "#fe5000",
                         "fontWeight": "bold",
-                        "marginBottom": "10px",
+                        "marginBottom": "8px",
                         "display": "block",
                         "fontFamily": "Arial",
                     }
@@ -655,11 +655,46 @@ def create_layout(server):
                         "fontFamily": "Arial",
                     }
                 ),
-            ], style={"marginBottom": "25px", "width": "100%"}),
+            ], style={"marginBottom": "15px", "width": "100%"}),
 
-            html.Div(id="crude-heading", style={"textAlign": "center"}),
-
-            html.Hr(style={"margin": "10px 0", "border": "1px solid #ccc"}),
+            # Table Container Card (Matches projects_by_country.py)
+            html.Div(
+                [
+                    html.Div([
+                        html.Div(id="crude-heading", style={"flex": "1", "textAlign": "center"}),
+                        html.Div([
+                            dcc.Loading(
+                                id="loading-crude-export",
+                                type="default",
+                                color="#fe5000",
+                                children=[
+                                    html.Button(
+                                        "Export to CSV",
+                                        id="crude-comparison-export-btn",
+                                        n_clicks=0,
+                                        style={
+                                            'backgroundColor': 'white',
+                                            'color': '#2c3e50',
+                                            'border': '1px solid #dee2e6',
+                                            'padding': '6px 12px',
+                                            'borderRadius': '4px',
+                                            'cursor': 'pointer',
+                                            'fontSize': '12px',
+                                            'fontWeight': 'normal',
+                                        }
+                                    ),
+                                    dcc.Download(id="download-crude-comparison-csv"),
+                                ]
+                            )
+                        ], style={'position': 'absolute', 'right': '0', 'top': '0px'})
+                    ], style={
+                        "display": "flex", 
+                        "justifyContent": "center", 
+                        "alignItems": "center", 
+                        "position": "relative",
+                        "marginBottom": "10px",
+                        "width": "100%"
+                    }),
 
             # CSS for popup menu hover effects and tooltips
             dcc.Markdown("""
@@ -870,27 +905,6 @@ def create_layout(server):
                 "left": "209px"
             }),
             
-            # Export button
-            html.Div([
-                html.Div([
-                    html.Button(
-                        "Export to CSV",
-                        id="crude-comparison-export-btn",
-                        n_clicks=0,
-                        style={
-                            'backgroundColor': 'white',
-                            'color': '#2c3e50',
-                            'border': '1px solid #dee2e6',
-                            'padding': '6px 12px',
-                            'borderRadius': '4px',
-                            'cursor': 'pointer',
-                            'fontSize': '13px',
-                            'display': 'inline-block'
-                        }
-                    ),
-                    dcc.Download(id="download-crude-comparison-csv"),
-                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'marginBottom': '10px'}),
-            ], style={'width': '100%'}),
 
             dcc.Loading(
                 id="crude-comparison-table-loading",
@@ -903,92 +917,98 @@ def create_layout(server):
                         style_table={
                             "overflowX": "auto",
                             "overflowY": "auto",
-                            "height": "1000px",
-                            "maxHeight": "1000px",
+                            "maxHeight": "600px",
                             "border": "1px solid #d9d9d9",
                             "backgroundColor": "white",
                             "position": "relative",
                         },
                         style_cell={
                             "textAlign": "right",
-                            "padding": "2px 8px",
-                            "fontSize": "12px",
-                            "fontFamily": "Arial, sans-serif",
-                            "border": "1px solid #e0e0e0",
-                            "whiteSpace": "normal",
-                            "height": "auto",
-                            "minHeight": "20px",
-                            "color": "#333333",
+                            "paddingTop": "0px",
+                            "paddingBottom": "0px",
+                            "paddingLeft": "4px",
+                            "paddingRight": "4px",
+                            "fontSize": "9px",
+                            "fontFamily": "Lato, sans-serif",
+                            "borderTop": "1px solid #ddd",
+                            "borderBottom": "1px solid #ddd",
+                            "borderLeft": "1px solid #ddd",
+                            "borderRight": "1px solid #ddd",
+                            "whiteSpace": "nowrap",
+                            "overflow": "hidden",
+                            "textOverflow": "ellipsis",
+                            "height": "12px",
+                            "minHeight": "12px",
+                            "lineHeight": "12px",
+                            "color": "rgb(27, 54, 93)",
                         },
                         style_header={
-                            "backgroundColor": "#f2f2f2",
+                            "backgroundColor": "#f8f9fa",
                             "fontWeight": "bold",
-                            "fontSize": "14px",
-                            "fontFamily": "Arial, sans-serif",
-                            "border": "1px solid #d0d0d0",
-                            "color": "#1f3263",
-                            "textAlign": "right",
-                            "padding": "4px 8px",
-                            "position": "relative",
+                            "fontSize": "9px",
+                            "fontFamily": "Lato, sans-serif",
+                            "border": "1px solid #ddd",
+                            "color": "rgb(27, 54, 93)",
+                            "textAlign": "center",
+                            "paddingTop": "0px",
+                            "paddingBottom": "0px",
+                            "paddingLeft": "4px",
+                            "paddingRight": "4px",
+                            "height": "12px",
+                            "minHeight": "12px",
+                            "lineHeight": "12px",
                         },
-                        style_cell_conditional=[
+                        style_header_conditional=[
                             {
                                 "if": {"column_id": "CrudeOil"},
                                 "textAlign": "left",
-                                "fontWeight": "600",
-                                "minWidth": "180px",
-                                "backgroundColor": "#FFFFFF",
-                                "borderRight": "1px solid #d0d0d0",
-                                "paddingLeft": "12px",
-                                "paddingRight": "12px",
-                                "color": "#1f3263",
-                                "cursor": "pointer",
-                            },
-                            {
-                                "if": {"column_id": "CrudeOil", "header": True},
-                                "textAlign": "left",
-                                "color": "#1f3263",
-                                "position": "relative",
+                                "color": "rgb(27, 54, 93)",
+                                "paddingLeft": "4px",
+                                "paddingRight": "4px",
                             },
                             # Year column headers - dark blue, center-aligned
                             {
-                                "if": {"header": True, "column_id": [str(year) for year in range(2007, 2025)]},
+                                "if": {"column_id": [str(year) for year in range(2007, 2025)]},
                                 "color": "#1f3263",
                                 "textAlign": "right",
                             },
                         ],
                         style_data_conditional=[
-                            # All data rows white background
+                            # Odd row striping
                             {
-                                "if": {"row_index": "odd"},
-                                "backgroundColor": "#FFFFFF",
-                            },
-                            {
-                                "if": {"row_index": "even"},
-                                "backgroundColor": "#FFFFFF",
+                                'if': {'row_index': 'odd'},
+                                'backgroundColor': '#f9f9f9'
                             },
                             # CrudeOil column data - dark blue
                             {
                                 "if": {"column_id": "CrudeOil"},
-                                "color": "#1f3263",
-                                "backgroundColor": "#FFFFFF",
+                                "color": "rgb(27, 54, 93)",
+                                "textAlign": "left",
+                                "fontWeight": "600",
+                                "minWidth": "180px",
+                                "borderRight": "1px solid #ddd",
+                                "paddingLeft": "4px",
+                                "paddingRight": "4px",
+                                "cursor": "pointer",
                             },
-                            # Year columns data - dark gray/black, center-aligned
+                            # Year columns data
                             {
                                 "if": {"column_id": [str(year) for year in range(2007, 2025)]},
-                                "color": "#333333",
+                                "color": "rgb(27, 54, 93)",
                                 "textAlign": "right",
                             },
                         ],
                         css=[
                             {
                                 'selector': '.dash-cell[data-dash-column="CrudeOil"]',
-                                'rule': '''
-                                    cursor: pointer !important;
-                                '''
+                                'rule': 'cursor: pointer !important;'
+                            },
+                             {
+                                'selector': '.dash-cell[data-dash-column="CrudeOil"] *',
+                                'rule': 'background-color: transparent !important; background: transparent !important;'
                             },
                             {
-                                'selector': '.dash-cell[data-dash-column="CrudeOil"] a',
+                                'selector': '.dash-cell[data-dash-column="CrudeOil"] a, .dash-cell[data-dash-column="CrudeOil"] a:visited, .dash-cell[data-dash-column="CrudeOil"] a:active',
                                 'rule': '''
                                     color: #1f3263 !important; 
                                     text-decoration: underline !important;
@@ -1002,6 +1022,7 @@ def create_layout(server):
                                 'rule': '''
                                     color: #1f3263 !important; 
                                     text-decoration: underline !important;
+                                    background-color: transparent !important;
                                 '''
                             },
                             {
@@ -1038,8 +1059,8 @@ def create_layout(server):
                             {
                                 'selector': '.dash-header',
                                 'rule': '''
-                                    border-left: 1px solid #d0d0d0 !important;
-                                    border-right: 1px solid #d0d0d0 !important;
+                                    border-left: 1px solid #ddd !important;
+                                    border-right: 1px solid #ddd !important;
                                 '''
                             },
                             # A-Z vertical text for sort order - HIDDEN BY DEFAULT
@@ -1155,15 +1176,67 @@ def create_layout(server):
                                 'selector': '#sum-text-box:hover',
                                 'rule': 'background-color: #f5f5f5 !important; border-color: #999 !important;'
                             },
+                            {
+                                'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner table',
+                                'rule': '--focused-background: transparent !important; --selected-background: transparent !important;'
+                            },
+                            {
+                                'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner table .dash-cell.focused',
+                                'rule': 'outline: none !important; box-shadow: none !important;'
+                            },
+                            {
+                                'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner table .dash-cell.focused[data-dash-column="CrudeOil"]',
+                                'rule': 'border: none !important;'
+                            },
+                            {
+                                'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner table .dash-cell.cell--selected',
+                                'rule': 'outline: none !important; box-shadow: none !important; border: none !important;'
+                            },
+                            {
+                                'selector': '.dash-spreadsheet-container .dash-spreadsheet-inner table .dash-cell.focused a, .dash-spreadsheet-container .dash-spreadsheet-inner table .dash-cell.cell--selected a',
+                                'rule': 'background-color: transparent !important;'
+                            },
+                            {
+                                "selector": ".dash-spreadsheet-container .dash-spreadsheet-inner tr",
+                                "rule": "min-height: 12px !important;"
+                            },
+                            {
+                                "selector": ".dash-spreadsheet-container .dash-spreadsheet-inner .dash-header",
+                                "rule": "height: 12px !important; min-height: 12px !important; line-height: 12px !important; padding-top: 0px !important; padding-bottom: 0px !important; padding-left: 4px !important; padding-right: 4px !important;"
+                            },
+                            {
+                                "selector": ".dash-spreadsheet-container .dash-spreadsheet-inner .dash-cell",
+                                "rule": "height: 12px !important; min-height: 12px !important; line-height: 12px !important; padding-top: 0px !important; padding-bottom: 0px !important; padding-left: 4px !important; padding-right: 4px !important;"
+                            },
+                            {
+                                "selector": ".dash-spreadsheet-container .dash-spreadsheet-inner td .dash-column-markdown",
+                                "rule": "height: 12px !important; display: flex !important; align-items: center !important; font-family: Lato, sans-serif !important;"
+                            },
+                            {
+                                "selector": ".dash-spreadsheet-container .dash-spreadsheet-inner td .dash-column-markdown p",
+                                "rule": "margin: 0 !important; padding: 0 !important;"
+                            },
+                            {
+                                'selector': '.dash-table-tooltip',
+                                'rule': 'font-size: 10px !important; font-family: Lato, sans-serif !important; color: rgb(27, 54, 93) !important; max-width: 400px !important; white-space: normal !important; word-wrap: break-word !important; line-height: 1.4 !important; padding: 6px 8px !important;'
+                            }
                         ],
                         fixed_rows={"headers": True},
                         page_action="none",
-                        sort_action="none",
+                        sort_action="native",
                         filter_action="none",
                         markdown_options={"html": True, "link_target": "_blank"},
                     ),
-                ]
-            ),
+                ]),
+            ],
+            style={
+                "background": "white",
+                "padding": "16px",
+                "borderRadius": "8px",
+                "border": "1px solid #e0e0e0",
+                "width": "100%",
+            }
+        ),
 
             # Store components
             dcc.Store(id='external-url-store'),
@@ -1183,16 +1256,18 @@ def create_layout(server):
             html.Button("Year Column Click", id="year-column-btn", n_clicks=0, style={"display": "none"}),
             html.Button("Field Sort Click", id="field-sort-btn", n_clicks=0, style={"display": "none"}),
             html.Button("Nested Sort Click", id="nested-sort-btn", n_clicks=0, style={"display": "none"}),
+            html.Button("Deselect Cell", id="deselect-cell-btn", n_clicks=0, style={"display": "none"}),
 
             html.Div([
                 html.P(
-                    "Data source: Energy Intelligence",
+                    "Countries: Select jurisdictions are included under countries for data presentation purposes.",
                     style={
                         "fontSize": "11px",
                         "fontStyle": "italic",
                         "color": "#777",
-                        "textAlign": "right",
+                        "textAlign": "left",
                         "marginTop": "8px",
+                        "marginBottom": "0px",
                         "fontFamily": "Arial",
                     },
                 )
@@ -1231,7 +1306,7 @@ def register_callbacks(app, server):
         return html.H2(
             title,
             style={
-                "color": "#d65a00",
+                "color": "#fe5000",
                 "fontSize": "22px",
                 "fontWeight": "bold",
                 "fontFamily": "Arial",
@@ -1242,6 +1317,7 @@ def register_callbacks(app, server):
 
     @app.callback(
         [Output("crude-comparison-table", "data"),
+         Output("crude-comparison-table", "columns"),
          Output("original-data-store", "data"),
          Output("is-combined-mode", "data")],
         [Input("export-production-dropdown", "value"),
@@ -1252,28 +1328,17 @@ def register_callbacks(app, server):
     def reload_data(mode, sum_text_clicks, year_clicks, is_combined):
         trigger = ctx.triggered_id
         
-        # SUM text box OR Year icon click switches to combined mode
         if trigger in ['sum-text-box', 'year-column-btn']:
-            # Use combined data
             combined_data = calculate_combined_sums()
-            return combined_data, combined_data, True
+            cols = _columns_from_records(combined_data)
+            return combined_data, cols, combined_data, True
         else:
-            # Use individual dataset (Production or Exports) - NO sum row
             crude_data, columns = load_crude_data(mode)
-            return crude_data, crude_data, False
+            # Ensure columns are list of dicts, sometimes they are tuples from load_crude_data
+            if isinstance(columns, tuple):
+                columns = list(columns)
+            return crude_data, columns, crude_data, False
 
-    @app.callback(
-        Output("crude-comparison-table", "columns"),
-        [
-            Input("original-data-store", "data"),
-            Input("export-production-dropdown", "value"),
-        ],
-    )
-    def reload_columns(original_data, mode):
-        if original_data:
-            return _columns_from_records(original_data)
-        _, columns = load_crude_data(mode)
-        return columns
 
     # Handle SUM text box display
     @app.callback(
@@ -1535,26 +1600,18 @@ def register_callbacks(app, server):
         
         return sorted_data, dash.no_update
 
-    # Handle sorting from popup menu text options - UPDATED FOR MAXIMUM VALUE SORTING
     @app.callback(
-        [Output('crude-comparison-table', 'data', allow_duplicate=True),
-         Output('current-sort-order', 'data', allow_duplicate=True)],
+        Output('current-sort-order', 'data', allow_duplicate=True),
         [Input('popup-source-btn', 'n_clicks'),
          Input('popup-alphabetic-btn', 'n_clicks'),
          Input('popup-field-btn', 'n_clicks'),
          Input('popup-nested-btn', 'n_clicks')],
-        [State('original-data-store', 'data'),
-         State('current-sort-order', 'data'),
-         State('export-production-dropdown', 'value'),
-         State('is-combined-mode', 'data')],
+        [State('current-sort-order', 'data')],
         prevent_initial_call=True
     )
     def handle_popup_sorting(popup_source_clicks, popup_alpha_clicks,
                            popup_field_clicks, popup_nested_clicks,
-                           original_data, current_sort, mode, is_combined):
-        if not original_data:
-            return dash.no_update, dash.no_update
-            
+                           current_sort):
         trigger = ctx.triggered_id
         
         if trigger == 'popup-source-btn':
@@ -1566,70 +1623,78 @@ def register_callbacks(app, server):
         elif trigger == 'popup-nested-btn':
             sort_type = 'nested'
         else:
-            return dash.no_update, dash.no_update
+            return dash.no_update
         
-        direction = current_sort.get('direction', 'asc')
-        
-        # If we're in combined mode, use the combined data directly
-        if is_combined:
-            combined_data = calculate_combined_sums()
-            return combined_data, {'type': sort_type, 'direction': direction}
-            
-        df = pd.DataFrame(original_data)
-        
-        if sort_type == 'alphabetic':
-            df_sorted = df.sort_values('CrudeOil', ascending=(direction == 'asc'), na_position='last')
-        elif sort_type in ['field', 'nested']:
-            # Use maximum value sorting for Field and Nested
-            sorted_data = sort_by_maximum_value(original_data, direction)
-            df_sorted = pd.DataFrame(sorted_data)
-        else:
-            df_sorted = df
-        
-        sorted_data = df_sorted.to_dict('records')
-        
-        return sorted_data, {'type': sort_type, 'direction': direction}
+        direction = current_sort.get('direction', 'asc') if current_sort else 'asc'
+        return {'type': sort_type, 'direction': direction}
 
     @app.callback(
-        [Output('external-url-store', 'data'),
-         Output('selected-cell-store', 'data')],
+        [Output('selected-cell-store', 'data'),
+         Output('crude-comparison-table', 'active_cell'),
+         Output('external-url-store', 'data')],
         Input('crude-comparison-table', 'active_cell'),
-        [State('crude-comparison-table', 'data'),
-         State('selected-cell-store', 'data')],
+        [State('selected-cell-store', 'data'),
+         State('crude-comparison-table', 'derived_virtual_data'),
+         State('crude-comparison-table', 'data')],
         prevent_initial_call=True
     )
-    def handle_cell_click(active_cell, data, previous_selected):
-        if active_cell and data:
-            row = active_cell['row']
-            column = active_cell['column_id']
-            
-            if row is not None and row < len(data):
-                crude_markdown = data[row].get('CrudeOil', '')
-                url_match = re.search(r'\[.*?\]\((.*?)\)', crude_markdown)
-                
-                if url_match:
-                    external_url = url_match.group(1)
-                    
-                    if column == "CrudeOil":
-                        # Click on CrudeOil column - highlight entire row
-                        selected_cell = {
-                            'row': row,
-                            'column': 'row',  # Special marker for row highlighting
-                            'value': None
-                        }
-                        return external_url, selected_cell
-                    else:
-                        # Click on value column - highlight specific cell
-                        cell_value = data[row].get(column)
-                        if cell_value and str(cell_value).strip():
-                            selected_cell = {
-                                'row': row,
-                                'column': column,
-                                'value': cell_value
-                            }
-                            return external_url, selected_cell
+    def manage_selection(active_cell, current_selection, virtual_data, original_data):
+        """
+        Handle cell selections using the 'Reset Pattern'.
+        - derived_virtual_data (rows): Represents the currently visible (sorted/filtered) data.
+        - active_cell['row']: Corresponds to the index in derived_virtual_data.
+        """
+        if not active_cell:
+            return dash.no_update, dash.no_update, dash.no_update
+
+        row_idx = active_cell['row']
+        column_id = active_cell['column_id']
         
-        raise dash.exceptions.PreventUpdate
+        # Determine which data source to use (Virtual is prioritized as it matches UI)
+        rows = virtual_data if virtual_data is not None else original_data
+        
+        # Verify row index is valid
+        if not rows or row_idx is None or row_idx < 0 or row_idx >= len(rows):
+             return dash.no_update, None, dash.no_update
+
+        # Construct the clicked cell object
+        clicked_cell = None
+        
+        # 1. CrudeOil Row Selection
+        if column_id == "CrudeOil":
+            clicked_cell = {
+                'row': row_idx,
+                'column': 'row',
+                'value': None
+            }
+        # 2. Data Cell Selection
+        else:
+            # Safe access to value
+            cell_value = rows[row_idx].get(column_id)
+            # Only allow selection if there is a visible value
+            if cell_value and str(cell_value).strip():
+                clicked_cell = {
+                    'row': row_idx,
+                    'column': column_id,
+                    'value': cell_value
+                }
+
+        # If invalid click (empty cell), clear active_cell to reset state, but don't change selection
+        if not clicked_cell:
+            return dash.no_update, None, dash.no_update
+
+        # CHECK FOR TOGGLE: Compare Row and Column only
+        # We explicitly cast to ensure JSON serialization (e.g. 0 vs 0.0) doesn't break equality
+        if current_selection and \
+           int(current_selection.get('row')) == int(clicked_cell['row']) and \
+           str(current_selection.get('column')) == str(clicked_cell['column']):
+            # MATCH -> Toggle OFF (Clear Selection)
+            print(f"Toggle OFF: Deselecting row {row_idx}")
+            return None, None, dash.no_update
+        else:
+            # NO MATCH -> Toggle ON (Set Selection)
+            print(f"Toggle ON: Selecting {clicked_cell}")
+            return clicked_cell, None, dash.no_update
 
     @app.callback(
         Output('crude-comparison-table', 'style_data_conditional'),
@@ -1653,37 +1718,33 @@ def register_callbacks(app, server):
             if selected_col == 'row':
                 # Highlight entire row - like fig1 (light blue background)
                 style_conditions = [
-                    # Dim all other rows
-                    {"if": {"row_index": "odd"}, "backgroundColor": "#f5f5f5", "opacity": "0.5"},
-                    {"if": {"row_index": "even"}, "backgroundColor": "#ffffff", "opacity": "0.5"},
-                    # Highlight the selected row
-                    {"if": {"row_index": selected_row}, "backgroundColor": "#e6f3ff", "opacity": "1", "fontWeight": "600"},
-                    # CrudeOil column styling
-                    {"if": {"column_id": "CrudeOil"}, "color": "#1f3263", "cursor": "pointer"},
-                    {"if": {"column_id": "CrudeOil", "row_index": selected_row}, "color": "#1f3263", "backgroundColor": "#e6f3ff", "fontWeight": "600"},
-                    # Year columns styling
-                    {"if": {"column_id": numeric_columns}, "cursor": "pointer"},
-                    {"if": {"column_id": numeric_columns, "row_index": selected_row}, "color": "#1f3263", "backgroundColor": "#e6f3ff", "fontWeight": "600"},
+                    # 1. Dim all other rows (data columns)
+                    {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9", "color": "rgba(27, 54, 93, 0.4)"},
+                    {"if": {"row_index": "even"}, "backgroundColor": "#ffffff", "color": "rgba(27, 54, 93, 0.4)"},
+                    # 2. CrudeOil column default styling
+                    {"if": {"column_id": "CrudeOil"}, "color": "#1f3263", "cursor": "pointer", "opacity": "1"},
+                    # 3. Highlight the selected row (All columns)
+                    {"if": {"row_index": selected_row}, "backgroundColor": "#e6f3ff", "color": "#1f3263", "opacity": "1"},
+                    # 4. Explicitly highlight CrudeOil for this row (Highest Priority)
+                    {"if": {"row_index": selected_row, "column_id": "CrudeOil"}, "backgroundColor": "#e6f3ff", "color": "#1f3263", "fontWeight": "600"},
                 ]
             else:
-                # Highlight specific cell and dim others
+                # Highlight specific cell only (not entire row)
                 style_conditions = [
-                    # Dim all cells
-                    {"if": {"row_index": "odd"}, "backgroundColor": "#f5f5f5", "opacity": "0.4"},
-                    {"if": {"row_index": "even"}, "backgroundColor": "#ffffff", "opacity": "0.4"},
-                    # Highlight the selected cell
+                    # 1. Dim everything by default
+                    {"if": {"row_index": "odd"}, "backgroundColor": "#f9f9f9", "color": "rgba(27, 54, 93, 0.2)"},
+                    {"if": {"row_index": "even"}, "backgroundColor": "#ffffff", "color": "rgba(27, 54, 93, 0.2)"},
+                    # 2. CrudeOil column remains visible
+                    {"if": {"column_id": "CrudeOil"}, "color": "#1f3263", "cursor": "pointer", "opacity": "1"},
+                    # 3. Keep the CrudeOil cell in the selected row visible (but not highlighted)
+                    {"if": {"row_index": selected_row, "column_id": "CrudeOil"}, "color": "#1f3263", "fontWeight": "600", "opacity": "1"},
+                    # 4. Highlight ONLY the clicked data cell specifically
                     {"if": {"row_index": selected_row, "column_id": selected_col}, 
-                     "color": "#1f3263", 
                      "backgroundColor": "#e6f3ff", 
+                     "color": "#1f3263", 
                      "fontWeight": "bold", 
                      "border": "2px solid #1f3263", 
-                     "opacity": "1",
-                     "cursor": "pointer"},
-                    # Keep CrudeOil column visible but dimmed
-                    {"if": {"column_id": "CrudeOil"}, "color": "#1f3263", "cursor": "pointer", "opacity": "0.6"},
-                    {"if": {"column_id": "CrudeOil", "row_index": selected_row}, "color": "#1f3263", "opacity": "0.8"},
-                    # Dim other year columns
-                    {"if": {"column_id": numeric_columns}, "cursor": "pointer", "opacity": "0.4"},
+                     "opacity": "1"}
                 ]
                 
             return style_conditions
@@ -1708,7 +1769,7 @@ def register_callbacks(app, server):
     # Add custom CSS for the header elements and tooltips
     app.clientside_callback(
         """
-        function(n) {
+        function(columns) {
             setTimeout(function() {
                 // Add A/Z and SVG sort icon to CrudeOil header
                 const crudeHeader = document.querySelector('.dash-header[data-dash-column="CrudeOil"]');
@@ -1846,7 +1907,7 @@ def register_callbacks(app, server):
                     };
                 }
                 
-                // Handle CrudeOil cell clicks - prevent link navigation, open in new tab, and highlight row
+                // Handle CrudeOil cell clicks - prevent link navigation, open in new tab
                 const crudeCells = document.querySelectorAll('.dash-cell[data-dash-column="CrudeOil"]');
                 crudeCells.forEach(function(cell) {
                     // Make the entire cell clickable
@@ -1870,15 +1931,9 @@ def register_callbacks(app, server):
                             
                             // Don't stop propagation - let the event bubble to the cell
                             // This allows DataTable's active_cell to fire
-                            // The cell click handler will then highlight the row
+                            // The Python callback will handle highlighting
                         }, false); // Use bubble phase so cell click can also fire
                     });
-                    
-                    // Also handle clicks directly on the cell (not just the link)
-                    cell.addEventListener('click', function(e) {
-                        // If clicking on the cell (not the link), the active_cell will fire naturally
-                        // The Python callback will handle highlighting
-                    }, false);
                 });
                 
             }, 100);
