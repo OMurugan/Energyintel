@@ -1144,17 +1144,15 @@ def register_callbacks(dash_app, server):
                 const style = document.createElement('style');
                 style.id = styleId;
                 style.innerHTML = `
-                    #imports-detail-table .dash-spreadsheet-container.column-highlight-active td[data-dash-column^="Y|"],
-                    #imports-detail-table .dash-spreadsheet-container.column-highlight-active th[data-dash-column^="Y|"] {
-                        opacity: 0.3 !important;
+                    #imports-detail-table .dash-spreadsheet-container.column-highlight-active td {
+                        opacity: 0.3;
                         transition: opacity 0.2s;
                     }
-                    #imports-detail-table .dash-spreadsheet-container.column-highlight-active td.column-highlighted,
-                    #imports-detail-table .dash-spreadsheet-container.column-highlight-active th.column-header-highlighted {
+                    #imports-detail-table .dash-spreadsheet-container.column-highlight-active td.column-highlighted {
                         opacity: 1 !important;
                         background-color: #e7f3ff !important;
                     }
-                    #imports-detail-table .dash-spreadsheet-container.column-highlight-active th.column-header-highlighted {
+                    #imports-detail-table .dash-spreadsheet-container th.column-header-highlighted {
                         background-color: #3366cc !important;
                         color: white !important;
                         font-weight: bold !important;
@@ -1163,13 +1161,13 @@ def register_callbacks(dash_app, server):
                 document.head.appendChild(style);
             }
 
-            // 2. Add click listener once for both headers and cells
-            if (spreadsheet.dataset.clickListenerAdded !== 'true') {
-                spreadsheet.dataset.clickListenerAdded = 'true';
+            // 2. Add header click listener once
+            if (spreadsheet.dataset.headerListenerAdded !== 'true') {
+                spreadsheet.dataset.headerListenerAdded = 'true';
                 spreadsheet.addEventListener('click', function(e) {
-                    const target = e.target.closest('th[data-dash-column], td[data-dash-column]');
-                    if (target) {
-                        const columnId = target.getAttribute('data-dash-column');
+                    const header = e.target.closest('th[data-dash-column]');
+                    if (header) {
+                        const columnId = header.getAttribute('data-dash-column');
                         // ONLY highlight columns that start with 'Y|' (Year columns)
                         if (columnId && columnId.startsWith('Y|')) {
                             const input = document.getElementById('selected-column-hidden-input');
@@ -1424,7 +1422,7 @@ def register_callbacks(dash_app, server):
                             'column_id': 'Exporter'
                         },
                         'backgroundColor': '#3366cc',
-                        'color': 'white',
+                        'color': 'white !important',
                         'fontWeight': 'bold'
                     }
                 ])
@@ -1481,10 +1479,6 @@ def register_callbacks(dash_app, server):
                     clicked_exporter = table_data[row_idx].get('_ExporterFull')
                     if clicked_exporter:
                         new_exporter = None if current_exporter == clicked_exporter else clicked_exporter
-                elif '|' in col_id:
-                    # Column selection (Year/Quarter etc) - Toggle highlight for year columns
-                    if col_id.startswith('Y|'):
-                        new_column = None if current_column == col_id else col_id
                 pass
             elif row_idx == -1:
                 pass
