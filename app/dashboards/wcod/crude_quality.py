@@ -1814,7 +1814,7 @@ def create_layout(dash_app=None):
                                 {'label': 'Export to PNG', 'value': 'png'},
                                 {'label': 'Export to CSV', 'value': 'csv'}
                             ],
-                            placeholder='Export Data',
+                            placeholder='Export',
                             style={
                                 'width': '200px',
                                 'marginRight': '10px',
@@ -1988,6 +1988,7 @@ def create_layout(dash_app=None):
                     type="circle",
                     children=dash_table.DataTable(
                         id='crude-quality-table',
+                        style_as_list_view=True,
                         columns=[],  # Will be updated by callback when data loads
                         data=[],  # Will be updated by callback when data loads
                         style_table={
@@ -2001,17 +2002,22 @@ def create_layout(dash_app=None):
                             'minWidth': '100%'
                         },
                         style_cell={
+                            'fontFamily': 'Arial',
+                            'fontSize': '8pt',
+                            'fontStyle': 'normal',
+                            'fontWeight': 'normal',
+                            'textDecoration': 'none',
+                            'color': 'rgb(27, 54, 93)',
+                            'textAlign': 'left',
+                            'maxWidth': '80px',
                             'padding': '4px 6px',
-                            'fontSize': '12px',
-                            'fontFamily': 'Arial, sans-serif',
-                            'border': '1px solid #E6E6E6',
+                            'border': 'none',
+                            'borderBottom': '1px solid #E6E6E6',
+                            'backgroundColor': 'white',
+                            'height': '25px',
                             'whiteSpace': 'nowrap',
                             'overflow': 'hidden',
                             'textOverflow': 'ellipsis',
-                            'textAlign': 'right',
-                            'backgroundColor': 'white',
-                            'height': '25px',
-                            'minWidth': '80px',
                         },
                         style_header={
                             'backgroundColor': 'white',
@@ -2032,7 +2038,7 @@ def create_layout(dash_app=None):
                                 'minWidth': '140px',
                                 'width': '140px',
                                 'fontWeight': 'bold',
-                                'color': '#333',
+                                'color': 'rgb(27, 54, 93)',
                                 'borderRight': '2px solid #D3D3D3',
                                 'fontSize': '12px',
                                 'padding': '8px 8px'
@@ -2069,7 +2075,7 @@ def create_layout(dash_app=None):
                             },
                             {
                                 'if': {'row_index': 'even'},
-                                'backgroundColor': '#ffffff'
+                                'backgroundColor': '#f5f5f5'
                             },
                             # Country column styling - header rows (non-empty)
                             {
@@ -2182,6 +2188,7 @@ def create_layout(dash_app=None):
                     type="circle",
                     children=dash_table.DataTable(
                         id='yield-volume-table',
+                        style_as_list_view=True,
                         columns=[],  # Will be updated by callback when data loads
                         data=[],  # Will be updated by callback when data loads
                         style_table={
@@ -2194,17 +2201,22 @@ def create_layout(dash_app=None):
                             'width': '100%'
                         },
                         style_cell={
+                            'fontFamily': 'Arial',
+                            'fontSize': '8pt',
+                            'fontStyle': 'normal',
+                            'fontWeight': 'normal',
+                            'textDecoration': 'none',
+                            'color': 'rgb(27, 54, 93)',
+                            'textAlign': 'left',
+                            'maxWidth': '80px',
                             'padding': '4px 6px',
-                            'fontSize': '12px',
-                            'fontFamily': 'Arial, sans-serif',
-                            'border': '1px solid #E6E6E6',
-                            'textAlign': 'right',
-                            'minWidth': '80px',
+                            'border': 'none',
+                            'borderBottom': '1px solid #E6E6E6',
                             'backgroundColor': 'white',
                             'height': '25px',
                             'whiteSpace': 'nowrap',
                             'overflow': 'hidden',
-                            'textOverflow': 'ellipsis'
+                            'textOverflow': 'ellipsis',
                         },
                         style_header={
                             'fontWeight': 'bold',
@@ -2225,7 +2237,7 @@ def create_layout(dash_app=None):
                                 'minWidth': '140px',
                                 'width': '140px',
                                 'fontWeight': 'bold',
-                                'color': '#333',
+                                'color': 'rgb(27, 54, 93)',
                                 'borderRight': '2px solid #D3D3D3',
                                 'fontSize': '12px',
                                 'padding': '8px 8px'
@@ -2262,7 +2274,7 @@ def create_layout(dash_app=None):
                             },
                             {
                                 'if': {'row_index': 'even'},
-                                'backgroundColor': '#ffffff'
+                                'backgroundColor': '#f5f5f5'
                             },
                             # Country column
                             {
@@ -2361,13 +2373,7 @@ def create_crude_quality_dashboard(server, url_base_pathname="/dash/crude-qualit
             width: 100% !important;
         }
         
-        /* Ensure proper table cell borders and spacing */
-        #crude-quality-table td,
-        #crude-quality-table th,
-        #yield-volume-table td,
-        #yield-volume-table th {
-            border: 1px solid #E6E6E6 !important;
-        }
+
         
         /* Remove top border for empty country cells to create grouping effect */
         #crude-quality-table tbody tr td:first-child:empty,
