@@ -1564,6 +1564,8 @@ def create_layout(server=None):
         dcc.Store(id="selected-country-map-store", data=None),
         # Store to track if map selection should filter the table
         dcc.Store(id="table-map-filter-active-store", data=False),
+        # Store to track selected bar for monthly chart isolation
+        dcc.Store(id="selected-bar-store", data=None),
         dcc.Store(id="stream-navigation-dummy", data=None),
         # Custom CSS to style markdown links in DataTable to look like normal text
         html.Div(
@@ -3002,6 +3004,100 @@ def register_callbacks(dash_app, server):
         return current_selected, current_active
     
     @dash_app.callback(
+        Output("selected-bar-store", "data"),
+        Input("production-breakdown-chart", "clickData"),
+        [State("selected-bar-store", "data"),
+         State("crude-main-tabs", "value"),
+         State("production-year-dropdown", "value")],
+        prevent_initial_call=True
+    )
+    def handle_chart_bar_click(clickData, current_selection, tab, production_years):
+        """
+        Handle chart bar clicks for single-bar global selection behavior.
+        
+        Core Logic:
+        - Only ONE bar can be active across the entire chart at any time
+        - Selection is based on unique bar identity: {year, month, stream}
+        - Click same bar → deselect (activeBar = null)
+        - Click different bar → replace selection (activeBar = new bar)
+        """
+        if not clickData or tab != "monthly":
+            return no_update
+        
+        try:
+            # Extract click information
+            point = clickData["points"][0]
+            clicked_stream = point.get("legendgroup") or point.get("name", "")
+            clicked_month = point.get("x", "")
+            
+            # Get the year from the subplot structure
+            # In monthly view, each year is a separate subplot (column)
+            subplot_col = point.get("xaxis", "x")  # e.g., "x", "x2", "x3"
+            
+            # Extract column number from xaxis (x=1, x2=2, x3=3, etc.)
+            if subplot_col == "x":
+                col_idx = 0
+            else:
+                col_idx = int(subplot_col[1:]) - 1  # x2 -> 1, x3 -> 2, etc.
+            
+            # Map column index to year based on production_years selection
+            resolved_years = _resolve_years_selection(production_years)
+            if resolved_years:
+                selected_years = sorted([str(y) for y in resolved_years])
+                if col_idx < len(selected_years):
+                    clicked_year = selected_years[col_idx]
+                else:
+                    print(f"DEBUG CHART CLICK: Column index {col_idx} out of range for years {selected_years}")
+                    return no_update
+            else:
+                print(f"DEBUG CHART CLICK: No production years available")
+                return no_update
+            
+            print(f"DEBUG CHART CLICK: Bar clicked - Stream: '{clicked_stream}', Month: '{clicked_month}', Year: '{clicked_year}'")
+            print(f"DEBUG CHART CLICK: Data types - Stream: {type(clicked_stream)}, Month: {type(clicked_month)}, Year: {type(clicked_year)}")
+            
+            # Core Logic: Single-bar global selection
+            # Create the clicked bar identity - ensure all values are strings for consistent comparison
+            clicked_bar = {
+                "year": str(clicked_year),
+                "month": str(clicked_month),
+                "stream": str(clicked_stream)
+            }
+            
+            # Check if same bar is clicked (toggle off)
+            if (current_selection and 
+                str(current_selection.get("year")) == str(clicked_bar["year"]) and
+                str(current_selection.get("month")) == str(clicked_bar["month"]) and
+                str(current_selection.get("stream")) == str(clicked_bar["stream"])):
+                print(f"DEBUG CHART CLICK: Same bar clicked ({clicked_stream}-{clicked_month}-{clicked_year}), clearing selection (activeBar = null)")
+                return None  # activeBar = null
+            
+            # New bar selected → replace previous selection
+            active_bar = {
+                "year": str(clicked_bar["year"]),
+                "month": str(clicked_bar["month"]),
+                "stream": str(clicked_bar["stream"]),
+                "timestamp": pd.Timestamp.now().isoformat()  # To force updates
+            }
+            
+            if current_selection:
+                prev_stream = current_selection.get("stream")
+                prev_month = current_selection.get("month")
+                prev_year = current_selection.get("year")
+                print(f"DEBUG CHART CLICK: Replacing selection from {prev_stream}-{prev_month}-{prev_year} to {clicked_stream}-{clicked_month}-{clicked_year}")
+            else:
+                print(f"DEBUG CHART CLICK: New bar selected: {clicked_stream}-{clicked_month}-{clicked_year}")
+            
+            print(f"DEBUG CHART CLICK: activeBar = {active_bar}")
+            return active_bar
+            
+        except Exception as e:
+            print(f"ERROR CHART CLICK: {e}")
+            import traceback
+            traceback.print_exc()
+            return no_update
+    
+    @dash_app.callback(
         Output("crude-map", "figure"),
         [Input("crude-year-dropdown", "value"),
          Input("crude-year-month-dropdown", "value"),
@@ -3260,10 +3356,11 @@ def register_callbacks(dash_app, server):
          Input("crude-main-tabs", "value"),
          Input("selected-country-map-store", "data"),
          Input("table-map-filter-active-store", "data"),
+         Input("selected-bar-store", "data"),
          Input("current-submenu", "data")],
         prevent_initial_call=False
     )
-    def update_breakdown(country, year, year_month, production_years, profiled, tab, selected_country_map, table_map_filter_active, current_submenu):
+    def update_breakdown(country, year, year_month, production_years, profiled, tab, selected_country_map, table_map_filter_active, selected_bar, current_submenu):
         """Update production breakdown chart - only loads data when page is active"""
         # Only load data if page is active
         if current_submenu != 'crude-overview':
@@ -3283,7 +3380,7 @@ def register_callbacks(dash_app, server):
         
         try:
             month_names = ["January", "February", "March", "April", "May", "June",
-                          "July", "August", "September", "October", "November", "December"]
+                        "July", "August", "September", "October", "November", "December"]
             
             # Handle map selection - update country selection
             # Only use map selection if table_map_filter_active is True
@@ -3392,9 +3489,9 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                # Apply profiled streams filter - check if all streams are selected (default mode)
-                # If all streams selected, don't filter (show all streams)
-                # If a specific stream is selected, filter to show only that stream
+                # NEW LOGIC: Handle stream selection for yearly chart
+                # For yearly view: If a single stream is selected, we should highlight it across ALL years
+                # but NOT filter the data - keep all streams and all years, just adjust opacity
                 is_single_stream_selected = False
                 selected_stream = None
                 if profiled and len(profiled) > 0:
@@ -3405,22 +3502,17 @@ def register_callbacks(dash_app, server):
                     # If all streams are selected, don't filter (show all)
                     if profiled_set == available_set and len(available_set) > 0:
                         print(f"DEBUG BREAKDOWN YEARLY: All streams selected (default mode), showing all streams")
-                        # Don't filter - show all streams
+                        # Don't filter - show all streams at full opacity
                         is_single_stream_selected = False
                     elif len(profiled) == 1:
-                        # Single stream selected: filter to show only that stream
+                        # Single stream selected: highlight this stream across all years
                         selected_stream = profiled[0]
                         is_single_stream_selected = True
-                        if selected_stream in df["Stream"].values:
-                            df = df[df["Stream"] == selected_stream].copy()
-                            print(f"DEBUG BREAKDOWN YEARLY: After profiled filter (selected: {selected_stream}), df length={len(df)}")
-                        else:
-                            print(f"DEBUG BREAKDOWN YEARLY: Selected stream '{selected_stream}' not found in data")
-                            is_single_stream_selected = False
+                        print(f"DEBUG BREAKDOWN YEARLY: Single stream selected ({selected_stream}), will highlight across all years")
+                        # IMPORTANT: Don't filter the data here - we'll handle highlighting via opacity later
                     else:
                         # Multiple streams selected (shouldn't happen in single selection mode, but handle it)
-                        df = df[df["Stream"].isin(profiled)].copy()
-                        print(f"DEBUG BREAKDOWN YEARLY: After profiled filter ({len(profiled)} streams), df length={len(df)}")
+                        print(f"DEBUG BREAKDOWN YEARLY: Multiple streams selected ({len(profiled)} streams), showing all at full opacity")
                         is_single_stream_selected = False
                 else:
                     # If no stream selected, show all streams (default mode)
@@ -3491,75 +3583,68 @@ def register_callbacks(dash_app, server):
                 
                 print(f"DEBUG BREAKDOWN YEARLY: Color map: {color_map}")
                 
-                # Handle years based on selection mode
+                # FIXED LOGIC: Always show all years from 2006-2024 regardless of stream selection
+                # This ensures the yearly chart always displays the full timeline
                 all_years_list = [str(y) for y in range(2006, 2025)]
                 all_streams_list = order_streams_list(agg["Stream"].unique().tolist(), tab="yearly")
                 
-                if is_single_stream_selected:
-                    # Single stream selected: Only show years that have data for this stream
-                    # Filter out years with zero or no data
-                    agg_with_data = agg[agg["value"] > 0].copy()
-                    years_with_data = sorted(agg_with_data["year"].unique().tolist())
-                    
-                    print(f"DEBUG BREAKDOWN YEARLY: Single stream selected ({selected_stream})")
-                    print(f"DEBUG BREAKDOWN YEARLY: Years with data: {years_with_data}")
-                    
-                    # Only include years that have actual data
-                    agg_for_chart = agg_with_data.copy()
-                    
-                    # Update years_sorted to only include years with data
-                    years_sorted = years_with_data
-                    
-                    print(f"DEBUG BREAKDOWN YEARLY: Filtered to years with data: {years_sorted} ({len(years_sorted)} years)")
-                else:
-                    # Default mode (all streams): Show all years from 2006-2024
-                    print(f"DEBUG BREAKDOWN YEARLY: Creating complete combo - years: {len(all_years_list)}, streams: {len(all_streams_list)}")
-                    
-                    # Create complete combination
-                    complete_combos = pd.DataFrame(list(itertools.product(all_years_list, all_streams_list)), 
-                                                   columns=["year", "Stream"])
-                    
-                    # Merge with actual data
-                    agg_complete = complete_combos.merge(agg, on=["year", "Stream"], how="left")
-                    agg_complete["value"] = agg_complete["value"].fillna(0)
-                    
-                    print(f"DEBUG BREAKDOWN YEARLY: Complete data shape: {agg_complete.shape}")
-                    print(f"DEBUG BREAKDOWN YEARLY: Years in complete data: {sorted(agg_complete['year'].unique())}")
-                    print(f"DEBUG BREAKDOWN YEARLY: Streams in complete data: {agg_complete['Stream'].unique().tolist()}")
-                    print(f"DEBUG BREAKDOWN YEARLY: Non-zero records: {len(agg_complete[agg_complete['value'] > 0])}")
-                    
-                    # IMPORTANT: For X-axis to show all years, we need to ensure each year appears in the data
-                    # Plotly will only show categories that exist in the data, so we need to include all years
-                    # We'll filter out zero values for individual stream-year combos, but ensure each year
-                    # has at least one entry (even if it's a tiny value) so it appears on the X-axis
-                    
-                    agg_nonzero = agg_complete.copy()
-                    
-                    years_in_data = set(agg_nonzero["year"].unique())
-                    missing_years = [y for y in all_years_list if y not in years_in_data]
-                    
-                    print(f"DEBUG BREAKDOWN YEARLY: Years with non-zero data: {sorted(years_in_data)}")
-                    print(f"DEBUG BREAKDOWN YEARLY: Missing years (will add placeholder): {missing_years}")
-                    
-                    # For years that have no data at all, add a placeholder entry so they appear on X-axis
-                    # Use a very small value (0.0001) that won't be visible but ensures the year appears
-                    if missing_years and len(all_streams_list) > 0:
-                        placeholder_data = pd.DataFrame({
-                            "year": missing_years,
-                            "Stream": [all_streams_list[0]] * len(missing_years),
-                            "value": [0.0001] * len(missing_years)  # Tiny invisible value
-                        })
-                        # Add Country column to placeholder if Country exists in agg_complete
-                        if "Country" in agg_complete.columns:
-                            # Get Country from the first non-null value in agg_complete, or use empty string
-                            default_country = agg_complete["Country"].dropna().iloc[0] if not agg_complete["Country"].dropna().empty else ""
-                            placeholder_data["Country"] = default_country
-                        agg_for_chart = pd.concat([agg_nonzero, placeholder_data], ignore_index=True)
-                        print(f"DEBUG BREAKDOWN YEARLY: Added placeholder entries for {len(missing_years)} years")
+                # Always create complete combination for yearly view (show all years)
+                print(f"DEBUG BREAKDOWN YEARLY: Creating complete combo - years: {len(all_years_list)}, streams: {len(all_streams_list)}")
+                
+                # Create complete combination
+                complete_combos = pd.DataFrame(list(itertools.product(all_years_list, all_streams_list)), 
+                                               columns=["year", "Stream"])
+                
+                # Merge with actual data
+                agg_complete = complete_combos.merge(agg, on=["year", "Stream"], how="left")
+                agg_complete["value"] = agg_complete["value"].fillna(0)
+                
+                # Add Country column if it exists in agg
+                if "Country" in agg.columns:
+                    # For missing combinations, use the country filter variable
+                    if country and len(country) > 0:
+                        default_country = ", ".join(sorted(country)) if len(country) > 1 else country[0]
                     else:
-                        agg_for_chart = agg_nonzero
-                    
-                    years_sorted = sorted(all_years_list)  # 2006 to 2024 (ascending order)
+                        default_country = ""
+                    agg_complete["Country"] = agg_complete["Country"].fillna(default_country)
+                
+                print(f"DEBUG BREAKDOWN YEARLY: Complete data shape: {agg_complete.shape}")
+                print(f"DEBUG BREAKDOWN YEARLY: Years in complete data: {sorted(agg_complete['year'].unique())}")
+                print(f"DEBUG BREAKDOWN YEARLY: Streams in complete data: {agg_complete['Stream'].unique().tolist()}")
+                print(f"DEBUG BREAKDOWN YEARLY: Non-zero records: {len(agg_complete[agg_complete['value'] > 0])}")
+                
+                # For X-axis to show all years, we need to ensure each year appears in the data
+                # Plotly will only show categories that exist in the data, so we need to include all years
+                # We'll filter out zero values for individual stream-year combos, but ensure each year
+                # has at least one entry (even if it's a tiny value) so it appears on the X-axis
+                
+                agg_nonzero = agg_complete.copy()
+                
+                years_in_data = set(agg_nonzero["year"].unique())
+                missing_years = [y for y in all_years_list if y not in years_in_data]
+                
+                print(f"DEBUG BREAKDOWN YEARLY: Years with data: {sorted(years_in_data)}")
+                print(f"DEBUG BREAKDOWN YEARLY: Missing years (will add placeholder): {missing_years}")
+                
+                # For years that have no data at all, add a placeholder entry so they appear on X-axis
+                # Use a very small value (0.0001) that won't be visible but ensures the year appears
+                if missing_years and len(all_streams_list) > 0:
+                    placeholder_data = pd.DataFrame({
+                        "year": missing_years,
+                        "Stream": [all_streams_list[0]] * len(missing_years),
+                        "value": [0.0001] * len(missing_years)  # Tiny invisible value
+                    })
+                    # Add Country column to placeholder if Country exists in agg_complete
+                    if "Country" in agg_complete.columns:
+                        # Get Country from the first non-null value in agg_complete, or use empty string
+                        default_country = agg_complete["Country"].dropna().iloc[0] if not agg_complete["Country"].dropna().empty else ""
+                        placeholder_data["Country"] = default_country
+                    agg_for_chart = pd.concat([agg_nonzero, placeholder_data], ignore_index=True)
+                    print(f"DEBUG BREAKDOWN YEARLY: Added placeholder entries for {len(missing_years)} years")
+                else:
+                    agg_for_chart = agg_nonzero
+                
+                years_sorted = sorted(all_years_list)  # 2006 to 2024 (ascending order)
                 
                 print(f"DEBUG BREAKDOWN YEARLY: Final chart data shape: {agg_for_chart.shape}")
                 print(f"DEBUG BREAKDOWN YEARLY: Years in chart data: {sorted(agg_for_chart['year'].unique())}")
@@ -3569,47 +3654,31 @@ def register_callbacks(dash_app, server):
                 
                 if len(agg_for_chart) == 0:
                     print("DEBUG BREAKDOWN YEARLY: No data, creating empty chart")
-                    # Create empty chart - use years_sorted which is already set based on selection mode
-                    if is_single_stream_selected:
-                        # For single stream with no data, show empty chart with no years
-                        fig = go.Figure()
-                        fig.add_annotation(text=f"No data available for {selected_stream}", 
-                                         xref="paper", yref="paper",
-                                         x=0.5, y=0.5, showarrow=False,
-                                         font=dict(size=14, color='#7f8c8d'))
-                        fig.update_layout(
-                            xaxis_title="Year",
-                            yaxis_title="Production Volume ('000 b/d)",
-                            plot_bgcolor="white",
-                            paper_bgcolor="white",
-                            height=360
-                        )
-                    else:
-                        # Default mode: show all years on X-axis
-                        first_stream = all_streams_list[0] if all_streams_list else "None"
-                        empty_df = pd.DataFrame({
-                            "year": all_years_list,
-                            "value": [0.0001] * len(all_years_list),
-                            "Stream": [first_stream] * len(all_years_list)
-                        })
-                        fig = px.bar(empty_df, x="year", y="value", color="Stream", 
-                                    labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
-                        fig.update_layout(
-                            xaxis_title="Year",
-                            yaxis_title="Production Volume ('000 b/d)",
-                            barmode="stack",
-                            plot_bgcolor="white",
-                            paper_bgcolor="white",
-                            xaxis=dict(
-                                type="category",
-                                categoryorder="array",
-                                categoryarray=years_sorted,
-                                tickmode='array',
-                                tickvals=years_sorted,
-                                ticktext=years_sorted
-                            ),
-                            yaxis=dict(range=[0, 100])  # Small range for invisible bars
-                        )
+                    # Create empty chart with all years on X-axis
+                    first_stream = all_streams_list[0] if all_streams_list else "None"
+                    empty_df = pd.DataFrame({
+                        "year": all_years_list,
+                        "value": [0.0001] * len(all_years_list),
+                        "Stream": [first_stream] * len(all_years_list)
+                    })
+                    fig = px.bar(empty_df, x="year", y="value", color="Stream", 
+                                labels={"value":"Production Volume ('000 b/d)", "year":"Year"})
+                    fig.update_layout(
+                        xaxis_title="Year",
+                        yaxis_title="Production Volume ('000 b/d)",
+                        barmode="stack",
+                        plot_bgcolor="white",
+                        paper_bgcolor="white",
+                        xaxis=dict(
+                            type="category",
+                            categoryorder="array",
+                            categoryarray=years_sorted,
+                            tickmode='array',
+                            tickvals=years_sorted,
+                            ticktext=years_sorted
+                        ),
+                        yaxis=dict(range=[0, 100])  # Small range for invisible bars
+                    )
                     return fig, title_text
                 
                 stream_categories = all_streams_list if all_streams_list else get_stream_order("yearly")
@@ -3653,211 +3722,111 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                # Recalculate year-level production totals for the selected countries/regions
-                # This ensures annotations match the specific country data rather than global totals
-                year_production_values = {}
-                if not BAR_LONG_YEARLY.empty and "Country" in BAR_LONG_YEARLY.columns:
-                    # Filter by country (the resolved country list)
-                    country_totals = BAR_LONG_YEARLY[BAR_LONG_YEARLY["Country"].isin(country)].groupby("year")["value"].sum()
-                    year_production_values = {str(k): float(v) for k, v in country_totals.items() if pd.notna(v)}
-                    print(f"DEBUG BREAKDOWN YEARLY: Recalculated year_production_values for selected countries: {len(year_production_values)} years")
+                # NEW LOGIC: Apply opacity-based highlighting for yearly chart
+                # If a single stream is selected, highlight it across all years and dim others
+                if is_single_stream_selected and selected_stream:
+                    print(f"DEBUG BREAKDOWN YEARLY: Applying opacity highlighting for selected stream: {selected_stream}")
+                    for trace in fig.data:
+                        if trace.name == selected_stream:
+                            # Highlight the selected stream
+                            trace.marker.opacity = 1.0
+                            print(f"DEBUG BREAKDOWN YEARLY: Set opacity=1.0 for trace: {trace.name}")
+                        else:
+                            # Dim all other streams
+                            trace.marker.opacity = 0.3
+                            print(f"DEBUG BREAKDOWN YEARLY: Set opacity=0.3 for trace: {trace.name}")
                 else:
-                    year_production_values = {}
-                print(f"DEBUG BREAKDOWN YEARLY: years_sorted: {years_sorted}")
+                    # Default mode: all streams at full opacity
+                    print(f"DEBUG BREAKDOWN YEARLY: Default mode - all streams at full opacity")
+                    for trace in fig.data:
+                        trace.marker.opacity = 1.0
                 
                 # Calculate max value for Y-axis scaling (use either ProductionDataValue or sum of bars)
                 chart_totals_df = agg_for_chart[agg_for_chart["value"] > 0.001].copy()  # Filter out tiny placeholder values
                 if len(chart_totals_df) > 0:
                     year_totals = chart_totals_df.groupby("year")["value"].sum().reset_index()
+                    max_value = year_totals["value"].max() if len(year_totals) > 0 else 0
                 else:
-                    # Fallback to original agg if chart data is empty
-                    year_totals = agg.groupby("year")["value"].sum().reset_index()
-                year_totals_dict = dict(zip(year_totals["year"], year_totals["value"]))
+                    max_value = 0
                 
-                # Format traces first - ensure equal bar widths
-                # Update hover template to show: Country, Crude (Stream), Year
-                # Need to set customdata for each trace with Country information
-                # Use agg_for_chart which is the actual data used to create the chart
-                for trace_idx, trace in enumerate(fig.data):
+                # Calculate Y-axis ticks (5 evenly spaced values from 0 to max)
+                y_axis_max, y_axis_ticks = _calculate_yaxis_ticks(max_value)
+                
+                # Update layout to match monthly chart styling
+                fig.update_layout(
+                    xaxis_title="Year",
+                    yaxis_title="Production Volume ('000 b/d)",
+                    barmode="stack",
+                    plot_bgcolor="white",
+                    paper_bgcolor="white",
+                    showlegend=False,  # Hide legend to match monthly chart
+                    bargap=0.2,  # Same gap as monthly chart
+                    bargroupgap=0.0,
+                    hovermode="closest",
+                    margin=dict(l=60, r=10, t=80, b=120),
+                    height=520,
+                    xaxis=dict(
+                        type="category",
+                        categoryorder="array",
+                        categoryarray=years_sorted,
+                        tickmode='array',
+                        tickvals=years_sorted,
+                        ticktext=years_sorted,
+                        tickfont=dict(size=10, color="#2c3e50"),
+                        titlefont=dict(size=12, color="#2c3e50"),
+                        showgrid=False,  # Remove X-axis grid lines
+                        gridwidth=0,
+                        zeroline=False  # Remove zero line
+                    ),
+                    yaxis=dict(
+                        range=[0, y_axis_max],
+                        tickmode='array',
+                        tickvals=y_axis_ticks,
+                        ticktext=[f"{int(t):,}" for t in y_axis_ticks],
+                        tickformat=',.0f',
+                        showgrid=True,  # Keep Y-axis grid lines
+                        gridcolor="#e0e0e0",
+                        tickfont=dict(size=10, color="#2c3e50"),
+                        titlefont=dict(size=12, color="#2c3e50")
+                    )
+                )
+                
+                # Update hover templates to match monthly chart format
+                for trace in fig.data:
                     stream_name = trace.name
-                    # Build customdata array: [Country] for each data point
+                    # Build customdata for hover template
                     customdata_list = []
-                    
                     if len(trace.x) > 0:
-                        for point_idx, year_val in enumerate(trace.x):
-                            # Match by Stream and year to get Country from agg_for_chart
+                        for year_val in trace.x:
+                            # Match by Stream and year
                             matching_rows = agg_for_chart[
                                 (agg_for_chart["Stream"] == stream_name) & 
                                 (agg_for_chart["year"] == str(year_val))
                             ]
+                            
                             if not matching_rows.empty and "Country" in matching_rows.columns:
                                 country_val = matching_rows.iloc[0]["Country"]
-                                # Handle NaN/None values
-                                if pd.isna(country_val) or country_val == "":
-                                    # Fallback to agg if Country is missing in agg_for_chart
-                                    agg_matching = agg[
-                                        (agg["Stream"] == stream_name) & 
-                                        (agg["year"] == str(year_val))
-                                    ]
-                                    if not agg_matching.empty and "Country" in agg_matching.columns:
-                                        country_val = agg_matching.iloc[0]["Country"]
-                                    else:
-                                        country_val = ""
                             else:
-                                # Fallback to agg if not found in agg_for_chart
-                                agg_matching = agg[
-                                    (agg["Stream"] == stream_name) & 
-                                    (agg["year"] == str(year_val))
-                                ]
-                                if not agg_matching.empty and "Country" in agg_matching.columns:
-                                    country_val = agg_matching.iloc[0]["Country"]
-                                else:
-                                    country_val = ""
-                            customdata_list.append([country_val if country_val else ""])
+                                country_val = ""
+                            
+                            # Add to customdata: [Country]
+                            customdata_list.append([country_val])
                     
                     # Set customdata
-                    if customdata_list:
-                        trace.customdata = customdata_list
+                    trace.customdata = customdata_list if customdata_list else None
                     
-                    # Update hover template
+                    # Create custom hover template
                     trace.hovertemplate = (
+                        "<b>Year:</b> %{x}<br>"
                         "<b>Country:</b> %{customdata[0]}<br>"
-                        "<b>Crude:</b> %{fullData.name}<br>"
-                        "<b>Year:</b> %{x}<extra></extra>"
+                        "<b>Stream Name:</b> " + stream_name + "<br>"
+                        "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
                     )
-                    
-                    # Native Plotly Selection Styling
-                    trace.update(
-                        selected=dict(marker=dict(opacity=1.0)),
-                        unselected=dict(marker=dict(opacity=0.3))
-                    )
-                    trace.marker = dict(line=dict(width=1, color='white'))
-                        
-                    trace.width = None  # Let Plotly calculate equal widths automatically
                 
-                # Calculate max bar height first (needed for annotation positioning)
-                max_bar_height = max(year_totals_dict.values()) if year_totals_dict else 0
-                
-                # Add ProductionDataValue above each bar - show only the value (no year, since year is on X-axis)
-                # Use year-level ProductionDataValue if available, otherwise use sum of bars
-                annotations_list = []
-                max_annotation_y = 0
-                
-                # Create year to index mapping for categorical X-axis positioning
-                year_to_index = {year: idx for idx, year in enumerate(years_sorted)}
-                
-                for year in years_sorted:
-                    # Prefer ProductionDataValue, fallback to sum of bars
-                    production_value = year_production_values.get(year)
-                    print(f"DEBUG BREAKDOWN YEARLY: Year {year} - ProductionDataValue: {production_value}, Sum of bars: {year_totals_dict.get(year, 0)}")
-                    
-                    if production_value is None or production_value == 0:
-                        production_value = year_totals_dict.get(year, 0)
-                    
-                    # Always show annotation if we have a value (either ProductionDataValue or sum)
-                    if production_value > 0:
-                        # Show only the value (no year, since year is on X-axis)
-                        annotation_text = f"{int(production_value):,}"
-                        # Position annotation above the bar - use bar height + fixed offset
-                        bar_height = year_totals_dict.get(year, 0)
-                        # Position annotation slightly above the bar (5% of max bar height for consistent spacing)
-                        annotation_y = bar_height + (max_bar_height * 0.05) if max_bar_height > 0 else bar_height + 500
-                        max_annotation_y = max(max_annotation_y, annotation_y)
-                        
-                        # Use numeric index for X position (works better with categorical axes)
-                        x_index = year_to_index.get(year, 0)
-                        
-                        print(f"DEBUG BREAKDOWN YEARLY: Adding annotation for year {year} (index {x_index}): text='{annotation_text}', y={annotation_y}, bar_height={bar_height}")
-                        
-                        annotations_list.append({
-                            "text": annotation_text,
-                            "x": x_index,  # Use numeric index for categorical X-axis
-                            "y": annotation_y,
-                            "xref": "x",
-                            "yref": "y",
-                            "xanchor": "center",
-                            "yanchor": "bottom",
-                            "showarrow": False,
-                            "font": dict(size=11, color="#2c3e50", family="Arial, sans-serif"),
-                            "align": "center",
-                            "textangle": -90  # Rotate text 90 degrees counterclockwise (bottom to top)
-                        })
-                    else:
-                        print(f"DEBUG BREAKDOWN YEARLY: Skipping annotation for year {year} - no value")
-                
-                print(f"DEBUG BREAKDOWN YEARLY: Created {len(annotations_list)} annotations, max Y: {max_annotation_y}")
-                
-                # Calculate Y-axis max to accommodate annotations
-                # Use the larger of actual max annotation Y or highest bar height
-                base_max = max(max_annotation_y, max_bar_height)
-                # Recalculate Y-axis ticks based on the max value needed
-                y_axis_max, y_axis_ticks = _calculate_yaxis_ticks(base_max)
-                
-                print(f"DEBUG BREAKDOWN YEARLY: max_bar_height={max_bar_height}, max_annotation_y={max_annotation_y}, base_max={base_max}, y_axis_max={y_axis_max}, y_axis_ticks={y_axis_ticks}")
-                
-                # Verify all annotations are within Y-axis range
-                for i, ann in enumerate(annotations_list):
-                    if ann.get('y', 0) > y_axis_max:
-                        print(f"DEBUG BREAKDOWN YEARLY: WARNING - Annotation {i} (year {ann.get('x')}) Y position {ann.get('y')} exceeds Y-axis max {y_axis_max}")
-                
-                print(f"DEBUG BREAKDOWN YEARLY: Year-level ProductionDataValue: {year_production_values}")
-                print(f"DEBUG BREAKDOWN YEARLY: Year totals (sum of bars): {year_totals_dict}")
-                print(f"DEBUG BREAKDOWN YEARLY: Max bar height: {max_bar_height}, Max annotation Y: {max_annotation_y}, Y-axis max: {y_axis_max}")
-                
-                # Update layout with annotations included directly
-                fig.update_layout(
-                    xaxis_title="",
-                    yaxis_title="Production Volume ('000 b/d)",
-                    xaxis=dict(
-                        showgrid=False,  # Remove X-axis grid lines (match original)
-                        gridcolor="#e0e0e0", 
-                        type="category",  # Treat as categorical to show all years
-                        categoryorder="array",
-                        categoryarray=years_sorted,  # Order years ascending (2006 to 2024)
-                        tickfont=dict(size=10, color="#2c3e50"),
-                        titlefont=dict(size=12, color="#2c3e50"),
-                        tickangle=0,
-                        tickmode='array',
-                        tickvals=years_sorted,
-                        ticktext=years_sorted,
-                        range=[-0.5, len(years_sorted) - 0.5],
-                        zeroline=False  # Remove zero line
-                    ),
-                    yaxis=dict(
-                        showgrid=True, 
-                        gridcolor="#e0e0e0", 
-                        title="Production Volume ('000 b/d)", 
-                        range=[0, y_axis_max],
-                        tickfont=dict(size=11, color="#2c3e50"),
-                        titlefont=dict(size=12, color="#2c3e50"),
-                        tickmode='array',
-                        tickvals=y_axis_ticks,
-                        zeroline=False,  # Remove zero line
-                        ticktext=[f"{int(t):,}" for t in y_axis_ticks],
-                        tickformat=',.0f'
-                    ),
-                    clickmode='select',
-                    # Add annotations to layout
-                    annotations=annotations_list,
-                    showlegend=False,
-                    plot_bgcolor="white",
-                    paper_bgcolor="white",
-                    bargap=0.2,  # Add proper spacing between bars (10% gap)
-                    bargroupgap=0.0,
-                    barmode="stack",
-                    margin=dict(l=70, r=30, t=70, b=80),
-                    hovermode='closest'
-                )
-                
-                print(f"DEBUG BREAKDOWN YEARLY: Added {len(annotations_list)} ProductionDataValue annotations to layout")
-                print(f"DEBUG BREAKDOWN YEARLY: Final figure has {len(fig.layout.annotations) if fig.layout.annotations else 0} total annotations")
-                if fig.layout.annotations:
-                    print(f"DEBUG BREAKDOWN YEARLY: First annotation sample: {fig.layout.annotations[0] if len(fig.layout.annotations) > 0 else 'N/A'}")
-                
-                print(f"DEBUG BREAKDOWN YEARLY: Chart layout updated, returning figure")
+                fig.update_layout(clickmode='select')
                 return fig, title_text
             else:
-                # Monthly view: simplified and robust stacked bars
+                # Monthly view: Handle stream selection behavior as per requirements
                 print(f"DEBUG BREAKDOWN MONTHLY: production_years={production_years}, country={country}")
                 print(f"DEBUG BREAKDOWN MONTHLY: original_country_selection={original_country_selection}")
                 
@@ -3894,8 +3863,8 @@ def register_callbacks(dash_app, server):
                 if BAR_LONG_MONTHLY.empty or "year" not in BAR_LONG_MONTHLY.columns:
                     fig = go.Figure()
                     fig.add_annotation(text="No monthly data available.", xref="paper", yref="paper",
-                                       x=0.5, y=0.5, showarrow=False,
-                                       font=dict(size=14, color='#7f8c8d'))
+                                    x=0.5, y=0.5, showarrow=False,
+                                    font=dict(size=14, color='#7f8c8d'))
                     fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
                     return fig, title_text
                 
@@ -3915,14 +3884,14 @@ def register_callbacks(dash_app, server):
                 if df.empty:
                     fig = go.Figure()
                     fig.add_annotation(text="No monthly data available for selected filters.",
-                                       xref="paper", yref="paper",
-                                       x=0.5, y=0.5, showarrow=False,
-                                       font=dict(size=14, color='#7f8c8d'))
+                                    xref="paper", yref="paper",
+                                    x=0.5, y=0.5, showarrow=False,
+                                    font=dict(size=14, color='#7f8c8d'))
                     fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
                     return fig, title_text
                 
                 month_names = ["January", "February", "March", "April", "May", "June",
-                               "July", "August", "September", "October", "November", "December"]
+                            "July", "August", "September", "October", "November", "December"]
                 month_map = {i+1: name for i, name in enumerate(month_names)}
                 if "month" not in df.columns:
                     df["month"] = df["month_idx"].map(month_map)
@@ -3966,22 +3935,30 @@ def register_callbacks(dash_app, server):
                 # Get available streams from the data
                 available_monthly_streams = sorted(agg["Stream"].dropna().unique().tolist()) if not agg.empty else []
                 
-                # Determine stream to highlight (if any)
-                # For monthly view: Always show all streams in the chart
-                # Use visual styling (opacity) to highlight selected stream and dim others
+                # NEW LOGIC: Handle stream selection based on profiled streams
+                # For monthly view: If a single stream is selected, we need to isolate it properly
                 highlight_stream = None
+                highlight_month = None
+                highlight_year = None
+                is_single_stream_selected = False
+                
                 if profiled and len(profiled) > 0:
                     profiled_set = set(str(p) for p in profiled)
                     available_set = set(str(s) for s in available_monthly_streams)
                     
-                    # If all streams are selected, no highlighting needed (all at full opacity)
-                    if profiled_set == available_set and len(available_set) > 0:
-                        print(f"DEBUG BREAKDOWN MONTHLY: All streams selected (default mode), showing all streams at full opacity")
-                        highlight_stream = None
-                    elif len(profiled) == 1:
-                        # Single stream selected: highlight this stream, dim others
-                        highlight_stream = str(profiled[0]).strip()
-                        print(f"DEBUG BREAKDOWN MONTHLY: Single stream selected ({highlight_stream}), will highlight this stream and dim others")
+                    # Check if we have a specific stream selected
+                    if len(profiled) == 1:
+                        # Single stream selected: we need to determine if this is for a specific month
+                        selected_stream = str(profiled[0]).strip()
+                        
+                        # Check if the selected stream exists in our data
+                        if selected_stream in available_set:
+                            # For monthly chart, when a single stream is selected,
+                            # we should show ALL months for ALL years for that stream
+                            # but highlight/dim based on the profiled selection
+                            highlight_stream = selected_stream
+                            is_single_stream_selected = True
+                            print(f"DEBUG BREAKDOWN MONTHLY: Single stream selected ({highlight_stream}), will highlight this stream across all months/years")
                     else:
                         # Multiple streams selected (shouldn't happen, but handle it)
                         print(f"DEBUG BREAKDOWN MONTHLY: Multiple streams selected ({len(profiled)}), showing all at full opacity")
@@ -3996,9 +3973,9 @@ def register_callbacks(dash_app, server):
                     print(f"DEBUG BREAKDOWN MONTHLY: No usable data (rows={len(agg)}, total={agg['value'].fillna(0).sum() if not agg.empty else 0})")
                     fig = go.Figure()
                     fig.add_annotation(text="No monthly data available for selected filters.",
-                                       xref="paper", yref="paper",
-                                       x=0.5, y=0.5, showarrow=False,
-                                       font=dict(size=14, color='#7f8c8d'))
+                                    xref="paper", yref="paper",
+                                    x=0.5, y=0.5, showarrow=False,
+                                    font=dict(size=14, color='#7f8c8d'))
                     fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
                     return fig, title_text
                 
@@ -4028,8 +4005,8 @@ def register_callbacks(dash_app, server):
                     # No years, return empty chart
                     fig = go.Figure()
                     fig.add_annotation(text="No monthly data available.", xref="paper", yref="paper",
-                                       x=0.5, y=0.5, showarrow=False,
-                                       font=dict(size=14, color='#7f8c8d'))
+                                    x=0.5, y=0.5, showarrow=False,
+                                    font=dict(size=14, color='#7f8c8d'))
                     fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
                     return fig, title_text
                 
@@ -4042,11 +4019,25 @@ def register_callbacks(dash_app, server):
                     horizontal_spacing=0.05
                 )
                 
-                # Add traces for each year separately
+                # For each year, we need to know which streams have data
+                print(f"DEBUG BREAKDOWN MONTHLY: Processing {len(unique_years)} years: {unique_years}")
+                print(f"DEBUG BREAKDOWN MONTHLY: selected_bar = {selected_bar}")
+                
+                # Add comprehensive debugging for selected_bar
+                if selected_bar:
+                    print(f"DEBUG SELECTED_BAR: activeBar found!")
+                    print(f"  - Year: '{selected_bar.get('year')}' (type: {type(selected_bar.get('year'))})")
+                    print(f"  - Month: '{selected_bar.get('month')}' (type: {type(selected_bar.get('month'))})")
+                    print(f"  - Stream: '{selected_bar.get('stream')}' (type: {type(selected_bar.get('stream'))})")
+                else:
+                    print(f"DEBUG SELECTED_BAR: No activeBar (selected_bar is None)")
+                
                 for year_idx, year_val in enumerate(unique_years):
+                    print(f"DEBUG BREAKDOWN MONTHLY: Processing year {year_val} (index {year_idx}) (type: {type(year_val)})")
                     year_data = agg[agg["year"] == year_val].copy()
                     
                     if year_data.empty:
+                        print(f"DEBUG BREAKDOWN MONTHLY: No data for year {year_val}, skipping")
                         continue
                     
                     # Get months with data for this year, in correct order
@@ -4055,6 +4046,7 @@ def register_callbacks(dash_app, server):
                     
                     # Get unique streams for this year
                     year_streams = sorted(year_data["Stream"].unique().tolist())
+                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year_val} has {len(year_streams)} streams: {year_streams}")
                     
                     # Add a trace for each stream
                     for stream in year_streams:
@@ -4073,37 +4065,115 @@ def register_callbacks(dash_app, server):
                         if not stream_color:
                             stream_color = get_stream_color(stream, year_streams, tab="monthly")
                         
-                        # Determine opacity based on highlight stream
-                        # If a stream is highlighted via legend/filter, dim all others
-                        opacity = 1.0
-                        if highlight_stream and stream != highlight_stream:
-                            opacity = 0.3
+                        # NEW LOGIC: Determine opacity based on specific bar selection or stream selection
+                        # Priority: 1) Specific bar selection (chart click), 2) Stream selection (profiled streams)
                         
-                        # Current trace index will be len(fig.data) since we are about to add it
-                        # Add bar trace for this stream
-                        fig.add_trace(
-                            go.Bar(
-                                x=stream_data["month"],
-                                y=stream_data["value"],
-                                name=stream,
-                                marker=dict(
-                                    color=stream_color,
-                                    line=dict(width=1, color='white'),
-                                    opacity=opacity
+                        if selected_bar:
+                            # Global single-bar selection - apply opacity to entire stream trace
+                            active_bar_year = selected_bar.get("year")
+                            active_bar_month = selected_bar.get("month") 
+                            active_bar_stream = selected_bar.get("stream")
+                            
+                            print(f"DEBUG CHART OPACITY: Processing {stream} in {year_val}, activeBar={active_bar_stream}-{active_bar_month}-{active_bar_year}")
+                            
+                            # Check if this stream in this year contains the active bar
+                            year_match = str(year_val) == str(active_bar_year)
+                            stream_match = str(stream) == str(active_bar_stream)
+                            
+                            # Check if this stream data contains the active month
+                            has_active_month = active_bar_month in stream_data["month"].values
+                            
+                            # This trace contains the active bar if all conditions match
+                            contains_active_bar = year_match and stream_match and has_active_month
+                            
+                            # Apply opacity: trace with active bar = 1.0, all others = 0.3
+                            trace_opacity = 1.0 if contains_active_bar else 0.3
+                            
+                            print(f"DEBUG TRACE OPACITY: {stream}-{year_val}")
+                            print(f"  - Year match: {year_val} == {active_bar_year} -> {year_match}")
+                            print(f"  - Stream match: {stream} == {active_bar_stream} -> {stream_match}")
+                            print(f"  - Has active month ({active_bar_month}): {has_active_month}")
+                            print(f"  - Contains active bar: {contains_active_bar}")
+                            print(f"  - Final opacity: {trace_opacity}")
+                            print("---")
+                            
+                            # Add normal trace with calculated opacity
+                            fig.add_trace(
+                                go.Bar(
+                                    x=stream_data["month"],
+                                    y=stream_data["value"],
+                                    name=stream,
+                                    marker=dict(
+                                        color=stream_color,
+                                        line=dict(width=1, color='white'),
+                                        opacity=trace_opacity
+                                    ),
+                                    legendgroup=stream,
+                                    showlegend=False,
+                                    # Disable hover for dimmed traces
+                                    hoverinfo='all' if trace_opacity >= 1.0 else 'skip',
+                                    hovertemplate=(
+                                        "<b>Month:</b> %{x}<br>"
+                                        "<b>Stream:</b> " + stream + "<br>"
+                                        "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
+                                    ) if trace_opacity >= 1.0 else None
                                 ),
-                                selected=dict(marker=dict(opacity=1.0)),
-                                unselected=dict(marker=dict(opacity=0.3)),
-                                legendgroup=stream,
-                                showlegend=False,  # Hide legend since we have custom legend
-                                hovertemplate=(
-                                    "<b>Month:</b> %{x}<br>"
-                                    "<b>Stream:</b> " + stream + "<br>"
-                                    "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
-                                )
-                            ),
-                            row=1,
-                            col=year_idx + 1
-                        )
+                                row=1,
+                                col=year_idx + 1
+                            )
+                        elif is_single_stream_selected and highlight_stream:
+                            # Stream selection via profiled streams interface
+                            opacity = 1.0 if stream == highlight_stream else 0.3
+                            
+                            # Normal trace creation for stream selection
+                            fig.add_trace(
+                                go.Bar(
+                                    x=stream_data["month"],
+                                    y=stream_data["value"],
+                                    name=stream,
+                                    marker=dict(
+                                        color=stream_color,
+                                        line=dict(width=1, color='white'),
+                                        opacity=opacity
+                                    ),
+                                    selected=dict(marker=dict(opacity=1.0)),
+                                    unselected=dict(marker=dict(opacity=0.3)),
+                                    legendgroup=stream,
+                                    showlegend=False,  # Hide legend since we have custom legend
+                                    hovertemplate=(
+                                        "<b>Month:</b> %{x}<br>"
+                                        "<b>Stream:</b> " + stream + "<br>"
+                                        "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
+                                    )
+                                ),
+                                row=1,
+                                col=year_idx + 1
+                            )
+                        else:
+                            # Default mode: show all streams at full opacity
+                            fig.add_trace(
+                                go.Bar(
+                                    x=stream_data["month"],
+                                    y=stream_data["value"],
+                                    name=stream,
+                                    marker=dict(
+                                        color=stream_color,
+                                        line=dict(width=1, color='white'),
+                                        opacity=1.0
+                                    ),
+                                    selected=dict(marker=dict(opacity=1.0)),
+                                    unselected=dict(marker=dict(opacity=0.3)),
+                                    legendgroup=stream,
+                                    showlegend=False,  # Hide legend since we have custom legend
+                                    hovertemplate=(
+                                        "<b>Month:</b> %{x}<br>"
+                                        "<b>Stream:</b> " + stream + "<br>"
+                                        "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
+                                    )
+                                ),
+                                row=1,
+                                col=year_idx + 1
+                            )
                 
                 # Calculate max value across all data for Y-axis scaling
                 max_value = agg["value"].max() if not agg.empty and "value" in agg.columns else 0
@@ -4308,9 +4378,9 @@ def register_callbacks(dash_app, server):
                 if not fig.data:
                     fig = go.Figure()
                     fig.add_annotation(text="No monthly data available for selected filters.",
-                                       xref="paper", yref="paper",
-                                       x=0.5, y=0.5, showarrow=False,
-                                       font=dict(size=14, color='#7f8c8d'))
+                                    xref="paper", yref="paper",
+                                    x=0.5, y=0.5, showarrow=False,
+                                    font=dict(size=14, color='#7f8c8d'))
                     fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
                 
                 fig.update_layout(clickmode='select')
