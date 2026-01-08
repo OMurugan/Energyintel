@@ -535,13 +535,13 @@ def create_layout():
                 html.P([html.Strong("Source:"), " Energy Intelligence"], style={'fontSize': '11px', 'marginBottom': '5px'})
             ]),
             html.Div([
-                html.A("EIA Data is through June 2025", className="source-link", href="#"),
+                html.Span("EIA Data is through June 2025", className="source-link", tabIndex="0"),
                 html.Br(),
-                html.A("Energy Intelligence Data is through July 2025", className="source-link", href="#"),
+                html.Span("Energy Intelligence Data is through July 2025", className="source-link", tabIndex="0"),
                 html.Br(),
-                html.A("OECD Data is through July 2025", className="source-link", href="#"),
+                html.Span("OECD Data is through July 2025", className="source-link", tabIndex="0"),
                 html.Br(),
-                html.A("Russian Imports Data is through August 2022", className="source-link", href="#"),
+                html.Span("Russian Imports Data is through August 2022", className="source-link", tabIndex="0"),
                 html.P("South Korea trade data source: KNOC", style={'fontSize': '11px', 'marginTop': '10px', 'marginBottom': '2px'}),
                 html.P("Countries: Select jurisdictions are included under countries for data presentation purposes.", style={'fontSize': '11px', 'marginBottom': '2px'})
             ], className="source-container")
