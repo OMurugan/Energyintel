@@ -1164,18 +1164,18 @@ def register_callbacks(dash_app, server):
             single_selected_country = selected_countries[0]
         
         # Create map
-        if df_filtered.empty:
+        if IMPORTS_DF.empty:
             map_fig = go.Figure()
             map_fig.add_annotation(
-                text="No data available for selected filters",
+                text="No data available for the selected year",
                 xref="paper", yref="paper",
                 x=0.5, y=0.5,
                 showarrow=False
             )
             map_fig.update_layout(height=600, plot_bgcolor='white', paper_bgcolor='white')
         else:
-            # Aggregate by country (sum if multiple entries)
-            df_map = df_filtered.groupby('Importer')['Import_Volume'].sum().reset_index()
+            # Aggregate by country using unfiltered data for the map
+            df_map = IMPORTS_DF.groupby('Importer')['Import_Volume'].sum().reset_index()
             df_map.columns = ['Country', 'Import_Volume']
             
             print(f"Map data after aggregation: {len(df_map)} countries")
@@ -1569,11 +1569,11 @@ def register_callbacks(dash_app, server):
                 filter_action='none'
             )
         
-        # Get max value for legend
-        if df_filtered.empty:
+        # Get max value for legend from unfiltered map data
+        if IMPORTS_DF.empty:
             max_value = 0
         else:
-            max_value = df_filtered.groupby('Importer')['Import_Volume'].sum().max()
+            max_value = IMPORTS_DF.groupby('Importer')['Import_Volume'].sum().max()
         
         max_value_str = f"{max_value:,.0f}" if max_value > 0 else "0"
         mid_value_str = f"{(max_value / 2):,.0f}" if max_value > 0 else "0"
