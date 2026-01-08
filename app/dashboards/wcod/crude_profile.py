@@ -1211,6 +1211,7 @@ def create_production_chart(crude_value: str | None = None):
         hovertemplate='Year: <span style="color:#1b365d;"><b>%{x}</b></span><br>Production: <span style="color:#1b365d;"><b>%{y:.2f} (000 b/d)</b></span><extra></extra>'
     ))
     
+    
     # Crude Exports as orange circular data points (scatter)
     fig.add_trace(go.Scatter(
         name="Crude Exports",
