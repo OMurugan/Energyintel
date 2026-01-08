@@ -1274,6 +1274,10 @@ def create_map_chart(crude_value: str | None = None):
     
     fig = go.Figure()
     
+    # Add background click layer for reset functionality and to capture hover events over ocean
+    from .shared_map_utils import add_background_click_layer
+    add_background_click_layer(fig, None, use_mapbox)
+    
     # Add country choropleth layer for country-level interactions
     if unique_countries:
         # Create country data for choropleth
@@ -1392,9 +1396,6 @@ def create_map_chart(crude_value: str | None = None):
             )
         ))
     
-    # Add background click layer for reset functionality
-    from .shared_map_utils import add_background_click_layer
-    add_background_click_layer(fig, None, use_mapbox)
     
     # Calculate bounds for better view
     lat_min, lat_max = min(lats), max(lats)
@@ -2041,7 +2042,7 @@ def create_layout(server=None):
                     "margin": "10px 0",
                     "backgroundColor": "white"
                 }, children=[
-                    dcc.Graph(id="loading-ports-map", figure=map_fig, config={"displayModeBar": False}),
+                    dcc.Graph(id="loading-ports-map", figure=map_fig, clear_on_unhover=True, config={"displayModeBar": False}),
                         # html.Div([
                         #     html.A("© 2025 Mapbox", href="https://www.mapbox.com/about/maps", target="_blank", style={
                         #         "color": "#666",
