@@ -189,7 +189,7 @@ def _load_crude_assay_df(crude_value: str | None = None) -> pd.DataFrame:
         LEFT JOIN fact_wcod_crude c 
                ON a.crude_id = c.crude_id
         WHERE a.to_be_deleted IS NULL
-          AND a.crude_name = :crude_name
+          AND a.crude_name = :crude_name AND a.product = 'Crude Oil'
     """
 
     try:
@@ -1210,7 +1210,7 @@ def create_production_chart(crude_value: str | None = None):
         width=0.5,
         hovertemplate='Year: <span style="color:#1b365d;"><b>%{x}</b></span><br>Production: <span style="color:#1b365d;"><b>%{y:.2f} (000 b/d)</b></span><extra></extra>'
     ))
-    
+
     
     # Crude Exports as orange circular data points (scatter)
     fig.add_trace(go.Scatter(
