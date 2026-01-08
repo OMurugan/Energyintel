@@ -124,7 +124,10 @@ def load_annual_imports_data(selected_countries=None):
         # Base query
         base_query = """
         SELECT
-            EXTRACT(YEAR FROM yr)::INT AS "Year",
+            EXTRACT(YEAR FROM yr)::INT    AS "Year",
+            EXTRACT(QUARTER FROM yr)::INT AS "Quarter of Year",
+            EXTRACT(MONTH FROM yr)::INT   AS "Month of Year",
+            EXTRACT(DAY FROM yr)::INT     AS "Day of Year",
             import_country AS "Importer",
             SUM(vol_kbpd) AS "DataValue"
         FROM fact_wcod_imports
@@ -159,10 +162,16 @@ def load_annual_imports_data(selected_countries=None):
         
         base_query += """
         GROUP BY
-            EXTRACT(YEAR FROM yr),
-            import_country
+            EXTRACT(YEAR FROM yr)::INT,
+            EXTRACT(QUARTER FROM yr)::INT,
+            EXTRACT(MONTH FROM yr)::INT,
+            EXTRACT(DAY FROM yr)::INT,
+    import_country
         ORDER BY
             "Year",
+            "Quarter of Year",
+            "Month of Year",
+            "Day of Year",
             "Importer";
         """
         
@@ -502,6 +511,8 @@ def create_layout():
         dcc.Store(id='imports-country-store', data={'all_selected': True}),
         dcc.Store(id='imports-map-clicked-country', data=None),  # Store clicked country from map
         dcc.Store(id='imports-loading-state', data=False),  # Global loading state
+        dcc.Store(id='imports-time-visibility', data={'Year': True, 'Quarter': False, 'Month': False, 'Day': False}),
+        dcc.Store(id='imports-expand-store', data={'years': [], 'quarters': []}),
         dcc.Interval(id='imports-year-interval', interval=2000, disabled=True),
         # Download components
         dcc.Download(id="download-global-imports-csv"),
@@ -869,6 +880,54 @@ def create_layout():
                     ]
                 )
             ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'gap': '20px'}),
+            # Time dimension toggle row (Year / Quarter / Month / Day)
+            html.Div([            
+                # Year toggle hidden (Year always on)
+                html.Div([
+                    html.Span("Year of Year"),
+                    html.Button('−', id='imports-toggle-year-btn', n_clicks=0)
+                ], style={'display': 'none'}),
+                html.Div([
+                    html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                    html.Button('+', id='imports-toggle-quarter-btn', n_clicks=0, style={
+                        'width': '20px', 'height': '20px', 'padding': '0',
+                        'border': '1px solid #dee2e6', 'backgroundColor': '#f8f9fa',
+                        'color': '#2c3e50', 'borderRadius': '3px', 'cursor': 'pointer',
+                        'fontSize': '14px', 'fontWeight': 'bold', 'lineHeight': '1',
+                        'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+                        'marginLeft': '3px', 'flexShrink': '0'
+                    })
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '150px'}),
+                html.Div([
+                    html.Span("Month of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                    html.Button('+', id='imports-toggle-month-btn', n_clicks=0, style={
+                        'width': '20px', 'height': '20px', 'padding': '0',
+                        'border': '1px solid #dee2e6', 'backgroundColor': '#f8f9fa',
+                        'color': '#2c3e50', 'borderRadius': '3px', 'cursor': 'pointer',
+                        'fontSize': '14px', 'fontWeight': 'bold', 'lineHeight': '1',
+                        'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+                        'marginLeft': '3px', 'flexShrink': '0'
+                    })
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '140px'}),
+                html.Div([
+                    html.Span("Day of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
+                    html.Button('+', id='imports-toggle-day-btn', n_clicks=0, style={
+                        'width': '20px', 'height': '20px', 'padding': '0',
+                        'border': '1px solid #dee2e6', 'backgroundColor': '#f8f9fa',
+                        'color': '#2c3e50', 'borderRadius': '3px', 'cursor': 'pointer',
+                        'fontSize': '14px', 'fontWeight': 'bold', 'lineHeight': '1',
+                        'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+                        'marginLeft': '3px', 'flexShrink': '0'
+                    })
+                ], style={'display': 'flex', 'alignItems': 'left', 'width': '130px'})
+            ], style={
+                'padding': '10px 0',
+                'marginBottom': '10px',
+                'display': 'flex',
+                'justifyContent': 'flex-start',
+                'alignItems': 'center',
+                'gap': '10px'
+            }),
             dcc.Loading(
                 id="loading-imports-annual-table",
                 type="default",
@@ -1038,10 +1097,12 @@ def register_callbacks(dash_app, server):
          Output('imports-matrix-caption', 'children')],
         [Input('imports-year-store', 'data'),
          Input('imports-country-checklist', 'value'),
-         Input('imports-map-clicked-country', 'data')],
+         Input('imports-map-clicked-country', 'data'),
+         Input('imports-time-visibility', 'data'),
+         Input('imports-expand-store', 'data')],
         prevent_initial_call=False
     )
-    def update_imports_dashboard(selected_year, selected_countries, clicked_country):
+    def update_imports_dashboard(selected_year, selected_countries, clicked_country, time_visibility, expansion_state):
         """Update map and annual chart based on filters"""
         matrix_caption = f"Import – Export Matrix for {selected_year} ('000 b/d)"
         
@@ -1162,61 +1223,153 @@ def register_callbacks(dash_app, server):
         if df_annual.empty:
             annual_table = html.Div("No data available", style={'padding': '20px', 'textAlign': 'center', 'color': '#666'})
         else:
+            # Time visibility settings
+            time_visibility = time_visibility or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}
+            show_quarter = time_visibility.get('Quarter', False)
+            show_month = time_visibility.get('Month', False)
+            show_day = time_visibility.get('Day', False)
             
-            if df_annual.empty:
-                annual_table = html.Div("No data available for selected countries", style={'padding': '20px', 'textAlign': 'center', 'color': '#666'})
-            else:
-                # Get available years (sorted descending: 2025, 2024, 2023, etc.)
-                available_years = sorted(df_annual['Year'].unique().tolist(), reverse=True)
+            # Constants for names
+            quarter_order = ['Q1', 'Q2', 'Q3', 'Q4']
+            month_order = [
+                'January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'
+            ]
+            
+            # Map numeric values to names
+            if 'Quarter of Year' in df_annual.columns:
+                quarter_map = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4'}
+                df_annual['Quarter of Year'] = df_annual['Quarter of Year'].map(quarter_map).fillna('').astype(str)
+            
+            if 'Month of Year' in df_annual.columns:
+                month_names = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+                              'July', 'August', 'September', 'October', 'November', 'December']
+                df_annual['Month of Year'] = df_annual['Month of Year'].apply(lambda x: month_names[int(x)] if pd.notna(x) and 1 <= int(x) <= 12 else '').astype(str)
+
+            # Get available years (sorted descending: 2025, 2024, 2023, etc.)
+            available_years = sorted(df_annual['Year'].unique().tolist(), reverse=True)
+            
+            # Limit to recent years (2019-2025) as shown in the reference
+            target_years = [y for y in range(2025, 2018, -1) if y in available_years]
+            if not target_years:
+                target_years = available_years
+            
+            # Determine default quarter/month per year (first available in order)
+            year_defaults = {}
+            for year in target_years:
+                df_year = df_annual[df_annual['Year'] == year]
+                q_default = ''
+                m_default = ''
+                d_default = ''
+                for q in quarter_order:
+                    if q in df_year['Quarter of Year'].unique():
+                        q_default = q
+                        df_q = df_year[df_year['Quarter of Year'] == q]
+                        for m in month_order:
+                            if m in df_q['Month of Year'].unique():
+                                m_default = m
+                                df_m = df_q[df_q['Month of Year'] == m]
+                                if 'Day of Year' in df_m.columns and not df_m['Day of Year'].dropna().empty:
+                                    d_default = str(int(df_m['Day of Year'].dropna().iloc[0]))
+                                break
+                        if m_default:
+                            break
+                year_defaults[year] = (q_default, m_default, d_default)
+
+            # Prepare columns and data for pivot
+            # We want to pivot to: Importer as index, Year as columns (with multi-line header)
+            # The value should be the specific slice (Year sum, or specific Q/M/D slice)
+            
+            table_records = []
+            importers = sorted(df_annual['Importer'].unique())
+            
+            for importer in importers:
+                record = {'Importer': importer}
+                df_imp = df_annual[df_annual['Importer'] == importer]
                 
-                # Limit to recent years (2019-2025) as shown in the reference
-                target_years = [y for y in range(2025, 2018, -1) if y in available_years]
-                if not target_years:
-                    target_years = available_years
-                
-                # Create pivot table: countries as rows, years as columns
-                df_annual_pivot = df_annual[df_annual['Year'].isin(target_years)].pivot(
-                    index='Importer', 
-                    columns='Year', 
-                    values='Import_Volume'
-                ).fillna(0)
-                
-                # Reorder columns to match year order (newest first: 2025, 2024, 2023, etc.)
-                df_annual_pivot = df_annual_pivot.reindex(columns=target_years, fill_value=0)
-                
-                # Sort countries alphabetically
-                df_annual_pivot = df_annual_pivot.sort_index()
-                
-                # Reset index to make Importer a column
-                df_annual_pivot = df_annual_pivot.reset_index()
-                df_annual_pivot.columns.name = None
-                
-                # Append grand total row
-                totals_row = {'Importer': 'Grand Total'}
                 for year in target_years:
-                    totals_row[year] = df_annual[df_annual['Year'] == year]['Import_Volume'].sum()
-                df_annual_pivot = pd.concat([df_annual_pivot, pd.DataFrame([totals_row])], ignore_index=True)
+                    q_def, m_def, d_def = year_defaults.get(year, ('', '', ''))
+                    
+                    if show_day:
+                        # Day slice
+                        val = df_imp[(df_imp['Year'] == year) & 
+                                    (df_imp['Quarter of Year'] == q_def) & 
+                                    (df_imp['Month of Year'] == m_def) & 
+                                    (df_imp['Day of Year'] == float(d_def) if d_def else False)]['Import_Volume'].sum()
+                        col_id = str(year)
+                    elif show_month:
+                        # Month slice
+                        val = df_imp[(df_imp['Year'] == year) & 
+                                    (df_imp['Quarter of Year'] == q_def) & 
+                                    (df_imp['Month of Year'] == m_def)]['Import_Volume'].sum()
+                        col_id = str(year)
+                    elif show_quarter:
+                        # Quarter slice
+                        val = df_imp[(df_imp['Year'] == year) & 
+                                    (df_imp['Quarter of Year'] == q_def)]['Import_Volume'].sum()
+                        col_id = str(year)
+                    else:
+                        # Year slice (sum of all months in that year)
+                        val = df_imp[df_imp['Year'] == year]['Import_Volume'].sum()
+                        col_id = str(year)
+                    
+                    record[col_id] = val if val > 0 else 0
+                table_records.append(record)
+            
+            # Add Grand Total row
+            totals_row = {'Importer': 'Grand Total'}
+            for year in target_years:
+                col_id = str(year)
+                q_def, m_def, d_def = year_defaults.get(year, ('', '', ''))
                 
-                # Prepare columns for DataTable
-                columns = [{'name': 'Importer', 'id': 'Importer'}] + [
-                    {'name': str(year), 'id': str(year), 'type': 'numeric', 'format': {'specifier': ',.0f'}}
-                    for year in target_years
-                ]
+                if show_day:
+                    val = df_annual[(df_annual['Year'] == year) & 
+                                   (df_annual['Quarter of Year'] == q_def) & 
+                                   (df_annual['Month of Year'] == m_def) & 
+                                   (df_annual['Day of Year'] == float(d_def) if d_def else False)]['Import_Volume'].sum()
+                elif show_month:
+                    val = df_annual[(df_annual['Year'] == year) & 
+                                   (df_annual['Quarter of Year'] == q_def) & 
+                                   (df_annual['Month of Year'] == m_def)]['Import_Volume'].sum()
+                elif show_quarter:
+                    val = df_annual[(df_annual['Year'] == year) & 
+                                   (df_annual['Quarter of Year'] == q_def)]['Import_Volume'].sum()
+                else:
+                    val = df_annual[df_annual['Year'] == year]['Import_Volume'].sum()
                 
-                # Prepare data
-                data = df_annual_pivot.to_dict('records')
+                totals_row[col_id] = val if val > 0 else 0
+            table_records.append(totals_row)
+
+            # Build multi-line headers
+            columns = [{'name': 'Importer', 'id': 'Importer'}]
+            for year in target_years:
+                q_def, m_def, d_def = year_defaults.get(year, ('', '', ''))
+                header_lines = [str(year)]
+                if show_quarter and q_def:
+                    header_lines.append(q_def)
+                if show_month and m_def:
+                    header_lines.append(m_def)
+                if show_day and d_def:
+                    header_lines.append(d_def)
                 
-                # Format numeric values in data
-                for record in data:
-                    for year in target_years:
-                        val = record.pop(year, None)
-                        if val is None or pd.isna(val) or val == 0:
-                            record[str(year)] = ''
-                        else:
-                            record[str(year)] = f"{val:,.0f}"
-                
-                # Create DataTable
-                annual_table = dash_table.DataTable(
+                header_name = '\n'.join(header_lines)
+                columns.append({
+                    'name': header_name,
+                    'id': str(year),
+                    'type': 'numeric',
+                    'format': {'specifier': ',.0f'}
+                })
+
+            data = []
+            for record in table_records:
+                formatted = {'Importer': record['Importer']}
+                for year in target_years:
+                    val = record.get(str(year), 0)
+                    formatted[str(year)] = f"{val:,.0f}" if val > 0 else ""
+                data.append(formatted)
+
+            # Create DataTable
+            annual_table = dash_table.DataTable(
                     id='imports-annual-table',
                     columns=columns,
                     data=data,
@@ -1277,6 +1430,17 @@ def register_callbacks(dash_app, server):
                         {
                             'if': {'row_index': 'odd'},
                             'backgroundColor': '#f8f9fa'
+                        },
+                        {
+                            'if': {'filter_query': '{Importer} = "Grand Total"'},
+                            'fontWeight': 'bold',
+                            'backgroundColor': '#f0f0f0'
+                        }
+                    ],
+                    css=[
+                        {
+                            'selector': '.dash-header',
+                            'rule': 'white-space: pre-line !important; line-height: 1.2 !important;'
                         }
                     ],
                     fixed_rows={'headers': True},
@@ -1416,6 +1580,155 @@ def register_callbacks(dash_app, server):
         
         return map_fig, annual_table, matrix_table, max_value_str, mid_value_str, matrix_caption
     
+    # Button icons and styles reflecting time visibility state
+    @dash_app.callback(
+        [Output('imports-toggle-year-btn', 'children'),
+         Output('imports-toggle-year-btn', 'style'),
+         Output('imports-toggle-quarter-btn', 'children'),
+         Output('imports-toggle-quarter-btn', 'style'),
+         Output('imports-toggle-month-btn', 'children'),
+         Output('imports-toggle-month-btn', 'style'),
+         Output('imports-toggle-day-btn', 'children'),
+         Output('imports-toggle-day-btn', 'style')],
+        Input('imports-time-visibility', 'data'),
+        prevent_initial_call=False
+    )
+    def update_imports_toggle_icons(vis):
+        vis = vis or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}
+        def base_style(active):
+            return {
+                'width': '20px',
+                'height': '20px',
+                'padding': '0',
+                'border': '1px solid #007bff' if active else '1px solid #dee2e6',
+                'backgroundColor': '#e7f3ff' if active else '#f8f9fa',
+                'color': '#007bff' if active else '#2c3e50',
+                'borderRadius': '3px',
+                'cursor': 'pointer',
+                'fontSize': '14px',
+                'fontWeight': 'bold',
+                'lineHeight': '1',
+                'display': 'flex',
+                'alignItems': 'center',
+                'justifyContent': 'center',
+                'marginLeft': '8px',
+                'flexShrink': '0'
+            }
+        year_active = vis.get('Year', True)
+        quarter_active = vis.get('Quarter', False)
+        month_active = vis.get('Month', False)
+        day_active = vis.get('Day', False)
+        return (
+            '−' if year_active else '+', base_style(year_active),
+            '−' if quarter_active else '+', base_style(quarter_active),
+            '−' if month_active else '+', base_style(month_active),
+            '−' if day_active else '+', base_style(day_active)
+        )
+
+    @dash_app.callback(
+        [Output('imports-time-visibility', 'data', allow_duplicate=True),
+         Output('imports-expand-store', 'data', allow_duplicate=True)],
+        Input('imports-toggle-year-btn', 'n_clicks'),
+        State('imports-time-visibility', 'data'),
+        State('imports-expand-store', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_year_vis(n_clicks, vis, expand_state):
+        vis = (vis or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}).copy()
+        expand_state = expand_state or {'years': [], 'quarters': []}
+        vis['Year'] = not vis.get('Year', True)
+        if not vis['Year']:
+            expand_state = {'years': [], 'quarters': []}
+        return vis, expand_state
+
+    @dash_app.callback(
+        [Output('imports-time-visibility', 'data', allow_duplicate=True),
+         Output('imports-expand-store', 'data', allow_duplicate=True)],
+        Input('imports-toggle-quarter-btn', 'n_clicks'),
+        State('imports-time-visibility', 'data'),
+        State('imports-expand-store', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_quarter_vis(n_clicks, vis, expand_state):
+        vis = (vis or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}).copy()
+        expand_state = expand_state or {'years': [], 'quarters': []}
+        vis['Quarter'] = not vis.get('Quarter', False)
+        if not vis['Quarter']:
+            vis['Month'] = False
+            vis['Day'] = False
+        return vis, expand_state
+
+    @dash_app.callback(
+        [Output('imports-time-visibility', 'data', allow_duplicate=True),
+         Output('imports-expand-store', 'data', allow_duplicate=True)],
+        Input('imports-toggle-month-btn', 'n_clicks'),
+        State('imports-time-visibility', 'data'),
+        State('imports-expand-store', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_month_vis(n_clicks, vis, expand_state):
+        vis = (vis or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}).copy()
+        expand_state = expand_state or {'years': [], 'quarters': []}
+        vis['Month'] = not vis.get('Month', False)
+        if vis['Month']:
+            vis['Quarter'] = True
+        else:
+            vis['Day'] = False
+        return vis, expand_state
+
+    @dash_app.callback(
+        Output('imports-time-visibility', 'data', allow_duplicate=True),
+        Input('imports-toggle-day-btn', 'n_clicks'),
+        State('imports-time-visibility', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_day_vis(n_clicks, vis):
+        vis = (vis or {'Year': True, 'Quarter': False, 'Month': False, 'Day': False}).copy()
+        vis['Day'] = not vis.get('Day', False)
+        if vis['Day']:
+            vis['Month'] = True
+            vis['Quarter'] = True
+        return vis
+
+    @dash_app.callback(
+        Output('imports-expand-store', 'data'),
+        Input('imports-annual-table', 'active_cell'),
+        State('imports-expand-store', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_header_expansion(active_cell, state):
+        """Toggle expansion for year/quarter headers via header clicks."""
+        state = state or {'years': [], 'quarters': []}
+        years = set(state.get('years', []))
+        quarters = set(tuple(q) for q in state.get('quarters', []))
+        
+        if not active_cell or active_cell.get('row') != -1:
+            return state
+        
+        col_id = active_cell.get('column_id') or ''
+        parts = col_id.split('|')
+        if not parts:
+            return state
+        
+        if parts[0] == 'Y' and len(parts) >= 2:
+            year = parts[1]
+            if year in years:
+                years.remove(year)
+                quarters = {q for q in quarters if q[0] != year}
+            else:
+                years.add(year)
+        elif parts[0] == 'Q' and len(parts) >= 3:
+            key = (parts[1], parts[2])
+            if key in quarters:
+                quarters.remove(key)
+            else:
+                quarters.add(key)
+        
+        return {
+            'years': sorted(years, reverse=True),
+            'quarters': sorted(list(quarters), reverse=True)
+        }
+
     @dash_app.callback(
         Output('imports-country-checklist', 'value'),
         Output('imports-country-store', 'data'),
