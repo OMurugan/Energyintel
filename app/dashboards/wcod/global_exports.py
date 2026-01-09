@@ -352,6 +352,8 @@ YEAR_COLUMN_IDS = [str(year) for year in YEAR_COLUMNS]
 TABLE_STATIC_COLUMNS = [
     {"name": "", "id": "country"},
     {"name": "", "id": "crude"},
+    {"name": "", "id": "_country_id"},
+    {"name": "", "id": "_stream_id"},
 ]
 TABLE_YEAR_COLUMNS = [
     {"name": str(year), "id": str(year), "type": "numeric", "format": {"specifier": ",.0f"}}
@@ -493,6 +495,8 @@ def _prepare_table_records(df: pd.DataFrame) -> List[Dict[str, object]]:
     last_country = None
     for row in records:
         country_value = row.get("country")
+        row["_country_id"] = country_value # Persistent ID for highlighting
+        row["_stream_id"] = row.get("crude")  # Persistent ID for highlighting
         if country_value == last_country:
             row["country"] = ""
         else:
@@ -1434,6 +1438,7 @@ def create_layout():
             dcc.Store(id="global-exports-play-direction", data="stop"),
             dcc.Store(id="global-exports-selected-country", data=None),
             dcc.Store(id="global-exports-selected-bar", data=None),
+            dcc.Store(id="global-exports-table-selection", data=None),
             html.Div(
                 [
                     html.Div(
@@ -1554,13 +1559,17 @@ def create_layout():
                         id="loading-table",
                         type="default",
                         color="#d35400",
-                        children=[
-                            dash_table.DataTable(
+                        children=[html.Div(id="table-loading-trigger")]
+                    ),
+                    dash_table.DataTable(
                                 id="global-exports-table",
                                 columns=TABLE_COLUMNS,
                                 data=INITIAL_TABLE_DATA,  # Use initial data showing all countries
                                 sort_action="native",
                                 page_action="none",
+                                active_cell=None,
+                                hidden_columns=["_country_id", "_stream_id"],
+                                css=[{"selector": ".show-hide", "rule": "display: none"}], # Hide the toggle columns button
                                 style_table={
                                     "overflowX": "auto",
                                     "overflowY": "auto",
@@ -1619,30 +1628,27 @@ def create_layout():
                                     }
                                     for col_id in YEAR_COLUMN_IDS
                                 ],
-                            ),
-                        ],
+                    ),
+                    html.P(
+                        "Source: Energy Intelligence.",
+                        style={"fontSize": "13px", "color": "#6c757d", "marginTop": "15px", "fontStyle": "italic", "fontWeight": "normal"},
+                    ),
+                    html.P(
+                        "Countries: Select jurisdictions are included under countries for data presentation purposes.",
+                        style={"fontSize": "11px", "color": "#6c757d", "marginTop": "5px", "fontStyle": "italic"},
                     ),
                 ],
-                style={"padding": "10px", "width": "100%"},
+                className="tab-content",
+                style={
+                    "padding": "20px 10px",
+                    "backgroundColor": "#f8f9fa",
+                    "overflowX": "hidden",
+                    "width": "100%",
+                    "maxWidth": "100%",
+                    "boxSizing": "border-box",
+                },
             ),
-            html.P(
-                "Source: Energy Intelligence.",
-                style={"fontSize": "13px", "color": "#6c757d", "marginTop": "15px", "fontStyle": "italic", "fontWeight": "normal"},
-            ),
-            html.P(
-                "Countries: Select jurisdictions are included under countries for data presentation purposes.",
-                style={"fontSize": "11px", "color": "#6c757d", "marginTop": "5px", "fontStyle": "italic"},
-            ),
-        ],
-        className="tab-content",
-        style={
-            "padding": "20px 10px",
-            "backgroundColor": "#f8f9fa",
-            "overflowX": "hidden",  # Prevent horizontal scrolling
-            "width": "100%",
-            "maxWidth": "100%",
-            "boxSizing": "border-box",
-        },
+        ]
     )
 
 
@@ -2170,8 +2176,132 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                         return new_selection
             except Exception:
                 return None
+        return dash.no_update
+
+    @dash_app.callback(
+        Output("global-exports-table-selection", "data"),
+        Output("global-exports-table", "active_cell"),
+        Input("global-exports-table", "active_cell"),
+        Input("global-exports-country-filter", "value"),
+        Input("global-exports-selected-country", "data"),
+        Input("current-submenu", "data"),
+        State("global-exports-table", "derived_viewport_data"),
+        State("global-exports-table-selection", "data"),
+        prevent_initial_call=True,
+    )
+    def handle_table_click(active_cell, country_filter, selected_country_store, submenu, viewport_data, current_selection):
+        """Handle clicks on the table to toggle selection of country, stream, or cell."""
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            return dash.no_update, dash.no_update
+            
+        trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        
+        # 1. Reset selection if environment changes
+        if trigger_id in ["global-exports-country-filter", "global-exports-selected-country", "current-submenu"]:
+            return None, dash.no_update
+            
+        # 2. Handle table click toggle
+        if trigger_id == "global-exports-table" and active_cell and viewport_data:
+            try:
+                row_idx = active_cell["row"]
+                col_id = active_cell["column_id"]
                 
-        return no_update
+                if row_idx >= len(viewport_data):
+                    return dash.no_update, None
+                    
+                row_data = viewport_data[row_idx]
+                country = row_data.get("_country_id")
+                stream = row_data.get("_stream_id")
+                
+                if not country:
+                    return dash.no_update, None
+                
+                # Determine selection type
+                if col_id == "country":
+                    new_selection = {"type": "country", "country": country}
+                elif col_id == "crude":
+                    new_selection = {"type": "stream", "country": country, "stream": stream}
+                else:
+                    # Data cell (Year)
+                    new_selection = {"type": "cell", "country": country, "stream": stream, "column_id": col_id}
+                    
+                # Toggle logic: if same selection, reset to None
+                # Resetting active_cell to None allows the same cell to be clicked again to trigger callback
+                if current_selection and current_selection == new_selection:
+                    return None, None
+                    
+                return new_selection, None
+            except Exception:
+                return dash.no_update, None
+                
+        return dash.no_update, dash.no_update
+
+    @dash_app.callback(
+        Output("global-exports-table", "style_data_conditional"),
+        Input("global-exports-table-selection", "data"),
+        State("global-exports-table", "columns"),
+        prevent_initial_call=False,
+    )
+    def update_table_styling(selection, columns):
+        """Apply highlighting and dimming styles to the table based on selection."""
+        # Base styles (odd row shading)
+        base_styles = [
+            {
+                "if": {"column_id": col["id"]},
+                "color": "#1b365d"
+            } for col in columns if col["id"] not in ["country", "crude", "_country_id", "_stream_id"]
+        ]
+        
+        if not selection:
+            # Default state: odd/even shading
+            return base_styles + [
+                {
+                    "if": {"row_index": "odd"},
+                    "backgroundColor": "#f9fbfd",
+                }
+            ]
+            
+        sel_type = selection.get("type")
+        sel_country = selection.get("country")
+        sel_stream = selection.get("stream")
+        sel_col_id = selection.get("column_id")
+        HIGHLIGHT_BG = "#ffe4e1"
+        
+        # 1. Dim EVERYTHING by default when a selection is active
+        # The first style rule applies to all cells
+        styles = [{"opacity": 0.3}]
+        
+        # 2. Add highlight rules (these will override the previous 0.3 opacity because they are appended later)
+        if sel_type == "country":
+            styles.append({
+                "if": {"filter_query": f'{{_country_id}} eq "{sel_country}"'},
+                "backgroundColor": HIGHLIGHT_BG,
+                "opacity": 1.0,
+            })
+        elif sel_type == "stream":
+            styles.append({
+                "if": {
+                    "filter_query": f'{{_country_id}} eq "{sel_country}" && {{_stream_id}} eq "{sel_stream}"'
+                },
+                "backgroundColor": HIGHLIGHT_BG,
+                "opacity": 1.0,
+            })
+        elif sel_type == "cell":
+            # Highlight specific cell
+            styles.append({
+                "if": {
+                    "filter_query": f'{{_country_id}} eq "{sel_country}" && {{_stream_id}} eq "{sel_stream}"',
+                    "column_id": sel_col_id
+                },
+                "backgroundColor": HIGHLIGHT_BG,
+                "opacity": 1.0,
+            })
+            # Optionally show the rest of the row faintly?
+            # User said "only that single cell is highlighted and others dimmed"
+            # So we stick to dimming everything else (including the rest of the row)
+            
+        return styles
 
     @dash_app.callback(
         Output("global-exports-stream-filter-container", "children"),
@@ -2314,6 +2444,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
 
     @dash_app.callback(
         Output("global-exports-table", "data"),
+        Output("table-loading-trigger", "children"),
         Input("current-submenu", "data"),
         Input("global-exports-year-display", "children"),
         Input("global-exports-stream-filter", "value"),
@@ -2336,10 +2467,10 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         """
         try:
             if submenu != "global-exports":
-                return []
+                return [], dash.no_update
             
             if TABLE_DF.empty:
-                return []
+                return [], dash.no_update
             
             # Get callback context to determine what triggered the update
             ctx = dash.callback_context
@@ -2355,7 +2486,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 # Return initial table data which already has all countries
                 # We need to create it fresh to ensure it's all countries
                 all_data = TABLE_DF.copy()
-                return _prepare_table_records(all_data)
+                return _prepare_table_records(all_data), dash.no_update
             
             # SUBSEQUENT INTERACTIONS: Apply filters based on user actions
             
@@ -2396,16 +2527,16 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             # If no filters were applied, return all data
             if not country_filter_applied and not stream_filter_applied:
                 all_data = TABLE_DF.copy()
-                return _prepare_table_records(all_data)
+                return _prepare_table_records(all_data), dash.no_update
             
-            return _prepare_table_records(filtered)
+            return _prepare_table_records(filtered), dash.no_update
             
         except Exception as e:
             print(f"Error in update_table: {e}")
             # Ultimate fallback: always return all data
             if not TABLE_DF.empty:
-                return _prepare_table_records(TABLE_DF.copy())
-            return []
+                return _prepare_table_records(TABLE_DF.copy()), dash.no_update
+            return [], dash.no_update
 
     @dash_app.callback(
         Output("global-exports-play-direction", "data"),
