@@ -382,55 +382,9 @@ def _resolve_countries(selected: Optional[Sequence[str]], all_countries: Sequenc
     return [c for c in selected if c in all_countries]
 
 
-def _stream_filter_options(stream_names: Sequence[str]) -> List[Dict[str, html.Span]]:
-    """Create checklist options with colored swatches for the given streams."""
-    options: List[Dict[str, html.Span]] = []
-    for name in stream_names:
-        # Use explicit color mapping when available, otherwise fall back
-        color = STREAM_COLOR_MAP.get(name)
-        if not color:
-            # Deterministic fallback based on name hash so it is stable across reloads
-            idx = abs(hash(name)) % len(FALLBACK_COLORS)
-            color = FALLBACK_COLORS[idx]
-
-        label = html.Span(
-            [
-                html.Span(
-                    "",
-                    style={
-                        "display": "inline-block",
-                        "width": "14px",
-                        "height": "14px",
-                        "backgroundColor": color,
-                        "borderRadius": "2px",
-                        "marginRight": "5px",
-                        "border": "1px solid #cfd8e3",
-                        "boxShadow": "0 0 2px rgba(0,0,0,0.1)",
-                    },
-                ),
-                html.Button(
-                    name,
-                    id={"type": "stream-isolate-button", "stream": name},
-                    n_clicks=0,
-                    type="button",
-                    style={
-                        "border": "none",
-                        "background": "transparent",
-                        "padding": "0",
-                        "margin": "0",
-                        "textAlign": "left",
-                        "color": "#1b365d",
-                        "fontWeight": "normal",
-                        "fontSize": "12px",
-                        "cursor": "pointer",
-                        "userSelect": "none",
-                    },
-                ),
-            ],
-            style={"display": "flex", "alignItems": "center", "width": "100%"},
-        )
-        options.append({"label": label, "value": name})
-    return options
+def _stream_filter_options(stream_names: Sequence[str]) -> List[Dict[str, str]]:
+    """Create simple checklist options for the hidden stream filter."""
+    return [{"label": name, "value": name} for name in stream_names]
 
 
 def _streams_for_countries(
@@ -1445,37 +1399,14 @@ def create_layout():
                     ),
                     html.Div(
                         [
+                            # Container for custom styled legend buttons
+                            html.Div(id="global-exports-stream-filter-container", children=[]),
+                            # Hidden checklist to store selection state
                             dcc.Checklist(
                                 id="global-exports-stream-filter",
                                 options=_stream_filter_options(STREAM_ORDER),
                                 value=STREAM_ORDER,
-                                style={
-                                    "display": "flex",
-                                    "flexDirection": "column",
-                                    "gap": "2px",
-                                    "marginTop": "2px",
-                                },
-                                labelStyle={
-                                    "display": "flex",
-                                    "alignItems": "center",
-                                    "gap": "2px",
-                                    "padding": "2px 2px",
-                                    "borderRadius": "4px",
-                                    "border": "0px solid #dfe3eb",
-                                    "backgroundColor": "#ffffff",
-                                    "width": "100%",
-                                    "boxShadow": "0 1px 2px rgba(0,0,0,0.05)",
-                                    "cursor": "pointer",
-                                    "transition": "background-color 0.2s ease, border-color 0.2s ease",
-                                    "userSelect": "none",
-                                    "fontSize": "12px",
-                                },
-                                inputStyle={
-                                    "marginRight": "5px",
-                                    "width": "16px",
-                                    "height": "16px",
-                                    "cursor": "pointer",
-                                },
+                                style={"display": "none"}
                             ),
                         ],
                         className="col-md-3",
@@ -2113,28 +2044,143 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 return minimal_fig, "All Annual Exports by Crude Stream"
 
     @dash_app.callback(
+        Output("global-exports-stream-filter-container", "children"),
+        Input("global-exports-stream-filter", "value"),
+        State("global-exports-stream-filter", "options"),
+    )
+    def update_stream_filter_container(selected_streams, stream_options):
+        """Render custom styled legend buttons with highlight/dimmed states."""
+        if not stream_options:
+            return html.Div("No streams available", style={"fontSize": "12px", "color": "#666", "padding": "10px"})
+        
+        selected_streams = selected_streams if selected_streams else []
+        selected_set = set(selected_streams)
+        all_available = [opt["value"] for opt in stream_options]
+        all_set = set(all_available)
+        
+        # Determine if we're in "all selected" mode
+        is_all_selected = (len(selected_set) == len(all_set) and len(all_set) > 0) or len(selected_set) == 0
+        
+        buttons = []
+        for opt in stream_options:
+            stream = opt["value"]
+            # Color from map or fallback
+            color_hex = STREAM_COLOR_MAP.get(stream)
+            if not color_hex:
+                idx = abs(hash(stream)) % len(FALLBACK_COLORS)
+                color_hex = FALLBACK_COLORS[idx]
+            
+            # Determine if this specific stream is selected or if we're in "all" mode
+            is_active = stream in selected_set
+            
+            # Highlight/Dim behavior:
+            # - If all selected: show all with normal colors
+            # - If only some selected: show selected as highlighted, others as dimmed
+            
+            if is_active and not is_all_selected:
+                # Isolated/Highlighted state: full color, white text, black border
+                bg_color = color_hex
+                text_color = "#ffffff"
+                border_color = "#000000"
+                border_width = "1px"
+            elif is_all_selected:
+                # All selected (Default state): show all with normal colors and light border
+                bg_color = color_hex
+                text_color = "#ffffff"
+                border_color = "#ccc"
+                border_width = "1px"
+            else:
+                # Dimmed state: mixed with white, light border
+                if isinstance(color_hex, str) and color_hex.startswith('#'):
+                    try:
+                        r = int(color_hex[1:3], 16)
+                        g = int(color_hex[3:5], 16)
+                        b = int(color_hex[5:7], 16)
+                        # Mix with white (80% white, 20% original color) for dimmed effect
+                        r_dimmed = int(r * 0.2 + 255 * 0.8)
+                        g_dimmed = int(g * 0.2 + 255 * 0.8)
+                        b_dimmed = int(b * 0.2 + 255 * 0.8)
+                        bg_color = f"rgb({r_dimmed}, {g_dimmed}, {b_dimmed})"
+                    except:
+                        bg_color = "#e0e0e0"
+                else:
+                    bg_color = "#e0e0e0"
+                text_color = "#ffffff"
+                border_color = "#ccc"
+                border_width = "1px"
+
+            button_style = {
+                "fontSize": "10px", # Smaller font to match crude_overview
+                "backgroundColor": bg_color,
+                "padding": "1px 5px", # Reduced padding
+                "borderRadius": "0px",
+                "display": "block",
+                "width": "100%",
+                "textAlign": "left",
+                "color": text_color,
+                "fontWeight": "500",
+                "cursor": "pointer",
+                "border": f"{border_width} solid {border_color}",
+                "marginBottom": "0px", # No margin between buttons to match fig2 stack
+                "transition": "all 0.1s ease",
+                "outline": "none"
+            }
+            
+            buttons.append(
+                html.Button(
+                    stream,
+                    id={"type": "stream-button", "stream": stream},
+                    n_clicks=0,
+                    style=button_style
+                )
+            )
+        
+        return buttons
+
+    @dash_app.callback(
         Output("global-exports-stream-filter", "value", allow_duplicate=True),
-        Input({"type": "stream-isolate-button", "stream": ALL}, "n_clicks"),
+        Input({"type": "stream-button", "stream": ALL}, "n_clicks"),
         State("global-exports-stream-filter", "value"),
+        State("global-exports-stream-filter", "options"),
         prevent_initial_call=True,
     )
-    def isolate_stream(_buttons, current_value):
-        """Single-click a stream name to solo that series."""
+    def isolate_stream(n_clicks_list, current_value, options):
+        """Update stream filter when legend buttons are clicked - single selection toggle logic."""
         ctx = dash.callback_context
-        if not ctx.triggered:
+        if not ctx.triggered or not n_clicks_list:
             return dash.no_update
-        triggered = ctx.triggered[0]["prop_id"].split(".")[0]
+            
+        # Ensure at least one click happened
+        if not any(click and click > 0 for click in n_clicks_list if click is not None):
+            return no_update
+            
+        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
         try:
-            stream_id = json.loads(triggered)
-            stream_name = stream_id.get("stream")
-        except (ValueError, TypeError, AttributeError):
-            stream_name = None
-        if not stream_name:
+            stream_id = json.loads(triggered_id)
+            clicked_stream = stream_id.get("stream")
+        except (ValueError, TypeError, AttributeError, json.JSONDecodeError):
             return dash.no_update
-        current_value = current_value or STREAM_ORDER
-        if isinstance(current_value, list) and len(current_value) == 1 and current_value[0] == stream_name:
-            return STREAM_ORDER
-        return [stream_name]
+            
+        if not clicked_stream:
+            return dash.no_update
+
+        all_streams = [opt["value"] for opt in options] if options else []
+        current_value = current_value or []
+        current_set = set(current_value)
+        all_set = set(all_streams)
+        
+        # Default mode: all selected or none selected
+        is_default_mode = (current_set == all_set and len(all_set) > 0) or len(current_set) == 0
+        
+        if is_default_mode:
+            # From all selected -> select only the clicked one
+            return [clicked_stream]
+        elif len(current_set) == 1 and clicked_stream in current_set:
+            # Already isolated -> return to all selected
+            return all_streams
+        else:
+            # Switching from one isolated stream to another
+            return [clicked_stream]
 
     @dash_app.callback(
         Output("global-exports-table", "data"),
@@ -2142,7 +2188,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input("global-exports-year-display", "children"),
         Input("global-exports-stream-filter", "value"),
         Input("global-exports-selected-country", "data"),
-        Input({"type": "stream-isolate-button", "stream": ALL}, "n_clicks"),
+        Input({"type": "stream-button", "stream": ALL}, "n_clicks"),
         prevent_initial_call=False,
     )
     def update_table(
@@ -2202,7 +2248,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             if stream_filter_state and len(stream_filter_state) > 0:
                 # Check if this was triggered by stream filter or stream isolate button
                 if (triggered_id == "global-exports-stream-filter" or 
-                    (triggered_id and "stream-isolate-button" in triggered_id)):
+                    (triggered_id and "stream-button" in triggered_id)):
                     # Don't apply stream filter if it would result in only Russia on initial-like state
                     if not country_filter_applied:
                         stream_filtered = filtered[filtered["crude"].isin(stream_filter_state)]
