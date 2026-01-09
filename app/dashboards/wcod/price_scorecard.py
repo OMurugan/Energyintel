@@ -32,19 +32,23 @@ def create_layout():
                 n_clicks=0,
                 style={
                     'display': 'inline-block',
-                    'marginRight': '30px',
-                    'padding': '12px 25px',
+                    'marginRight': '20px',
+                    'padding': '12px 20px',
                     'border': '2px solid #ff6600',  # Orange border
                     'color': '#0066cc',  # Blue text
                     'fontSize': '15px',
                     'fontWeight': 'normal',
                     'fontFamily': 'Arial, sans-serif',
-                    'width': '380px',
+                    'width': '30%',
+                    'minWidth': '280px',
+                    'maxWidth': '350px',
                     'textAlign': 'center',
                     'cursor': 'pointer',
                     'borderRadius': '4px',
                     'height': '45px',
-                    'lineHeight': '21px'
+                    'lineHeight': '21px',
+                    'boxSizing': 'border-box',
+                    'whiteSpace': 'nowrap'
                 }
             ),
             
@@ -55,19 +59,23 @@ def create_layout():
                 n_clicks=0,
                 style={
                     'display': 'inline-block',
-                    'marginRight': '30px',
-                    'padding': '12px 25px',
+                    'marginRight': '20px',
+                    'padding': '12px 20px',
                     'border': '2px solid #ff6600',  # Orange border
                     'color': '#0066cc',  # Blue text
                     'fontSize': '15px',
                     'fontWeight': 'normal',
                     'fontFamily': 'Arial, sans-serif',
-                    'width': '380px',
+                    'width': '30%',
+                    'minWidth': '280px',
+                    'maxWidth': '350px',
                     'textAlign': 'center',
                     'cursor': 'pointer',
                     'borderRadius': '4px',
                     'height': '45px',
-                    'lineHeight': '21px'
+                    'lineHeight': '21px',
+                    'boxSizing': 'border-box',
+                    'whiteSpace': 'nowrap'
                 }
             ),
             
@@ -78,23 +86,35 @@ def create_layout():
                 n_clicks=0,
                 style={
                     'display': 'inline-block',
-                    'padding': '12px 25px',
+                    'padding': '12px 20px',
                     'border': '2px solid #ff6600',  # Orange border
                     'color': '#0066cc',  # Blue text
                     'fontSize': '15px',
                     'fontWeight': 'bold',
                     'fontFamily': 'Arial, sans-serif',
-                    'width': '380px',
+                    'width': '30%',
+                    'minWidth': '280px',
+                    'maxWidth': '350px',
                     'textAlign': 'center',
                     'cursor': 'pointer',
                     'borderRadius': '4px',
                     'height': '45px',
-                    'lineHeight': '21px'
+                    'lineHeight': '21px',
+                    'boxSizing': 'border-box',
+                    'whiteSpace': 'nowrap'
                 }
             )
         ], style={
             'marginBottom': '30px',
-            'textAlign': 'center'
+            'textAlign': 'center',
+            'display': 'flex',
+            'justifyContent': 'center',
+            'alignItems': 'center',
+            'flexWrap': 'nowrap',
+            'gap': '0px',
+            'width': '100%',
+            'minWidth': '900px',
+            'overflowX': 'auto'
         }),
         # Title - left-aligned, orange-brown, serif font
         html.H3("PIW SCORECARD -- COSTS TO REFINERS OF KEY FORMULA PRICED CRUDE OILS IN PRIMARY WORLD MARKETS ($/bbl)", 
@@ -578,19 +598,23 @@ def register_callbacks(dash_app, server):
         """Update button styles to show which one is active"""
         base_style = {
             'display': 'inline-block',
-            'marginRight': '30px',
-            'padding': '12px 25px',
+            'marginRight': '20px',
+            'padding': '12px 20px',
             'border': '2px solid #ff6600',
             'color': '#0066cc',
             'fontSize': '15px',
             'fontWeight': 'normal',
             'fontFamily': 'Arial, sans-serif',
-            'width': '380px',
+            'width': '30%',
+            'minWidth': '280px',
+            'maxWidth': '350px',
             'textAlign': 'center',
             'cursor': 'pointer',
             'borderRadius': '4px',
             'height': '45px',
-            'lineHeight': '21px'
+            'lineHeight': '21px',
+            'boxSizing': 'border-box',
+            'whiteSpace': 'nowrap'
         }
         
         # Active button has background color
