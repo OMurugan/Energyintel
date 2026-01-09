@@ -1698,7 +1698,7 @@ def create_layout(server=None):
                     ],
                     style={"height":"500px", "width":"100%"}
                 )
-            ], className='col-md-10', style={'padding': '10px'}),
+            ], style={'padding': '10px', 'width': '83.33%', 'display': 'inline-block', 'verticalAlign': 'top'}),
             html.Div([
                 # Year dropdown (shown when yearly tab is selected)
                 html.Div(
@@ -1746,8 +1746,8 @@ def create_layout(server=None):
                     persistence=True,
                     persistence_type="session",
                 )
-            ], className='col-md-2', style={'padding': '10px', 'paddingTop': '20px'})
-        ], className='row'),
+            ], style={'padding': '10px', 'paddingTop': '20px', 'width': '16.67%', 'display': 'inline-block', 'verticalAlign': 'top'})
+        ], style={'display': 'block', 'width': '100%'}),
         html.Br(),
         html.Div([
             html.Div([
@@ -1800,8 +1800,7 @@ def create_layout(server=None):
                     ],
                     style={"height":"520px"}
                 ), 
-                className='col-md-10',
-                style={'padding': '15px'}
+                style={'padding': '15px', 'width': '83.33%', 'display': 'inline-block', 'verticalAlign': 'top'}
             ),
             html.Div([
                 # Year of Date filter (only for monthly view, for 
@@ -1853,8 +1852,8 @@ def create_layout(server=None):
                     "overflowY": "auto",
                     "fontSize": "10px",
                 })
-            ], className='col-md-2', style={'padding': '12px'})
-        ], className='row'),
+            ], style={'padding': '12px', 'width': '16.67%', 'display': 'inline-block', 'verticalAlign': 'top'})
+        ], style={'display': 'block', 'width': '100%'}),
         html.Br(),
         html.Div([
             html.H4(
@@ -1979,10 +1978,10 @@ def create_layout(server=None):
                     ],
                     style={"minHeight": "400px"}
                 )
-            ], className='col-md-10', style={'padding': '15px', 'minHeight': '400px'}),
+            ], style={'padding': '15px', 'minHeight': '400px', 'width': '83.33%', 'display': 'inline-block', 'verticalAlign': 'top'}),
             html.Div([
                 html.Label("Stream Name"),
-                dcc.Input(id="filter-stream", type="text", placeholder="Stream Name", style={"width": "100%"}),
+                dcc.Input(id="filter-stream", type="text", placeholder="Stream Name", value="", style={"width": "100%"}),
                 html.Br(), html.Br(),
                 html.Div([
                     html.Label("CI Rank", style={"fontWeight":"bold", "color":"#2c3e50", "fontSize":"13px", "marginBottom":"5px"}),
@@ -2027,9 +2026,9 @@ def create_layout(server=None):
                         }
                     ),
                 ], id="monthly-only-filters-container", style={"display": "none"})
-            ], className='col-md-2', style={'padding': '15px'})
+            ], style={'padding': '15px', 'width': '16.67%', 'display': 'inline-block', 'verticalAlign': 'top'})
 
-        ], className='row')
+        ], style={'display': 'block', 'width': '100%'})
     ], style={'padding': '20px', 'background': '#f8f9fa'})
 
 
