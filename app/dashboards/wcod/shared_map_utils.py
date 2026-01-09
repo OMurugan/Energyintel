@@ -228,6 +228,7 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str, se
                     showscale=False,
                     hoverinfo="text",
                     hovertext=["Click to reset view" for _ in other_isos],
+                    customdata=["__BACKGROUND_CLICK__" for _ in other_isos],
                     marker_line_color="rgba(200,200,200,0.3)",
                     marker_line_width=0.5,
                     name="inactive_countries"
@@ -241,12 +242,13 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str, se
                 locations=[selected_iso],
                 z=[0],
                 featureidkey="id",
-                colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
+                colorscale=[[0, "rgba(255,255,255,0.01)"], [1, "rgba(255,255,255,0.01)"]],
                 showscale=False,
                 marker_line_color=MAP_SELECTION_COLOR,
                 marker_line_width=MAP_SELECTION_WIDTH,
                 hoverinfo="text",
                 hovertext=f"<b>{selected_country}</b><br>Click to reset view",
+                customdata=[selected_country],
                 name="selected_country_border"
             )
         )
@@ -262,6 +264,7 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str, se
                     showscale=False,
                     hoverinfo="text",
                     hovertext=["Click to reset view" for _ in other_isos],
+                    customdata=["__BACKGROUND_CLICK__" for _ in other_isos],
                     marker_line_color="rgba(200,200,200,0.3)",
                     marker_line_width=0.5,
                     name="inactive_countries"
@@ -273,12 +276,13 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str, se
                 locations=[selected_iso],
                 z=[0],
                 locationmode="ISO-3",
-                colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
+                colorscale=[[0, "rgba(255,255,255,0.01)"], [1, "rgba(255,255,255,0.01)"]],
                 showscale=False,
                 marker_line_color=MAP_SELECTION_COLOR,
                 marker_line_width=MAP_SELECTION_WIDTH,
                 hoverinfo="text",
                 hovertext=f"<b>{selected_country}</b><br>Click to reset view",
+                customdata=[selected_country],
                 name="selected_country_border"
             )
         )
@@ -374,6 +378,7 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
                 showscale=False,
                 hoverinfo="text" if hover_text else "location+z",
                 hovertext=hover_text,
+                customdata=hover_text,  # Use hover_text as customdata for fallback extraction
                 marker_line_color=MAP_COUNTRY_BORDER_COLOR,
                 marker_line_width=0.8,
                 marker_opacity=0.8,
@@ -393,6 +398,7 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
                 showscale=False,
                 hoverinfo="text" if hover_text else "location+z",
                 hovertext=hover_text,
+                customdata=hover_text,  # Use hover_text as customdata for fallback extraction
                 marker_line_color=MAP_COUNTRY_BORDER_COLOR,
                 marker_line_width=0.7,
                 marker_opacity=0.8,

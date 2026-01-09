@@ -1095,7 +1095,7 @@ def create_layout():
                             ),
                         ],
                         style={
-                            "width": "75%",
+                            "width": "83.33%",
                             "display": "inline-block",
                             "verticalAlign": "top",
                             "padding": "10px 5px 10px 10px",
@@ -1342,7 +1342,7 @@ def create_layout():
                             ),
                         ],
                         style={
-                            "width": "25%",
+                            "width": "16.67%",
                             "display": "inline-block",
                             "verticalAlign": "top",
                             "padding": "10px",
@@ -1404,7 +1404,7 @@ def create_layout():
                             ),
                         ],
                         style={
-                            "width": "75%",
+                            "width": "83.33%",
                             "display": "inline-block",
                             "verticalAlign": "top",
                             "padding": "10px",
@@ -1424,7 +1424,7 @@ def create_layout():
                             ),
                         ],
                         style={
-                            "width": "25%",
+                            "width": "16.67%",
                             "display": "inline-block",
                             "verticalAlign": "top",
                             "padding": "25px 10px",
