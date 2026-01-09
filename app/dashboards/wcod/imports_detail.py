@@ -276,7 +276,7 @@ def create_layout():
                 clearable=False,
                 searchable=True,
                 style={
-                    'width': '1200px',
+                    'width': '100%',
                     'fontSize': '13px',
                     'fontFamily': '"Lato", "Benton Sans", "Arial", "Helvetica", sans-serif',
                     'color': '#1b365d',
@@ -1007,9 +1007,7 @@ def create_imports_table(selected_country='Japan', expansion_state=None, time_vi
             'id': col_id,
             'type': 'numeric',
             'format': {'specifier': ',.1f'},
-            'presentation': 'input',
-            'header_styles': {'textAlign': 'center'},
-            'cell_styles': {'textAlign': 'right'}
+            'presentation': 'input'
         })
     columns.extend(dynamic_columns)
     
