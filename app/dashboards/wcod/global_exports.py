@@ -560,13 +560,22 @@ def _build_map_figure(
     for _, row in df.iterrows():
         country = row["country"]
         value = row["value"]
+        year_val = row["year"]
         
         # Convert country name to ISO code for better mapping
         iso_code = _iso_for_country(country)
         if iso_code:
             locations.append(iso_code)
             z_values.append(value)
-            hover_texts.append(f"<b>{country}</b><br>Exports: {value:,.0f} '000 b/d")
+            
+            # Format according to design shown in screenshot
+            # Using &nbsp; for spacing as Plotly tooltips have limited CSS support for alignment
+            tooltip = (
+                f"Country:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{country}</b><br>"
+                f"Exports Volume:&nbsp;&nbsp;<b>{value:,.0f} ('000 b/d)</b><br>"
+                f"Year:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{year_val}</b>"
+            )
+            hover_texts.append(tooltip)
     
     if not locations:
         return create_empty_map("No valid country data found")
