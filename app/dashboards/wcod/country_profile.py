@@ -1415,8 +1415,7 @@ def create_production_table(country_name, time_period='Yearly'):
         columns = [{
             'name': ['', 'Crude'],
             'id': 'Crude',
-            'type': 'text',
-            'sortable': True
+            'type': 'text'
         }]
         
         # Add "Date" parent header
@@ -1435,10 +1434,6 @@ def create_production_table(country_name, time_period='Yearly'):
                     'id': col_id,
                     'type': 'numeric',
                     'format': {'specifier': ',.0f'},
-                    'sortable': False,
-                    'minWidth': '110px',
-                    'width': '110px',
-                    'maxWidth': '110px'
                 })
         
         columns.extend(date_cols)
@@ -1491,8 +1486,7 @@ def create_production_table(country_name, time_period='Yearly'):
         columns = [{
             'name': ['', 'Crude'],
             'id': 'Crude',
-            'type': 'text',
-            'sortable': True
+            'type': 'text'
         }]
         for year in years:
             year_id = str(year)
@@ -1500,8 +1494,7 @@ def create_production_table(country_name, time_period='Yearly'):
                 'name': ['Year', year_id],
                 'id': year_id,
                 'type': 'numeric',
-                'format': {'specifier': ',.0f'},
-                'sortable': False
+                'format': {'specifier': ',.0f'}
             })
         
         table_data = []
@@ -1571,10 +1564,7 @@ def create_production_table(country_name, time_period='Yearly'):
             {
                 'if': {'column_id': 'Crude'},
                 'textAlign': 'left',
-                'fontWeight': 'bold',
-                'minWidth': '180px',
-                'width': '180px',
-                'maxWidth': '180px'
+                'fontWeight': 'bold'
             }
         ],
         style_header_conditional=[
@@ -1591,9 +1581,7 @@ def create_production_table(country_name, time_period='Yearly'):
             'overflowX': 'auto',
             'border': '1px solid #dee2e6',
             'borderRadius': '4px',
-            'backgroundColor': 'white',
-            'minWidth': '100%',
-            'width': '100%'
+            'backgroundColor': 'white'
         },
         tooltip_data=[
             {
@@ -1806,14 +1794,10 @@ def create_port_details_table(country_name):
         style_cell_conditional=[
             {
                 'if': {'column_id': 'Port Name'},
-                'width': '180px',
-                'maxWidth': '180px',
                 'fontWeight': 'bold'
             },
             {
-                'if': {'column_id': 'Coordinates'},
-                'width': '180px',
-                'maxWidth': '180px',
+                'if': {'column_id': 'Coordinates'}
             }
         ],
         page_action='none',
@@ -2135,7 +2119,6 @@ def create_key_figures_table(country_name, time_period='Monthly'):
                 'if': {'column_id': 'Measure'},
                 'textAlign': 'left',
                 'fontWeight': '600',
-                'minWidth': '220px',
                 'paddingLeft': '15px'
             }
         ],
@@ -2815,6 +2798,10 @@ def register_callbacks(dash_app, server):
             }
             .profile-link-hover:hover {
                 border-color: #fe5000 !important;
+            }
+            
+            .dash-spreadsheet.dash-freeze-left {
+                max-width: 100% !important;
             }
             #production-table .dash-spreadsheet-container {
                 cursor: pointer;
