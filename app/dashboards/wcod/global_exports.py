@@ -1656,29 +1656,23 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                         break
             
             # Resolve countries for filtering
-            selected_countries = None
-            highlight = selected_country  # Highlight the clicked country
-            
-            # On initial load, ALWAYS show all countries regardless of default country selection
-            if is_initial_call:
-                # Initial load - show ALL countries (ignore any default selection)
+            # STANDARDIZED: If selected_country is None (reset state), show ALL countries
+            # even if country_filter has a value.
+            if selected_country is None:
                 selected_countries = None
-            elif not country_filter_triggered:
-                # Show all countries when filter wasn't explicitly changed
-                selected_countries = None
-            elif country_value is not None:
-                # Handle empty list (when "(All)" is unselected)
-                if isinstance(country_value, list) and len(country_value) == 0:
-                    # Empty selection - show no countries
-                    selected_countries = []
-                else:
-                    # Resolve countries (handles "(All)" option)
+                highlight = None
+            else:
+                highlight = selected_country
+                # If country filter was triggered, use it
+                if country_filter_triggered and country_value:
                     resolved_countries = _resolve_countries(country_value, COUNTRY_OPTIONS)
-                    if len(resolved_countries) == 0:
-                        # No countries matched - show empty
-                        selected_countries = []
-                    else:
-                        selected_countries = resolved_countries
+                    selected_countries = resolved_countries if resolved_countries else []
+                # Otherwise, if we have a selected_country (map click), only show that
+                elif selected_country:
+                    selected_countries = [selected_country]
+                # Default to all
+                else:
+                    selected_countries = None
             
             return _build_map_figure(normalized_year, highlight, selected_countries)
         except Exception:
@@ -1770,63 +1764,62 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         prevent_initial_call=True,
     )
     def handle_map_click(click_data, current_filter, options, current_selected_country):
-        """Handle map click to update country selection using standardized behavior from shared_map_utils"""
+        """Handle map click to update country selection using clarified reset behavior."""
         if not click_data or not options:
             return no_update, no_update
         
         # Extract all country options (excluding "(All)")
         all_country_options = [opt["value"] for opt in options if opt["value"] != "(All)"]
         
-        # SPECIAL HANDLING FOR FIRST CLICK:
-        # If no country is currently selected (selected_country is None), 
-        # treat this as a first click from "all countries" state regardless of current_filter
-        if current_selected_country is None:
-            # This is the first map click - extract the clicked country and select it
-            point = click_data["points"][0]
-            clicked_country = None
-            is_background_click = False
-            
-            # Extract country from click data
-            if "customdata" in point and point["customdata"]:
-                if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
-                    if point["customdata"][0] == "__BACKGROUND_CLICK__":
-                        is_background_click = True
-                    else:
-                        clicked_country = point["customdata"][0]
-                elif point["customdata"] == "__BACKGROUND_CLICK__":
+        # 1. IDENTIFY CLICKED ITEM
+        point = click_data["points"][0]
+        clicked_country_raw = None
+        is_background_click = False
+        
+        # Extract from customdata
+        if "customdata" in point and point["customdata"]:
+            if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
+                if point["customdata"][0] == "__BACKGROUND_CLICK__":
                     is_background_click = True
                 else:
-                    clicked_country = point["customdata"]
-            
-            # Extract from other click data if needed
-            if not clicked_country and not is_background_click:
-                if "text" in point and point["text"]:
-                    clicked_country = point["text"]
-                elif "hovertext" in point and point["hovertext"]:
-                    hovertext = point["hovertext"]
-                    if "<b>" in hovertext and "</b>" in hovertext:
-                        clicked_country = hovertext.split("<b>")[1].split("</b>")[0]
-            
-            # Handle first click
-            if is_background_click:
-                # Background click on first interaction - keep showing all
-                return ["(All)"] + all_country_options, None
-            elif clicked_country and clicked_country in all_country_options:
-                # Valid country clicked - select it
-                return [clicked_country], clicked_country
+                    clicked_country_raw = point["customdata"][0]
+            elif point["customdata"] == "__BACKGROUND_CLICK__":
+                is_background_click = True
             else:
-                # Invalid click - keep showing all
-                return ["(All)"] + all_country_options, None
+                clicked_country_raw = point["customdata"]
         
-        # SUBSEQUENT CLICKS: Use the standard map click handler
-        updated_filter = handle_map_click_reset(click_data, current_filter, all_country_options)
+        # Extract from text/hovertext if needed
+        if not clicked_country_raw and not is_background_click:
+            if "text" in point and point["text"]:
+                clicked_country_raw = point["text"]
+            elif "hovertext" in point and point["hovertext"]:
+                clicked_country_raw = point["hovertext"]
         
-        # Determine selected country for highlighting
-        selected_country = None
-        if updated_filter and len(updated_filter) == 1 and updated_filter[0] != "(All)":
-            selected_country = updated_filter[0]
+        # 2. CLEAN UP COUNTRY NAME (Extract from <b> tags if present)
+        clicked_country = None
+        if clicked_country_raw and isinstance(clicked_country_raw, str):
+            if "<b>" in clicked_country_raw and "</b>" in clicked_country_raw:
+                clicked_country = clicked_country_raw.split("<b>")[1].split("</b>")[0]
+            elif "Click to reset" in clicked_country_raw:
+                is_background_click = True
+            else:
+                clicked_country = clicked_country_raw.strip()
         
-        return updated_filter, selected_country
+        # 3. HANDLE RESET STATE (Background click OR clicking same country again)
+        is_reset = is_background_click or (clicked_country and clicked_country == current_selected_country)
+        
+        if is_reset:
+            # RESET:
+            # - Dropdown (country filter) stays same -> dash.no_update
+            # - Store (selected-country) -> None (triggers map/table reset)
+            return dash.no_update, None
+            
+        # 3. HANDLE NEW SELECTION
+        if clicked_country and clicked_country in all_country_options:
+            # Select new country
+            return [clicked_country], clicked_country
+            
+        return no_update, no_update
 
     @dash_app.callback(
         Output("global-exports-stream-filter", "options"),
