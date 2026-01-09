@@ -668,6 +668,7 @@ div[id*="range-slider"] {
 #gpw-date-range-slider .rc-slider-handle-1:active {
     cursor: grabbing !important;
 }
+
 /* Source Link Interactions */
 /* Source Link Interactions */
 .source-link {
@@ -680,7 +681,8 @@ div[id*="range-slider"] {
     border: 1px solid transparent;
     cursor: pointer;
     font-family: inherit;
-    font-weight: bold !important; /* Bold items as requested */
+    font-weight: bold !important;
+    /* Bold items as requested */
     transition: opacity 0.3s;
 }
 
@@ -696,5 +698,6 @@ div[id*="range-slider"] {
 
 /* Dim others when one is focused within the container */
 .source-container:focus-within .source-link:not(:focus) {
-    opacity: 0.2; /* Stronger dimming for "disabled" look */
+    opacity: 0.2;
+    /* Stronger dimming for "disabled" look */
 }
