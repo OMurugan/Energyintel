@@ -14,82 +14,104 @@ from core.data_helpers import execute_query
 def create_layout():
     """Create the Projects Tracker layout"""
     return html.Div([
-        html.H3("Upstream Oil Projects Tracker", style={'marginBottom': '20px'}),
+        # Coming Soon Content
         html.Div([
             html.Div([
-                dcc.Graph(id='projects-tracker-chart')
-            ], className='col-md-12'),
-        ], className='row'),
-        html.Div([
-            dash_table.DataTable(
-                id='projects-tracker-table',
-                style_table={'overflowX': 'auto'},
-                style_cell={'textAlign': 'left', 'padding': '10px'},
-                style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold'},
-                page_size=20
-            )
-        ], style={'marginTop': '20px'})
-    ], className='tab-content')
+                # Icon
+                html.Div([
+                    html.I(className="fas fa-tools", style={
+                        'fontSize': '80px',
+                        'color': '#fe5000',
+                        'marginBottom': '30px'
+                    })
+                ], style={'textAlign': 'center'}),
+                
+                # Title
+                html.H2("Upstream Oil Projects Tracker", style={
+                    'color': '#fe5000',
+                    'textAlign': 'center',
+                    'marginBottom': '20px',
+                    'fontSize': '28px',
+                    'fontWeight': 'bold',
+                    'fontFamily': 'Lato, sans-serif'
+                }),
+                
+                # Coming Soon Message
+                html.H3("Coming Soon", style={
+                    'color': '#1b365d',
+                    'textAlign': 'center',
+                    'marginBottom': '30px',
+                    'fontSize': '24px',
+                    'fontWeight': '600',
+                    'fontFamily': 'Lato, sans-serif'
+                }),
+                
+                # Description
+                html.P([
+                    "We're working hard to bring you a comprehensive upstream oil projects tracking dashboard. ",
+                    "This feature will include:"
+                ], style={
+                    'textAlign': 'center',
+                    'fontSize': '16px',
+                    'color': '#2c3e50',
+                    'marginBottom': '30px',
+                    'fontFamily': 'Lato, sans-serif',
+                    'lineHeight': '1.6'
+                }),
+                
+                # Feature List
+                html.Div([
+                    html.Ul([
+                        html.Li("Interactive project tracking and monitoring", style={'marginBottom': '10px'}),
+                        html.Li("Real-time project status updates", style={'marginBottom': '10px'}),
+                        html.Li("Comprehensive project details and analytics", style={'marginBottom': '10px'}),
+                        html.Li("Advanced filtering and search capabilities", style={'marginBottom': '10px'}),
+                        html.Li("Export functionality for project data", style={'marginBottom': '10px'})
+                    ], style={
+                        'listStyleType': 'none',
+                        'padding': '0',
+                        'fontSize': '14px',
+                        'color': '#2c3e50',
+                        'fontFamily': 'Lato, sans-serif'
+                    })
+                ], style={
+                    'backgroundColor': '#f8f9fa',
+                    'padding': '30px',
+                    'borderRadius': '8px',
+                    'border': '1px solid #dee2e6',
+                    'marginBottom': '30px'
+                }),
+                
+                # Contact Info
+                html.P([
+                    "Stay tuned for updates! This feature will be available soon."
+                ], style={
+                    'textAlign': 'center',
+                    'fontSize': '14px',
+                    'color': '#6c757d',
+                    'fontFamily': 'Lato, sans-serif',
+                    'fontStyle': 'italic'
+                })
+                
+            ], style={
+                'maxWidth': '600px',
+                'margin': '0 auto',
+                'padding': '60px 20px'
+            })
+        ], style={
+            'minHeight': '70vh',
+            'display': 'flex',
+            'alignItems': 'center',
+            'justifyContent': 'center',
+            'backgroundColor': '#ffffff'
+        })
+    ], className='tab-content', style={'backgroundColor': '#ffffff', 'minHeight': '100vh'})
 
 
 def register_callbacks(dash_app, server):
     """Register all callbacks for Projects Tracker"""
-    
-    @dash_app.callback(
-        [Output('projects-tracker-chart', 'figure'),
-         Output('projects-tracker-table', 'data'),
-         Output('projects-tracker-table', 'columns')],
-        Input('current-submenu', 'data')
-    )
-    def update_projects_tracker(submenu):
-        """Update projects tracker chart and table"""
-        if submenu != 'projects-tracker':
-            return go.Figure(), [], []
-        
-        # Chart data - projects by country
-        chart_df = load_projects_tracker_chart_data()
-        
-        # Table data - all projects
-        table_df = load_projects_tracker_table_data()
-    
-        if chart_df.empty:
-            fig = go.Figure()
-            fig.add_annotation(
-                text="No project data available.",
-                xref="paper", yref="paper",
-                x=0.5, y=0.5, showarrow=False
-            )
-            fig.update_layout(height=400, plot_bgcolor='white', paper_bgcolor='white')
-            return fig, [], []
-        
-        # Ensure 'name' and 'project_count' columns exist for the chart
-        if 'name' not in chart_df.columns or 'project_count' not in chart_df.columns:
-            print("Error: Expected columns 'name' and 'project_count' not found in chart DataFrame.")
-            return go.Figure(), [], []
-        
-        # Rename columns for chart display
-        chart_df = chart_df.rename(columns={'name': 'Country', 'project_count': 'Projects'})
-        
-        fig = px.bar(chart_df, x='Country', y='Projects', title='Projects by Country')
-        fig.update_layout(height=400, plot_bgcolor='white', paper_bgcolor='white', xaxis_tickangle=-45)
-        
-        # Ensure table columns exist and are correctly named
-        if table_df.empty:
-            table_data = []
-            table_columns = []
-        else:
-            # Rename columns for table display
-            table_df = table_df.rename(columns={
-                'name': 'Project',
-                'country_name': 'Country',
-                'status': 'Status',
-                'capacity_bbl_per_day': 'Capacity (bbl/d)',
-                'start_date': 'Start Date'
-            })
-            table_columns = [{'name': col, 'id': col} for col in table_df.columns]
-            table_data = table_df.to_dict('records')
-        
-        return fig, table_data, table_columns
+    # No callbacks needed for coming soon page
+    pass
 
 
 def load_projects_tracker_chart_data():
