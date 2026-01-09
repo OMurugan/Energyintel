@@ -382,55 +382,9 @@ def _resolve_countries(selected: Optional[Sequence[str]], all_countries: Sequenc
     return [c for c in selected if c in all_countries]
 
 
-def _stream_filter_options(stream_names: Sequence[str]) -> List[Dict[str, html.Span]]:
-    """Create checklist options with colored swatches for the given streams."""
-    options: List[Dict[str, html.Span]] = []
-    for name in stream_names:
-        # Use explicit color mapping when available, otherwise fall back
-        color = STREAM_COLOR_MAP.get(name)
-        if not color:
-            # Deterministic fallback based on name hash so it is stable across reloads
-            idx = abs(hash(name)) % len(FALLBACK_COLORS)
-            color = FALLBACK_COLORS[idx]
-
-        label = html.Span(
-            [
-                html.Span(
-                    "",
-                    style={
-                        "display": "inline-block",
-                        "width": "14px",
-                        "height": "14px",
-                        "backgroundColor": color,
-                        "borderRadius": "2px",
-                        "marginRight": "5px",
-                        "border": "1px solid #cfd8e3",
-                        "boxShadow": "0 0 2px rgba(0,0,0,0.1)",
-                    },
-                ),
-                html.Button(
-                    name,
-                    id={"type": "stream-isolate-button", "stream": name},
-                    n_clicks=0,
-                    type="button",
-                    style={
-                        "border": "none",
-                        "background": "transparent",
-                        "padding": "0",
-                        "margin": "0",
-                        "textAlign": "left",
-                        "color": "#1b365d",
-                        "fontWeight": "normal",
-                        "fontSize": "12px",
-                        "cursor": "pointer",
-                        "userSelect": "none",
-                    },
-                ),
-            ],
-            style={"display": "flex", "alignItems": "center", "width": "100%"},
-        )
-        options.append({"label": label, "value": name})
-    return options
+def _stream_filter_options(stream_names: Sequence[str]) -> List[Dict[str, str]]:
+    """Create simple checklist options for the hidden stream filter."""
+    return [{"label": name, "value": name} for name in stream_names]
 
 
 def _streams_for_countries(
@@ -606,13 +560,22 @@ def _build_map_figure(
     for _, row in df.iterrows():
         country = row["country"]
         value = row["value"]
+        year_val = row["year"]
         
         # Convert country name to ISO code for better mapping
         iso_code = _iso_for_country(country)
         if iso_code:
             locations.append(iso_code)
             z_values.append(value)
-            hover_texts.append(f"<b>{country}</b><br>Exports: {value:,.0f} '000 b/d")
+            
+            # Format according to design shown in screenshot
+            # Using &nbsp; for spacing as Plotly tooltips have limited CSS support for alignment
+            tooltip = (
+                f"Country:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{country}</b><br>"
+                f"Exports Volume:&nbsp;&nbsp;<b>{value:,.0f} ('000 b/d)</b><br>"
+                f"Year:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{year_val}</b>"
+            )
+            hover_texts.append(tooltip)
     
     if not locations:
         return create_empty_map("No valid country data found")
@@ -672,6 +635,7 @@ def _build_map_figure(
 def _build_chart_figure(
     selected_streams: Optional[Sequence[str]] = None,
     selected_countries: Optional[Sequence[str]] = None,
+    selected_bar: Optional[Dict[str, Any]] = None,
 ) -> go.Figure:
     if CHART_DF.empty:
         return _empty_figure("No chart data available")
@@ -858,11 +822,22 @@ def _build_chart_figure(
         agg_non_zero = agg_complete[non_zero_mask].copy()
         # Get unique combinations that have data
         valid_combinations = agg_non_zero[["stream", "country"]].drop_duplicates()
+        
+        # Determine which years to show on x-axis (Dynamic Years)
+        # Remove years that have no data for the current selection
+        active_years = sorted(agg_non_zero["year"].unique())
+        if active_years:
+            years_sorted = [str(y) for y in active_years]
+            # CRITICAL: Filter agg_complete to only include active years
+            # This ensures traces only have points for these years, 
+            # allowing Plotly to scale them to fill the horizontal space.
+            agg_complete = agg_complete[agg_complete["year"].isin(years_sorted)].copy()
     else:
+        agg_non_zero = pd.DataFrame()
         valid_combinations = pd.DataFrame(columns=["stream", "country"])
     
-    # OPTIMIZATION: Pre-create year array as string to avoid repeated conversion
-    years_sorted_str = [str(y) for y in years_sorted]
+    # Pre-create year array as string to avoid repeated conversion
+    years_sorted_str = list(years_sorted) # years_sorted now contains strings
     
     # Create a separate bar series for each country-stream combination
     # OPTIMIZATION: Only iterate through combinations that have data
@@ -894,14 +869,66 @@ def _build_chart_figure(
             # Create unique bar series name for each country-stream combination
             bar_name = f"{country} - {stream}"
             
+            # Prepare selection highlighting logic
+            opacities = []
+            line_widths = []
+            line_colors = []
+            
+            # Ensure selected_bar is exactly what we expect
+            sel_year = None
+            sel_stream = None
+            sel_country = None
+            
+            if isinstance(selected_bar, dict):
+                sel_year = selected_bar.get("year")
+                sel_stream = selected_bar.get("stream")
+                sel_country = selected_bar.get("country")
+            
+            has_selection = sel_year is not None and sel_stream is not None and sel_country is not None
+            
+            # Pre-calculate integers for years to avoid repeated conversion in loop
+            try:
+                years_ints = [int(y) for y in country_stream_df["year"]]
+            except (ValueError, TypeError):
+                # Fallback if year conversion fails
+                years_ints = [0] * len(country_stream_df)
+
+            for i, row_year in enumerate(years_ints):
+                is_selected = has_selection and row_year == sel_year and stream == sel_stream and country == sel_country
+                
+                if not has_selection:
+                    opacities.append(1.0)
+                    line_widths.append(0)
+                    line_colors.append("rgba(0,0,0,0)")
+                elif is_selected:
+                    opacities.append(1.0)
+                    line_widths.append(2)
+                    line_colors.append("black")
+                else:
+                    opacities.append(0.15)
+                    line_widths.append(0)
+                    line_colors.append("rgba(0,0,0,0)")
+
+            # Create customdata for each point
+            point_customdata = []
+            for y_int in years_ints:
+                point_customdata.append([y_int, stream, country])
+
             fig.add_bar(
                 x=country_stream_df["year"].tolist(),
                 y=country_stream_df["value"].tolist(),
                 name=bar_name,
-                marker_color=stream_color,
+                marker=dict(
+                    color=stream_color,
+                    opacity=opacities,
+                    line=dict(width=line_widths, color=line_colors)
+                ),
+                customdata=point_customdata,
                 hovertemplate=(
                     "<span style='color:#1b365d; font-weight:300;'>Country:</span> "
                     f"<span style='color:#1b365d; font-weight:700;'>{country}</span><br>"
+                    "<span style='color:#1b365d; font-weight:300;'>Stream:</span> "
+                    f"<span style='color:#1b365d; font-weight:700;'>{stream}</span><br>"
                     "<span style='color:#1b365d; font-weight:300;'>Year:</span> "
                     "<span style='color:#1b365d; font-weight:700;'>%{x}</span><br>"
                     "<span style='color:#1b365d; font-weight:300;'>Exports Volume:</span> "
@@ -1141,7 +1168,7 @@ def create_layout():
                             ),
                         ],
                         style={
-                            "width": "75%",
+                            "width": "83.33%",
                             "display": "inline-block",
                             "verticalAlign": "top",
                             "padding": "10px 5px 10px 10px",
@@ -1388,7 +1415,7 @@ def create_layout():
                             ),
                         ],
                         style={
-                            "width": "25%",
+                            "width": "16.67%",
                             "display": "inline-block",
                             "verticalAlign": "top",
                             "padding": "10px",
@@ -1406,6 +1433,7 @@ def create_layout():
             ),
             dcc.Store(id="global-exports-play-direction", data="stop"),
             dcc.Store(id="global-exports-selected-country", data=None),
+            dcc.Store(id="global-exports-selected-bar", data=None),
             html.Div(
                 [
                     html.Div(
@@ -1450,7 +1478,7 @@ def create_layout():
                             ),
                         ],
                         style={
-                            "width": "75%",
+                            "width": "83.33%",
                             "display": "inline-block",
                             "verticalAlign": "top",
                             "padding": "10px",
@@ -1459,41 +1487,18 @@ def create_layout():
                     ),
                     html.Div(
                         [
+                            # Container for custom styled legend buttons
+                            html.Div(id="global-exports-stream-filter-container", children=[]),
+                            # Hidden checklist to store selection state
                             dcc.Checklist(
                                 id="global-exports-stream-filter",
                                 options=_stream_filter_options(STREAM_ORDER),
                                 value=STREAM_ORDER,
-                                style={
-                                    "display": "flex",
-                                    "flexDirection": "column",
-                                    "gap": "2px",
-                                    "marginTop": "2px",
-                                },
-                                labelStyle={
-                                    "display": "flex",
-                                    "alignItems": "center",
-                                    "gap": "2px",
-                                    "padding": "2px 2px",
-                                    "borderRadius": "4px",
-                                    "border": "0px solid #dfe3eb",
-                                    "backgroundColor": "#ffffff",
-                                    "width": "100%",
-                                    "boxShadow": "0 1px 2px rgba(0,0,0,0.05)",
-                                    "cursor": "pointer",
-                                    "transition": "background-color 0.2s ease, border-color 0.2s ease",
-                                    "userSelect": "none",
-                                    "fontSize": "12px",
-                                },
-                                inputStyle={
-                                    "marginRight": "5px",
-                                    "width": "16px",
-                                    "height": "16px",
-                                    "cursor": "pointer",
-                                },
+                                style={"display": "none"}
                             ),
                         ],
                         style={
-                            "width": "25%",
+                            "width": "16.67%",
                             "display": "inline-block",
                             "verticalAlign": "top",
                             "padding": "25px 10px",
@@ -1737,29 +1742,23 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                         break
             
             # Resolve countries for filtering
-            selected_countries = None
-            highlight = selected_country  # Highlight the clicked country
-            
-            # On initial load, ALWAYS show all countries regardless of default country selection
-            if is_initial_call:
-                # Initial load - show ALL countries (ignore any default selection)
+            # STANDARDIZED: If selected_country is None (reset state), show ALL countries
+            # even if country_filter has a value.
+            if selected_country is None:
                 selected_countries = None
-            elif not country_filter_triggered:
-                # Show all countries when filter wasn't explicitly changed
-                selected_countries = None
-            elif country_value is not None:
-                # Handle empty list (when "(All)" is unselected)
-                if isinstance(country_value, list) and len(country_value) == 0:
-                    # Empty selection - show no countries
-                    selected_countries = []
-                else:
-                    # Resolve countries (handles "(All)" option)
+                highlight = None
+            else:
+                highlight = selected_country
+                # If country filter was triggered, use it
+                if country_filter_triggered and country_value:
                     resolved_countries = _resolve_countries(country_value, COUNTRY_OPTIONS)
-                    if len(resolved_countries) == 0:
-                        # No countries matched - show empty
-                        selected_countries = []
-                    else:
-                        selected_countries = resolved_countries
+                    selected_countries = resolved_countries if resolved_countries else []
+                # Otherwise, if we have a selected_country (map click), only show that
+                elif selected_country:
+                    selected_countries = [selected_country]
+                # Default to all
+                else:
+                    selected_countries = None
             
             return _build_map_figure(normalized_year, highlight, selected_countries)
         except Exception:
@@ -1851,63 +1850,62 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         prevent_initial_call=True,
     )
     def handle_map_click(click_data, current_filter, options, current_selected_country):
-        """Handle map click to update country selection using standardized behavior from shared_map_utils"""
+        """Handle map click to update country selection using clarified reset behavior."""
         if not click_data or not options:
             return no_update, no_update
         
         # Extract all country options (excluding "(All)")
         all_country_options = [opt["value"] for opt in options if opt["value"] != "(All)"]
         
-        # SPECIAL HANDLING FOR FIRST CLICK:
-        # If no country is currently selected (selected_country is None), 
-        # treat this as a first click from "all countries" state regardless of current_filter
-        if current_selected_country is None:
-            # This is the first map click - extract the clicked country and select it
-            point = click_data["points"][0]
-            clicked_country = None
-            is_background_click = False
-            
-            # Extract country from click data
-            if "customdata" in point and point["customdata"]:
-                if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
-                    if point["customdata"][0] == "__BACKGROUND_CLICK__":
-                        is_background_click = True
-                    else:
-                        clicked_country = point["customdata"][0]
-                elif point["customdata"] == "__BACKGROUND_CLICK__":
+        # 1. IDENTIFY CLICKED ITEM
+        point = click_data["points"][0]
+        clicked_country_raw = None
+        is_background_click = False
+        
+        # Extract from customdata
+        if "customdata" in point and point["customdata"]:
+            if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
+                if point["customdata"][0] == "__BACKGROUND_CLICK__":
                     is_background_click = True
                 else:
-                    clicked_country = point["customdata"]
-            
-            # Extract from other click data if needed
-            if not clicked_country and not is_background_click:
-                if "text" in point and point["text"]:
-                    clicked_country = point["text"]
-                elif "hovertext" in point and point["hovertext"]:
-                    hovertext = point["hovertext"]
-                    if "<b>" in hovertext and "</b>" in hovertext:
-                        clicked_country = hovertext.split("<b>")[1].split("</b>")[0]
-            
-            # Handle first click
-            if is_background_click:
-                # Background click on first interaction - keep showing all
-                return ["(All)"] + all_country_options, None
-            elif clicked_country and clicked_country in all_country_options:
-                # Valid country clicked - select it
-                return [clicked_country], clicked_country
+                    clicked_country_raw = point["customdata"][0]
+            elif point["customdata"] == "__BACKGROUND_CLICK__":
+                is_background_click = True
             else:
-                # Invalid click - keep showing all
-                return ["(All)"] + all_country_options, None
+                clicked_country_raw = point["customdata"]
         
-        # SUBSEQUENT CLICKS: Use the standard map click handler
-        updated_filter = handle_map_click_reset(click_data, current_filter, all_country_options)
+        # Extract from text/hovertext if needed
+        if not clicked_country_raw and not is_background_click:
+            if "text" in point and point["text"]:
+                clicked_country_raw = point["text"]
+            elif "hovertext" in point and point["hovertext"]:
+                clicked_country_raw = point["hovertext"]
         
-        # Determine selected country for highlighting
-        selected_country = None
-        if updated_filter and len(updated_filter) == 1 and updated_filter[0] != "(All)":
-            selected_country = updated_filter[0]
+        # 2. CLEAN UP COUNTRY NAME (Extract from <b> tags if present)
+        clicked_country = None
+        if clicked_country_raw and isinstance(clicked_country_raw, str):
+            if "<b>" in clicked_country_raw and "</b>" in clicked_country_raw:
+                clicked_country = clicked_country_raw.split("<b>")[1].split("</b>")[0]
+            elif "Click to reset" in clicked_country_raw:
+                is_background_click = True
+            else:
+                clicked_country = clicked_country_raw.strip()
         
-        return updated_filter, selected_country
+        # 3. HANDLE RESET STATE (Background click OR clicking same country again)
+        is_reset = is_background_click or (clicked_country and clicked_country == current_selected_country)
+        
+        if is_reset:
+            # RESET:
+            # - Dropdown (country filter) stays same -> dash.no_update
+            # - Store (selected-country) -> None (triggers map/table reset)
+            return dash.no_update, None
+            
+        # 3. HANDLE NEW SELECTION
+        if clicked_country and clicked_country in all_country_options:
+            # Select new country
+            return [clicked_country], clicked_country
+            
+        return no_update, no_update
 
     @dash_app.callback(
         Output("global-exports-stream-filter", "options"),
@@ -1982,6 +1980,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input("global-exports-stream-filter", "value"),
         Input("global-exports-country-filter", "value"),
         Input("global-exports-selected-country", "data"),
+        Input("global-exports-selected-bar", "data"),
         prevent_initial_call=False,
     )
     def update_chart(
@@ -1989,6 +1988,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         streams: Optional[Sequence[str]],
         countries: Optional[Sequence[str]],
         selected_country: Optional[str],
+        selected_bar: Optional[Dict[str, Any]],
     ):
         """Update stacked area chart."""
         # Default values
@@ -2065,7 +2065,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 else:
                     # Pass resolved countries (or None if no selection)
                     # None = show all countries, [] = show no countries, [list] = show specific countries
-                    fig = _build_chart_figure(streams, resolved_countries)
+                    fig = _build_chart_figure(streams, resolved_countries, selected_bar)
                     # Validate figure
                     if not isinstance(fig, go.Figure):
                         fig = _empty_figure("Invalid chart data")
@@ -2125,28 +2125,192 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 return minimal_fig, "All Annual Exports by Crude Stream"
 
     @dash_app.callback(
-        Output("global-exports-stream-filter", "value", allow_duplicate=True),
-        Input({"type": "stream-isolate-button", "stream": ALL}, "n_clicks"),
-        State("global-exports-stream-filter", "value"),
+        Output("global-exports-selected-bar", "data"),
+        Input("global-exports-stream-chart", "clickData"),
+        Input("global-exports-country-filter", "value"),
+        Input("global-exports-selected-country", "data"),
+        Input("current-submenu", "data"),
+        State("global-exports-selected-bar", "data"),
         prevent_initial_call=True,
     )
-    def isolate_stream(_buttons, current_value):
-        """Single-click a stream name to solo that series."""
+    def handle_chart_click(click_data, country_filter, selected_country_store, submenu, current_selected_bar):
+        """Handle clicks on the bar chart to toggle selection/highlight."""
         ctx = dash.callback_context
         if not ctx.triggered:
+            return no_update
+        
+        trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        
+        # 1. Reset selection if environment changes
+        if trigger_id in ["global-exports-country-filter", "global-exports-selected-country", "current-submenu"]:
+            return None
+            
+        # 2. Handle map click toggle
+        if trigger_id == "global-exports-stream-chart" and click_data:
+            try:
+                point = click_data["points"][0]
+                if "customdata" in point and point["customdata"]:
+                    # Format: [year, stream, country]
+                    clicked_data = point["customdata"]
+                    if len(clicked_data) == 3:
+                        new_selection = {
+                            "year": int(clicked_data[0]),
+                            "stream": clicked_data[1],
+                            "country": clicked_data[2]
+                        }
+                        
+                        # Toggle off if clicked same item
+                        if current_selected_bar and (
+                            current_selected_bar.get("year") == new_selection["year"] and
+                            current_selected_bar.get("stream") == new_selection["stream"] and
+                            current_selected_bar.get("country") == new_selection["country"]
+                        ):
+                            return None
+                            
+                        return new_selection
+            except Exception:
+                return None
+                
+        return no_update
+
+    @dash_app.callback(
+        Output("global-exports-stream-filter-container", "children"),
+        Input("global-exports-stream-filter", "value"),
+        State("global-exports-stream-filter", "options"),
+    )
+    def update_stream_filter_container(selected_streams, stream_options):
+        """Render custom styled legend buttons with highlight/dimmed states."""
+        if not stream_options:
+            return html.Div("No streams available", style={"fontSize": "12px", "color": "#666", "padding": "10px"})
+        
+        selected_streams = selected_streams if selected_streams else []
+        selected_set = set(selected_streams)
+        all_available = [opt["value"] for opt in stream_options]
+        all_set = set(all_available)
+        
+        # Determine if we're in "all selected" mode
+        is_all_selected = (len(selected_set) == len(all_set) and len(all_set) > 0) or len(selected_set) == 0
+        
+        buttons = []
+        for opt in stream_options:
+            stream = opt["value"]
+            # Color from map or fallback
+            color_hex = STREAM_COLOR_MAP.get(stream)
+            if not color_hex:
+                idx = abs(hash(stream)) % len(FALLBACK_COLORS)
+                color_hex = FALLBACK_COLORS[idx]
+            
+            # Determine if this specific stream is selected or if we're in "all" mode
+            is_active = stream in selected_set
+            
+            # Highlight/Dim behavior:
+            # - If all selected: show all with normal colors
+            # - If only some selected: show selected as highlighted, others as dimmed
+            
+            if is_active and not is_all_selected:
+                # Isolated/Highlighted state: full color, white text, black border
+                bg_color = color_hex
+                text_color = "#ffffff"
+                border_color = "#000000"
+                border_width = "1px"
+            elif is_all_selected:
+                # All selected (Default state): show all with normal colors and light border
+                bg_color = color_hex
+                text_color = "#ffffff"
+                border_color = "#ccc"
+                border_width = "1px"
+            else:
+                # Dimmed state: mixed with white, light border
+                if isinstance(color_hex, str) and color_hex.startswith('#'):
+                    try:
+                        r = int(color_hex[1:3], 16)
+                        g = int(color_hex[3:5], 16)
+                        b = int(color_hex[5:7], 16)
+                        # Mix with white (80% white, 20% original color) for dimmed effect
+                        r_dimmed = int(r * 0.2 + 255 * 0.8)
+                        g_dimmed = int(g * 0.2 + 255 * 0.8)
+                        b_dimmed = int(b * 0.2 + 255 * 0.8)
+                        bg_color = f"rgb({r_dimmed}, {g_dimmed}, {b_dimmed})"
+                    except:
+                        bg_color = "#e0e0e0"
+                else:
+                    bg_color = "#e0e0e0"
+                text_color = "#ffffff"
+                border_color = "#ccc"
+                border_width = "1px"
+
+            button_style = {
+                "fontSize": "10px", # Smaller font to match crude_overview
+                "backgroundColor": bg_color,
+                "padding": "1px 5px", # Reduced padding
+                "borderRadius": "0px",
+                "display": "block",
+                "width": "100%",
+                "textAlign": "left",
+                "color": text_color,
+                "fontWeight": "500",
+                "cursor": "pointer",
+                "border": f"{border_width} solid {border_color}",
+                "marginBottom": "0px", # No margin between buttons to match fig2 stack
+                "transition": "all 0.1s ease",
+                "outline": "none"
+            }
+            
+            buttons.append(
+                html.Button(
+                    stream,
+                    id={"type": "stream-button", "stream": stream},
+                    n_clicks=0,
+                    style=button_style
+                )
+            )
+        
+        return buttons
+
+    @dash_app.callback(
+        Output("global-exports-stream-filter", "value", allow_duplicate=True),
+        Input({"type": "stream-button", "stream": ALL}, "n_clicks"),
+        State("global-exports-stream-filter", "value"),
+        State("global-exports-stream-filter", "options"),
+        prevent_initial_call=True,
+    )
+    def isolate_stream(n_clicks_list, current_value, options):
+        """Update stream filter when legend buttons are clicked - single selection toggle logic."""
+        ctx = dash.callback_context
+        if not ctx.triggered or not n_clicks_list:
             return dash.no_update
-        triggered = ctx.triggered[0]["prop_id"].split(".")[0]
+            
+        # Ensure at least one click happened
+        if not any(click and click > 0 for click in n_clicks_list if click is not None):
+            return no_update
+            
+        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
         try:
-            stream_id = json.loads(triggered)
-            stream_name = stream_id.get("stream")
-        except (ValueError, TypeError, AttributeError):
-            stream_name = None
-        if not stream_name:
+            stream_id = json.loads(triggered_id)
+            clicked_stream = stream_id.get("stream")
+        except (ValueError, TypeError, AttributeError, json.JSONDecodeError):
             return dash.no_update
-        current_value = current_value or STREAM_ORDER
-        if isinstance(current_value, list) and len(current_value) == 1 and current_value[0] == stream_name:
-            return STREAM_ORDER
-        return [stream_name]
+            
+        if not clicked_stream:
+            return dash.no_update
+
+        all_streams = [opt["value"] for opt in options] if options else []
+        current_value = current_value or []
+        current_set = set(current_value)
+        all_set = set(all_streams)
+        
+        # Default mode: all selected or none selected
+        is_default_mode = (current_set == all_set and len(all_set) > 0) or len(current_set) == 0
+        
+        if is_default_mode:
+            # From all selected -> select only the clicked one
+            return [clicked_stream]
+        elif len(current_set) == 1 and clicked_stream in current_set:
+            # Already isolated -> return to all selected
+            return all_streams
+        else:
+            # Switching from one isolated stream to another
+            return [clicked_stream]
 
     @dash_app.callback(
         Output("global-exports-table", "data"),
@@ -2154,7 +2318,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input("global-exports-year-display", "children"),
         Input("global-exports-stream-filter", "value"),
         Input("global-exports-selected-country", "data"),
-        Input({"type": "stream-isolate-button", "stream": ALL}, "n_clicks"),
+        Input({"type": "stream-button", "stream": ALL}, "n_clicks"),
         prevent_initial_call=False,
     )
     def update_table(
@@ -2214,7 +2378,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             if stream_filter_state and len(stream_filter_state) > 0:
                 # Check if this was triggered by stream filter or stream isolate button
                 if (triggered_id == "global-exports-stream-filter" or 
-                    (triggered_id and "stream-isolate-button" in triggered_id)):
+                    (triggered_id and "stream-button" in triggered_id)):
                     # Don't apply stream filter if it would result in only Russia on initial-like state
                     if not country_filter_applied:
                         stream_filtered = filtered[filtered["crude"].isin(stream_filter_state)]
