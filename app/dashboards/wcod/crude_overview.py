@@ -190,9 +190,10 @@ def _calculate_yaxis_ticks(max_value):
     normalized_step = raw_step / magnitude
     
     # Choose a nice step based on standard sets {1, 2, 2.5, 5, 10}
-    if normalized_step < 1.5: nice_step = 1
-    elif normalized_step < 2.25: nice_step = 2
-    elif normalized_step < 3: nice_step = 2.5
+    # Adjusted thresholds to prefer 2 (2000) as requested by user
+    if normalized_step < 1.1: nice_step = 1
+    elif normalized_step < 2.5: nice_step = 2
+    elif normalized_step < 4: nice_step = 2.5
     elif normalized_step < 7.5: nice_step = 5
     else: nice_step = 10
     
@@ -1567,36 +1568,6 @@ def create_layout(server=None):
         # Store to track selected bar for monthly chart isolation
         dcc.Store(id="selected-bar-store", data=None),
         dcc.Store(id="stream-navigation-dummy", data=None),
-        # Custom CSS to style markdown links in DataTable to look like normal text
-        html.Div(
-            dcc.Markdown(
-                """
-                <style>
-                    #crude-table .dash-cell-value a,
-                    #crude-table .dash-cell-value a:link,
-                    #crude-table .dash-cell-value a:visited,
-                    #crude-table .dash-cell-value a:hover,
-                    #crude-table .dash-cell-value a:active {
-                        color: #000000 !important;
-                        text-decoration: none !important;
-                    }
-                    .tab-content {
-                        padding: 0px !important;
-                    }
-                    .jsx-4017309047.tab-content {
-                        display: none !important;
-                        padding: 0px !important;
-                    }
-                    div[class*="jsx-"][class*="tab-content"] {
-                        display: none !important;
-                        padding: 0px !important;
-                    }
-                </style>
-                """,
-                dangerously_allow_html=True
-            ),
-            style={"display": "none"}
-        ),
         # Text above tabs
         html.P(
             "Click on a country for a breakdown of production by crude stream. *Profiled countries only.", 
@@ -1785,7 +1756,8 @@ def create_layout(server=None):
                     children=[
                         dcc.Graph(
                             id="production-breakdown-chart", 
-                            style={"height":"520px"},
+                            style={"height":"520px", "pointer-events": "auto"},
+                            className="interactive-bar-chart",
                             figure=go.Figure(),
                             config={
                                 'displayModeBar': True,
@@ -2800,88 +2772,88 @@ def register_callbacks(dash_app, server):
     
     @dash_app.callback(
         Output("profiled-streams", "value", allow_duplicate=True),
-        [Input({"type": "stream-button", "stream": ALL}, "n_clicks")],
-        [State({"type": "stream-button", "stream": ALL}, "id"),
-         State("profiled-streams", "value")],
+        Input("production-breakdown-chart", "clickData"),
+        [State("crude-main-tabs", "value"),
+        State("profiled-streams", "value"),
+        State("profiled-streams", "options")],
         prevent_initial_call=True
     )
-    def update_profiled_streams_from_buttons(button_clicks, button_ids, current_selected):
-        """Update profiled-streams selection when stream buttons are clicked - toggle behavior"""
-        from dash import ctx
-        if not ctx.triggered:
+    def update_profiled_from_chart_click(clickData, tab, current_profiled, stream_options):
+        if tab != "yearly" or not clickData:
             return no_update
-            
-        # CRITICAL: Ensure this only runs if a button was actually clicked.
-        # Pattern-matching callbacks can trigger when buttons are added to the layout (Input ALL).
-        # We check if any of the buttons have n_clicks > 0.
-        if not any(click and click > 0 for click in (button_clicks or []) if click is not None):
-            return no_update
-        
-        # Find which button was clicked using ctx.triggered
-        clicked_stream = None
-        triggered_id = ctx.triggered[0]["prop_id"]
-        
-        # Parse the triggered_id to get the stream name
-        # Format: '{"type":"stream-button","stream":"Arco"}.n_clicks'
-        if 'stream-button' in triggered_id:
-            try:
-                import json
-                # Extract the JSON part
-                start_idx = triggered_id.find('{')
-                end_idx = triggered_id.find('}', start_idx) + 1
-                if start_idx >= 0 and end_idx > start_idx:
-                    id_dict = json.loads(triggered_id[start_idx:end_idx])
-                    if isinstance(id_dict, dict) and "stream" in id_dict:
-                        clicked_stream = id_dict["stream"]
-            except Exception as e:
-                print(f"Error parsing triggered_id: {e}")
-        
-        if not clicked_stream:
-            return no_update
-        
-        # Get all available streams from button_ids
-        all_streams = []
-        if button_ids:
-            for button_id in button_ids:
-                if isinstance(button_id, dict) and "stream" in button_id:
-                    all_streams.append(str(button_id["stream"]))
-        
-        # Normalize clicked_stream to string
-        clicked_stream = str(clicked_stream) if clicked_stream else None
-        
-        print(f"DEBUG PROFILE BTN: Clicked='{clicked_stream}'")
-        print(f"DEBUG PROFILE BTN: Current selected count={len(current_selected) if current_selected else 0}")
-        print(f"DEBUG PROFILE BTN: All streams count={len(all_streams)}")
 
-        # Get current selection - normalize to strings
-        current_selected = [str(s) for s in current_selected] if current_selected else []
-        current_set = set(current_selected)
-        all_set = set(all_streams)
+        # Get the stream and year from the clicked bar
+        point = clickData["points"][0]
+        clicked_stream = point.get("legendgroup") or point.get("name", "")
         
-        # Determine if we're in default mode (all streams selected)
-        # Note: If current_selected is empty, it usually implies default mode in UI logic, 
-        # but here we want to return EXPLICIT list of all streams for "all selected" state.
-        is_default_mode = (current_set == all_set and len(all_set) > 0) or len(current_set) == 0
+        # Try to get year from customdata first (most robust)
+        customdata = point.get("customdata")
+        clicked_year = None
+        if customdata and len(customdata) > 1:
+            clicked_year = customdata[1]
+        elif customdata and len(customdata) == 1:
+            # Maybe yearly tab customdata format
+            clicked_year = point.get("x")
         
-        print(f"DEBUG PROFILE BTN: is_default_mode={is_default_mode}")
-        
-        # Toggle behavior:
-        # - If in default mode (all selected): clicking a stream selects only that stream
-        # - If one stream is selected: clicking the same stream returns to default (all selected)
-        if is_default_mode:
-            # Default mode: clicking any stream selects only that stream
-            print(f"DEBUG PROFILE BTN: Default mode -> Selecting only '{clicked_stream}'")
+        if not clicked_year:
+            clicked_year = point.get("x") # Fallback to x-axis value (Year for yearly tab)
+
+        # Get all available streams from options
+        all_streams = [opt["value"] for opt in stream_options]
+
+        # If current_profiled is empty or equals all_streams, then set to [clicked_stream]
+        if not current_profiled or set(current_profiled) == set(all_streams):
             return [clicked_stream]
-        elif len(current_set) == 1 and clicked_stream in current_set:
-            # One stream selected and clicking the same stream: return to default (all selected)
-            print(f"DEBUG PROFILE BTN: Single select match -> Resetting to ALL ({len(all_streams)} items)")
-            # Return sorted all_streams to explicitly select all
-            res = sorted(all_streams) if all_streams else []
-            return res
+        # If current_profiled is exactly [clicked_stream], then set to all_streams
+        elif current_profiled == [clicked_stream]:
+            return all_streams
+        # Otherwise, set to [clicked_stream]
         else:
-            # Clicking a different stream when one is already selected: select the clicked stream
-            print(f"DEBUG PROFILE BTN: Switching selection to '{clicked_stream}'")
             return [clicked_stream]
+            
+            # Get all available streams from button_ids
+            all_streams = []
+            if button_ids:
+                for button_id in button_ids:
+                    if isinstance(button_id, dict) and "stream" in button_id:
+                        all_streams.append(str(button_id["stream"]))
+            
+            # Normalize clicked_stream to string
+            clicked_stream = str(clicked_stream) if clicked_stream else None
+            
+            print(f"DEBUG PROFILE BTN: Clicked='{clicked_stream}'")
+            print(f"DEBUG PROFILE BTN: Current selected count={len(current_selected) if current_selected else 0}")
+            print(f"DEBUG PROFILE BTN: All streams count={len(all_streams)}")
+
+            # Get current selection - normalize to strings
+            current_selected = [str(s) for s in current_selected] if current_selected else []
+            current_set = set(current_selected)
+            all_set = set(all_streams)
+            
+            # Determine if we're in default mode (all streams selected)
+            # Note: If current_selected is empty, it usually implies default mode in UI logic, 
+            # but here we want to return EXPLICIT list of all streams for "all selected" state.
+            is_default_mode = (current_set == all_set and len(all_set) > 0) or len(current_set) == 0
+            
+            print(f"DEBUG PROFILE BTN: is_default_mode={is_default_mode}")
+            
+            # Toggle behavior:
+            # - If in default mode (all selected): clicking a stream selects only that stream
+            # - If one stream is selected: clicking the same stream returns to default (all selected)
+            if is_default_mode:
+                # Default mode: clicking any stream selects only that stream
+                print(f"DEBUG PROFILE BTN: Default mode -> Selecting only '{clicked_stream}'")
+                return [clicked_stream]
+            elif len(current_set) == 1 and clicked_stream in current_set:
+                # One stream selected and clicking the same stream: return to default (all selected)
+                print(f"DEBUG PROFILE BTN: Single select match -> Resetting to ALL ({len(all_streams)} items)")
+                # Return sorted all_streams to explicitly select all
+                res = sorted(all_streams) if all_streams else []
+                return res
+            else:
+                # Clicking a different stream when one is already selected: select the clicked stream
+                print(f"DEBUG PROFILE BTN: Switching selection to '{clicked_stream}'")
+                return [clicked_stream]
     
     # Clientside callback to navigate to stream profile URL and track last clicked stream
     clientside_callback(
@@ -3095,82 +3067,98 @@ def register_callbacks(dash_app, server):
     def handle_chart_bar_click(clickData, current_selection, tab, production_years):
         """
         Handle chart bar clicks for single-bar global selection behavior.
-        
-        Core Logic:
-        - Only ONE bar can be active across the entire chart at any time
-        - Selection is based on unique bar identity: {year, month, stream}
-        - Click same bar → deselect (activeBar = null)
-        - Click different bar → replace selection (activeBar = new bar)
+        Now supports both monthly and yearly tabs for isolation.
         """
-        if not clickData or tab != "monthly":
+        if not clickData:
             return no_update
         
         try:
             # Extract click information
+            # Extract point information
             point = clickData["points"][0]
-            clicked_stream = point.get("legendgroup") or point.get("name", "")
-            clicked_month = point.get("x", "")
             
-            # Get the year from the subplot structure
-            # In monthly view, each year is a separate subplot (column)
-            subplot_col = point.get("xaxis", "x")  # e.g., "x", "x2", "x3"
+            # Extract stream with priority on customdata for robustness
+            clicked_stream = None
+            customdata = point.get("customdata")
+            if customdata:
+                # Based on our injected customdata structure:
+                # Monthly: [Country, Year, Stream] -> index 2
+                # Yearly: [Stream] -> index 0 (as added via px.bar)
+                if isinstance(customdata, list):
+                    if len(customdata) >= 3:
+                        clicked_stream = customdata[2]
+                    elif len(customdata) >= 1:
+                        clicked_stream = customdata[0]
             
-            # Extract column number from xaxis (x=1, x2=2, x3=3, etc.)
-            if subplot_col == "x":
-                col_idx = 0
+            # Fallback to legendgroup or name if customdata didn't work
+            if not clicked_stream:
+                clicked_stream = str(point.get("legendgroup") or point.get("name", "")).strip()
+            
+            # Extract Month and Year based on tab
+            clicked_month = None
+            clicked_year = None
+            
+            if tab == "monthly":
+                clicked_month = str(point.get("x", "")).strip()
+                # Try customdata first for year (format: [Country, Year, Stream])
+                if customdata and len(customdata) > 1:
+                    clicked_year = str(customdata[1])
+                
+                # Fallback to axis-based calculation if customdata is missing
+                if not clicked_year:
+                    subplot_col = point.get("xaxis", "x")
+                    col_idx = 0 if subplot_col == "x" else int(subplot_col[1:]) - 1
+                    resolved_years = _resolve_years_selection(production_years)
+                    if resolved_years:
+                        selected_years = sorted([str(y) for y in resolved_years])
+                        if 0 <= col_idx < len(selected_years):
+                            clicked_year = selected_years[col_idx]
             else:
-                col_idx = int(subplot_col[1:]) - 1  # x2 -> 1, x3 -> 2, etc.
+                # Tab is yearly
+                clicked_year = str(point.get("x", "")).strip()
+                # Check customdata for stream just in case
+                clicked_month = None
+
+            # Sanitize for comparison
+            clicked_year = str(clicked_year).strip() if clicked_year else None
+            clicked_month = str(clicked_month).strip() if clicked_month else ""
+            clicked_stream = str(clicked_stream).strip() if (clicked_stream and str(clicked_stream).lower() != 'none') else None
             
-            # Map column index to year based on production_years selection
-            resolved_years = _resolve_years_selection(production_years)
-            if resolved_years:
-                selected_years = sorted([str(y) for y in resolved_years])
-                if col_idx < len(selected_years):
-                    clicked_year = selected_years[col_idx]
-                else:
-                    print(f"DEBUG CHART CLICK: Column index {col_idx} out of range for years {selected_years}")
-                    return no_update
-            else:
-                print(f"DEBUG CHART CLICK: No production years available")
+            if not clicked_year or not clicked_stream:
+                print(f"DEBUG CHART CLICK: Missing identification (Year: {clicked_year}, Stream: {clicked_stream})")
                 return no_update
-            
+                
             print(f"DEBUG CHART CLICK: Bar clicked - Stream: '{clicked_stream}', Month: '{clicked_month}', Year: '{clicked_year}'")
-            print(f"DEBUG CHART CLICK: Data types - Stream: {type(clicked_stream)}, Month: {type(clicked_month)}, Year: {type(clicked_year)}")
             
-            # Core Logic: Single-bar global selection
-            # Create the clicked bar identity - ensure all values are strings for consistent comparison
-            clicked_bar = {
-                "year": str(clicked_year),
-                "month": str(clicked_month),
-                "stream": str(clicked_stream)
-            }
+            # Use standardized casing for reliable comparison
+            c_stream = clicked_stream.lower()
+            c_month = clicked_month.lower() if clicked_month else ""
+            c_year = clicked_year.lower()
             
-            # Check if same bar is clicked (toggle off)
-            if (current_selection and 
-                str(current_selection.get("year")) == str(clicked_bar["year"]) and
-                str(current_selection.get("month")) == str(clicked_bar["month"]) and
-                str(current_selection.get("stream")) == str(clicked_bar["stream"])):
-                print(f"DEBUG CHART CLICK: Same bar clicked ({clicked_stream}-{clicked_month}-{clicked_year}), clearing selection (activeBar = null)")
-                return None  # activeBar = null
-            
-            # New bar selected → replace previous selection
-            active_bar = {
-                "year": str(clicked_bar["year"]),
-                "month": str(clicked_bar["month"]),
-                "stream": str(clicked_bar["stream"]),
-                "timestamp": pd.Timestamp.now().isoformat()  # To force updates
-            }
-            
+            # Check current selection for toggle
             if current_selection:
-                prev_stream = current_selection.get("stream")
-                prev_month = current_selection.get("month")
-                prev_year = current_selection.get("year")
-                print(f"DEBUG CHART CLICK: Replacing selection from {prev_stream}-{prev_month}-{prev_year} to {clicked_stream}-{clicked_month}-{clicked_year}")
-            else:
-                print(f"DEBUG CHART CLICK: New bar selected: {clicked_stream}-{clicked_month}-{clicked_year}")
+                 s_stream = str(current_selection.get("stream", "")).strip().lower()
+                 s_month = str(current_selection.get("month", "")).strip().lower()
+                 s_year = str(current_selection.get("year", "")).strip().lower()
+                 
+                 if s_stream == c_stream and s_month == c_month and s_year == c_year:
+                     print(f"DEBUG CHART CLICK: Toggle OFF - identical segment clicked")
+                     return None
             
-            print(f"DEBUG CHART CLICK: activeBar = {active_bar}")
+            # Set new selection
+            active_bar = {
+                "year": clicked_year,
+                "month": clicked_month,
+                "stream": clicked_stream,
+                "timestamp": pd.Timestamp.now().isoformat()
+            }
+            
+            print(f"DEBUG CHART CLICK: Setting activeBar = {active_bar}")
             return active_bar
+            
+        except Exception as e:
+            print(f"ERROR CHART CLICK: {e}")
+            return no_update
             
         except Exception as e:
             print(f"ERROR CHART CLICK: {e}")
@@ -3570,34 +3558,26 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                # NEW LOGIC: Handle stream selection for yearly chart
-                # For yearly view: If a single stream is selected, we should highlight it across ALL years
-                # but NOT filter the data - keep all streams and all years, just adjust opacity
+                # NEW LOGIC: Handle stream and isolation selection for yearly chart
                 is_single_stream_selected = False
                 selected_stream = None
-                if profiled and len(profiled) > 0:
-                    # Check if all available streams are selected (default mode)
-                    profiled_set = set(profiled)
-                    available_set = set(available_streams) if available_streams else set()
-                    
-                    # If all streams are selected, don't filter (show all)
-                    if profiled_set == available_set and len(available_set) > 0:
-                        print(f"DEBUG BREAKDOWN YEARLY: All streams selected (default mode), showing all streams")
-                        # Don't filter - show all streams at full opacity
-                        is_single_stream_selected = False
-                    elif len(profiled) == 1:
-                        # Single stream selected: highlight this stream across all years
-                        selected_stream = profiled[0]
-                        is_single_stream_selected = True
-                        print(f"DEBUG BREAKDOWN YEARLY: Single stream selected ({selected_stream}), will highlight across all years")
-                        # IMPORTANT: Don't filter the data here - we'll handle highlighting via opacity later
-                    else:
-                        # Multiple streams selected (shouldn't happen in single selection mode, but handle it)
-                        print(f"DEBUG BREAKDOWN YEARLY: Multiple streams selected ({len(profiled)} streams), showing all at full opacity")
-                        is_single_stream_selected = False
+                highlight_year = None
+                highlight_month = None
+                
+                # Check if we have a specific bar selection from chart click
+                if selected_bar and selected_bar.get("stream"):
+                    # Chart click selection takes precedence
+                    selected_stream = selected_bar.get("stream")
+                    highlight_year = selected_bar.get("year")
+                    highlight_month = selected_bar.get("month")
+                    is_single_stream_selected = True
+                    print(f"DEBUG BREAKDOWN YEARLY: Isolation Active - Stream: {selected_stream}, Year: {highlight_year}")
+                elif profiled and len(profiled) == 1:
+                    # Single stream selected from profiled streams (Side Menu)
+                    selected_stream = profiled[0]
+                    is_single_stream_selected = True
+                    print(f"DEBUG BREAKDOWN YEARLY: Stream Highlight active ({selected_stream})")
                 else:
-                    # If no stream selected, show all streams (default mode)
-                    print(f"DEBUG BREAKDOWN YEARLY: No stream selected, showing all streams (default mode)")
                     is_single_stream_selected = False
                 
                 # Group by year and stream, sum values
@@ -3765,7 +3745,7 @@ def register_callbacks(dash_app, server):
                 stream_categories = all_streams_list if all_streams_list else get_stream_order("yearly")
                 agg_for_chart["Stream"] = pd.Categorical(agg_for_chart["Stream"], categories=stream_categories, ordered=True)
                 agg_for_chart = agg_for_chart.sort_values(["year", "Stream"])
-
+    
                 # Create the stacked bar chart using plotly express - px.bar creates vertical bars by default
                 print(f"DEBUG BREAKDOWN YEARLY: Creating chart with {len(agg_for_chart)} records")
                 try:
@@ -3778,7 +3758,8 @@ def register_callbacks(dash_app, server):
                         color_discrete_sequence=get_color_sequence("yearly"),
                         category_orders={"Stream": stream_categories},
                         labels={"value":"Production Volume ('000 b/d)", "year":"Year", "Stream":"Stream"},
-                        barmode="stack"  # Stack streams for each year
+                        barmode="stack",  # Stack streams for each year
+                        custom_data=["Stream"]
                     )
                     stack_order = list(reversed(stream_categories))
                     order_lookup = {name: idx for idx, name in enumerate(stack_order)}
@@ -3803,19 +3784,54 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                # NEW LOGIC: Apply opacity-based highlighting for yearly chart
-                # If a single stream is selected, highlight it across all years and dim others
                 if is_single_stream_selected and selected_stream:
-                    print(f"DEBUG BREAKDOWN YEARLY: Applying opacity highlighting for selected stream: {selected_stream}")
+                    # Sanitize highlight targets for robust comparison
+                    h_stream_str = str(selected_stream).strip().lower()
+                    h_year_str = str(highlight_year).strip() if highlight_year else None
+                    is_isolated_view = h_year_str is not None
+                    
+                    print(f"DEBUG BREAKDOWN YEARLY: Isolation Mode - Stream: {h_stream_str}, Year: {h_year_str}")
+                    
                     for trace in fig.data:
-                        if trace.name == selected_stream:
-                            # Highlight the selected stream
-                            trace.marker.opacity = 1.0
-                            print(f"DEBUG BREAKDOWN YEARLY: Set opacity=1.0 for trace: {trace.name}")
-                        else:
-                            # Dim all other streams
-                            trace.marker.opacity = 0.3
-                            print(f"DEBUG BREAKDOWN YEARLY: Set opacity=0.3 for trace: {trace.name}")
+                        t_stream_str = str(trace.name).strip().lower()
+                        trace_colors = []
+                        trace_line_widths = []
+                        trace_line_colors = []
+                        has_any_enabled = False
+                        
+                        # Get original color for this stream
+                        orig_color = color_map.get(trace.name) if color_map else "grey"
+
+                        for x_val in trace.x:
+                            curr_year_str = str(x_val).strip()
+                            
+                            matches_stream = (t_stream_str == h_stream_str)
+                            matches_column = (curr_year_str == h_year_str) if is_isolated_view else False
+                            
+                            if matches_stream and matches_column:
+                                # Intersection: Color + Thick Border
+                                trace_colors.append(orig_color)
+                                trace_line_widths.append(4)
+                                trace_line_colors.append("black")
+                                has_any_enabled = True
+                            elif matches_stream or matches_column:
+                                # Crosshair part (Stream match or Column match): Color + Standard Border
+                                trace_colors.append(orig_color)
+                                trace_line_widths.append(1)
+                                trace_line_colors.append("white")
+                                has_any_enabled = True
+                            else:
+                                # Disabled: Greyed-out
+                                trace_colors.append("rgba(200,200,200,0.3)")
+                                trace_line_widths.append(1)
+                                trace_line_colors.append("rgba(220,220,220,0.2)")
+                        
+                        trace.marker.color = trace_colors
+                        trace.marker.line.width = trace_line_widths
+                        trace.marker.line.color = trace_line_colors
+                        trace.hoverinfo = 'all' if has_any_enabled else 'skip'
+                        if not has_any_enabled:
+                            trace.hovertemplate = None
                 else:
                     # Default mode: all streams at full opacity
                     print(f"DEBUG BREAKDOWN YEARLY: Default mode - all streams at full opacity")
@@ -3863,8 +3879,8 @@ def register_callbacks(dash_app, server):
                         range=[0, y_axis_max],
                         tickmode='array',
                         tickvals=y_axis_ticks,
-                        ticktext=[f"{int(t):,}" for t in y_axis_ticks],
-                        tickformat=',.0f',
+                        ticktext=[f"{int(t/1000)}K" if t >= 1000 or t == 0 else f"{int(t)}" for t in y_axis_ticks],
+                        tickformat='.0f',
                         showgrid=True,  # Keep Y-axis grid lines
                         gridcolor="#e0e0e0",
                         tickfont=dict(size=10, color="#2c3e50"),
@@ -3904,7 +3920,7 @@ def register_callbacks(dash_app, server):
                         "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
                     )
                 
-                fig.update_layout(clickmode='select')
+                fig.update_layout(clickmode='event')
                 return fig, title_text
             else:
                 # Monthly view: Handle stream selection behavior as per requirements
@@ -4023,30 +4039,25 @@ def register_callbacks(dash_app, server):
                 highlight_year = None
                 is_single_stream_selected = False
                 
-                if profiled and len(profiled) > 0:
-                    profiled_set = set(str(p) for p in profiled)
-                    available_set = set(str(s) for s in available_monthly_streams)
-                    
-                    # Check if we have a specific stream selected
-                    if len(profiled) == 1:
-                        # Single stream selected: we need to determine if this is for a specific month
-                        selected_stream = str(profiled[0]).strip()
-                        
-                        # Check if the selected stream exists in our data
-                        if selected_stream in available_set:
-                            # For monthly chart, when a single stream is selected,
-                            # we should show ALL months for ALL years for that stream
-                            # but highlight/dim based on the profiled selection
-                            highlight_stream = selected_stream
-                            is_single_stream_selected = True
-                            print(f"DEBUG BREAKDOWN MONTHLY: Single stream selected ({highlight_stream}), will highlight this stream across all months/years")
-                    else:
-                        # Multiple streams selected (shouldn't happen, but handle it)
-                        print(f"DEBUG BREAKDOWN MONTHLY: Multiple streams selected ({len(profiled)}), showing all at full opacity")
-                        highlight_stream = None
+                # Check if we have a specific bar selection from chart click
+                if selected_bar and selected_bar.get("stream"):
+                    # Chart click selection takes precedence
+                    highlight_stream = selected_bar.get("stream")
+                    highlight_month = selected_bar.get("month")
+                    highlight_year = selected_bar.get("year")
+                    is_single_stream_selected = True
+                    print(f"DEBUG BREAKDOWN MONTHLY: Chart click selection active: {highlight_stream} in {highlight_month} {highlight_year}")
+                elif profiled and len(profiled) == 1:
+                    # Single stream selected from profiled streams (Side Menu)
+                    highlight_stream = str(profiled[0]).strip()
+                    highlight_month = None
+                    highlight_year = None
+                    if highlight_stream in available_monthly_streams:
+                        is_single_stream_selected = True
+                        print(f"DEBUG BREAKDOWN MONTHLY: Single stream selected from side menu ({highlight_stream}), will highlight this stream across all months/years")
                 else:
-                    # If no stream selected, show all streams at full opacity (default mode)
-                    print(f"DEBUG BREAKDOWN MONTHLY: No stream selected, showing all streams at full opacity (default mode)")
+                    # Multiple streams or all streams selected
+                    print(f"DEBUG BREAKDOWN MONTHLY: Multiple streams or all streams selected, showing all at full opacity")
                     highlight_stream = None
                 
                 # If no rows or all values are zero, show a friendly message
@@ -4100,18 +4111,12 @@ def register_callbacks(dash_app, server):
                     horizontal_spacing=0.05
                 )
                 
-                # For each year, we need to know which streams have data
-                print(f"DEBUG BREAKDOWN MONTHLY: Processing {len(unique_years)} years: {unique_years}")
-                print(f"DEBUG BREAKDOWN MONTHLY: selected_bar = {selected_bar}")
-                
-                # Add comprehensive debugging for selected_bar
-                if selected_bar:
-                    print(f"DEBUG SELECTED_BAR: activeBar found!")
-                    print(f"  - Year: '{selected_bar.get('year')}' (type: {type(selected_bar.get('year'))})")
-                    print(f"  - Month: '{selected_bar.get('month')}' (type: {type(selected_bar.get('month'))})")
-                    print(f"  - Stream: '{selected_bar.get('stream')}' (type: {type(selected_bar.get('stream'))})")
-                else:
-                    print(f"DEBUG SELECTED_BAR: No activeBar (selected_bar is None)")
+                # Get unique streams across all years for consistent ordering
+                all_streams_list = order_streams_list(agg["Stream"].unique().tolist(), tab="monthly")
+                # For stacking (bottom to top), we reverse the order
+                # This ensures consistent stacking order and matches required visual (e.g. Urals at bottom)
+                stack_order = list(reversed(all_streams_list))
+                print(f"DEBUG BREAKDOWN MONTHLY: Global stream stack order: {stack_order}")
                 
                 for year_idx, year_val in enumerate(unique_years):
                     print(f"DEBUG BREAKDOWN MONTHLY: Processing year {year_val} (index {year_idx}) (type: {type(year_val)})")
@@ -4125,11 +4130,11 @@ def register_callbacks(dash_app, server):
                     year_months = year_data["month"].unique().tolist()
                     year_months_ordered = [m for m in month_names if m in year_months]
                     
-                    # Get unique streams for this year
-                    year_streams = sorted(year_data["Stream"].unique().tolist())
-                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year_val} has {len(year_streams)} streams: {year_streams}")
+                    # Get unique streams for this year in the global stack order
+                    year_streams = [s for s in stack_order if s in year_data["Stream"].unique()]
+                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year_val} has {len(year_streams)} streams in stack order")
                     
-                    # Add a trace for each stream
+                    # Add a trace for each stream in the specific stack order
                     for stream in year_streams:
                         stream_data = year_data[year_data["Stream"] == stream].copy()
                         
@@ -4146,115 +4151,124 @@ def register_callbacks(dash_app, server):
                         if not stream_color:
                             stream_color = get_stream_color(stream, year_streams, tab="monthly")
                         
-                        # NEW LOGIC: Determine opacity based on specific bar selection or stream selection
-                        # Priority: 1) Specific bar selection (chart click), 2) Stream selection (profiled streams)
+                        # Prepare trace variables
+                        hover_text = None
                         
-                        if selected_bar:
-                            # Global single-bar selection - apply opacity to entire stream trace
-                            active_bar_year = selected_bar.get("year")
-                            active_bar_month = selected_bar.get("month") 
-                            active_bar_stream = selected_bar.get("stream")
+                        # Determine highlighting state at point level
+                        # Pre-calculate highlight metadata for efficiency
+                        h_stream = str(highlight_stream).strip().lower() if highlight_stream else None
+                        h_month = str(highlight_month).strip().lower() if highlight_month else None
+                        h_year = str(highlight_year).strip() if highlight_year else None
+                        
+                        point_marker_colors = []
+                        point_marker_line_widths = []
+                        point_marker_line_colors = []
+                        point_hover_infos = []
+                        any_point_highlighted = False
+                        
+                        # Current trace identifiers
+                        t_stream = str(stream).strip().lower()
+                        t_year = str(year_val).strip()
+                        
+                        for _, row in stream_data.iterrows():
+                            curr_month = str(row["month"]).strip().lower()
                             
-                            print(f"DEBUG CHART OPACITY: Processing {stream} in {year_val}, activeBar={active_bar_stream}-{active_bar_month}-{active_bar_year}")
+                            is_this_point_highlighted = True
+                            is_at_intersection = False
                             
-                            # Check if this stream in this year contains the active bar
-                            year_match = str(year_val) == str(active_bar_year)
-                            stream_match = str(stream) == str(active_bar_stream)
+                            if is_single_stream_selected:
+                                # Crosshair logic: Enable selected stream OR selected month/year column
+                                matches_stream = (t_stream == h_stream)
+                                matches_column = False
+                                
+                                if h_month:
+                                    # Month isolation active from click
+                                    matches_column = (t_year == h_year and curr_month == h_month)
+                                elif h_year:
+                                    # Year isolation only (Yearly Tab selection mirrored or Yearly column click converted)
+                                    matches_column = (t_year == h_year)
+                                    
+                                if matches_stream and matches_column:
+                                    is_at_intersection = True
+                                    is_this_point_highlighted = True
+                                elif matches_stream or matches_column:
+                                    # Partially enabled (crosshair)
+                                    is_this_point_highlighted = True
+                                elif not h_month and not h_year:
+                                    # Side menu selection only: highlight whole stream
+                                    is_this_point_highlighted = matches_stream
+                                else:
+                                    # Active selection is present, but this point matches neither
+                                    is_this_point_highlighted = False
                             
-                            # Check if this stream data contains the active month
-                            has_active_month = active_bar_month in stream_data["month"].values
-                            
-                            # This trace contains the active bar if all conditions match
-                            contains_active_bar = year_match and stream_match and has_active_month
-                            
-                            # Apply opacity: trace with active bar = 1.0, all others = 0.3
-                            trace_opacity = 1.0 if contains_active_bar else 0.3
-                            
-                            print(f"DEBUG TRACE OPACITY: {stream}-{year_val}")
-                            print(f"  - Year match: {year_val} == {active_bar_year} -> {year_match}")
-                            print(f"  - Stream match: {stream} == {active_bar_stream} -> {stream_match}")
-                            print(f"  - Has active month ({active_bar_month}): {has_active_month}")
-                            print(f"  - Contains active bar: {contains_active_bar}")
-                            print(f"  - Final opacity: {trace_opacity}")
-                            print("---")
-                            
-                            # Add normal trace with calculated opacity
-                            fig.add_trace(
-                                go.Bar(
-                                    x=stream_data["month"],
-                                    y=stream_data["value"],
-                                    name=stream,
-                                    marker=dict(
-                                        color=stream_color,
-                                        line=dict(width=1, color='white'),
-                                        opacity=trace_opacity
-                                    ),
-                                    legendgroup=stream,
-                                    showlegend=False,
-                                    # Disable hover for dimmed traces
-                                    hoverinfo='all' if trace_opacity >= 1.0 else 'skip',
-                                    hovertemplate=(
-                                        "<b>Month:</b> %{x}<br>"
-                                        "<b>Stream:</b> " + stream + "<br>"
-                                        "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
-                                    ) if trace_opacity >= 1.0 else None
+                            if is_this_point_highlighted:
+                                any_point_highlighted = True
+                                point_marker_colors.append(stream_color)
+                                # Global Style Alignment: Intersection point gets 4px black border
+                                if is_at_intersection:
+                                    point_marker_line_widths.append(4)
+                                    point_marker_line_colors.append("black")
+                                else:
+                                    # Enabled part of crosshair or default state
+                                    point_marker_line_widths.append(1)
+                                    point_marker_line_colors.append("white")
+                                point_hover_infos.append("all")
+                            else:
+                                # Global Grey-Out: Consistently greyed out segments
+                                point_marker_colors.append("rgba(200,200,200,0.3)")
+                                point_marker_line_widths.append(1)
+                                point_marker_line_colors.append("rgba(220,220,220,0.2)")
+                                point_hover_infos.append("skip")
+
+                        # Array-based properties for per-point styling
+                        marker_color = point_marker_colors
+                        marker_line_width = point_marker_line_widths
+                        marker_line_color = point_marker_line_colors
+                        
+                        # Hover text logic
+                        hover_text_list = []
+                        for idx, name in enumerate(stream_data["month"]):
+                            if point_hover_infos[idx] == 'all':
+                                val = stream_data.iloc[idx]["value"]
+                                hover_text_list.append(
+                                    f"<b>Month:</b> {name}<br>"
+                                    f"<b>Stream:</b> {stream}<br>"
+                                    f"<b>Production Volume:</b> {val:,.0f} ('000 b/d)<extra></extra>"
+                                )
+                            else:
+                                hover_text_list.append("")
+                        
+                        hover_info = 'text' if is_single_stream_selected else 'all'
+                        hover_template = "%{text}" if is_single_stream_selected else None
+                        hover_text = hover_text_list if is_single_stream_selected else None
+                        
+                        # Prepare customdata
+                        trace_customdata = []
+                        c_val = agg[agg["Stream"] == stream]["Country"].iloc[0] if not agg[agg["Stream"] == stream].empty else ""
+                        for m in stream_data["month"]:
+                            trace_customdata.append([c_val, str(year_val), stream])
+
+                        # Add trace
+                        fig.add_trace(
+                            go.Bar(
+                                x=stream_data["month"],
+                                y=stream_data["value"],
+                                name=stream,
+                                marker=dict(
+                                    color=marker_color,
+                                    line=dict(width=marker_line_width, color=marker_line_color),
+                                    opacity=1.0 
                                 ),
-                                row=1,
-                                col=year_idx + 1
-                            )
-                        elif is_single_stream_selected and highlight_stream:
-                            # Stream selection via profiled streams interface
-                            opacity = 1.0 if stream == highlight_stream else 0.3
-                            
-                            # Normal trace creation for stream selection
-                            fig.add_trace(
-                                go.Bar(
-                                    x=stream_data["month"],
-                                    y=stream_data["value"],
-                                    name=stream,
-                                    marker=dict(
-                                        color=stream_color,
-                                        line=dict(width=1, color='white'),
-                                        opacity=opacity
-                                    ),
-                                    selected=dict(marker=dict(opacity=1.0)),
-                                    unselected=dict(marker=dict(opacity=0.3)),
-                                    legendgroup=stream,
-                                    showlegend=False,  # Hide legend since we have custom legend
-                                    hovertemplate=(
-                                        "<b>Month:</b> %{x}<br>"
-                                        "<b>Stream:</b> " + stream + "<br>"
-                                        "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
-                                    )
-                                ),
-                                row=1,
-                                col=year_idx + 1
-                            )
-                        else:
-                            # Default mode: show all streams at full opacity
-                            fig.add_trace(
-                                go.Bar(
-                                    x=stream_data["month"],
-                                    y=stream_data["value"],
-                                    name=stream,
-                                    marker=dict(
-                                        color=stream_color,
-                                        line=dict(width=1, color='white'),
-                                        opacity=1.0
-                                    ),
-                                    selected=dict(marker=dict(opacity=1.0)),
-                                    unselected=dict(marker=dict(opacity=0.3)),
-                                    legendgroup=stream,
-                                    showlegend=False,  # Hide legend since we have custom legend
-                                    hovertemplate=(
-                                        "<b>Month:</b> %{x}<br>"
-                                        "<b>Stream:</b> " + stream + "<br>"
-                                        "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
-                                    )
-                                ),
-                                row=1,
-                                col=year_idx + 1
-                            )
+                                legendgroup=stream,
+                                showlegend=False,
+                                hoverinfo=hover_info,
+                                hovertemplate=hover_template,
+                                hovertext=hover_text,
+                                customdata=trace_customdata
+                            ),
+                            row=1,
+                            col=year_idx + 1
+                        )
                 
                 # Calculate max value across all data for Y-axis scaling
                 max_value = agg["value"].max() if not agg.empty and "value" in agg.columns else 0
@@ -4293,6 +4307,7 @@ def register_callbacks(dash_app, server):
                     bargroupgap=0.0,
                     barmode="stack",
                     hovermode="closest",
+                    clickmode="event", # Disable native selection to avoid Plotly dimming subplots automatically
                     margin=dict(l=60, r=10, t=80, b=120),
                     height=520
                 )
@@ -4385,15 +4400,18 @@ def register_callbacks(dash_app, server):
                     if year_data.empty:
                         continue
                     
-                    year_streams = sorted(year_data["Stream"].unique().tolist())
-                    
                     # Process traces for this year
+                    # IMPORTANT: Use the same order (stack_order) as used when adding traces
+                    year_streams = [s for s in stack_order if s in year_data["Stream"].unique()]
+                    
                     for stream in year_streams:
                         if trace_idx >= len(fig.data):
                             break
                         
                         trace = fig.data[trace_idx]
                         trace.width = monthly_bar_width
+                        
+                        # Already handled via selected/unselected in add_trace logic for global highlighting
                         
                         # Get the Stream name for this trace
                         stream_name = trace.name
@@ -4438,8 +4456,8 @@ def register_callbacks(dash_app, server):
                             range=[0, y_axis_max],
                             tickmode='array',
                             tickvals=y_axis_ticks,
-                            ticktext=[f"{int(t):,}" for t in y_axis_ticks],
-                            tickformat=',.0f',
+                            ticktext=[f"{int(t/1000)}K" if t >= 1000 or t == 0 else f"{int(t)}" for t in y_axis_ticks],
+                            tickformat='.0f',
                             showgrid=True,  # Keep Y-axis grid lines
                             gridcolor="#e0e0e0"
                         )
@@ -4464,7 +4482,7 @@ def register_callbacks(dash_app, server):
                                     font=dict(size=14, color='#7f8c8d'))
                     fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
                 
-                fig.update_layout(clickmode='select')
+                fig.update_layout(clickmode='event')
                 return fig, title_text
         except Exception as e:
             print(f"Error in update_breakdown: {e}")
