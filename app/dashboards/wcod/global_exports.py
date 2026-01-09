@@ -626,6 +626,7 @@ def _build_map_figure(
 def _build_chart_figure(
     selected_streams: Optional[Sequence[str]] = None,
     selected_countries: Optional[Sequence[str]] = None,
+    selected_bar: Optional[Dict[str, Any]] = None,
 ) -> go.Figure:
     if CHART_DF.empty:
         return _empty_figure("No chart data available")
@@ -812,11 +813,22 @@ def _build_chart_figure(
         agg_non_zero = agg_complete[non_zero_mask].copy()
         # Get unique combinations that have data
         valid_combinations = agg_non_zero[["stream", "country"]].drop_duplicates()
+        
+        # Determine which years to show on x-axis (Dynamic Years)
+        # Remove years that have no data for the current selection
+        active_years = sorted(agg_non_zero["year"].unique())
+        if active_years:
+            years_sorted = [str(y) for y in active_years]
+            # CRITICAL: Filter agg_complete to only include active years
+            # This ensures traces only have points for these years, 
+            # allowing Plotly to scale them to fill the horizontal space.
+            agg_complete = agg_complete[agg_complete["year"].isin(years_sorted)].copy()
     else:
+        agg_non_zero = pd.DataFrame()
         valid_combinations = pd.DataFrame(columns=["stream", "country"])
     
-    # OPTIMIZATION: Pre-create year array as string to avoid repeated conversion
-    years_sorted_str = [str(y) for y in years_sorted]
+    # Pre-create year array as string to avoid repeated conversion
+    years_sorted_str = list(years_sorted) # years_sorted now contains strings
     
     # Create a separate bar series for each country-stream combination
     # OPTIMIZATION: Only iterate through combinations that have data
@@ -848,14 +860,66 @@ def _build_chart_figure(
             # Create unique bar series name for each country-stream combination
             bar_name = f"{country} - {stream}"
             
+            # Prepare selection highlighting logic
+            opacities = []
+            line_widths = []
+            line_colors = []
+            
+            # Ensure selected_bar is exactly what we expect
+            sel_year = None
+            sel_stream = None
+            sel_country = None
+            
+            if isinstance(selected_bar, dict):
+                sel_year = selected_bar.get("year")
+                sel_stream = selected_bar.get("stream")
+                sel_country = selected_bar.get("country")
+            
+            has_selection = sel_year is not None and sel_stream is not None and sel_country is not None
+            
+            # Pre-calculate integers for years to avoid repeated conversion in loop
+            try:
+                years_ints = [int(y) for y in country_stream_df["year"]]
+            except (ValueError, TypeError):
+                # Fallback if year conversion fails
+                years_ints = [0] * len(country_stream_df)
+
+            for i, row_year in enumerate(years_ints):
+                is_selected = has_selection and row_year == sel_year and stream == sel_stream and country == sel_country
+                
+                if not has_selection:
+                    opacities.append(1.0)
+                    line_widths.append(0)
+                    line_colors.append("rgba(0,0,0,0)")
+                elif is_selected:
+                    opacities.append(1.0)
+                    line_widths.append(2)
+                    line_colors.append("black")
+                else:
+                    opacities.append(0.15)
+                    line_widths.append(0)
+                    line_colors.append("rgba(0,0,0,0)")
+
+            # Create customdata for each point
+            point_customdata = []
+            for y_int in years_ints:
+                point_customdata.append([y_int, stream, country])
+
             fig.add_bar(
                 x=country_stream_df["year"].tolist(),
                 y=country_stream_df["value"].tolist(),
                 name=bar_name,
-                marker_color=stream_color,
+                marker=dict(
+                    color=stream_color,
+                    opacity=opacities,
+                    line=dict(width=line_widths, color=line_colors)
+                ),
+                customdata=point_customdata,
                 hovertemplate=(
                     "<span style='color:#1b365d; font-weight:300;'>Country:</span> "
                     f"<span style='color:#1b365d; font-weight:700;'>{country}</span><br>"
+                    "<span style='color:#1b365d; font-weight:300;'>Stream:</span> "
+                    f"<span style='color:#1b365d; font-weight:700;'>{stream}</span><br>"
                     "<span style='color:#1b365d; font-weight:300;'>Year:</span> "
                     "<span style='color:#1b365d; font-weight:700;'>%{x}</span><br>"
                     "<span style='color:#1b365d; font-weight:300;'>Exports Volume:</span> "
@@ -1360,6 +1424,7 @@ def create_layout():
             ),
             dcc.Store(id="global-exports-play-direction", data="stop"),
             dcc.Store(id="global-exports-selected-country", data=None),
+            dcc.Store(id="global-exports-selected-bar", data=None),
             html.Div(
                 [
                     html.Div(
@@ -1906,6 +1971,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input("global-exports-stream-filter", "value"),
         Input("global-exports-country-filter", "value"),
         Input("global-exports-selected-country", "data"),
+        Input("global-exports-selected-bar", "data"),
         prevent_initial_call=False,
     )
     def update_chart(
@@ -1913,6 +1979,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         streams: Optional[Sequence[str]],
         countries: Optional[Sequence[str]],
         selected_country: Optional[str],
+        selected_bar: Optional[Dict[str, Any]],
     ):
         """Update stacked area chart."""
         # Default values
@@ -1989,7 +2056,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 else:
                     # Pass resolved countries (or None if no selection)
                     # None = show all countries, [] = show no countries, [list] = show specific countries
-                    fig = _build_chart_figure(streams, resolved_countries)
+                    fig = _build_chart_figure(streams, resolved_countries, selected_bar)
                     # Validate figure
                     if not isinstance(fig, go.Figure):
                         fig = _empty_figure("Invalid chart data")
@@ -2047,6 +2114,55 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 minimal_fig = go.Figure()
                 minimal_fig.add_annotation(text="Error loading chart", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
                 return minimal_fig, "All Annual Exports by Crude Stream"
+
+    @dash_app.callback(
+        Output("global-exports-selected-bar", "data"),
+        Input("global-exports-stream-chart", "clickData"),
+        Input("global-exports-country-filter", "value"),
+        Input("global-exports-selected-country", "data"),
+        Input("current-submenu", "data"),
+        State("global-exports-selected-bar", "data"),
+        prevent_initial_call=True,
+    )
+    def handle_chart_click(click_data, country_filter, selected_country_store, submenu, current_selected_bar):
+        """Handle clicks on the bar chart to toggle selection/highlight."""
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            return no_update
+        
+        trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        
+        # 1. Reset selection if environment changes
+        if trigger_id in ["global-exports-country-filter", "global-exports-selected-country", "current-submenu"]:
+            return None
+            
+        # 2. Handle map click toggle
+        if trigger_id == "global-exports-stream-chart" and click_data:
+            try:
+                point = click_data["points"][0]
+                if "customdata" in point and point["customdata"]:
+                    # Format: [year, stream, country]
+                    clicked_data = point["customdata"]
+                    if len(clicked_data) == 3:
+                        new_selection = {
+                            "year": int(clicked_data[0]),
+                            "stream": clicked_data[1],
+                            "country": clicked_data[2]
+                        }
+                        
+                        # Toggle off if clicked same item
+                        if current_selected_bar and (
+                            current_selected_bar.get("year") == new_selection["year"] and
+                            current_selected_bar.get("stream") == new_selection["stream"] and
+                            current_selected_bar.get("country") == new_selection["country"]
+                        ):
+                            return None
+                            
+                        return new_selection
+            except Exception:
+                return None
+                
+        return no_update
 
     @dash_app.callback(
         Output("global-exports-stream-filter-container", "children"),
