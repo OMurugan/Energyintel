@@ -397,7 +397,7 @@ def load_country_overview_data():
             pivot_df['Profile_URL'] = pivot_df['Profile_URL'].replace({'nan': '', 'None': '', 'none': ''}).fillna('')
         logger.info(f"Final pivot_df before return, head:\n{pivot_df.head()}")
 
-    print(f"load_country_overview_data returning: pivot_df.empty={pivot_df.empty}, bar_chart_data.empty={bar_chart_data.empty}, len(years)={len(years)}, len(data_columns)={len(data_columns)}, latest_year={years[0] if years else None}, latest_quarter={latest_quarter_value}, latest_month={latest_month_value}, latest_day={latest_day_value}")
+    print(f"REPORTER: load_country_overview_data returning: pivot_df.empty={pivot_df.empty}, bar_chart_data.empty={bar_chart_data.empty}, len(years)={len(years)}")
     return pivot_df, bar_chart_data, country_url_map, years, data_columns, years[0] if years else None, latest_quarter_value, latest_month_value, latest_day_value
 
 
@@ -415,6 +415,7 @@ LATEST_DAY = None
 def get_country_overview_data():
     """Lazy load country overview data - only when page is accessed"""
     global pivot_df, bar_chart_data, country_url_map, YEARS_TO_DISPLAY, DATA_COLUMNS, LATEST_YEAR, LATEST_QUARTER, LATEST_MONTH, LATEST_DAY
+    print(f"REPORTER: get_country_overview_data called. pivot_df.empty={pivot_df.empty}, YEARS_TO_DISPLAY={YEARS_TO_DISPLAY}")
     # Load data if not already loaded (check if pivot_df is empty or YEARS_TO_DISPLAY is empty)
     if pivot_df.empty or not YEARS_TO_DISPLAY:
         pivot_df, bar_chart_data, country_url_map, YEARS_TO_DISPLAY, DATA_COLUMNS, LATEST_YEAR, LATEST_QUARTER, LATEST_MONTH, LATEST_DAY = load_country_overview_data()
@@ -1131,8 +1132,9 @@ def create_ranking_chart(selected_country=None, time_visibility=None, year_value
 
 def register_callbacks(dash_app, server):
     """Register all callbacks for Country Overview"""
+    print("REPORTER: country_overview.register_callbacks called")
 
-    @callback(
+    @dash_app.callback(
         [Output('download-dashboard-content', 'data'),
          Output('download-raw-chart-csv', 'data'),
          Output('download-png-report', 'data')],
@@ -1309,7 +1311,7 @@ def register_callbacks(dash_app, server):
 
         return download_pdf, download_raw_chart_csv, download_png
 
-    @callback(
+    @dash_app.callback(
         Output('download-raw-table-csv', 'data'),
         Input('btn-export-raw-table-csv', 'n_clicks'),
         prevent_initial_call=True
@@ -1322,7 +1324,7 @@ def register_callbacks(dash_app, server):
 
 
 
-    @callback(
+    @dash_app.callback(
         Output('exports-ranking-chart', 'figure'),
         [Input('current-submenu', 'data'),
          Input('selected-country-store', 'data'),
@@ -1331,6 +1333,7 @@ def register_callbacks(dash_app, server):
     )
     def update_ranking_chart(submenu, selected_country, time_visibility):
         """Update ranking chart with highlighting and time dimensions"""
+        print(f"REPORTER: update_ranking_chart called with submenu={submenu}")
         if submenu != 'country-overview':
             return go.Figure()
         
@@ -1339,7 +1342,7 @@ def register_callbacks(dash_app, server):
         
         return create_ranking_chart(selected_country=selected_country, time_visibility=time_visibility, year_value=_LATEST_YEAR, quarter_value=_LATEST_QUARTER, month_value=_LATEST_MONTH, day_value=_LATEST_DAY)
 
-    @callback(
+    @dash_app.callback(
         [Output('oil-data-table', 'data'),
          Output('oil-data-table', 'columns')],
         [Input('current-submenu', 'data'),
@@ -1348,6 +1351,7 @@ def register_callbacks(dash_app, server):
     )
     def update_oil_data_table(submenu, time_dimension_table_visibility):
         """Update oil data table with country statistics"""
+        print(f"REPORTER: update_oil_data_table called with submenu={submenu}")
         if submenu != 'country-overview':
             return [], []
 
@@ -1398,7 +1402,7 @@ def register_callbacks(dash_app, server):
 
         return table_data, table_columns
 
-    @callback(
+    @dash_app.callback(
         [Output('selected-country-store', 'data'),
          Output('profile-url-store', 'data'),
          Output('click-counter-store', 'data')],
@@ -1423,7 +1427,7 @@ def register_callbacks(dash_app, server):
             return country_name, profile_url, new_counter
         return dash.no_update, dash.no_update, click_counter
 
-    @callback(
+    @dash_app.callback(
         [Output('selected-country-store', 'data', allow_duplicate=True),
          Output('profile-url-store', 'data', allow_duplicate=True),
          Output('click-counter-store', 'data', allow_duplicate=True)],
@@ -1464,7 +1468,7 @@ def register_callbacks(dash_app, server):
         return dash.no_update, dash.no_update, click_counter
 
 
-    @callback(
+    @dash_app.callback(
         Output('oil-data-table', 'style_data_conditional', allow_duplicate=True),
         Input('selected-country-store', 'data'),
         State('oil-data-table', 'data'),
@@ -1492,7 +1496,7 @@ def register_callbacks(dash_app, server):
 
         return style_conditions
 
-    @callback(
+    @dash_app.callback(
         [Output('chart-collapse-content', 'style'),
          Output('chart-collapse-button', 'children')],
         Input('chart-collapse-button', 'n_clicks'),
@@ -1509,7 +1513,7 @@ def register_callbacks(dash_app, server):
         return current_style, '−'
 
     # Initialize button icons and styles based on visibility state
-    @callback(
+    @dash_app.callback(
         [Output('toggle-year-btn', 'children'),
          Output('toggle-year-btn', 'style'),
          Output('toggle-quarter-btn', 'children'),
@@ -1604,7 +1608,7 @@ def register_callbacks(dash_app, server):
         )
 
     # Callbacks for time dimension toggles
-    @callback(
+    @dash_app.callback(
         [Output('time-dimension-visibility', 'data', allow_duplicate=True),
          Output('toggle-year-btn', 'children', allow_duplicate=True),
          Output('toggle-year-btn', 'style', allow_duplicate=True)],
@@ -1637,7 +1641,7 @@ def register_callbacks(dash_app, server):
             return new_visibility, '−' if is_expanded else '+', button_style
         return visibility, dash.no_update, dash.no_update
 
-    @callback(
+    @dash_app.callback(
         [Output('time-dimension-visibility', 'data', allow_duplicate=True),
          Output('toggle-quarter-btn', 'children', allow_duplicate=True),
          Output('toggle-quarter-btn', 'style', allow_duplicate=True)],
@@ -1670,7 +1674,7 @@ def register_callbacks(dash_app, server):
             return new_visibility, '−' if is_expanded else '+', button_style
         return visibility, dash.no_update, dash.no_update
 
-    @callback(
+    @dash_app.callback(
         [Output('time-dimension-visibility', 'data', allow_duplicate=True),
          Output('toggle-month-btn', 'children', allow_duplicate=True),
          Output('toggle-month-btn', 'style', allow_duplicate=True)],
@@ -1703,7 +1707,7 @@ def register_callbacks(dash_app, server):
             return new_visibility, '−' if is_expanded else '+', button_style
         return visibility, dash.no_update, dash.no_update
 
-    @callback(
+    @dash_app.callback(
         [Output('time-dimension-visibility', 'data', allow_duplicate=True),
          Output('toggle-day-btn', 'children', allow_duplicate=True),
          Output('toggle-day-btn', 'style', allow_duplicate=True)],
@@ -1736,7 +1740,7 @@ def register_callbacks(dash_app, server):
             return new_visibility, '−' if is_expanded else '+', button_style
         return visibility, dash.no_update, dash.no_update
 
-    @callback(
+    @dash_app.callback(
         [Output('time-dimension-table-visibility', 'data', allow_duplicate=True),
          Output('toggle-table-quarter-btn', 'children', allow_duplicate=True),
          Output('toggle-table-quarter-btn', 'style', allow_duplicate=True)],
@@ -1769,7 +1773,7 @@ def register_callbacks(dash_app, server):
             return new_visibility, '−' if is_expanded else '+', button_style
         return visibility, dash.no_update, dash.no_update
 
-    @callback(
+    @dash_app.callback(
         [Output('time-dimension-table-visibility', 'data', allow_duplicate=True),
          Output('toggle-table-month-btn', 'children', allow_duplicate=True),
          Output('toggle-table-month-btn', 'style', allow_duplicate=True)],
@@ -1802,7 +1806,7 @@ def register_callbacks(dash_app, server):
             return new_visibility, '−' if is_expanded else '+', button_style
         return visibility, dash.no_update, dash.no_update
 
-    @callback(
+    @dash_app.callback(
         [Output('time-dimension-table-visibility', 'data', allow_duplicate=True),
          Output('toggle-table-day-btn', 'children', allow_duplicate=True),
          Output('toggle-table-day-btn', 'style', allow_duplicate=True)],

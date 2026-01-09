@@ -35,7 +35,7 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register all callbacks for Projects Tracker"""
     
-    @callback(
+    @dash_app.callback(
         [Output('projects-tracker-chart', 'figure'),
          Output('projects-tracker-table', 'data'),
          Output('projects-tracker-table', 'columns')],

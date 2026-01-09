@@ -242,7 +242,7 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register all callbacks for Russian Exports"""
     
-    @callback(
+    @dash_app.callback(
         [Output('russian-exports-table', 'data'),
          Output('russian-exports-table', 'columns'),
          Output('year-column-sort-order', 'data')],
@@ -539,7 +539,7 @@ def register_callbacks(dash_app, server):
     )
     
     # CSV Export Callback
-    @callback(
+    @dash_app.callback(
         Output('download-russian-exports-csv', 'data'),
         Input('export-russian-exports-btn', 'n_clicks'),
         State('russian-exports-table', 'data'),

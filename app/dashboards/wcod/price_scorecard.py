@@ -542,7 +542,7 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for Price Scorecard"""
     
     # Callback to update selected type filter when buttons are clicked
-    @callback(
+    @dash_app.callback(
         Output('selected-type-filter', 'data'),
         [Input('costs-to-refiners-btn', 'n_clicks'),
          Input('port-of-loading-btn', 'n_clicks'),
@@ -568,7 +568,7 @@ def register_callbacks(dash_app, server):
         return 'Cost to Refiners'  # Default
     
     # Callback to update button styles based on selection
-    @callback(
+    @dash_app.callback(
         [Output('costs-to-refiners-btn', 'style'),
          Output('port-of-loading-btn', 'style'),
          Output('price-formula-btn', 'style')],
@@ -626,7 +626,7 @@ def register_callbacks(dash_app, server):
         return active_style, inactive_style, last_button_inactive
 
     # Callback to update the heading text and footnote based on selected type
-    @callback(
+    @dash_app.callback(
         [Output('price-scorecard-header', 'children'),
          Output('price-scorecard-footnote', 'children')],
         Input('selected-type-filter', 'data')
@@ -646,7 +646,7 @@ def register_callbacks(dash_app, server):
         return header, footnote
     
     # Callback to update table based on selected type filter
-    @callback(
+    @dash_app.callback(
         Output('price-scorecard-table-container', 'children'),
         [Input('selected-type-filter', 'data'),
          Input('current-submenu', 'data')]
@@ -918,7 +918,7 @@ def register_callbacks(dash_app, server):
                 ]
             )
 
-    @callback(
+    @dash_app.callback(
         Output("download-price-scorecard-csv", "data"),
         Input("price-scorecard-export-btn", "n_clicks"),
         [State("price-scorecard-table", "data"),

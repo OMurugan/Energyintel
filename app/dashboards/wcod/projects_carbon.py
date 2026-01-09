@@ -22,7 +22,7 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register all callbacks for Carbon Intensity"""
     
-    @callback(
+    @dash_app.callback(
         Output('projects-carbon-chart', 'figure'),
         Input('current-submenu', 'data')
     )

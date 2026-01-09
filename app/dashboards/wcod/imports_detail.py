@@ -241,8 +241,8 @@ def create_layout():
         dcc.Store(id='selected-year-store', data=2023),  # Store selected year from chart click
         
         dcc.Store(id='selected-country-store', data=default_country),  # Store selected country
-        dcc.Store(id='imports-expand-store', data={'years': [], 'quarters': []}),  # Track header expansion state
-        dcc.Store(id='imports-time-visibility', data={'Year': True, 'Quarter': False, 'Month': False, 'Day': False}),
+        dcc.Store(id='imports-detail-expand-store', data={'years': [], 'quarters': []}),  # Track header expansion state
+        dcc.Store(id='imports-detail-time-visibility', data={'Year': True, 'Quarter': False, 'Month': False, 'Day': False}),
         dcc.Store(id='selected-region-store', data=None),  # Store selected region from legend click
         dcc.Store(id='selected-crude-store', data=None),   # Store selected crude from legend click
         dcc.Store(id='selected-exporter-store', data=None), # Store selected exporter for table highlighting
@@ -384,11 +384,11 @@ def create_layout():
                 # Year toggle hidden (Year always on)
                 html.Div([
                     html.Span("Year of Year"),
-                    html.Button('−', id='imports-toggle-year-btn', n_clicks=0)
+                    html.Button('−', id='imports-detail-toggle-year-btn', n_clicks=0)
                 ], style={'display': 'none'}),
                     html.Div([
                         html.Span("Quarter of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
-                        html.Button('+', id='imports-toggle-quarter-btn', n_clicks=0, style={
+                        html.Button('+', id='imports-detail-toggle-quarter-btn', n_clicks=0, style={
                             'width': '20px', 'height': '20px', 'padding': '0',
                             'border': '1px solid #dee2e6', 'backgroundColor': '#f8f9fa',
                             'color': '#2c3e50', 'borderRadius': '3px', 'cursor': 'pointer',
@@ -399,7 +399,7 @@ def create_layout():
                     ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '150px'}),
                 html.Div([
                     html.Span("Month of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
-                    html.Button('+', id='imports-toggle-month-btn', n_clicks=0, style={
+                    html.Button('+', id='imports-detail-toggle-month-btn', n_clicks=0, style={
                         'width': '20px', 'height': '20px', 'padding': '0',
                         'border': '1px solid #dee2e6', 'backgroundColor': '#f8f9fa',
                         'color': '#2c3e50', 'borderRadius': '3px', 'cursor': 'pointer',
@@ -410,7 +410,7 @@ def create_layout():
                 ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '20px', 'width': '140px'}),
                 html.Div([
                     html.Span("Day of Year", style={'fontSize': '12px', 'color': '#2c3e50', 'flex': '1'}),
-                    html.Button('+', id='imports-toggle-day-btn', n_clicks=0, style={
+                    html.Button('+', id='imports-detail-toggle-day-btn', n_clicks=0, style={
                         'width': '20px', 'height': '20px', 'padding': '0',
                         'border': '1px solid #dee2e6', 'backgroundColor': '#f8f9fa',
                         'color': '#2c3e50', 'borderRadius': '3px', 'cursor': 'pointer',
@@ -1214,7 +1214,7 @@ def register_callbacks(dash_app, server):
         prevent_initial_call=False
     )
     
-    @callback(
+    @dash_app.callback(
         Output('selected-column-store', 'data', allow_duplicate=True),
         Input('selected-column-hidden-input', 'value'),
         [State('selected-column-store', 'data')],
@@ -1230,7 +1230,7 @@ def register_callbacks(dash_app, server):
             return None
         return new_val
 
-    @callback(
+    @dash_app.callback(
         [Output('imports-by-region-chart', 'figure'),
          Output('imports-by-region-chart-title', 'children')],
         [Input('importing-country-select', 'value'),
@@ -1249,7 +1249,7 @@ def register_callbacks(dash_app, server):
             return fig, title
         return go.Figure(), title
     
-    @callback(
+    @dash_app.callback(
         Output('imports-by-country-chart', 'figure'),
         [Input('importing-country-select', 'value'),
          Input('current-submenu', 'data'),
@@ -1268,7 +1268,7 @@ def register_callbacks(dash_app, server):
         fig = create_imports_by_country_chart(selected_year, selected_country, selected_crude)
         return fig
     
-    @callback(
+    @dash_app.callback(
         [Output('imports-detail-table', 'data'),
          Output('imports-detail-table', 'columns'),
          Output('imports-detail-table', 'hidden_columns'),
@@ -1277,8 +1277,8 @@ def register_callbacks(dash_app, server):
          Output('imports-detail-table', 'style_header_conditional')],
         [Input('importing-country-select', 'value'),
          Input('current-submenu', 'data'),
-         Input('imports-expand-store', 'data'),
-         Input('imports-time-visibility', 'data'),
+         Input('imports-detail-expand-store', 'data'),
+         Input('imports-detail-time-visibility', 'data'),
          Input('selected-exporter-store', 'data'),
          Input('selected-column-store', 'data')]
     )
@@ -1452,16 +1452,16 @@ def register_callbacks(dash_app, server):
             ]
             return [], empty_columns, [], "", [], []
 
-    @callback(
+    @dash_app.callback(
         [Output('selected-exporter-store', 'data'),
          Output('selected-column-store', 'data'),
-         Output('imports-expand-store', 'data'),
+         Output('imports-detail-expand-store', 'data'),
          Output('imports-detail-table', 'active_cell')],
         [Input('imports-detail-table', 'active_cell')],
         [State('imports-detail-table', 'data'),
          State('selected-exporter-store', 'data'),
          State('selected-column-store', 'data'),
-         State('imports-expand-store', 'data')],
+         State('imports-detail-expand-store', 'data')],
         prevent_initial_call=True
     )
     def handle_table_interaction(active_cell, table_data, current_exporter, current_column, expand_state):
@@ -1523,16 +1523,16 @@ def register_callbacks(dash_app, server):
         return new_exporter, new_column, new_expand_state, None # Always reset active_cell to allow re-clicking
     
     # Button icons and styles reflecting time visibility state
-    @callback(
-        [Output('imports-toggle-year-btn', 'children'),
-         Output('imports-toggle-year-btn', 'style'),
-         Output('imports-toggle-quarter-btn', 'children'),
-         Output('imports-toggle-quarter-btn', 'style'),
-         Output('imports-toggle-month-btn', 'children'),
-         Output('imports-toggle-month-btn', 'style'),
-         Output('imports-toggle-day-btn', 'children'),
-         Output('imports-toggle-day-btn', 'style')],
-        Input('imports-time-visibility', 'data'),
+    @dash_app.callback(
+        [Output('imports-detail-toggle-year-btn', 'children'),
+         Output('imports-detail-toggle-year-btn', 'style'),
+         Output('imports-detail-toggle-quarter-btn', 'children'),
+         Output('imports-detail-toggle-quarter-btn', 'style'),
+         Output('imports-detail-toggle-month-btn', 'children'),
+         Output('imports-detail-toggle-month-btn', 'style'),
+         Output('imports-detail-toggle-day-btn', 'children'),
+         Output('imports-detail-toggle-day-btn', 'style')],
+        Input('imports-detail-time-visibility', 'data'),
         prevent_initial_call=False
     )
     def update_imports_toggle_icons(vis):
@@ -1568,12 +1568,12 @@ def register_callbacks(dash_app, server):
         )
     
     # Toggle button callbacks to update visibility and expansion state
-    @callback(
-        [Output('imports-time-visibility', 'data', allow_duplicate=True),
-         Output('imports-expand-store', 'data', allow_duplicate=True)],
-        Input('imports-toggle-year-btn', 'n_clicks'),
-        State('imports-time-visibility', 'data'),
-        State('imports-expand-store', 'data'),
+    @dash_app.callback(
+        [Output('imports-detail-time-visibility', 'data', allow_duplicate=True),
+         Output('imports-detail-expand-store', 'data', allow_duplicate=True)],
+        Input('imports-detail-toggle-year-btn', 'n_clicks'),
+        State('imports-detail-time-visibility', 'data'),
+        State('imports-detail-expand-store', 'data'),
         prevent_initial_call=True
     )
     def toggle_year_vis(n_clicks, vis, expand_state):
@@ -1584,12 +1584,12 @@ def register_callbacks(dash_app, server):
             expand_state = {'years': [], 'quarters': []}
         return vis, expand_state
     
-    @callback(
-        [Output('imports-time-visibility', 'data', allow_duplicate=True),
-         Output('imports-expand-store', 'data', allow_duplicate=True)],
-        Input('imports-toggle-quarter-btn', 'n_clicks'),
-        State('imports-time-visibility', 'data'),
-        State('imports-expand-store', 'data'),
+    @dash_app.callback(
+        [Output('imports-detail-time-visibility', 'data', allow_duplicate=True),
+         Output('imports-detail-expand-store', 'data', allow_duplicate=True)],
+        Input('imports-detail-toggle-quarter-btn', 'n_clicks'),
+        State('imports-detail-time-visibility', 'data'),
+        State('imports-detail-expand-store', 'data'),
         prevent_initial_call=True
     )
     def toggle_quarter_vis(n_clicks, vis, expand_state):
@@ -1598,12 +1598,12 @@ def register_callbacks(dash_app, server):
         vis['Quarter'] = not vis.get('Quarter', False)
         return vis, expand_state
     
-    @callback(
-        [Output('imports-time-visibility', 'data', allow_duplicate=True),
-         Output('imports-expand-store', 'data', allow_duplicate=True)],
-        Input('imports-toggle-month-btn', 'n_clicks'),
-        State('imports-time-visibility', 'data'),
-        State('imports-expand-store', 'data'),
+    @dash_app.callback(
+        [Output('imports-detail-time-visibility', 'data', allow_duplicate=True),
+         Output('imports-detail-expand-store', 'data', allow_duplicate=True)],
+        Input('imports-detail-toggle-month-btn', 'n_clicks'),
+        State('imports-detail-time-visibility', 'data'),
+        State('imports-detail-expand-store', 'data'),
         prevent_initial_call=True
     )
     def toggle_month_vis(n_clicks, vis, expand_state):
@@ -1612,10 +1612,10 @@ def register_callbacks(dash_app, server):
         vis['Month'] = not vis.get('Month', False)
         return vis, expand_state
     
-    @callback(
-        Output('imports-time-visibility', 'data', allow_duplicate=True),
-        Input('imports-toggle-day-btn', 'n_clicks'),
-        State('imports-time-visibility', 'data'),
+    @dash_app.callback(
+        Output('imports-detail-time-visibility', 'data', allow_duplicate=True),
+        Input('imports-detail-toggle-day-btn', 'n_clicks'),
+        State('imports-detail-time-visibility', 'data'),
         prevent_initial_call=True
     )
     def toggle_day_vis(n_clicks, vis):
@@ -1624,7 +1624,7 @@ def register_callbacks(dash_app, server):
         return vis
     
 
-    @callback(
+    @dash_app.callback(
         Output('imports-by-region-legend', 'children'),
         [Input('importing-country-select', 'value'),
          Input('current-submenu', 'data')]
@@ -1672,7 +1672,7 @@ def register_callbacks(dash_app, server):
             )
         return legend_items
 
-    @callback(
+    @dash_app.callback(
         Output('selected-region-store', 'data'),
         [Input({'type': 'region-legend-item', 'index': ALL}, 'n_clicks')],
         [State('selected-region-store', 'data')],
@@ -1691,7 +1691,7 @@ def register_callbacks(dash_app, server):
             return None  # Deselect if clicking the same region
         return clicked_region
 
-    @callback(
+    @dash_app.callback(
         Output({'type': 'region-legend-item', 'index': ALL}, 'style'),
         [Input('selected-region-store', 'data')],
         [State({'type': 'region-legend-item', 'index': ALL}, 'id')]
@@ -1719,7 +1719,7 @@ def register_callbacks(dash_app, server):
             styles.append(base_style)
         return styles
 
-    @callback(
+    @dash_app.callback(
         Output('imports-by-country-legend', 'children'),
         [Input('importing-country-select', 'value'),
          Input('selected-year-store', 'data'),
@@ -1794,7 +1794,7 @@ def register_callbacks(dash_app, server):
             )
         return legend_items
 
-    @callback(
+    @dash_app.callback(
         Output('selected-crude-store', 'data'),
         [Input({'type': 'crude-legend-item', 'index': ALL}, 'n_clicks')],
         [State('selected-crude-store', 'data')],
@@ -1813,7 +1813,7 @@ def register_callbacks(dash_app, server):
             return None  # Deselect
         return clicked_crude
 
-    @callback(
+    @dash_app.callback(
         Output({'type': 'crude-legend-item', 'index': ALL}, 'style'),
         [Input('selected-crude-store', 'data')],
         [State({'type': 'crude-legend-item', 'index': ALL}, 'id')]
@@ -1841,7 +1841,7 @@ def register_callbacks(dash_app, server):
             styles.append(base_style)
         return styles
 
-    @callback(
+    @dash_app.callback(
         Output('download-imports-by-region-csv', 'data'),
         Input('export-imports-by-region-btn', 'n_clicks'),
         State('importing-country-select', 'value'),
@@ -1862,12 +1862,12 @@ def register_callbacks(dash_app, server):
                 return dcc.send_data_frame(df_grouped.to_csv, filename=filename, index=False)
         raise dash.exceptions.PreventUpdate
 
-    @callback(
+    @dash_app.callback(
         Output('download-imports-detail-csv', 'data'),
         Input('export-imports-detail-btn', 'n_clicks'),
         State('importing-country-select', 'value'),
-        State('imports-expand-store', 'data'),
-        State('imports-time-visibility', 'data'),
+        State('imports-detail-expand-store', 'data'),
+        State('imports-detail-time-visibility', 'data'),
         prevent_initial_call=True
     )
     def export_imports_detail_csv(n_clicks, selected_country, expand_state, time_visibility):
@@ -1928,7 +1928,7 @@ def register_callbacks(dash_app, server):
             return dcc.send_data_frame(df_export.to_csv, filename=filename, index=False)
         raise dash.exceptions.PreventUpdate
 
-    @callback(
+    @dash_app.callback(
         Output('download-imports-by-country-csv', 'data'),
         Input('export-imports-by-country-btn', 'n_clicks'),
         State('importing-country-select', 'value'),
