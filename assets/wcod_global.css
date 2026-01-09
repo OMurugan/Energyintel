@@ -668,3 +668,33 @@ div[id*="range-slider"] {
 #gpw-date-range-slider .rc-slider-handle-1:active {
     cursor: grabbing !important;
 }
+/* Source Link Interactions */
+/* Source Link Interactions */
+.source-link {
+    color: black !important;
+    text-decoration: none !important;
+    display: inline-block;
+    padding: 2px 4px;
+    margin-bottom: 2px;
+    font-size: 11px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: bold !important; /* Bold items as requested */
+    transition: opacity 0.3s;
+}
+
+.source-link:hover {
+    border: 1px solid #1b365d !important;
+}
+
+.source-link:focus {
+    background-color: #d1ecf1 !important;
+    outline: none !important;
+    opacity: 1 !important;
+}
+
+/* Dim others when one is focused within the container */
+.source-container:focus-within .source-link:not(:focus) {
+    opacity: 0.2; /* Stronger dimming for "disabled" look */
+}

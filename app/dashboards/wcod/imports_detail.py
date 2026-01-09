@@ -239,6 +239,7 @@ def create_layout():
     
     return html.Div([
         dcc.Store(id='selected-year-store', data=2023),  # Store selected year from chart click
+        
         dcc.Store(id='selected-country-store', data=default_country),  # Store selected country
         dcc.Store(id='imports-expand-store', data={'years': [], 'quarters': []}),  # Track header expansion state
         dcc.Store(id='imports-time-visibility', data={'Year': True, 'Quarter': False, 'Month': False, 'Day': False}),
@@ -531,16 +532,19 @@ def create_layout():
         # Source and Footer (Static content)
         html.Div([
             html.Div([
-                html.P("Source: Energy Intelligence", style={'fontSize': '11px', 'marginBottom': '5px'})
+                html.P([html.Strong("Source:"), " Energy Intelligence"], style={'fontSize': '11px', 'marginBottom': '5px'})
             ]),
             html.Div([
-                html.P("EIA Data is through June 2025", style={'fontSize': '11px', 'marginBottom': '2px'}),
-                html.P("Energy Intelligence Data is through July 2025", style={'fontSize': '11px', 'marginBottom': '2px'}),
-                html.P("OECD Data is through July 2025", style={'fontSize': '11px', 'marginBottom': '2px'}),
-                html.P("Russian Imports Data is through August 2022", style={'fontSize': '11px', 'marginBottom': '2px'}),
-                html.P("South Korea trade data source: KNOC", style={'fontSize': '11px', 'marginBottom': '2px'}),
+                html.Span("EIA Data is through June 2025", className="source-link", tabIndex="0"),
+                html.Br(),
+                html.Span("Energy Intelligence Data is through July 2025", className="source-link", tabIndex="0"),
+                html.Br(),
+                html.Span("OECD Data is through July 2025", className="source-link", tabIndex="0"),
+                html.Br(),
+                html.Span("Russian Imports Data is through August 2022", className="source-link", tabIndex="0"),
+                html.P("South Korea trade data source: KNOC", style={'fontSize': '11px', 'marginTop': '10px', 'marginBottom': '2px'}),
                 html.P("Countries: Select jurisdictions are included under countries for data presentation purposes.", style={'fontSize': '11px', 'marginBottom': '2px'})
-            ])
+            ], className="source-container")
         ], style={'marginTop': '20px', 'fontSize': '11px', 'color': '#666'})
     ], className='tab-content', style={'padding': '20px'})
 
@@ -1168,13 +1172,15 @@ def register_callbacks(dash_app, server):
                     const header = e.target.closest('th[data-dash-column]');
                     if (header) {
                         const columnId = header.getAttribute('data-dash-column');
-                        // ONLY highlight columns that start with 'Y|' (Year columns)
-                        if (columnId && columnId.startsWith('Y|')) {
+                        // Highlight columns that start with dynamic prefixes
+                        const validPrefixes = ['Y|', 'Q|', 'M|', 'D|'];
+                        if (columnId && validPrefixes.some(p => columnId.startsWith(p))) {
                             const input = document.getElementById('selected-column-hidden-input');
                             if (input) {
+                                // Dispatch both events to ensure Dash picks it up
                                 input.value = columnId;
+                                input.dispatchEvent(new Event('input', { bubbles: true }));
                                 input.dispatchEvent(new Event('change', { bubbles: true }));
-                                e.stopPropagation();
                             }
                         }
                     }
@@ -1479,6 +1485,12 @@ def register_callbacks(dash_app, server):
                     clicked_exporter = table_data[row_idx].get('_ExporterFull')
                     if clicked_exporter:
                         new_exporter = None if current_exporter == clicked_exporter else clicked_exporter
+                
+                # Column selection via cell click (Year, Quarter, Month, Day columns)
+                valid_prefixes = ['Y|', 'Q|', 'M|', 'D|']
+                if any(col_id.startswith(p) for p in valid_prefixes):
+                    new_column = None if current_column == col_id else col_id
+                
                 pass
             elif row_idx == -1:
                 pass
