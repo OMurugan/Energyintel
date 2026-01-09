@@ -288,22 +288,24 @@ def create_layout():
         
         # First Chart: Imports by Region over Time
         html.Div([
-            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+            html.Div(style={'position': 'relative', 'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
                 html.Div(id='imports-by-region-chart-title', style={
                     'fontSize': '21px',
                     'fontWeight': 'bold',
                     'color': '#fe5000',
-                    'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif'
+                    'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                    'textAlign': 'center'
                 }),
                 html.Button("Export to CSV", id='export-imports-by-region-btn', n_clicks=0, style={
-                    'marginLeft': '12px',
                     'backgroundColor': 'white',
                     'color': '#2c3e50',
                     'border': '1px solid #dee2e6',
                     'padding': '6px 10px',
                     'borderRadius': '4px',
                     'cursor': 'pointer',
-                    'fontSize': '12px'
+                    'fontSize': '12px',
+                    'position': 'absolute',
+                    'right': '0'
                 })
             ]),
             dcc.Graph(id='imports-by-region-chart'),
@@ -366,17 +368,18 @@ def create_layout():
         
         # Table: Detailed Imports Data
         html.Div([
-            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
-                html.H4(id='imports-table-title', children="Japan Crude Oil Imports by Region and Country", className='imports-table-title', style={'color': '#fe5000', 'textAlign': 'center','fontSize': '21px', 'fontWeight': 'bold'}),
+            html.Div(style={'position': 'relative', 'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                html.H4(id='imports-table-title', children="Japan Crude Oil Imports by Region and Country", className='imports-table-title', style={'color': '#fe5000', 'textAlign': 'center','fontSize': '21px', 'fontWeight': 'bold', 'margin': '0'}),
                 html.Button("Export to CSV", id='export-imports-detail-btn', n_clicks=0, style={
-                    'marginLeft': '12px',
                     'backgroundColor': 'white',
                     'color': '#2c3e50',
                     'border': '1px solid #dee2e6',
                     'padding': '6px 10px',
                     'borderRadius': '4px',
                     'cursor': 'pointer',
-                    'fontSize': '12px'
+                    'fontSize': '12px',
+                    'position': 'absolute',
+                    'right': '0'
                 })
             ]),
             # Time dimension toggle row (Year / Quarter / Month / Day)
