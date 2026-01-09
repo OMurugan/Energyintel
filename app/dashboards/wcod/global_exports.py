@@ -1140,8 +1140,13 @@ def create_layout():
                                 style={"marginTop": "10px"},
                             ),
                         ],
-                        className="col-md-9",
-                        style={"padding": "10px 5px 10px 10px", "maxWidth": "100%", "boxSizing": "border-box"},
+                        style={
+                            "width": "75%",
+                            "display": "inline-block",
+                            "verticalAlign": "top",
+                            "padding": "10px 5px 10px 10px",
+                            "boxSizing": "border-box"
+                        },
                     ),
                     html.Div(
                         [
@@ -1382,12 +1387,16 @@ def create_layout():
                                 },
                             ),
                         ],
-                        className="col-md-3",
-                        style={"padding": "10px", "maxWidth": "100%", "boxSizing": "border-box"},
+                        style={
+                            "width": "25%",
+                            "display": "inline-block",
+                            "verticalAlign": "top",
+                            "padding": "10px",
+                            "boxSizing": "border-box"
+                        },
                     ),
                 ],
-                className="row",
-                style={"marginLeft": "0", "marginRight": "0", "width": "100%"},
+                style={"width": "100%", "minWidth": "1200px", "overflowX": "auto"},
             ),
             dcc.Interval(
                 id="global-exports-year-interval",
@@ -1440,8 +1449,13 @@ def create_layout():
                                 ],
                             ),
                         ],
-                        className="col-md-9",
-                        style={"padding": "10px", "maxWidth": "100%", "boxSizing": "border-box"},
+                        style={
+                            "width": "75%",
+                            "display": "inline-block",
+                            "verticalAlign": "top",
+                            "padding": "10px",
+                            "boxSizing": "border-box"
+                        },
                     ),
                     html.Div(
                         [
@@ -1478,8 +1492,10 @@ def create_layout():
                                 },
                             ),
                         ],
-                        className="col-md-3",
                         style={
+                            "width": "25%",
+                            "display": "inline-block",
+                            "verticalAlign": "top",
                             "padding": "25px 10px",
                             "border": "0px solid #dfe3eb",
                             "borderRadius": "6px",
@@ -1488,14 +1504,11 @@ def create_layout():
                             "maxHeight": "520px",
                             "overflowY": "auto",
                             "boxShadow": "0 2px 6px rgba(0,0,0,0.05)",
-                            "marginLeft": "0",
-                            "maxWidth": "100%",
                             "boxSizing": "border-box",
                         },
                     ),
                 ],
-                className="row",
-                style={"marginTop": "30px", "marginLeft": "0", "marginRight": "0", "width": "100%"},
+                style={"marginTop": "30px", "width": "100%", "minWidth": "1200px", "overflowX": "auto"},
             ),
             html.Div(
                 [
@@ -1605,8 +1618,7 @@ def create_layout():
                         ],
                     ),
                 ],
-                className="col-md-9",
-                style={"padding": "10px"},
+                style={"padding": "10px", "width": "100%"},
             ),
             html.P(
                 "Source: Energy Intelligence.",

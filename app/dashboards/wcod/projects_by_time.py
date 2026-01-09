@@ -379,7 +379,7 @@ def create_layout():
                         config={'displayModeBar': False}
                     )
                 )
-            ], style={'width': '75%', 'display': 'inline-block', 'verticalAlign': 'top'}),
+            ], style={'width': '85%', 'display': 'inline-block', 'verticalAlign': 'top'}),
             
             html.Div([
                 html.Div([
@@ -407,13 +407,13 @@ def create_layout():
                 ]),
                 dcc.Store(id='projects-time-selection', data=None)
             ], style={
-                'width': '25%',
+                'width': '15%',
                 'display': 'inline-block',
                 'verticalAlign': 'top',
-                'paddingLeft': '20px',
+                'paddingLeft': '15px',
                 'paddingTop': '60px'
             })
-        ], style={'display': 'flex', 'marginBottom': '20px'}),
+        ], style={'display': 'flex', 'marginBottom': '20px', 'minWidth': '1200px', 'overflowX': 'auto'}),
         
         html.Div([
             html.P(
@@ -700,7 +700,7 @@ def register_callbacks(dash_app, server):
                 font={'size': 14, 'family': 'Lato', 'color': 'rgb(27, 54, 93)'}
             )
             fig.update_layout(
-                height=500,
+                height=550,
                 plot_bgcolor='white',
                 paper_bgcolor='white'
             )
@@ -837,7 +837,7 @@ def register_callbacks(dash_app, server):
                 'tickfont': {'color': 'rgb(27, 54, 93)', 'size': 12, 'family': 'Lato'}
             },
             barmode='stack',
-            height=500,
+            height=550,
             plot_bgcolor='white',
             paper_bgcolor='white',
             hovermode='closest',

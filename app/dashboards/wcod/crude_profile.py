@@ -953,14 +953,12 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
                 "fontWeight": "normal",
                 "color": "#1f3263",
                 "borderRight": "2px solid #ccc",
-                "maxWidth": "84px",
             },
             {
                 "if": {"column_id": "Product", "filter_query": '{Product} = ""'},
                 "borderTop": "none",
                 "borderBottom": "none",
                 "backgroundColor": "inherit",
-                "maxWidth": "80px",
             },
             
             # Cut Points column styling
@@ -969,14 +967,12 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
                 "fontWeight": "normal",
                 "color": "#1f3263",
                 "borderRight": "1px solid #ddd",
-                "maxWidth": "60px",
             },
             {
                 "if": {"column_id": "Cut Points (°C)", "filter_query": '{Cut Points (°C)} = ""'},
                 "borderTop": "none",
                 "borderBottom": "none",
                 "backgroundColor": "inherit",
-                "maxWidth": "92px",
             },
             
             # Property column styling
@@ -984,7 +980,6 @@ def create_grouped_refined_products_table(crude_value: str | None = None):
                 "if": {"column_id": "Property", "filter_query": '{Property} != ""'},
                 "fontWeight": "normal",
                 "color": "#1f3263",
-                "maxWidth": "56px",
             },
             # Value column right alignment
             {
@@ -1063,9 +1058,9 @@ def create_grouped_assay_table(crude_value: str | None = None):
         id="assay-table",
         data=assay_data,
         columns=[
-            {"name": "Property", "id": "Property", "presentation": "markdown", "minWidth": "80px", "maxWidth": "120px"},
-            {"name": "Unit", "id": "Unit", "minWidth": "50px", "maxWidth": "80px"}, 
-            {"name": "Value", "id": "Value", "minWidth": "50px", "maxWidth": "70px"}
+            {"name": "Property", "id": "Property", "presentation": "markdown"},
+            {"name": "Unit", "id": "Unit"}, 
+            {"name": "Value", "id": "Value"}
         ],
         style_table={
             "overflowX": "auto",
@@ -1110,8 +1105,6 @@ def create_grouped_assay_table(crude_value: str | None = None):
                 "if": {"column_id": "Property"},
                 "textAlign": "left",
                 "fontWeight": "normal",
-                "minWidth": "80px",
-                "maxWidth": "120px",
                 "backgroundColor": "#FFFFFF",
                 "borderRight": "2px solid #ccc",
                 "padding": "2px 8px",
@@ -1120,8 +1113,6 @@ def create_grouped_assay_table(crude_value: str | None = None):
             {
                 "if": {"column_id": "Unit"},
                 "textAlign": "left",
-                "minWidth": "50px",
-                "maxWidth": "80px",
                 "backgroundColor": "#FFFFFF",
                 "borderRight": "1px solid #ddd",
                 "padding": "2px 8px",
@@ -1129,8 +1120,6 @@ def create_grouped_assay_table(crude_value: str | None = None):
             {
                 "if": {"column_id": "Value"},
                 "textAlign": "right",
-                "minWidth": "50px",
-                "maxWidth": "70px",
                 "backgroundColor": "#FFFFFF",
                 "padding": "2px 8px",
             },
@@ -1932,10 +1921,12 @@ def create_layout(server=None):
         # Main Grid Layout
         html.Div(style={
             "display": "grid",
-            "gridTemplateColumns": "minmax(0, 2fr) minmax(0, 4fr) minmax(0, 4fr)",
+            "gridTemplateColumns": "300px 1fr 1fr",
             "gap": "15px",
             "marginBottom": "20px",
-            "alignItems": "start"
+            "alignItems": "start",
+            "minWidth": "1200px",
+            "overflowX": "auto"
         }, children=[
             # Column 1: Mars Blend Assay
             dcc.Loading(
@@ -2156,7 +2147,6 @@ def create_layout(server=None):
                                 "fontWeight": "normal",
                                 "color": "#1f3263",
                                 "borderRight": "2px solid #ccc",
-                                "maxWidth": "150px", # Example max-width, adjust as needed
                                 "textAlign": "left",
                                 "padding": "2px 8px",
                             },
@@ -2327,22 +2317,20 @@ def register_callbacks(app):
                 
                 # Create columns: Measure + one column per port
                 port_columns = [
-                    {"name": "Measure", "id": "Measure", "header_style": {"textAlign": "left"}, "style": {"textAlign": "left"}}
+                    {"name": "Measure", "id": "Measure"}
                 ]
                 for port in port_ports:
                     port_columns.append({
                         "name": port, 
-                        "id": port, 
-                        "header_style": {"textAlign": "center"}, 
-                        "style": {"textAlign": "center"}
+                        "id": port
                     })
             else:
                 # Single port format: convert tuples to dictionaries (backward compatibility)
                 port_label = port_details_data.get("label", "Port Details")
                 port_rows = [{"Measure": r[0], port_label: r[1]} for r in port_details_rows_data]
                 port_columns = [
-                    {"name": "Measure", "id": "Measure", "header_style": {"textAlign": "left"}, "style": {"textAlign": "left"}},
-                    {"name": port_label, "id": port_label, "header_style": {"textAlign": "center"}, "style": {"textAlign": "center"}}
+                    {"name": "Measure", "id": "Measure"},
+                    {"name": port_label, "id": port_label}
                 ]
 
             # Convert grouped data to flat rows for DataTable

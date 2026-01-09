@@ -1117,7 +1117,7 @@ def create_layout():
                             ),
                         ], style={'width': '100%', 'margin': '0', 'padding': '0'}),
                     ], style={'width': '100%', 'position': 'relative'}),
-                ], className='col-md-4', style={'padding': '10px'}),
+                ], style={'padding': '10px', 'display': 'inline-block', 'width': '33.33%', 'verticalAlign': 'top'}),
                 
                 html.Div([
                     html.Label(
@@ -1136,12 +1136,14 @@ def create_layout():
                         clearable=False,
                         style={'width': '100%'}
                     )
-                ], className='col-md-8', style={'padding': '10px'})
-            ], className='row', style={
+                ], style={'padding': '10px', 'display': 'inline-block', 'width': '66.67%', 'verticalAlign': 'top'})
+            ], style={
                 'backgroundColor': '#f8f9fa',
                 'padding': '2px 20px',
                 'marginBottom': '0px',
-                'borderRadius': '5px'
+                'borderRadius': '5px',
+                'minWidth': '1200px',
+                'overflowX': 'auto'
             })
         ], style={'padding': '0px 5px 0px 5px', 'marginTop': '0px'}),
         
@@ -1215,7 +1217,7 @@ def create_layout():
                                 children=dcc.Graph(id='gpw-catalytic-cracking-chart',
                                 config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False})
                             ),
-                        ], className='col-md-6', style={'padding': '5px 15px'}),
+                        ], style={'padding': '5px 15px', 'display': 'inline-block', 'width': '50%', 'verticalAlign': 'top'}),
                         
                         html.Div([
                             html.Div([
@@ -1240,9 +1242,12 @@ def create_layout():
                                 children=dcc.Graph(id='gpw-hydroskimming-chart',
                                 config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False})
                             ),
-                        ], className='col-md-6', style={'padding': '0px 15px'})
-                    ], className='row')
-                ], className='col-md-10', style={'padding': '0px 15px'}),
+                        ], style={'padding': '0px 15px', 'display': 'inline-block', 'width': '50%', 'verticalAlign': 'top'})
+                    ], style={
+                        'minWidth': '1000px',
+                        'overflowX': 'auto'
+                    })
+                ], style={'padding': '0px 15px', 'display': 'inline-block', 'width': '83.33%', 'verticalAlign': 'top'}),
                 
                 # Right Side Filters
                 html.Div([
@@ -1359,15 +1364,21 @@ def create_layout():
                         value=CRUDES.copy() if CRUDES else [],
                         style={'display': 'none'}
                     ),
-                ], className='col-md-2', style={
+                ], style={
                     'padding': '10px 15px',
                     'border': '0px solid #dfe3eb',
                     'borderRadius': '6px',
                     'backgroundColor': '#f8f9fb',
                     'boxShadow': '0 2px 6px rgba(0,0,0,0.05)',
                     'marginLeft': '0',
+                    'display': 'inline-block',
+                    'width': '16.67%',
+                    'verticalAlign': 'top'
                 }),
-            ], className='row')
+            ], style={
+                'minWidth': '1200px',
+                'overflowX': 'auto'
+            })
         ], style={'padding': '0px 5px', 'marginBottom': '0px', 'marginTop': '0px'}),
         
         # Incremental Margins Section
@@ -1433,7 +1444,7 @@ def create_layout():
                                 children=dcc.Graph(id='gpw-incremental-catalytic-chart',
                                     config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False})
                             ),
-                        ], className='col-md-6', style={'padding': '5px 15px'}),
+                        ], style={'padding': '5px 15px', 'display': 'inline-block', 'width': '50%', 'verticalAlign': 'top'}),
                         
                         html.Div([
                             html.Div([
@@ -1458,14 +1469,20 @@ def create_layout():
                                 children=dcc.Graph(id='gpw-incremental-hydroskimming-chart',
                                     config={'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover', 'toggleSpikelines', 'sendDataToCloud', 'hoverClosestGl2d', 'hoverClosestPie', 'resetViewBag'], 'displaylogo': False})
                             ),
-                        ], className='col-md-6', style={'padding': '5px 15px'})
-                    ], className='row')
-                ], className='col-md-10', style={'margin': '0', 'padding': '0'}),
+                        ], style={'padding': '5px 15px', 'display': 'inline-block', 'width': '50%', 'verticalAlign': 'top'})
+                    ], style={
+                        'minWidth': '1000px',
+                        'overflowX': 'auto'
+                    })
+                ], style={'margin': '0', 'padding': '0', 'display': 'inline-block', 'width': '83.33%', 'verticalAlign': 'top'}),
                 
                 # Empty column to maintain layout (filters shown in section above)
                 html.Div([
-                ], className='col-md-2', style={'padding': '0px 15px'}),
-            ], className='row')
+                ], style={'padding': '0px 15px', 'display': 'inline-block', 'width': '16.67%', 'verticalAlign': 'top'}),
+            ], style={
+                'minWidth': '1200px',
+                'overflowX': 'auto'
+            })
         ], style={'padding': '0px 5px', 'marginBottom': '0px', 'marginTop': '0px'}),
         
         # Data Table Section
@@ -1621,8 +1638,11 @@ def create_layout():
                         )
                         ]
                     )
-                ], className='col-md-12', style={'padding': '15px'}),
-            ], className='row')
+                ], style={'padding': '15px', 'width': '100%'}),
+            ], style={
+                'minWidth': '1200px',
+                'overflowX': 'auto'
+            })
         ], style={'padding': '0px 5px', 'marginBottom': '0px', 'marginTop': '0px'}),
         
         # Store selected column for highlighting

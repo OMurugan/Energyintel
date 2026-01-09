@@ -1829,7 +1829,7 @@ def create_layout(dash_app=None):
                     dcc.Download(id="download-crude-map-pdf"),
                     dcc.Download(id="download-crude-map-png"),
                     dcc.Download(id="download-crude-map-csv"),
-                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'margin-bottom': '10px'}),
+                ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'flex-end', 'marginBottom': '10px'}),
                 
                 dcc.Loading(
                     id="loading-crude-quality-chart",

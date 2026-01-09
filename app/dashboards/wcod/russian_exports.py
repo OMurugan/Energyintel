@@ -97,7 +97,9 @@ def create_layout():
                 'column_id': 'Company'
             },
             'fontSize': '12px',
-            'fontWeight': 'bold'
+            'fontWeight': 'bold',
+            'maxWidth': '500px',
+            'width': '500px'
         },
         # Remove top border for all OTHER columns when Terminal, Country cell is empty (to create merged appearance)
         {
@@ -281,7 +283,12 @@ def register_callbacks(dash_app, server):
     )
     def update_russian_exports(submenu, sort_clicks, current_sort_order):
         """Update Russian exports table from database"""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"update_russian_exports called with submenu: {submenu}")
+        
         if submenu != 'russian-exports':
+            logger.info(f"Submenu mismatch: {submenu} != 'russian-exports', returning empty data")
             return [], [], current_sort_order
         
         # Determine sort order: toggle if button was clicked, otherwise use stored value
@@ -456,12 +463,6 @@ def register_callbacks(dash_app, server):
                     'name': col_str,
                     'id': col_str
                 }
-                
-                # Set specific widths for Terminal, Country and Company columns
-                if col_str == 'Terminal, Country':
-                    col_config['width'] = '100px'
-                elif col_str == 'Company':
-                    col_config['width'] = '500px'
                 
                 if col_str in year_columns_str:
                     col_config['type'] = 'numeric'
