@@ -153,10 +153,14 @@ def create_layout():
         dcc.Download(id="download-russian-exports-csv"),
         # Store for year column sort order (True = descending, False = ascending)
         dcc.Store(id='year-column-sort-order', data=True),  # Default: descending (2022 → 2006)
+        # Store for selected column highlighting
+        dcc.Store(id='russian-exports-selection-store', data={'selected_column': None}),
         # Hidden button to trigger sort toggle from clientside callback
         html.Button(id='sort-year-columns-btn-hidden', style={'display': 'none'}),
         # Dummy output for clientside callback
         html.Div(id='russian-exports-dummy-sort', style={'display': 'none'}),
+        # Hidden div for clientside callback anchor
+        html.Div(id='russian-exports-enhancer-anchor', style={'display': 'none'}),
         html.Div([
             # Export button positioned above the table
             html.Div([
@@ -221,10 +225,32 @@ def create_layout():
                         fixed_rows={'headers': True},
                         fixed_columns={'headers': True, 'data': 2},
                         sort_action='native',
-                        css=[{
-                            "selector": "th",
-                            "rule": "padding-right: 25px !important;"
-                        }]
+                        css=[
+                            {
+                                "selector": "th",
+                                "rule": "padding-right: 25px !important; cursor: pointer;"
+                            },
+                            {
+                                "selector": ".dash-spreadsheet-container.column-selection-active td:not([data-dash-column='Terminal, Country']):not([data-dash-column='Company']):not(.column-cell-selected)",
+                                "rule": "opacity: 0.3 !important;"
+                            },
+                            {
+                                "selector": ".dash-spreadsheet-container.row-selection-active tbody tr:not(.row-selected) td:not([data-dash-column='Terminal, Country'])",
+                                "rule": "opacity: 0.3 !important;"
+                            },
+                            {
+                                "selector": ".column-selected",
+                                "rule": "background-color: #0075A8 !important; color: white !important; font-weight: bold !important;"
+                            },
+                            {
+                                "selector": "td.column-cell-selected",
+                                "rule": "background-color: #b3d9ff !important; border: none !important; font-weight: 600 !important; color: #1b365d !important; opacity: 1 !important;"
+                            },
+                            {
+                                "selector": "tr.row-selected td",
+                                "rule": "background-color: #b3d9ff !important; border-bottom: 1px solid #ddd !important; font-weight: 600 !important; color: #1b365d !important; opacity: 1 !important;"
+                            }
+                        ]
                     )
                 ],
                 style={'minHeight': '400px'}
@@ -232,10 +258,13 @@ def create_layout():
         ], style={'marginTop': '20px', 'width': '100%', 'overflowX': 'auto'}),
         html.Div([
             html.P("Source: Energy Intelligence. Data through August 2022.", 
+                   id='russian-exports-source-text',
+                   className='source-link',
+                   tabIndex='0',
                    style={'fontSize': '11px', 'fontStyle': 'italic', 'marginTop': '10px', 'color': '#1b365d', 'fontWeight': 'bold'}),
             html.P("Countries: Select jurisdictions are included under countries for data presentation purposes.", 
                    style={'fontSize': '11px', 'fontStyle': 'italic', 'marginTop': '5px', 'color': '#1b365d',})
-        ])
+        ], className='source-container')
     ], className='tab-content')
 
 
@@ -633,3 +662,168 @@ def register_callbacks(dash_app, server):
         raise dash.exceptions.PreventUpdate
     
 
+    # Clientside callback for column highlighting
+    dash_app.clientside_callback(
+        """
+        function(anchor) {
+            const tableId = 'russian-exports-table';
+            const storeId = 'russian-exports-selection-store';
+            
+            // Wait for table to be available
+            setTimeout(function() {
+                const tableEl = document.getElementById(tableId);
+                if (!tableEl) return;
+                
+                const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                if (!spreadsheet) return;
+                
+                if (spreadsheet.dataset.highlightingEnhanced === 'true') return;
+                spreadsheet.dataset.highlightingEnhanced = 'true';
+                
+                function clearColumnSelections() {
+                    spreadsheet.classList.remove('column-selection-active');
+                    spreadsheet.querySelectorAll('th.column-selected').forEach(el => el.classList.remove('column-selected'));
+                    spreadsheet.querySelectorAll('td.column-cell-selected').forEach(el => el.classList.remove('column-cell-selected'));
+                }
+                
+                function clearRowSelections() {
+                    spreadsheet.classList.remove('row-selection-active');
+                    spreadsheet.querySelectorAll('tr.row-selected').forEach(el => el.classList.remove('row-selected'));
+                }
+                
+                function applyColumnSelection(columnId) {
+                    clearColumnSelections();
+                    if (!columnId) return;
+                    
+                    spreadsheet.classList.add('column-selection-active');
+                    
+                    // Highlight header
+                    const headers = spreadsheet.querySelectorAll('th[data-dash-column="' + columnId + '"]');
+                    headers.forEach(h => h.classList.add('column-selected'));
+                    
+                    // Highlight cells
+                    const cells = spreadsheet.querySelectorAll('td[data-dash-column="' + columnId + '"]');
+                    cells.forEach(c => c.classList.add('column-cell-selected'));
+                }
+
+                function applyRowSelection(rowIndex) {
+                    clearRowSelections();
+                    if (rowIndex === null) return;
+                    
+                    spreadsheet.classList.add('row-selection-active');
+                    
+                    // Tables with fixed columns split the TR. We must highlight all segments.
+                    const cells = spreadsheet.querySelectorAll('td[data-dash-row="' + rowIndex + '"]');
+                    cells.forEach(c => {
+                        const tr = c.closest('tr');
+                        if (tr) tr.classList.add('row-selected');
+                    });
+                }
+
+                function applyGroupSelection(rowIndices) {
+                    clearRowSelections();
+                    if (!rowIndices || rowIndices.length === 0) return;
+                    
+                    spreadsheet.classList.add('row-selection-active');
+                    rowIndices.forEach(idx => {
+                        const cells = spreadsheet.querySelectorAll('td[data-dash-row="' + idx + '"]');
+                        cells.forEach(c => {
+                            const tr = c.closest('tr');
+                            if (tr) tr.classList.add('row-selected');
+                        });
+                    });
+                }
+                
+                // Add click listener to spreadsheet for header and row clicks
+                spreadsheet.addEventListener('click', function(e) {
+                    const header = e.target.closest('th[data-dash-column]');
+                    if (header) {
+                        const columnId = header.getAttribute('data-dash-column');
+                        if (columnId === 'Terminal, Country' || columnId === 'Company') return;
+                        
+                        e.stopPropagation();
+                        const isSelected = header.classList.contains('column-selected');
+                        if (isSelected) {
+                            clearColumnSelections();
+                        } else {
+                            applyColumnSelection(columnId);
+                        }
+                        return;
+                    }
+
+                    const cell = e.target.closest('td[data-dash-column]');
+                    if (cell) {
+                        const columnId = cell.getAttribute('data-dash-column');
+                        const rowIndexStr = cell.getAttribute('data-dash-row');
+                        
+                        if (rowIndexStr === null) return;
+                        const rowIndex = parseInt(rowIndexStr);
+
+                        if (columnId === 'Company') {
+                            e.stopPropagation();
+                            // Check if this row segment is selected
+                            const row = cell.closest('tr');
+                            const isSelected = row && row.classList.contains('row-selected');
+                            
+                            if (isSelected) {
+                                clearRowSelections();
+                            } else {
+                                applyRowSelection(rowIndex);
+                            }
+                        } else if (columnId === 'Terminal, Country') {
+                            e.stopPropagation();
+                            
+                            // Find group range
+                            const allCells = spreadsheet.querySelectorAll('td[data-dash-column="Terminal, Country"]');
+                            const cellMap = {};
+                            allCells.forEach(c => {
+                                cellMap[c.getAttribute('data-dash-row')] = (c.textContent || '').trim();
+                            });
+
+                            let startIdx = rowIndex;
+                            while (startIdx > 0 && (!cellMap[startIdx] || cellMap[startIdx] === '')) {
+                                startIdx--;
+                            }
+                            
+                            const maxIdx = Math.max(...Object.keys(cellMap).map(Number));
+                            let endIdx = rowIndex + 1;
+                            while (endIdx <= maxIdx && (!cellMap[endIdx] || cellMap[endIdx] === '')) {
+                                endIdx++;
+                            }
+                            endIdx--;
+                            
+                            const groupIndices = [];
+                            for (let i = startIdx; i <= endIdx; i++) {
+                                groupIndices.push(i);
+                            }
+
+                            // Check if the group is already selected (check the first row of group)
+                            const firstRowCell = spreadsheet.querySelector('td[data-dash-column="Terminal, Country"][data-dash-row="' + startIdx + '"]');
+                            const firstRow = firstRowCell ? firstRowCell.closest('tr') : null;
+                            const isSelected = firstRow && firstRow.classList.contains('row-selected');
+                            
+                            if (isSelected) {
+                                clearRowSelections();
+                            } else {
+                                applyGroupSelection(groupIndices);
+                            }
+                        }
+                    }
+                }, true);
+                
+                // Add document click listener for outside clicks
+                document.addEventListener('click', function(e) {
+                    if (!tableEl.contains(e.target)) {
+                        clearColumnSelections();
+                        clearRowSelections();
+                    }
+                });
+                
+            }, 300);
+            
+            return '';
+        }
+        """,
+        Output('russian-exports-enhancer-anchor', 'children'),
+        Input('russian-exports-enhancer-anchor', 'id')
+    )
