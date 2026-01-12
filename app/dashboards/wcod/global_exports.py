@@ -352,6 +352,8 @@ YEAR_COLUMN_IDS = [str(year) for year in YEAR_COLUMNS]
 TABLE_STATIC_COLUMNS = [
     {"name": "", "id": "country"},
     {"name": "", "id": "crude"},
+    {"name": "", "id": "_country_id"},
+    {"name": "", "id": "_stream_id"},
 ]
 TABLE_YEAR_COLUMNS = [
     {"name": str(year), "id": str(year), "type": "numeric", "format": {"specifier": ",.0f"}}
@@ -488,11 +490,34 @@ def _prepare_table_records(df: pd.DataFrame) -> List[Dict[str, object]]:
         .reset_index()
     )
     pivot.columns = [str(col) for col in pivot.columns]
+    
+    # Calculate Grand Total across all filtered rows
+    year_cols = [str(y) for y in years]
+    total_row = {
+        "country": "GRAND TOTAL",
+        "crude": "",
+        "_country_id": "GRAND_TOTAL",
+        "_stream_id": "GRAND_TOTAL",
+        "_is_total": True
+    }
+    for col in year_cols:
+        total_val = pivot[col].sum() if col in pivot.columns else 0
+        total_row[col] = total_val
+        
     pivot = pivot.sort_values(["country", "crude"]).reset_index(drop=True)
     records = pivot.to_dict("records")
+    
+    # Append the Grand Total row at the end
+    records.append(total_row)
+    
     last_country = None
     for row in records:
+        if row.get("_is_total"):
+            continue
+            
         country_value = row.get("country")
+        row["_country_id"] = country_value # Persistent ID for highlighting
+        row["_stream_id"] = row.get("crude")  # Persistent ID for highlighting
         if country_value == last_country:
             row["country"] = ""
         else:
@@ -1022,7 +1047,7 @@ def create_layout():
         [
             # Download components
             dcc.Download(id="download-global-exports-map-csv"),
-            dcc.Download(id="download-russia-exports-csv"),
+            dcc.Download(id="download-chart-exports-csv"),
             dcc.Download(id="download-annual-exports-csv"),
             html.Div(
                 [
@@ -1434,6 +1459,8 @@ def create_layout():
             dcc.Store(id="global-exports-play-direction", data="stop"),
             dcc.Store(id="global-exports-selected-country", data=None),
             dcc.Store(id="global-exports-selected-bar", data=None),
+            dcc.Store(id="global-exports-table-selection", data=None),
+            html.Div(id="global-exports-table-enhancer-anchor"),
             html.Div(
                 [
                     html.Div(
@@ -1452,7 +1479,7 @@ def create_layout():
                                 ),
                                 html.Button(
                                     "Export to CSV",
-                                    id='export-russia-exports-btn',
+                                    id='export-chart-exports-btn',
                                     n_clicks=0,
                                     style={
                                         'backgroundColor': 'white',
@@ -1554,13 +1581,17 @@ def create_layout():
                         id="loading-table",
                         type="default",
                         color="#d35400",
-                        children=[
-                            dash_table.DataTable(
+                        children=[html.Div(id="table-loading-trigger")]
+                    ),
+                    dash_table.DataTable(
                                 id="global-exports-table",
                                 columns=TABLE_COLUMNS,
                                 data=INITIAL_TABLE_DATA,  # Use initial data showing all countries
                                 sort_action="native",
                                 page_action="none",
+                                active_cell=None,
+                                hidden_columns=["_country_id", "_stream_id", "_is_total"],
+                                css=[{"selector": ".show-hide", "rule": "display: none"}], # Hide the toggle columns button
                                 style_table={
                                     "overflowX": "auto",
                                     "overflowY": "auto",
@@ -1610,6 +1641,11 @@ def create_layout():
                                     {
                                         "if": {"row_index": "odd"},
                                         "backgroundColor": "#f9fbfd",
+                                    },
+                                    {
+                                        "if": {"filter_query": "{_is_total} eq True"},
+                                        "fontWeight": "bold",
+                                        "backgroundColor": "#f0f2f5",
                                     }
                                 ]
                                 + [
@@ -1618,31 +1654,38 @@ def create_layout():
                                         "color": "#1b365d",
                                     }
                                     for col_id in YEAR_COLUMN_IDS
+                                ]
+                                + [
+                                    {
+                                        "if": {
+                                            "filter_query": "{_is_total} eq True",
+                                            "column_id": "country"
+                                        },
+                                        "fontWeight": "bold",
+                                        "textAlign": "left",
+                                    }
                                 ],
-                            ),
-                        ],
+                    ),
+                    html.P(
+                        "Source: Energy Intelligence.",
+                        style={"fontSize": "13px", "color": "#6c757d", "marginTop": "15px", "fontStyle": "italic", "fontWeight": "normal"},
+                    ),
+                    html.P(
+                        "Countries: Select jurisdictions are included under countries for data presentation purposes.",
+                        style={"fontSize": "11px", "color": "#6c757d", "marginTop": "5px", "fontStyle": "italic"},
                     ),
                 ],
-                style={"padding": "10px", "width": "100%"},
+                className="tab-content",
+                style={
+                    "padding": "20px 10px",
+                    "backgroundColor": "#f8f9fa",
+                    "overflowX": "hidden",
+                    "width": "100%",
+                    "maxWidth": "100%",
+                    "boxSizing": "border-box",
+                },
             ),
-            html.P(
-                "Source: Energy Intelligence.",
-                style={"fontSize": "13px", "color": "#6c757d", "marginTop": "15px", "fontStyle": "italic", "fontWeight": "normal"},
-            ),
-            html.P(
-                "Countries: Select jurisdictions are included under countries for data presentation purposes.",
-                style={"fontSize": "11px", "color": "#6c757d", "marginTop": "5px", "fontStyle": "italic"},
-            ),
-        ],
-        className="tab-content",
-        style={
-            "padding": "20px 10px",
-            "backgroundColor": "#f8f9fa",
-            "overflowX": "hidden",  # Prevent horizontal scrolling
-            "width": "100%",
-            "maxWidth": "100%",
-            "boxSizing": "border-box",
-        },
+        ]
     )
 
 
@@ -2170,8 +2213,129 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                         return new_selection
             except Exception:
                 return None
+        return dash.no_update
+
+    @dash_app.callback(
+        Output("global-exports-table-selection", "data"),
+        Output("global-exports-table", "active_cell"),
+        Input("global-exports-table", "active_cell"),
+        Input("global-exports-country-filter", "value"),
+        Input("global-exports-selected-country", "data"),
+        Input("current-submenu", "data"),
+        State("global-exports-table", "derived_viewport_data"),
+        State("global-exports-table-selection", "data"),
+        prevent_initial_call=True,
+    )
+    def handle_table_click(active_cell, country_filter, selected_country_store, submenu, viewport_data, current_selection):
+        """Handle clicks on the table to toggle selection of country, stream, or cell."""
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            return dash.no_update, dash.no_update
+            
+        trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        
+        # 1. Reset selection if environment changes
+        if trigger_id in ["global-exports-country-filter", "global-exports-selected-country", "current-submenu"]:
+            return None, dash.no_update
+            
+        # 2. Handle table click toggle
+        if trigger_id == "global-exports-table" and active_cell and viewport_data:
+            try:
+                row_idx = active_cell["row"]
+                col_id = active_cell["column_id"]
                 
-        return no_update
+                if row_idx >= len(viewport_data):
+                    return dash.no_update, None
+                    
+                row_data = viewport_data[row_idx]
+                country = row_data.get("_country_id")
+                stream = row_data.get("_stream_id")
+                
+                if not country:
+                    return dash.no_update, None
+                
+                # Determine selection type
+                if col_id == "country":
+                    new_selection = {"type": "country", "country": country}
+                elif col_id == "crude":
+                    new_selection = {"type": "stream", "country": country, "stream": stream}
+                else:
+                    # Data cell (Year)
+                    new_selection = {"type": "cell", "country": country, "stream": stream, "column_id": col_id}
+                    
+                # Toggle logic: if same selection, reset to None
+                # Resetting active_cell to None allows the same cell to be clicked again to trigger callback
+                if current_selection and current_selection == new_selection:
+                    return None, None
+                    
+                return new_selection, None
+            except Exception:
+                return dash.no_update, None
+                
+        return dash.no_update, dash.no_update
+
+    @dash_app.callback(
+        Output("global-exports-table", "style_data_conditional"),
+        Input("global-exports-table-selection", "data"),
+        State("global-exports-table", "columns"),
+        prevent_initial_call=False,
+    )
+    def update_table_styling(selection, columns):
+        """Apply highlighting and dimming styles to the table based on selection."""
+        # Base styles (odd row shading)
+        base_styles = [
+            {
+                "if": {"column_id": col["id"]},
+                "color": "#1b365d"
+            } for col in columns if col["id"] not in ["country", "crude", "_country_id", "_stream_id"]
+        ]
+        
+        if not selection:
+            # Default state: odd/even shading
+            return base_styles + [
+                {
+                    "if": {"row_index": "odd"},
+                    "backgroundColor": "#f9fbfd",
+                }
+            ]
+            
+        sel_type = selection.get("type")
+        sel_country = selection.get("country")
+        sel_stream = selection.get("stream")
+        sel_col_id = selection.get("column_id")
+        HIGHLIGHT_BG = "#d3eeff"
+        
+        # 1. Dim EVERYTHING by default when a selection is active
+        # The first style rule applies to all cells
+        styles = [{"opacity": 0.3}]
+        
+        # 2. Add highlight rules (these will override the previous 0.3 opacity because they are appended later)
+        if sel_type == "country":
+            styles.append({
+                "if": {"filter_query": f'{{_country_id}} eq "{sel_country}"'},
+                "backgroundColor": HIGHLIGHT_BG,
+                "opacity": 1.0,
+            })
+        elif sel_type == "stream":
+            styles.append({
+                "if": {
+                    "filter_query": f'{{_country_id}} eq "{sel_country}" && {{_stream_id}} eq "{sel_stream}"'
+                },
+                "backgroundColor": HIGHLIGHT_BG,
+                "opacity": 1.0,
+            })
+        elif sel_type == "cell":
+            # Highlight specific cell
+            styles.append({
+                "if": {
+                    "filter_query": f'{{_country_id}} eq "{sel_country}" && {{_stream_id}} eq "{sel_stream}"',
+                    "column_id": sel_col_id
+                },
+                "backgroundColor": HIGHLIGHT_BG,
+                "opacity": 1.0,
+            })
+            
+        return styles
 
     @dash_app.callback(
         Output("global-exports-stream-filter-container", "children"),
@@ -2314,6 +2478,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
 
     @dash_app.callback(
         Output("global-exports-table", "data"),
+        Output("table-loading-trigger", "children"),
         Input("current-submenu", "data"),
         Input("global-exports-year-display", "children"),
         Input("global-exports-stream-filter", "value"),
@@ -2332,80 +2497,48 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Update table data.
         
         FIXED: On initial load, show ALL countries without any filtering.
-        Only apply filters after user interaction.
+        NEW: Map selection (selected_country store) filters the table.
+        Dropdown selection (country-filter) is ignored for the table.
         """
         try:
             if submenu != "global-exports":
-                return []
+                return [], dash.no_update
             
             if TABLE_DF.empty:
-                return []
+                return [], dash.no_update
             
             # Get callback context to determine what triggered the update
             ctx = dash.callback_context
             is_initial_call = not ctx.triggered or len(ctx.triggered) == 0
             
-            # Get the ID of what triggered the callback
-            triggered_id = None
-            if ctx.triggered:
-                triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
-            
             # INITIAL LOAD: Return all data without any filtering
             if is_initial_call:
-                # Return initial table data which already has all countries
-                # We need to create it fresh to ensure it's all countries
-                all_data = TABLE_DF.copy()
-                return _prepare_table_records(all_data)
+                return _prepare_table_records(TABLE_DF.copy()), dash.no_update
             
-            # SUBSEQUENT INTERACTIONS: Apply filters based on user actions
+            # SUBSEQUENT INTERACTIONS: Apply filters based on map and legend
             
             # Start with all data
             filtered = TABLE_DF.copy()
             
-            # Apply country filter ONLY if selected_country is explicitly set from map click
-            # AND this callback was triggered by selected_country change
-            country_filter_applied = False
-            if selected_country and selected_country not in [None, "(All)"] and selected_country in COUNTRY_OPTIONS:
-                # Only apply country filter if this was triggered by a country change
-                # or if we're intentionally filtering by country
-                if triggered_id == "global-exports-selected-country" or selected_country != "Russia":
-                    filtered = filtered[filtered["country"] == selected_country]
-                    country_filter_applied = True
+            # 1. Apply map selection (Store only, ignores Multi-dropdown)
+            if selected_country:
+                filtered = filtered[filtered["country"].str.strip() == selected_country.strip()]
             
-            # Apply stream filter ONLY if this was triggered by stream filter change
-            # AND we're not in the initial "show all" state
-            stream_filter_applied = False
-            if stream_filter_state and len(stream_filter_state) > 0:
-                # Check if this was triggered by stream filter or stream isolate button
-                if (triggered_id == "global-exports-stream-filter" or 
-                    (triggered_id and "stream-button" in triggered_id)):
-                    # Don't apply stream filter if it would result in only Russia on initial-like state
-                    if not country_filter_applied:
-                        stream_filtered = filtered[filtered["crude"].isin(stream_filter_state)]
-                        stream_countries = set(stream_filtered["country"].unique()) if not stream_filtered.empty else set()
-                        # If stream filtering would show only Russia and we haven't applied country filter,
-                        # don't apply it (keep showing all countries)
-                        if stream_countries != {"Russia"} or country_filter_applied:
-                            filtered = stream_filtered
-                            stream_filter_applied = True
-                    else:
-                        # Country filter is applied, so stream filter is safe to apply
-                        filtered = filtered[filtered["crude"].isin(stream_filter_state)]
-                        stream_filter_applied = True
+            # 2. Apply stream filter ONLY if a single stream is isolated in the legend.
+            # This ensures that when multiple streams are selected (e.g. on load or reset),
+            # we don't accidentally filter to a partial set of streams.
+            if stream_filter_state and len(stream_filter_state) == 1:
+                filtered = filtered[filtered["crude"].isin(stream_filter_state)]
             
-            # If no filters were applied, return all data
-            if not country_filter_applied and not stream_filter_applied:
-                all_data = TABLE_DF.copy()
-                return _prepare_table_records(all_data)
-            
-            return _prepare_table_records(filtered)
+            # return the results (which might be the full table if no country/stream isolated)
+            return _prepare_table_records(filtered), dash.no_update
             
         except Exception as e:
             print(f"Error in update_table: {e}")
             # Ultimate fallback: always return all data
             if not TABLE_DF.empty:
-                return _prepare_table_records(TABLE_DF.copy())
-            return []
+                return _prepare_table_records(TABLE_DF.copy()), dash.no_update
+            return [], dash.no_update
 
     @dash_app.callback(
         Output("global-exports-play-direction", "data"),
@@ -2472,15 +2605,88 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 new_year = max_year
         return new_year, new_year, str(new_year)
 
+    dash_app.clientside_callback(
+        """
+        function(_id) {
+            try {
+                const tableId = 'global-exports-table';
+                const labelColumns = ['country', 'crude'];
+                const styleId = 'global-exports-column-highlight-css';
+
+                function getStyleEl() {
+                    let el = document.getElementById(styleId);
+                    if (!el) {
+                        el = document.createElement('style');
+                        el.id = styleId;
+                        document.head.appendChild(el);
+                    }
+                    return el;
+                }
+
+                function applyColumnHighlight(columnId) {
+                    const styleEl = getStyleEl();
+                    if (!columnId) {
+                        styleEl.innerHTML = '';
+                        return;
+                    }
+                    // Apply styles directly to the column ID. 
+                    // Dimming is applied to all OTHER data columns.
+                    // We don't use !important for dimming to allow row highlight (inline) to win.
+                    styleEl.innerHTML = `
+                        #${tableId} td[data-dash-column="${columnId}"] {
+                            background-color: #d3eeff !important;
+                            opacity: 1 !important;
+                        }
+                        #${tableId} th[data-dash-column="${columnId}"] {
+                            background-color: #316ac5 !important;
+                            color: white !important;
+                        }
+                        #${tableId} td:not([data-dash-column="${columnId}"]):not([data-dash-column="country"]):not([data-dash-column="crude"]) {
+                            opacity: 0.3;
+                        }
+                    `;
+                }
+
+                if (!window.globalExportsHeaderInited) {
+                    window.globalExportsSelection = { columnId: null };
+                    
+                    document.addEventListener('click', function(event) {
+                        const header = event.target.closest('#' + tableId + ' th[data-dash-column]');
+                        if (!header) return;
+
+                        const columnId = header.getAttribute('data-dash-column');
+                        if (!columnId || labelColumns.includes(columnId)) return;
+
+                        if (window.globalExportsSelection.columnId === columnId) {
+                            window.globalExportsSelection.columnId = null;
+                            applyColumnHighlight(null);
+                        } else {
+                            window.globalExportsSelection.columnId = columnId;
+                            applyColumnHighlight(columnId);
+                        }
+                    });
+                    window.globalExportsHeaderInited = true;
+                }
+            } catch (error) {
+                console.error('Column highlight error:', error);
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output("global-exports-table-enhancer-anchor", "children"),
+        Input("global-exports-table-enhancer-anchor", "id"),
+    )
+
     # CSV Export Callbacks
     @dash_app.callback(
         Output('download-global-exports-map-csv', 'data'),
         Input('export-global-exports-map-btn', 'n_clicks'),
         State('global-exports-year-display', 'children'),
         State('global-exports-country-filter', 'value'),
+        State('global-exports-selected-country', 'data'),
         prevent_initial_call=True
     )
-    def export_global_exports_map_csv(n_clicks, year_str, selected_countries):
+    def export_global_exports_map_csv(n_clicks, year_str, selected_countries, selected_country):
         """Export Global Crude Exports map data to CSV"""
         if n_clicks and year_str:
             try:
@@ -2496,20 +2702,19 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 
                 df = MAP_DF[MAP_DF["year"] == normalized_year].copy()
                 
-                # Filter by selected countries if specified
-                if selected_countries is not None:
-                    resolved_countries = _resolve_countries(selected_countries, COUNTRY_OPTIONS)
-                    if len(resolved_countries) > 0 and "(All)" not in selected_countries:
-                        # Filter df by matching countries (case-insensitive)
-                        df_countries_normalized = df["country"].str.strip().str.lower()
-                        target_countries_normalized = {c.lower().strip(): c for c in resolved_countries}
-                        mask = df_countries_normalized.isin(target_countries_normalized.keys())
-                        df = df[mask].copy()
+                # 1. PRIORITY SELECTION LOGIC
+                # If map selection is active, filter to that country.
+                # If map selection is cleared, export ALL countries (ignore dropdown).
+                if selected_country:
+                    df = df[df["country"].str.strip() == selected_country.strip()]
+                    filename = f"{selected_country}_Crude_Exports_{normalized_year}.csv"
+                else:
+                    # Export all
+                    filename = f"Global_Crude_Exports_{normalized_year}.csv"
                 
                 if df.empty:
                     # Return empty CSV if no data after filtering
                     empty_df = pd.DataFrame(columns=['Country', 'Year', 'Export_Volume'])
-                    filename = f"Global_Crude_Exports_{normalized_year}.csv"
                     return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
                 
                 # Prepare export data
@@ -2523,7 +2728,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 # Sort by export volume descending
                 df_export = df_export.sort_values(f"Export Volume {normalized_year} ('000 b/d)", ascending=False)
                 
-                filename = f"Global_Crude_Exports_{normalized_year}.csv"
                 return dcc.send_data_frame(df_export.to_csv, filename=filename, index=False)
             except Exception:
                 # Return empty CSV on error
@@ -2533,45 +2737,51 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         raise dash.exceptions.PreventUpdate
 
     @dash_app.callback(
-        Output('download-russia-exports-csv', 'data'),
-        Input('export-russia-exports-btn', 'n_clicks'),
+        Output('download-chart-exports-csv', 'data'),
+        Input('export-chart-exports-btn', 'n_clicks'),
         State('global-exports-stream-filter', 'value'),
         State('global-exports-country-filter', 'value'),
+        State('global-exports-selected-country', 'data'),
         prevent_initial_call=True
     )
-    def export_russia_exports_csv(n_clicks, selected_streams, selected_countries):
-        """Export Russia Annual Exports by Crude Stream data to CSV"""
+    def export_chart_data_csv(n_clicks, selected_streams, selected_countries, selected_country):
+        """Export Annual Exports by Crude Stream data to CSV"""
         if n_clicks:
             try:
                 # Get chart data
                 if CHART_DF.empty:
                     # Return empty CSV if no data
                     empty_df = pd.DataFrame(columns=['Country', 'Year', 'Crude_Stream', 'Export_Volume'])
-                    filename = "Russia_Annual_Exports_by_Crude_Stream.csv"
+                    filename = "Annual_Exports_by_Crude_Stream.csv"
                     return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
                 
                 # Apply filters
                 df = CHART_DF.copy()
                 
+                # 1. PRIORITY SELECTION LOGIC
+                # If map selection is active, filter to that country.
+                # If map selection is cleared, use dropdown selection.
+                if selected_country:
+                    df = df[df["country"].str.strip() == selected_country.strip()]
+                    filename = f"{selected_country}_Annual_Exports_by_Crude_Stream.csv"
+                else:
+                    filename = "Annual_Exports_by_Crude_Stream.csv"
+                    if selected_countries is not None:
+                        resolved_countries = _resolve_countries(selected_countries, COUNTRY_OPTIONS)
+                        if len(resolved_countries) > 0 and "(All)" not in selected_countries:
+                            if "country" in df.columns:
+                                df_countries_normalized = df["country"].str.strip().str.lower()
+                                target_countries_normalized = {c.lower().strip(): c for c in resolved_countries}
+                                mask = df_countries_normalized.isin(target_countries_normalized.keys())
+                                df = df[mask].copy()
+                
                 # Filter by streams
                 if selected_streams:
                     df = df[df["stream"].isin(selected_streams)]
                 
-                # Filter by countries
-                if selected_countries is not None:
-                    resolved_countries = _resolve_countries(selected_countries, COUNTRY_OPTIONS)
-                    if len(resolved_countries) > 0 and "(All)" not in selected_countries:
-                        # Filter df by matching countries (case-insensitive)
-                        if "country" in df.columns:
-                            df_countries_normalized = df["country"].str.strip().str.lower()
-                            target_countries_normalized = {c.lower().strip(): c for c in resolved_countries}
-                            mask = df_countries_normalized.isin(target_countries_normalized.keys())
-                            df = df[mask].copy()
-                
                 if df.empty:
                     # Return empty CSV if no data after filtering
                     empty_df = pd.DataFrame(columns=['Country', 'Year', 'Crude_Stream', 'Export_Volume'])
-                    filename = "Russia_Annual_Exports_by_Crude_Stream.csv"
                     return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
                 
                 # Prepare export data
@@ -2586,12 +2796,11 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 # Sort by country, year, and export volume
                 df_export = df_export.sort_values(['Country', 'Year', "Export Volume ('000 b/d)"], ascending=[True, True, False])
                 
-                filename = "Russia_Annual_Exports_by_Crude_Stream.csv"
                 return dcc.send_data_frame(df_export.to_csv, filename=filename, index=False)
             except Exception:
                 # Return empty CSV on error
                 empty_df = pd.DataFrame(columns=['Country', 'Year', 'Crude_Stream', 'Export_Volume'])
-                filename = "Russia_Annual_Exports_by_Crude_Stream.csv"
+                filename = "Annual_Exports_by_Crude_Stream.csv"
                 return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
         raise dash.exceptions.PreventUpdate
 
@@ -2600,9 +2809,10 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input('export-annual-exports-btn', 'n_clicks'),
         State('global-exports-country-filter', 'value'),
         State('global-exports-stream-filter', 'value'),
+        State('global-exports-selected-country', 'data'),
         prevent_initial_call=True
     )
-    def export_annual_exports_csv(n_clicks, selected_countries, selected_streams):
+    def export_annual_exports_csv(n_clicks, selected_countries, selected_streams, selected_country):
         """Export Annual Exports Volume table data to CSV"""
         if n_clicks:
             try:
@@ -2613,18 +2823,26 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                     filename = "Annual_Exports_Volume.csv"
                     return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
                 
-                # Apply filters - NOTE: Country filter is NOT applied to export (export all countries)
-                # Stream filter IS applied to export (export only selected streams)
+                # Apply filters
                 df = TABLE_DF.copy()
                 
-                # Filter by streams (crude types) only - country filter is ignored
-                if selected_streams:
+                # 1. PRIORITY SELECTION LOGIC
+                # If map selection is active, filter to that country.
+                # If map selection is cleared, export ALL countries (ignore dropdown).
+                if selected_country:
+                    df = df[df["country"].str.strip() == selected_country.strip()]
+                    filename = f"{selected_country}_Annual_Exports_Volume.csv"
+                else:
+                    filename = "Annual_Exports_Volume.csv"
+                
+                # Stream filter IS applied to export ONLY if isolated (one stream selected).
+                # This mirrors the UI logic and prevents the dropdown from narrowing the global view.
+                if selected_streams and len(selected_streams) == 1:
                     df = df[df["crude"].isin(selected_streams)]
                 
                 if df.empty:
                     # Return empty CSV if no data after filtering
                     empty_df = pd.DataFrame(columns=['Country', 'Crude'])
-                    filename = "Annual_Exports_Volume.csv"
                     return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
                 
                 # Create pivot table: countries and crudes as rows, years as columns
@@ -2655,7 +2873,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 # Sort by country and crude
                 df_pivot = df_pivot.sort_values(['Country', 'Crude'])
                 
-                filename = "Annual_Exports_Volume.csv"
                 return dcc.send_data_frame(df_pivot.to_csv, filename=filename, index=False)
             except Exception:
                 # Return empty CSV on error
