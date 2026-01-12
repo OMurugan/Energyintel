@@ -490,10 +490,31 @@ def _prepare_table_records(df: pd.DataFrame) -> List[Dict[str, object]]:
         .reset_index()
     )
     pivot.columns = [str(col) for col in pivot.columns]
+    
+    # Calculate Grand Total across all filtered rows
+    year_cols = [str(y) for y in years]
+    total_row = {
+        "country": "GRAND TOTAL",
+        "crude": "",
+        "_country_id": "GRAND_TOTAL",
+        "_stream_id": "GRAND_TOTAL",
+        "_is_total": True
+    }
+    for col in year_cols:
+        total_val = pivot[col].sum() if col in pivot.columns else 0
+        total_row[col] = total_val
+        
     pivot = pivot.sort_values(["country", "crude"]).reset_index(drop=True)
     records = pivot.to_dict("records")
+    
+    # Append the Grand Total row at the end
+    records.append(total_row)
+    
     last_country = None
     for row in records:
+        if row.get("_is_total"):
+            continue
+            
         country_value = row.get("country")
         row["_country_id"] = country_value # Persistent ID for highlighting
         row["_stream_id"] = row.get("crude")  # Persistent ID for highlighting
@@ -1569,7 +1590,7 @@ def create_layout():
                                 sort_action="native",
                                 page_action="none",
                                 active_cell=None,
-                                hidden_columns=["_country_id", "_stream_id"],
+                                hidden_columns=["_country_id", "_stream_id", "_is_total"],
                                 css=[{"selector": ".show-hide", "rule": "display: none"}], # Hide the toggle columns button
                                 style_table={
                                     "overflowX": "auto",
@@ -1620,6 +1641,11 @@ def create_layout():
                                     {
                                         "if": {"row_index": "odd"},
                                         "backgroundColor": "#f9fbfd",
+                                    },
+                                    {
+                                        "if": {"filter_query": "{_is_total} eq True"},
+                                        "fontWeight": "bold",
+                                        "backgroundColor": "#f0f2f5",
                                     }
                                 ]
                                 + [
@@ -1628,6 +1654,16 @@ def create_layout():
                                         "color": "#1b365d",
                                     }
                                     for col_id in YEAR_COLUMN_IDS
+                                ]
+                                + [
+                                    {
+                                        "if": {
+                                            "filter_query": "{_is_total} eq True",
+                                            "column_id": "country"
+                                        },
+                                        "fontWeight": "bold",
+                                        "textAlign": "left",
+                                    }
                                 ],
                     ),
                     html.P(
