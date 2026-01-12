@@ -666,29 +666,7 @@ def load_monthly_grades_for_country(countries):
             df = df.rename(columns={"Stream Name": "Stream"})
         elif "CrudeOil" in df.columns:
             df = df.rename(columns={"CrudeOil": "Stream"})
-        
-        # Debug: Print available streams
-        if not df.empty and "Stream" in df.columns:
-            available_streams = df["Stream"].dropna().unique().tolist()
-            print(f"DEBUG MONTHLY: Loaded streams ({len(available_streams)}): {available_streams}")
-            if "Urals" not in available_streams:
-                print(f"DEBUG WARNING: 'Urals' not found in monthly streams!")
-                # Check for similar names
-                similar = [s for s in available_streams if "ural" in s.lower()]
-                if similar:
-                    print(f"DEBUG: Similar streams found: {similar}")
-            
-            # Additional debug: Check if this is Russia data
-            if "Country" in df.columns:
-                russia_streams = df[df["Country"] == "Russia"]["Stream"].dropna().unique().tolist()
-                print(f"DEBUG MONTHLY: Russia streams ({len(russia_streams)}): {russia_streams}")
-                if "Urals" not in russia_streams:
-                    print(f"DEBUG WARNING: 'Urals' not found in Russia streams!")
-                    russia_similar = [s for s in russia_streams if "ural" in s.lower()]
-                    if russia_similar:
-                        print(f"DEBUG: Similar Russia streams: {russia_similar}")
-        
-        # Normalize color column naming
+        # Ensure expected helper columns exist
         for col in ["crude_color", "avg_calculation1"]:
             if col not in df.columns:
                 if col == "crude_color":
@@ -3116,96 +3094,82 @@ def register_callbacks(dash_app, server):
     def handle_chart_bar_click(clickData, current_selection, tab, production_years):
         """
         Handle chart bar clicks for single-bar global selection behavior.
-        Now supports both monthly and yearly tabs for isolation.
+        
+        Core Logic:
+        - Only ONE bar can be active across the entire chart at any time
+        - Selection is based on unique bar identity: {year, month, stream}
+        - Click same bar → deselect (activeBar = null)
+        - Click different bar → replace selection (activeBar = new bar)
         """
-        if not clickData:
+        if not clickData or tab != "monthly":
             return no_update
         
         try:
             # Extract click information
-            # Extract point information
             point = clickData["points"][0]
+            clicked_stream = point.get("legendgroup") or point.get("name", "")
+            clicked_month = point.get("x", "")
             
-            # Extract stream with priority on customdata for robustness
-            clicked_stream = None
-            customdata = point.get("customdata")
+            # Get the year from the subplot structure
+            # In monthly view, each year is a separate subplot (column)
+            subplot_col = point.get("xaxis", "x")  # e.g., "x", "x2", "x3"
             
-            if customdata and tab == "monthly":
-                # Based on our injected customdata structure:
-                # Monthly: [Country, Year, Stream] -> index 2
-                # Yearly: [Country] -> stream comes from trace.name/legendgroup
-                if isinstance(customdata, list) and len(customdata) >= 3:
-                    clicked_stream = customdata[2]
-            
-            # For yearly tab, or if customdata didn't work for monthly, use name/legendgroup
-            if not clicked_stream:
-                clicked_stream = str(point.get("legendgroup") or point.get("name", "")).strip()
-            
-            # Extract Month and Year based on tab
-            clicked_month = None
-            clicked_year = None
-            
-            if tab == "monthly":
-                clicked_month = str(point.get("x", "")).strip()
-                # Try customdata first for year (format: [Country, Year, Stream])
-                if customdata and len(customdata) > 1:
-                    clicked_year = str(customdata[1])
-                
-                # Fallback to axis-based calculation if customdata is missing
-                if not clicked_year:
-                    subplot_col = point.get("xaxis", "x")
-                    col_idx = 0 if subplot_col == "x" else int(subplot_col[1:]) - 1
-                    resolved_years = _resolve_years_selection(production_years)
-                    if resolved_years:
-                        selected_years = sorted([str(y) for y in resolved_years])
-                        if 0 <= col_idx < len(selected_years):
-                            clicked_year = selected_years[col_idx]
+            # Extract column number from xaxis (x=1, x2=2, x3=3, etc.)
+            if subplot_col == "x":
+                col_idx = 0
             else:
-                # Tab is yearly
-                clicked_year = str(point.get("x", "")).strip()
-                # Check customdata for stream just in case
-                clicked_month = None
-
-            # Sanitize for comparison
-            clicked_year = str(clicked_year).strip() if clicked_year else None
-            clicked_month = str(clicked_month).strip() if clicked_month else ""
-            clicked_stream = str(clicked_stream).strip() if (clicked_stream and str(clicked_stream).lower() != 'none') else None
+                col_idx = int(subplot_col[1:]) - 1  # x2 -> 1, x3 -> 2, etc.
             
-            if not clicked_year or not clicked_stream:
-                print(f"DEBUG CHART CLICK: Missing identification (Year: {clicked_year}, Stream: {clicked_stream})")
+            # Map column index to year based on production_years selection
+            resolved_years = _resolve_years_selection(production_years)
+            if resolved_years:
+                selected_years = sorted([str(y) for y in resolved_years])
+                if col_idx < len(selected_years):
+                    clicked_year = selected_years[col_idx]
+                else:
+                    print(f"DEBUG CHART CLICK: Column index {col_idx} out of range for years {selected_years}")
+                    return no_update
+            else:
+                print(f"DEBUG CHART CLICK: No production years available")
                 return no_update
-                
+            
             print(f"DEBUG CHART CLICK: Bar clicked - Stream: '{clicked_stream}', Month: '{clicked_month}', Year: '{clicked_year}'")
+            print(f"DEBUG CHART CLICK: Data types - Stream: {type(clicked_stream)}, Month: {type(clicked_month)}, Year: {type(clicked_year)}")
             
-            # Use standardized casing for reliable comparison
-            c_stream = clicked_stream.lower()
-            c_month = clicked_month.lower() if clicked_month else ""
-            c_year = clicked_year.lower()
-            
-            # Check current selection for toggle
-            if current_selection:
-                 s_stream = str(current_selection.get("stream", "")).strip().lower()
-                 s_month = str(current_selection.get("month", "")).strip().lower()
-                 s_year = str(current_selection.get("year", "")).strip().lower()
-                 
-                 if s_stream == c_stream and s_month == c_month and s_year == c_year:
-                     print(f"DEBUG CHART CLICK: Toggle OFF - identical segment clicked")
-                     return None
-            
-            # Set new selection
-            active_bar = {
-                "year": clicked_year,
-                "month": clicked_month,
-                "stream": clicked_stream,
-                "timestamp": pd.Timestamp.now().isoformat()
+            # Core Logic: Single-bar global selection
+            # Create the clicked bar identity - ensure all values are strings for consistent comparison
+            clicked_bar = {
+                "year": str(clicked_year),
+                "month": str(clicked_month),
+                "stream": str(clicked_stream)
             }
             
-            print(f"DEBUG CHART CLICK: Setting activeBar = {active_bar}")
-            return active_bar
+            # Check if same bar is clicked (toggle off)
+            if (current_selection and 
+                str(current_selection.get("year")) == str(clicked_bar["year"]) and
+                str(current_selection.get("month")) == str(clicked_bar["month"]) and
+                str(current_selection.get("stream")) == str(clicked_bar["stream"])):
+                print(f"DEBUG CHART CLICK: Same bar clicked ({clicked_stream}-{clicked_month}-{clicked_year}), clearing selection (activeBar = null)")
+                return None  # activeBar = null
             
-        except Exception as e:
-            print(f"ERROR CHART CLICK: {e}")
-            return no_update
+            # New bar selected → replace previous selection
+            active_bar = {
+                "year": str(clicked_bar["year"]),
+                "month": str(clicked_bar["month"]),
+                "stream": str(clicked_bar["stream"]),
+                "timestamp": pd.Timestamp.now().isoformat()  # To force updates
+            }
+            
+            if current_selection:
+                prev_stream = current_selection.get("stream")
+                prev_month = current_selection.get("month")
+                prev_year = current_selection.get("year")
+                print(f"DEBUG CHART CLICK: Replacing selection from {prev_stream}-{prev_month}-{prev_year} to {clicked_stream}-{clicked_month}-{clicked_year}")
+            else:
+                print(f"DEBUG CHART CLICK: New bar selected: {clicked_stream}-{clicked_month}-{clicked_year}")
+            
+            print(f"DEBUG CHART CLICK: activeBar = {active_bar}")
+            return active_bar
             
         except Exception as e:
             print(f"ERROR CHART CLICK: {e}")
@@ -4160,30 +4124,11 @@ def register_callbacks(dash_app, server):
                     year_months = year_data["month"].unique().tolist()
                     year_months_ordered = [m for m in month_names if m in year_months]
                     
-                    # Get unique streams across all years for consistent ordering
-                all_streams_list = order_streams_list(agg["Stream"].unique().tolist(), tab="monthly")
-                # For stacking (bottom to top), we reverse the order
-                # This ensures consistent stacking order and matches required visual (e.g. Urals at bottom)
-                stack_order = list(reversed(all_streams_list))
-                print(f"DEBUG BREAKDOWN MONTHLY: Global stream stack order: {stack_order}")
-                
-                for year_idx, year_val in enumerate(unique_years):
-                    print(f"DEBUG BREAKDOWN MONTHLY: Processing year {year_val} (index {year_idx}) (type: {type(year_val)})")
-                    year_data = agg[agg["year"] == year_val].copy()
+                    # Get unique streams for this year
+                    year_streams = sorted(year_data["Stream"].unique().tolist())
+                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year_val} has {len(year_streams)} streams: {year_streams}")
                     
-                    if year_data.empty:
-                        print(f"DEBUG BREAKDOWN MONTHLY: No data for year {year_val}, skipping")
-                        continue
-                    
-                    # Get months with data for this year, in correct order
-                    year_months = year_data["month"].unique().tolist()
-                    year_months_ordered = [m for m in month_names if m in year_months]
-                    
-                    # Get unique streams for this year in global stack order
-                    year_streams = [s for s in stack_order if s in year_data["Stream"].unique()]
-                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year_val} has {len(year_streams)} streams in stack order: {year_streams}")
-                    
-                    # Add a trace for each stream in specific stack order
+                    # Add a trace for each stream
                     for stream in year_streams:
                         stream_data = year_data[year_data["Stream"] == stream].copy()
                         
@@ -4467,8 +4412,8 @@ def register_callbacks(dash_app, server):
                                 else:
                                     country_val = ""
                                 
-                                # Add to customdata: [Country, Year, Stream]
-                                customdata_list.append([country_val, str(year_val), stream])
+                                # Add to customdata: [Country, Year]
+                                customdata_list.append([country_val, str(year_val)])
                         
                         # Set customdata
                         trace.customdata = customdata_list if customdata_list else None
@@ -4477,8 +4422,8 @@ def register_callbacks(dash_app, server):
                         trace.hovertemplate = (
                             "<b>Month of Date:</b> %{x}<br>"
                             "<b>Country:</b> %{customdata[0]}<br>"
-                            "<b>Stream Name:</b> %{customdata[2]}<br>"
-                            "<b>Year of Date:</b> %{customdata[1]}<br>"
+                            "<b>Stream Name:</b> " + stream_name + "<br>"
+                            "<b>Year of Date:</b> " + str(year_val) + "<br>"
                             "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
                         )
                         
