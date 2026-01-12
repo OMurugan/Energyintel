@@ -2619,25 +2619,9 @@ def register_callbacks(dash_app, server):
         if active_tab == "monthly" and len(all_available_streams) > 0:
             print(f"DEBUG COLOR: First 10 monthly streams: {all_available_streams[:10]}")
         
-        # Get colors from chart if available
+        # Get colors from STREAM_COLOR_MAPS and comprehensive mapping (NOT from chart figure to avoid circular dependency)
         color_map = {}
         streams_in_chart = []
-        
-        if chart_figure and 'data' in chart_figure:
-            for trace in chart_figure.get('data', []):
-                stream_name = trace.get('name') or trace.get('legendgroup', '')
-                if stream_name:
-                    streams_in_chart.append(stream_name)
-                    marker = trace.get('marker', {})
-                    if isinstance(marker, dict):
-                        color = marker.get('color')
-                        if color:
-                            if isinstance(color, list) and len(color) > 0:
-                                color_map[stream_name] = color[0] if isinstance(color[0], str) else str(color[0])
-                            elif isinstance(color, str):
-                                color_map[stream_name] = color
-                            elif hasattr(color, '__iter__') and not isinstance(color, str):
-                                color_map[stream_name] = str(color)
         
         # Also populate color_map from STREAM_COLOR_MAPS and comprehensive mapping
         tab_value = active_tab if active_tab in STREAM_COLOR_ORDERS else "yearly"
@@ -3128,11 +3112,13 @@ def register_callbacks(dash_app, server):
                 customdata = point.get("customdata")
                 print(f"DEBUG CHART CLICK: Customdata available: {customdata}")
                 if len(customdata) >= 3:
-                    clicked_stream = str(customdata[2]).strip()  # [Country, Year, Stream]
-                    print(f"DEBUG CHART CLICK: Extracted stream from customdata[2]: '{clicked_stream}'")
+                    # Monthly format: [Country, Year, Stream]
+                    clicked_stream = str(customdata[2]).strip()
+                    print(f"DEBUG CHART CLICK: Extracted stream from customdata[2] (monthly): '{clicked_stream}'")
                 elif len(customdata) >= 1:
+                    # Yearly format: [Stream] - stream is at index 0
                     clicked_stream = str(customdata[0]).strip()
-                    print(f"DEBUG CHART CLICK: Extracted stream from customdata[0]: '{clicked_stream}'")
+                    print(f"DEBUG CHART CLICK: Extracted stream from customdata[0] (yearly): '{clicked_stream}'")
             
             if not clicked_stream:
                 print(f"DEBUG CHART CLICK: Could not extract stream from point: {point}")
@@ -3206,6 +3192,7 @@ def register_callbacks(dash_app, server):
                 "year": str(clicked_bar["year"]),
                 "month": str(clicked_bar["month"]),
                 "stream": str(clicked_bar["stream"]),
+                "tab": str(tab),  # Store current tab for clearing logic
                 "timestamp": pd.Timestamp.now().isoformat()  # To force updates
             }
             
@@ -3215,7 +3202,7 @@ def register_callbacks(dash_app, server):
                 prev_year = current_selection.get("year")
                 print(f"DEBUG CHART CLICK: Replacing global selection from {prev_stream}-{prev_month}-{prev_year} to {clicked_stream}-{clicked_month}-{clicked_year}")
             else:
-                print(f"DEBUG CHART CLICK: New global bar selected: {clicked_stream}-{clicked_month}-{clicked_year}")
+                print(f"DEBUG CHART CLICK: New global bar selected: {clicked_stream}-{clicked_month}-{clicked_year} (tab: {tab})")
             
             print(f"DEBUG CHART CLICK: activeBar = {active_bar}")
             return active_bar
@@ -3496,6 +3483,20 @@ def register_callbacks(dash_app, server):
             fig = go.Figure()
             fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
             return fig, ""
+        
+        # Clear selected_bar when switching tabs to start fresh
+        if selected_bar:
+            # Check if the selected_bar belongs to a different tab
+            selected_bar_tab = selected_bar.get("tab")
+            if selected_bar_tab and selected_bar_tab != tab:
+                print(f"DEBUG BREAKDOWN: Clearing selected_bar from previous tab '{selected_bar_tab}' when switching to '{tab}'")
+                selected_bar = None
+            elif not selected_bar_tab:
+                # If no tab info in selected_bar, clear it when switching to be safe
+                print(f"DEBUG BREAKDOWN: Clearing selected_bar with no tab info when switching to '{tab}'")
+                selected_bar = None
+            else:
+                print(f"DEBUG BREAKDOWN: Keeping selected_bar from same tab '{selected_bar_tab}'")
         
         # Ensure data is loaded
         _ensure_data_loaded()
@@ -3826,7 +3827,8 @@ def register_callbacks(dash_app, server):
                         color_discrete_sequence=get_color_sequence("yearly"),
                         category_orders={"Stream": stream_categories},
                         labels={"value":"Production Volume ('000 b/d)", "year":"Year", "Stream":"Stream"},
-                        barmode="stack"  # Stack streams for each year
+                        barmode="stack",  # Stack streams for each year
+                        custom_data=["Stream"]
                     )
                     stack_order = list(reversed(stream_categories))
                     order_lookup = {name: idx for idx, name in enumerate(stack_order)}
@@ -3851,19 +3853,80 @@ def register_callbacks(dash_app, server):
                     )
                     return fig, title_text
                 
-                # NEW LOGIC: Apply opacity-based highlighting for yearly chart
-                # If a single stream is selected, highlight it across all years and dim others
-                if is_single_stream_selected and selected_stream:
-                    print(f"DEBUG BREAKDOWN YEARLY: Applying opacity highlighting for selected stream: {selected_stream}")
-                    for trace in fig.data:
-                        if trace.name == selected_stream:
-                            # Highlight the selected stream
-                            trace.marker.opacity = 1.0
-                            print(f"DEBUG BREAKDOWN YEARLY: Set opacity=1.0 for trace: {trace.name}")
-                        else:
-                            # Dim all other streams
-                            trace.marker.opacity = 0.3
-                            print(f"DEBUG BREAKDOWN YEARLY: Set opacity=0.3 for trace: {trace.name}")
+                # NEW LOGIC: Apply point-level highlighting for yearly chart (single bar selection)
+                # Check for both legend filter selection (profiled) and chart bar click (selected_bar)
+                chart_selected_stream = None
+                chart_selected_year = None
+                if selected_bar and selected_bar.get("stream"):
+                    # Chart bar click detected - extract stream and year from selected_bar
+                    chart_selected_stream = selected_bar.get("stream")
+                    chart_selected_year = selected_bar.get("month")  # For yearly, month contains the year
+                    print(f"DEBUG BREAKDOWN YEARLY: Chart bar click detected for stream: {chart_selected_stream}, year: {chart_selected_year}")
+                
+                # Use chart selection if available, otherwise use legend filter selection
+                active_stream = chart_selected_stream or selected_stream
+                should_highlight = (is_single_stream_selected and selected_stream) or (chart_selected_stream is not None)
+                
+                if should_highlight and active_stream:
+                    if chart_selected_stream and chart_selected_year:
+                        # Chart bar click: point-level styling for single bar
+                        print(f"DEBUG BREAKDOWN YEARLY: Applying point-level highlighting for {active_stream}-{chart_selected_year}")
+                        
+                        for trace in fig.data:
+                            if trace.name == active_stream:
+                                # Create point-level styling arrays
+                                point_marker_colors = []
+                                point_marker_line_widths = []
+                                point_marker_line_colors = []
+                                point_hover_infos = []
+                                
+                                # Get the stream color
+                                stream_color = color_map.get(trace.name, '#808080')
+                                
+                                for i, year_val in enumerate(trace.x):
+                                    if str(year_val) == str(chart_selected_year):
+                                        # Highlight the clicked bar
+                                        point_marker_colors.append(stream_color)
+                                        point_marker_line_widths.append(4)
+                                        point_marker_line_colors.append("black")
+                                        point_hover_infos.append("all")
+                                        print(f"DEBUG BREAKDOWN YEARLY: Highlighted {trace.name}-{year_val}")
+                                    else:
+                                        # Dim other bars in same stream
+                                        point_marker_colors.append("rgba(200,200,200,0.3)")
+                                        point_marker_line_widths.append(1)
+                                        point_marker_line_colors.append("rgba(220,220,220,0.2)")
+                                        point_hover_infos.append("skip")
+                                
+                                # Apply point-level styling
+                                trace.marker.color = point_marker_colors
+                                trace.marker.line.width = point_marker_line_widths
+                                trace.marker.line.color = point_marker_line_colors
+                                trace.hoverinfo = point_hover_infos
+                            else:
+                                # Dim entire trace for other streams
+                                point_marker_colors = ["rgba(200,200,200,0.3)"] * len(trace.x)
+                                point_marker_line_widths = [1] * len(trace.x)
+                                point_marker_line_colors = ["rgba(220,220,220,0.2)"] * len(trace.x)
+                                point_hover_infos = ["skip"] * len(trace.x)
+                                
+                                trace.marker.color = point_marker_colors
+                                trace.marker.line.width = point_marker_line_widths
+                                trace.marker.line.color = point_marker_line_colors
+                                trace.hoverinfo = point_hover_infos
+                                print(f"DEBUG BREAKDOWN YEARLY: Dimmed entire trace: {trace.name}")
+                    else:
+                        # Legend filter selection: trace-level styling (all years of selected stream)
+                        print(f"DEBUG BREAKDOWN YEARLY: Applying trace-level highlighting for stream: {active_stream}")
+                        for trace in fig.data:
+                            if trace.name == active_stream:
+                                # Highlight the selected stream
+                                trace.marker.opacity = 1.0
+                                print(f"DEBUG BREAKDOWN YEARLY: Set opacity=1.0 for trace: {trace.name}")
+                            else:
+                                # Dim all other streams
+                                trace.marker.opacity = 0.3
+                                print(f"DEBUG BREAKDOWN YEARLY: Set opacity=0.3 for trace: {trace.name}")
                 else:
                     # Default mode: all streams at full opacity
                     print(f"DEBUG BREAKDOWN YEARLY: Default mode - all streams at full opacity")
@@ -3938,8 +4001,8 @@ def register_callbacks(dash_app, server):
                             else:
                                 country_val = ""
                             
-                            # Add to customdata: [Country]
-                            customdata_list.append([country_val])
+                            # Add to customdata: [Stream] (matching reference file format)
+                            customdata_list.append([stream_name])
                     
                     # Set customdata
                     trace.customdata = customdata_list if customdata_list else None
@@ -3947,8 +4010,8 @@ def register_callbacks(dash_app, server):
                     # Create custom hover template
                     trace.hovertemplate = (
                         "<b>Year:</b> %{x}<br>"
-                        "<b>Country:</b> %{customdata[0]}<br>"
-                        "<b>Stream Name:</b> " + stream_name + "<br>"
+                        "<b>Stream Name:</b> %{customdata[0]}<br>"
+                        "<b>Country:</b> " + country_val + "<br>"
                         "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
                     )
                 
