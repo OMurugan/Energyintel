@@ -3101,42 +3101,79 @@ def register_callbacks(dash_app, server):
         - Click same bar → deselect (activeBar = null)
         - Click different bar → replace selection (activeBar = new bar)
         """
-        if not clickData or tab != "monthly":
+        if not clickData:
             return no_update
         
         try:
-            # Extract click information
+            # Extract point information with robust error handling
             point = clickData["points"][0]
-            clicked_stream = point.get("legendgroup") or point.get("name", "")
-            clicked_month = point.get("x", "")
             
-            # Get the year from the subplot structure
-            # In monthly view, each year is a separate subplot (column)
+            # Extract stream information with multiple fallbacks
+            clicked_stream = None
+            if point.get("legendgroup"):
+                clicked_stream = str(point.get("legendgroup")).strip()
+            elif point.get("name"):
+                clicked_stream = str(point.get("name")).strip()
+            elif point.get("customdata") and isinstance(point.get("customdata"), list):
+                # Try customdata if available
+                customdata = point.get("customdata")
+                if len(customdata) >= 3:
+                    clicked_stream = str(customdata[2]).strip()  # [Country, Year, Stream]
+                elif len(customdata) >= 1:
+                    clicked_stream = str(customdata[0]).strip()
+            
+            if not clicked_stream:
+                print(f"DEBUG CHART CLICK: Could not extract stream from point: {point}")
+                return no_update
+            
+            # Extract month with robust handling
+            clicked_month = str(point.get("x", "")).strip()
+            if not clicked_month:
+                print(f"DEBUG CHART CLICK: Could not extract month from point: {point}")
+                return no_update
+            
+            # Get the year from the subplot structure with robust error handling
             subplot_col = point.get("xaxis", "x")  # e.g., "x", "x2", "x3"
+            print(f"DEBUG CHART CLICK: Subplot column: {subplot_col}")
             
             # Extract column number from xaxis (x=1, x2=2, x3=3, etc.)
-            if subplot_col == "x":
-                col_idx = 0
-            else:
-                col_idx = int(subplot_col[1:]) - 1  # x2 -> 1, x3 -> 2, etc.
+            try:
+                if subplot_col == "x":
+                    col_idx = 0
+                elif subplot_col.startswith("x") and subplot_col[1:].isdigit():
+                    col_idx = int(subplot_col[1:]) - 1  # x2 -> 1, x3 -> 2, etc.
+                else:
+                    print(f"DEBUG CHART CLICK: Invalid subplot format: {subplot_col}")
+                    return no_update
+            except (ValueError, IndexError) as e:
+                print(f"DEBUG CHART CLICK: Error parsing subplot column {subplot_col}: {e}")
+                return no_update
             
             # Map column index to year based on production_years selection
             resolved_years = _resolve_years_selection(production_years)
             if resolved_years:
                 selected_years = sorted([str(y) for y in resolved_years])
-                if col_idx < len(selected_years):
+                print(f"DEBUG CHART CLICK: Available years: {selected_years}, Column index: {col_idx}")
+                
+                if 0 <= col_idx < len(selected_years):
                     clicked_year = selected_years[col_idx]
                 else:
                     print(f"DEBUG CHART CLICK: Column index {col_idx} out of range for years {selected_years}")
-                    return no_update
+                    # Try to fallback to first year if index is out of range
+                    clicked_year = selected_years[0] if selected_years else None
+                    print(f"DEBUG CHART CLICK: Fallback to year: {clicked_year}")
             else:
                 print(f"DEBUG CHART CLICK: No production years available")
+                return no_update
+            
+            if not clicked_year:
+                print(f"DEBUG CHART CLICK: Could not determine year")
                 return no_update
             
             print(f"DEBUG CHART CLICK: Bar clicked - Stream: '{clicked_stream}', Month: '{clicked_month}', Year: '{clicked_year}'")
             print(f"DEBUG CHART CLICK: Data types - Stream: {type(clicked_stream)}, Month: {type(clicked_month)}, Year: {type(clicked_year)}")
             
-            # Core Logic: Single-bar global selection
+            # Core Logic: Single-bar global selection across entire chart
             # Create the clicked bar identity - ensure all values are strings for consistent comparison
             clicked_bar = {
                 "year": str(clicked_year),
@@ -3152,7 +3189,7 @@ def register_callbacks(dash_app, server):
                 print(f"DEBUG CHART CLICK: Same bar clicked ({clicked_stream}-{clicked_month}-{clicked_year}), clearing selection (activeBar = null)")
                 return None  # activeBar = null
             
-            # New bar selected → replace previous selection
+            # New bar selected → replace previous selection globally
             active_bar = {
                 "year": str(clicked_bar["year"]),
                 "month": str(clicked_bar["month"]),
@@ -3164,9 +3201,9 @@ def register_callbacks(dash_app, server):
                 prev_stream = current_selection.get("stream")
                 prev_month = current_selection.get("month")
                 prev_year = current_selection.get("year")
-                print(f"DEBUG CHART CLICK: Replacing selection from {prev_stream}-{prev_month}-{prev_year} to {clicked_stream}-{clicked_month}-{clicked_year}")
+                print(f"DEBUG CHART CLICK: Replacing global selection from {prev_stream}-{prev_month}-{prev_year} to {clicked_stream}-{clicked_month}-{clicked_year}")
             else:
-                print(f"DEBUG CHART CLICK: New bar selected: {clicked_stream}-{clicked_month}-{clicked_year}")
+                print(f"DEBUG CHART CLICK: New global bar selected: {clicked_stream}-{clicked_month}-{clicked_year}")
             
             print(f"DEBUG CHART CLICK: activeBar = {active_bar}")
             return active_bar
@@ -4150,18 +4187,23 @@ def register_callbacks(dash_app, server):
                         
                         if selected_bar:
                             # Global single-bar selection - apply opacity to entire stream trace
-                            active_bar_year = selected_bar.get("year")
-                            active_bar_month = selected_bar.get("month") 
-                            active_bar_stream = selected_bar.get("stream")
+                            active_bar_year = str(selected_bar.get("year", "")).strip()
+                            active_bar_month = str(selected_bar.get("month", "")).strip()
+                            active_bar_stream = str(selected_bar.get("stream", "")).strip()
                             
                             print(f"DEBUG CHART OPACITY: Processing {stream} in {year_val}, activeBar={active_bar_stream}-{active_bar_month}-{active_bar_year}")
                             
-                            # Check if this stream in this year contains the active bar
-                            year_match = str(year_val) == str(active_bar_year)
-                            stream_match = str(stream) == str(active_bar_stream)
+                            # Normalize comparison values for robust matching
+                            current_year = str(year_val).strip()
+                            current_stream = str(stream).strip()
                             
-                            # Check if this stream data contains the active month
-                            has_active_month = active_bar_month in stream_data["month"].values
+                            # Check if this stream in this year contains the active bar
+                            year_match = current_year == active_bar_year
+                            stream_match = current_stream == active_bar_stream
+                            
+                            # Check if this stream data contains the active month (case-insensitive)
+                            stream_months = [str(m).strip() for m in stream_data["month"].values]
+                            has_active_month = active_bar_month in stream_months
                             
                             # This trace contains the active bar if all conditions match
                             contains_active_bar = year_match and stream_match and has_active_month
@@ -4170,9 +4212,10 @@ def register_callbacks(dash_app, server):
                             trace_opacity = 1.0 if contains_active_bar else 0.3
                             
                             print(f"DEBUG TRACE OPACITY: {stream}-{year_val}")
-                            print(f"  - Year match: {year_val} == {active_bar_year} -> {year_match}")
-                            print(f"  - Stream match: {stream} == {active_bar_stream} -> {stream_match}")
-                            print(f"  - Has active month ({active_bar_month}): {has_active_month}")
+                            print(f"  - Year match: '{current_year}' == '{active_bar_year}' -> {year_match}")
+                            print(f"  - Stream match: '{current_stream}' == '{active_bar_stream}' -> {stream_match}")
+                            print(f"  - Stream months: {stream_months}")
+                            print(f"  - Has active month ('{active_bar_month}'): {has_active_month}")
                             print(f"  - Contains active bar: {contains_active_bar}")
                             print(f"  - Final opacity: {trace_opacity}")
                             print("---")
