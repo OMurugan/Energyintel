@@ -2446,6 +2446,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input("current-submenu", "data"),
         Input("global-exports-year-display", "children"),
         Input("global-exports-stream-filter", "value"),
+        Input("global-exports-selected-country", "data"),
         Input({"type": "stream-button", "stream": ALL}, "n_clicks"),
         prevent_initial_call=False,
     )
@@ -2453,13 +2454,15 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         submenu: str,
         year_str: Optional[str],
         stream_filter_state: Optional[Sequence[str]],
+        selected_country: Optional[str],
         legend_clicks,
     ):
         """
         Update table data.
         
         FIXED: On initial load, show ALL countries without any filtering.
-        Only apply filters after user interaction.
+        NEW: Map selection (selected_country store) filters the table.
+        Dropdown selection (country-filter) is ignored for the table.
         """
         try:
             if submenu != "global-exports":
@@ -2476,25 +2479,22 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             if is_initial_call:
                 return _prepare_table_records(TABLE_DF.copy()), dash.no_update
             
-            # SUBSEQUENT INTERACTIONS: Apply filters based on legend clicks
+            # SUBSEQUENT INTERACTIONS: Apply filters based on map and legend
             
             # Start with all data
             filtered = TABLE_DF.copy()
             
-            # Apply stream filter ONLY if a single stream is isolated in the legend.
+            # 1. Apply map selection (Store only, ignores Multi-dropdown)
+            if selected_country:
+                filtered = filtered[filtered["country"].str.strip() == selected_country.strip()]
+            
+            # 2. Apply stream filter ONLY if a single stream is isolated in the legend.
             # This ensures that when multiple streams are selected (e.g. on load or reset),
-            # we show the global view for all countries as requested.
-            stream_filter_applied = False
+            # we don't accidentally filter to a partial set of streams.
             if stream_filter_state and len(stream_filter_state) == 1:
                 filtered = filtered[filtered["crude"].isin(stream_filter_state)]
-                stream_filter_applied = True
             
-            # Final logic: 
-            # If a stream is isolated (len == 1), show all countries exporting that stream.
-            # Otherwise (load, reset, or multiple selection), show all countries and all streams.
-            if not stream_filter_applied:
-                return _prepare_table_records(TABLE_DF.copy()), dash.no_update
-            
+            # return the results (which might be the full table if no country/stream isolated)
             return _prepare_table_records(filtered), dash.no_update
             
         except Exception as e:
