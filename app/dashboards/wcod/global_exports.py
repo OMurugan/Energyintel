@@ -2491,41 +2491,26 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             # Start with all data
             filtered = TABLE_DF.copy()
             
-            # Apply country filter ONLY if selected_country is explicitly set from map click
-            # AND this callback was triggered by selected_country change
+            # Apply country filter if selected_country is set
             country_filter_applied = False
             if selected_country and selected_country not in [None, "(All)"] and selected_country in COUNTRY_OPTIONS:
-                # Only apply country filter if this was triggered by a country change
-                # or if we're intentionally filtering by country
-                if triggered_id == "global-exports-selected-country" or selected_country != "Russia":
-                    filtered = filtered[filtered["country"] == selected_country]
-                    country_filter_applied = True
+                filtered = filtered[filtered["country"] == selected_country]
+                country_filter_applied = True
             
-            # Apply stream filter ONLY if this was triggered by stream filter change
-            # AND we're not in the initial "show all" state
+            # Apply stream filter if selected
             stream_filter_applied = False
             if stream_filter_state and len(stream_filter_state) > 0:
-                # Check if this was triggered by stream filter or stream isolate button
-                if (triggered_id == "global-exports-stream-filter" or 
-                    (triggered_id and "stream-button" in triggered_id)):
-                    # Don't apply stream filter if it would result in only Russia on initial-like state
-                    if not country_filter_applied:
-                        stream_filtered = filtered[filtered["crude"].isin(stream_filter_state)]
-                        stream_countries = set(stream_filtered["country"].unique()) if not stream_filtered.empty else set()
-                        # If stream filtering would show only Russia and we haven't applied country filter,
-                        # don't apply it (keep showing all countries)
-                        if stream_countries != {"Russia"} or country_filter_applied:
-                            filtered = stream_filtered
-                            stream_filter_applied = True
-                    else:
-                        # Country filter is applied, so stream filter is safe to apply
-                        filtered = filtered[filtered["crude"].isin(stream_filter_state)]
-                        stream_filter_applied = True
+                # Get the set of all available streams
+                all_streams = set(STREAM_ORDER)
+                
+                # If everything is selected, don't filter (treat as "Show All")
+                if len(set(stream_filter_state)) < len(all_streams):
+                    filtered = filtered[filtered["crude"].isin(stream_filter_state)]
+                    stream_filter_applied = True
             
             # If no filters were applied, return all data
             if not country_filter_applied and not stream_filter_applied:
-                all_data = TABLE_DF.copy()
-                return _prepare_table_records(all_data), dash.no_update
+                return _prepare_table_records(TABLE_DF.copy()), dash.no_update
             
             return _prepare_table_records(filtered), dash.no_update
             
