@@ -2446,7 +2446,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input("current-submenu", "data"),
         Input("global-exports-year-display", "children"),
         Input("global-exports-stream-filter", "value"),
-        Input("global-exports-selected-country", "data"),
         Input({"type": "stream-button", "stream": ALL}, "n_clicks"),
         prevent_initial_call=False,
     )
@@ -2454,7 +2453,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         submenu: str,
         year_str: Optional[str],
         stream_filter_state: Optional[Sequence[str]],
-        selected_country: Optional[str],
         legend_clicks,
     ):
         """
@@ -2474,42 +2472,27 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             ctx = dash.callback_context
             is_initial_call = not ctx.triggered or len(ctx.triggered) == 0
             
-            # Get the ID of what triggered the callback
-            triggered_id = None
-            if ctx.triggered:
-                triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
-            
             # INITIAL LOAD: Return all data without any filtering
             if is_initial_call:
-                # Return initial table data which already has all countries
-                # We need to create it fresh to ensure it's all countries
-                all_data = TABLE_DF.copy()
-                return _prepare_table_records(all_data), dash.no_update
+                return _prepare_table_records(TABLE_DF.copy()), dash.no_update
             
-            # SUBSEQUENT INTERACTIONS: Apply filters based on user actions
+            # SUBSEQUENT INTERACTIONS: Apply filters based on legend clicks
             
             # Start with all data
             filtered = TABLE_DF.copy()
             
-            # Apply country filter if selected_country is set
-            country_filter_applied = False
-            if selected_country and selected_country not in [None, "(All)"] and selected_country in COUNTRY_OPTIONS:
-                filtered = filtered[filtered["country"] == selected_country]
-                country_filter_applied = True
-            
-            # Apply stream filter if selected
+            # Apply stream filter ONLY if a single stream is isolated in the legend.
+            # This ensures that when multiple streams are selected (e.g. on load or reset),
+            # we show the global view for all countries as requested.
             stream_filter_applied = False
-            if stream_filter_state and len(stream_filter_state) > 0:
-                # Get the set of all available streams
-                all_streams = set(STREAM_ORDER)
-                
-                # If everything is selected, don't filter (treat as "Show All")
-                if len(set(stream_filter_state)) < len(all_streams):
-                    filtered = filtered[filtered["crude"].isin(stream_filter_state)]
-                    stream_filter_applied = True
+            if stream_filter_state and len(stream_filter_state) == 1:
+                filtered = filtered[filtered["crude"].isin(stream_filter_state)]
+                stream_filter_applied = True
             
-            # If no filters were applied, return all data
-            if not country_filter_applied and not stream_filter_applied:
+            # Final logic: 
+            # If a stream is isolated (len == 1), show all countries exporting that stream.
+            # Otherwise (load, reset, or multiple selection), show all countries and all streams.
+            if not stream_filter_applied:
                 return _prepare_table_records(TABLE_DF.copy()), dash.no_update
             
             return _prepare_table_records(filtered), dash.no_update
