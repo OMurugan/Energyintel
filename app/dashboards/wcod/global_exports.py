@@ -1047,7 +1047,7 @@ def create_layout():
         [
             # Download components
             dcc.Download(id="download-global-exports-map-csv"),
-            dcc.Download(id="download-russia-exports-csv"),
+            dcc.Download(id="download-chart-exports-csv"),
             dcc.Download(id="download-annual-exports-csv"),
             html.Div(
                 [
@@ -1479,7 +1479,7 @@ def create_layout():
                                 ),
                                 html.Button(
                                     "Export to CSV",
-                                    id='export-russia-exports-btn',
+                                    id='export-chart-exports-btn',
                                     n_clicks=0,
                                     style={
                                         'backgroundColor': 'white',
@@ -2683,9 +2683,10 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input('export-global-exports-map-btn', 'n_clicks'),
         State('global-exports-year-display', 'children'),
         State('global-exports-country-filter', 'value'),
+        State('global-exports-selected-country', 'data'),
         prevent_initial_call=True
     )
-    def export_global_exports_map_csv(n_clicks, year_str, selected_countries):
+    def export_global_exports_map_csv(n_clicks, year_str, selected_countries, selected_country):
         """Export Global Crude Exports map data to CSV"""
         if n_clicks and year_str:
             try:
@@ -2701,20 +2702,19 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 
                 df = MAP_DF[MAP_DF["year"] == normalized_year].copy()
                 
-                # Filter by selected countries if specified
-                if selected_countries is not None:
-                    resolved_countries = _resolve_countries(selected_countries, COUNTRY_OPTIONS)
-                    if len(resolved_countries) > 0 and "(All)" not in selected_countries:
-                        # Filter df by matching countries (case-insensitive)
-                        df_countries_normalized = df["country"].str.strip().str.lower()
-                        target_countries_normalized = {c.lower().strip(): c for c in resolved_countries}
-                        mask = df_countries_normalized.isin(target_countries_normalized.keys())
-                        df = df[mask].copy()
+                # 1. PRIORITY SELECTION LOGIC
+                # If map selection is active, filter to that country.
+                # If map selection is cleared, export ALL countries (ignore dropdown).
+                if selected_country:
+                    df = df[df["country"].str.strip() == selected_country.strip()]
+                    filename = f"{selected_country}_Crude_Exports_{normalized_year}.csv"
+                else:
+                    # Export all
+                    filename = f"Global_Crude_Exports_{normalized_year}.csv"
                 
                 if df.empty:
                     # Return empty CSV if no data after filtering
                     empty_df = pd.DataFrame(columns=['Country', 'Year', 'Export_Volume'])
-                    filename = f"Global_Crude_Exports_{normalized_year}.csv"
                     return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
                 
                 # Prepare export data
@@ -2728,7 +2728,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 # Sort by export volume descending
                 df_export = df_export.sort_values(f"Export Volume {normalized_year} ('000 b/d)", ascending=False)
                 
-                filename = f"Global_Crude_Exports_{normalized_year}.csv"
                 return dcc.send_data_frame(df_export.to_csv, filename=filename, index=False)
             except Exception:
                 # Return empty CSV on error
@@ -2738,45 +2737,51 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         raise dash.exceptions.PreventUpdate
 
     @dash_app.callback(
-        Output('download-russia-exports-csv', 'data'),
-        Input('export-russia-exports-btn', 'n_clicks'),
+        Output('download-chart-exports-csv', 'data'),
+        Input('export-chart-exports-btn', 'n_clicks'),
         State('global-exports-stream-filter', 'value'),
         State('global-exports-country-filter', 'value'),
+        State('global-exports-selected-country', 'data'),
         prevent_initial_call=True
     )
-    def export_russia_exports_csv(n_clicks, selected_streams, selected_countries):
-        """Export Russia Annual Exports by Crude Stream data to CSV"""
+    def export_chart_data_csv(n_clicks, selected_streams, selected_countries, selected_country):
+        """Export Annual Exports by Crude Stream data to CSV"""
         if n_clicks:
             try:
                 # Get chart data
                 if CHART_DF.empty:
                     # Return empty CSV if no data
                     empty_df = pd.DataFrame(columns=['Country', 'Year', 'Crude_Stream', 'Export_Volume'])
-                    filename = "Russia_Annual_Exports_by_Crude_Stream.csv"
+                    filename = "Annual_Exports_by_Crude_Stream.csv"
                     return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
                 
                 # Apply filters
                 df = CHART_DF.copy()
                 
+                # 1. PRIORITY SELECTION LOGIC
+                # If map selection is active, filter to that country.
+                # If map selection is cleared, use dropdown selection.
+                if selected_country:
+                    df = df[df["country"].str.strip() == selected_country.strip()]
+                    filename = f"{selected_country}_Annual_Exports_by_Crude_Stream.csv"
+                else:
+                    filename = "Annual_Exports_by_Crude_Stream.csv"
+                    if selected_countries is not None:
+                        resolved_countries = _resolve_countries(selected_countries, COUNTRY_OPTIONS)
+                        if len(resolved_countries) > 0 and "(All)" not in selected_countries:
+                            if "country" in df.columns:
+                                df_countries_normalized = df["country"].str.strip().str.lower()
+                                target_countries_normalized = {c.lower().strip(): c for c in resolved_countries}
+                                mask = df_countries_normalized.isin(target_countries_normalized.keys())
+                                df = df[mask].copy()
+                
                 # Filter by streams
                 if selected_streams:
                     df = df[df["stream"].isin(selected_streams)]
                 
-                # Filter by countries
-                if selected_countries is not None:
-                    resolved_countries = _resolve_countries(selected_countries, COUNTRY_OPTIONS)
-                    if len(resolved_countries) > 0 and "(All)" not in selected_countries:
-                        # Filter df by matching countries (case-insensitive)
-                        if "country" in df.columns:
-                            df_countries_normalized = df["country"].str.strip().str.lower()
-                            target_countries_normalized = {c.lower().strip(): c for c in resolved_countries}
-                            mask = df_countries_normalized.isin(target_countries_normalized.keys())
-                            df = df[mask].copy()
-                
                 if df.empty:
                     # Return empty CSV if no data after filtering
                     empty_df = pd.DataFrame(columns=['Country', 'Year', 'Crude_Stream', 'Export_Volume'])
-                    filename = "Russia_Annual_Exports_by_Crude_Stream.csv"
                     return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
                 
                 # Prepare export data
@@ -2791,12 +2796,11 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 # Sort by country, year, and export volume
                 df_export = df_export.sort_values(['Country', 'Year', "Export Volume ('000 b/d)"], ascending=[True, True, False])
                 
-                filename = "Russia_Annual_Exports_by_Crude_Stream.csv"
                 return dcc.send_data_frame(df_export.to_csv, filename=filename, index=False)
             except Exception:
                 # Return empty CSV on error
                 empty_df = pd.DataFrame(columns=['Country', 'Year', 'Crude_Stream', 'Export_Volume'])
-                filename = "Russia_Annual_Exports_by_Crude_Stream.csv"
+                filename = "Annual_Exports_by_Crude_Stream.csv"
                 return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
         raise dash.exceptions.PreventUpdate
 
@@ -2805,9 +2809,10 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         Input('export-annual-exports-btn', 'n_clicks'),
         State('global-exports-country-filter', 'value'),
         State('global-exports-stream-filter', 'value'),
+        State('global-exports-selected-country', 'data'),
         prevent_initial_call=True
     )
-    def export_annual_exports_csv(n_clicks, selected_countries, selected_streams):
+    def export_annual_exports_csv(n_clicks, selected_countries, selected_streams, selected_country):
         """Export Annual Exports Volume table data to CSV"""
         if n_clicks:
             try:
@@ -2818,18 +2823,26 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                     filename = "Annual_Exports_Volume.csv"
                     return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
                 
-                # Apply filters - NOTE: Country filter is NOT applied to export (export all countries)
-                # Stream filter IS applied to export (export only selected streams)
+                # Apply filters
                 df = TABLE_DF.copy()
                 
-                # Filter by streams (crude types) only - country filter is ignored
-                if selected_streams:
+                # 1. PRIORITY SELECTION LOGIC
+                # If map selection is active, filter to that country.
+                # If map selection is cleared, export ALL countries (ignore dropdown).
+                if selected_country:
+                    df = df[df["country"].str.strip() == selected_country.strip()]
+                    filename = f"{selected_country}_Annual_Exports_Volume.csv"
+                else:
+                    filename = "Annual_Exports_Volume.csv"
+                
+                # Stream filter IS applied to export ONLY if isolated (one stream selected).
+                # This mirrors the UI logic and prevents the dropdown from narrowing the global view.
+                if selected_streams and len(selected_streams) == 1:
                     df = df[df["crude"].isin(selected_streams)]
                 
                 if df.empty:
                     # Return empty CSV if no data after filtering
                     empty_df = pd.DataFrame(columns=['Country', 'Crude'])
-                    filename = "Annual_Exports_Volume.csv"
                     return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
                 
                 # Create pivot table: countries and crudes as rows, years as columns
@@ -2860,7 +2873,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 # Sort by country and crude
                 df_pivot = df_pivot.sort_values(['Country', 'Crude'])
                 
-                filename = "Annual_Exports_Volume.csv"
                 return dcc.send_data_frame(df_pivot.to_csv, filename=filename, index=False)
             except Exception:
                 # Return empty CSV on error
