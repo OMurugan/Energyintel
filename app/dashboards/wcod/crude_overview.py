@@ -3101,26 +3101,38 @@ def register_callbacks(dash_app, server):
         - Click same bar → deselect (activeBar = null)
         - Click different bar → replace selection (activeBar = new bar)
         """
+        print(f"DEBUG CHART CLICK: Handler called! clickData={clickData is not None}, tab={tab}")
+        
         if not clickData:
+            print(f"DEBUG CHART CLICK: No clickData provided")
             return no_update
         
         try:
             # Extract point information with robust error handling
             point = clickData["points"][0]
             
+            # DEBUG: Print all available fields in the point
+            print(f"DEBUG CHART CLICK: Point data: {point}")
+            print(f"DEBUG CHART CLICK: Available keys: {list(point.keys())}")
+            
             # Extract stream information with multiple fallbacks
             clicked_stream = None
             if point.get("legendgroup"):
                 clicked_stream = str(point.get("legendgroup")).strip()
+                print(f"DEBUG CHART CLICK: Extracted stream from legendgroup: '{clicked_stream}'")
             elif point.get("name"):
                 clicked_stream = str(point.get("name")).strip()
+                print(f"DEBUG CHART CLICK: Extracted stream from name: '{clicked_stream}'")
             elif point.get("customdata") and isinstance(point.get("customdata"), list):
                 # Try customdata if available
                 customdata = point.get("customdata")
+                print(f"DEBUG CHART CLICK: Customdata available: {customdata}")
                 if len(customdata) >= 3:
                     clicked_stream = str(customdata[2]).strip()  # [Country, Year, Stream]
+                    print(f"DEBUG CHART CLICK: Extracted stream from customdata[2]: '{clicked_stream}'")
                 elif len(customdata) >= 1:
                     clicked_stream = str(customdata[0]).strip()
+                    print(f"DEBUG CHART CLICK: Extracted stream from customdata[0]: '{clicked_stream}'")
             
             if not clicked_stream:
                 print(f"DEBUG CHART CLICK: Could not extract stream from point: {point}")
@@ -3940,7 +3952,7 @@ def register_callbacks(dash_app, server):
                         "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
                     )
                 
-                fig.update_layout(clickmode='select')
+                fig.update_layout(clickmode='event')
                 return fig, title_text
             else:
                 # Monthly view: Handle stream selection behavior as per requirements
@@ -4185,118 +4197,149 @@ def register_callbacks(dash_app, server):
                         # NEW LOGIC: Determine opacity based on specific bar selection or stream selection
                         # Priority: 1) Specific bar selection (chart click), 2) Stream selection (profiled streams)
                         
-                        if selected_bar:
-                            # Global single-bar selection - apply opacity to entire stream trace
-                            active_bar_year = str(selected_bar.get("year", "")).strip()
-                            active_bar_month = str(selected_bar.get("month", "")).strip()
-                            active_bar_stream = str(selected_bar.get("stream", "")).strip()
-                            
-                            print(f"DEBUG CHART OPACITY: Processing {stream} in {year_val}, activeBar={active_bar_stream}-{active_bar_month}-{active_bar_year}")
-                            
-                            # Normalize comparison values for robust matching
-                            current_year = str(year_val).strip()
-                            current_stream = str(stream).strip()
-                            
-                            # Check if this stream in this year contains the active bar
-                            year_match = current_year == active_bar_year
-                            stream_match = current_stream == active_bar_stream
-                            
-                            # Check if this stream data contains the active month (case-insensitive)
-                            stream_months = [str(m).strip() for m in stream_data["month"].values]
-                            has_active_month = active_bar_month in stream_months
-                            
-                            # This trace contains the active bar if all conditions match
-                            contains_active_bar = year_match and stream_match and has_active_month
-                            
-                            # Apply opacity: trace with active bar = 1.0, all others = 0.3
-                            trace_opacity = 1.0 if contains_active_bar else 0.3
-                            
-                            print(f"DEBUG TRACE OPACITY: {stream}-{year_val}")
-                            print(f"  - Year match: '{current_year}' == '{active_bar_year}' -> {year_match}")
-                            print(f"  - Stream match: '{current_stream}' == '{active_bar_stream}' -> {stream_match}")
-                            print(f"  - Stream months: {stream_months}")
-                            print(f"  - Has active month ('{active_bar_month}'): {has_active_month}")
-                            print(f"  - Contains active bar: {contains_active_bar}")
-                            print(f"  - Final opacity: {trace_opacity}")
-                            print("---")
-                            
-                            # Add normal trace with calculated opacity
-                            fig.add_trace(
-                                go.Bar(
-                                    x=stream_data["month"],
-                                    y=stream_data["value"],
-                                    name=stream,
-                                    marker=dict(
-                                        color=stream_color,
-                                        line=dict(width=1, color='white'),
-                                        opacity=trace_opacity
-                                    ),
-                                    legendgroup=stream,
-                                    showlegend=False,
-                                    # Disable hover for dimmed traces
-                                    hoverinfo='all' if trace_opacity >= 1.0 else 'skip',
-                                    hovertemplate=(
-                                        "<b>Month:</b> %{x}<br>"
-                                        "<b>Stream:</b> " + stream + "<br>"
-                                        "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
-                                    ) if trace_opacity >= 1.0 else None
-                                ),
-                                row=1,
-                                col=year_idx + 1
-                            )
-                        elif is_single_stream_selected and highlight_stream:
-                            # Stream selection via profiled streams interface
-                            opacity = 1.0 if stream == highlight_stream else 0.3
-                            
-                            # Normal trace creation for stream selection
-                            fig.add_trace(
-                                go.Bar(
-                                    x=stream_data["month"],
-                                    y=stream_data["value"],
-                                    name=stream,
-                                    marker=dict(
-                                        color=stream_color,
-                                        line=dict(width=1, color='white'),
-                                        opacity=opacity
-                                    ),
-                                    selected=dict(marker=dict(opacity=1.0)),
-                                    unselected=dict(marker=dict(opacity=0.3)),
-                                    legendgroup=stream,
-                                    showlegend=False,  # Hide legend since we have custom legend
-                                    hovertemplate=(
-                                        "<b>Month:</b> %{x}<br>"
-                                        "<b>Stream:</b> " + stream + "<br>"
-                                        "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
-                                    )
-                                ),
-                                row=1,
-                                col=year_idx + 1
-                            )
+                        # NEW LOGIC: Determine highlighting state at point level (matches reference file)
+                        # Unified logic for both chart bar selection and legend filter selection
+                        point_marker_colors = []
+                        point_marker_line_widths = []
+                        point_marker_line_colors = []
+                        point_hover_infos = []
+                        any_point_highlighted = False
+                        
+                        # Current trace identifiers
+                        t_stream = str(stream).strip().lower()
+                        t_year = str(year_val).strip()
+                        
+                        # Determine selection type and targets
+                        h_stream = None
+                        h_month = None  
+                        h_year = None
+                        selection_type = None
+                        
+                        if selected_bar and selected_bar.get("stream"):
+                            # Chart click selection
+                            h_stream = str(selected_bar.get("stream")).strip().lower()
+                            h_month = str(selected_bar.get("month")).strip().lower() if selected_bar.get("month") else None
+                            h_year = str(selected_bar.get("year")).strip() if selected_bar.get("year") else None
+                            selection_type = "chart_click"
+                        elif profiled and len(profiled) == 1:
+                            # Legend filter selection
+                            h_stream = str(profiled[0]).strip().lower()
+                            selection_type = "legend_filter"
                         else:
-                            # Default mode: show all streams at full opacity
-                            fig.add_trace(
-                                go.Bar(
-                                    x=stream_data["month"],
-                                    y=stream_data["value"],
-                                    name=stream,
-                                    marker=dict(
-                                        color=stream_color,
-                                        line=dict(width=1, color='white'),
-                                        opacity=1.0
-                                    ),
-                                    selected=dict(marker=dict(opacity=1.0)),
-                                    unselected=dict(marker=dict(opacity=0.3)),
-                                    legendgroup=stream,
-                                    showlegend=False,  # Hide legend since we have custom legend
-                                    hovertemplate=(
-                                        "<b>Month:</b> %{x}<br>"
-                                        "<b>Stream:</b> " + stream + "<br>"
-                                        "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
-                                    )
+                            # No selection - all streams highlighted
+                            selection_type = "none"
+                        
+                        print(f"DEBUG CHART OPACITY: Processing {stream} in {year_val}, selection={selection_type}, target={h_stream}-{h_month}-{h_year}")
+                        
+                        for _, row in stream_data.iterrows():
+                            curr_month = str(row["month"]).strip().lower()
+                            
+                            is_this_point_highlighted = True
+                            is_at_intersection = False
+                            
+                            if selection_type == "chart_click":
+                                # Chart click selection behavior
+                                matches_stream = (t_stream == h_stream)
+                                
+                                if h_month and h_year:
+                                    # Specific month/year clicked - highlight ONLY the specific bar
+                                    matches_column = (t_year == h_year and curr_month == h_month)
+                                    is_this_point_highlighted = matches_stream and matches_column
+                                    is_at_intersection = matches_stream and matches_column
+                                    
+                                    # DEBUG: Log detailed comparison for chart click
+                                    if t_stream == h_stream:  # Only log for the clicked stream
+                                        print(f"DEBUG CHART CLICK DETAIL: {stream}-{curr_month}-{t_year}")
+                                        print(f"  - Target: {h_stream}-{h_month}-{h_year}")
+                                        print(f"  - Stream match: {t_stream} == {h_stream} -> {matches_stream}")
+                                        print(f"  - Year match: {t_year} == {h_year} -> {t_year == h_year}")
+                                        print(f"  - Month match: {curr_month} == {h_month} -> {curr_month == h_month}")
+                                        print(f"  - Column match: {matches_column}")
+                                        print(f"  - Final highlight: {is_this_point_highlighted}")
+                                        print("---")
+                                        
+                                elif h_year and not h_month:
+                                    # Year-only selection
+                                    matches_column = (t_year == h_year)
+                                    is_this_point_highlighted = matches_stream and matches_column
+                                    is_at_intersection = matches_stream and matches_column
+                                else:
+                                    # Side menu selection only (shouldn't happen here, but fallback)
+                                    is_this_point_highlighted = matches_stream
+                                    is_at_intersection = False
+                                    
+                            elif selection_type == "legend_filter":
+                                # Legend filter selection - highlight entire stream across all months/years
+                                matches_stream = (t_stream == h_stream)
+                                is_this_point_highlighted = matches_stream
+                                is_at_intersection = False
+                                
+                            # No selection - all points highlighted (default case)
+                            # is_this_point_highlighted remains True
+                            
+                            if is_this_point_highlighted:
+                                any_point_highlighted = True
+                                point_marker_colors.append(stream_color)
+                                # Global Style Alignment: Intersection point gets 4px black border
+                                if is_at_intersection:
+                                    point_marker_line_widths.append(4)
+                                    point_marker_line_colors.append("black")
+                                else:
+                                    # Enabled part of crosshair or default state
+                                    point_marker_line_widths.append(1)
+                                    point_marker_line_colors.append("white")
+                                point_hover_infos.append("all")
+                                
+                                # DEBUG: Log highlighted points
+                                if selection_type == "chart_click" and t_stream == h_stream:
+                                    print(f"DEBUG HIGHLIGHTED: {stream}-{curr_month}-{t_year} -> ACTIVE")
+                            else:
+                                # Global Grey-Out: Consistently greyed out segments
+                                point_marker_colors.append("rgba(200,200,200,0.3)")
+                                point_marker_line_widths.append(1)
+                                point_marker_line_colors.append("rgba(220,220,220,0.2)")
+                                point_hover_infos.append("skip")
+                                
+                                # DEBUG: Log greyed out points for clicked stream
+                                if selection_type == "chart_click" and t_stream == h_stream:
+                                    print(f"DEBUG GREYED OUT: {stream}-{curr_month}-{t_year} -> DISABLED")
+
+                        # Array-based properties for per-point styling
+                        marker_color = point_marker_colors
+                        marker_line_width = point_marker_line_widths
+                        marker_line_color = point_marker_line_colors
+                        
+                        print(f"DEBUG TRACE OPACITY: {stream}-{year_val}")
+                        print(f"  - Selection type: {selection_type}")
+                        print(f"  - Stream: '{t_stream}' vs '{h_stream}' -> {t_stream == h_stream}")
+                        print(f"  - Year: '{t_year}' vs '{h_year}' -> {t_year == h_year}")
+                        print(f"  - Any point highlighted: {any_point_highlighted}")
+                        print(f"  - Points processed: {len(point_marker_colors)}")
+                        print("---")
+                            
+                        # Add trace with point-level styling (matches reference file exactly)
+                        fig.add_trace(
+                            go.Bar(
+                                x=stream_data["month"],
+                                y=stream_data["value"],
+                                name=stream,
+                                marker=dict(
+                                    color=marker_color,
+                                    line=dict(width=marker_line_width, color=marker_line_color),
                                 ),
-                                row=1,
-                                col=year_idx + 1
-                            )
+                                legendgroup=stream,
+                                showlegend=False,
+                                # Use point-level hover control
+                                hoverinfo=point_hover_infos,
+                                hovertemplate=(
+                                    "<b>Month:</b> %{x}<br>"
+                                    "<b>Stream:</b> " + stream + "<br>"
+                                    "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
+                                ) if any_point_highlighted else None
+                            ),
+                            row=1,
+                            col=year_idx + 1
+                        )
                 
                 # Calculate max value across all data for Y-axis scaling
                 max_value = agg["value"].max() if not agg.empty and "value" in agg.columns else 0
@@ -4455,8 +4498,8 @@ def register_callbacks(dash_app, server):
                                 else:
                                     country_val = ""
                                 
-                                # Add to customdata: [Country, Year]
-                                customdata_list.append([country_val, str(year_val)])
+                                # Add to customdata: [Country, Year, Stream]
+                                customdata_list.append([country_val, str(year_val), stream_name])
                         
                         # Set customdata
                         trace.customdata = customdata_list if customdata_list else None
@@ -4506,7 +4549,7 @@ def register_callbacks(dash_app, server):
                                     font=dict(size=14, color='#7f8c8d'))
                     fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
                 
-                fig.update_layout(clickmode='select')
+                fig.update_layout(clickmode='event')
                 return fig, title_text
         except Exception as e:
             print(f"Error in update_breakdown: {e}")
