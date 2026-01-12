@@ -2710,12 +2710,19 @@ def register_callbacks(dash_app, server):
                 color_hex = f"rgb({color[0]}, {color[1]}, {color[2]})"
             
             # Apply highlight/dimmed styling based on selection
-            if is_selected:
-                # Highlighted: use full color, solid background with white text
+            # distinct visual states:
+            # 1. Active/Selected: Full color
+            # 2. Inactive/Dimmed: Lighter/Muted color
+            
+            # If no streams are selected, ALL streams are active (default state)
+            is_active = (stream in selected_set) or (not selected_set)
+            
+            if is_active:
+                # Highlighted/Active: use full color, solid background with white text
                 bg_color = color_hex
                 text_color = "#ffffff"  # Always white text for highlighted items
-                border_color = "#000000"  # Black border for highlighted
-                border_width = "1px"
+                border_color = "#000000" if (selected_set and stream in selected_set) else color_hex # Black border only if explicitly selected
+                border_width = "2px" if (selected_set and stream in selected_set) else "1px"
             else:
                 # Dimmed: use lighter/muted background
                 # Convert to lighter version by mixing with white
@@ -2980,6 +2987,25 @@ def register_callbacks(dash_app, server):
          State("last-clicked-stream-store", "data"),
          State("profiled-streams", "value")]
     )
+    
+    @dash_app.callback(
+        Output("profiled-streams", "value", allow_duplicate=True),
+        Input("last-clicked-stream-store", "data"),
+        State("profiled-streams", "value"),
+        prevent_initial_call=True
+    )
+    def update_profiled_selection_from_button_store(clicked_stream, current_selection):
+        """
+        Update the profiled-streams selection when a stream button is clicked.
+        This restores the 'click to filter' functionality for the legend.
+        """
+        if clicked_stream:
+            print(f"DEBUG BUTTON CLICK: Selecting stream {clicked_stream}")
+            return [clicked_stream]
+        else:
+            # If clicked_stream is None/null, it means toggle off or reset
+            print("DEBUG BUTTON CLICK: Clearing selection (Toggle OFF)")
+            return []
     
     @dash_app.callback(
         [Output("year-controls", "style"),
@@ -4176,29 +4202,25 @@ def register_callbacks(dash_app, server):
                             is_at_intersection = False
                             
                             if is_single_stream_selected:
-                                # Crosshair logic: Enable selected stream OR selected month/year column
+                                # Stream-level selection behavior for monthly charts
                                 matches_stream = (t_stream == h_stream)
-                                matches_column = False
                                 
-                                if h_month:
-                                    # Month isolation active from click
+                                if h_month and h_year:
+                                    # Specific month/year clicked - highlight ONLY the specific bar
                                     matches_column = (t_year == h_year and curr_month == h_month)
-                                elif h_year:
-                                    # Year isolation only (Yearly Tab selection mirrored or Yearly column click converted)
+                                    # Strict validation: matches stream AND Matches specific Time
+                                    is_this_point_highlighted = matches_stream and matches_column
+                                    # Mark the specific clicked point as intersection for special styling
+                                    is_at_intersection = matches_stream and matches_column
+                                elif h_year and not h_month:
+                                    # Year-only selection (from yearly tab or year column click)
                                     matches_column = (t_year == h_year)
-                                    
-                                if matches_stream and matches_column:
-                                    is_at_intersection = True
-                                    is_this_point_highlighted = True
-                                elif matches_stream or matches_column:
-                                    # Partially enabled (crosshair)
-                                    is_this_point_highlighted = True
-                                elif not h_month and not h_year:
-                                    # Side menu selection only: highlight whole stream
-                                    is_this_point_highlighted = matches_stream
+                                    is_this_point_highlighted = matches_stream and matches_column
+                                    is_at_intersection = matches_stream and matches_column
                                 else:
-                                    # Active selection is present, but this point matches neither
-                                    is_this_point_highlighted = False
+                                    # Side menu selection only: highlight whole stream across all months/years
+                                    is_this_point_highlighted = matches_stream
+                                    is_at_intersection = False
                             
                             if is_this_point_highlighted:
                                 any_point_highlighted = True
@@ -4430,8 +4452,8 @@ def register_callbacks(dash_app, server):
                                 else:
                                     country_val = ""
                                 
-                                # Add to customdata: [Country, Year]
-                                customdata_list.append([country_val, str(year_val)])
+                                # Add to customdata: [Country, Year, Stream]
+                                customdata_list.append([country_val, str(year_val), stream_name])
                         
                         # Set customdata
                         trace.customdata = customdata_list if customdata_list else None
@@ -5030,6 +5052,18 @@ def register_callbacks(dash_app, server):
             import traceback
             traceback.print_exc()
             return no_update
+    
+    @dash_app.callback(
+        Output("profiled-streams", "value", allow_duplicate=True),
+        Input("selected-bar-store", "data"),
+        [State("profiled-streams", "options"),
+         State("profiled-streams", "value")],
+        prevent_initial_call=True
+    )
+    def update_profiled_streams_from_chart_click(selected_bar, profiled_options, current_profiled):
+        # User requested decoupling: Chart click should NOT update the legend filter.
+        # "Stream click and revert only should work only in chart section. Dont affect to the legend filter."
+        return no_update
 
     @dash_app.callback(
         Output("download-table-csv", "data"),
