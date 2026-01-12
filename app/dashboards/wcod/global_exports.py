@@ -1439,6 +1439,7 @@ def create_layout():
             dcc.Store(id="global-exports-selected-country", data=None),
             dcc.Store(id="global-exports-selected-bar", data=None),
             dcc.Store(id="global-exports-table-selection", data=None),
+            html.Div(id="global-exports-table-enhancer-anchor"),
             html.Div(
                 [
                     html.Div(
@@ -2297,9 +2298,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 "backgroundColor": HIGHLIGHT_BG,
                 "opacity": 1.0,
             })
-            # Optionally show the rest of the row faintly?
-            # User said "only that single cell is highlighted and others dimmed"
-            # So we stick to dimming everything else (including the rest of the row)
             
         return styles
 
@@ -2602,6 +2600,78 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             if new_year < min_year:
                 new_year = max_year
         return new_year, new_year, str(new_year)
+
+    dash_app.clientside_callback(
+        """
+        function(_id) {
+            try {
+                const tableId = 'global-exports-table';
+                const labelColumns = ['country', 'crude'];
+                const styleId = 'global-exports-column-highlight-css';
+
+                function getStyleEl() {
+                    let el = document.getElementById(styleId);
+                    if (!el) {
+                        el = document.createElement('style');
+                        el.id = styleId;
+                        document.head.appendChild(el);
+                    }
+                    return el;
+                }
+
+                function applyColumnHighlight(columnId) {
+                    const styleEl = getStyleEl();
+                    if (!columnId) {
+                        styleEl.innerHTML = '';
+                        return;
+                    }
+                    // Apply styles directly to the column ID. 
+                    // Dimming is applied to all OTHER data columns.
+                    // We don't use !important for dimming to allow row highlight (inline) to win.
+                    styleEl.innerHTML = `
+                        #${tableId} td[data-dash-column="${columnId}"] {
+                            background-color: #ffe4e1 !important;
+                            opacity: 1 !important;
+                        }
+                        #${tableId} th[data-dash-column="${columnId}"] {
+                            background-color: #fe5000 !important;
+                            color: white !important;
+                        }
+                        #${tableId} td:not([data-dash-column="${columnId}"]):not([data-dash-column="country"]):not([data-dash-column="crude"]) {
+                            opacity: 0.3;
+                        }
+                    `;
+                }
+
+                if (!window.globalExportsHeaderInited) {
+                    window.globalExportsSelection = { columnId: null };
+                    
+                    document.addEventListener('click', function(event) {
+                        const header = event.target.closest('#' + tableId + ' th[data-dash-column]');
+                        if (!header) return;
+
+                        const columnId = header.getAttribute('data-dash-column');
+                        if (!columnId || labelColumns.includes(columnId)) return;
+
+                        if (window.globalExportsSelection.columnId === columnId) {
+                            window.globalExportsSelection.columnId = null;
+                            applyColumnHighlight(null);
+                        } else {
+                            window.globalExportsSelection.columnId = columnId;
+                            applyColumnHighlight(columnId);
+                        }
+                    });
+                    window.globalExportsHeaderInited = true;
+                }
+            } catch (error) {
+                console.error('Column highlight error:', error);
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output("global-exports-table-enhancer-anchor", "children"),
+        Input("global-exports-table-enhancer-anchor", "id"),
+    )
 
     # CSV Export Callbacks
     @dash_app.callback(
