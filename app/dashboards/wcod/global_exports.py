@@ -2303,7 +2303,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         sel_country = selection.get("country")
         sel_stream = selection.get("stream")
         sel_col_id = selection.get("column_id")
-        HIGHLIGHT_BG = "#ffe4e1"
+        HIGHLIGHT_BG = "#d3eeff"
         
         # 1. Dim EVERYTHING by default when a selection is active
         # The first style rule applies to all cells
@@ -2634,11 +2634,11 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                     // We don't use !important for dimming to allow row highlight (inline) to win.
                     styleEl.innerHTML = `
                         #${tableId} td[data-dash-column="${columnId}"] {
-                            background-color: #ffe4e1 !important;
+                            background-color: #d3eeff !important;
                             opacity: 1 !important;
                         }
                         #${tableId} th[data-dash-column="${columnId}"] {
-                            background-color: #fe5000 !important;
+                            background-color: #316ac5 !important;
                             color: white !important;
                         }
                         #${tableId} td:not([data-dash-column="${columnId}"]):not([data-dash-column="country"]):not([data-dash-column="crude"]) {
