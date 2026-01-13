@@ -3378,7 +3378,7 @@ def register_callbacks(dash_app, server):
 
         # Use max_val directly for the scale limit as requested
         color_max = float(max_val)
-        if tab == "yearly" and color_max > 1000:
+        if color_max > 1000:
              # Round to nearest 100 to match the 13,200 style in the live sample
              color_max = round(color_max / 100) * 100
         
@@ -3405,14 +3405,13 @@ def register_callbacks(dash_app, server):
             [0.9473, "#4c527e"], [1.0000, "#4c527e"]
         ]
 
-        # Use working named colorscale for monthly, custom for yearly
-        dynamic_colorscale = CUSTOM_MAP_COLORSCALE if tab == "yearly" else "Blues"
+        # Use the custom discrete colorscale for both yearly and monthly
+        dynamic_colorscale = CUSTOM_MAP_COLORSCALE
         
         # Create custom tick values to show actual scale (like live: 0 and max)
         scale_ticks = [0, round(color_max)]
         
-        print(f"DEBUG MAP: Working named colorscale - max_val: {max_val}, colorscale: {'CUSTOM' if tab == 'yearly' else 'Blues'}")
-        print(f"DEBUG MAP: colorscale: {'CUSTOM' if tab == 'yearly' else 'Blues'} - color_max: {color_max}")
+        print(f"DEBUG MAP: Using CUSTOM discrete colorscale - max_val: {max_val}, color_max: {color_max}")
         print(f"DEBUG MAP: Custom scale ticks: {scale_ticks}")
         
         # Use standardized map creation with dynamic colorscale
