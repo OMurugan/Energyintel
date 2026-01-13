@@ -3371,20 +3371,55 @@ def register_callbacks(dash_app, server):
         else:
             print(f"DEBUG MAP: No highlighting (selected_country_map={selected_country_map}, table_map_filter_active={table_map_filter_active})")
 
-        # Dynamically scale the color range to the data
+        # Calculate max_val for scaling
         max_val = agg["value"].max() if "value" in agg.columns and len(agg) > 0 else 0
         if pd.isna(max_val) or max_val <= 0:
             max_val = 1000
-        color_max = float(max_val) * 1.05
-        tick_step = max(500, round((color_max / 6) / 500) * 500)
-        if tick_step == 0:
-            tick_step = 500
+
+        # Use max_val directly for the scale limit as requested
+        color_max = float(max_val)
+        if tab == "yearly" and color_max > 1000:
+             # Round to nearest 100 to match the 13,200 style in the live sample
+             color_max = round(color_max / 100) * 100
         
-        # Use standardized map creation
+        # Custom discrete colorscale using exact 19 hex codes from live dashboard
+        CUSTOM_MAP_COLORSCALE = [
+            [0.0000, "#d8d8d8"], [0.0526, "#d8d8d8"],
+            [0.0526, "#cecfd4"], [0.1052, "#cecfd4"],
+            [0.1052, "#c3c7cf"], [0.1578, "#c3c7cf"],
+            [0.1578, "#b9bdca"], [0.2105, "#b9bdca"],
+            [0.2105, "#afb5c5"], [0.2631, "#afb5c5"],
+            [0.2631, "#a7aec0"], [0.3157, "#a7aec0"],
+            [0.3157, "#9da7bc"], [0.3684, "#9da7bc"],
+            [0.3684, "#949fb8"], [0.4210, "#949fb8"],
+            [0.4210, "#8b96b3"], [0.4736, "#8b96b3"],
+            [0.4736, "#7681a4"], [0.5263, "#7681a4"],
+            [0.5263, "#7d88a9"], [0.5789, "#7d88a9"],
+            [0.5789, "#6f7ba0"], [0.6315, "#6f7ba0"],
+            [0.6315, "#69749b"], [0.6842, "#69749b"],
+            [0.6842, "#636d96"], [0.7368, "#636d96"],
+            [0.7368, "#5e6891"], [0.7894, "#5e6891"],
+            [0.7894, "#59618c"], [0.8421, "#59618c"],
+            [0.8421, "#545c87"], [0.8947, "#545c87"],
+            [0.8947, "#505783"], [0.9473, "#505783"],
+            [0.9473, "#4c527e"], [1.0000, "#4c527e"]
+        ]
+
+        # Use working named colorscale for monthly, custom for yearly
+        dynamic_colorscale = CUSTOM_MAP_COLORSCALE if tab == "yearly" else "Blues"
+        
+        # Create custom tick values to show actual scale (like live: 0 and max)
+        scale_ticks = [0, round(color_max)]
+        
+        print(f"DEBUG MAP: Working named colorscale - max_val: {max_val}, colorscale: {'CUSTOM' if tab == 'yearly' else 'Blues'}")
+        print(f"DEBUG MAP: colorscale: {'CUSTOM' if tab == 'yearly' else 'Blues'} - color_max: {color_max}")
+        print(f"DEBUG MAP: Custom scale ticks: {scale_ticks}")
+        
+        # Use standardized map creation with dynamic colorscale
         fig = create_choropleth_map(
             locations=agg["iso_alpha"].tolist(),
             z_values=agg["value"].tolist(),
-            colorscale="Blues",
+            colorscale=dynamic_colorscale,
             hover_text=agg["hover_text"].tolist(),
             selected_country=map_selected_country,
             selected_iso=selected_iso,
@@ -3432,31 +3467,46 @@ def register_callbacks(dash_app, server):
                             trace.customdata = inactive_customdata
         
         fig.update_layout(
-            margin=dict(l=10, r=10, t=10, b=80),
+            margin=dict(l=10, r=10, t=10, b=100),
             coloraxis=dict(
-                colorscale="Blues",
+                colorscale=dynamic_colorscale if isinstance(dynamic_colorscale, list) else "Blues",
                 showscale=True,
                 colorbar=dict(
-                    title=dict(text="Production<br>('000 b/d)", font=dict(size=12)),
-                    tickfont=dict(size=10),
+                    title=dict(
+                        text="", # Text in annotations
+                        font=dict(size=12, color="#1f3b6f")
+                    ),
+                    tickfont=dict(size=10, color="#1f3b6f"),
                     orientation="h",
-                    x=0.5,
-                    xanchor="center",
-                    y=-0.12,
+                    x=0.15,  # Aligned to the left based on screenshot
+                    xanchor="left",
+                    y=-0.12, # Slightly lower to match screenshot
                     yanchor="top",
-                    len=0.7,
-                    thickness=20,
-                    outlinewidth=0,
+                    len=0.85, # Longer bar as requested
+                    thickness=12, # Sleeker bar as requested
+                    outlinewidth=1,
+                    outlinecolor="#A0A0A0",
                     bordercolor="white",
                     bgcolor="rgba(255,255,255,0)",
-                    tickmode="linear",
-                    tickformat=",",
-                    tick0=0,
-                    dtick=tick_step,
+                    tickmode="array",
+                    tickvals=[0, round(color_max)],
+                    ticktext=["0", f"{int(color_max):,}"],
                     showticklabels=True,
-                    ticks="outside"
+                    ticks=""
                 )
             ),
+            annotations=[
+                dict(
+                    text="<b>Production</b><br><b>('000 b/d)</b>",
+                    showarrow=False,
+                    xref="paper",
+                    yref="paper",
+                    x=0.14,  # Move slightly left of the bar's start
+                    y=-0.13, # Align vertically with the thinned bar
+                    xanchor="right",
+                    font=dict(size=12, color="#1f3b6f")
+                )
+            ],
             hoverlabel=dict(
                 bgcolor="white",
                 bordercolor="#ccc",
