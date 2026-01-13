@@ -1904,7 +1904,7 @@ def create_layout(server=None):
                             style_table={
                                 "overflowX": "auto", 
                                 "overflowY": "auto", 
-                                "minHeight": "600px",
+                                "minHeight": "500px",
                                 "maxHeight": "600px",
                                 "height": "auto"
                             },
@@ -1977,9 +1977,9 @@ def create_layout(server=None):
                             merge_duplicate_headers=True
                         )
                     ],
-                    style={"minHeight": "400px"}
+                    style={"minHeight": "500px"}
                 )
-            ], style={'padding': '15px', 'minHeight': '400px', 'width': '83.33%', 'display': 'inline-block', 'verticalAlign': 'top'}),
+            ], style={'padding': '15px', 'minHeight': '500px', 'maxHeight': '600px', 'width': '83.33%', 'display': 'inline-block', 'verticalAlign': 'top'}),
             html.Div([
                 html.Label("Stream Name"),
                 dcc.Input(id="filter-stream", type="text", placeholder="Stream Name", value="", style={"width": "100%"}),
@@ -2029,7 +2029,33 @@ def create_layout(server=None):
                 ], id="monthly-only-filters-container", style={"display": "none"})
             ], style={'padding': '15px', 'width': '16.67%', 'display': 'inline-block', 'verticalAlign': 'top'})
 
-        ], style={'display': 'block', 'width': '100%'})
+        ], style={'display': 'block', 'width': '100%'}),
+        
+        # Footer Content
+        html.Div([
+            # Yearly Footer
+            html.Div(id="yearly-footer", children=[
+                html.P([
+                    html.B("Countries: "),
+                    "Select jurisdictions are included under countries for data presentation purposes."
+                ], style={"fontSize": "12px", "color": "#2c3e50", "marginTop": "10px", "marginBottom": "5px", "fontStyle": "italic"})
+            ], style={"display": "block", "paddingLeft": "15px", "width": "83.33%"}),
+            
+            # Monthly Footer
+            html.Div(id="monthly-footer", children=[
+                html.P([
+                    html.B("Countries: "),
+                    "Select jurisdictions are included under countries for data presentation purposes."
+                ], style={"fontSize": "12px", "color": "#2c3e50", "marginTop": "10px", "marginBottom": "2px", "fontStyle": "italic"}),
+                html.P("Countries are being added as they are updated.", 
+                       style={"fontSize": "12px", "color": "#2c3e50", "marginBottom": "2px", "fontStyle": "italic"}),
+                html.Ul([
+                    html.Li("Starting 2024, Olmeca is being blended with condensates."),
+                    html.Li("CPC Kazakhstan is a blend of Tengiz, Kashagan and Karachaganak streams."),
+                    html.Li("In April and May 2022, Russia's \"Other Crudes\" are negative due to significant inventory withdrawals.")
+                ], style={"fontSize": "12px", "color": "#2c3e50", "marginTop": "5px", "paddingLeft": "20px", "fontStyle": "italic"})
+            ], style={"display": "none", "paddingLeft": "15px", "width": "83.33%"})
+        ])
     ], style={'padding': '20px', 'background': '#f8f9fa'})
 
 
@@ -2037,14 +2063,19 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for Crude Overview"""
     
     @dash_app.callback(
-        Output("monthly-only-filters-container", "style"),
+        [Output("monthly-only-filters-container", "style"),
+         Output("yearly-footer", "style"),
+         Output("monthly-footer", "style")],
         [Input("crude-main-tabs", "value")]
     )
-    def toggle_monthly_filters(tab):
-        """Show/hide filters only for monthly tab"""
+    def toggle_monthly_elements(tab):
+        """Show/hide filters and footers based on active tab"""
         if tab == "monthly":
-            return {"display": "block"}
-        return {"display": "none"}
+            return {"display": "block"}, {"display": "none"}, {"display": "block", "paddingLeft": "15px", "width": "83.33%"}
+        elif tab == "yearly":
+            return {"display": "none"}, {"display": "block", "paddingLeft": "15px", "width": "83.33%"}, {"display": "none"}
+        else:
+            return {"display": "none"}, {"display": "block", "paddingLeft": "15px", "width": "83.33%"}, {"display": "none"}
 
     @dash_app.callback(
         Output("filter-stream", "value"),
