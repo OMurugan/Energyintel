@@ -4352,7 +4352,7 @@ def register_callbacks(dash_app, server):
                 if max_months == 0:
                     max_months = 12
                     
-                monthly_bargap = 0.05  # Tighter bars to avoid "collapsed" look
+                monthly_bargap = 0.15  # Increased gap for better visual spacing
                 
                 # 2. Add Traces for each Subplot and Stream
                 # Create subplots - one column per year
