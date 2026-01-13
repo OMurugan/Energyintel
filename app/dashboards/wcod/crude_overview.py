@@ -3473,38 +3473,56 @@ def register_callbacks(dash_app, server):
                 showscale=True,
                 colorbar=dict(
                     title=dict(
-                        text="", # Text in annotations
+                        text="", # Labelled via annotations
                         font=dict(size=12, color="#1f3b6f")
                     ),
                     tickfont=dict(size=10, color="#1f3b6f"),
                     orientation="h",
-                    x=0.15,  # Aligned to the left based on screenshot
+                    x=0.20,  # Safe starting position
                     xanchor="left",
-                    y=-0.12, # Slightly lower to match screenshot
-                    yanchor="top",
-                    len=0.85, # Longer bar as requested
-                    thickness=12, # Sleeker bar as requested
+                    y=-0.12,
+                    yanchor="bottom",
+                    len=0.70, # Controlled length for precise annotation mapping
+                    thickness=12,
                     outlinewidth=1,
                     outlinecolor="#A0A0A0",
                     bordercolor="white",
                     bgcolor="rgba(255,255,255,0)",
-                    tickmode="array",
-                    tickvals=[0, round(color_max)],
-                    ticktext=["0", f"{int(color_max):,}"],
-                    showticklabels=True,
+                    showticklabels=False, # Use annotations instead for absolute control
                     ticks=""
                 )
             ),
             annotations=[
+                # Colorbar Title
                 dict(
                     text="<b>Production</b><br><b>('000 b/d)</b>",
                     showarrow=False,
                     xref="paper",
                     yref="paper",
-                    x=0.14,  # Move slightly left of the bar's start
-                    y=-0.13, # Align vertically with the thinned bar
+                    x=0.19,  # Just left of the bar's start
+                    y=-0.13,
                     xanchor="right",
                     font=dict(size=12, color="#1f3b6f")
+                ),
+                # Start Label (0)
+                dict(
+                    text="0",
+                    showarrow=False,
+                    xref="paper",
+                    yref="paper",
+                    x=0.20,  # Start of the bar
+                    y=-0.16, # Under the bar
+                    font=dict(size=10, color="#1f3b6f")
+                ),
+                # End Label (Max Value)
+                dict(
+                    text=f"{int(color_max):,}",
+                    showarrow=False,
+                    xref="paper",
+                    yref="paper",
+                    x=0.90,  # x(0.2) + len(0.7)
+                    y=-0.16, # Under the bar
+                    font=dict(size=10, color="#1f3b6f")
                 )
             ],
             hoverlabel=dict(
