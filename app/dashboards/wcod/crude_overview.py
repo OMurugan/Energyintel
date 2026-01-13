@@ -1722,6 +1722,7 @@ def create_layout(server=None):
                         dcc.Dropdown(
                             id="crude-year-month-dropdown",
                             options=YEAR_MONTHS,
+                            clearable=False,
                             value="2025-07",  # Default to 2025-07 for monthly filter
                             style={"marginBottom":"10px", "fontSize":"12px"}
                         )
@@ -5077,10 +5078,13 @@ def register_callbacks(dash_app, server):
     @callback(
         Output("download-map-csv", "data"),
         Input("btn-export-map-csv", "n_clicks"),
-        State("crude-main-tabs", "value"),
+        [State("crude-main-tabs", "value"),
+         State("crude-country-dropdown", "value"),
+         State("selected-country-map-store", "data"),
+         State("table-map-filter-active-store", "data")],
         prevent_initial_call=True
     )
-    def export_map_data_to_csv(n_clicks, tab):
+    def export_map_data_to_csv(n_clicks, tab, country_dropdown, selected_country_map, table_map_filter_active):
         if n_clicks is None or n_clicks <= 0:
             return no_update
             
@@ -5098,6 +5102,33 @@ def register_callbacks(dash_app, server):
                 print("DEBUG: Exporting MONTHLY map data (raw_export=True)")
                 df = load_monthly_map_from_db(raw_export=True)
                 filename = "world_crude_production_monthly.csv"
+            
+            # Apply Country Filtering to Map Data Export
+            if df is not None and not df.empty:
+                df.columns = df.columns.str.strip()
+                
+                # CHECK FOR INITIAL LOAD: If only default "Russia" is selected and no map click, download all
+                is_initial_load = (selected_country_map is None and country_dropdown == ["Russia"])
+                
+                if is_initial_load:
+                    print("DEBUG MAP EXPORT: Initial load detected (default Russia only), exporting all countries.")
+                else:
+                    # Determine target country from map selection or dropdown
+                    if selected_country_map and table_map_filter_active:
+                        target_country = _map_iso_to_country_name(selected_country_map)
+                        if "country" in df.columns:
+                            df = df[df["country"] == target_country]
+                        elif "Country" in df.columns:
+                            df = df[df["Country"] == target_country]
+                        print(f"DEBUG MAP EXPORT: Filtered for map selection: {target_country}")
+                    elif country_dropdown:
+                        dropdown_countries = _resolve_countries_selection(country_dropdown)
+                        if dropdown_countries and len(dropdown_countries) > 0:
+                            if "country" in df.columns:
+                                df = df[df["country"].isin(dropdown_countries)]
+                            elif "Country" in df.columns:
+                                df = df[df["Country"].isin(dropdown_countries)]
+                            print(f"DEBUG MAP EXPORT: Filtered for dropdown: {dropdown_countries}")
             
             if df.empty:
                 print("DEBUG: No data to export for map")
@@ -5287,7 +5318,7 @@ def register_callbacks(dash_app, server):
                 ON a.country_id = grp.dim_country_id
             LEFT JOIN fact_wcod_crude_bsp_links b
                 ON a.crude_id = b.crude_id
-            ORDER BY a.crude_name ASC;
+            ORDER BY a.country_name ASC, a.crude_name ASC;
         """
                 rows = execute_query(yearly_query)
                 if not rows:
@@ -5299,11 +5330,21 @@ def register_callbacks(dash_app, server):
                 
                 # Apply Filters to Yearly Data
                 
-                # 1. Country Filter (Map selection only)
-                # Dropdown country filter is ignored for Yearly table (Global view), same as UI logic
-                if selected_country_map and table_map_filter_active:
+                # 1. Country Filter (Map selection or Dropdown)
+                # CHECK FOR INITIAL LOAD: If only default "Russia" is selected and no map click, download all
+                is_initial_load = (selected_country_map is None and country == ["Russia"])
+                
+                if is_initial_load:
+                    print("DEBUG EXPORT TABLE: Initial load detected (default Russia only), exporting all yearly data.")
+                elif selected_country_map and table_map_filter_active:
+                    country_name = _map_iso_to_country_name(selected_country_map)
                     if "Country" in df.columns:
-                        df = df[df["Country"] == selected_country_map]
+                        df = df[df["Country"] == country_name]
+                elif country:
+                    dropdown_countries = _resolve_countries_selection(country)
+                    if dropdown_countries and len(dropdown_countries) > 0:
+                        if "Country" in df.columns:
+                            df = df[df["Country"].isin(dropdown_countries)]
                 
                 # 2. Text Search Filter (Stream Name)
                 if stream and str(stream).strip():
@@ -5332,6 +5373,7 @@ def register_callbacks(dash_app, server):
             else:
                 monthly_query = """
             SELECT     
+                m.country_long_name AS "Country",
                 c.crude_name AS "Crude",
                 c.ci_rank,
                 c.api,
@@ -5346,6 +5388,7 @@ def register_callbacks(dash_app, server):
             LEFT JOIN (
                 SELECT DISTINCT ON (crude_id) 
                     crude_id,
+                    country_id,
                     crude_name,
                     ci_rank,
                     api,
@@ -5355,9 +5398,14 @@ def register_callbacks(dash_app, server):
             ) c 
                 ON a.crude_id = c.crude_id
 
+            -- Country Name
+            LEFT JOIN dim_country m
+                ON c.country_id = m.dim_country_id
+
             -- Profile URL
             LEFT JOIN fact_wcod_crude_bsp_links l
                 ON a.crude_id = l.crude_id
+            ORDER BY m.country_long_name ASC, c.crude_name ASC;
         """
                 rows = execute_query(monthly_query)
                 if not rows:
@@ -5402,43 +5450,26 @@ def register_callbacks(dash_app, server):
                     # Use helper classify_sulfur_value
                     df = df[df["sulfur_pct"].apply(lambda v: classify_sulfur_value(v) in sulfur_vals)]
                     
-                # 3. Country Filter 
-                # Note: Monthly query provided does NOT have a Country column! 
-                # The user's query: 
-                # SELECT c.crude_name AS "Crude", ... FROM t_wcod_monthly_stream_production a LEFT JOIN fact_wcod_crude c ...
-                # fact_wcod_crude has country_id, but the join in the user's snippet uses a subselect that DOES NOT select country_id/name.
-                # Subselect: SELECT DISTINCT ON (crude_id) crude_id, crude_name, ci_rank, api, sulfur_pct ...
-                # So the result of monthly_query DOES NOT HAVE COUNTRY info.
-                # However, the UI filter `filter_table` applies country filter to `TABLE_DF_MONTHLY`.
-                # `TABLE_DF_MONTHLY` comes from `load_table` -> `monthly_query` (lines 1101-1129 in file).
-                # Wait, looking at lines 1101-1129 in the file (Step 45), the existing `monthly_query` ALSO DOES NOT select Country.
-                # BUT `loading_table` function (checking Step 42/45 carefully)... 
-                # Ah, existing `load_table` logic constructs `monthly_df` WITHOUT country column initially?
-                # Let's check `_ensure_data_loaded` (Step 36). `COUNTRIES` are derived from `BAR_DF_YEARLY`/`BAR_DF_MONTHLY`.
-                # The `TABLE_DF_MONTHLY` seems to rely on `monthly_agg` and merges. 
-                # If the query doesn't return Country, how does the UI filter by Country?
-                # Looking at `filter_table` (Step 24, line 4253):
-                # `if "Country" in df.columns: df = df[df["Country"] == selected_country_map]`
-                # So `TABLE_DF_MONTHLY` MUST have a "Country" column.
-                # Let's check how `TABLE_DF_MONTHLY` gets Country.
-                # In `load_table` (Step 45), there is NO Country selected in `monthly_query`.
-                # Is it merged later? 
-                # Line 1089: `yearly_df["Country"] = ...` (For Yearly).
-                # For Monthly? I don't see it in the snippet 1100-1199.
-                # Maybe it's not there? 
-                # If `tbl_df_monthly` doesn't have Country, then filtering by country in `filter_table` would do nothing for it?
-                # Wait, line 4258: `if "Country" in df.columns: ...`
-                # If it's not there, it skips.
+                # 3. Country Filter
+                # CHECK FOR INITIAL LOAD: If only default "Russia" is selected and no map click, download all
+                is_initial_load = (selected_country_map is None and country == ["Russia"])
                 
-                # IMPORTANT: The user said "i want csv file of query returns".
-                # The user provided query for monthly DOES NOT include Country. 
-                # So I should NOT try to filter by Country if it's not in the query result, 
-                # AND I should not output Country column if it's not in the query.
-                # I will strictly follow the user's query columns.
-                # If the user wants country filtering, they would need to modify the query, 
-                # but they said "csv in same as query return values".
+                if is_initial_load:
+                    print("DEBUG EXPORT TABLE: Initial load detected (default Russia only), exporting all monthly data.")
+                elif selected_country_map and table_map_filter_active:
+                    country_name = _map_iso_to_country_name(selected_country_map)
+                    if "Country" in df.columns:
+                        df = df[df["Country"] == country_name]
+                        print(f"DEBUG EXPORT TABLE: Filtered by map country: {country_name}")
+                elif country:
+                    dropdown_countries = _resolve_countries_selection(country)
+                    if dropdown_countries and len(dropdown_countries) > 0:
+                        if "Country" in df.columns:
+                            df = df[df["Country"].isin(dropdown_countries)]
+                            print(f"DEBUG EXPORT TABLE: Filtered by dropdown countries: {dropdown_countries}")
                 
-                filename = "crude_production_breakdown_monthly.csv"
+                
+                filename = "global_crude_production_breakdown_monthly.csv"
                 print(f"DEBUG EXPORT TABLE: Exporting {len(df)} rows to {filename}")
                 return dcc.send_data_frame(df.to_csv, filename, index=False)
 
