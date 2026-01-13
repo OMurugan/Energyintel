@@ -4013,6 +4013,36 @@ def register_callbacks(dash_app, server):
                     for trace in fig.data:
                         trace.marker.opacity = 1.0
                 
+                # Add total labels on top of bars
+                if not agg_for_chart.empty:
+                    # Calculate totals per year for the labels
+                    # Filter out the tiny placeholder values used for empty years
+                    labels_df = agg_for_chart[agg_for_chart["value"] > 0.001].copy()
+                    if labels_df.empty:
+                        # Fallback for empty/placeholder state
+                        labels_df = agg_for_chart.copy()
+                        
+                    totals = labels_df.groupby("year")["value"].sum().reset_index()
+                    totals["year"] = totals["year"].astype(str)
+                    
+                    # Sort totals by year order to match X-axis
+                    totals["year_cat"] = pd.Categorical(totals["year"], categories=years_sorted, ordered=True)
+                    totals = totals.sort_values("year_cat")
+                    
+                    # Add total labels as a separate scatter trace
+                    fig.add_trace(go.Scatter(
+                        x=totals["year"],
+                        y=totals["value"],
+                        mode='text',
+                        text=[f"{v:,.0f}" if v > 0.1 else "" for v in totals["value"]],
+                        textposition='top center',
+                        textfont=dict(size=11, color="#2c3e50"),
+                        showlegend=False,
+                        hoverinfo='skip',
+                        name='Totals'
+                    ))
+                    print(f"DEBUG BREAKDOWN YEARLY: Added totals trace for labels")
+                
                 # Calculate max value for Y-axis scaling (use either ProductionDataValue or sum of bars)
                 chart_totals_df = agg_for_chart[agg_for_chart["value"] > 0.001].copy()  # Filter out tiny placeholder values
                 if len(chart_totals_df) > 0:
@@ -4048,10 +4078,14 @@ def register_callbacks(dash_app, server):
                         titlefont=dict(size=12, color="#2c3e50"),
                         showgrid=False,  # Remove X-axis grid lines
                         gridwidth=0,
-                        zeroline=False  # Remove zero line
+                        zeroline=False,  # Remove zero line
+                        showline=False,
+                        linewidth=0,
+                        linecolor='#ced4da',
+                        mirror=True
                     ),
                     yaxis=dict(
-                        range=[0, y_axis_max],
+                        range=[0, y_axis_max * 1.05], # Add 5% buffer for labels
                         tickmode='array',
                         tickvals=y_axis_ticks,
                         ticktext=[f"{int(t):,}" for t in y_axis_ticks],
@@ -4059,7 +4093,11 @@ def register_callbacks(dash_app, server):
                         showgrid=True,  # Keep Y-axis grid lines
                         gridcolor="#e0e0e0",
                         tickfont=dict(size=10, color="#2c3e50"),
-                        titlefont=dict(size=12, color="#2c3e50")
+                        titlefont=dict(size=12, color="#2c3e50"),
+                        showline=False,
+                        linewidth=0,
+                        linecolor='#ced4da',
+                        mirror=True
                     )
                 )
                 
@@ -4288,7 +4326,7 @@ def register_callbacks(dash_app, server):
                     cols=len(unique_years),
                     subplot_titles=unique_years,
                     shared_yaxes=True,
-                    horizontal_spacing=0.05
+                    horizontal_spacing=0.02  # Added margin between subplots
                 )
                 
                 # For each year, we need to know which streams have data
@@ -4546,8 +4584,13 @@ def register_callbacks(dash_app, server):
                 
                 # Calculate domain start positions for each subplot
                 # Each subplot gets domain width proportional to its number of months
-                domain_start = 0
-                domain_width_per_month = 1.0 / total_months if total_months > 0 else 1.0 / len(unique_years)
+                domain_start = 0.0
+                # Account for horizontal_spacing gaps (0.02 each) between columns
+                available_width = 1.0 - (max(0, len(unique_years) - 1) * 0.02)
+                domain_width_per_month = available_width / total_months if total_months > 0 else available_width / len(unique_years)
+                
+                # Store boundaries for vertical separator lines
+                subplot_boundaries = []
                 
                 # Update x-axis for each subplot to show only months with data and make labels vertical
                 for year_idx, year_val in enumerate(unique_years):
@@ -4593,8 +4636,11 @@ def register_callbacks(dash_app, server):
                             col=year_idx + 1
                         )
                     
-                    # Update domain start for next subplot
-                    domain_start = domain_end
+                    # Store boundaries
+                    subplot_boundaries.append((domain_start, domain_end))
+                    
+                    # Update domain start for next subplot (including gap)
+                    domain_start = domain_end + 0.02
                 
                 # Update y-axis
                 fig.update_yaxes(
@@ -4683,6 +4729,25 @@ def register_callbacks(dash_app, server):
                             gridwidth=0,
                             zeroline=False  # Remove zero line
                         )
+                
+                # Add vertical separation lines between years with top and bottom margins
+                # We add them as shapes to the layout
+                if len(subplot_boundaries) > 1:
+                    shapes = []
+                    for i in range(len(subplot_boundaries) - 1):
+                        # Gap is between boundary[i].end and boundary[i+1].start
+                        # Midpoint between subplots
+                        line_x = (subplot_boundaries[i][1] + subplot_boundaries[i+1][0]) / 2
+                        
+                        shapes.append(dict(
+                            type="line",
+                            xref="paper", yref="paper",
+                            x0=line_x, x1=line_x,
+                            y0=0.05, y1=0.95, # 5% vertical padding at top and bottom
+                            line=dict(color="#ced4da", width=1)
+                        ))
+                    
+                    fig.update_layout(shapes=shapes)
                 
                 if not fig.data:
                     fig = go.Figure()
