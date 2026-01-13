@@ -11,4 +11,8 @@ dash_enterprise_libraries==1.7.2
 python-dotenv==1.0.0
 plotly==5.18.0
 numpy==1.26.4
+kaleido==0.2.1
+PyMuPDF==1.26.7
+weasyprint==67.0
+PyJWT==2.6.0
 setuptools<81

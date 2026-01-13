@@ -3,6 +3,7 @@ import os
 import dash
 from dash import html, dcc
 import app_instance as app_mod
+import utils as utils
 
 
 dash.register_page(
@@ -73,62 +74,101 @@ SECTIONS = [
 ]
 
 
-def _with_prefix(path: str) -> str:
-    """Prefix internal links with routes prefix if set."""
-    raw = os.getenv("DASH_ROUTES_PATHNAME_PREFIX", "")
-    if raw:
-        prefix = raw.strip()
-        if prefix and not prefix.startswith("/"):
-            prefix = f"/{prefix}"
-        if prefix and not prefix.endswith("/"):
-            prefix = f"{prefix}/"
-    else:
-        prefix = ""
-
-    base = path
-    anchor = ""
-    if "#" in path:
-        base, anchor = path.split("#", 1)
-        anchor = f"#{anchor}"
-
-    if not base.startswith("/"):
-        base = f"/{base}"
-
-    return f"{prefix}{base.lstrip('/')}{anchor}" if prefix else f"{base}{anchor}"
-
-
 def layout():
-    return html.Div(
-        [
-            html.H2("EnergyIntel Dash Pages"),
-            html.P("Main tabs and relevant page links:"),
-            html.Div(
-                [
-                    html.Div(
-                        [
-                            html.H4(
-                                html.A(section["title"], href=_with_prefix(section["path"])),
-                                style={"marginBottom": "8px"},
-                            ),
-                            html.Ul(
-                                [
-                                    html.Li(
-                                        html.A(name, href=_with_prefix(href)),
-                                        style={"marginBottom": "4px"},
-                                    )
-                                    for name, href in section["links"]
-                                ],
-                                style={"marginTop": "4px", "marginBottom": "16px"},
-                            ),
-                        ],
-                        style={"marginBottom": "12px"},
+    # Check if authentication is enabled
+    auth_enabled = os.environ.get('ENABLE_AUTH', 'false').lower() == 'true'
+    
+    # Only show authentication components if auth is enabled
+    auth_info = html.Div()
+    
+    # if auth_enabled:
+    #     # Get authentication status
+    #     auth_status = utils.get_embedded_auth_status()
+        
+    #     # Create token-based authentication info section
+    #     if auth_status['is_authenticated']:
+    #         permissions_list = auth_status['permissions'] if auth_status['permissions'] else []
+    #         auth_info = html.Div([
+    #             html.H4("🔑 Authentication Status"),
+    #             html.P(f"✅ Authenticated as: {auth_status['user']}", style={'color': '#28a745', 'fontWeight': 'bold'}),
+    #             html.P(f"🛡️ Permissions: {', '.join(permissions_list) if permissions_list else 'None'}"),
+    #             html.P("🔗 Authentication Method: Token-based", style={'color': '#6c757d', 'fontSize': '14px'}),
+    #             html.Hr(),
+    #             html.H5("Token Information:"),
+    #             html.Ul([
+    #                 html.Li("Your token is valid and active"),
+    #                 html.Li("Token-based authentication is stateless"),
+    #                 html.Li("Include token in requests via URL parameter, header, or cookie"),
+    #             ], style={'fontSize': '14px', 'color': '#6c757d'})
+    #         ], style={'backgroundColor': '#d4edda', 'padding': '15px', 'borderRadius': '8px', 'border': '1px solid #c3e6cb'})
+    #     else:
+    #         auth_info = html.Div([
+    #             html.H4("🔒 Authentication Required"),
+    #             html.P("❌ No valid authentication token provided", style={'color': '#dc3545', 'fontWeight': 'bold'}),
+    #             html.Hr(),
+    #             html.H5("How to authenticate:"),
+    #             html.P("Provide your authentication token using one of these methods:"),
+    #             html.Ul([
+    #                 html.Li(html.Code("?token=your-token-here")),
+    #                 html.Li(html.Code("Authorization: Bearer your-token-here")),
+    #                 html.Li(html.Code("X-API-Token: your-token-here")),
+    #                 html.Li(html.Code("Cookie: auth_token=your-token-here")),
+    #             ]),
+    #             html.Div([
+    #                 html.H6("Demo Tokens:"),
+    #                 html.P([
+    #                     html.Strong("Admin: "), 
+    #                     html.Code("admin-token-123"),
+    #                     html.Br(),
+    #                     html.Strong("User: "), 
+    #                     html.Code("user-token-456")
+    #                 ]),
+    #                 # html.P([
+    #                 #     html.Strong("Try: "), 
+    #                 #     html.A("Click here with admin token", 
+    #                 #            href="?token=admin-token-123",
+    #                 #            style={'color': '#007bff'})
+    #                 # ])
+    #             ], style={'backgroundColor': '#e7f3ff', 'padding': '10px', 'borderRadius': '4px', 'marginTop': '10px'})
+    #         ], style={'backgroundColor': '#f8d7da', 'padding': '15px', 'borderRadius': '8px', 'border': '1px solid #f5c6cb'})
+    
+    return html.Div([
+        html.H2("EnergyIntel Dash Pages"),
+        
+        # Token-based authentication status (only if auth enabled)
+        auth_info,
+        
+        # html.H3("Dashboard Navigation"),
+        html.P("Main tabs and relevant page links:"),
+        
+        # Simple list of sections
+        html.Div([
+            html.Div([
+                html.H4(
+                    utils.create_embedded_nav_link(section["path"], section["title"])
+                ),
+                html.Ul([
+                    html.Li(
+                        utils.create_embedded_nav_link(href, name)
                     )
-                    for section in SECTIONS
-                ]
-            ),
-        ],
-        style={"padding": "24px"},
-    )
+                    for name, href in section["links"]
+                ])
+            ])
+            for section in SECTIONS
+        ]),
+        
+        # Simple utilities info
+        # html.Hr(),
+        # html.H4("Embedded Utilities"),
+        # html.P("This page demonstrates embedded token-based authentication and navigation utilities."),
+        # html.Ul([
+        #     html.Li("Token-based authentication (no sessions)" if auth_enabled else "Authentication is disabled"),
+        #     html.Li("All navigation links use embedded path utilities"),
+        #     html.Li("Stateless authentication via tokens" if auth_enabled else "Authentication features are disabled"),
+        #     html.Li("Multiple token authentication methods supported" if auth_enabled else "No authentication UI when disabled"),
+        # ]),
+        # html.P("Authentication is token-based. Include your token in requests for access." if auth_enabled else "To enable authentication, set ENABLE_AUTH=true in your environment variables.")
+    ])
 
 
 def init_callbacks(app, server):

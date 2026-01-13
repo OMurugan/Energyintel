@@ -288,22 +288,24 @@ def create_layout():
         
         # First Chart: Imports by Region over Time
         html.Div([
-            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+            html.Div(style={'position': 'relative', 'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
                 html.Div(id='imports-by-region-chart-title', style={
                     'fontSize': '21px',
                     'fontWeight': 'bold',
                     'color': '#fe5000',
-                    'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif'
+                    'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif',
+                    'textAlign': 'center'
                 }),
                 html.Button("Export to CSV", id='export-imports-by-region-btn', n_clicks=0, style={
-                    'marginLeft': '12px',
                     'backgroundColor': 'white',
                     'color': '#2c3e50',
                     'border': '1px solid #dee2e6',
                     'padding': '6px 10px',
                     'borderRadius': '4px',
                     'cursor': 'pointer',
-                    'fontSize': '12px'
+                    'fontSize': '12px',
+                    'position': 'absolute',
+                    'right': '0'
                 })
             ]),
             dcc.Graph(id='imports-by-region-chart'),
@@ -366,17 +368,18 @@ def create_layout():
         
         # Table: Detailed Imports Data
         html.Div([
-            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
-                html.H4(id='imports-table-title', children="Japan Crude Oil Imports by Region and Country", className='imports-table-title', style={'color': '#fe5000', 'textAlign': 'center','fontSize': '21px', 'fontWeight': 'bold'}),
+            html.Div(style={'position': 'relative', 'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center', 'marginBottom': '10px'}, children=[
+                html.H4(id='imports-table-title', children="Japan Crude Oil Imports by Region and Country", className='imports-table-title', style={'color': '#fe5000', 'textAlign': 'center','fontSize': '21px', 'fontWeight': 'bold', 'margin': '0'}),
                 html.Button("Export to CSV", id='export-imports-detail-btn', n_clicks=0, style={
-                    'marginLeft': '12px',
                     'backgroundColor': 'white',
                     'color': '#2c3e50',
                     'border': '1px solid #dee2e6',
                     'padding': '6px 10px',
                     'borderRadius': '4px',
                     'cursor': 'pointer',
-                    'fontSize': '12px'
+                    'fontSize': '12px',
+                    'position': 'absolute',
+                    'right': '0'
                 })
             ]),
             # Time dimension toggle row (Year / Quarter / Month / Day)
@@ -438,58 +441,66 @@ def create_layout():
                 ],
                 style_table={
                     'overflowX': 'auto',
-                    'overflowY': 'auto',
-                    'maxHeight': '500px',
-                    'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif',
-                    'border': '1px solid #d3d3d3',
-                    'borderRadius': '4px'
+                    'width': 'auto',
+                    'minWidth': '100%',
+                    'border': '1px solid #ddd'
                 },
                 style_cell={
-                    
-                    'padding': '10px 5px',
+                    'textAlign': 'left',
+                    'padding': '2px 8px',
                     'fontSize': '12px',
-                    'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif',
-                    'border': '1px solid #e0e0e0',
-                    'backgroundColor': 'white',
-                    'color': '#333333',
-                    'minWidth': '80px',
-                    'width': 'auto',
-                    'maxWidth': '200px',
+                    'fontFamily': 'Lato',
                     'whiteSpace': 'normal',
-                    'height': 'auto'
+                    'height': 'auto',
+                    'minWidth': '80px',
+                    'width': 'auto'
                 },
                 style_header={
-                    'backgroundColor': '#f8f8f8',
-                    'fontWeight': '600',
-                    'border': '1px solid #d3d3d3',
+                    'backgroundColor': 'white',
+                    'fontWeight': 'bold',
                     'textAlign': 'center',
-                    'fontSize': '12px',
-                    'fontFamily': '"Benton Sans", "Arial", "Helvetica", sans-serif',
-                    'color': '#333333',
-                    'textTransform': 'none',
-                    'padding': '10px 12px'
+                    'border': '1px solid #ddd',
+                    'color': '#1b365d',
+                    'fontSize': '14px',
+                    'height': '45px',
+                    'verticalAlign': 'middle',
                 },
                 style_data={
-                    'border': '1px solid #e0e0e0',
-                    'backgroundColor': 'white',
-                    'color': '#333333'
+                    'border': '1px solid #ddd',
+                    'fontFamily': 'Lato',
+                    'fontSize': '12px',
+                    'fontStyle': 'normal',
+                    'fontWeight': 'normal',
+                    'textDecoration': 'none',
+                    'color': 'rgb(27, 54, 93)',
+                    'textAlign': 'left',
+                    'padding': '8px',
+                    'maxHeight': '60px'
                 },
                 css=[
                     {
-                        'selector': '.dash-loading-overlay',
-                        'rule': 'display: none !important;'
+                        "selector": "th",
+                        "rule": "padding-right: 25px !important; cursor: pointer;"
                     },
                     {
-                        'selector': '.dash-header',
-                        'rule': 'white-space: pre-line !important; line-height: 1.2 !important;'
+                        "selector": ".dash-spreadsheet-container.column-selection-active td:not([data-dash-column='Exporting Region']):not([data-dash-column='Exporter']):not([data-dash-column='Company']):not([data-dash-column='Crude']):not(.column-cell-selected)",
+                        "rule": "opacity: 0.3 !important;"
                     },
                     {
-                        'selector': '.dash-header .column-header--sort',
-                        'rule': 'white-space: pre-line !important; line-height: 1.2 !important;'
+                        "selector": ".dash-spreadsheet-container.row-selection-active tbody tr:not(.row-selected) td:not([data-dash-column='Exporting Region'])",
+                        "rule": "opacity: 0.3 !important;"
                     },
                     {
-                        'selector': '.dash-spreadsheet-container th',
-                        'rule': 'cursor: pointer !important;'
+                        "selector": ".column-selected",
+                        "rule": "background-color: #0075A8 !important; color: white !important; font-weight: bold !important;"
+                    },
+                    {
+                        "selector": "td.column-cell-selected",
+                        "rule": "background-color: #b3d9ff !important; border: none !important; font-weight: 600 !important; color: #1b365d !important; opacity: 1 !important;"
+                    },
+                    {
+                        "selector": "tr.row-selected td",
+                        "rule": "background-color: #b3d9ff !important; border-bottom: 1px solid #ddd !important; font-weight: 600 !important; color: #1b365d !important; opacity: 1 !important;"
                     }
                 ],
                 style_data_conditional=[
@@ -522,8 +533,9 @@ def create_layout():
                 ],
                 page_action='none',
                 filter_action='none',
-                sort_action='none',
+                sort_action='native',
                 fixed_rows={'headers': True},
+                fixed_columns={'headers': True, 'data': 4},
                 merge_duplicate_headers=True,
                 hidden_columns=[]
             )
@@ -1133,100 +1145,97 @@ def register_callbacks(dash_app, server):
     # Clientside callback to handle header clicks and CSS-based highlighting
     dash_app.clientside_callback(
         """
-        function(selected_column, table_data) {
-            const tableEl = document.getElementById('imports-detail-table');
-            if (!tableEl) return window.dash_clientside.no_update;
+        function(table_data) {
+            const tableId = 'imports-detail-table';
             
-            const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
-            if (!spreadsheet) return window.dash_clientside.no_update;
-
-            // 1. Inject CSS if not present
-            const styleId = 'imports-detail-table-custom-highlighting';
-            if (!document.getElementById(styleId)) {
-                const style = document.createElement('style');
-                style.id = styleId;
-                style.innerHTML = `
-                    #imports-detail-table .dash-spreadsheet-container.column-highlight-active td {
-                        opacity: 0.3;
-                        transition: opacity 0.2s;
-                    }
-                    #imports-detail-table .dash-spreadsheet-container.column-highlight-active td.column-highlighted {
-                        opacity: 1 !important;
-                        background-color: #e7f3ff !important;
-                    }
-                    #imports-detail-table .dash-spreadsheet-container th.column-header-highlighted {
-                        background-color: #3366cc !important;
-                        color: white !important;
-                        font-weight: bold !important;
-                    }
-                `;
-                document.head.appendChild(style);
-            }
-
-            // 2. Add header click listener once
-            if (spreadsheet.dataset.headerListenerAdded !== 'true') {
-                spreadsheet.dataset.headerListenerAdded = 'true';
+            // Wait for table to be available
+            setTimeout(function() {
+                const tableEl = document.getElementById(tableId);
+                if (!tableEl) return;
+                
+                const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                if (!spreadsheet) return;
+                
+                if (spreadsheet.dataset.highlightingEnhanced === 'true') return;
+                spreadsheet.dataset.highlightingEnhanced = 'true';
+                
+                function clearColumnSelections() {
+                    spreadsheet.classList.remove('column-selection-active');
+                    spreadsheet.querySelectorAll('th.column-selected').forEach(el => el.classList.remove('column-selected'));
+                    spreadsheet.querySelectorAll('td.column-cell-selected').forEach(el => el.classList.remove('column-cell-selected'));
+                }
+                
+                function applyColumnSelection(columnId) {
+                    clearColumnSelections();
+                    if (!columnId) return;
+                    
+                    spreadsheet.classList.add('column-selection-active');
+                    
+                    // Highlight header
+                    const headers = spreadsheet.querySelectorAll('th[data-dash-column="' + columnId + '"]');
+                    headers.forEach(h => h.classList.add('column-selected'));
+                    
+                    // Highlight cells
+                    const cells = spreadsheet.querySelectorAll('td[data-dash-column="' + columnId + '"]');
+                    cells.forEach(c => c.classList.add('column-cell-selected'));
+                }
+                
+                // Add click listener to spreadsheet for header and cell clicks
                 spreadsheet.addEventListener('click', function(e) {
+                    // 1. Check for header click
                     const header = e.target.closest('th[data-dash-column]');
                     if (header) {
                         const columnId = header.getAttribute('data-dash-column');
-                        // Highlight columns that start with dynamic prefixes
                         const validPrefixes = ['Y|', 'Q|', 'M|', 'D|'];
                         if (columnId && validPrefixes.some(p => columnId.startsWith(p))) {
-                            const input = document.getElementById('selected-column-hidden-input');
-                            if (input) {
-                                // Dispatch both events to ensure Dash picks it up
-                                input.value = columnId;
-                                input.dispatchEvent(new Event('input', { bubbles: true }));
-                                input.dispatchEvent(new Event('change', { bubbles: true }));
+                            e.stopPropagation();
+                            const isSelected = header.classList.contains('column-selected');
+                            if (isSelected) {
+                                clearColumnSelections();
+                            } else {
+                                applyColumnSelection(columnId);
+                            }
+                        }
+                        return;
+                    }
+
+                    // 2. Check for cell click
+                    const cell = e.target.closest('td[data-dash-column]');
+                    if (cell) {
+                        const columnId = cell.getAttribute('data-dash-column');
+                        const validPrefixes = ['Y|', 'Q|', 'M|', 'D|'];
+                        if (columnId && validPrefixes.some(p => columnId.startsWith(p))) {
+                            e.stopPropagation();
+                            // Find the header for this column to check if it's already selected
+                            const matchingHeader = spreadsheet.querySelector('th[data-dash-column="' + columnId + '"]');
+                            const isSelected = matchingHeader && matchingHeader.classList.contains('column-selected');
+                            
+                            if (isSelected) {
+                                clearColumnSelections();
+                            } else {
+                                applyColumnSelection(columnId);
                             }
                         }
                     }
-                });
-            }
-
-            // 3. Update CSS classes based on selected_column
-            // Clear existing highlights
-            spreadsheet.classList.remove('column-highlight-active');
-            spreadsheet.querySelectorAll('.column-highlighted').forEach(el => el.classList.remove('column-highlighted'));
-            spreadsheet.querySelectorAll('.column-header-highlighted').forEach(el => el.classList.remove('column-header-highlighted'));
-
-            if (selected_column) {
-                spreadsheet.classList.add('column-highlight-active');
+                }, true);
                 
-                // Highlight header
-                const header = spreadsheet.querySelector(`th[data-dash-column="${selected_column}"]`);
-                if (header) header.classList.add('column-header-highlighted');
-
-                // Highlight all cells in that column
-                const cells = spreadsheet.querySelectorAll(`td[data-dash-column="${selected_column}"]`);
-                cells.forEach(cell => cell.classList.add('column-highlighted'));
-            }
-
+                // Add document click listener for outside clicks
+                document.addEventListener('click', function(e) {
+                    if (!tableEl.contains(e.target)) {
+                        clearColumnSelections();
+                    }
+                });
+                
+            }, 500);
+            
             return window.dash_clientside.no_update;
         }
         """,
         Output('selected-column-hidden-input', 'style'), # Dummy output
-        [Input('selected-column-store', 'data'),
-         Input('imports-detail-table', 'data')],
+        [Input('imports-detail-table', 'data')],
         prevent_initial_call=False
     )
     
-    @dash_app.callback(
-        Output('selected-column-store', 'data', allow_duplicate=True),
-        Input('selected-column-hidden-input', 'value'),
-        [State('selected-column-store', 'data')],
-        prevent_initial_call=True
-    )
-    def update_selected_column_from_input(new_val, current_column):
-        """Update selected-column-store when the hidden input value is changed from clientside"""
-        if not new_val:
-            return dash.no_update
-        
-        # Toggle selection if same column is clicked
-        if current_column == new_val:
-            return None
-        return new_val
 
     @dash_app.callback(
         [Output('imports-by-region-chart', 'figure'),
@@ -1370,18 +1379,101 @@ def register_callbacks(dash_app, server):
             
             title = f"{selected_country} Crude Oil Imports by Region and Country"
             
-            # Dynamic styles for row highlighting
+            # Dynamic styles for row highlighting and merged cell appearance
             style_data_conditional = [
+                # Striped table rows - even rows (light gray)
+                {
+                    'if': {'row_index': 'even'},
+                    'backgroundColor': '#f8f9fa'
+                },
+                # Striped table rows - odd rows (white)
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#fafafa'
+                    'backgroundColor': '#ffffff'
+                },
+                # Exporting Region column - always white background for merged cells
+                {
+                    'if': {
+                        'filter_query': '{Exporting Region} != "" && {Exporting Region} != null',
+                        'column_id': 'Exporting Region'
+                    },
+                    'backgroundColor': '#ffffff',
+                    'borderBottom': 'none',
+                    'verticalAlign': 'top',
+                    'fontWeight': 'bold',
+                    'fontSize': '12px'
                 },
                 {
-                    'if': {'filter_query': '{Exporting Region} = Total'},
-                    'fontWeight': '600',
-                    'backgroundColor': '#f0f0f0'
+                    'if': {
+                        'filter_query': '{Exporting Region} = ""',
+                        'column_id': 'Exporting Region'
+                    },
+                    'backgroundColor': '#ffffff',
+                    'borderTop': 'none',
+                    'fontSize': '12px'
                 },
-                # Ensure first four columns are left-aligned
+                # Exporter column - always white background for merged cells
+                {
+                    'if': {
+                        'filter_query': '{Exporter} != "" && {Exporter} != null',
+                        'column_id': 'Exporter'
+                    },
+                    'backgroundColor': '#ffffff',
+                    'borderBottom': 'none',
+                    'verticalAlign': 'top',
+                    'fontWeight': 'bold',
+                    'fontSize': '12px'
+                },
+                {
+                    'if': {
+                        'filter_query': '{Exporter} = ""',
+                        'column_id': 'Exporter'
+                    },
+                    'backgroundColor': '#ffffff',
+                    'borderTop': 'none',
+                    'fontSize': '12px'
+                },
+                # Company column - always white background for merged cells
+                {
+                    'if': {
+                        'filter_query': '{Company} != "" && {Company} != null',
+                        'column_id': 'Company'
+                    },
+                    'backgroundColor': '#ffffff',
+                    'borderBottom': 'none',
+                    'verticalAlign': 'top',
+                    'fontWeight': 'bold',
+                    'fontSize': '12px'
+                },
+                {
+                    'if': {
+                        'filter_query': '{Company} = ""',
+                        'column_id': 'Company'
+                    },
+                    'backgroundColor': '#ffffff',
+                    'borderTop': 'none',
+                    'fontSize': '12px'
+                },
+                # Crude column - always bold
+                {
+                    'if': {'column_id': 'Crude'},
+                    'fontWeight': 'bold',
+                    'fontSize': '12px'
+                },
+                # Remove top border for all OTHER columns when Region is empty (to create merged appearance)
+                {
+                    'if': {
+                        'filter_query': '{Exporting Region} = ""'
+                    },
+                    'borderTop': 'none'
+                },
+                # Total rows styling
+                {
+                    'if': {'filter_query': '{Exporting Region} contains "Total"'},
+                    'backgroundColor': '#e8f4f8',
+                    'fontWeight': 'bold'
+                },
+                # Alignments and column widths
                 {
                     'if': {'column_id': 'Exporting Region'},
                     'textAlign': 'left', 'minWidth': '150px', 'width': '150px', 'maxWidth': '150px'
@@ -1398,10 +1490,10 @@ def register_callbacks(dash_app, server):
                     'if': {'column_id': 'Crude'},
                     'textAlign': 'left', 'minWidth': '150px', 'width': '150px', 'maxWidth': '150px'
                 },
-                # Override default active/selected cell background colors (the "pink" issue)
+                # Highlight columns that are selected
                 {
                     'if': {'state': 'active'},
-                    'backgroundColor': 'transparent', # Use transparent so underlying highlight shows through
+                    'backgroundColor': 'transparent',
                     'border': '1px solid #e0e0e0'
                 },
                 {
@@ -1411,6 +1503,17 @@ def register_callbacks(dash_app, server):
                 }
             ]
             
+            # Add right-align and styling for numeric year/time columns
+            for col in cleaned_columns:
+                col_id = col.get('id', '')
+                if '|' in col_id:
+                    style_data_conditional.append({
+                        'if': {'column_id': col_id},
+                        'textAlign': 'right',
+                        'fontSize': '12px',
+                        'fontWeight': 'normal'
+                    })
+
             if selected_exporter:
                 # Highlight rows with the selected exporter
                 style_data_conditional.extend([
@@ -1419,22 +1522,20 @@ def register_callbacks(dash_app, server):
                             'filter_query': f'{{_ExporterFull}} = "{selected_exporter}"'
                         },
                         'backgroundColor': '#e7f3ff'
-                    },
-                    {
-                        'if': {
-                            'filter_query': f'{{_ExporterFull}} = "{selected_exporter}"',
-                            'column_id': 'Exporter'
-                        },
-                        'backgroundColor': '#3366cc',
-                        'color': 'white !important',
-                        'fontWeight': 'bold'
                     }
                 ])
             
-            
             # Header styles
             style_header_conditional = []
-                
+            for col in cleaned_columns:
+                col_id = col.get('id', '')
+                if '|' in col_id:
+                    style_header_conditional.append({
+                        'if': {'column_id': col_id},
+                        'padding': '2px 8px',
+                        'lineHeight': '14px',
+                        'fontSize': '14px',
+                    })
                 
             return cleaned_data, cleaned_columns, hidden, title, style_data_conditional, style_header_conditional
         except Exception as e:

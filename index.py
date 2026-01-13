@@ -2,6 +2,7 @@
 
 from dash import dcc, html, page_container, page_registry, Input, Output
 import app_instance as app_mod
+import utils as utils
 
 # Import page modules to register them with Dash
 from pages import (
@@ -97,13 +98,14 @@ def _build_nav_links():
     """Generate navigation links from Dash page registry."""
     links = []
     for page in sorted(page_registry.values(), key=lambda p: p["path"]):
+        # Use the wcod-country path helper for navigation links
+        nav_path = utils.get_wcod_country_path(page["path"])
         links.append(
-            dcc.Link(
+            utils.create_embedded_nav_link(
+                nav_path,
                 page["name"],
-                href=page["path"],
                 className="nav-link",
-                refresh=True,  # force full navigation to avoid history.pushState issues in embeds
-                style={"padding": "8px 12px", "textDecoration": "none"},
+                style={"padding": "8px 12px", "textDecoration": "none"}
             )
         )
     return links
@@ -111,8 +113,41 @@ def _build_nav_links():
 
 def _home_href() -> str:
     """Return home link respecting any configured routes prefix."""
-    prefix = getattr(app_mod, "ROUTES_PREFIX", "") or ""
-    return prefix or "/"
+    return utils.get_relative_path("/")
+
+
+def _is_embedded_mode():
+    """
+    Detect if the app is running in embedded mode.
+    Uses the utility function from utils module.
+    """
+    return utils.is_embedded_mode()
+
+
+def _create_header():
+    """Create header with authentication status and navigation."""
+    auth_component = utils.create_auth_component()
+    
+    return html.Div([
+        # Authentication status bar
+        html.Div([
+            html.Div([
+                html.H4("Energy Intelligence Dashboard", 
+                       style={'margin': 0, 'color': '#333'}),
+            ], style={'flex': 1}),
+            auth_component
+        ], style={
+            'display': 'flex', 
+            'alignItems': 'center', 
+            'padding': '10px 20px',
+            'backgroundColor': '#ffffff',
+            'borderBottom': '2px solid #007bff',
+            'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'
+        }),
+        
+        # Navigation breadcrumbs (will be updated by callback)
+        html.Div(id="breadcrumb-container", style={'padding': '5px 20px'})
+    ], id="main-header")
 
 
 _init_callbacks()
@@ -126,13 +161,71 @@ NAV_STYLE = {
     "borderBottom": "1px solid #e0e0e0",
 }
 
-# Global layout without fullscreen loading wrapper to avoid double-loading
+# Global layout with embedded authentication integration
 app_mod.app.layout = html.Div(
     [
         dcc.Location(id="url"),
+        # Header is conditionally shown based on embedded mode and page
+        html.Div(id="main-header"),
         page_container,
+        # Add script to set embedded mode class on body and redirect if needed
+        html.Script("""
+            // Set embedded mode class on body if embedded
+            var isEmbedded = false;
+            
+            if (window.location.search.includes('embedded=true') || 
+                (document.referrer && !document.referrer.startsWith(window.location.origin))) {
+                document.body.classList.add('embedded-mode');
+                isEmbedded = true;
+            }
+            
+            // Handle wcod-country suffix routing for embedded mode
+            if (isEmbedded && window.location.pathname.endsWith('/wcod-country')) {
+                var newPath = window.location.pathname.replace('/wcod-country', '') || '/';
+                if (newPath !== window.location.pathname) {
+                    window.history.replaceState(null, '', newPath + window.location.search);
+                }
+            }
+            
+            // If embedded and on home page, redirect to country-overview
+            if (isEmbedded && (window.location.pathname === '/' || window.location.pathname === '')) {
+                // Use a small delay to ensure the page is loaded
+                setTimeout(function() {
+                    window.location.pathname = '/country-overview';
+                }, 100);
+            }
+        """)
     ]
 )
+
+
+# Callback to update header based on current page and embedded mode
+@app_mod.app.callback(
+    Output("main-header", "children"),
+    Input("url", "pathname"),
+)
+def update_navigation_and_header(pathname):
+    """Update header visibility based on current page and embedded mode."""
+    
+    # Process pathname using display_content routing function
+    processed_pathname = utils.display_content(pathname)
+    
+    # Check if we're in embedded mode
+    is_embedded = _is_embedded_mode()
+    
+    # Only show header on home page when NOT embedded
+    if processed_pathname == "/" and not is_embedded:
+        # Create full header for home page
+        return _create_header()
+    elif not is_embedded:
+        # Show minimal header with just breadcrumbs for other pages when not embedded
+        breadcrumbs = utils.get_page_breadcrumbs(processed_pathname)
+        return html.Div([
+            html.Div(breadcrumbs, style={'padding': '5px 20px'})
+        ])
+    else:
+        # Embedded mode - no header at all
+        return html.Div()  # Empty header
 
 
 # app_mod.app.layout = html.Div(

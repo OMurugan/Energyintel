@@ -789,6 +789,22 @@ def create_layout():
                         {
                             'selector': '.dash-spreadsheet td[data-dash-column="Country"] a',
                             'rule': 'color: #1b365d !important;'
+                        },
+                        {
+                            'selector': '.dash-spreadsheet td',
+                            'rule': 'vertical-align: middle !important;'
+                        },
+                        {
+                            'selector': '.dash-spreadsheet td div.dash-cell-value',
+                            'rule': 'display: flex; align-items: center; justify-content: flex-end; height: 100%; min-height: 100%;'
+                        },
+                        {
+                            'selector': '.dash-spreadsheet td[data-dash-column="Country"] div.dash-cell-value',
+                            'rule': 'justify-content: flex-start !important;'
+                        },
+                        {
+                            'selector': '.dash-spreadsheet td div.dash-cell-value p, .dash-spreadsheet td div.dash-cell-value a',
+                            'rule': 'margin: 0 !important; padding: 0 !important; display: inline-block;'
                         }
                     ],
                     style_cell={
@@ -797,7 +813,8 @@ def create_layout():
                         'fontSize': '12px',
                         'fontFamily': 'Arial, sans-serif',
                         'border': '1px solid #dee2e6',
-                        'color': '#2c3e50'
+                        'color': '#2c3e50',
+                        'verticalAlign': 'middle'
                     },
                     style_header={
                         'backgroundColor': '#f8f9fa',
@@ -832,7 +849,8 @@ def create_layout():
                             'textAlign': 'left',
                             'fontWeight': 'bold',
                             'minWidth': '150px',
-                            'color': '#1b365d'
+                            'color': '#1b365d',
+                            'verticalAlign': 'middle'
                         }
                     ],
                     style_data_conditional=[
