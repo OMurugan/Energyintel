@@ -3899,7 +3899,7 @@ def register_callbacks(dash_app, server):
                                     if str(year_val) == str(chart_selected_year):
                                         # Highlight the clicked bar
                                         point_marker_colors.append(stream_color)
-                                        point_marker_line_widths.append(4)
+                                        point_marker_line_widths.append(2)
                                         point_marker_line_colors.append("black")
                                         point_hover_infos.append("all")
                                         print(f"DEBUG BREAKDOWN YEARLY: Highlighted {trace.name}-{year_val}")
@@ -4357,7 +4357,7 @@ def register_callbacks(dash_app, server):
                                 point_marker_colors.append(stream_color)
                                 # Global Style Alignment: Intersection point gets 4px black border
                                 if is_at_intersection:
-                                    point_marker_line_widths.append(4)
+                                    point_marker_line_widths.append(2)
                                     point_marker_line_colors.append("black")
                                 else:
                                     # Enabled part of crosshair or default state
