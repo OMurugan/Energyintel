@@ -216,19 +216,23 @@ def add_country_labels(fig: go.Figure, countries_df, use_mapbox: bool = True, ma
         )
 
 
-def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str, selected_country: str, 
+def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | list, selected_country: str | list, 
                           other_isos: list = None, use_mapbox: bool = True):
     """
-    Add selection highlighting for a selected country and dim others.
+    Add selection highlighting for selected countries and dim others.
     
     Args:
         fig: Plotly figure to add highlighting to
         geojson: GeoJSON data for country boundaries
-        selected_iso: ISO code of selected country
-        selected_country: Name of selected country
+        selected_iso: ISO code(s) of selected country/countries
+        selected_country: Name(s) of selected country/countries
         other_isos: List of ISO codes for other countries to dim
         use_mapbox: Whether to use Mapbox or geo coordinates
     """
+    # Normalize inputs to lists
+    selected_isos = [selected_iso] if isinstance(selected_iso, str) else (selected_iso or [])
+    selected_names = [selected_country] if isinstance(selected_country, str) else (selected_country or [])
+    
     if use_mapbox and geojson:
         # Add dimming overlay for other countries
         if other_isos:
@@ -250,24 +254,25 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str, se
                 )
             )
         
-        # Add selection border for selected country
-        fig.add_trace(
-            go.Choroplethmapbox(
-                geojson=geojson,
-                locations=[selected_iso],
-                z=[0],
-                featureidkey="id",
-                colorscale=[[0, "rgba(255,255,255,0.01)"], [1, "rgba(255,255,255,0.01)"]],
-                showscale=False,
-                marker_line_color=MAP_SELECTION_COLOR,
-                marker_line_width=MAP_SELECTION_WIDTH,
-                hoverinfo="text",
-                hovertext=f"<b>{selected_country}</b><br>Click to reset view",
-                customdata=[selected_country],
-                hoverlabel=HOVER_LABEL_STYLE,
-                name="selected_country_border"
+        # Add selection border for selected countries
+        if selected_isos:
+            fig.add_trace(
+                go.Choroplethmapbox(
+                    geojson=geojson,
+                    locations=selected_isos,
+                    z=[0] * len(selected_isos),
+                    featureidkey="id",
+                    colorscale=[[0, "rgba(255,255,255,0.01)"], [1, "rgba(255,255,255,0.01)"]],
+                    showscale=False,
+                    marker_line_color=MAP_SELECTION_COLOR,
+                    marker_line_width=MAP_SELECTION_WIDTH,
+                    hoverinfo="text",
+                    hovertext=[f"<b>{name}</b><br>Click to focus/reset" for name in selected_names] if len(selected_names) == len(selected_isos) else "Selected countries",
+                    customdata=selected_names if len(selected_names) == len(selected_isos) else ["__SELECTED__"] * len(selected_isos),
+                    hoverlabel=HOVER_LABEL_STYLE,
+                    name="selected_countries_border"
+                )
             )
-        )
     else:
         # Geo fallback
         if other_isos:
@@ -288,22 +293,23 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str, se
                 )
             )
         
-        fig.add_trace(
-            go.Choropleth(
-                locations=[selected_iso],
-                z=[0],
-                locationmode="ISO-3",
-                colorscale=[[0, "rgba(255,255,255,0.01)"], [1, "rgba(255,255,255,0.01)"]],
-                showscale=False,
-                marker_line_color=MAP_SELECTION_COLOR,
-                marker_line_width=MAP_SELECTION_WIDTH,
-                hoverinfo="text",
-                hovertext=f"<b>{selected_country}</b><br>Click to reset view",
-                customdata=[selected_country],
-                hoverlabel=HOVER_LABEL_STYLE,
-                name="selected_country_border"
+        if selected_isos:
+            fig.add_trace(
+                go.Choropleth(
+                    locations=selected_isos,
+                    z=[0] * len(selected_isos),
+                    locationmode="ISO-3",
+                    colorscale=[[0, "rgba(255,255,255,0.01)"], [1, "rgba(255,255,255,0.01)"]],
+                    showscale=False,
+                    marker_line_color=MAP_SELECTION_COLOR,
+                    marker_line_width=MAP_SELECTION_WIDTH,
+                    hoverinfo="text",
+                    hovertext=[f"<b>{name}</b><br>Click to focus/reset" for name in selected_names] if len(selected_names) == len(selected_isos) else "Selected countries",
+                    customdata=selected_names if len(selected_names) == len(selected_isos) else ["__SELECTED__"] * len(selected_isos),
+                    hoverlabel=HOVER_LABEL_STYLE,
+                    name="selected_countries_border"
+                )
             )
-        )
 
 
 def apply_standard_layout(fig: go.Figure, use_mapbox: bool = True, mapbox_layout: dict = None, 
