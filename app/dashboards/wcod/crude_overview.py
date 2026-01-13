@@ -4710,7 +4710,7 @@ def register_callbacks(dash_app, server):
                     yaxis_key = f"yaxis{i+1}" if i > 0 else "yaxis"
                     if yaxis_key in fig.layout:
                         fig.layout[yaxis_key].update(
-                            range=[0, y_axis_max],
+                            range=[0, y_axis_max * 1.05], # Add 5% buffer for highlight borders
                             tickmode='array',
                             tickvals=y_axis_ticks,
                             ticktext=[f"{int(t):,}" for t in y_axis_ticks],
