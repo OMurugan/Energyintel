@@ -4296,18 +4296,18 @@ def register_callbacks(dash_app, server):
                 # Ensure data is sorted by year and month (in correct month order)
                 # This ensures months appear in the right order and only months with data are shown
                 if not agg.empty:
-                    # Convert month names to numeric for proper sorting
+                    # Normalize names for robust mapping and sorting
+                    agg["month"] = agg["month"].astype(str).str.strip()
+                    agg["Stream"] = agg["Stream"].astype(str).str.strip()
                     month_to_num = {name: idx+1 for idx, name in enumerate(month_names)}
                     agg["month_num"] = agg["month"].map(month_to_num)
                     agg = agg.sort_values(["year", "month_num"]).drop(columns=["month_num"])
                     
                     # Convert month to categorical with only the months that have data
-                    # This ensures Plotly only shows months with data for each facet
-                    # Get unique months from data, sorted in month order
                     available_months = agg["month"].unique().tolist()
                     months_ordered = [m for m in month_names if m in available_months]
                     agg["month"] = pd.Categorical(agg["month"], categories=months_ordered, ordered=True)
-                    print(f"DEBUG BREAKDOWN MONTHLY: Data sorted by year and month, month column converted to categorical with {len(months_ordered)} months")
+                    print(f"DEBUG BREAKDOWN MONTHLY: Data normalized and sorted. Month categorical with {len(months_ordered)} months")
                 
                 # Get unique years - each will be a separate subplot
                 unique_years = sorted(agg["year"].unique().tolist()) if not agg.empty else []
@@ -4321,6 +4321,40 @@ def register_callbacks(dash_app, server):
                     fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
                     return fig, title_text
                 
+                # 1. Calculate Global Stream Ordering and Max Stacked Total
+                # We need a consistent order across all subplots, and a Y-axis that fits the tallest stack
+                if not agg.empty:
+                    # Global Stream Order: Highest total volume at the bottom
+                    global_stream_totals = agg.groupby("Stream")["value"].sum().reset_index()
+                    global_ordered_streams = global_stream_totals.sort_values("value", ascending=False)["Stream"].tolist()
+                    print(f"DEBUG BREAKDOWN MONTHLY: Global ordered streams: {global_ordered_streams}")
+                    
+                    # Max Stacked Total: For Y-axis range
+                    # Group by year and month to get the total stacked height for each column
+                    monthly_totals_test = agg.groupby(["year", "month"])["value"].sum().reset_index()
+                    max_stacked_value = monthly_totals_test["value"].max() if not monthly_totals_test.empty else 0
+                    print(f"DEBUG BREAKDOWN MONTHLY: Max stacked bar height: {max_stacked_value}")
+                else:
+                    global_ordered_streams = []
+                    max_stacked_value = 0
+
+                # Calculate Y-axis ticks (5-6 evenly spaced values from 0 to max)
+                y_axis_max, y_axis_ticks = _calculate_yaxis_ticks(max_stacked_value)
+                
+                # Calculate bar width to ensure all bars are equal size across all years
+                max_months = 0
+                for year_val in unique_years:
+                    year_data = agg[agg["year"] == year_val]
+                    if not year_data.empty:
+                        num_months_for_year = len(year_data["month"].unique())
+                        max_months = max(max_months, num_months_for_year)
+                
+                if max_months == 0:
+                    max_months = 12
+                    
+                monthly_bargap = 0.05  # Tighter bars to avoid "collapsed" look
+                
+                # 2. Add Traces for each Subplot and Stream
                 # Create subplots - one column per year
                 fig = make_subplots(
                     rows=1,
@@ -4330,38 +4364,20 @@ def register_callbacks(dash_app, server):
                     horizontal_spacing=0.02  # Added margin between subplots
                 )
                 
-                # For each year, we need to know which streams have data
-                print(f"DEBUG BREAKDOWN MONTHLY: Processing {len(unique_years)} years: {unique_years}")
-                print(f"DEBUG BREAKDOWN MONTHLY: selected_bar = {selected_bar}")
-                
-                # Add comprehensive debugging for selected_bar
-                if selected_bar:
-                    print(f"DEBUG SELECTED_BAR: activeBar found!")
-                    print(f"  - Year: '{selected_bar.get('year')}' (type: {type(selected_bar.get('year'))})")
-                    print(f"  - Month: '{selected_bar.get('month')}' (type: {type(selected_bar.get('month'))})")
-                    print(f"  - Stream: '{selected_bar.get('stream')}' (type: {type(selected_bar.get('stream'))})")
-                else:
-                    print(f"DEBUG SELECTED_BAR: No activeBar (selected_bar is None)")
-                
+                # We add streams in the order of global_ordered_streams (Highest volume first -> Bottom of stack)
                 for year_idx, year_val in enumerate(unique_years):
-                    print(f"DEBUG BREAKDOWN MONTHLY: Processing year {year_val} (index {year_idx}) (type: {type(year_val)})")
                     year_data = agg[agg["year"] == year_val].copy()
-                    
                     if year_data.empty:
-                        print(f"DEBUG BREAKDOWN MONTHLY: No data for year {year_val}, skipping")
                         continue
                     
-                    # Get months with data for this year, in correct order
+                    # Months ordering for this year
                     year_months = year_data["month"].unique().tolist()
                     year_months_ordered = [m for m in month_names if m in year_months]
                     
-                    # Get unique streams for this year
-                    year_streams = sorted(year_data["Stream"].unique().tolist())
-                    print(f"DEBUG BREAKDOWN MONTHLY: Year {year_val} has {len(year_streams)} streams: {year_streams}")
-                    
-                    # Add a trace for each stream
-                    for stream in year_streams:
+                    for stream in global_ordered_streams:
                         stream_data = year_data[year_data["Stream"] == stream].copy()
+                        if stream_data.empty:
+                            continue # Skip if this stream has no data in this specific year
                         
                         # Ensure months are in correct order
                         stream_data["month_cat"] = pd.Categorical(
@@ -4374,381 +4390,176 @@ def register_callbacks(dash_app, server):
                         # Get color for this stream
                         stream_color = color_map.get(stream) if color_map else None
                         if not stream_color:
-                            stream_color = get_stream_color(stream, year_streams, tab="monthly")
+                            stream_color = get_stream_color(stream, global_ordered_streams, tab="monthly")
                         
-                        # NEW LOGIC: Determine opacity based on specific bar selection or stream selection
-                        # Priority: 1) Specific bar selection (chart click), 2) Stream selection (profiled streams)
-                        
-                        # NEW LOGIC: Determine highlighting state at point level (matches reference file)
-                        # Unified logic for both chart bar selection and legend filter selection
+                        # Point-level styling (Highlighting, Opacity)
                         point_marker_colors = []
                         point_marker_line_widths = []
                         point_marker_line_colors = []
                         point_hover_infos = []
+                        customdata_list = []
                         any_point_highlighted = False
                         
-                        # Current trace identifiers
+                        # Trace/Selection Identifiers
                         t_stream = str(stream).strip().lower()
                         t_year = str(year_val).strip()
                         
-                        # Determine selection type and targets
-                        h_stream = None
-                        h_month = None  
-                        h_year = None
-                        selection_type = None
+                        # Selection context
+                        h_stream = str(selected_bar.get("stream")).strip().lower() if selected_bar and selected_bar.get("stream") else None
+                        h_month = str(selected_bar.get("month")).strip().lower() if selected_bar and selected_bar.get("month") else None
+                        h_year = str(selected_bar.get("year")).strip() if selected_bar and selected_bar.get("year") else None
                         
-                        if selected_bar and selected_bar.get("stream"):
-                            # Chart click selection
-                            h_stream = str(selected_bar.get("stream")).strip().lower()
-                            h_month = str(selected_bar.get("month")).strip().lower() if selected_bar.get("month") else None
-                            h_year = str(selected_bar.get("year")).strip() if selected_bar.get("year") else None
+                        # Determine selection type
+                        if h_stream:
                             selection_type = "chart_click"
                         elif profiled and len(profiled) == 1:
-                            # Legend filter selection
                             h_stream = str(profiled[0]).strip().lower()
                             selection_type = "legend_filter"
                         else:
-                            # No selection - all streams highlighted
                             selection_type = "none"
-                        
-                        print(f"DEBUG CHART OPACITY: Processing {stream} in {year_val}, selection={selection_type}, target={h_stream}-{h_month}-{h_year}")
-                        
+
                         for _, row in stream_data.iterrows():
                             curr_month = str(row["month"]).strip().lower()
-                            
                             is_this_point_highlighted = True
                             is_at_intersection = False
                             
                             if selection_type == "chart_click":
-                                # Chart click selection behavior
                                 matches_stream = (t_stream == h_stream)
-                                
                                 if h_month and h_year:
-                                    # Specific month/year clicked - highlight ONLY the specific bar
                                     matches_column = (t_year == h_year and curr_month == h_month)
                                     is_this_point_highlighted = matches_stream and matches_column
                                     is_at_intersection = matches_stream and matches_column
-                                    
-                                    # DEBUG: Log detailed comparison for chart click
-                                    if t_stream == h_stream:  # Only log for the clicked stream
-                                        print(f"DEBUG CHART CLICK DETAIL: {stream}-{curr_month}-{t_year}")
-                                        print(f"  - Target: {h_stream}-{h_month}-{h_year}")
-                                        print(f"  - Stream match: {t_stream} == {h_stream} -> {matches_stream}")
-                                        print(f"  - Year match: {t_year} == {h_year} -> {t_year == h_year}")
-                                        print(f"  - Month match: {curr_month} == {h_month} -> {curr_month == h_month}")
-                                        print(f"  - Column match: {matches_column}")
-                                        print(f"  - Final highlight: {is_this_point_highlighted}")
-                                        print("---")
-                                        
                                 elif h_year and not h_month:
-                                    # Year-only selection
                                     matches_column = (t_year == h_year)
                                     is_this_point_highlighted = matches_stream and matches_column
                                     is_at_intersection = matches_stream and matches_column
                                 else:
-                                    # Side menu selection only (shouldn't happen here, but fallback)
                                     is_this_point_highlighted = matches_stream
-                                    is_at_intersection = False
-                                    
                             elif selection_type == "legend_filter":
-                                # Legend filter selection - highlight entire stream across all months/years
-                                matches_stream = (t_stream == h_stream)
-                                is_this_point_highlighted = matches_stream
-                                is_at_intersection = False
-                                
-                            # No selection - all points highlighted (default case)
-                            # is_this_point_highlighted remains True
+                                is_this_point_highlighted = (t_stream == h_stream)
                             
                             if is_this_point_highlighted:
                                 any_point_highlighted = True
                                 point_marker_colors.append(stream_color)
-                                # Global Style Alignment: Intersection point gets 4px black border
                                 if is_at_intersection:
                                     point_marker_line_widths.append(2)
                                     point_marker_line_colors.append("black")
                                 else:
-                                    # Enabled part of crosshair or default state
                                     point_marker_line_widths.append(1)
                                     point_marker_line_colors.append("white")
                                 point_hover_infos.append("all")
-                                
-                                # DEBUG: Log highlighted points
-                                if selection_type == "chart_click" and t_stream == h_stream:
-                                    print(f"DEBUG HIGHLIGHTED: {stream}-{curr_month}-{t_year} -> ACTIVE")
                             else:
-                                # Global Grey-Out: Consistently greyed out segments
                                 point_marker_colors.append("rgba(200,200,200,0.3)")
                                 point_marker_line_widths.append(1)
                                 point_marker_line_colors.append("rgba(220,220,220,0.2)")
                                 point_hover_infos.append("skip")
                                 
-                                # DEBUG: Log greyed out points for clicked stream
-                                if selection_type == "chart_click" and t_stream == h_stream:
-                                    print(f"DEBUG GREYED OUT: {stream}-{curr_month}-{t_year} -> DISABLED")
+                            # Customdata for hover: [Country, Year, Stream]
+                            country_val = row["Country"] if "Country" in row else ""
+                            customdata_list.append([country_val, str(year_val), stream])
 
-                        # Array-based properties for per-point styling
-                        marker_color = point_marker_colors
-                        marker_line_width = point_marker_line_widths
-                        marker_line_color = point_marker_line_colors
-                        
-                        print(f"DEBUG TRACE OPACITY: {stream}-{year_val}")
-                        print(f"  - Selection type: {selection_type}")
-                        print(f"  - Stream: '{t_stream}' vs '{h_stream}' -> {t_stream == h_stream}")
-                        print(f"  - Year: '{t_year}' vs '{h_year}' -> {t_year == h_year}")
-                        print(f"  - Any point highlighted: {any_point_highlighted}")
-                        print(f"  - Points processed: {len(point_marker_colors)}")
-                        print("---")
-                            
-                        # Add trace with point-level styling (matches reference file exactly)
+                        # Add the trace to the subplot
                         fig.add_trace(
                             go.Bar(
                                 x=stream_data["month"],
                                 y=stream_data["value"],
                                 name=stream,
                                 marker=dict(
-                                    color=marker_color,
-                                    line=dict(width=marker_line_width, color=marker_line_color),
+                                    color=point_marker_colors,
+                                    line=dict(width=point_marker_line_widths, color=point_marker_line_colors),
                                 ),
                                 legendgroup=stream,
                                 showlegend=False,
-                                # Use point-level hover control
                                 hoverinfo=point_hover_infos,
+                                customdata=customdata_list if customdata_list else None,
                                 hovertemplate=(
                                     "<b>Month:</b> %{x}<br>"
-                                    "<b>Stream:</b> " + stream + "<br>"
+                                    "<b>Country:</b> %{customdata[0]}<br>"
+                                    "<b>Stream Name:</b> %{customdata[2]}<br>"
+                                    "<b>Year:</b> %{customdata[1]}<br>"
                                     "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
-                                ) if any_point_highlighted else None
+                                )
                             ),
                             row=1,
                             col=year_idx + 1
                         )
-                
-                # Calculate max value across all data for Y-axis scaling
-                max_value = agg["value"].max() if not agg.empty and "value" in agg.columns else 0
-                
-                # Calculate Y-axis ticks (5 evenly spaced values from 0 to max)
-                y_axis_max, y_axis_ticks = _calculate_yaxis_ticks(max_value)
-                
-                # Calculate bar width to ensure all bars are equal size across all years
-                # Find the maximum number of months across all years
-                max_months = 0
-                for year_val in unique_years:
-                    year_data = agg[agg["year"] == year_val]
-                    if not year_data.empty:
-                        num_months_for_year = len(year_data["month"].unique())
-                        max_months = max(max_months, num_months_for_year)
-                
-                # If no data, default to 12
-                if max_months == 0:
-                    max_months = 12
-                
-                # Calculate bar width as a fraction that will make all bars appear equal
-                # Use a consistent fraction (e.g., 0.75) but base it on max_months
-                # This ensures bars in years with fewer months don't appear wider
-                # The bargap will create consistent spacing
-                monthly_bar_width = 0.75  # 75% of category width - consistent across all years
-                monthly_bargap = 0.2  # Keep same gap as yearly for consistency
-                
-                print(f"DEBUG BREAKDOWN MONTHLY: Max months across all years: {max_months}, bar width: {monthly_bar_width}")
-                
-                # Update layout
-                fig.update_layout(
-                    showlegend=False,
-                    plot_bgcolor="white",
-                    paper_bgcolor="white",
-                    bargap=monthly_bargap,  # Same gap as yearly chart
-                    bargroupgap=0.0,
-                    barmode="stack",
-                    hovermode="closest",
-                    margin=dict(l=60, r=10, t=80, b=120),
-                    height=520
-                )
-                
-                # Update subplot title annotations to match styling
-                if fig.layout.annotations:
-                    for annotation in fig.layout.annotations:
-                        if hasattr(annotation, 'text') and annotation.text in [str(y) for y in unique_years]:
-                            annotation.font = dict(size=14, color="#2c3e50", family="Arial, sans-serif")
-                
-                # Calculate domains for each subplot so that each month gets equal visual space
-                # This ensures bars appear the same size across all years
+
+                # 3. Finalize Layout and Domain Spacing
+                # Update subplot domains so each month gets equal visual space (Crucial for multi-year view)
                 total_months = 0
                 year_month_counts = {}
                 for year_val in unique_years:
                     year_data = agg[agg["year"] == year_val]
-                    if not year_data.empty:
-                        num_months = len(year_data["month"].unique())
-                        year_month_counts[year_val] = num_months
-                        total_months += num_months
-                    else:
-                        year_month_counts[year_val] = 0
+                    num_months = len(year_data["month"].unique()) if not year_data.empty else 0
+                    year_month_counts[year_val] = num_months
+                    total_months += num_months
                 
-                # Calculate domain start positions for each subplot
-                # Each subplot gets domain width proportional to its number of months
                 domain_start = 0.0
-                # Account for horizontal_spacing gaps (0.02 each) between columns
                 available_width = 1.0 - (max(0, len(unique_years) - 1) * 0.02)
                 domain_width_per_month = available_width / total_months if total_months > 0 else available_width / len(unique_years)
                 
-                # Store boundaries for vertical separator lines
                 subplot_boundaries = []
                 
-                # Update x-axis for each subplot to show only months with data and make labels vertical
                 for year_idx, year_val in enumerate(unique_years):
-                    year_data = agg[agg["year"] == year_val]
-                    year_months_ordered = []
-                    if not year_data.empty:
-                        year_months = year_data["month"].unique().tolist()
-                        # Sort months according to month_names order
-                        year_months_ordered = [m for m in month_names if m in year_months]
-                        print(f"DEBUG BREAKDOWN MONTHLY: Year {year_val} has months: {year_months_ordered}")
-                    
-                    # Calculate domain for this subplot
                     num_months_for_year = year_month_counts.get(year_val, 0)
-                    if num_months_for_year > 0:
-                        subplot_domain_width = num_months_for_year * domain_width_per_month
-                        domain_end = domain_start + subplot_domain_width
-                    else:
-                        # Fallback: equal width for all subplots
-                        subplot_domain_width = 1.0 / len(unique_years)
-                        domain_end = domain_start + subplot_domain_width
+                    subplot_domain_width = num_months_for_year * domain_width_per_month if total_months > 0 else 1.0 / len(unique_years)
+                    domain_end = domain_start + subplot_domain_width
                     
-                    # Update x-axis for this specific subplot
-                    if year_months_ordered:
-                        fig.update_xaxes(
-                            tickangle=-90,  # Vertical labels
-                            type="category",
-                            categoryorder="array",
-                            categoryarray=year_months_ordered,  # Only months with data for this year
-                            tickfont=dict(size=10, color="#2c3e50"),
-                            titlefont=dict(size=12, color="#2c3e50"),
-                            domain=[domain_start, domain_end],  # Set domain proportional to number of months
-                            row=1,
-                            col=year_idx + 1
-                        )
-                    else:
-                        fig.update_xaxes(
-                            tickangle=-90,
-                            type="category",
-                            tickfont=dict(size=10, color="#2c3e50"),
-                            titlefont=dict(size=12, color="#2c3e50"),
-                            domain=[domain_start, domain_end],
-                            row=1,
-                            col=year_idx + 1
-                        )
-                    
-                    # Store boundaries
+                    # Store for separator lines
                     subplot_boundaries.append((domain_start, domain_end))
                     
-                    # Update domain start for next subplot (including gap)
-                    domain_start = domain_end + 0.02
-                
-                # Update y-axis
-                fig.update_yaxes(
-                    title_text="Production Volume ('000 b/d)",
-                    tickfont=dict(size=10, color="#2c3e50"),
-                    titlefont=dict(size=12, color="#2c3e50"),
-                    row=1,
-                    col=1
-                )
-                
-                # Set explicit bar width and update hover template with Country info
-                # With make_subplots, traces are added in order: all streams for year1, then all streams for year2, etc.
-                trace_idx = 0
-                for year_idx, year_val in enumerate(unique_years):
+                    # Update X-axis for this subplot
                     year_data = agg[agg["year"] == year_val]
-                    if year_data.empty:
-                        continue
+                    year_months_ordered = [m for m in month_names if m in year_data["month"].unique().tolist()] if not year_data.empty else []
                     
-                    year_streams = sorted(year_data["Stream"].unique().tolist())
+                    fig.update_xaxes(
+                        tickangle=-90,
+                        type="category",
+                        categoryorder="array",
+                        categoryarray=year_months_ordered,
+                        tickfont=dict(size=10, color="#2c3e50"),
+                        domain=[domain_start, domain_end],
+                        title_text="",  # No "Month" label
+                        showgrid=False,
+                        zeroline=False,
+                        row=1, col=year_idx + 1
+                    )
                     
-                    # Process traces for this year
-                    for stream in year_streams:
-                        if trace_idx >= len(fig.data):
-                            break
-                        
-                        trace = fig.data[trace_idx]
-                        trace.width = monthly_bar_width
-                        
-                        # Get the Stream name for this trace
-                        stream_name = trace.name
-                        
-                        # Build customdata array matching this trace's data points
-                        customdata_list = []
-                        if len(trace.x) > 0:
-                            for month_val in trace.x:
-                                # Match by Stream, month, and year
-                                matching_rows = year_data[
-                                    (year_data["Stream"] == stream_name) & 
-                                    (year_data["month"] == month_val)
-                                ]
-                                
-                                if not matching_rows.empty and "Country" in matching_rows.columns:
-                                    country_val = matching_rows.iloc[0]["Country"]
-                                else:
-                                    country_val = ""
-                                
-                                # Add to customdata: [Country, Year, Stream]
-                                customdata_list.append([country_val, str(year_val), stream_name])
-                        
-                        # Set customdata
-                        trace.customdata = customdata_list if customdata_list else None
-                        
-                        # Create custom hover template
-                        trace.hovertemplate = (
-                            "<b>Month of Date:</b> %{x}<br>"
-                            "<b>Country:</b> %{customdata[0]}<br>"
-                            "<b>Stream Name:</b> " + stream_name + "<br>"
-                            "<b>Year of Date:</b> " + str(year_val) + "<br>"
-                            "<b>Production Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>"
-                        )
-                        
-                        trace_idx += 1
-                
-                # Update Y-axis for all subplots (yaxis, yaxis2, yaxis3, etc.) with 5 evenly spaced ticks
-                for i in range(len(unique_years)):
-                    yaxis_key = f"yaxis{i+1}" if i > 0 else "yaxis"
+                    # Update Y-axis for each subplot
+                    yaxis_key = f"yaxis{year_idx+1}" if year_idx > 0 else "yaxis"
                     if yaxis_key in fig.layout:
                         fig.layout[yaxis_key].update(
-                            range=[0, y_axis_max * 1.05], # Add 5% buffer for highlight borders
+                            range=[0, y_axis_max * 1.05], # 5% buffer for highlight borders
                             tickmode='array',
                             tickvals=y_axis_ticks,
                             ticktext=[f"{int(t):,}" for t in y_axis_ticks],
                             tickformat=',.0f',
-                            showgrid=True,  # Keep Y-axis grid lines
-                            gridcolor="#e0e0e0"
+                            showgrid=True,
+                            gridcolor="#e0e0e0",
+                            title_text="Production Volume ('000 b/d)" if year_idx == 0 else "",
+                            tickfont=dict(size=10, color="#2c3e50"),
+                            titlefont=dict(size=12, color="#2c3e50")
                         )
+                    
+                    domain_start = domain_end + 0.02 # horizontal_spacing = 0.02
                 
-                # Remove "Month" label text and X-axis grid lines from each subplot (match original)
-                # Update xaxis for each facet (xaxis, xaxis2, xaxis3, etc.)
-                for i in range(len(unique_years)):
-                    xaxis_key = f"xaxis{i+1}" if i > 0 else "xaxis"
-                    if xaxis_key in fig.layout:
-                        fig.layout[xaxis_key].update(
-                            title_text="",  # Remove "Month" label text, but keep month tick labels visible
-                            showgrid=False,  # Remove X-axis grid lines (match original)
-                            gridwidth=0,
-                            zeroline=False  # Remove zero line
-                        )
-                
-                # Add vertical separation lines between years with top and bottom margins
-                # We add them as shapes to the layout
+                # Add vertical separation lines
                 if len(subplot_boundaries) > 1:
                     shapes = []
                     for i in range(len(subplot_boundaries) - 1):
-                        # Gap is between boundary[i].end and boundary[i+1].start
-                        # Midpoint between subplots
                         line_x = (subplot_boundaries[i][1] + subplot_boundaries[i+1][0]) / 2
-                        
                         shapes.append(dict(
-                            type="line",
-                            xref="paper", yref="paper",
-                            x0=line_x, x1=line_x,
-                            y0=0.05, y1=0.95, # 5% vertical padding at top and bottom
+                            type="line", xref="paper", yref="paper",
+                            x0=line_x, x1=line_x, y0=0.05, y1=0.95,
                             line=dict(color="#ced4da", width=1)
                         ))
-                    
                     fig.update_layout(shapes=shapes)
+                
+                # Update subplot title fonts
+                if fig.layout.annotations:
+                    for annotation in fig.layout.annotations:
+                        if hasattr(annotation, 'text') and annotation.text in [str(y) for y in unique_years]:
+                            annotation.font = dict(size=14, color="#2c3e50", family="Arial, sans-serif")
                 
                 if not fig.data:
                     fig = go.Figure()
@@ -4758,7 +4569,12 @@ def register_callbacks(dash_app, server):
                                     font=dict(size=14, color='#7f8c8d'))
                     fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
                 
-                fig.update_layout(clickmode='event')
+                fig.update_layout(
+                    barmode="stack",
+                    bargap=monthly_bargap,
+                    bargroupgap=0.0,
+                    clickmode='event'
+                )
                 return fig, title_text
         except Exception as e:
             print(f"Error in update_breakdown: {e}")
