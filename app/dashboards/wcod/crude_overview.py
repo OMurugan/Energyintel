@@ -3147,22 +3147,34 @@ def register_callbacks(dash_app, server):
                 print(f"DEBUG CHART CLICK: Error parsing subplot column {subplot_col}: {e}")
                 return no_update
             
-            # Map column index to year based on production_years selection
-            resolved_years = _resolve_years_selection(production_years)
-            if resolved_years:
-                selected_years = sorted([str(y) for y in resolved_years])
-                print(f"DEBUG CHART CLICK: Available years: {selected_years}, Column index: {col_idx}")
-                
-                if 0 <= col_idx < len(selected_years):
-                    clicked_year = selected_years[col_idx]
+            # Extract year information - for monthly charts, use customdata; for yearly charts, use column mapping
+            clicked_year = None
+            if tab == "monthly" and point.get("customdata") and isinstance(point.get("customdata"), list):
+                customdata = point.get("customdata")
+                if len(customdata) >= 2:
+                    # Monthly format: [Country, Year, Stream] - extract year from customdata[1]
+                    clicked_year = str(customdata[1]).strip()
+                    print(f"DEBUG CHART CLICK: Extracted year from customdata[1] (monthly): '{clicked_year}'")
                 else:
-                    print(f"DEBUG CHART CLICK: Column index {col_idx} out of range for years {selected_years}")
-                    # Try to fallback to first year if index is out of range
-                    clicked_year = selected_years[0] if selected_years else None
-                    print(f"DEBUG CHART CLICK: Fallback to year: {clicked_year}")
+                    print(f"DEBUG CHART CLICK: Monthly customdata too short for year extraction: {customdata}")
+                    return no_update
             else:
-                print(f"DEBUG CHART CLICK: No production years available")
-                return no_update
+                # For yearly charts or fallback, use column index mapping
+                resolved_years = _resolve_years_selection(production_years)
+                if resolved_years:
+                    selected_years = sorted([str(y) for y in resolved_years])
+                    print(f"DEBUG CHART CLICK: Available years: {selected_years}, Column index: {col_idx}")
+                    
+                    if 0 <= col_idx < len(selected_years):
+                        clicked_year = selected_years[col_idx]
+                    else:
+                        print(f"DEBUG CHART CLICK: Column index {col_idx} out of range for years {selected_years}")
+                        # Try to fallback to first year if index is out of range
+                        clicked_year = selected_years[0] if selected_years else None
+                        print(f"DEBUG CHART CLICK: Fallback to year: {clicked_year}")
+                else:
+                    print(f"DEBUG CHART CLICK: No production years available")
+                    return no_update
             
             if not clicked_year:
                 print(f"DEBUG CHART CLICK: Could not determine year")
