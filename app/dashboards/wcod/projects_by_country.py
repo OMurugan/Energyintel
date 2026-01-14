@@ -134,7 +134,10 @@ def _build_country_colors(countries: list[str]) -> dict[str, str]:
 
 def _ordered_countries() -> list[str]:
     """Return countries in the same stable ordering used to render legend blocks."""
-    return sorted(load_map_data()["Country"].tolist())
+    df = load_map_data()
+    if df.empty:
+        return []
+    return sorted(df["Country"].unique().tolist())
 
 
 def _normalize_country_name(name: str | None) -> str:
@@ -151,6 +154,38 @@ def _normalize_country_name(name: str | None) -> str:
         .decode("ascii")
     )
     return text
+
+
+def _standardize_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    """Standardize column names to be proper-case for internal consistency."""
+    rename_map = {}
+    for col in df.columns:
+        low = col.lower()
+        if low == "country": rename_map[col] = "Country"
+        elif low == "group": rename_map[col] = "Group"
+        elif "latitude" in low: rename_map[col] = "Latitude"
+        elif "longitude" in low: rename_map[col] = "Longitude"
+        elif low == "quarter": rename_map[col] = "Quarter"
+        elif low == "productionadditions": rename_map[col] = "ProductionAdditions"
+        elif low == "likely_goahead": rename_map[col] = "likely_goahead"
+        elif low == "opec_group": rename_map[col] = "Opec_group"
+    return df.rename(columns=rename_map)
+
+
+def _normalize_likely(val: str) -> str:
+    """Standardize Likely To Go Ahead status values."""
+    if pd.isna(val) or val is None:
+        return ""
+    text = str(val or "").strip().lower()
+    if not text or text in ("nan", "none", "null", "undefined"):
+        return ""
+    if text.startswith("y"):
+        return "Y"
+    if text.startswith("n"):
+        return "N"
+    if "uncertain" in text:
+        return "Uncertain"
+    return text.capitalize()
 
 
 def _resolve_countries(selected: list[str] | None, all_countries: list[str]) -> list[str]:
@@ -216,7 +251,7 @@ def load_map_data() -> pd.DataFrame:
         df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
         df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
         df = df.dropna(subset=["Country", "Group", "Latitude", "Longitude"])
-        df = df.drop_duplicates(subset=["Country"])
+        # Removed drop_duplicates by Country here to preserve project statuses for filtering
         df["iso_alpha"] = df["Country"].apply(_iso_for_country)
         df = df.dropna(subset=["iso_alpha"])
         return df
@@ -227,15 +262,17 @@ def load_map_data() -> pd.DataFrame:
             SELECT DISTINCT
                 c.country_long_name AS "Country",
                 CASE
-                    WHEN LOWER(c.opec_grp) IN ('opec', 'opec_plus') THEN 'opec_plus'
-                    ELSE 'Non opec_plus'
+                    WHEN LOWER(c.opec_grp) IN ('opec', 'opec_plus') THEN 'OPEC-Plus'
+                    ELSE 'Non-OPEC-Plus'
                 END AS "Group",
                 c.latitude AS "Latitude (generated)",
                 c.longitude AS "Longitude (generated)",
-                a.likely_goahead AS "Likely Go-ahead"
+                COALESCE(est.likely_goahead, a.likely_goahead) AS likely_goahead
             FROM fact_upstream_project_tracker a
             LEFT JOIN dim_country c
                 ON a.country_id = c.dim_country_id
+            LEFT JOIN fact_upstream_tracker_prod_estimates est
+                ON a.project_id = est.project_id
             WHERE a.include = true
             ORDER BY c.country_long_name DESC;
             """
@@ -248,44 +285,65 @@ def load_map_data() -> pd.DataFrame:
             df = pd.DataFrame(results)
             
             if df.empty:
-                logger.warning("SQL query returned empty DataFrame for map data")
+                logger.warning("Dataframe is empty after SQL query")
                 return pd.DataFrame()
+
+            # Standardize columns first
+            df = _standardize_column_names(df)
             
-            # Rename columns to match expected format
-            df = df.rename(
-                columns={
-                    "Country": "Country",
-                    "Group": "Group",
-                    "Latitude (generated)": "Latitude",
-                    "Longitude (generated)": "Longitude",
-                }
-            )
+            # Filter data
+            df = _normalize_map_df(df)
+            df["likely_goahead_normalized"] = df["likely_goahead"].apply(_normalize_likely)
             
-            map_df = _normalize_map_df(df)
+            map_df = df
+            country_colors = _build_country_colors(map_df["Country"].unique().tolist())
+            return map_df
         except Exception as e:
             logger.error(f"Error loading map data from SQL: {e}")
             import traceback
             traceback.print_exc()
             return pd.DataFrame()
     else:
-        map_df = _normalize_map_df(map_df)
+        # If map_df is not empty, we still want to ensure country_colors is populated
+        if not country_colors:
+            country_colors = _build_country_colors(map_df["Country"].unique().tolist())
 
-    country_colors = _build_country_colors(map_df["Country"].unique().tolist())
     return map_df
 
 
-def load_chart_data() -> pd.DataFrame:
-    """Load and cache chart data from SQL query."""
+def load_chart_data(likely_filter: list[str] | None = None) -> pd.DataFrame:
+    """Load chart data from SQL query, optionally filtering by likely status."""
     global chart_df
-    if not chart_df.empty:
+    # We disable global caching when a filter is applied to ensure dynamic results
+    if likely_filter is None and not chart_df.empty:
         return chart_df
 
+    where_clause = "WHERE a.include = TRUE"
+    if likely_filter and "(All)" not in likely_filter:
+        conditions = []
+        for val in likely_filter:
+            # Use COALESCE directly for status expression to maximize NULL-matching reliability
+            status_expr = "COALESCE(est.likely_goahead, a.likely_goahead)"
+            raw_expr = "LOWER(TRIM(COALESCE(est.likely_goahead, a.likely_goahead)))"
+            
+            if val == "":  # (Empty)
+                conditions.append(f"({status_expr} IS NULL OR {raw_expr} = '' OR {raw_expr} IN ('nan', 'none', 'null', 'undefined'))")
+            else:
+                # Use LIKE to handle 'Y' -> 'yes', 'N' -> 'no', etc.
+                conditions.append(f"{raw_expr} LIKE '{val.lower()}%'")
+        if conditions:
+            where_clause += f" AND ({' OR '.join(conditions)})"
+
     try:
-        query = """
+        query = f"""
         WITH unpivoted AS (
             SELECT
-                c.country_long_name AS country,
-                q.quarter,
+                c.country_long_name AS Country,
+                CASE
+                    WHEN c.opec_grp = 'opec' OR c.opec_grp = 'opec_plus' THEN 'OPEC-Plus'
+                    ELSE 'Non-OPEC-Plus'
+                END AS Opec_group,
+                q.quarter AS Quarter,
                 q.value
             FROM fact_upstream_project_tracker a
             LEFT JOIN fact_upstream_tracker_prod_estimates est
@@ -294,65 +352,51 @@ def load_chart_data() -> pd.DataFrame:
                 ON a.country_id = c.dim_country_id
             CROSS JOIN LATERAL (
                 VALUES
-                    ('2025 Q1', est."2025_Q1"),
-                    ('2025 Q2', est."2025_Q2"),
-                    ('2025 Q3', est."2025_Q3"),
-                    ('2025 Q4', est."2025_Q4"),
-                    ('2026 Q1', est."2026_Q1"),
-                    ('2026 Q2', est."2026_Q2"),
-                    ('2026 Q3', est."2026_Q3"),
-                    ('2026 Q4', est."2026_Q4"),
-                    ('2027 Q1', est."2027_Q1"),
-                    ('2027 Q2', est."2027_Q2"),
-                    ('2027 Q3', est."2027_Q3"),
-                    ('2027 Q4', est."2027_Q4"),
-                    ('2028 Q1', est."2028_Q1"),
-                    ('2028 Q2', est."2028_Q2"),
-                    ('2028 Q3', est."2028_Q3"),
-                    ('2028 Q4', est."2028_Q4"),
-                    ('2029 Q1', est."2029_Q1"),
-                    ('2029 Q2', est."2029_Q2"),
-                    ('2029 Q3', est."2029_Q3"),
-                    ('2029 Q4', est."2029_Q4")
+                    ('2024 Q1', est."2024_Q1"), ('2024 Q2', est."2024_Q2"),
+                    ('2024 Q3', est."2024_Q3"), ('2024 Q4', est."2024_Q4"),
+                    ('2025 Q1', est."2025_Q1"), ('2025 Q2', est."2025_Q2"),
+                    ('2025 Q3', est."2025_Q3"), ('2025 Q4', est."2025_Q4"),
+                    ('2026 Q1', est."2026_Q1"), ('2026 Q2', est."2026_Q2"),
+                    ('2026 Q3', est."2026_Q3"), ('2026 Q4', est."2026_Q4"),
+                    ('2027 Q1', est."2027_Q1"), ('2027 Q2', est."2027_Q2"),
+                    ('2027 Q3', est."2027_Q3"), ('2027 Q4', est."2027_Q4"),
+                    ('2028 Q1', est."2028_Q1"), ('2028 Q2', est."2028_Q2"),
+                    ('2028 Q3', est."2028_Q3"), ('2028 Q4', est."2028_Q4"),
+                    ('2029 Q1', est."2029_Q1"), ('2029 Q2', est."2029_Q2"),
+                    ('2029 Q3', est."2029_Q3"), ('2029 Q4', est."2029_Q4")
             ) AS q(quarter, value)
-            WHERE a.include = TRUE
+            {where_clause}
         ),
         aggregated AS (
             SELECT
-                quarter AS "Quarter of Period",
-                country AS "Country",
-                SUM(value) AS "Production Additions"
+                Quarter,
+                Country,
+                Opec_group,
+                SUM(value) AS ProductionAdditions
             FROM unpivoted
-            GROUP BY quarter, country
+            GROUP BY Quarter, Country, Opec_group
         )
-        SELECT
-            "Quarter of Period",
-            "Country",
-            "Production Additions"
-        FROM aggregated
+        SELECT * FROM aggregated
         ORDER BY
-            SPLIT_PART("Quarter of Period", ' ', 1)::INT,
-            SPLIT_PART("Quarter of Period", ' ', 2);
+            SPLIT_PART(Quarter, ' ', 1)::INT,
+            SPLIT_PART(Quarter, ' ', 2);
         """
         
         results = execute_query(query)
         if not results:
             logger.warning("SQL query returned no results for chart data")
             return pd.DataFrame()
-        
+            
         df = pd.DataFrame(results)
+        df = _standardize_column_names(df)
+        
+        # If no filter applied, we can cache the result
+        if likely_filter is None:
+            chart_df = df
         
         if df.empty:
             logger.warning("SQL query returned empty DataFrame for chart data")
             return pd.DataFrame()
-        
-        df = df.rename(
-            columns={
-                "Quarter of Period": "Quarter",
-                "Country": "Country",
-                "Production Additions": "ProductionAdditions",
-            }
-        )
 
         df["Country"] = (
             df["Country"]
@@ -373,8 +417,7 @@ def load_chart_data() -> pd.DataFrame:
             df["ProductionAdditions"], errors="coerce"
         ).fillna(0)
         df = df.sort_values(["Year", "QuarterNum"])
-        chart_df = df
-        return chart_df
+        return df
     except Exception as e:
         logger.error(f"Error loading chart data from SQL: {e}")
         import traceback
@@ -392,7 +435,7 @@ def load_table_data() -> pd.DataFrame:
         query = """
         SELECT
             a.project_name AS "Project Name",
-            a.likely_goahead,
+            COALESCE(est.likely_goahead, a.likely_goahead) AS likely_goahead,
             c.country_long_name AS Country,
             c.region AS Region,
             CASE
@@ -494,70 +537,14 @@ def load_table_data() -> pd.DataFrame:
         results = execute_query(query)
         if not results:
             return pd.DataFrame()
-        
+            
         df = pd.DataFrame(results)
-        
-        if df.empty:
-            logger.warning("SQL query returned no results")
-            return pd.DataFrame()
-        
-        # Keep original column names like projects_by_time.py does
-        # Only normalize values, not column names
-        column_mapping = {
-            'Country': 'Country',
-            'country': 'Country',
-            'Region': 'Region',
-            'region': 'Region',
-            'Opec_group': 'Opec_group',
-            'opec_group': 'Opec_group',
-            'field_type': 'field_type',
-            'Field Type': 'field_type',
-            'field': 'field',
-            'Field': 'field',
-            'play_type': 'play_type',
-            'Play Type': 'play_type',
-            'hydrocarbon': 'Hydrocarbon',
-            'Hydrocarbon': 'Hydrocarbon',
-            'depth': 'Depth',
-            'Depth': 'Depth',
-            'operator': 'Operator',
-            'Operator': 'Operator',
-            'partner1': 'Partner1',
-            'Partner1': 'Partner1',
-            'partner2': 'Partner2',
-            'Partner2': 'Partner2',
-            'partner3': 'Partner3',
-            'Partner3': 'Partner3',
-            'partner4': 'Partner4',
-            'Partner4': 'Partner4',
-            'partner5': 'Partner5',
-            'Partner5': 'Partner5',
-            'sanctioned': 'Sanctioned',
-            'Sanctioned': 'Sanctioned',
-            'comments': 'Comments',
-            'Comments': 'Comments',
-            'api': 'API',
-            'API': 'API',
-            'sulfur': 'Sulfur',
-            'Sulfur': 'Sulfur',
-            'likely_goahead': 'likely_goahead'
-        }
-        
-        df = df.rename(columns=column_mapping)
-        
-        # Normalize country names (keep column name as Country)
+        df = _standardize_column_names(df)
         if "Country" in df.columns:
             df["Country"] = df["Country"].astype(str).str.strip().apply(_normalize_country_name)
-        
-        # Normalize Group values but keep column name as Opec_group for now
         if "Opec_group" in df.columns:
             df["Opec_group"] = df["Opec_group"].apply(_normalize_group)
-        
-        # Fill NaN values with empty strings
-        df = df.fillna("")
-        
         table_df = df
-        logger.info(f"Loaded {len(table_df)} rows for table data")
         return table_df
     except Exception as e:
         logger.error(f"Error loading table data: {e}")
@@ -572,7 +559,10 @@ def load_table_data() -> pd.DataFrame:
 def create_layout():
     """Create the Projects by Country layout."""
     map_data = load_map_data()
-    available_countries = sorted(map_data["Country"].unique().tolist())
+    if map_data.empty:
+        available_countries = []
+    else:
+        available_countries = sorted(map_data["Country"].unique().tolist())
 
     country_options = [{"label": country, "value": country} for country in available_countries]
     default_country_values = ["(All)"] + available_countries
@@ -991,7 +981,7 @@ def create_layout():
                                         id="projects-likely-filter",
                                         options=[
                                             {"label": "(All)", "value": "(All)"},
-                                            {"label": "", "value": ""},
+                                            {"label": "(Empty)", "value": ""},
                                             {"label": "N", "value": "N"},
                                             {"label": "Uncertain", "value": "Uncertain"},
                                             {"label": "Y", "value": "Y"},
@@ -1381,25 +1371,23 @@ def _chart_figure(
     selected_country: str | None,
     selected_countries: list[str] | None,
     allowed_groups: set[str],
+    likely_filter: list[str] | None = None,
 ) -> go.Figure:
-    df = load_chart_data()
+    df = load_chart_data(likely_filter)
+    
+    # Filter by group directly since load_chart_data now joins dim_country
+    if allowed_groups and not df.empty and "Opec_group" in df.columns:
+        df = df[df["Opec_group"].isin(allowed_groups)]
+        
     map_data = load_map_data()
-    country_to_group = map_data.set_index("Country")["Group"].to_dict()
-
-    def _allowed(country: str) -> bool:
-        if not allowed_groups:
-            return True
-        return country_to_group.get(country) in allowed_groups
 
     # Resolve the working country set; explicit empty list means "none selected"
     if selected_countries is None:
-        base_countries = [c for c in map_data["Country"].tolist() if _allowed(c)]
+        base_countries = map_data["Country"].tolist()
     else:
-        base_countries = [c for c in selected_countries if _allowed(c)]
+        base_countries = selected_countries
 
     if selected_country:
-        if not _allowed(selected_country):
-            return create_empty_map("Selected country is filtered out by group selection.")
         country_df = df[df["Country"] == selected_country].copy()
         title = f"Capacity Additions — {selected_country}"
     else:
@@ -1483,21 +1471,13 @@ def _chart_figure(
         title_text="'000 b/d",
         showgrid=True,
         gridcolor="#f0f0f0",
-        range=[0, 1000],
-        tick0=0,
-        dtick=200,
-        tickformat='d',
+        tickformat=',d',
         secondary_y=False,
     )
-    # Keep secondary axis tall enough so the running-sum line is not clipped.
-    secondary_max = max(12000, float(line_values.max() if not line_values.empty else 0) * 1.05)
     fig.update_yaxes(
-        title_text="'000 b/d",
+        title_text="Cumulative Additions ('000 b/d)",
         showgrid=False,
-        range=[0, secondary_max],
-        tick0=0,
-        dtick=2000,
-        tickformat='d',
+        tickformat=',.1f',
         secondary_y=True,
     )
 
@@ -1784,9 +1764,10 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             Input("projects-country-filter", "value"),
             Input("projects-group-filter", "value"),
             Input("projects-chart-group-filter", "value"),
+            Input("projects-likely-filter", "value"),
         ],
     )
-    def update_country_legend_styles(selected_countries, group_filter, chart_group_filter):
+    def update_country_legend_styles(selected_countries, group_filter, chart_group_filter, likely_filter):
         """Dim legend items that are not selected and hide those filtered out by group."""
         all_countries = _ordered_countries()
         selected_set = set(_resolve_countries(selected_countries, all_countries))
@@ -1796,11 +1777,18 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         chart_group_set = set(chart_group_filter or DEFAULT_GROUPS)
         allowed_groups = group_set.intersection(chart_group_set)
         
-        # Get map data and filter by allowed groups
+        # Get map data and filter by allowed groups and likely status
         map_data = load_map_data()
-        filtered_countries_set = set(
-            map_data[map_data["Group"].isin(allowed_groups)]["Country"].tolist()
-        )
+        
+        # Filter map data by group
+        mask = map_data["Group"].isin(allowed_groups)
+        
+        # Filter map data by likely status
+        likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
+        if "(All)" not in likely_values:
+            mask &= map_data["likely_goahead_normalized"].isin(likely_values)
+            
+        filtered_countries_set = set(map_data[mask]["Country"].tolist())
         
         base_style = {
             "display": "flex",
@@ -1951,8 +1939,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         try:
             # Check if likely filter is empty (no options selected)
             likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
-            if not likely_values:
-                return create_empty_map("No data available. Select 'Likely To Go Ahead' filter.", height=520)
             
             group_set = set(group_filter or DEFAULT_GROUPS)
             chart_group_set = (
@@ -1966,6 +1952,15 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 return create_empty_map("Selected groups are filtered out.")
             
             base_df = load_map_data()
+            
+            # Filter by likely status
+            if "(All)" not in likely_values:
+                base_df = base_df[base_df["likely_goahead_normalized"].isin(likely_values)]
+            
+            # Deduplicate by country AFTER likely filter to ensure we have a valid set for the map
+            # but preserve countries that have at least one project matching the filter
+            base_df = base_df.drop_duplicates(subset=["Country"])
+            
             all_countries = base_df["Country"].tolist()
             selected_countries = _resolve_countries(country_filter, all_countries)
             
@@ -1997,8 +1992,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
     ):
         # Check if likely filter is empty
         likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
-        if not likely_values:
-            return create_empty_map("No data available. Select 'Likely To Go Ahead' filter.")
         
         group_set = set(group_filter or DEFAULT_GROUPS)
         chart_group_set = (
@@ -2019,7 +2012,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         else:
             selected_countries = _resolve_countries(country_filter, all_countries)
         
-        return _chart_figure(focus_country, selected_countries, allowed_groups)
+        return _chart_figure(focus_country, selected_countries, allowed_groups, likely_filter=likely_values)
 
     @dash_app.callback(
         [
@@ -2088,21 +2081,6 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         
         # Filter by likely go-ahead - use likely_goahead column name
         if "likely_goahead" in df.columns:
-            # Normalize likely_goahead values for filtering
-            def _normalize_likely(val: str) -> str:
-                if pd.isna(val):
-                    return ""
-                text = str(val or "").strip().lower()
-                if not text:
-                    return ""
-                if text.startswith("y"):
-                    return "Y"
-                if text.startswith("n"):
-                    return "N"
-                if "uncertain" in text:
-                    return "Uncertain"
-                return text.capitalize()
-            
             df["likely_goahead_normalized"] = df["likely_goahead"].apply(_normalize_likely)
             if "(All)" not in likely_values:
                 if not likely_values:  # If no options selected, return empty dataframe
@@ -2374,49 +2352,51 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             State("projects-group-filter", "value"),
             State("projects-chart-group-filter", "value"),
             State("projects-likely-filter", "value"),
+            State("projects-selected-country", "data"),
         ],
         prevent_initial_call=True,
     )
-    def export_map_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter):
+    def export_map_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter, focus_country):
         """Export map data to CSV."""
         if n_clicks == 0:
             return no_update
             
         try:
-            # Apply same filtering logic as map
             likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
-            if not likely_values:
-                return no_update
-                
             group_set = set(group_filter or DEFAULT_GROUPS)
             chart_group_set = (
                 set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
             )
-            if not chart_group_set:
+            allowed_groups = group_set.intersection(chart_group_set)
+            
+            base_df = load_map_data()
+            if base_df.empty:
                 return no_update
 
-            allowed_groups = group_set.intersection(chart_group_set)
-            if not allowed_groups:
-                return no_update
-                
-            base_df = load_map_data()
-            all_countries = base_df["Country"].tolist()
-            selected_countries = _resolve_countries(country_filter, all_countries)
+            # Filter by likely status
+            if "(All)" not in likely_values:
+                base_df = base_df[base_df["likely_goahead_normalized"].isin(likely_values)]
             
-            filtered_df = base_df[
-                base_df["Group"].isin(allowed_groups) & base_df["Country"].isin(selected_countries)
-            ]
+            # Filter by group
+            base_df = base_df[base_df["Group"].isin(allowed_groups)]
+            
+            # Resolve countries
+            if focus_country:
+                selected_countries = [focus_country]
+            else:
+                all_countries = base_df["Country"].tolist()
+                selected_countries = _resolve_countries(country_filter, all_countries)
+            
+            filtered_df = base_df[base_df["Country"].isin(selected_countries)]
             
             if filtered_df.empty:
                 return no_update
                 
-            # Prepare export data
-            export_df = filtered_df[["Country", "Group", "Latitude", "Longitude"]].copy()
+            # Prepare export data (deduplicate for map view)
+            export_df = filtered_df.drop_duplicates(subset=["Country"])[["Country", "Group", "Latitude", "Longitude"]].copy()
             
-            # Generate filename
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
             filename = f"projects_producing_countries_{timestamp}.csv"
-            
             return dcc.send_data_frame(export_df.to_csv, filename, index=False)
             
         except Exception as e:
@@ -2431,51 +2411,45 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             State("projects-group-filter", "value"),
             State("projects-chart-group-filter", "value"),
             State("projects-likely-filter", "value"),
+            State("projects-selected-country", "data"),
         ],
         prevent_initial_call=True,
     )
-    def export_chart_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter):
+    def export_chart_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter, focus_country):
         """Export chart data to CSV."""
         if n_clicks == 0:
             return no_update
             
         try:
-            # Apply same filtering logic as chart
             likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
-            if not likely_values:
-                return no_update
-                
             group_set = set(group_filter or DEFAULT_GROUPS)
             chart_group_set = (
                 set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
             )
-            if not chart_group_set:
-                return no_update
-
             allowed_groups = group_set.intersection(chart_group_set)
-            if not allowed_groups:
+            
+            # Load optimized chart data via SQL
+            df = load_chart_data(likely_values)
+            if df.empty:
                 return no_update
                 
-            # Load and filter chart data
-            df = load_chart_data()
+            # Filter by group directly
+            if allowed_groups and "Opec_group" in df.columns:
+                df = df[df["Opec_group"].isin(allowed_groups)]
+                
             map_data = load_map_data()
-            country_to_group = map_data.set_index("Country")["Group"].to_dict()
-
-            def _allowed(country: str) -> bool:
-                if not allowed_groups:
-                    return True
-                return country_to_group.get(country) in allowed_groups
-
             all_countries = map_data["Country"].tolist()
-            selected_countries = _resolve_countries(country_filter, all_countries)
-            base_countries = [c for c in selected_countries if _allowed(c)]
             
+            if focus_country:
+                base_countries = [focus_country]
+            else:
+                base_countries = _resolve_countries(country_filter, all_countries)
+                
             country_df = df[df["Country"].isin(base_countries)].copy()
             
             if country_df.empty:
                 return no_update
                 
-            # Aggregate data for export
             export_df = (
                 country_df.groupby(["Country", "Year", "QuarterNum", "Quarter"], as_index=False)[
                     "ProductionAdditions"
@@ -2484,10 +2458,8 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 .sort_values(["Year", "QuarterNum", "Country"])
             )
             
-            # Generate filename
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
             filename = f"projects_capacity_additions_{timestamp}.csv"
-            
             return dcc.send_data_frame(export_df.to_csv, filename, index=False)
             
         except Exception as e:
@@ -2502,68 +2474,43 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             State("projects-group-filter", "value"),
             State("projects-chart-group-filter", "value"),
             State("projects-likely-filter", "value"),
+            State("projects-selected-country", "data"),
         ],
         prevent_initial_call=True,
     )
-    def export_table_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter):
+    def export_table_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter, focus_country):
         """Export table data to CSV."""
         if n_clicks == 0:
             return no_update
             
         try:
-            # Apply same filtering logic as table
             df = load_table_data()
-            
             if df.empty:
                 return no_update
                 
             groups = group_filter or DEFAULT_GROUPS
             likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
-            
-            # Apply group filtering
             group_set = set(groups)
             chart_group_set = (
                 set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
             )
-            if not chart_group_set:
-                return no_update
-
             allowed_groups = group_set.intersection(chart_group_set)
-            if not allowed_groups:
-                return no_update
-                
+            
             # Filter by group
-            if "Opec_group" in df.columns:
-                df = df[df["Opec_group"].isin(allowed_groups)]
-            elif "Group" in df.columns:
-                df = df[df["Group"].isin(allowed_groups)]
+            group_col = "Opec_group" if "Opec_group" in df.columns else "Group"
+            if group_col in df.columns:
+                df = df[df[group_col].isin(allowed_groups)]
                 
-            # Filter by likely go-ahead
-            if "likely_goahead" in df.columns:
-                def _normalize_likely(val: str) -> str:
-                    if pd.isna(val):
-                        return ""
-                    text = str(val or "").strip().lower()
-                    if not text:
-                        return ""
-                    if text.startswith("y"):
-                        return "Y"
-                    if text.startswith("n"):
-                        return "N"
-                    if "uncertain" in text:
-                        return "Uncertain"
-                    return text.capitalize()
-                
+            # Filter by likely status
+            if "likely_goahead" in df.columns and "(All)" not in likely_values:
                 df["likely_goahead_normalized"] = df["likely_goahead"].apply(_normalize_likely)
-                if "(All)" not in likely_values:
-                    if not likely_values:
-                        return no_update
-                    else:
-                        df = df[df["likely_goahead_normalized"].isin(likely_values)]
+                df = df[df["likely_goahead_normalized"].isin(likely_values)]
                 df = df.drop(columns=["likely_goahead_normalized"], errors="ignore")
                 
             # Filter by country
-            if "Country" in df.columns:
+            if focus_country:
+                df = df[df["Country"] == focus_country]
+            else:
                 available_countries = df["Country"].unique().tolist()
                 selected_countries = _resolve_countries(country_filter, available_countries)
                 if selected_countries:
@@ -2572,14 +2519,9 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             if df.empty:
                 return no_update
                 
-            # Clean up data for export
-            export_df = df.fillna("")
-            
-            # Generate filename
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
             filename = f"projects_details_{timestamp}.csv"
-            
-            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+            return dcc.send_data_frame(df.to_csv, filename, index=False)
             
         except Exception as e:
             logger.error(f"Error exporting table data: {e}")
