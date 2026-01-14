@@ -2352,49 +2352,51 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             State("projects-group-filter", "value"),
             State("projects-chart-group-filter", "value"),
             State("projects-likely-filter", "value"),
+            State("projects-selected-country", "data"),
         ],
         prevent_initial_call=True,
     )
-    def export_map_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter):
+    def export_map_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter, focus_country):
         """Export map data to CSV."""
         if n_clicks == 0:
             return no_update
             
         try:
-            # Apply same filtering logic as map
             likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
-            if not likely_values:
-                return no_update
-                
             group_set = set(group_filter or DEFAULT_GROUPS)
             chart_group_set = (
                 set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
             )
-            if not chart_group_set:
+            allowed_groups = group_set.intersection(chart_group_set)
+            
+            base_df = load_map_data()
+            if base_df.empty:
                 return no_update
 
-            allowed_groups = group_set.intersection(chart_group_set)
-            if not allowed_groups:
-                return no_update
-                
-            base_df = load_map_data()
-            all_countries = base_df["Country"].tolist()
-            selected_countries = _resolve_countries(country_filter, all_countries)
+            # Filter by likely status
+            if "(All)" not in likely_values:
+                base_df = base_df[base_df["likely_goahead_normalized"].isin(likely_values)]
             
-            filtered_df = base_df[
-                base_df["Group"].isin(allowed_groups) & base_df["Country"].isin(selected_countries)
-            ]
+            # Filter by group
+            base_df = base_df[base_df["Group"].isin(allowed_groups)]
+            
+            # Resolve countries
+            if focus_country:
+                selected_countries = [focus_country]
+            else:
+                all_countries = base_df["Country"].tolist()
+                selected_countries = _resolve_countries(country_filter, all_countries)
+            
+            filtered_df = base_df[base_df["Country"].isin(selected_countries)]
             
             if filtered_df.empty:
                 return no_update
                 
-            # Prepare export data
-            export_df = filtered_df[["Country", "Group", "Latitude", "Longitude"]].copy()
+            # Prepare export data (deduplicate for map view)
+            export_df = filtered_df.drop_duplicates(subset=["Country"])[["Country", "Group", "Latitude", "Longitude"]].copy()
             
-            # Generate filename
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
             filename = f"projects_producing_countries_{timestamp}.csv"
-            
             return dcc.send_data_frame(export_df.to_csv, filename, index=False)
             
         except Exception as e:
@@ -2409,51 +2411,45 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             State("projects-group-filter", "value"),
             State("projects-chart-group-filter", "value"),
             State("projects-likely-filter", "value"),
+            State("projects-selected-country", "data"),
         ],
         prevent_initial_call=True,
     )
-    def export_chart_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter):
+    def export_chart_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter, focus_country):
         """Export chart data to CSV."""
         if n_clicks == 0:
             return no_update
             
         try:
-            # Apply same filtering logic as chart
             likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
-            if not likely_values:
-                return no_update
-                
             group_set = set(group_filter or DEFAULT_GROUPS)
             chart_group_set = (
                 set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
             )
-            if not chart_group_set:
-                return no_update
-
             allowed_groups = group_set.intersection(chart_group_set)
-            if not allowed_groups:
+            
+            # Load optimized chart data via SQL
+            df = load_chart_data(likely_values)
+            if df.empty:
                 return no_update
                 
-            # Load and filter chart data
-            df = load_chart_data()
+            # Filter by group directly
+            if allowed_groups and "Opec_group" in df.columns:
+                df = df[df["Opec_group"].isin(allowed_groups)]
+                
             map_data = load_map_data()
-            country_to_group = map_data.set_index("Country")["Group"].to_dict()
-
-            def _allowed(country: str) -> bool:
-                if not allowed_groups:
-                    return True
-                return country_to_group.get(country) in allowed_groups
-
             all_countries = map_data["Country"].tolist()
-            selected_countries = _resolve_countries(country_filter, all_countries)
-            base_countries = [c for c in selected_countries if _allowed(c)]
             
+            if focus_country:
+                base_countries = [focus_country]
+            else:
+                base_countries = _resolve_countries(country_filter, all_countries)
+                
             country_df = df[df["Country"].isin(base_countries)].copy()
             
             if country_df.empty:
                 return no_update
                 
-            # Aggregate data for export
             export_df = (
                 country_df.groupby(["Country", "Year", "QuarterNum", "Quarter"], as_index=False)[
                     "ProductionAdditions"
@@ -2462,10 +2458,8 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 .sort_values(["Year", "QuarterNum", "Country"])
             )
             
-            # Generate filename
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
             filename = f"projects_capacity_additions_{timestamp}.csv"
-            
             return dcc.send_data_frame(export_df.to_csv, filename, index=False)
             
         except Exception as e:
@@ -2480,68 +2474,43 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             State("projects-group-filter", "value"),
             State("projects-chart-group-filter", "value"),
             State("projects-likely-filter", "value"),
+            State("projects-selected-country", "data"),
         ],
         prevent_initial_call=True,
     )
-    def export_table_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter):
+    def export_table_data(n_clicks, country_filter, group_filter, chart_group_filter, likely_filter, focus_country):
         """Export table data to CSV."""
         if n_clicks == 0:
             return no_update
             
         try:
-            # Apply same filtering logic as table
             df = load_table_data()
-            
             if df.empty:
                 return no_update
                 
             groups = group_filter or DEFAULT_GROUPS
             likely_values = likely_filter if likely_filter is not None else DEFAULT_LIKELY
-            
-            # Apply group filtering
             group_set = set(groups)
             chart_group_set = (
                 set(chart_group_filter) if chart_group_filter is not None else set(DEFAULT_GROUPS)
             )
-            if not chart_group_set:
-                return no_update
-
             allowed_groups = group_set.intersection(chart_group_set)
-            if not allowed_groups:
-                return no_update
-                
+            
             # Filter by group
-            if "Opec_group" in df.columns:
-                df = df[df["Opec_group"].isin(allowed_groups)]
-            elif "Group" in df.columns:
-                df = df[df["Group"].isin(allowed_groups)]
+            group_col = "Opec_group" if "Opec_group" in df.columns else "Group"
+            if group_col in df.columns:
+                df = df[df[group_col].isin(allowed_groups)]
                 
-            # Filter by likely go-ahead
-            if "likely_goahead" in df.columns:
-                def _normalize_likely(val: str) -> str:
-                    if pd.isna(val):
-                        return ""
-                    text = str(val or "").strip().lower()
-                    if not text:
-                        return ""
-                    if text.startswith("y"):
-                        return "Y"
-                    if text.startswith("n"):
-                        return "N"
-                    if "uncertain" in text:
-                        return "Uncertain"
-                    return text.capitalize()
-                
+            # Filter by likely status
+            if "likely_goahead" in df.columns and "(All)" not in likely_values:
                 df["likely_goahead_normalized"] = df["likely_goahead"].apply(_normalize_likely)
-                if "(All)" not in likely_values:
-                    if not likely_values:
-                        return no_update
-                    else:
-                        df = df[df["likely_goahead_normalized"].isin(likely_values)]
+                df = df[df["likely_goahead_normalized"].isin(likely_values)]
                 df = df.drop(columns=["likely_goahead_normalized"], errors="ignore")
                 
             # Filter by country
-            if "Country" in df.columns:
+            if focus_country:
+                df = df[df["Country"] == focus_country]
+            else:
                 available_countries = df["Country"].unique().tolist()
                 selected_countries = _resolve_countries(country_filter, available_countries)
                 if selected_countries:
@@ -2550,14 +2519,9 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             if df.empty:
                 return no_update
                 
-            # Clean up data for export
-            export_df = df.fillna("")
-            
-            # Generate filename
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
             filename = f"projects_details_{timestamp}.csv"
-            
-            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+            return dcc.send_data_frame(df.to_csv, filename, index=False)
             
         except Exception as e:
             logger.error(f"Error exporting table data: {e}")
