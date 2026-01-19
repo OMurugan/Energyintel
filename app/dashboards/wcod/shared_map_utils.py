@@ -23,7 +23,8 @@ MAP_LAND_COLOR = "#f4f4f4"  # Light gray for land areas
 MAP_COASTLINE_COLOR = "#cccccc"  # Light gray for coastlines
 MAP_COUNTRY_BORDER_COLOR = "white"  # White country borders
 MAP_SELECTION_COLOR = "#4A4A4A"  # Dark gray for selection highlights
-MAP_SELECTION_WIDTH = 2  # Selection border width
+MAP_SELECTION_WIDTH = 1  # Selection border width
+MAP_SELECTED_WIDTH = 1 #Selected border width
 
 # Shared tooltip styling
 HOVER_LABEL_STYLE = dict(
@@ -327,7 +328,7 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | l
                     colorscale=[[0, "rgba(255,255,255,0.01)"], [1, "rgba(255,255,255,0.01)"]],
                     showscale=False,
                     marker_line_color=MAP_SELECTION_COLOR,
-                    marker_line_width=MAP_SELECTION_WIDTH,
+                    marker_line_width=MAP_SELECTED_WIDTH,
                     hoverinfo="none",  # Hide hover text but keep click functionality
                     customdata=selected_names if len(selected_names) == len(selected_isos) else ["__SELECTED__"] * len(selected_isos),
                     name="selected_countries_border"
