@@ -1564,6 +1564,8 @@ def create_layout(server=None):
         dcc.Store(id="selected-country-map-store", data=None),
         # Store to track if map selection should filter the table
         dcc.Store(id="table-map-filter-active-store", data=False),
+        # Store to track ocean clicks for reset behavior
+        dcc.Store(id="ocean-click-trigger", data=None),
         # Store to track selected bar for monthly chart isolation
         dcc.Store(id="selected-bar-store", data=None),
         dcc.Store(id="stream-navigation-dummy", data=None),
@@ -1593,6 +1595,22 @@ def create_layout(server=None):
                     }
                     .dash-spreadsheet.dash-freeze-top, .dash-spreadsheet.dash-virtualized {
                         max-height: 600px !important;
+                    }
+                    /* Map cursor styles for reset functionality */
+                    #crude-map .js-plotly-plot .plotly .modebar {
+                        pointer-events: auto;
+                    }
+                    #crude-map .js-plotly-plot .plotly .main-svg {
+                        cursor: default;
+                    }
+                    /* Show pointer cursor when country is selected (when reset layers are present) */
+                    #crude-map[data-country-selected="true"] .js-plotly-plot .plotly .main-svg {
+                        cursor: pointer;
+                    }
+                    /* Ensure country hover shows pointer */
+                    #crude-map .js-plotly-plot .plotly .main-svg .geo,
+                    #crude-map .js-plotly-plot .plotly .main-svg .mapboxgl-map {
+                        cursor: pointer;
                     }
                 </style>
                 """,
@@ -3050,42 +3068,162 @@ def register_callbacks(dash_app, server):
         else:
             return {"display": "none"}, {"display": "block"}, {"display": "block"}
     
-    @dash_app.callback(
-        [Output("selected-country-map-store", "data"),
-         Output("table-map-filter-active-store", "data")],
-        [Input("crude-map", "clickData"),
-         Input("crude-main-tabs", "value")],
-        [State("selected-country-map-store", "data"),
-         State("table-map-filter-active-store", "data"),
-         State("current-submenu", "data")],
+    # Clientside callback to set cursor style based on country selection
+    dash_app.clientside_callback(
+        """
+        function(selectedCountry, isActive) {
+            const mapElement = document.getElementById('crude-map');
+            if (mapElement) {
+                if (selectedCountry && isActive) {
+                    mapElement.setAttribute('data-country-selected', 'true');
+                } else {
+                    mapElement.removeAttribute('data-country-selected');
+                }
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output("crude-map", "style"),
+        Input("selected-country-map-store", "data"),
+        Input("table-map-filter-active-store", "data"),
         prevent_initial_call=False
     )
-    def update_selected_country_map(click_data, tab_value, current_selected, current_active, submenu):
-        """Update country selection from map click, toggle if clicked again"""
+
+    # Enhanced clientside callback for comprehensive ocean click detection
+    # This uses JavaScript to detect clicks directly on the map container
+    dash_app.clientside_callback(
+        """
+        function(clickData, selectedCountry, isActive, mapFigure) {
+            // Enhanced ocean click detection using multiple strategies
+            
+            if (!selectedCountry || !isActive) {
+                // No country selected, nothing to reset
+                return window.dash_clientside.no_update;
+            }
+            
+            // Strategy 1: Check if clickData indicates a background click
+            if (clickData && clickData.points && clickData.points.length > 0) {
+                const point = clickData.points[0];
+                
+                // Check for our background click markers
+                if (point.customdata) {
+                    let cdata = point.customdata;
+                    
+                    // Handle different customdata formats
+                    if (Array.isArray(cdata)) {
+                        if (cdata.length > 0) {
+                            let firstItem = cdata[0];
+                            if (Array.isArray(firstItem) && firstItem.length > 0 && firstItem[0] === "__BACKGROUND_CLICK__") {
+                                return {"trigger": "ocean_click", "timestamp": Date.now()};
+                            } else if (typeof firstItem === "string" && firstItem === "__BACKGROUND_CLICK__") {
+                                return {"trigger": "ocean_click", "timestamp": Date.now()};
+                            }
+                        }
+                    } else if (typeof cdata === "string" && cdata === "__BACKGROUND_CLICK__") {
+                        return {"trigger": "ocean_click", "timestamp": Date.now()};
+                    }
+                }
+                
+                // Check trace name for background elements
+                if (point.trace && point.trace.name) {
+                    const traceName = point.trace.name;
+                    if (traceName === "ocean_background" || traceName === "background_fill" || traceName === "background") {
+                        return {"trigger": "ocean_click", "timestamp": Date.now()};
+                    }
+                }
+            }
+            
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output("ocean-click-trigger", "data"),
+        Input("crude-map", "clickData"),
+        State("selected-country-map-store", "data"),
+        State("table-map-filter-active-store", "data"),
+        State("crude-map", "figure"),
+        prevent_initial_call=True
+    )
+
+    # Enhanced map click callback with better ocean detection
+    @dash_app.callback(
+        [Output("selected-country-map-store", "data"),
+         Output("table-map-filter-active-store", "data"),
+         Output("crude-country-dropdown", "value")],
+        [Input("crude-map", "clickData"),
+         Input("crude-main-tabs", "value"),
+         Input("ocean-click-trigger", "data")],
+        [State("selected-country-map-store", "data"),
+         State("table-map-filter-active-store", "data"),
+         State("current-submenu", "data"),
+         State("crude-country-dropdown", "value")],
+        prevent_initial_call=False
+    )
+    def update_selected_country_map(click_data, tab_value, ocean_trigger, current_selected, current_active, submenu, current_dropdown):
+        """Update country selection from map click with enhanced ocean click detection"""
         from dash import ctx
         if submenu != 'crude-overview':
-            return no_update, no_update
+            return no_update, no_update, no_update
             
         triggered_id = ctx.triggered_id
         
+        # Handle ocean click trigger
+        if triggered_id == "ocean-click-trigger" and ocean_trigger:
+            print("DEBUG MAP CLICK: Ocean click trigger activated - resetting to show all countries")
+            _ensure_data_loaded()
+            all_countries = COUNTRIES if COUNTRIES else []
+            reset_dropdown = ["(All)"] + all_countries
+            return None, False, reset_dropdown
+        
         # Don't reset selection when switching tabs - allow persistence
         if triggered_id == "crude-main-tabs":
-            return no_update, no_update
+            return no_update, no_update, no_update
             
         if click_data and click_data.get("points"):
             point = click_data["points"][0]
             
-            # Check for background click (ocean/empty area)
+            # Enhanced background click detection
+            is_background_click = False
             if "customdata" in point and point["customdata"]:
                 cdata = point["customdata"]
-                if (isinstance(cdata, list) and len(cdata) > 0 and cdata[0] == "__BACKGROUND_CLICK__") or \
-                   (isinstance(cdata, str) and cdata == "__BACKGROUND_CLICK__"):
-                    return None, True
+                # Handle both old format (string/list with string) and new format (list of lists)
+                if isinstance(cdata, list):
+                    if len(cdata) > 0:
+                        # New format: [["__BACKGROUND_CLICK__"]] or old format: ["__BACKGROUND_CLICK__"]
+                        first_item = cdata[0]
+                        if isinstance(first_item, list) and len(first_item) > 0 and first_item[0] == "__BACKGROUND_CLICK__":
+                            is_background_click = True
+                        elif isinstance(first_item, str) and first_item == "__BACKGROUND_CLICK__":
+                            is_background_click = True
+                elif isinstance(cdata, str) and cdata == "__BACKGROUND_CLICK__":
+                    is_background_click = True
+            
+            # Additional check: if the trace name suggests it's a background element
+            if hasattr(point, 'trace') and point.trace and hasattr(point.trace, 'name'):
+                trace_name = point.trace.name
+                if trace_name in ['ocean_background', 'background_fill', 'background']:
+                    is_background_click = True
+            
+            # Handle background clicks - reset to show all countries
+            if is_background_click:
+                print("DEBUG MAP CLICK: Background/ocean click detected - resetting to show all countries")
+                # Ensure data is loaded to get all countries
+                _ensure_data_loaded()
+                all_countries = COUNTRIES if COUNTRIES else []
+                reset_dropdown = ["(All)"] + all_countries
+                return None, False, reset_dropdown
             
             # Try to get country name from customdata first (standardized map)
             clicked_country = None
             if "customdata" in point and point["customdata"]:
-                clicked_country = point["customdata"][0]
+                if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
+                    # Handle nested list format [[country, iso]] or simple list [country]
+                    first_item = point["customdata"][0]
+                    if isinstance(first_item, list) and len(first_item) > 0:
+                        clicked_country = first_item[0]  # [[country, iso]] format
+                    elif isinstance(first_item, str):
+                        clicked_country = first_item  # [country] format
+                else:
+                    clicked_country = point["customdata"]
             
             # Fallback to location (might be ISO or name)
             if not clicked_country:
@@ -3095,20 +3233,28 @@ def register_callbacks(dash_app, server):
                 # Map ISO code to full country name if needed
                 clicked_country = _map_iso_to_country_name(clicked_country)
                 
-                # Toggle logic: if already selected, toggle the table filter active state
-                # but KEEP the country selection for barchart and legend
-                if clicked_country == current_selected:
-                    # If it was already selected, toggle the active state for the table
-                    # current_active is a boolean from the store
-                    new_active = not current_active
-                    print(f"DEBUG MAP CLICK: Same country clicked ({clicked_country}), toggling table_map_filter_active from {current_active} to {new_active}")
-                    return current_selected, new_active
+                # Enhanced behavior: if one country is selected, any other click resets to all
+                if current_selected and current_active:
+                    if clicked_country == current_selected:
+                        # Same country clicked - reset to show all countries
+                        print(f"DEBUG MAP CLICK: Same country clicked ({clicked_country}) - resetting to show all countries")
+                        _ensure_data_loaded()
+                        all_countries = COUNTRIES if COUNTRIES else []
+                        reset_dropdown = ["(All)"] + all_countries
+                        return None, False, reset_dropdown
+                    else:
+                        # Different country clicked - also reset to show all countries (matches Tableau behavior)
+                        print(f"DEBUG MAP CLICK: Different country clicked ({clicked_country}) when {current_selected} was selected - resetting to show all countries")
+                        _ensure_data_loaded()
+                        all_countries = COUNTRIES if COUNTRIES else []
+                        reset_dropdown = ["(All)"] + all_countries
+                        return None, False, reset_dropdown
                 
-                # New country selected: set it and make table filter active
+                # No country currently selected or not active - select the clicked country
                 print(f"DEBUG MAP CLICK: New country selected ({clicked_country}), setting table_map_filter_active to True")
-                return clicked_country, True
+                return clicked_country, True, [clicked_country]
                 
-        return current_selected, current_active
+        return current_selected, current_active, no_update
     
     @dash_app.callback(
         Output("selected-bar-store", "data"),

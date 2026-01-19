@@ -114,49 +114,140 @@ def get_mapbox_config() -> tuple[bool, str | None, dict]:
 
 def add_background_click_layer(fig: go.Figure, selected_country: str | None = None, use_mapbox: bool = True):
     """
-    Add invisible background layer for click-to-reset functionality.
+    Add multiple invisible scatter points across ocean areas for click-to-reset functionality.
+    
+    Since Mapbox base layers intercept clicks on ocean areas, we need to place actual
+    scatter points in strategic ocean locations to capture background clicks.
     
     Args:
         fig: Plotly figure to add the layer to
-        selected_country: Currently selected country (affects hover text)
+        selected_country: Currently selected country (affects whether layers are added)
         use_mapbox: Whether to use Mapbox or geo coordinates
     """
-    hover_text = "Click to reset view" if selected_country else "Click anywhere to reset view"
+    # Strategic ocean points to capture background clicks
+    # These are placed in major ocean areas where users are likely to click
+    # Using a denser grid to increase click capture probability
+    ocean_points = []
     
-    if use_mapbox:
-        fig.add_trace(
-            go.Scattermapbox(
-                lon=[-180, 180, 180, -180, -180],
-                lat=[-85, -85, 85, 85, -85],
-                mode="lines",
-                line=dict(color="rgba(0,0,0,0)", width=0),
-                fill="toself",
-                fillcolor="rgba(255,255,255,0.05)",  # Nearly transparent white
-                hoverinfo="text",
-                hovertext=hover_text,
-                customdata=["__BACKGROUND_CLICK__"],
-                showlegend=False,
-                hoverlabel=HOVER_LABEL_STYLE,
-                name="background"
+    # Atlantic Ocean - dense coverage
+    for lat in range(-40, 61, 20):  # -40 to 60, every 20 degrees
+        for lon in range(-80, -9, 15):  # -80 to -10, every 15 degrees
+            ocean_points.append([lon, lat])
+    
+    # Pacific Ocean - dense coverage
+    for lat in range(-40, 61, 20):  # -40 to 60, every 20 degrees
+        for lon in range(-180, -99, 15):  # -180 to -100, every 15 degrees
+            ocean_points.append([lon, lat])
+        for lon in range(120, 181, 15):  # 120 to 180, every 15 degrees
+            ocean_points.append([lon, lat])
+    
+    # Indian Ocean
+    for lat in range(-40, 21, 20):  # -40 to 20, every 20 degrees
+        for lon in range(60, 121, 15):  # 60 to 120, every 15 degrees
+            ocean_points.append([lon, lat])
+    
+    # Arctic Ocean
+    for lat in range(70, 86, 10):  # 70 to 85, every 10 degrees
+        for lon in range(-180, 181, 30):  # -180 to 180, every 30 degrees
+            ocean_points.append([lon, lat])
+    
+    # Southern Ocean
+    for lat in range(-80, -49, 10):  # -80 to -50, every 10 degrees
+        for lon in range(-180, 181, 30):  # -180 to 180, every 30 degrees
+            ocean_points.append([lon, lat])
+    
+    # Additional strategic points in major ocean areas
+    strategic_points = [
+        # Mid-Atlantic
+        [-40, 0], [-30, 20], [-50, -20], [-60, 40], [-20, -30],
+        # Mid-Pacific  
+        [-140, 0], [-160, 20], [-120, -10], [160, -20], [140, 10], [-150, 30],
+        # Indian Ocean centers
+        [80, -20], [90, 0], [100, -30], [70, 10],
+        # Arctic centers
+        [-100, 80], [0, 85], [100, 80],
+        # Southern centers
+        [-120, -65], [0, -75], [120, -70]
+    ]
+    
+    ocean_points.extend(strategic_points)
+    
+    # Extract lons and lats
+    lons = [point[0] for point in ocean_points]
+    lats = [point[1] for point in ocean_points]
+    
+    # Only add background click layers if a country is selected
+    if selected_country:
+        if use_mapbox:
+            # Add invisible scatter points in ocean areas
+            fig.add_trace(
+                go.Scattermapbox(
+                    lon=lons,
+                    lat=lats,
+                    mode="markers",
+                    marker=dict(
+                        size=80,  # Large invisible markers to increase click area
+                        color="rgba(255,255,255,0.01)",  # Nearly transparent
+                        opacity=0.01
+                    ),
+                    hoverinfo="none",  # Hide hover text but keep click functionality
+                    customdata=[["__BACKGROUND_CLICK__"]] * len(ocean_points),
+                    showlegend=False,
+                    name="ocean_background"
+                )
             )
-        )
-    else:
-        fig.add_trace(
-            go.Scattergeo(
-                lon=[-180, 180, 180, -180, -180],
-                lat=[-85, -85, 85, 85, -85],
-                mode="lines",
-                line=dict(color="rgba(0,0,0,0)", width=0),
-                fill="toself",
-                fillcolor="rgba(255,255,255,0.05)",  # Nearly transparent white
-                hoverinfo="text",
-                hovertext=hover_text,
-                customdata=["__BACKGROUND_CLICK__"],
-                showlegend=False,
-                hoverlabel=HOVER_LABEL_STYLE,
-                name="background"
+            
+            # Also add a very transparent fill layer as backup
+            fig.add_trace(
+                go.Scattermapbox(
+                    lon=[-180, 180, 180, -180, -180],
+                    lat=[-85, -85, 85, 85, -85],
+                    mode="lines",
+                    line=dict(color="rgba(0,0,0,0)", width=0),
+                    fill="toself",
+                    fillcolor="rgba(255,255,255,0.001)",  # Extremely transparent
+                    hoverinfo="none",  # Hide hover text but keep click functionality
+                    customdata=[["__BACKGROUND_CLICK__"]],
+                    showlegend=False,
+                    name="background_fill",
+                    opacity=0.001
+                )
             )
-        )
+        else:
+            # Geo fallback - use scatter points
+            fig.add_trace(
+                go.Scattergeo(
+                    lon=lons,
+                    lat=lats,
+                    mode="markers",
+                    marker=dict(
+                        size=80,
+                        color="rgba(255,255,255,0.01)",
+                        opacity=0.01
+                    ),
+                    hoverinfo="none",  # Hide hover text but keep click functionality
+                    customdata=[["__BACKGROUND_CLICK__"]] * len(ocean_points),
+                    showlegend=False,
+                    name="ocean_background"
+                )
+            )
+            
+            # Backup fill layer
+            fig.add_trace(
+                go.Scattergeo(
+                    lon=[-180, 180, 180, -180, -180],
+                    lat=[-85, -85, 85, 85, -85],
+                    mode="lines",
+                    line=dict(color="rgba(0,0,0,0)", width=0),
+                    fill="toself",
+                    fillcolor="rgba(255,255,255,0.001)",
+                    hoverinfo="none",  # Hide hover text but keep click functionality
+                    customdata=[["__BACKGROUND_CLICK__"]],
+                    showlegend=False,
+                    name="background_fill",
+                    opacity=0.001
+                )
+            )
 
 
 def add_country_labels(fig: go.Figure, countries_df, use_mapbox: bool = True, max_labels: int = 40):
@@ -244,12 +335,10 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | l
                     featureidkey="id",
                     colorscale=[[0, "rgba(255,255,255,0.8)"], [1, "rgba(255,255,255,0.8)"]],
                     showscale=False,
-                    hoverinfo="text",
-                    hovertext=["Click to reset view" for _ in other_isos],
+                    hoverinfo="none",  # Hide hover text but keep click functionality
                     customdata=["__BACKGROUND_CLICK__" for _ in other_isos],
                     marker_line_color="rgba(200,200,200,0.3)",
                     marker_line_width=0.5,
-                    hoverlabel=HOVER_LABEL_STYLE,
                     name="inactive_countries"
                 )
             )
@@ -266,10 +355,8 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | l
                     showscale=False,
                     marker_line_color=MAP_SELECTION_COLOR,
                     marker_line_width=MAP_SELECTION_WIDTH,
-                    hoverinfo="text",
-                    hovertext=[f"<b>{name}</b><br>Click to focus/reset" for name in selected_names] if len(selected_names) == len(selected_isos) else "Selected countries",
+                    hoverinfo="none",  # Hide hover text but keep click functionality
                     customdata=selected_names if len(selected_names) == len(selected_isos) else ["__SELECTED__"] * len(selected_isos),
-                    hoverlabel=HOVER_LABEL_STYLE,
                     name="selected_countries_border"
                 )
             )
@@ -283,12 +370,10 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | l
                     locationmode="ISO-3",
                     colorscale=[[0, "rgba(255,255,255,0.8)"], [1, "rgba(255,255,255,0.8)"]],
                     showscale=False,
-                    hoverinfo="text",
-                    hovertext=["Click to reset view" for _ in other_isos],
+                    hoverinfo="none",  # Hide hover text but keep click functionality
                     customdata=["__BACKGROUND_CLICK__" for _ in other_isos],
                     marker_line_color="rgba(200,200,200,0.3)",
                     marker_line_width=0.5,
-                    hoverlabel=HOVER_LABEL_STYLE,
                     name="inactive_countries"
                 )
             )
@@ -303,10 +388,8 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | l
                     showscale=False,
                     marker_line_color=MAP_SELECTION_COLOR,
                     marker_line_width=MAP_SELECTION_WIDTH,
-                    hoverinfo="text",
-                    hovertext=[f"<b>{name}</b><br>Click to focus/reset" for name in selected_names] if len(selected_names) == len(selected_isos) else "Selected countries",
+                    hoverinfo="none",  # Hide hover text but keep click functionality
                     customdata=selected_names if len(selected_names) == len(selected_isos) else ["__SELECTED__"] * len(selected_isos),
-                    hoverlabel=HOVER_LABEL_STYLE,
                     name="selected_countries_border"
                 )
             )
@@ -387,7 +470,7 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
     
     fig = go.Figure()
     
-    # Create main choropleth layer
+    # Create main choropleth layer FIRST
     if use_mapbox and geojson:
         logger.info("Creating Mapbox choropleth map")
         fig.add_trace(
@@ -432,16 +515,17 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
             )
         )
     
-    # Add background click layer
-    add_background_click_layer(fig, selected_country, use_mapbox)
-    
-    # Add country labels if provided
-    if countries_df is not None and not countries_df.empty:
-        add_country_labels(fig, countries_df, use_mapbox)
-    
     # Add selection highlighting if a country is selected
     if selected_country and selected_iso:
         add_selection_highlight(fig, geojson, selected_iso, selected_country, other_isos, use_mapbox)
+    
+    # Add background click layer AFTER countries and selection highlights
+    # This ensures it's on top and can capture clicks
+    add_background_click_layer(fig, selected_country, use_mapbox)
+    
+    # Add country labels if provided (on top of everything)
+    if countries_df is not None and not countries_df.empty:
+        add_country_labels(fig, countries_df, use_mapbox)
     
     # Apply standard layout
     apply_standard_layout(fig, use_mapbox, mapbox_layout, height)
