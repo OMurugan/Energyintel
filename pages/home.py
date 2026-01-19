@@ -82,6 +82,36 @@ SECTIONS = [
             ("Product Exports", "/product-exports"),
         ],
     },
+    {
+        "title": "World Gas Analytics Tool",
+        "path": "/gas/europe-dashboard",
+        "links": [
+            ("Europe World Gas Data Dashboard", "/gas/europe-dashboard"),
+            ("European Gas Trade - Pipeline Flows to Europe", "/gas/europe-pipeline-flows"),
+            ("European Gas Trade - Pipeline Flows by Country", "/gas/europe-pipeline-flows-country"),
+            ("European Gas Trade - Gas Imports Mix by Country", "/gas/europe-imports-mix"),
+            ("European Gas Trade - LNG Imports by Terminal", "/gas/europe-lng-imports"),
+            ("European Gas Demand - Yearly Demand", "/gas/europe-demand-yearly"),
+            ("European Gas Demand - Monthly Demand by Country", "/gas/europe-demand-monthly-country"),
+            ("European Gas Demand - Monthly Demand by Sector", "/gas/europe-demand-monthly-sector"),
+            ("Asia World Gas Dashboard", "/gas/asia-dashboard"),
+            ("Asian Gas Demand - Yearly Gas Demand", "/gas/asia-demand-yearly"),
+            ("Asian Gas Demand - Monthly Demand by Country", "/gas/asia-demand-monthly-country"),
+            ("Asian Gas Demand - Monthly Demand by Sector", "/gas/asia-demand-monthly-sector"),
+            ("Asian Gas Trade - Gas Import Mix by Country", "/gas/asia-imports-mix"),
+            ("Asian Gas Trade - Yearly Imports by Origin", "/gas/asia-imports-yearly"),
+        ],
+    },
+    {
+        "title": "Low-Carbon Investment Analytics Tool",
+        "path": "/low-carbon/dashboard",
+        "links": [
+            ("Low-Carbon Investment Dashboard", "/low-carbon/dashboard"),
+            ("List of Tracked Investments", "/low-carbon/investments-list"),
+            ("Activity by Date Announced", "/low-carbon/activity-by-date"),
+            ("Activity by Region", "/low-carbon/activity-by-region"),
+        ],
+    },
 ]
 
 

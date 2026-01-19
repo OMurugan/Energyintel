@@ -28,6 +28,31 @@ from pages import (
     projects_latest,
     projects_tracker,
     projects_carbon,
+    # Russian Analytics
+    crude_seaborne,
+    crude_pipeline,
+    product_output,
+    product_exports,
+    # Gas Analytics Pages
+    gas_europe_dashboard,
+    gas_europe_pipeline_flows,
+    gas_europe_pipeline_flows_country,
+    gas_europe_imports_mix,
+    gas_europe_lng_imports,
+    gas_europe_demand_yearly,
+    gas_europe_demand_monthly_country,
+    gas_europe_demand_monthly_sector,
+    gas_asia_dashboard,
+    gas_asia_demand_yearly,
+    gas_asia_demand_monthly_country,
+    gas_asia_demand_monthly_sector,
+    gas_asia_imports_mix,
+    gas_asia_imports_yearly,
+    # Low-Carbon Investment Pages
+    low_carbon_dashboard,
+    low_carbon_investments_list,
+    low_carbon_activity_by_date,
+    low_carbon_activity_by_region,
 )
 
 # Import callback registrars (one per dashboard)
@@ -53,6 +78,26 @@ from callbacks import (
     projects_latest_callbacks,
     projects_tracker_callbacks,
     projects_carbon_callbacks,
+    # Gas Analytics Callbacks
+    gas_europe_dashboard_callbacks,
+    gas_europe_pipeline_flows_callbacks,
+    gas_europe_pipeline_flows_country_callbacks,
+    gas_europe_imports_mix_callbacks,
+    gas_europe_lng_imports_callbacks,
+    gas_europe_demand_yearly_callbacks,
+    gas_europe_demand_monthly_country_callbacks,
+    gas_europe_demand_monthly_sector_callbacks,
+    gas_asia_dashboard_callbacks,
+    gas_asia_demand_yearly_callbacks,
+    gas_asia_demand_monthly_country_callbacks,
+    gas_asia_demand_monthly_sector_callbacks,
+    gas_asia_imports_mix_callbacks,
+    gas_asia_imports_yearly_callbacks,
+    # Low-Carbon Investment Callbacks
+    low_carbon_dashboard_callbacks,
+    low_carbon_investments_list_callbacks,
+    low_carbon_activity_by_date_callbacks,
+    low_carbon_activity_by_region_callbacks,
 )
 
 CALLBACK_REGISTRARS = [
@@ -77,6 +122,26 @@ CALLBACK_REGISTRARS = [
     projects_latest_callbacks.register_callbacks,
     projects_tracker_callbacks.register_callbacks,
     projects_carbon_callbacks.register_callbacks,
+    # Gas Analytics Callbacks
+    gas_europe_dashboard_callbacks.register_callbacks,
+    gas_europe_pipeline_flows_callbacks.register_callbacks,
+    gas_europe_pipeline_flows_country_callbacks.register_callbacks,
+    gas_europe_imports_mix_callbacks.register_callbacks,
+    gas_europe_lng_imports_callbacks.register_callbacks,
+    gas_europe_demand_yearly_callbacks.register_callbacks,
+    gas_europe_demand_monthly_country_callbacks.register_callbacks,
+    gas_europe_demand_monthly_sector_callbacks.register_callbacks,
+    gas_asia_dashboard_callbacks.register_callbacks,
+    gas_asia_demand_yearly_callbacks.register_callbacks,
+    gas_asia_demand_monthly_country_callbacks.register_callbacks,
+    gas_asia_demand_monthly_sector_callbacks.register_callbacks,
+    gas_asia_imports_mix_callbacks.register_callbacks,
+    gas_asia_imports_yearly_callbacks.register_callbacks,
+    # Low-Carbon Investment Callbacks
+    low_carbon_dashboard_callbacks.register_callbacks,
+    low_carbon_investments_list_callbacks.register_callbacks,
+    low_carbon_activity_by_date_callbacks.register_callbacks,
+    low_carbon_activity_by_region_callbacks.register_callbacks,
 ]
 
 _callbacks_initialized = False
