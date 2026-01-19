@@ -427,6 +427,7 @@ def create_imports_map_figure(df_map, single_selected_country, max_volume, selec
     
     # Prepare data for the shared map utility
     locations = df_map['ISO_Code'].astype(str).tolist()
+    country_names = df_map['Country_DB_Original'].tolist()  # Collect country names for customdata
     z_values = df_map['Import_Volume'].tolist()
     
     # Create hover text with structured format matching the requested design
@@ -485,7 +486,8 @@ def create_imports_map_figure(df_map, single_selected_country, max_volume, selec
         countries_df=countries_df,
         height=550,
         zmin=0,
-        zmax=max_volume
+        zmax=max_volume,
+        country_names=country_names  # Pass country names for proper click handling
     )
     
     # Add custom margin and UI revision for imports
@@ -1047,65 +1049,110 @@ def register_callbacks(dash_app, server):
         prevent_initial_call=True
     )
     def handle_map_click(clickData, current_clicked_country, current_selection):
-        """Handle map click to update country selection like in projects_by_country.py"""
+        """Handle map click to update country selection with proper reset behavior"""
         if not clickData or 'points' not in clickData or len(clickData['points']) == 0:
             return no_update, no_update
         
         point = clickData['points'][0]
         clicked_country = None
+        is_background_click = False
         
-        # Extract country name using multiple fallback methods (same as projects_by_country.py)
-        if "text" in point and point["text"]:
-            clicked_country = point["text"]
-        elif "hovertext" in point and point["hovertext"]:
-            hovertext = point["hovertext"]
-            if "<b>" in hovertext and "</b>" in hovertext:
-                clicked_country = hovertext.split("<b>")[1].split("</b>")[0]
-        elif "customdata" in point and point["customdata"]:
-            if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
-                clicked_country = point["customdata"][0]
-            else:
-                clicked_country = point["customdata"]
-        elif "location" in point:
-            iso_value = point["location"]
-            # Use reverse mapping from COUNTRY_TO_ISO
-            reverse_map = {v: k for k, v in COUNTRY_TO_ISO.items()}
-            clicked_country = reverse_map.get(iso_value, None)
+        # Debug logging to help diagnose issues
+        print(f"DEBUG: Map Click Data: {point}")
+        
+        # Check for background click (ocean click) first
+        # Robustly check customdata for background markers
+        if "customdata" in point:
+            customdata = point["customdata"]
+            # Handle list format (common in Plotly)
+            if isinstance(customdata, list) and len(customdata) > 0:
+                first_item = customdata[0]
+                if first_item == "__BACKGROUND_CLICK__":
+                    is_background_click = True
+                elif first_item == "__SELECTED__":
+                    # Clicked on the border of a selected country - treat as clicking that country
+                    # We'll need to rely on location/text if customdata is just logic marker
+                    pass 
+                else:
+                    clicked_country = first_item
+            # Handle direct value format
+            elif customdata == "__BACKGROUND_CLICK__":
+                is_background_click = True
+            elif customdata != "__SELECTED__":
+                clicked_country = customdata
+        
+        # Extract country name using multiple fallback methods if not background click
+        if not is_background_click and not clicked_country:
+            if "text" in point and point["text"]:
+                clicked_country = point["text"]
+            elif "hovertext" in point and point["hovertext"]:
+                hovertext = point["hovertext"]
+                # Parse HTML formatting if present
+                if isinstance(hovertext, str) and "<b>" in hovertext and "</b>" in hovertext:
+                    try:
+                        clicked_country = hovertext.split("<b>")[1].split("</b>")[0]
+                    except IndexError:
+                        clicked_country = hovertext
+                else:
+                    clicked_country = hovertext
+            elif "location" in point:
+                iso_value = point["location"]
+                # Use reverse mapping from COUNTRY_TO_ISO
+                reverse_map = {v: k for k, v in COUNTRY_TO_ISO.items()}
+                clicked_country = reverse_map.get(iso_value, None)
+        
+        # Handle ocean/background clicks - reset to all countries
+        if is_background_click:
+            print("DEBUG: Ocean click detected - resetting to all countries")
+            return None, ['All'] + AVAILABLE_COUNTRIES
         
         if not clicked_country:
+            print("DEBUG: No country detected in click data")
             return no_update, no_update
+        
+        print(f"DEBUG: Raw clicked country: '{clicked_country}'")
         
         # Denormalize country name if needed (convert from map display name to original name)
         original_country_name = denormalize_country_name(clicked_country)
         if original_country_name not in AVAILABLE_COUNTRIES:
             # Try to find by case-insensitive matching
+            found_match = False
             for country in AVAILABLE_COUNTRIES:
-                if (country.lower() == clicked_country.lower() or 
-                    normalize_country_name(country).lower() == clicked_country.lower()):
+                if (country.lower() == str(clicked_country).lower() or 
+                    normalize_country_name(country).lower() == str(clicked_country).lower()):
                     original_country_name = country
+                    found_match = True
                     break
-            else:
+            
+            if not found_match:
                 # Country not found in available countries
+                print(f"DEBUG: Country '{clicked_country}' not found in AVAILABLE_COUNTRIES")
                 return no_update, no_update
         
-        # Apply the same logic as projects_by_country.py
+        print(f"DEBUG: Final original country name: '{original_country_name}'")
+        
+        # ENHANCED RESET LOGIC: Check if this country is currently the ONLY selected country
+        # We check the actual checklist value to be single and equal to this country
         current_selection = current_selection or []
         
-        # Resolve current selection (handle "All" case)
-        if 'All' in current_selection:
-            resolved_countries = AVAILABLE_COUNTRIES
-        else:
-            resolved_countries = [c for c in current_selection if c in AVAILABLE_COUNTRIES]
+        # Standardize selection list (remove 'All' for count check)
+        clean_selection = [c for c in current_selection if c != 'All']
         
-        # If country is not currently in the resolved selection, select only this country
-        if original_country_name not in resolved_countries:
-            return original_country_name, [original_country_name]
+        is_single_country_selected = (
+            len(clean_selection) == 1 and 
+            clean_selection[0] == original_country_name
+        )
         
-        # If this country is already the only one selected, expand to show all
-        if len(resolved_countries) == 1 and original_country_name in resolved_countries:
+        print(f"DEBUG: Is single country currently selected? {is_single_country_selected}")
+        
+        # Reset conditions:
+        # 1. Single country is selected and user clicks it again (Classic toggle off behavior)
+        if is_single_country_selected:
+            print(f"DEBUG: Re-clicking selected country ({original_country_name}) - resetting to all countries")
             return None, ['All'] + AVAILABLE_COUNTRIES
-            
-        # If multiple countries are selected and this one is clicked, select only this country
+        
+        # different country clicked or multiple currently selected - select only this country
+        print(f"DEBUG: New country clicked ({original_country_name}) - selecting it")
         return original_country_name, [original_country_name]
     
     @dash_app.callback(
