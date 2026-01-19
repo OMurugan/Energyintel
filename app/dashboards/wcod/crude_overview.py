@@ -1591,6 +1591,9 @@ def create_layout(server=None):
                         display: none !important;
                         padding: 0px !important;
                     }
+                    .dash-spreadsheet.dash-freeze-top, .dash-spreadsheet.dash-virtualized {
+                        max-height: 600px !important;
+                    }
                 </style>
                 """,
                 dangerously_allow_html=True
@@ -1687,10 +1690,18 @@ def create_layout(server=None):
                         dcc.Graph(
                             id="crude-map", 
                             config={
-                                "displayModeBar": False,
-                                "scrollZoom": True,  # Allow scroll zoom
-                                "doubleClick": "reset",  # Double-click to reset zoom
-                                "modeBarButtonsToRemove": ["pan2d", "lasso2d"]  # Remove some controls
+                                'displaylogo': False,
+                                'displayModeBar': True,
+                                'scrollZoom': True,  # Allow scroll zoom
+                                'doubleClick': 'reset',  # Double-click to reset zoom
+                                'modeBarButtonsToRemove': [
+                                    'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 
+                                    'autoScale2d', 'resetScale2d', 'hoverClosestCartesian', 
+                                    'hoverCompareCartesian', 'toggleSpikelines', 
+                                    'zoom2d', 'resetViews', 'toggleHover',
+                                    'zoomInMapbox', 'zoomOutMapbox', 'panMapbox', 
+                                    'selectMapbox', 'lassoMapbox'
+                                ]
                             }, 
                             style={"height":"500px", "width":"100%"},
                             figure=go.Figure()  # Initialize with empty figure
@@ -1904,7 +1915,7 @@ def create_layout(server=None):
                             style_table={
                                 "overflowX": "auto", 
                                 "overflowY": "auto", 
-                                "minHeight": "500px",
+                                "minHeight": "600px",
                                 "maxHeight": "600px",
                                 "height": "auto"
                             },
@@ -1977,9 +1988,9 @@ def create_layout(server=None):
                             merge_duplicate_headers=True
                         )
                     ],
-                    style={"minHeight": "500px"}
+                    style={"minHeight": "600px", 'maxHeight': '600px'}
                 )
-            ], style={'padding': '15px', 'minHeight': '500px', 'maxHeight': '600px', 'width': '83.33%', 'display': 'inline-block', 'verticalAlign': 'top'}),
+            ], style={'padding': '15px', 'minHeight': '600px', 'maxHeight': '600px', 'width': '83.33%', 'display': 'inline-block', 'verticalAlign': 'top'}),
             html.Div([
                 html.Label("Stream Name"),
                 dcc.Input(id="filter-stream", type="text", placeholder="Stream Name", value="", style={"width": "100%"}),
@@ -3653,7 +3664,7 @@ def register_callbacks(dash_app, server):
                     font=dict(size=14, color='#7f8c8d')
                 )
                 fig.update_layout(
-                    height=360,
+                    height=520,
                     plot_bgcolor='white',
                     paper_bgcolor='white',
                     xaxis=dict(showgrid=False, showticklabels=False),
@@ -4194,7 +4205,7 @@ def register_callbacks(dash_app, server):
                         font=dict(size=14, color='#7f8c8d')
                     )
                     fig.update_layout(
-                        height=360,
+                        height=520,
                         plot_bgcolor='white',
                         paper_bgcolor='white',
                         xaxis=dict(showgrid=False, showticklabels=False),
@@ -4207,7 +4218,7 @@ def register_callbacks(dash_app, server):
                     fig.add_annotation(text="No monthly data available.", xref="paper", yref="paper",
                                     x=0.5, y=0.5, showarrow=False,
                                     font=dict(size=14, color='#7f8c8d'))
-                    fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
+                    fig.update_layout(height=520, plot_bgcolor='white', paper_bgcolor='white')
                     return fig, title_text
                 
                 df = BAR_LONG_MONTHLY.copy()
@@ -4229,7 +4240,7 @@ def register_callbacks(dash_app, server):
                                     xref="paper", yref="paper",
                                     x=0.5, y=0.5, showarrow=False,
                                     font=dict(size=14, color='#7f8c8d'))
-                    fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
+                    fig.update_layout(height=520, plot_bgcolor='white', paper_bgcolor='white')
                     return fig, title_text
                 
                 month_names = ["January", "February", "March", "April", "May", "June",
@@ -4318,7 +4329,7 @@ def register_callbacks(dash_app, server):
                                     xref="paper", yref="paper",
                                     x=0.5, y=0.5, showarrow=False,
                                     font=dict(size=14, color='#7f8c8d'))
-                    fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
+                    fig.update_layout(height=520, plot_bgcolor='white', paper_bgcolor='white')
                     return fig, title_text
                 
                 # Stream color map
@@ -4349,7 +4360,7 @@ def register_callbacks(dash_app, server):
                     fig.add_annotation(text="No monthly data available.", xref="paper", yref="paper",
                                     x=0.5, y=0.5, showarrow=False,
                                     font=dict(size=14, color='#7f8c8d'))
-                    fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
+                    fig.update_layout(height=520, plot_bgcolor='white', paper_bgcolor='white')
                     return fig, title_text
                 
                 # 1. Calculate Global Stream Ordering and Max Stacked Total
@@ -4598,7 +4609,7 @@ def register_callbacks(dash_app, server):
                                     xref="paper", yref="paper",
                                     x=0.5, y=0.5, showarrow=False,
                                     font=dict(size=14, color='#7f8c8d'))
-                    fig.update_layout(height=360, plot_bgcolor='white', paper_bgcolor='white')
+                    fig.update_layout(height=520, plot_bgcolor='white', paper_bgcolor='white')
                 
                 fig.update_layout(
                     barmode="stack",
@@ -4621,7 +4632,7 @@ def register_callbacks(dash_app, server):
                 font=dict(size=14, color='#7f8c8d')
             )
             fig.update_layout(
-                height=360,
+                height=520,
                 plot_bgcolor='white',
                 paper_bgcolor='white',
                 xaxis=dict(showgrid=False),
