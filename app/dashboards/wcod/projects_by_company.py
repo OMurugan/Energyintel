@@ -112,6 +112,7 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
         WHERE a.include = TRUE
             AND c.country_long_name IS NOT NULL
             AND TRIM(c.country_long_name) != ''
+            {company_filter}
     ),
     all_periods AS (
         SELECT 2025 AS year, 'Q1' AS quarter UNION ALL SELECT 2025, 'Q2' UNION ALL SELECT 2025, 'Q3' UNION ALL SELECT 2025, 'Q4' UNION ALL
@@ -130,7 +131,11 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
             a.project_id,
             a.project_name,
             c.country_long_name AS country,
-            COALESCE(TRIM(a.likely_goahead), '') AS likely_goahead,
+            -- convert varchar -> boolean
+            CASE
+                WHEN LOWER(TRIM(a.likely_goahead)) IN ('yes', 'y', 'true', '1') THEN TRUE
+                ELSE FALSE
+            END AS likely_goahead,
             {company_pc_case},
             est."2024_Q1", est."2024_Q2", est."2024_Q3", est."2024_Q4",
             est."2025_Q1", est."2025_Q2", est."2025_Q3", est."2025_Q4",
@@ -175,7 +180,8 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
             year_of_period,
             quarter_of_period,
             country,
-            SUM((production_value * company_pc) / 100.0) AS value_company
+            COALESCE(SUM((COALESCE(production_value, 0) * COALESCE(company_pc, 0)) / 100.0), 0) AS value_company,
+            COALESCE(BOOL_OR(likely_goahead), FALSE) AS likely_goahead
         FROM unpvt
         GROUP BY 1, 2, 3
     )
@@ -183,7 +189,8 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
         s.year AS "Year of Period",
         s.quarter AS "Quarter of Period",
         s.country AS "Country",
-        COALESCE(a.value_company, 0) AS value_company,
+        a.value_company AS value_company,
+        a.likely_goahead,
         CASE
             WHEN s.country = 'Algeria' THEN '#a0cbe8'
             WHEN s.country = 'Angola' THEN '#4e79a7'
@@ -249,7 +256,7 @@ def load_chart_data(company_name=None, likely_goahead_filter=None):
         
         df = pd.DataFrame(results)
         df.columns = df.columns.str.strip()
-        df['value_company'] = pd.to_numeric(df['value_company'], errors='coerce').fillna(0)
+        df['value_company'] = pd.to_numeric(df['value_company'], errors='coerce')
         return df
     except Exception as e:
         print(f"Error loading chart data: {e}")
@@ -339,14 +346,38 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
         company_pc_case = "a.operator_pc AS company_pc"
     
     query = f"""
-    WITH base AS (
-        SELECT
-            a.project_id,
+    WITH all_countries AS (
+        SELECT DISTINCT 
             c.country_long_name AS country,
             c.region,
             c.latitude,
-            c.longitude,
-            COALESCE(TRIM(a.likely_goahead), '') AS likely_goahead,
+            c.longitude
+        FROM fact_upstream_project_tracker a
+        LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
+        WHERE a.include = TRUE
+            AND c.country_long_name IS NOT NULL
+            AND TRIM(c.country_long_name) != ''
+            {company_filter}
+    ),
+    all_years AS (
+        SELECT 2025 AS year UNION ALL SELECT 2026 UNION ALL SELECT 2027 UNION ALL SELECT 2028 UNION ALL SELECT 2029
+    ),
+    skeleton AS (
+        SELECT c.country, c.region, c.latitude, c.longitude, y.year
+        FROM all_countries c
+        CROSS JOIN all_years y
+    ),
+    base AS (
+        SELECT
+            a.project_id,
+            c.country_long_name AS country,
+
+            -- convert varchar -> boolean
+            CASE
+                WHEN LOWER(TRIM(a.likely_goahead)) IN ('yes', 'y', 'true', '1') THEN TRUE
+                ELSE FALSE
+            END AS likely_goahead,
+
             {company_pc_case},
             est."2024_Q1", est."2024_Q2", est."2024_Q3", est."2024_Q4",
             est."2025_Q1", est."2025_Q2", est."2025_Q3", est."2025_Q4",
@@ -366,11 +397,8 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
     unpvt AS (
         SELECT
             country,
-            region,
-            latitude,
-            longitude,
-            likely_goahead,
             company_pc,
+            likely_goahead,
             SPLIT_PART(qtr, '_', 1)::INT AS year_of_period,
             value AS production_value
         FROM base
@@ -387,19 +415,26 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
                 ('2029_Q1', "2029_Q1"), ('2029_Q2', "2029_Q2"),
                 ('2029_Q3', "2029_Q3"), ('2029_Q4', "2029_Q4")
         ) AS t(qtr, value)
+    ),
+    aggregated AS (
+        SELECT
+            year_of_period,
+            country,
+            COALESCE(SUM((COALESCE(production_value, 0) * COALESCE(company_pc, 0)) / 100.0), 0) AS value_company,
+            COALESCE(BOOL_OR(likely_goahead), FALSE) AS likely_goahead
+        FROM unpvt
+        GROUP BY 1, 2
     )
     SELECT
-        year_of_period AS "Year of Period",
-        country AS "Country",
-        region AS "Region",
-        AVG(latitude) AS "Latitude",
-        AVG(longitude) AS "Longitude",
-        SUM((production_value * company_pc) / 100.0) AS value_company
-    FROM unpvt
-    GROUP BY
-        year_of_period,
-        country,
-        region
+        s.year AS "Year of Period",
+        s.country AS "Country",
+        s.region AS "Region",
+        s.latitude AS "Latitude",
+        s.longitude AS "Longitude",
+        a.value_company,
+        a.likely_goahead
+    FROM skeleton s
+    LEFT JOIN aggregated a ON s.country = a.country AND s.year = a.year_of_period
     ORDER BY
         value_company DESC NULLS LAST;
     """
@@ -411,7 +446,7 @@ def load_map_data(company_name=None, likely_goahead_filter=None):
         
         df = pd.DataFrame(results)
         df.columns = df.columns.str.strip()
-        df['value_company'] = pd.to_numeric(df['value_company'], errors='coerce').fillna(0)
+        df['value_company'] = pd.to_numeric(df['value_company'], errors='coerce')
         
         # Add ISO codes for map
         df['iso_alpha'] = df['Country'].apply(get_iso_code)
@@ -495,10 +530,11 @@ QUARTER_COLUMNS = [
 YEARS_FOR_CHART = list(range(2025, 2030))
 
 
-def load_projects_data(company_name=None):
+def load_projects_data(company_name=None, likely_goahead_filter=None):
     """Load Projects by Company data directly from the database."""
     # Build query conditionally based on whether company_name is provided
     company_filter = ""
+    likely_filter = ""
     params = {}
     
     # Get company_id from company_name if provided
@@ -514,7 +550,51 @@ def load_projects_data(company_name=None):
     
     if company_id:
         company_filter = "AND :company_id IN (a.operator_id, a.partner1_id, a.partner2_id, a.partner3_id, a.partner4_id, a.partner5_id)"
-        params = {'company_id': company_id}
+        params['company_id'] = company_id
+
+    # Build likely_goahead filter
+    if likely_goahead_filter is not None and isinstance(likely_goahead_filter, list):
+        if len(likely_goahead_filter) == 0:
+            # Empty list means all checkboxes unchecked - return no data
+            likely_filter = "AND 1=0"  # This will match nothing
+        elif 'ALL' in [str(v).upper() for v in likely_goahead_filter]:
+            # If ALL is selected, don't filter
+            likely_filter = ""
+        else:
+            # Normalize filter values
+            selected_statuses = []
+            for v in likely_goahead_filter:
+                v_up = str(v).upper()
+                if v_up == 'Y':
+                    selected_statuses.append('Y')
+                elif v_up == 'N':
+                    selected_statuses.append('N')
+                elif v_up.startswith('U'):
+                    selected_statuses.append('UNCERTAIN')
+                elif v_up == 'EMPTY' or v == '':
+                    selected_statuses.append('')
+            
+            if selected_statuses:
+                # Build OR conditions for likely_goahead
+                conditions = []
+                for idx, status in enumerate(selected_statuses):
+                    if status == 'Y':
+                        conditions.append(f"COALESCE(TRIM(a.likely_goahead), '') LIKE 'Y%'")
+                    elif status == 'N':
+                        conditions.append(f"COALESCE(TRIM(a.likely_goahead), '') LIKE 'N%'")
+                    elif status == 'UNCERTAIN' or status == 'U':
+                        conditions.append(f"COALESCE(TRIM(a.likely_goahead), '') LIKE 'U%'")
+                    elif status == '':
+                        conditions.append(f"COALESCE(TRIM(a.likely_goahead), '') = ''")
+                
+                if conditions:
+                    likely_filter = "AND (" + " OR ".join(conditions) + ")"
+                else:
+                    # No valid statuses - return no data
+                    likely_filter = "AND 1=0"
+            else:
+                # No valid statuses - return no data
+                likely_filter = "AND 1=0"
     
     # Build company_pc calculation based on company_id
     company_pc_case = ""
@@ -654,6 +734,7 @@ def load_projects_data(company_name=None):
             ON cr.dim_crude_id = a.crude_id
         WHERE a.include = TRUE
             {company_filter}
+            {likely_filter}
         ORDER BY a.project_name;
     """
 
@@ -1395,21 +1476,15 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     locations = country_totals['iso_alpha'].tolist()
     z_values = country_totals['Value'].tolist()
     hover_text = [
-        f"<b>{row['Country']}</b><br>Production Addition: {row['Value']:,.1f} '000 b/d" 
+        f"Country: {row['Country']}<br>"
+        f"Year of Period: {selected_year}<br>"
+        f"Production Additions ('000 b/d): {row['Value']:,.1f}"
         for _, row in country_totals.iterrows()
     ]
     
-    # Get centroids for labels (reuse existing logic but simplified)
+    # Get centroids for labels only for countries present in the CURRENT map data
     all_centroids = get_all_country_centroids()
-    label_countries = [
-        'Algeria', 'Angola', 'Argentina', 'Australia', 'Azerbaijan', 'Brazil', 'Brunei', 
-        'Cameroon', 'Canada', 'China', "Cote d'Ivoire", 'Denmark', 'Egypt', 'Gabon', 
-        'Ghana', 'Guyana', 'India', 'Indonesia', 'Iran', 'Iraq', 'Kazakhstan', 'Kuwait', 
-        'Libya', 'Malaysia', 'Mexico', 'Namibia', 'Neutral Zone', 'Niger', 'Nigeria', 
-        'Norway', 'Oman', 'Qatar', 'Russia', 'Saudi Arabia', 'Senegal', 'Suriname', 
-        'Thailand', 'Trinidad and Tobago', 'Turkey', 'Turkmenistan', 'Uganda', 
-        'United Arab Emirates', 'United Kingdom', 'United States', 'Vietnam'
-    ]
+    label_countries = year_df['Country'].unique().tolist()
     
     if not all_centroids.empty:
         all_centroids = all_centroids[all_centroids['Country'].isin(label_countries)]
@@ -1884,18 +1959,19 @@ def create_layout():
                     dcc.Checklist(
                         id='likely-to-go-filter',
                         options=[
-                            {'label': '(All)', 'value': 'ALL'},
-                            {'label': '', 'value': 'EMPTY'},
+                            {'label': '(All)', 'value': 'All'},
+                            {'label': ' ', 'value': ''},
                             {'label': 'N', 'value': 'N'},
-                            {'label': 'Uncertain', 'value': 'UNCERTAIN'},
-                            {'label': 'Y', 'value': 'Y'},
+                            {'label': 'Uncertain', 'value': 'Uncertain'},
+                            {'label': 'Y', 'value': 'Y'}
                         ],
                         value=['Y'],
-                        labelStyle={
-                            'display': 'block',
+                        style={
                             'fontSize': '12px',
-                            'marginBottom': '2px'
-                        }
+                            'fontFamily': 'Arial, sans-serif'
+                        },
+                        inputStyle={'marginRight': '8px', 'marginLeft': '0px'},
+                        labelStyle={'display': 'block', 'marginBottom': '6px', 'cursor': 'pointer'}
                     )
                 ], style={'marginBottom': '14px'}),
             ], style={
@@ -2181,39 +2257,50 @@ def register_callbacks(dash_app, server):
          Output('likely-filter-previous-store', 'data')],
         Input('likely-to-go-filter', 'value'),
         State('likely-filter-previous-store', 'data'),
-        prevent_initial_call=True
+        prevent_initial_call=False
     )
-    def normalize_likely_to_go(selected, previous_selected):
-        """Checklist behavior: (All) checks everything; unchecking (All) clears all checkboxes."""
-        options_all = ['ALL', 'EMPTY', 'N', 'UNCERTAIN', 'Y']
-        
-        # Normalize inputs
-        selected = selected or []
-        previous_selected = previous_selected or []
-        
-        # Check if ALL was in previous selection but not in current selection
-        # This means user unchecked ALL - clear all checkboxes
-        had_all_before = 'ALL' in previous_selected
-        has_all_now = 'ALL' in selected
-        
-        if had_all_before and not has_all_now:
-            # User unchecked ALL - clear all checkboxes
+    def manage_all_checkbox(selected_values, previous_values):
+        """Handle (All) checkbox behavior for the Likely-to-Go-Ahead filter"""
+        if selected_values is None:
             return [], []
         
-        # Handle empty selection
-        if not selected:
-            return [], selected
+        if not isinstance(selected_values, list):
+            selected_values = [selected_values] if selected_values else []
         
-        # If ALL is present, force all options on
-        if 'ALL' in selected:
-            return options_all, options_all
+        all_options = ['All', 'N', 'Uncertain', 'Y', '']
+        individual_options = ['N', 'Uncertain', 'Y', '']
+        if previous_values is None:
+            previous_values = []
+        if not isinstance(previous_values, list):
+            previous_values = [previous_values] if previous_values else []
         
-        # Otherwise keep the order and remove duplicates
-        seen = []
-        for v in selected:
-            if v not in seen:
-                seen.append(v)
-        return seen, seen
+        was_all_selected = 'All' in previous_values
+        is_all_selected = 'All' in selected_values
+        prev_individual = [opt for opt in previous_values if opt in individual_options]
+        curr_individual = [opt for opt in selected_values if opt in individual_options]
+        
+        if not was_all_selected and is_all_selected:
+            return all_options, all_options
+        
+        if was_all_selected and not is_all_selected:
+            return [], []
+        
+        if was_all_selected and is_all_selected and prev_individual != curr_individual:
+            if len(curr_individual) < len(prev_individual):
+                return curr_individual, curr_individual
+            elif len(curr_individual) == len(individual_options):
+                return all_options, all_options
+        
+        if is_all_selected:
+            return all_options, all_options
+        
+        selected_individual = [opt for opt in selected_values if opt in individual_options]
+        
+        if len(selected_individual) == len(individual_options):
+            return all_options, all_options
+        
+        final_return_values = selected_individual if len(selected_individual) > 0 else (all_options if is_all_selected else [])
+        return final_return_values, final_return_values
     
     @dash_app.callback(
         [Output('projects-company-table', 'data'),
@@ -2230,42 +2317,33 @@ def register_callbacks(dash_app, server):
         prevent_initial_call='initial_duplicate'
     )
     def filter_projects_company_table(company, likely_filter, selected_countries, data_full, tooltip_full):
-        """Filter and format the Projects by Company table to mirror projects_by_time layout.
-        Reloads table data when company changes to ensure synchronization with chart and map."""
-        ctx = callback_context
-        triggered_id = None
-        if ctx.triggered:
-            triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        """Filter and format the Projects by Company table.
+        Reloads table data when company or likely-to-go-ahead filter changes."""
         
-        # Reload table data when company changes (to ensure synchronization)
-        if triggered_id == 'company-filter' or (company and (not data_full or len(data_full) == 0)):
-            if company:
-                # Load fresh data for the selected company
-                df_table = load_projects_data(company)
-                if not df_table.empty:
-                    data_full = df_table.fillna("").to_dict('records')
-                    tooltip_data = []
-                    for row in data_full:
-                        tip_row = {}
-                        comments_val = str(row.get('Comments', '') or '').strip()
-                        if comments_val and comments_val.lower() != 'nan':
-                            tip_row['Comments'] = {'value': comments_val, 'type': 'text'}
-                        tooltip_data.append(tip_row)
-                    tooltip_full = tooltip_data
-                else:
-                    data_full = []
-                    tooltip_full = []
+        # Reload table data when company or filter changes
+        if company:
+            # Load fresh data for the selected company and filter
+            df_table = load_projects_data(company, likely_filter)
+            if not df_table.empty:
+                data_full = df_table.fillna("").to_dict('records')
+                tooltip_data = []
+                for row in data_full:
+                    tip_row = {}
+                    comments_val = str(row.get('Comments', '') or '').strip()
+                    if comments_val and comments_val.lower() != 'nan':
+                        tip_row['Comments'] = {'value': comments_val, 'type': 'text'}
+                    tooltip_data.append(tip_row)
+                tooltip_full = tooltip_data
             else:
-                # No company selected - show empty table
                 data_full = []
                 tooltip_full = []
         else:
-            # Use existing data if company hasn't changed
-            data_full = data_full or []
-            tooltip_full = tooltip_full or []
+            # No company selected - show empty table
+            data_full = []
+            tooltip_full = []
         
         if not data_full:
-            return [], [], [], dash.no_update, dash.no_update, []
+            return [], [], [], [], [], []
         
         df = pd.DataFrame(data_full)
         
@@ -2274,58 +2352,7 @@ def register_callbacks(dash_app, server):
             df = df[df['Country'].isin(selected_countries)]
         
         if df.empty:
-            return [], [], [], dash.no_update, dash.no_update, []
-        
-        # Find likely-go-ahead column
-        likely_col = None
-        for col in df.columns:
-            col_lower = str(col).lower()
-            if 'likely' in col_lower and ('go' in col_lower or 'ahead' in col_lower):
-                likely_col = col
-                break
-        
-        # Normalize Likely To Go filter (match projects_by_time behavior)
-        if not likely_filter:
-            likely_filter = []
-        if not isinstance(likely_filter, list):
-            likely_filter = [likely_filter]
-        
-        selected_statuses = []
-        if 'ALL' in [str(v).upper() for v in likely_filter]:
-            selected_statuses = ['Y', 'N', 'UNCERTAIN', '']
-        else:
-            for v in likely_filter:
-                v_up = str(v).upper()
-                if v_up == 'Y':
-                    selected_statuses.append('Y')
-                elif v_up == 'N':
-                    selected_statuses.append('N')
-                elif v_up.startswith('U'):
-                    selected_statuses.append('UNCERTAIN')
-                elif v_up == 'EMPTY':
-                    selected_statuses.append('')
-                elif v == '':
-                    selected_statuses.append('')
-        
-        if likely_col and selected_statuses:
-            df[likely_col] = df[likely_col].astype(str).str.strip()
-            col_upper = df[likely_col].str.upper()
-            mask = pd.Series(False, index=df.index)
-            for status in selected_statuses:
-                if status == 'Y':
-                    mask |= col_upper.str.startswith('Y')
-                elif status == 'N':
-                    mask |= col_upper.str.startswith('N')
-                elif status == 'UNCERTAIN' or status == 'U':
-                    mask |= col_upper.str.startswith('U')
-                elif status == '':
-                    mask |= (col_upper == '')
-            df = df[mask].copy()
-        elif likely_col and not selected_statuses:
-            df = pd.DataFrame()
-        
-        if df.empty:
-            return [], [], [], dash.no_update, dash.no_update, []
+            return [], [], [], data_full, tooltip_full, []
         
         # Preserve all available columns; order them similar to projects_by_time
         base_priority = [
@@ -2982,7 +3009,10 @@ def register_callbacks(dash_app, server):
             )
             empty_fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
             # Hide Year of Period and show Null in Production Additions when no data
-            return empty_fig, empty_fig, {'display': 'none'}, null_content
+            return empty_fig, empty_fig, {'display': 'block'}, null_content
+        
+        # Check if all values are null or zero (meaning filters excluded everything or no checkboxes checked)
+        all_null = df['value_company'].isnull().all() or (df['value_company'].dropna() == 0).all()
         
         # Pass selected countries to chart function for highlighting/greyout logic
         # The chart will show ALL countries, but highlight selected ones and grey out non-selected
@@ -3004,8 +3034,9 @@ def register_callbacks(dash_app, server):
         map_fig = create_world_map(year_to_use, company, ltg_list, selected_countries)
 
         
-        # Show Year of Period section and normal Production Additions gradient when there's data
-        return bar_fig, map_fig, {'display': 'block'}, normal_content
+        # Show Year of Period section and appropriate legend gradient
+        current_legend = null_content if all_null else normal_content
+        return bar_fig, map_fig, {'display': 'block'}, current_legend
 
     # Download Callbacks
     
