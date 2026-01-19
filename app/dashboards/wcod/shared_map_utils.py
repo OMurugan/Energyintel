@@ -114,63 +114,36 @@ def get_mapbox_config() -> tuple[bool, str | None, dict]:
 
 def add_background_click_layer(fig: go.Figure, selected_country: str | None = None, use_mapbox: bool = True):
     """
-    Add multiple invisible scatter points across ocean areas for click-to-reset functionality.
+    Add optimized invisible scatter points across ocean areas for click-to-reset functionality.
     
-    Since Mapbox base layers intercept clicks on ocean areas, we need to place actual
-    scatter points in strategic ocean locations to capture background clicks.
+    Reduced from 100+ points to ~20 strategic locations for better performance while
+    maintaining good click coverage across major ocean areas.
     
     Args:
         fig: Plotly figure to add the layer to
         selected_country: Currently selected country (affects whether layers are added)
         use_mapbox: Whether to use Mapbox or geo coordinates
     """
-    # Strategic ocean points to capture background clicks
-    # These are placed in major ocean areas where users are likely to click
-    # Using a denser grid to increase click capture probability
-    ocean_points = []
-    
-    # Atlantic Ocean - dense coverage
-    for lat in range(-40, 61, 20):  # -40 to 60, every 20 degrees
-        for lon in range(-80, -9, 15):  # -80 to -10, every 15 degrees
-            ocean_points.append([lon, lat])
-    
-    # Pacific Ocean - dense coverage
-    for lat in range(-40, 61, 20):  # -40 to 60, every 20 degrees
-        for lon in range(-180, -99, 15):  # -180 to -100, every 15 degrees
-            ocean_points.append([lon, lat])
-        for lon in range(120, 181, 15):  # 120 to 180, every 15 degrees
-            ocean_points.append([lon, lat])
-    
-    # Indian Ocean
-    for lat in range(-40, 21, 20):  # -40 to 20, every 20 degrees
-        for lon in range(60, 121, 15):  # 60 to 120, every 15 degrees
-            ocean_points.append([lon, lat])
-    
-    # Arctic Ocean
-    for lat in range(70, 86, 10):  # 70 to 85, every 10 degrees
-        for lon in range(-180, 181, 30):  # -180 to 180, every 30 degrees
-            ocean_points.append([lon, lat])
-    
-    # Southern Ocean
-    for lat in range(-80, -49, 10):  # -80 to -50, every 10 degrees
-        for lon in range(-180, 181, 30):  # -180 to 180, every 30 degrees
-            ocean_points.append([lon, lat])
-    
-    # Additional strategic points in major ocean areas
-    strategic_points = [
-        # Mid-Atlantic
+    # Optimized strategic ocean points - reduced for better performance
+    # These cover major ocean areas where users are likely to click
+    ocean_points = [
+        # Atlantic Ocean - key points
         [-40, 0], [-30, 20], [-50, -20], [-60, 40], [-20, -30],
-        # Mid-Pacific  
+        [-45, 10], [-35, -10], [-25, 35],
+        
+        # Pacific Ocean - key points  
         [-140, 0], [-160, 20], [-120, -10], [160, -20], [140, 10], [-150, 30],
-        # Indian Ocean centers
-        [80, -20], [90, 0], [100, -30], [70, 10],
-        # Arctic centers
+        [170, 0], [-130, 40], [150, 30],
+        
+        # Indian Ocean - key points
+        [80, -20], [90, 0], [100, -30], [70, 10], [85, -10],
+        
+        # Arctic Ocean - key points
         [-100, 80], [0, 85], [100, 80],
-        # Southern centers
+        
+        # Southern Ocean - key points
         [-120, -65], [0, -75], [120, -70]
     ]
-    
-    ocean_points.extend(strategic_points)
     
     # Extract lons and lats
     lons = [point[0] for point in ocean_points]
@@ -186,7 +159,7 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
                     lat=lats,
                     mode="markers",
                     marker=dict(
-                        size=80,  # Large invisible markers to increase click area
+                        size=120,  # Larger invisible markers to increase click area
                         color="rgba(255,255,255,0.01)",  # Nearly transparent
                         opacity=0.01
                     ),
@@ -221,7 +194,7 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
                     lat=lats,
                     mode="markers",
                     marker=dict(
-                        size=80,
+                        size=120,
                         color="rgba(255,255,255,0.01)",
                         opacity=0.01
                     ),
@@ -562,6 +535,54 @@ def create_empty_map(message: str = "No data available", height: int = 520) -> g
         paper_bgcolor="white",
         plot_bgcolor=MAP_BACKGROUND_COLOR,
         margin=dict(l=0, r=0, t=0, b=0),
+    )
+    return fig
+
+
+def create_error_figure(error_message: str = "An error occurred while loading data", height: int = 520) -> go.Figure:
+    """Create an error figure with a user-friendly message."""
+    fig = go.Figure()
+    fig.add_annotation(
+        text=f"⚠️ {error_message}<br><br>Please try refreshing the page or contact support if the issue persists.",
+        xref="paper",
+        yref="paper",
+        x=0.5,
+        y=0.5,
+        showarrow=False,
+        font=dict(size=14, color="#e74c3c"),
+        align="center"
+    )
+    fig.update_layout(
+        height=height,
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        margin=dict(l=20, r=20, t=20, b=20),
+        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+        yaxis=dict(showgrid=False, showticklabels=False, zeroline=False)
+    )
+    return fig
+
+
+def create_loading_figure(message: str = "Loading data...", height: int = 520) -> go.Figure:
+    """Create a loading figure with a message."""
+    fig = go.Figure()
+    fig.add_annotation(
+        text=f"🔄 {message}",
+        xref="paper",
+        yref="paper",
+        x=0.5,
+        y=0.5,
+        showarrow=False,
+        font=dict(size=14, color="#3498db"),
+        align="center"
+    )
+    fig.update_layout(
+        height=height,
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        margin=dict(l=20, r=20, t=20, b=20),
+        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+        yaxis=dict(showgrid=False, showticklabels=False, zeroline=False)
     )
     return fig
 

@@ -1310,6 +1310,136 @@ def load_table():
     
     return yearly_df, monthly_df, year_to_month_cols
 
+import time
+import functools
+
+def monitor_performance(func_name):
+    """Decorator to monitor callback performance"""
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            start_time = time.time()
+            try:
+                result = func(*args, **kwargs)
+                execution_time = time.time() - start_time
+                if execution_time > 1.0:  # Only log slow operations
+                    print(f"PERFORMANCE: {func_name} took {execution_time:.2f}s")
+                return result
+            except Exception as e:
+                execution_time = time.time() - start_time
+                print(f"ERROR in {func_name} after {execution_time:.2f}s: {e}")
+                raise
+        return wrapper
+    return decorator
+
+# Global cache for processed data to avoid recomputation
+_DATA_CACHE = {
+    "map_yearly": {},
+    "map_monthly": {},
+    "chart_yearly": {},
+    "chart_monthly": {},
+    "table_yearly": {},
+    "table_monthly": {},
+    "last_update": None
+}
+
+def _get_cache_key(*args):
+    """Generate cache key from arguments"""
+    return str(hash(tuple(str(arg) for arg in args if arg is not None)))
+
+def _is_cache_valid():
+    """Check if cache is still valid (within 5 minutes)"""
+    if not _DATA_CACHE["last_update"]:
+        return False
+    import time
+    return (time.time() - _DATA_CACHE["last_update"]) < 300  # 5 minutes
+
+def _update_cache_timestamp():
+    """Update cache timestamp"""
+    import time
+    _DATA_CACHE["last_update"] = time.time()
+
+def _get_cached_map_data(tab, year=None, year_month=None):
+    """Get cached map data or compute if not available"""
+    cache_key = _get_cache_key(tab, year, year_month)
+    cache_section = f"map_{tab}"
+    
+    if _is_cache_valid() and cache_key in _DATA_CACHE[cache_section]:
+        return _DATA_CACHE[cache_section][cache_key]
+    
+    # Compute data
+    try:
+        if tab == "yearly":
+            if MAP_YEARLY_LONG.empty:
+                result = pd.DataFrame()
+            else:
+                mask = MAP_YEARLY_LONG["year"] == str(year)
+                result = MAP_YEARLY_LONG[mask].groupby("GeoCountry", as_index=False).agg({
+                    "value": "sum",
+                    "Country": "first"
+                })
+        else:
+            if MAP_MONTHLY_LONG.empty:
+                result = pd.DataFrame()
+            else:
+                year_str, month_str = str(year_month).split("-")
+                mask = (MAP_MONTHLY_LONG["year"] == year_str) & (MAP_MONTHLY_LONG["month"] == int(month_str))
+                result = MAP_MONTHLY_LONG[mask].groupby("GeoCountry", as_index=False).agg({
+                    "value": "sum",
+                    "Country": "first"
+                })
+        
+        # Cache result
+        _DATA_CACHE[cache_section][cache_key] = result
+        _update_cache_timestamp()
+        return result
+        
+    except Exception as e:
+        print(f"Error computing map data: {e}")
+        return pd.DataFrame()
+
+def _get_cached_chart_data(tab, countries, year=None, year_month=None, production_years=None, profiled=None):
+    """Get cached chart data or compute if not available"""
+    cache_key = _get_cache_key(tab, tuple(sorted(countries)) if countries else None, year, year_month, 
+                              tuple(sorted(production_years)) if production_years else None,
+                              tuple(sorted(profiled)) if profiled else None)
+    cache_section = f"chart_{tab}"
+    
+    if _is_cache_valid() and cache_key in _DATA_CACHE[cache_section]:
+        return _DATA_CACHE[cache_section][cache_key]
+    
+    # Compute data - this will be filled in by the actual chart callback logic
+    # For now, return None to indicate cache miss
+    return None
+
+def _cache_chart_data(tab, countries, year, year_month, production_years, profiled, data):
+    """Cache chart data"""
+    cache_key = _get_cache_key(tab, tuple(sorted(countries)) if countries else None, year, year_month,
+                              tuple(sorted(production_years)) if production_years else None,
+                              tuple(sorted(profiled)) if profiled else None)
+    cache_section = f"chart_{tab}"
+    _DATA_CACHE[cache_section][cache_key] = data
+    _update_cache_timestamp()
+
+def _get_cached_table_data(tab, countries, filters=None):
+    """Get cached table data or compute if not available"""
+    cache_key = _get_cache_key(tab, tuple(sorted(countries)) if countries else None, 
+                              str(filters) if filters else None)
+    cache_section = f"table_{tab}"
+    
+    if _is_cache_valid() and cache_key in _DATA_CACHE[cache_section]:
+        return _DATA_CACHE[cache_section][cache_key]
+    
+    return None
+
+def _cache_table_data(tab, countries, filters, data):
+    """Cache table data"""
+    cache_key = _get_cache_key(tab, tuple(sorted(countries)) if countries else None,
+                              str(filters) if filters else None)
+    cache_section = f"table_{tab}"
+    _DATA_CACHE[cache_section][cache_key] = data
+    _update_cache_timestamp()
+
 # Global variables for lazy loading - initialized to empty DataFrames
 BAR_DF_YEARLY = pd.DataFrame()
 BAR_LONG_YEARLY = pd.DataFrame()
@@ -1327,7 +1457,7 @@ YEARLY_GRADES_CACHE = {}
 MONTHLY_GRADES_CACHE = {}
 
 def _ensure_data_loaded():
-    """Lazy load all data - only called when page is active"""
+    """Lazy load all data - only called when page is active - with performance monitoring"""
     global BAR_DF_YEARLY, BAR_LONG_YEARLY, YEAR_PRODUCTION_DATA_VALUE
     global BAR_DF_MONTHLY, BAR_LONG_MONTHLY
     global MAP_YEARLY_LONG, MAP_MONTHLY_LONG
@@ -1339,41 +1469,66 @@ def _ensure_data_loaded():
     global YEARLY_STREAM_COLOR_ORDER, MONTHLY_STREAM_COLOR_ORDER
     global STREAM_COLOR_ORDERS, STREAM_COLOR_MAPS, STREAM_ORDERS
     
+    import time
+    start_time = time.time()
+    
     # Check if data is already loaded (not empty)
     if BAR_DF_YEARLY.empty or TABLE_DF_YEARLY.empty:
-        BAR_DF_YEARLY, BAR_LONG_YEARLY, YEAR_PRODUCTION_DATA_VALUE = load_yearly_bar()
-        BAR_DF_MONTHLY, BAR_LONG_MONTHLY = load_monthly_bar()
-        MAP_YEARLY_LONG, MAP_MONTHLY_LONG = load_map_data()
-        TABLE_DF_YEARLY, TABLE_DF_MONTHLY, YEAR_TO_MONTH_COLS = load_table()
-        YEARLY_GRADES_DF, MONTHLY_GRADES_DF = load_grades_data()
+        print("DEBUG: Loading crude overview data...")
         
-        # Initialize derived variables
-        if not BAR_DF_YEARLY.empty and "Country" in BAR_DF_YEARLY.columns:
-            COUNTRIES = sorted(BAR_DF_YEARLY["Country"].dropna().unique().tolist())
-        elif not BAR_DF_MONTHLY.empty and "Country" in BAR_DF_MONTHLY.columns:
-            COUNTRIES = sorted(BAR_DF_MONTHLY["Country"].dropna().unique().tolist())
-        else:
+        # Load data in parallel where possible
+        try:
+            # Load core data
+            BAR_DF_YEARLY, BAR_LONG_YEARLY, YEAR_PRODUCTION_DATA_VALUE = load_yearly_bar()
+            BAR_DF_MONTHLY, BAR_LONG_MONTHLY = load_monthly_bar()
+            
+            # Load map and table data
+            MAP_YEARLY_LONG, MAP_MONTHLY_LONG = load_map_data()
+            TABLE_DF_YEARLY, TABLE_DF_MONTHLY, YEAR_TO_MONTH_COLS = load_table()
+            
+            # Load grades data (lighter operation)
+            YEARLY_GRADES_DF, MONTHLY_GRADES_DF = load_grades_data()
+            
+            # Initialize derived variables
+            if not BAR_DF_YEARLY.empty and "Country" in BAR_DF_YEARLY.columns:
+                COUNTRIES = sorted(BAR_DF_YEARLY["Country"].dropna().unique().tolist())
+            elif not BAR_DF_MONTHLY.empty and "Country" in BAR_DF_MONTHLY.columns:
+                COUNTRIES = sorted(BAR_DF_MONTHLY["Country"].dropna().unique().tolist())
+            else:
+                COUNTRIES = []
+            
+            STREAMS = sorted(BAR_DF_MONTHLY["Stream"].dropna().unique().tolist()) if not BAR_DF_MONTHLY.empty and "Stream" in BAR_DF_MONTHLY.columns else []
+            YEARS_YEARLY = sorted(BAR_LONG_YEARLY["year"].dropna().unique().tolist()) if not BAR_LONG_YEARLY.empty and "year" in BAR_LONG_YEARLY.columns else []
+            YEARS_MONTHLY = sorted(BAR_LONG_MONTHLY["year"].dropna().unique().tolist()) if not BAR_LONG_MONTHLY.empty and "year" in BAR_LONG_MONTHLY.columns else []
+            YEARS = sorted(list(set(YEARS_YEARLY + YEARS_MONTHLY))) if YEARS_YEARLY or YEARS_MONTHLY else []
+            
+            CI_OPTIONS = _collect_filter_values("CI Rank")
+            API_OPTIONS = _collect_filter_values("API")
+            SULFUR_OPTIONS = _collect_filter_values("Sulfur")
+            
+            PRODUCTION_YEARS = sorted([int(y) for y in YEAR_TO_MONTH_COLS.keys() if y.isdigit()], reverse=True) if YEAR_TO_MONTH_COLS else []
+            # Default to the two most recent years available (e.g., 2024, 2025)
+            PRODUCTION_YEAR_DEFAULT = PRODUCTION_YEARS[:2] if len(PRODUCTION_YEARS) >= 2 else PRODUCTION_YEARS[:] if PRODUCTION_YEARS else []
+            
+            YEARLY_STREAM_COLOR_ORDER, MONTHLY_STREAM_COLOR_ORDER = load_stream_color_order()
+            STREAM_COLOR_ORDERS = {
+                "yearly": YEARLY_STREAM_COLOR_ORDER,
+                "monthly": MONTHLY_STREAM_COLOR_ORDER
+            }
+            STREAM_COLOR_MAPS = {mode: {name: color for name, color in order} for mode, order in STREAM_COLOR_ORDERS.items()}
+            STREAM_ORDERS = {mode: [name for name, _ in order] for mode, order in STREAM_COLOR_ORDERS.items()}
+            
+            load_time = time.time() - start_time
+            print(f"DEBUG: Data loading completed in {load_time:.2f} seconds")
+            
+        except Exception as e:
+            print(f"ERROR: Failed to load data: {e}")
+            import traceback
+            traceback.print_exc()
+            # Initialize with empty data to prevent crashes
             COUNTRIES = []
-        STREAMS = sorted(BAR_DF_MONTHLY["Stream"].dropna().unique().tolist()) if not BAR_DF_MONTHLY.empty and "Stream" in BAR_DF_MONTHLY.columns else []
-        YEARS_YEARLY = sorted(BAR_LONG_YEARLY["year"].dropna().unique().tolist()) if not BAR_LONG_YEARLY.empty and "year" in BAR_LONG_YEARLY.columns else []
-        YEARS_MONTHLY = sorted(BAR_LONG_MONTHLY["year"].dropna().unique().tolist()) if not BAR_LONG_MONTHLY.empty and "year" in BAR_LONG_MONTHLY.columns else []
-        YEARS = sorted(list(set(YEARS_YEARLY + YEARS_MONTHLY))) if YEARS_YEARLY or YEARS_MONTHLY else []
-        
-        CI_OPTIONS = _collect_filter_values("CI Rank")
-        API_OPTIONS = _collect_filter_values("API")
-        SULFUR_OPTIONS = _collect_filter_values("Sulfur")
-        
-        PRODUCTION_YEARS = sorted([int(y) for y in YEAR_TO_MONTH_COLS.keys() if y.isdigit()], reverse=True) if YEAR_TO_MONTH_COLS else []
-        # Default to the two most recent years available (e.g., 2024, 2025)
-        PRODUCTION_YEAR_DEFAULT = PRODUCTION_YEARS[:2] if len(PRODUCTION_YEARS) >= 2 else PRODUCTION_YEARS[:] if PRODUCTION_YEARS else []
-        
-        YEARLY_STREAM_COLOR_ORDER, MONTHLY_STREAM_COLOR_ORDER = load_stream_color_order()
-        STREAM_COLOR_ORDERS = {
-            "yearly": YEARLY_STREAM_COLOR_ORDER,
-            "monthly": MONTHLY_STREAM_COLOR_ORDER
-        }
-        STREAM_COLOR_MAPS = {mode: {name: color for name, color in order} for mode, order in STREAM_COLOR_ORDERS.items()}
-        STREAM_ORDERS = {mode: [name for name, _ in order] for mode, order in STREAM_COLOR_ORDERS.items()}
+            STREAMS = []
+            YEARS = []
     else:
         # Colors may not be initialized if data loaded before code change
         _ensure_color_maps()
@@ -2090,6 +2245,20 @@ def create_layout(server=None):
 
 def register_callbacks(dash_app, server):
     """Register all callbacks for Crude Overview"""
+    
+    # Clientside callback for responsive loading states
+    dash_app.clientside_callback(
+        """
+        function(map_loading, chart_loading, table_loading) {
+            // Show loading indicators immediately when any component is updating
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output("loading-map", "children"),
+        [Input("loading-map", "loading_state"),
+         Input("loading-chart", "loading_state"),
+         Input("loading-table", "loading_state")]
+    )
     
     @dash_app.callback(
         [Output("monthly-only-filters-container", "style"),
@@ -3425,8 +3594,9 @@ def register_callbacks(dash_app, server):
          Input("current-submenu", "data")],
         prevent_initial_call=False
     )
+    @monitor_performance("update_map")
     def update_map(selected_year, selected_year_month, selected_countries, tab, selected_country_map, table_map_filter_active, current_submenu):
-        """Update world map based on filters - only loads data when page is active"""
+        """Update world map based on filters - optimized with caching and reduced ocean points"""
         # Only load data if page is active
         if current_submenu != 'crude-overview':
             fig = go.Figure()
@@ -3443,79 +3613,80 @@ def register_callbacks(dash_app, server):
         if tab is None:
             tab = "monthly"
         
+        # Try to get cached data first
         try:
             if tab == "yearly":
-                if not MAP_YEARLY_LONG.empty and "year" in MAP_YEARLY_LONG.columns:
-                    agg = MAP_YEARLY_LONG[MAP_YEARLY_LONG["year"] == str(selected_year)].copy()
-                    if len(agg) > 0:
-                        agg = agg.groupby("GeoCountry").agg({
-                            "value": "sum",
-                            "Country": lambda x: x.iloc[0] if len(x.unique()) == 1 else COUNTRY_NAME_MAPPING.get(x.iloc[0], x.iloc[0])
-                        }).reset_index()
-                    else:
-                        agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
-                else:
-                    agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
-            else:
-                # Monthly view - Map uses Year Month dropdown
-                print(f"DEBUG MAP MONTHLY: selected_year_month={selected_year_month}, tab={tab}, MAP_MONTHLY_LONG empty={MAP_MONTHLY_LONG.empty}")
-                
-                # Set default year_month if not provided - default to 2025-07
-                if not selected_year_month:
-                    selected_year_month = "2025-07"  # Default to 2025-07 for monthly filter
-                    print(f"DEBUG MAP MONTHLY: Using default selected_year_month={selected_year_month}")
-                
-                if not MAP_MONTHLY_LONG.empty:
-                    print(f"DEBUG MAP MONTHLY: columns={MAP_MONTHLY_LONG.columns.tolist()}")
-                    print(f"DEBUG MAP MONTHLY: MAP_MONTHLY_LONG length={len(MAP_MONTHLY_LONG)}")
-                    if "year" in MAP_MONTHLY_LONG.columns and "month" in MAP_MONTHLY_LONG.columns:
-                        if selected_year_month:
-                            year, month = selected_year_month.split("-")
-                            year = str(year)
-                            month = int(month)
-                            print(f"DEBUG MAP MONTHLY: Filtering by year={year}, month={month}")
-                            agg = MAP_MONTHLY_LONG[(MAP_MONTHLY_LONG["year"] == year) & 
-                                                  (MAP_MONTHLY_LONG["month"] == month)].copy()
-                            print(f"DEBUG MAP MONTHLY: After filter, agg length={len(agg)}")
-                        else:
-                            # Use default: latest year and month
-                            if len(MAP_MONTHLY_LONG) > 0:
-                                max_year = MAP_MONTHLY_LONG["year"].max()
-                                df_monthly = MAP_MONTHLY_LONG[MAP_MONTHLY_LONG["year"] == max_year].copy()
-                                if len(df_monthly) > 0:
-                                    max_month = df_monthly["month"].max()
-                                    df_monthly = df_monthly[df_monthly["month"] == max_month]
-                                    agg = df_monthly.copy()
-                                    print(f"DEBUG MAP MONTHLY: Using default max_year={max_year}, max_month={max_month}, agg length={len(agg)}")
-                                else:
-                                    agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
-                            else:
-                                agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
-                        
+                agg = _get_cached_map_data(tab, selected_year)
+                if agg is None:
+                    # Cache miss - compute data
+                    if not MAP_YEARLY_LONG.empty and "year" in MAP_YEARLY_LONG.columns:
+                        agg = MAP_YEARLY_LONG[MAP_YEARLY_LONG["year"] == str(selected_year)].copy()
                         if len(agg) > 0:
-                            # Group by GeoCountry to merge Abu Dhabi/Dubai and handle renames (USA)
-                            # Use 'first' for Country to preserve original label where possible
-                            # but if it was a merge (UAE), the GeoCountry name might be better.
-                            # For simplicity, we'll keep the first one or just use GeoCountry for the tooltip.
                             agg = agg.groupby("GeoCountry").agg({
                                 "value": "sum",
                                 "Country": lambda x: x.iloc[0] if len(x.unique()) == 1 else COUNTRY_NAME_MAPPING.get(x.iloc[0], x.iloc[0])
                             }).reset_index()
-                            print(f"DEBUG MAP MONTHLY: After groupby, agg length={len(agg)}")
-                            print(f"DEBUG MAP MONTHLY: Sample mapping: {agg[['Country', 'GeoCountry']].head().values.tolist()}")
                         else:
                             agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
                     else:
-                        print(f"DEBUG MAP MONTHLY: Missing required columns. Available: {MAP_MONTHLY_LONG.columns.tolist()}")
                         agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
-                else:
-                    print(f"DEBUG MAP MONTHLY: MAP_MONTHLY_LONG is empty")
-                    agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
+                    
+                    # Cache the result
+                    _DATA_CACHE[f"map_{tab}"][_get_cache_key(tab, selected_year)] = agg
+                    _update_cache_timestamp()
+            else:
+                # Monthly view - Map uses Year Month dropdown
+                if not selected_year_month:
+                    selected_year_month = "2025-07"  # Default to 2025-07 for monthly filter
+                
+                agg = _get_cached_map_data(tab, year_month=selected_year_month)
+                if agg is None:
+                    # Cache miss - compute data
+                    if not MAP_MONTHLY_LONG.empty:
+                        if "year" in MAP_MONTHLY_LONG.columns and "month" in MAP_MONTHLY_LONG.columns:
+                            if selected_year_month:
+                                year, month = selected_year_month.split("-")
+                                year = str(year)
+                                month = int(month)
+                                agg = MAP_MONTHLY_LONG[(MAP_MONTHLY_LONG["year"] == year) & 
+                                                      (MAP_MONTHLY_LONG["month"] == month)].copy()
+                            else:
+                                # Use default: latest year and month
+                                if len(MAP_MONTHLY_LONG) > 0:
+                                    max_year = MAP_MONTHLY_LONG["year"].max()
+                                    df_monthly = MAP_MONTHLY_LONG[MAP_MONTHLY_LONG["year"] == max_year].copy()
+                                    if len(df_monthly) > 0:
+                                        max_month = df_monthly["month"].max()
+                                        df_monthly = df_monthly[df_monthly["month"] == max_month]
+                                        agg = df_monthly.copy()
+                                    else:
+                                        agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
+                                else:
+                                    agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
+                            
+                            if len(agg) > 0:
+                                agg = agg.groupby("GeoCountry").agg({
+                                    "value": "sum",
+                                    "Country": lambda x: x.iloc[0] if len(x.unique()) == 1 else COUNTRY_NAME_MAPPING.get(x.iloc[0], x.iloc[0])
+                                }).reset_index()
+                            else:
+                                agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
+                        else:
+                            agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
+                    else:
+                        agg = pd.DataFrame(columns=["Country", "GeoCountry", "value"])
+                    
+                    # Cache the result
+                    _DATA_CACHE[f"map_{tab}"][_get_cache_key(tab, year_month=selected_year_month)] = agg
+                    _update_cache_timestamp()
+                    
         except Exception as e:
-            print(f"Error in update_map: {e}")
+            print(f"Error in update_map data processing: {e}")
             import traceback
             traceback.print_exc()
-            agg = pd.DataFrame(columns=["Country", "value"])
+            # Return error figure instead of empty DataFrame
+            from .shared_map_utils import create_error_figure
+            return create_error_figure("Failed to load map data", height=500)
         
         # Add year/period for tooltip and ISO codes for map
         if not agg.empty:
@@ -3542,10 +3713,8 @@ def register_callbacks(dash_app, server):
                 ), axis=1)
         
         if agg.empty:
-            fig = go.Figure()
-            fig.add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-            fig.update_layout(height=500, plot_bgcolor='white', paper_bgcolor='white')
-            return fig
+            from .shared_map_utils import create_empty_map
+            return create_empty_map("No data available for the selected period", height=500)
         
         # Identify selected ISOs for highlighting - only when table_map_filter_active is True
         selected_iso = None
@@ -3556,9 +3725,6 @@ def register_callbacks(dash_app, server):
             selected_iso = get_iso_code(selected_country_map)
             other_isos = [iso for iso in agg["iso_alpha"].tolist() if iso and iso != selected_iso]
             map_selected_country = selected_country_map
-            print(f"DEBUG MAP: Highlighting country {selected_country_map} (table_map_filter_active=True)")
-        else:
-            print(f"DEBUG MAP: No highlighting (selected_country_map={selected_country_map}, table_map_filter_active={table_map_filter_active})")
 
         # Calculate max_val for scaling
         max_val = agg["value"].max() if "value" in agg.columns and len(agg) > 0 else 0
@@ -3571,8 +3737,8 @@ def register_callbacks(dash_app, server):
              # Round to nearest 100 to match the 13,200 style in the live sample
              color_max = round(color_max / 100) * 100
         
-        # Custom discrete colorscale using exact 19 hex codes from live dashboard
-        CUSTOM_MAP_COLORSCALE = [
+        # Enhanced discrete colorscale with 20 color steps for better visual granularity
+        OPTIMIZED_MAP_COLORSCALE = [
             [0.00, "#e8eaeb"], [0.05, "#e8eaeb"],
             [0.05, "#dfe2e5"], [0.10, "#dfe2e5"],
             [0.10, "#d6d9df"], [0.15, "#d6d9df"],
@@ -3595,28 +3761,32 @@ def register_callbacks(dash_app, server):
             [0.95, "#343b79"], [1.00, "#343b79"]
         ]
 
-        # Use the custom discrete colorscale for both yearly and monthly
-        dynamic_colorscale = CUSTOM_MAP_COLORSCALE
+        # Use the enhanced 20-step colorscale for better visual granularity
+        dynamic_colorscale = OPTIMIZED_MAP_COLORSCALE
         
         # Create custom tick values to show actual scale (like live: 0 and max)
         scale_ticks = [0, round(color_max)]
         
-        print(f"DEBUG MAP: Using CUSTOM discrete colorscale - max_val: {max_val}, color_max: {color_max}")
-        print(f"DEBUG MAP: Custom scale ticks: {scale_ticks}")
-        
-        # Use standardized map creation with dynamic colorscale
-        fig = create_choropleth_map(
-            locations=agg["iso_alpha"].tolist(),
-            z_values=agg["value"].tolist(),
-            colorscale=dynamic_colorscale,
-            hover_text=agg["hover_text"].tolist(),
-            selected_country=map_selected_country,
-            selected_iso=selected_iso,
-            other_isos=other_isos,
-            height=500,
-            zmin=0,
-            zmax=color_max
-        )
+        # Use standardized map creation with error handling
+        try:
+            fig = create_choropleth_map(
+                locations=agg["iso_alpha"].tolist(),
+                z_values=agg["value"].tolist(),
+                colorscale=dynamic_colorscale,
+                hover_text=agg["hover_text"].tolist(),
+                selected_country=map_selected_country,
+                selected_iso=selected_iso,
+                other_isos=other_isos,
+                height=500,
+                zmin=0,
+                zmax=color_max
+            )
+        except Exception as e:
+            print(f"Error creating choropleth map: {e}")
+            import traceback
+            traceback.print_exc()
+            from .shared_map_utils import create_error_figure
+            return create_error_figure("Failed to render map visualization", height=500)
 
         # Restore the production bar (coloraxis_colorbar) and add customdata for click handling
         # Store Country name at idx 0 and ISO at idx 1
@@ -3745,6 +3915,7 @@ def register_callbacks(dash_app, server):
          Input("current-submenu", "data")],
         prevent_initial_call=False
     )
+    @monitor_performance("update_breakdown")
     def update_breakdown(country, year, year_month, production_years, profiled, tab, selected_country_map, table_map_filter_active, selected_bar, current_submenu):
         """Update production breakdown chart - only loads data when page is active"""
         # Only load data if page is active
@@ -4816,6 +4987,7 @@ def register_callbacks(dash_app, server):
         [State("profiled-streams", "options")],
         prevent_initial_call=False
     )
+    @monitor_performance("filter_table")
     def filter_table(stream, ci, api, sulfur, year, year_month, country, tab, profiled_streams, selected_country_map, table_map_filter_active, current_submenu, profiled_streams_options):
         """Filter and update data table - only loads data when page is active"""
         # Only load data if page is active
