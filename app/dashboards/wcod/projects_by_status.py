@@ -24,6 +24,7 @@ def load_treemap_data():
                 SELECT 
                     a.play_type,
                     a.project_status,
+                    a.likely_goahead,
                     c.region,
                     SPLIT_PART(qcol, '_', 1)::INT AS year_num,
 
@@ -60,12 +61,12 @@ def load_treemap_data():
             ranked AS (
                 SELECT *,
                     ROW_NUMBER() OVER (
-                        PARTITION BY play_type, project_status, region
+                        PARTITION BY play_type, project_status, region, likely_goahead
                         ORDER BY year_num DESC, quarter_num DESC
                     ) AS rn_max,
 
                     ROW_NUMBER() OVER (
-                        PARTITION BY play_type, project_status, region
+                        PARTITION BY play_type, project_status, region, likely_goahead
                         ORDER BY year_num ASC, quarter_num ASC
                     ) AS rn_min
                 FROM unpvt
@@ -76,6 +77,7 @@ def load_treemap_data():
                 play_type AS "Play Type",
                 project_status AS "Project Status",
                 region AS "Region",
+                likely_goahead AS "likely_goahead",
 
                 -- Max Q
                 CONCAT(
@@ -94,7 +96,7 @@ def load_treemap_data():
                 SUM(production_additions) AS "Production Additions"
 
             FROM ranked
-            GROUP BY play_type, project_status, region
+            GROUP BY play_type, project_status, region, likely_goahead
             ORDER BY region, play_type, project_status;
 
         """
@@ -128,6 +130,8 @@ def load_treemap_data():
                 column_mapping[col] = 'max Q'
             elif lower in ('min q', 'min_q'):
                 column_mapping[col] = 'min Q'
+            elif lower in ('likely_goahead',):
+                column_mapping[col] = 'likely_goahead'
 
         if column_mapping:
             df = df.rename(columns=column_mapping)
@@ -137,7 +141,7 @@ def load_treemap_data():
             df['Production Additions'] = pd.to_numeric(df['Production Additions'], errors='coerce').fillna(0)
 
         # Normalize string columns to avoid mismatches due to whitespace/case
-        for col in ['Play Type', 'Project Status', 'Region']:
+        for col in ['Play Type', 'Project Status', 'Region', 'likely_goahead']:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip()
 
@@ -313,6 +317,48 @@ def load_table_data():
 # KPI aggregation logic in `update_tables`).
 
 
+def _get_likely_filter_mask(series, selected_values):
+    """
+    Generate a boolean mask for the 'Likely to Go Ahead' filter.
+    Handles 'All', explicit 'Y'/'N'/'Uncertain', and various 'null' representations.
+    """
+    if selected_values is None or 'All' in selected_values:
+        return pd.Series(True, index=series.index)
+    
+    if not isinstance(selected_values, list):
+        selected_values = [selected_values]
+        
+    if len(selected_values) == 0:
+        return pd.Series(False, index=series.index)
+        
+    # Normalize series values to uppercase strings for comparison
+    series_upper = series.astype(str).str.upper().str.strip()
+    mask = pd.Series(False, index=series.index)
+    
+    # Define "null/blank" identifiers
+    null_identifiers = {'', 'NAN', 'NONE', 'NULL', 'BLANK', '?'}
+    
+    for v in selected_values:
+        if v == 'All': continue
+        v_str = str(v).strip()
+        v_up = v_str.upper()
+        
+        if v_up == '' or v_str.lower() == 'blank' or v_up == 'NULL':
+            # Match various null-like values and explicit NULL/NaN
+            mask |= series.isna() | series_upper.isin(null_identifiers)
+        elif v_up == 'Y' or v_up == 'YES':
+            mask |= series_upper.str.startswith('Y')
+        elif v_up == 'N' or v_up == 'NO':
+            mask |= series_upper.str.startswith('N')
+        elif v_up.startswith('UNCERT') or v_up.startswith('U'):
+            mask |= series_upper.str.startswith('U')
+        else:
+            # Exact match for any other custom values
+            mask |= (series_upper == v_up)
+            
+    return mask
+
+
 def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table_df=None, selected_label=None):
     """Create treemap visualization for projects by status"""
     # Normalize selection to a unique key (dict with 'key') so only one block stays active
@@ -368,83 +414,28 @@ def create_treemap_figure(df=None, region_filter=None, likely_filter=None, table
             normalized_single = str(region_filter).strip()
             filtered_df = filtered_df[filtered_df["Region"] == normalized_single]
     
-    # Apply likely filter by joining with table data if available
-    if likely_filter and table_df is not None:
+    # Apply likely filter directly to treemap data
+    if likely_filter is not None:
         # Normalize checklist selection (handle 'All' sentinel)
         if isinstance(likely_filter, list):
             if 'All' in likely_filter and len(likely_filter) > 1:
-                likely_filter = [v for v in likely_filter if v != 'All']
-            if not likely_filter or (len(likely_filter) == 1 and likely_filter[0] == 'All'):
-                likely_filter = None
+                likely_filter_vals = [v for v in likely_filter if v != 'All']
+            elif len(likely_filter) == 1 and likely_filter[0] == 'All':
+                likely_filter_vals = None
+            else:
+                likely_filter_vals = likely_filter
+        else:
+            likely_filter_vals = likely_filter
 
-        if likely_filter is not None:
-            # Find likely column name in table (flexible matching)
-            likely_col = None
-            for col in table_df.columns:
-                col_lower = col.lower()
-                if 'likely' in col_lower and ('go' in col_lower or 'ahead' in col_lower):
-                    likely_col = col
-                    break
-
-            if likely_col is not None:
-                col_upper = table_df[likely_col].astype(str).str.upper()
-                # Build mask from selected filter values (support 'Yes'/'Y', 'No'/'N', 'Uncertain', blank)
-                selected_values = likely_filter if isinstance(likely_filter, list) else [likely_filter]
-                mask = pd.Series(False, index=col_upper.index)
-                for v in selected_values:
-                    v_str = str(v).strip()
-                    v_up = v_str.upper()
-                    if v_up == 'ALL' or v == 'All':
-                        mask |= pd.Series(True, index=col_upper.index)
-                    elif v_up == '' or v_str.lower() == 'blank':
-                        mask |= (col_upper == '')
-                    elif v_up.startswith('Y') or v_up == 'YES':
-                        mask |= col_upper.str.startswith('Y')
-                    elif v_up.startswith('N'):
-                        mask |= col_upper.str.startswith('N')
-                    elif v_up.startswith('UNCERT') or v_up.startswith('U'):
-                        mask |= col_upper.str.startswith('U')
-
-                matching_projects = table_df[mask]
-                # Debug: log matching counts to help diagnose empty treemap issues
-                try:
-                    print(f"DEBUG: likely_filter selected_values={selected_values}")
-                    print(f"DEBUG: matching_projects count={len(matching_projects)}")
-                except Exception:
-                    pass
-
-                if not matching_projects.empty:
-                    # Create a set of unique combinations from matching projects
-                    matching_combos = set()
-                    for _, row in matching_projects.iterrows():
-                        combo = (
-                            row.get("Region", ""),
-                            row.get("Play Type", ""),
-                            row.get("Project Status", "")
-                        )
-                        matching_combos.add(combo)
-
-                    try:
-                        print(f"DEBUG: matching_combos count={len(matching_combos)}")
-                    except Exception:
-                        pass
-
-                    # Filter treemap data to only include matching combinations
-                    def matches_combo(row):
-                        combo = (
-                            str(row.get("Region", "")),
-                            str(row.get("Play Type", "")),
-                            str(row.get("Project Status", ""))
-                        )
-                        return combo in matching_combos
-
-                    before_count = len(filtered_df)
-                    filtered_df = filtered_df[filtered_df.apply(matches_combo, axis=1)]
-                    after_count = len(filtered_df)
-                    try:
-                        print(f"DEBUG: filtered_df reduced from {before_count} to {after_count} by likely filter")
-                    except Exception:
-                        pass
+        if likely_filter_vals is not None and "likely_goahead" in filtered_df.columns:
+            mask = _get_likely_filter_mask(filtered_df["likely_goahead"], likely_filter_vals)
+            before_count = len(filtered_df)
+            filtered_df = filtered_df[mask]
+            after_count = len(filtered_df)
+            try:
+                print(f"DEBUG: create_treemap_figure - likely filter reduced treemap DF from {before_count} to {after_count}")
+            except Exception:
+                pass
     
     if filtered_df.empty:
         fig = go.Figure()
@@ -1114,51 +1105,13 @@ def register_callbacks(dash_app, server):
         regions = []
         
         def _apply_likely_filter(df: pd.DataFrame, likely_vals):
-            if df.empty or "Region" not in df.columns:
+            if df.empty or "likely_goahead" not in df.columns:
                 return df
             if likely_vals is None:
                 return df
-            if isinstance(likely_vals, list):
-                if len(likely_vals) == 0:
-                    return df.iloc[0:0]
-                if 'All' in likely_vals:
-                    return df
-            table_df = load_table_data()
-            # Find likely column in table
-            likely_col = None
-            for col in table_df.columns:
-                lc = col.lower()
-                if 'likely' in lc and ('go' in lc or 'ahead' in lc):
-                    likely_col = col
-                    break
-            if likely_col is None:
-                return df
-            col_upper = table_df[likely_col].astype(str).str.upper()
-            filter_values = likely_vals if isinstance(likely_vals, list) else [likely_vals]
-            mask = pd.Series(False, index=col_upper.index)
-            for v in filter_values:
-                v_str = str(v).strip()
-                v_up = v_str.upper()
-                if v_up == 'ALL' or v == 'All':
-                    mask |= pd.Series(True, index=col_upper.index)
-                elif v_up == '' or v_str.lower() == 'blank':
-                    mask |= (col_upper == '')
-                elif v_up.startswith('Y') or v_up == 'YES':
-                    mask |= col_upper.str.startswith('Y')
-                elif v_up.startswith('N'):
-                    mask |= col_upper.str.startswith('N')
-                elif v_up.startswith('UNCERT') or v_up.startswith('U'):
-                    mask |= col_upper.str.startswith('U')
-            matching_projects = table_df[mask]
-            if matching_projects.empty:
-                return df.iloc[0:0]
-            combos = set()
-            for _, row in matching_projects.iterrows():
-                combos.add((str(row.get("Region", "")).strip(), str(row.get("Play Type", "")).strip(), str(row.get("Project Status", "")).strip()))
-            def _match_combo(r):
-                return (str(r.get("Region", "")).strip(), str(r.get("Play Type", "")).strip(), str(r.get("Project Status", "")).strip()) in combos
-            filtered = df[df.apply(_match_combo, axis=1)]
-            return filtered
+            
+            mask = _get_likely_filter_mask(df["likely_goahead"], likely_vals)
+            return df[mask]
 
         if not treemap_df.empty and "Region" in treemap_df.columns:
             treemap_df = _apply_likely_filter(treemap_df, likely_filter)
@@ -1527,53 +1480,15 @@ def register_callbacks(dash_app, server):
         else:
             cached_table_df = load_table_data()
         
-        # Apply likely filter to treemap data before rendering
+        # Apply likely filter directly to treemap data
         def _apply_likely_filter(df_in: pd.DataFrame, likely_vals):
-            if df_in.empty or "Region" not in df_in.columns:
+            if df_in.empty or "likely_goahead" not in df_in.columns:
                 return df_in
-            if likely_vals is None:
+            if likely_vals is None or (isinstance(likely_vals, list) and 'All' in likely_vals):
                 return df_in
-            if isinstance(likely_vals, list):
-                if len(likely_vals) == 0:
-                    return df_in.iloc[0:0]
-                if 'All' in likely_vals:
-                    return df_in
-            # Use cached table data
-            table_df = cached_table_df.copy()
-            likely_col = None
-            for col in table_df.columns:
-                lc = col.lower()
-                if 'likely' in lc and ('go' in lc or 'ahead' in lc):
-                    likely_col = col
-                    break
-            if likely_col is None:
-                return df_in
-            col_upper = table_df[likely_col].astype(str).str.upper()
-            filter_values = likely_vals if isinstance(likely_vals, list) else [likely_vals]
-            mask = pd.Series(False, index=col_upper.index)
-            for v in filter_values:
-                v_str = str(v).strip()
-                v_up = v_str.upper()
-                if v_up == 'ALL' or v == 'All':
-                    mask |= pd.Series(True, index=col_upper.index)
-                elif v_up == '' or v_str.lower() == 'blank':
-                    mask |= (col_upper == '')
-                elif v_up.startswith('Y') or v_up == 'YES':
-                    mask |= col_upper.str.startswith('Y')
-                elif v_up.startswith('N'):
-                    mask |= col_upper.str.startswith('N')
-                elif v_up.startswith('UNCERT') or v_up.startswith('U'):
-                    mask |= col_upper.str.startswith('U')
-            matching_projects = table_df[mask]
-            if matching_projects.empty:
-                return df_in.iloc[0:0]
-            combos = set()
-            for _, row in matching_projects.iterrows():
-                combos.add((str(row.get("Region", "")).strip(), str(row.get("Play Type", "")).strip(), str(row.get("Project Status", "")).strip()))
-            def _match_combo(r):
-                return (str(r.get("Region", "")).strip(), str(r.get("Play Type", "")).strip(), str(r.get("Project Status", "")).strip()) in combos
-            filtered_df = df_in[df_in.apply(_match_combo, axis=1)]
-            return filtered_df
+            
+            mask = _get_likely_filter_mask(df_in["likely_goahead"], likely_vals)
+            return df_in[mask]
 
         df = _apply_likely_filter(df, likely_filter)
         
@@ -1687,79 +1602,25 @@ def register_callbacks(dash_app, server):
         
         # Apply likely filter to treemap for KPI calculation
         if likely_filter:
-        # Normalize selection and handle 'All' sentinel
+            # Normalize selection and handle 'All' sentinel
             filter_values = likely_filter
             if isinstance(likely_filter, list):
                 if 'All' in likely_filter and len(likely_filter) > 1:
                     filter_values = [v for v in likely_filter if v != 'All']
-                if not likely_filter or (len(likely_filter) == 1 and likely_filter[0] == 'All'):
+                elif len(likely_filter) == 1 and likely_filter[0] == 'All':
                     filter_values = None
+                else:
+                    filter_values = likely_filter
 
-            if filter_values is not None:
-                # Find likely column name in table (flexible matching)
-                likely_col = None
-                for col in table_df.columns:
-                    col_lower = col.lower()
-                    if 'likely' in col_lower and ('go' in col_lower or 'ahead' in col_lower):
-                        likely_col = col
-                        break
-
-                if likely_col is not None:
-                    col_upper = table_df[likely_col].astype(str).str.upper()
-                    selected_values = filter_values if isinstance(filter_values, list) else [filter_values]
-                    mask = pd.Series(False, index=col_upper.index)
-                    for v in selected_values:
-                        v_str = str(v).strip()
-                        v_up = v_str.upper()
-                        if v_up == 'ALL' or v == 'All':
-                            mask |= pd.Series(True, index=col_upper.index)
-                        elif v_up == '' or v_str.lower() == 'blank':
-                            mask |= (col_upper == '')
-                        elif v_up.startswith('Y') or v_up == 'YES':
-                            mask |= col_upper.str.startswith('Y')
-                        elif v_up.startswith('N'):
-                            mask |= col_upper.str.startswith('N')
-                        elif v_up.startswith('UNCERT') or v_up.startswith('U'):
-                            mask |= col_upper.str.startswith('U')
-
-                    matching_projects = table_df[mask]
-                # Debug: log matching counts to help diagnose empty KPI/treemap issues
+            if filter_values is not None and "likely_goahead" in filtered_treemap.columns:
+                mask = _get_likely_filter_mask(filtered_treemap["likely_goahead"], filter_values)
+                before_kpi = len(filtered_treemap)
+                filtered_treemap = filtered_treemap[mask]
+                after_kpi = len(filtered_treemap)
                 try:
-                    print(f"DEBUG: KPI likely selected_values={selected_values}")
-                    print(f"DEBUG: KPI matching_projects count={len(matching_projects)}")
+                    print(f"DEBUG: filtered_treemap reduced from {before_kpi} to {after_kpi} by KPI likely filter")
                 except Exception:
                     pass
-
-                if not matching_projects.empty:
-                    matching_combos = set()
-                    for _, row in matching_projects.iterrows():
-                        combo = (
-                            row.get("Region", ""),
-                            row.get("Play Type", ""),
-                            row.get("Project Status", "")
-                        )
-                        matching_combos.add(combo)
-
-                    try:
-                        print(f"DEBUG: KPI matching_combos count={len(matching_combos)}")
-                    except Exception:
-                        pass
-
-                    def matches_combo(row):
-                        combo = (
-                            str(row.get("Region", "")),
-                            str(row.get("Play Type", "")),
-                            str(row.get("Project Status", ""))
-                        )
-                        return combo in matching_combos
-
-                    before_kpi = len(filtered_treemap)
-                    filtered_treemap = filtered_treemap[filtered_treemap.apply(matches_combo, axis=1)]
-                    after_kpi = len(filtered_treemap)
-                    try:
-                        print(f"DEBUG: filtered_treemap reduced from {before_kpi} to {after_kpi} by KPI likely filter")
-                    except Exception:
-                        pass
         
         # Calculate KPIs from filtered treemap
         if not filtered_treemap.empty:
@@ -1825,23 +1686,7 @@ def register_callbacks(dash_app, server):
                         break
 
                 if likely_col is not None:
-                    col_upper = filtered_table[likely_col].astype(str).str.upper()
-                    selected_values = filter_values if isinstance(filter_values, list) else [filter_values]
-                    mask = pd.Series(False, index=col_upper.index)
-                    for v in selected_values:
-                        v_str = str(v).strip()
-                        v_up = v_str.upper()
-                        if v_up == 'ALL' or v == 'All':
-                            mask |= pd.Series(True, index=col_upper.index)
-                        elif v_up == '' or v_str.lower() == 'blank':
-                            mask |= (col_upper == '')
-                        elif v_up.startswith('Y') or v_up == 'YES':
-                            mask |= col_upper.str.startswith('Y')
-                        elif v_up.startswith('N'):
-                            mask |= col_upper.str.startswith('N')
-                        elif v_up.startswith('UNCERT') or v_up.startswith('U'):
-                            mask |= col_upper.str.startswith('U')
-
+                    mask = _get_likely_filter_mask(filtered_table[likely_col], filter_values)
                     filtered_table = filtered_table[mask]
         
         # Check if a Project Status block was clicked.
@@ -1988,49 +1833,18 @@ def register_callbacks(dash_app, server):
                 
                 # Likely filter
                 if likely_filter:
-                    if table_store:
-                        table_df = pd.DataFrame(table_store)
-                    else:
-                        table_df = load_table_data()
-                    
                     filter_values = likely_filter
                     if isinstance(likely_filter, list):
                         if 'All' in likely_filter and len(likely_filter) > 1:
                             filter_values = [v for v in likely_filter if v != 'All']
-                        if not likely_filter or (len(likely_filter) == 1 and likely_filter[0] == 'All'):
+                        elif len(likely_filter) == 1 and likely_filter[0] == 'All':
                             filter_values = None
+                        else:
+                            filter_values = likely_filter
 
-                    if filter_values is not None:
-                        likely_col = None
-                        for col in table_df.columns:
-                            lc = col.lower()
-                            if 'likely' in lc and ('go' in lc or 'ahead' in lc):
-                                likely_col = col
-                                break
-                        if likely_col:
-                            col_upper = table_df[likely_col].astype(str).str.upper()
-                            selected_vals = filter_values if isinstance(filter_values, list) else [filter_values]
-                            mask = pd.Series(False, index=col_upper.index)
-                            for v in selected_vals:
-                                v_str, v_up = str(v).strip(), str(v).strip().upper()
-                                if v_up == 'ALL' or v == 'All':
-                                    mask |= pd.Series(True, index=col_upper.index)
-                                elif v_up == '' or v_str.lower() == 'blank':
-                                    mask |= (col_upper == '')
-                                elif v_up.startswith('Y') or v_up == 'YES':
-                                    mask |= col_upper.str.startswith('Y')
-                                elif v_up.startswith('N'):
-                                    mask |= col_upper.str.startswith('N')
-                                elif v_up.startswith('UNCERT') or v_up.startswith('U'):
-                                    mask |= col_upper.str.startswith('U')
-                            matching_projects = table_df[mask]
-                            if not matching_projects.empty:
-                                combos = set()
-                                for _, row in matching_projects.iterrows():
-                                    combos.add((str(row.get("Region", "")).strip(), str(row.get("Play Type", "")).strip(), str(row.get("Project Status", "")).strip()))
-                                def matches_combo(r):
-                                    return (str(r.get("Region", "")).strip(), str(r.get("Play Type", "")).strip(), str(r.get("Project Status", "")).strip()) in combos
-                                df = df[df.apply(matches_combo, axis=1)]
+                    if filter_values is not None and "likely_goahead" in df.columns:
+                        mask = _get_likely_filter_mask(df["likely_goahead"], filter_values)
+                        df = df[mask]
                 
                 # Format for export
                 export_df = df.rename(columns={'Production Additions': "Production Additions ('000 b/d)"})
@@ -2076,8 +1890,10 @@ def register_callbacks(dash_app, server):
                     if isinstance(likely_filter, list):
                         if 'All' in likely_filter and len(likely_filter) > 1:
                             filter_values = [v for v in likely_filter if v != 'All']
-                        if not likely_filter or (len(likely_filter) == 1 and likely_filter[0] == 'All'):
+                        elif len(likely_filter) == 1 and likely_filter[0] == 'All':
                             filter_values = None
+                        else:
+                            filter_values = likely_filter
                     if filter_values is not None:
                         likely_col = None
                         for col in df.columns:
@@ -2086,21 +1902,7 @@ def register_callbacks(dash_app, server):
                                 likely_col = col
                                 break
                         if likely_col:
-                            col_upper = df[likely_col].astype(str).str.upper()
-                            selected_vals = filter_values if isinstance(filter_values, list) else [filter_values]
-                            mask = pd.Series(False, index=col_upper.index)
-                            for v in selected_vals:
-                                v_str, v_up = str(v).strip(), str(v).strip().upper()
-                                if v_up == 'ALL' or v == 'All':
-                                    mask |= pd.Series(True, index=col_upper.index)
-                                elif v_up == '' or v_str.lower() == 'blank':
-                                    mask |= (col_upper == '')
-                                elif v_up.startswith('Y') or v_up == 'YES':
-                                    mask |= col_upper.str.startswith('Y')
-                                elif v_up.startswith('N'):
-                                    mask |= col_upper.str.startswith('N')
-                                elif v_up.startswith('UNCERT') or v_up.startswith('U'):
-                                    mask |= col_upper.str.startswith('U')
+                            mask = _get_likely_filter_mask(df[likely_col], filter_values)
                             df = df[mask]
                 
                 # Treemap click selection filter
