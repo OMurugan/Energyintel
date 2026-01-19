@@ -1097,16 +1097,30 @@ def register_callbacks(dash_app, server):
                     clicked_country = hovertext
             elif "location" in point:
                 iso_value = point["location"]
-                # Use reverse mapping from COUNTRY_TO_ISO
+                # Use reverse mapping from COUNTRY_TO_ISO centrally
                 reverse_map = {v: k for k, v in COUNTRY_TO_ISO.items()}
                 clicked_country = reverse_map.get(iso_value, None)
+        
+        # Additional step: if clicked_country looks like an ISO code, resolve it
+        if clicked_country and len(str(clicked_country)) == 3 and str(clicked_country).isupper():
+            reverse_map = {v: k for k, v in COUNTRY_TO_ISO.items()}
+            resolved = reverse_map.get(clicked_country)
+            if resolved:
+                clicked_country = resolved
         
         # Handle ocean/background clicks - reset to all countries
         if is_background_click:
             print("DEBUG: Ocean click detected - resetting to all countries")
             return None, ['All'] + AVAILABLE_COUNTRIES
         
+        # If we reached here and haven't identified a country, it's an "outer" click
+        # If a single country is currently selected, treat this as a signal to reset
         if not clicked_country:
+            current_selection = current_selection or []
+            clean_selection = [c for c in current_selection if c != 'All']
+            if len(clean_selection) == 1:
+                print("DEBUG: Unidentified click while single country selected - resetting")
+                return None, ['All'] + AVAILABLE_COUNTRIES
             print("DEBUG: No country detected in click data")
             return no_update, no_update
         
@@ -1118,8 +1132,8 @@ def register_callbacks(dash_app, server):
             # Try to find by case-insensitive matching
             found_match = False
             for country in AVAILABLE_COUNTRIES:
-                if (country.lower() == str(clicked_country).lower() or 
-                    normalize_country_name(country).lower() == str(clicked_country).lower()):
+                if (country.lower() == str(clicked_country).lower().strip() or 
+                    normalize_country_name(country).lower() == str(clicked_country).lower().strip()):
                     original_country_name = country
                     found_match = True
                     break
@@ -1127,15 +1141,17 @@ def register_callbacks(dash_app, server):
             if not found_match:
                 # Country not found in available countries
                 print(f"DEBUG: Country '{clicked_country}' not found in AVAILABLE_COUNTRIES")
+                # If we have a single selection, treat non-match click as reset
+                clean_selection = [c for c in (current_selection or []) if c != 'All']
+                if len(clean_selection) == 1:
+                    print(f"DEBUG: Clicking non-data country '{clicked_country}' - resetting")
+                    return None, ['All'] + AVAILABLE_COUNTRIES
                 return no_update, no_update
         
         print(f"DEBUG: Final original country name: '{original_country_name}'")
         
         # ENHANCED RESET LOGIC: Check if this country is currently the ONLY selected country
-        # We check the actual checklist value to be single and equal to this country
         current_selection = current_selection or []
-        
-        # Standardize selection list (remove 'All' for count check)
         clean_selection = [c for c in current_selection if c != 'All']
         
         is_single_country_selected = (
