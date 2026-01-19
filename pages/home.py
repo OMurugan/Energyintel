@@ -71,6 +71,17 @@ SECTIONS = [
             ("Carbon Intensity", "/projects-carbon"),
         ],
     },
+
+    {
+        "title": "Russian Analytics",
+        "path": "/crude-seaborne",
+        "links": [
+            ("Crude Seaborne", "/crude-seaborne"),
+            ("Crude Pipeline", "/crude-pipeline"),
+            ("Product Output", "/product-output"),
+            ("Product Exports", "/product-exports"),
+        ],
+    },
 ]
 
 
