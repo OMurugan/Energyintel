@@ -581,6 +581,7 @@ def _build_map_figure(
     locations = []
     z_values = []
     hover_texts = []
+    country_names = []  # Collect country names for customdata
     
     for _, row in df.iterrows():
         country = row["country"]
@@ -592,6 +593,7 @@ def _build_map_figure(
         if iso_code:
             locations.append(iso_code)
             z_values.append(value)
+            country_names.append(country)  # Store country name for click handling
             
             # Format according to design shown in screenshot
             # Using &nbsp; for spacing as Plotly tooltips have limited CSS support for alignment
@@ -647,7 +649,8 @@ def _build_map_figure(
         countries_df=labels_df if not labels_df.empty else None,
         height=520,
         zmin=0,
-        zmax=max_value
+        zmax=max_value,
+        country_names=country_names  # Pass country names for proper click handling
     )
     
     # Set custom zoom level for global exports
@@ -1893,7 +1896,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         prevent_initial_call=True,
     )
     def handle_map_click(click_data, current_filter, options, current_selected_country):
-        """Handle map click to update country selection using clarified reset behavior."""
+        """Handle map click to update country selection with ocean click support."""
         if not click_data or not options:
             return no_update, no_update
         
@@ -1905,7 +1908,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         clicked_country_raw = None
         is_background_click = False
         
-        # Extract from customdata
+        # Check for background click (ocean click)
         if "customdata" in point and point["customdata"]:
             if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
                 if point["customdata"][0] == "__BACKGROUND_CLICK__":
@@ -1922,33 +1925,36 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
             if "text" in point and point["text"]:
                 clicked_country_raw = point["text"]
             elif "hovertext" in point and point["hovertext"]:
-                clicked_country_raw = point["hovertext"]
+                hovertext = point["hovertext"]
+                if "Click to reset" in hovertext:
+                    is_background_click = True
+                elif "<b>" in hovertext and "</b>" in hovertext:
+                    clicked_country_raw = hovertext.split("<b>")[1].split("</b>")[0]
+                else:
+                    clicked_country_raw = hovertext
         
         # 2. CLEAN UP COUNTRY NAME (Extract from <b> tags if present)
         clicked_country = None
         if clicked_country_raw and isinstance(clicked_country_raw, str):
             if "<b>" in clicked_country_raw and "</b>" in clicked_country_raw:
                 clicked_country = clicked_country_raw.split("<b>")[1].split("</b>")[0]
-            elif "Click to reset" in clicked_country_raw:
-                is_background_click = True
             else:
                 clicked_country = clicked_country_raw.strip()
         
-        # 3. HANDLE RESET STATE (Background click OR clicking same country again)
-        is_reset = is_background_click or (clicked_country and clicked_country == current_selected_country)
+        # 3. HANDLE OCEAN/BACKGROUND CLICKS - Reset to all countries
+        if is_background_click:
+            return ["(All)"] + all_country_options, None
         
-        if is_reset:
-            # RESET:
-            # - Dropdown (country filter) stays same -> dash.no_update
-            # - Store (selected-country) -> None (triggers map/table reset)
-            return dash.no_update, None
-            
-        # 3. HANDLE NEW SELECTION
+        # 4. HANDLE COUNTRY CLICKS
         if clicked_country and clicked_country in all_country_options:
-            # Select new country
+            # If clicking the same country that's already selected, reset to all
+            if clicked_country == current_selected_country:
+                return ["(All)"] + all_country_options, None
+            # Otherwise, select the clicked country
             return [clicked_country], clicked_country
-            
-        return no_update, no_update
+        
+        # 5. FALLBACK - treat as background click if country not found
+        return ["(All)"] + all_country_options, None
 
     @dash_app.callback(
         Output("global-exports-stream-filter", "options"),
@@ -2880,4 +2886,3 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 filename = "Annual_Exports_Volume.csv"
                 return dcc.send_data_frame(empty_df.to_csv, filename=filename, index=False)
         raise dash.exceptions.PreventUpdate
-

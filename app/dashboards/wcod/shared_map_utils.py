@@ -418,7 +418,8 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
                          hover_text: list = None, selected_country: str = None,
                          selected_iso: str = None, other_isos: list = None,
                          countries_df = None, height: int = 520, 
-                         zmin: float = None, zmax: float = None) -> go.Figure:
+                         zmin: float = None, zmax: float = None,
+                         country_names: list = None) -> go.Figure:
     """
     Create a standardized choropleth map with consistent styling and behavior.
     
@@ -434,6 +435,7 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
         height: Figure height in pixels
         zmin: Minimum value for color scale
         zmax: Maximum value for color scale
+        country_names: List of country names corresponding to locations (for customdata)
     
     Returns:
         go.Figure: Configured Plotly figure
@@ -442,6 +444,27 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
     geojson = load_world_geojson()
     
     fig = go.Figure()
+    
+    # Prepare customdata for click handling
+    # If country_names is provided, use it; otherwise try to extract from hover_text
+    if country_names:
+        customdata = [[name] for name in country_names]
+    elif hover_text:
+        # Try to extract country names from hover_text
+        customdata = []
+        for text in hover_text:
+            if isinstance(text, str) and "<b>" in text and "</b>" in text:
+                # Extract country name from HTML formatted text
+                try:
+                    country_name = text.split("<b>")[1].split("</b>")[0]
+                    customdata.append([country_name])
+                except (IndexError, AttributeError):
+                    customdata.append([text])
+            else:
+                customdata.append([text if text else ""])
+    else:
+        # Fallback: use locations as country identifiers
+        customdata = [[loc] for loc in locations]
     
     # Create main choropleth layer FIRST
     if use_mapbox and geojson:
@@ -458,7 +481,7 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
                 showscale=False,
                 hoverinfo="text" if hover_text else "location+z",
                 hovertext=hover_text,
-                customdata=hover_text,  # Use hover_text as customdata for fallback extraction
+                customdata=customdata,  # Use proper country names for click handling
                 marker_line_color=MAP_COUNTRY_BORDER_COLOR,
                 marker_line_width=0.8,
                 marker_opacity=0.8,
@@ -479,7 +502,7 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
                 showscale=False,
                 hoverinfo="text" if hover_text else "location+z",
                 hovertext=hover_text,
-                customdata=hover_text,  # Use hover_text as customdata for fallback extraction
+                customdata=customdata,  # Use proper country names for click handling
                 marker_line_color=MAP_COUNTRY_BORDER_COLOR,
                 marker_line_width=0.7,
                 marker_opacity=0.8,

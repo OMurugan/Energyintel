@@ -2,7 +2,7 @@
 Projects by Company View
 Upstream projects grouped by company - matches Tableau dashboard design
 """
-from dash import dcc, html, Input, Output, State, callback, ALL, callback_context, dash_table
+from dash import dcc, html, Input, Output, State, callback, ALL, callback_context, dash_table, no_update
 import dash
 import json
 import plotly.graph_objects as go
@@ -1474,6 +1474,7 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
     
     # Prepare data for standardized map
     locations = country_totals['iso_alpha'].tolist()
+    country_names = country_totals['Country'].tolist()  # Collect country names for customdata
     z_values = country_totals['Value'].tolist()
     hover_text = [
         f"Country: {row['Country']}<br>"
@@ -1512,7 +1513,8 @@ def create_world_map(selected_year=2025, selected_company=None, likely_goahead_f
         countries_df=all_centroids,
         height=520,
         zmin=0.7,
-        zmax=135.0
+        zmax=135.0,
+        country_names=country_names  # Pass country names for proper click handling
     )
     
     # Custom title update to match exact requirement

@@ -1303,6 +1303,7 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None, selecte
 
     # Prepare data for choropleth map
     locations = df["iso_alpha"].tolist()
+    country_names = df["Country"].tolist()  # Collect country names for customdata
     
     # Create z-values based on group (for coloring)
     group_code = df["Group"].map({"Non-OPEC-Plus": 0, "OPEC-Plus": 1}).fillna(0)
@@ -1361,7 +1362,8 @@ def _map_figure(filtered_df: pd.DataFrame, selected_country: str | None, selecte
         countries_df=countries_df,
         height=520,
         zmin=0,
-        zmax=1
+        zmax=1,
+        country_names=country_names  # Pass country names for proper click handling
     )
     
     return fig
@@ -1844,11 +1846,12 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         resolved = _resolve_countries(country_filter, all_countries)
         trigger = ctx.triggered[0]["prop_id"].split(".")[0]
         if trigger == "projects-country-map" and click_data:
+            # Use shared map click handler to detect background clicks
             point = click_data["points"][0]
-            country = None
             is_background_click = False
+            country = None
             
-            # Extract country name from click data
+            # Check for background click using shared logic pattern
             if "customdata" in point and point["customdata"]:
                 if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
                     if point["customdata"][0] == "__BACKGROUND_CLICK__":
@@ -1860,6 +1863,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
                 else:
                     country = point["customdata"]
             
+            # Handle background clicks - reset selection
             if is_background_click:
                 return None
             
@@ -1886,7 +1890,7 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         prevent_initial_call=True,
     )
     def update_country_filter_from_map_click(click_data, current_filter, submenu):
-        """Update country filter when a country is clicked on the map."""
+        """Update country filter when a country is clicked on the map using shared ocean click functionality."""
         if submenu != "projects-country":
             return no_update
         
@@ -1895,25 +1899,13 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         
         # Get available countries
         all_countries = load_map_data()["Country"].tolist()
-        current_filter = current_filter or []
-        resolved_countries = _resolve_countries(current_filter, all_countries)
-            
-        # Extract country name from click data
-        point = click_data["points"][0]
-        country = None
         
-        if "customdata" in point and point["customdata"]:
-            if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
-                if point["customdata"][0] != "__BACKGROUND_CLICK__":
-                    country = point["customdata"][0]
-            elif point["customdata"] != "__BACKGROUND_CLICK__":
-                country = point["customdata"]
+        # Use shared map click handler for consistent ocean click behavior
+        updated_filter = handle_map_click_reset(click_data, current_filter, all_countries)
         
-        # If clicking a country that is NOT in the current selection, add it.
-        # But per user request, we mostly want to focus.
-        # Let's keep the filter stable unless they click something truly new.
-        if country and country in all_countries and country not in resolved_countries:
-            return sorted(current_filter + [country])
+        # Return the updated filter if it changed
+        if updated_filter != current_filter:
+            return updated_filter
             
         return no_update
 
