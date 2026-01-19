@@ -301,6 +301,14 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | l
     if use_mapbox and geojson:
         # Add dimming overlay for other countries
         if other_isos:
+            # Prepare customdata for dimmed countries if names are provided
+            inactive_customdata = None
+            if isinstance(selected_country, list) and len(selected_country) == len(other_isos):
+                inactive_customdata = [[name] for name in selected_country] # This arg naming is a bit confusing in the original, I'll fix it below
+            
+            # Using customdata from the caller is better
+            # We'll expect customdata to be passed or we use ISOs
+            
             fig.add_trace(
                 go.Choroplethmapbox(
                     geojson=geojson,
@@ -309,8 +317,8 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | l
                     featureidkey="id",
                     colorscale=[[0, "rgba(255,255,255,0.8)"], [1, "rgba(255,255,255,0.8)"]],
                     showscale=False,
-                    hoverinfo="none",  # Hide hover text but keep click functionality
-                    customdata=["__BACKGROUND_CLICK__" for _ in other_isos],
+                    hoverinfo="none",
+                    customdata=[[iso] for iso in other_isos], # Pass ISO as fallback identifier
                     marker_line_color="rgba(200,200,200,0.3)",
                     marker_line_width=0.5,
                     name="inactive_countries"
@@ -344,8 +352,8 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | l
                     locationmode="ISO-3",
                     colorscale=[[0, "rgba(255,255,255,0.8)"], [1, "rgba(255,255,255,0.8)"]],
                     showscale=False,
-                    hoverinfo="none",  # Hide hover text but keep click functionality
-                    customdata=["__BACKGROUND_CLICK__" for _ in other_isos],
+                    hoverinfo="none",
+                    customdata=[[iso] for iso in other_isos],
                     marker_line_color="rgba(200,200,200,0.3)",
                     marker_line_width=0.5,
                     name="inactive_countries"
@@ -467,7 +475,11 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
         # Fallback: use locations as country identifiers
         customdata = [[loc] for loc in locations]
     
-    # Create main choropleth layer FIRST
+    # Add background click layer FIRST (on the bottom)
+    # This ensures it captures clicks only in ocean areas not covered by countries
+    add_background_click_layer(fig, selected_country, use_mapbox)
+    
+    # Create main choropleth layer
     if use_mapbox and geojson:
         logger.info("Creating Mapbox choropleth map")
         fig.add_trace(
@@ -512,13 +524,9 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
             )
         )
     
-    # Add selection highlighting if a country is selected
+    # Add selection highlighting if a country is selected (dim others)
     if selected_country and selected_iso:
         add_selection_highlight(fig, geojson, selected_iso, selected_country, other_isos, use_mapbox)
-    
-    # Add background click layer AFTER countries and selection highlights
-    # This ensures it's on top and can capture clicks
-    add_background_click_layer(fig, selected_country, use_mapbox)
     
     # Add country labels if provided (on top of everything)
     if countries_df is not None and not countries_df.empty:
