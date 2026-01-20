@@ -1,6 +1,6 @@
 import dash
 from pages._utils import wrap_layout
-from app.dashboards.wcod import gas_europe_pipeline_flows
+from app.dashboards.analytics import gas_europe_pipeline_flows
 
 
 dash.register_page(

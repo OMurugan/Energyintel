@@ -136,7 +136,9 @@ Edit `init_db.py` to add more countries or extend the date range for sample data
 2. Configure Redis for caching (optional but recommended)
 3. Use Gunicorn with multiple workers:
    ```bash
-   gunicorn --bind 0.0.0.0:8000 --workers 4 app:app
+   gunicorn -b 0.0.0.0:5000 \
+  --workers 2 --threads 4 --timeout 120 \
+  app_instance:server
    ```
 4. Set up Nginx as reverse proxy
 5. Use a process manager like systemd or supervisor

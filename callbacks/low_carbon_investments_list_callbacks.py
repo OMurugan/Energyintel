@@ -1,4 +1,4 @@
-from app.dashboards.wcod import low_carbon_investments_list
+from app.dashboards.analytics import low_carbon_investments_list
 
 
 def register_callbacks(app, server):

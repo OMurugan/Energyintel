@@ -1,6 +1,6 @@
 import dash
 from pages._utils import wrap_layout
-from app.dashboards.wcod import crude_pipeline
+from app.dashboards.analytics import crude_pipeline
 
 
 dash.register_page(

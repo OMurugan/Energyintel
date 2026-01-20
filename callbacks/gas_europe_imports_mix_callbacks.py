@@ -1,4 +1,4 @@
-from app.dashboards.wcod import gas_europe_imports_mix
+from app.dashboards.analytics import gas_europe_imports_mix
 
 
 def register_callbacks(app, server):
