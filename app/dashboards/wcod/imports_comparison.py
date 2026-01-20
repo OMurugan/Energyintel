@@ -18,6 +18,7 @@ from .shared_map_utils import (
     get_mapbox_config, 
     load_world_geojson,
     create_empty_map,
+    handle_map_click_reset,
     MAP_BACKGROUND_COLOR as SHARED_MAP_BACKGROUND_COLOR,
     MAP_LAND_COLOR as SHARED_MAP_LAND_COLOR
 )
@@ -100,6 +101,7 @@ def load_imports_data(selected_year=2023):
 # Country name mapping for Plotly compatibility
 COUNTRY_NAME_MAP = {
     'United States': 'United States of America',
+    'USA': 'United States of America',
     'South Korea': 'South Korea',
     'Czech Republic': 'Czechia',
     # Add more mappings as needed
@@ -323,7 +325,7 @@ def get_available_countries():
         query = """
         SELECT DISTINCT import_country AS "Importer"
         FROM fact_wcod_imports
-        WHERE (import_country NOT IN ('Australia', 'Japan', 'South Korea', 'United States')
+        WHERE (import_country NOT IN ('Australia', 'Japan', 'South Korea') -- US is allowed but might need normalization
             OR source <> 'OECD Imports')
         ORDER BY import_country;
         """
@@ -507,10 +509,8 @@ def create_imports_map_figure(df_map, single_selected_country, max_volume, selec
         )
     )
     
-    # Ensure only the main data trace shows the custom tooltip
-    for trace in fig.data:
-        if trace.name != "countries":
-            trace.hoverinfo = 'skip'
+    # Loop removed: shared_map_utils handles hoverinfo correctly for all layers
+    # Specifically, ensuring background layers are not set to 'skip' is crucial for click detection
     
     # Add copyright annotation
     use_mapbox, _, _ = get_mapbox_config()
@@ -1049,7 +1049,7 @@ def register_callbacks(dash_app, server):
         prevent_initial_call=True
     )
     def handle_map_click(clickData, current_clicked_country, current_selection, options):
-        """Handle map click to update country selection with ocean click support - based on working global_exports.py implementation"""
+        """Handle map click to update country selection using shared utility logic"""
         if not clickData or 'points' not in clickData or len(clickData['points']) == 0:
             return no_update, no_update
         
@@ -1062,91 +1062,57 @@ def register_callbacks(dash_app, server):
 
         current_selection = current_selection or []
         
-        # 1. IDENTIFY CLICKED ITEM
-        point = clickData["points"][0]
-        clicked_country_raw = None
-        is_background_click = False
-        
-        # Check for background click (ocean click) - same logic as global_exports.py
-        if "customdata" in point and point["customdata"]:
-            if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
-                if point["customdata"][0] == "__BACKGROUND_CLICK__":
-                    is_background_click = True
-                else:
-                    clicked_country_raw = point["customdata"][0]
-            elif point["customdata"] == "__BACKGROUND_CLICK__":
-                is_background_click = True
-            else:
-                clicked_country_raw = point["customdata"]
-        
-        # Check trace name for background layers (Robust fallback)
-        if "curveNumber" in point and not is_background_click:
-            try:
-                # curveNumber maps to the index of the trace in the figure's data
-                trace_name = ""
-                # Try to access trace info if available in the point
-                if "data" in point:
-                    trace_name = point["data"].get("name", "")
+        # Use shared helper to determine new selection
+        # This handles ocean clicks, background layers, trace names, and toggle behavior
+        new_selection = handle_map_click_reset(
+            clickData,
+            current_selection,
+            all_country_options,
+            all_value='All'
+        )
+
+        # Convert any normalized country names back to original display names (e.g., 'United States of America' -> 'United States')
+        new_selection = [REVERSE_COUNTRY_MAP.get(name, name) for name in new_selection]
+
+
+        # Force US selection if it failed to resolve (common issue with US naming variants)
+        try:
+            point = clickData.get("points", [{}])[0]
+            # Check various indicators for US
+            txt = str(point.get("text", "")).lower()
+            hov = str(point.get("hovertext", "")).lower()
+            custom = str(point.get("customdata", "")).lower()
+            loc = str(point.get("location", "")).lower()
+            
+            is_us_click = (
+                "united states" in txt or "united states" in hov or "united states" in custom or
+                "usa" == txt or "usa" == hov or "usa" == custom or "usa" == loc
+            )
+            
+            if is_us_click and 'United States' in all_country_options:
+                # If shared utility returned Reset ('All') but we clicked US, and US is not currently selected,
+                # force select US. 
+                # Be careful not to break the "Click again to reset" logic.
+                # If US is already selected, 'All' is correct (reset).
+                # If US is NOT selected, 'All' is WRONG (should be US).
                 
-                # Check known background layer names
-                background_trace_names = [
-                    "ocean_grid", "world_background", "atlantic_fill", 
-                    "pacific_west_fill", "pacific_east_fill", 
-                    "ocean_background", "background_fill"
-                ]
-                
-                if trace_name in background_trace_names:
-                    # Logic confirms it is a background layer
-                    is_background_click = True
-                    # print(f"DEBUG: Background click detected via trace name: {trace_name}")
-            except Exception as e:
-                # Fail silently
-                pass
-                
-        # EXTENDED: Click to reset fallback
-        if not is_background_click and not clicked_country_raw:
-             if "hovertext" in point and point["hovertext"] and "Click to reset" in str(point["hovertext"]):
-                 is_background_click = True
+                us_selected = 'United States' in current_selection and len(current_selection) == 1
+                if not us_selected and 'All' in new_selection:
+                     print("DEBUG: Overriding reset to select United States")
+                     new_selection = ['United States']
+        except Exception as e:
+            print(f"DEBUG: Error in US override logic: {e}")
         
-        # Extract from text/hovertext if needed
-        if not clicked_country_raw and not is_background_click:
-            if "text" in point and point["text"]:
-                clicked_country_raw = point["text"]
-            elif "hovertext" in point and point["hovertext"]:
-                hovertext = point["hovertext"]
-                if "Click to reset" in hovertext:
-                    is_background_click = True
-                elif "<b>" in hovertext and "</b>" in hovertext:
-                    clicked_country_raw = hovertext.split("<b>")[1].split("</b>")[0]
-                else:
-                    clicked_country_raw = hovertext
-        
-        # 2. CLEAN UP COUNTRY NAME (Extract from <b> tags if present)
-        clicked_country = None
-        if clicked_country_raw and isinstance(clicked_country_raw, str):
-            if "<b>" in clicked_country_raw and "</b>" in clicked_country_raw:
-                clicked_country = clicked_country_raw.split("<b>")[1].split("</b>")[0]
-            else:
-                clicked_country = clicked_country_raw.strip()
-        
-        # 3. HANDLE OCEAN/BACKGROUND CLICKS - Reset to all countries
-        if is_background_click:
-            print("DEBUG: Ocean/background click detected - resetting to all countries")
-            return None, ['All'] + all_country_options
-        
-        # 4. HANDLE COUNTRY CLICKS
-        if clicked_country and clicked_country in all_country_options:
-            # If clicking the same country that's already selected, reset to all
-            if clicked_country == current_clicked_country:
-                print(f"DEBUG: Same country clicked ({clicked_country}) - resetting to all countries")
-                return None, ['All'] + all_country_options
-            # Otherwise, select the clicked country
-            print(f"DEBUG: New country selected: {clicked_country}")
-            return clicked_country, [clicked_country]
-        
-        # 5. FALLBACK - treat as background click if country not found
-        print(f"DEBUG: Country not found ({clicked_country}) - treating as background click")
-        return None, ['All'] + all_country_options
+        # Determine the single selected country for the store
+        # If 'All' is in selection, or multiple countries, or empty -> None
+        new_clicked_country = None
+        if new_selection and 'All' not in new_selection and len(new_selection) == 1:
+            new_clicked_country = new_selection[0]
+            print(f"DEBUG: Selected single country: {new_clicked_country}")
+        else:
+            print("DEBUG: Resetting map selection")
+            
+        return new_clicked_country, new_selection
     
     @dash_app.callback(
         [Output('imports-world-map', 'figure'),
@@ -1169,9 +1135,9 @@ def register_callbacks(dash_app, server):
         # Load imports data dynamically for the selected year
         IMPORTS_DF = load_imports_data(selected_year)
         
-        # Normalize country names for map compatibility
-        if not IMPORTS_DF.empty:
-            IMPORTS_DF['Importer'] = IMPORTS_DF['Importer'].apply(normalize_country_name)
+        # Normalize country names logic removed here - moved to map creation to preserve Original names for filtering
+        # if not IMPORTS_DF.empty:
+        #    IMPORTS_DF['Importer'] = IMPORTS_DF['Importer'].apply(normalize_country_name)
         
         if IMPORTS_DF.empty:
             empty_fig = go.Figure()
@@ -1242,38 +1208,10 @@ def register_callbacks(dash_app, server):
             if not df_map.empty:
                 print(f"Countries in map data: {df_map['Country'].tolist()}")
             
-            # Store original country names BEFORE normalization for ISO code lookup
-            df_map['Country_DB_Original'] = df_map['Country'].copy()
-            
-            # Store normalized country names for display
-            df_map['Country_Original'] = df_map['Country'].apply(normalize_country_name)
-            
-            # Ensure country names are normalized for map compatibility
-            df_map['Country'] = df_map['Country'].apply(normalize_country_name)
-            
             # Create choropleth map
             max_volume = df_map['Import_Volume'].max() if len(df_map) > 0 else 1
-            # Add year column for hover
-            df_map['Year'] = selected_year
             
-            # Store original country names BEFORE normalization for ISO code lookup
-            df_map['Country_DB_Original'] = df_map['Country'].copy()
-            
-            # Store normalized country names for display
-            df_map['Country_Original'] = df_map['Country'].apply(normalize_country_name)
-            
-            # Create mapping from country names to ISO-3 codes using _iso_for_country function
-            df_map['ISO_Code'] = df_map['Country_DB_Original'].apply(_iso_for_country)
-            
-            # Filter out any countries without valid ISO-3 codes
-            df_map = df_map.dropna(subset=['ISO_Code']).copy()
-            
-            # Ensure ISO codes are strings and exactly 3 characters
-            if not df_map.empty:
-                df_map['ISO_Code'] = df_map['ISO_Code'].astype(str)
-                df_map = df_map[df_map['ISO_Code'].str.len() == 3].copy()
-            
-            # Create map figure using the same approach as projects_by_country.py
+            # Create map figure - create_imports_map_figure handles ISO code generation internally
             map_fig = create_imports_map_figure(df_map, single_selected_country, max_volume, selected_year)
         
         # Create annual table using database query with dynamic country filtering

@@ -125,8 +125,8 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
         selected_country: Currently selected country (affects whether layers are added)
         use_mapbox: Whether to use Mapbox or geo coordinates
     """
-    # Only add background click layers if a country is selected
-    if selected_country:
+    # Always add background click layers to ensure reset functionality works
+    if True:
         # Create a comprehensive grid of ocean points for better coverage
         # Increased density for more reliable clicking
         ocean_lons = []
@@ -688,7 +688,7 @@ def create_loading_figure(message: str = "Loading data...", height: int = 520) -
     return fig
 
 
-def handle_map_click_reset(click_data, current_filter, all_countries: list) -> list:
+def handle_map_click_reset(click_data, current_filter, all_countries: list, all_value: str = "(All)") -> list:
     """
     Handle map click events with consistent reset behavior.
     
@@ -699,6 +699,7 @@ def handle_map_click_reset(click_data, current_filter, all_countries: list) -> l
         click_data: Dash clickData from map
         current_filter: Current country filter selection
         all_countries: List of all available countries
+        all_value: The value representing "All countries" (default: "(All)")
     
     Returns:
         list: Updated country filter selection
@@ -725,7 +726,16 @@ def handle_map_click_reset(click_data, current_filter, all_countries: list) -> l
     # Check trace name for background layers
     if "curveNumber" in point:
         try:
-            trace_name = click_data.get("points", [{}])[0].get("data", {}).get("name", "")
+            # Try to get trace name from point data if available (some contexts)
+            # Or fall back to checking if we can infer it
+            trace_name = ""
+            if "data" in point:
+                trace_name = point["data"].get("name", "")
+            
+            # Compatible with older logic if 'data' was accessed differently
+            if not trace_name and "data" in click_data.get("points", [{}])[0]:
+                 trace_name = click_data.get("points", [{}])[0].get("data", {}).get("name", "")
+
             if trace_name in ["ocean_grid", "world_background", "atlantic_fill", "pacific_west_fill", "pacific_east_fill", "ocean_background", "background_fill"]:
                 is_background_click = True
         except (KeyError, IndexError, AttributeError):
@@ -757,19 +767,19 @@ def handle_map_click_reset(click_data, current_filter, all_countries: list) -> l
     # Handle background clicks - always reset to all countries
     if is_background_click:
         logger.info("Background click detected - resetting to all countries")
-        return ["(All)"] + all_countries
+        return [all_value] + all_countries
     
     # If we can't determine the country, treat as background click
     if not country:
         logger.info("Could not determine clicked country - treating as background click")
-        return ["(All)"] + all_countries
+        return [all_value] + all_countries
     
     # Check if country is valid
     if country not in all_countries:
         # Try to find country by partial match or ISO code
         matched_country = None
         for c in all_countries:
-            if c.lower() == country.lower() or country.upper() in c.upper():
+            if c.lower() == country.lower() or country.upper() in c.upper() or c.upper() in country.upper():
                 matched_country = c
                 break
         
@@ -777,19 +787,22 @@ def handle_map_click_reset(click_data, current_filter, all_countries: list) -> l
             country = matched_country
         else:
             logger.info(f"Unknown country '{country}' - treating as background click")
-            return ["(All)"] + all_countries
+            return [all_value] + all_countries
     
     # Resolve current selection
     current_filter = current_filter or []
-    if "(All)" in current_filter:
+    if all_value in current_filter:
         resolved_countries = all_countries
     else:
         resolved_countries = [c for c in current_filter if c in all_countries]
     
     # Enhanced behavior: if one country is selected, any click resets to all
-    if len(resolved_countries) == 1:
-        logger.info(f"Single country selected, any click resets to all countries")
-        return ["(All)"] + all_countries
+    # Also check if the clicked country is the SAME as the one currently selected
+    is_same_country = len(resolved_countries) == 1 and resolved_countries[0] == country
+    
+    if len(resolved_countries) == 1 and is_same_country:
+        logger.info(f"Single country selected and clicked again, resetting to all countries")
+        return [all_value] + all_countries
     
     # If all countries shown, clicking selects only that country
     logger.info(f"Selecting country: {country}")
