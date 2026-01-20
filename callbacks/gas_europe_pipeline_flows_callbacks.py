@@ -1,4 +1,4 @@
-from app.dashboards.wcod import gas_europe_pipeline_flows
+from app.dashboards.analytics import gas_europe_pipeline_flows
 
 
 def register_callbacks(app, server):

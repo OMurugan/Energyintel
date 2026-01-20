@@ -1,6 +1,6 @@
 import dash
 from pages._utils import wrap_layout
-from app.dashboards.wcod import gas_asia_dashboard
+from app.dashboards.analytics import gas_asia_dashboard
 
 
 dash.register_page(

@@ -1,4 +1,4 @@
-from app.dashboards.wcod import gas_europe_dashboard
+from app.dashboards.analytics import gas_europe_dashboard
 
 
 def register_callbacks(app, server):

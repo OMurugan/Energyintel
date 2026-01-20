@@ -1,6 +1,6 @@
 import dash
 from pages._utils import wrap_layout
-from app.dashboards.wcod import low_carbon_investments_list
+from app.dashboards.analytics import low_carbon_investments_list
 
 
 dash.register_page(

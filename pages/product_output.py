@@ -1,6 +1,6 @@
 import dash
 from pages._utils import wrap_layout
-from app.dashboards.wcod import product_output
+from app.dashboards.analytics import product_output
 
 
 dash.register_page(

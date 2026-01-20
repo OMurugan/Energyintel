@@ -1,4 +1,4 @@
-from app.dashboards.wcod import gas_europe_demand_monthly_country
+from app.dashboards.analytics import gas_europe_demand_monthly_country
 
 
 def register_callbacks(app, server):

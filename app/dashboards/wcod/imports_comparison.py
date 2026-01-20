@@ -17,7 +17,6 @@ from .shared_map_utils import (
     create_choropleth_map, 
     get_mapbox_config, 
     load_world_geojson,
-    handle_map_click_reset,
     create_empty_map,
     MAP_BACKGROUND_COLOR as SHARED_MAP_BACKGROUND_COLOR,
     MAP_LAND_COLOR as SHARED_MAP_LAND_COLOR
@@ -1045,131 +1044,109 @@ def register_callbacks(dash_app, server):
          Output('imports-country-checklist', 'value', allow_duplicate=True)],
         Input('imports-world-map', 'clickData'),
         [State('imports-map-clicked-country', 'data'),
-         State('imports-country-checklist', 'value')],
+         State('imports-country-checklist', 'value'),
+         State('imports-country-checklist', 'options')],
         prevent_initial_call=True
     )
-    def handle_map_click(clickData, current_clicked_country, current_selection):
-        """Handle map click to update country selection with proper reset behavior"""
+    def handle_map_click(clickData, current_clicked_country, current_selection, options):
+        """Handle map click to update country selection with ocean click support - based on working global_exports.py implementation"""
         if not clickData or 'points' not in clickData or len(clickData['points']) == 0:
             return no_update, no_update
         
-        point = clickData['points'][0]
-        clicked_country = None
+        # Robustly get available countries from options if possible, fallback to global
+        all_country_options = []
+        if options:
+            all_country_options = [opt["value"] for opt in options if opt["value"] != 'All']
+        if not all_country_options:
+            all_country_options = AVAILABLE_COUNTRIES
+
+        current_selection = current_selection or []
+        
+        # 1. IDENTIFY CLICKED ITEM
+        point = clickData["points"][0]
+        clicked_country_raw = None
         is_background_click = False
         
-        # Debug logging to help diagnose issues
-        print(f"DEBUG: Map Click Data: {point}")
-        
-        # Check for background click (ocean click) first
-        # Robustly check customdata for background markers
-        if "customdata" in point:
-            customdata = point["customdata"]
-            # Handle list format (common in Plotly)
-            if isinstance(customdata, list) and len(customdata) > 0:
-                first_item = customdata[0]
-                if first_item == "__BACKGROUND_CLICK__":
+        # Check for background click (ocean click) - same logic as global_exports.py
+        if "customdata" in point and point["customdata"]:
+            if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
+                if point["customdata"][0] == "__BACKGROUND_CLICK__":
                     is_background_click = True
-                elif first_item == "__SELECTED__":
-                    # Clicked on the border of a selected country - treat as clicking that country
-                    # We'll need to rely on location/text if customdata is just logic marker
-                    pass 
                 else:
-                    clicked_country = first_item
-            # Handle direct value format
-            elif customdata == "__BACKGROUND_CLICK__":
+                    clicked_country_raw = point["customdata"][0]
+            elif point["customdata"] == "__BACKGROUND_CLICK__":
                 is_background_click = True
-            elif customdata != "__SELECTED__":
-                clicked_country = customdata
+            else:
+                clicked_country_raw = point["customdata"]
         
-        # Extract country name using multiple fallback methods if not background click
-        if not is_background_click and not clicked_country:
+        # Check trace name for background layers (Robust fallback)
+        if "curveNumber" in point and not is_background_click:
+            try:
+                # curveNumber maps to the index of the trace in the figure's data
+                trace_name = ""
+                # Try to access trace info if available in the point
+                if "data" in point:
+                    trace_name = point["data"].get("name", "")
+                
+                # Check known background layer names
+                background_trace_names = [
+                    "ocean_grid", "world_background", "atlantic_fill", 
+                    "pacific_west_fill", "pacific_east_fill", 
+                    "ocean_background", "background_fill"
+                ]
+                
+                if trace_name in background_trace_names:
+                    # Logic confirms it is a background layer
+                    is_background_click = True
+                    # print(f"DEBUG: Background click detected via trace name: {trace_name}")
+            except Exception as e:
+                # Fail silently
+                pass
+                
+        # EXTENDED: Click to reset fallback
+        if not is_background_click and not clicked_country_raw:
+             if "hovertext" in point and point["hovertext"] and "Click to reset" in str(point["hovertext"]):
+                 is_background_click = True
+        
+        # Extract from text/hovertext if needed
+        if not clicked_country_raw and not is_background_click:
             if "text" in point and point["text"]:
-                clicked_country = point["text"]
+                clicked_country_raw = point["text"]
             elif "hovertext" in point and point["hovertext"]:
                 hovertext = point["hovertext"]
-                # Parse HTML formatting if present
-                if isinstance(hovertext, str) and "<b>" in hovertext and "</b>" in hovertext:
-                    try:
-                        clicked_country = hovertext.split("<b>")[1].split("</b>")[0]
-                    except IndexError:
-                        clicked_country = hovertext
+                if "Click to reset" in hovertext:
+                    is_background_click = True
+                elif "<b>" in hovertext and "</b>" in hovertext:
+                    clicked_country_raw = hovertext.split("<b>")[1].split("</b>")[0]
                 else:
-                    clicked_country = hovertext
-            elif "location" in point:
-                iso_value = point["location"]
-                # Use reverse mapping from COUNTRY_TO_ISO centrally
-                reverse_map = {v: k for k, v in COUNTRY_TO_ISO.items()}
-                clicked_country = reverse_map.get(iso_value, None)
+                    clicked_country_raw = hovertext
         
-        # Additional step: if clicked_country looks like an ISO code, resolve it
-        if clicked_country and len(str(clicked_country)) == 3 and str(clicked_country).isupper():
-            reverse_map = {v: k for k, v in COUNTRY_TO_ISO.items()}
-            resolved = reverse_map.get(clicked_country)
-            if resolved:
-                clicked_country = resolved
+        # 2. CLEAN UP COUNTRY NAME (Extract from <b> tags if present)
+        clicked_country = None
+        if clicked_country_raw and isinstance(clicked_country_raw, str):
+            if "<b>" in clicked_country_raw and "</b>" in clicked_country_raw:
+                clicked_country = clicked_country_raw.split("<b>")[1].split("</b>")[0]
+            else:
+                clicked_country = clicked_country_raw.strip()
         
-        # Handle ocean/background clicks - reset to all countries
+        # 3. HANDLE OCEAN/BACKGROUND CLICKS - Reset to all countries
         if is_background_click:
-            print("DEBUG: Ocean click detected - resetting to all countries")
-            return None, ['All'] + AVAILABLE_COUNTRIES
+            print("DEBUG: Ocean/background click detected - resetting to all countries")
+            return None, ['All'] + all_country_options
         
-        # If we reached here and haven't identified a country, it's an "outer" click
-        # If a single country is currently selected, treat this as a signal to reset
-        if not clicked_country:
-            current_selection = current_selection or []
-            clean_selection = [c for c in current_selection if c != 'All']
-            if len(clean_selection) == 1:
-                print("DEBUG: Unidentified click while single country selected - resetting")
-                return None, ['All'] + AVAILABLE_COUNTRIES
-            print("DEBUG: No country detected in click data")
-            return no_update, no_update
+        # 4. HANDLE COUNTRY CLICKS
+        if clicked_country and clicked_country in all_country_options:
+            # If clicking the same country that's already selected, reset to all
+            if clicked_country == current_clicked_country:
+                print(f"DEBUG: Same country clicked ({clicked_country}) - resetting to all countries")
+                return None, ['All'] + all_country_options
+            # Otherwise, select the clicked country
+            print(f"DEBUG: New country selected: {clicked_country}")
+            return clicked_country, [clicked_country]
         
-        print(f"DEBUG: Raw clicked country: '{clicked_country}'")
-        
-        # Denormalize country name if needed (convert from map display name to original name)
-        original_country_name = denormalize_country_name(clicked_country)
-        if original_country_name not in AVAILABLE_COUNTRIES:
-            # Try to find by case-insensitive matching
-            found_match = False
-            for country in AVAILABLE_COUNTRIES:
-                if (country.lower() == str(clicked_country).lower().strip() or 
-                    normalize_country_name(country).lower() == str(clicked_country).lower().strip()):
-                    original_country_name = country
-                    found_match = True
-                    break
-            
-            if not found_match:
-                # Country not found in available countries
-                print(f"DEBUG: Country '{clicked_country}' not found in AVAILABLE_COUNTRIES")
-                # If we have a single selection, treat non-match click as reset
-                clean_selection = [c for c in (current_selection or []) if c != 'All']
-                if len(clean_selection) == 1:
-                    print(f"DEBUG: Clicking non-data country '{clicked_country}' - resetting")
-                    return None, ['All'] + AVAILABLE_COUNTRIES
-                return no_update, no_update
-        
-        print(f"DEBUG: Final original country name: '{original_country_name}'")
-        
-        # ENHANCED RESET LOGIC: Check if this country is currently the ONLY selected country
-        current_selection = current_selection or []
-        clean_selection = [c for c in current_selection if c != 'All']
-        
-        is_single_country_selected = (
-            len(clean_selection) == 1 and 
-            clean_selection[0] == original_country_name
-        )
-        
-        print(f"DEBUG: Is single country currently selected? {is_single_country_selected}")
-        
-        # Reset conditions:
-        # 1. Single country is selected and user clicks it again (Classic toggle off behavior)
-        if is_single_country_selected:
-            print(f"DEBUG: Re-clicking selected country ({original_country_name}) - resetting to all countries")
-            return None, ['All'] + AVAILABLE_COUNTRIES
-        
-        # different country clicked or multiple currently selected - select only this country
-        print(f"DEBUG: New country clicked ({original_country_name}) - selecting it")
-        return original_country_name, [original_country_name]
+        # 5. FALLBACK - treat as background click if country not found
+        print(f"DEBUG: Country not found ({clicked_country}) - treating as background click")
+        return None, ['All'] + all_country_options
     
     @dash_app.callback(
         [Output('imports-world-map', 'figure'),

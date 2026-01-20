@@ -1,6 +1,6 @@
 import dash
 from pages._utils import wrap_layout
-from app.dashboards.wcod import gas_europe_demand_monthly_country
+from app.dashboards.analytics import gas_europe_demand_monthly_country
 
 
 dash.register_page(
