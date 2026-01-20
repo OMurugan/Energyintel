@@ -28,8 +28,9 @@ class TokenAuth:
         self.valid_tokens = self._load_valid_tokens()
         self.token_expiry = int(os.environ.get('TOKEN_EXPIRY_HOURS', '24')) * 3600  # Convert to seconds
         
-        # Add before_request handler
+        # Add before_request and after_request handlers
         self.server.before_request(self._check_token_auth)
+        self.server.after_request(self._set_auth_cookie)
     
     def _load_valid_tokens(self):
         """Load valid tokens from environment or use defaults."""
@@ -167,20 +168,45 @@ class TokenAuth:
     
     def _check_token_auth(self):
         """Check token authentication before serving pages."""
-        # Skip auth for static assets
-        if request.path.startswith('/_dash') or request.path.startswith('/assets'):
+        # Skip authentication for OPTIONS requests (CORS preflight) - this must be first
+        if request.method == 'OPTIONS':
             return
         
-        # Get token from various sources
-        token = self._extract_token()
+        # Skip auth for static assets, dash internal routes, and health checks
+        # We use a broad check to ensure Dash internal AJAX doesn't get blocked
+        path = request.path.lower()
+        whitelist = [
+            '/_dash-', 
+            '/assets/', 
+            '/_favicon.ico', 
+            '/static/',
+            '/health',
+            '/_resources'  # Add _resources endpoint to whitelist
+        ]
         
-        if not token:
+        if any(x in path for x in whitelist):
+            return
+        
+        # Get all potential tokens from various sources
+        potential_tokens = self._extract_tokens()
+        
+        if not potential_tokens:
             return self._auth_error("No authentication token provided")
         
-        # Try JWT validation first, then fallback to simple tokens
-        token_info = self._validate_jwt_token(token)
-        if not token_info:
-            token_info = self._validate_simple_token(token)
+        token_info = None
+        valid_token = None
+        
+        # Try each token found until one works
+        for token in potential_tokens:
+            # Try JWT validation
+            token_info = self._validate_jwt_token(token)
+            if not token_info:
+                # Fallback to simple tokens (admin-token-123 etc)
+                token_info = self._validate_simple_token(token)
+            
+            if token_info:
+                valid_token = token
+                break
         
         if not token_info:
             return self._auth_error("Invalid or expired token")
@@ -188,37 +214,89 @@ class TokenAuth:
         # Store user info in Flask's g object for use in callbacks
         g.current_user = token_info['user']
         g.user_permissions = token_info['permissions']
-        g.token = token
+        g.token = valid_token
         g.jwt_payload = token_info.get('jwt_payload')
+        
+        # If token was provided in query string, flag it to be set as cookie
+        if request.args.get('token'):
+            g.set_auth_cookie = token
+            
+    def _set_auth_cookie(self, response):
+        """Set authentication cookie if a token was provided in the request."""
+        if hasattr(g, 'set_auth_cookie'):
+            # Set cookie for 24 hours (or matching token_expiry)
+            response.set_cookie(
+                'auth_token', 
+                g.set_auth_cookie,
+                max_age=24 * 3600,
+                httponly=True,
+                samesite='None', # Required for cross-site iframes
+                secure=True      # Required when samesite=None
+            )
+        
+        # Add CORS headers for authentication responses (only if not already set)
+        origin = None
+        request_origin = request.headers.get('Origin')
+        allowed_origins = [
+            'https://www.energyintel.com',
+            'https://energyintel.com'
+            # 'http://localhost:3000',
+            # 'http://localhost:8080'
+        ]
+        
+        if request_origin and request_origin in allowed_origins:
+            origin = request_origin
+        elif request_origin and any(request_origin.endswith(domain) for domain in ['.energyintel.com']):
+            origin = request_origin
+        
+        if origin:
+            # Check if CORS header already exists to avoid duplication
+            existing_origin = response.headers.get('Access-Control-Allow-Origin')
+            if not existing_origin:
+                response.headers.add('Access-Control-Allow-Origin', origin)
+            elif existing_origin != origin:
+                # Replace with the correct origin if different
+                response.headers['Access-Control-Allow-Origin'] = origin
+            
+            # Add other CORS headers only if not already present
+            if not response.headers.get('Access-Control-Allow-Credentials'):
+                response.headers.add('Access-Control-Allow-Credentials', 'true')
+            if not response.headers.get('Vary'):
+                response.headers.add('Vary', 'Origin')
+        
+        return response
     
-    def _extract_token(self):
-        """Extract token from request headers, query params, or cookies."""
-        # Check Authorization header (Bearer token)
-        auth_header = request.headers.get('Authorization', '')
-        if auth_header.startswith('Bearer '):
-            return auth_header[7:]  # Remove 'Bearer ' prefix
+    def _extract_tokens(self):
+        """Extract all potential tokens from request sources."""
+        tokens = []
         
-        # Check X-API-Token header
-        api_token = request.headers.get('X-API-Token')
-        if api_token:
-            return api_token
-        
-        # Check cookie first (more reliable for embedded contexts)
-        cookie_token = request.cookies.get('auth_token')
-        if cookie_token:
-            return cookie_token
-        
-        # Check for default token in environment (for development)
-        default_token = os.environ.get('DEFAULT_AUTH_TOKEN')
-        if default_token:
-            return default_token
-        
-        # Check query parameter last (can cause issues with Dash Pages)
+        # 1. Check query parameter FIRST (explicit user intent)
         query_token = request.args.get('token')
         if query_token:
-            return query_token
+            tokens.append(query_token)
+            
+        # 2. Check Authorization header (Bearer token)
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            tokens.append(auth_header[7:])
         
-        return None
+        # 3. Check X-API-Token header
+        api_token = request.headers.get('X-API-Token')
+        if api_token:
+            tokens.append(api_token)
+        
+        # 4. Check cookies
+        for cookie_name in ['auth_token', 'kcToken', 'pelcro.user.auth.token']:
+            t = request.cookies.get(cookie_name)
+            if t:
+                tokens.append(t)
+        
+        # 5. Check for default token in environment
+        default_token = os.environ.get('DEFAULT_AUTH_TOKEN')
+        if default_token:
+            tokens.append(default_token)
+            
+        return tokens
     
     def _validate_simple_token(self, token):
         """Validate simple string tokens (fallback method)."""
