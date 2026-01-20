@@ -1903,58 +1903,22 @@ def register_callbacks(dash_app, server):  # pylint: disable=unused-argument
         # Extract all country options (excluding "(All)")
         all_country_options = [opt["value"] for opt in options if opt["value"] != "(All)"]
         
-        # 1. IDENTIFY CLICKED ITEM
-        point = click_data["points"][0]
-        clicked_country_raw = None
-        is_background_click = False
+        # Use shared helper to determine new selection
+        # This handles ocean clicks, background layers, trace names, and toggle behavior
+        new_selection = handle_map_click_reset(
+            click_data,
+            current_filter or [],
+            all_country_options,
+            all_value="(All)"
+        )
         
-        # Check for background click (ocean click)
-        if "customdata" in point and point["customdata"]:
-            if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
-                if point["customdata"][0] == "__BACKGROUND_CLICK__":
-                    is_background_click = True
-                else:
-                    clicked_country_raw = point["customdata"][0]
-            elif point["customdata"] == "__BACKGROUND_CLICK__":
-                is_background_click = True
-            else:
-                clicked_country_raw = point["customdata"]
+        # Determine the single selected country for the store
+        # If '(All)' is in selection, or multiple countries, or empty -> None
+        new_clicked_country = None
+        if new_selection and '(All)' not in new_selection and len(new_selection) == 1:
+            new_clicked_country = new_selection[0]
         
-        # Extract from text/hovertext if needed
-        if not clicked_country_raw and not is_background_click:
-            if "text" in point and point["text"]:
-                clicked_country_raw = point["text"]
-            elif "hovertext" in point and point["hovertext"]:
-                hovertext = point["hovertext"]
-                if "Click to reset" in hovertext:
-                    is_background_click = True
-                elif "<b>" in hovertext and "</b>" in hovertext:
-                    clicked_country_raw = hovertext.split("<b>")[1].split("</b>")[0]
-                else:
-                    clicked_country_raw = hovertext
-        
-        # 2. CLEAN UP COUNTRY NAME (Extract from <b> tags if present)
-        clicked_country = None
-        if clicked_country_raw and isinstance(clicked_country_raw, str):
-            if "<b>" in clicked_country_raw and "</b>" in clicked_country_raw:
-                clicked_country = clicked_country_raw.split("<b>")[1].split("</b>")[0]
-            else:
-                clicked_country = clicked_country_raw.strip()
-        
-        # 3. HANDLE OCEAN/BACKGROUND CLICKS - Reset to all countries
-        if is_background_click:
-            return ["(All)"] + all_country_options, None
-        
-        # 4. HANDLE COUNTRY CLICKS
-        if clicked_country and clicked_country in all_country_options:
-            # If clicking the same country that's already selected, reset to all
-            if clicked_country == current_selected_country:
-                return ["(All)"] + all_country_options, None
-            # Otherwise, select the clicked country
-            return [clicked_country], clicked_country
-        
-        # 5. FALLBACK - treat as background click if country not found
-        return ["(All)"] + all_country_options, None
+        return new_selection, new_clicked_country
 
     @dash_app.callback(
         Output("global-exports-stream-filter", "options"),
