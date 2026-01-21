@@ -56,29 +56,55 @@ def create_layout():
             html.Div([
                 # Map
                 html.Div([
-                    dcc.Loading(
-                        id='loading-seaborne-map',
-                        type='circle',
-                        children=dcc.Graph(
-                            id='seaborne-map',
-                            style={'height': '380px'},
-                            config={'displayModeBar': False}
+                    html.Div([
+                        html.Button(
+                            'Export to CSV',
+                            id='btn-seaborne-map-csv',
+                            n_clicks=0,
+                            style={
+                                'position': 'absolute', 'top': '10px', 'right': '10px', 'zIndex': '1000',
+                                'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
+                                'padding': '4px 8px', 'borderRadius': '4px', 'fontSize': '11px', 'cursor': 'pointer'
+                            }
+                        ),
+                        dcc.Download(id="download-seaborne-map-csv"),
+                        dcc.Loading(
+                            id='loading-seaborne-map',
+                            type='circle',
+                            children=dcc.Graph(
+                                id='seaborne-map',
+                                style={'height': '380px'},
+                                config={'displayModeBar': False}
+                            )
                         )
-                    )
+                    ], style={'position': 'relative'})
                 ], style={'marginBottom': '0'}),
 
                 # Bar Chart
                 html.Div([
-                    dcc.Loading(
-                        id='loading-seaborne-bar-chart',
-                        type='circle',
-                        children=dcc.Graph(
-                            id='seaborne-bar-chart',
-                            style={'height': '320px'},
-                            config={'displayModeBar': False}
+                    html.Div([
+                        html.Button(
+                            'Export to CSV',
+                            id='btn-seaborne-bar-csv',
+                            n_clicks=0,
+                            style={
+                                'position': 'absolute', 'top': '0px', 'right': '10px', 'zIndex': '1000',
+                                'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
+                                'padding': '4px 8px', 'borderRadius': '4px', 'fontSize': '11px', 'cursor': 'pointer'
+                            }
+                        ),
+                        dcc.Download(id="download-seaborne-bar-csv"),
+                        dcc.Loading(
+                            id='loading-seaborne-bar-chart',
+                            type='circle',
+                            children=dcc.Graph(
+                                id='seaborne-bar-chart',
+                                style={'height': '320px'},
+                                config={'displayModeBar': False}
+                            )
                         )
-                    )
-                ], style={'marginTop': '-20px'}) # Tightly pack chart under map
+                    ], style={'position': 'relative', 'marginTop': '-20px'})
+                ]) # Tightly pack chart under map
             ], style={'width': '64%', 'paddingRight': '15px', 'borderRight': '1px solid #eee'}),
 
             # Right Column (Tables)
@@ -86,9 +112,21 @@ def create_layout():
                 # Average Exports Table
                 html.Div([
                     html.Div([
-                        html.H4("AVERAGE SEABORNE EXPORTS BY", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'margin': '0'}),
-                        html.H4("LOADING PORT ('000 b/d)", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'margin': '0'}),
-                    ], style={'marginBottom': '8px'}),
+                        html.Div([
+                            html.H4("AVERAGE SEABORNE EXPORTS BY", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'margin': '0'}),
+                            html.H4("LOADING PORT ('000 b/d)", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'margin': '0'}),
+                        ], style={'flex': '1'}),
+                        html.Button(
+                            'Export to CSV',
+                            id='btn-avg-exports-csv',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
+                                'padding': '2px 6px', 'borderRadius': '4px', 'fontSize': '10px', 'cursor': 'pointer'
+                            }
+                        ),
+                        dcc.Download(id="download-avg-exports-csv")
+                    ], style={'display': 'flex', 'alignItems': 'flex-start', 'marginBottom': '8px'}),
 
                     # Time Dimension Toggles
                     html.Div([
@@ -136,7 +174,19 @@ def create_layout():
 
                 # YOY Change Table
                 html.Div([
-                    html.H4("YOY % CHANGE BY LOADING PORT", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'marginBottom': '8px'}),
+                    html.Div([
+                        html.H4("YOY % CHANGE BY LOADING PORT", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'margin': '0', 'flex': '1'}),
+                        html.Button(
+                            'Export to CSV',
+                            id='btn-yoy-change-csv',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
+                                'padding': '2px 6px', 'borderRadius': '4px', 'fontSize': '10px', 'cursor': 'pointer'
+                            }
+                        ),
+                        dcc.Download(id="download-yoy-change-csv")
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '8px'}),
                     dash_table.DataTable(
                         id='yoy-change-table',
                         style_table={'height': '360px', 'overflowY': 'auto', 'overflowX': 'auto'},
@@ -597,6 +647,94 @@ def register_callbacks(dash_app, server):
         except Exception as e:
             print(f"Error loading bar chart: {e}")
             return go.Figure()
+
+    # CSV Export Callbacks
+    @callback(
+        Output("download-seaborne-map-csv", "data"),
+        Input("btn-seaborne-map-csv", "n_clicks"),
+        State("seaborne-year-selector", "value"),
+        prevent_initial_call=True,
+    )
+    def export_map_csv(n_clicks, selected_year):
+        query = """
+        SELECT
+            po.port_name                     AS loading_port,
+            EXTRACT(YEAR FROM ru.date)::INT  AS year,
+            ROUND(AVG(ru.vol_kbpd))          AS average_vol_kbpd
+        FROM dev.russia_master_data ru
+        JOIN dev.dim_ports po ON ru.destination = po.port_name
+        WHERE ru.type = 'Seaborne' AND EXTRACT(YEAR FROM ru.date) = :year
+        GROUP BY po.port_name, year
+        ORDER BY average_vol_kbpd DESC;
+        """
+        try:
+            results = execute_query(query, {'year': selected_year})
+            df = pd.DataFrame(results)
+            return dcc.send_data_frame(df.to_csv, f"seaborne_map_data_{selected_year}.csv", index=False)
+        except Exception as e:
+            print(f"Error exporting map csv: {e}")
+            return None
+
+    @callback(
+        Output("download-seaborne-bar-csv", "data"),
+        Input("btn-seaborne-bar-csv", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def export_bar_csv(n_clicks):
+        query = """
+        SELECT
+            EXTRACT(YEAR FROM date)::int AS year,
+            EXTRACT(MONTH FROM date)::int AS month,
+            SUM(vol_kbpd) AS total_vol_kbpd
+        FROM dev.russia_master_data
+        WHERE type = 'Seaborne' AND EXTRACT(YEAR FROM date) > 2021
+        GROUP BY year, month
+        ORDER BY year, month;
+        """
+        try:
+            results = execute_query(query)
+            df = pd.DataFrame(results)
+            return dcc.send_data_frame(df.to_csv, "seaborne_historical_exports.csv", index=False)
+        except Exception as e:
+            print(f"Error exporting bar csv: {e}")
+            return None
+
+    @callback(
+        Output("download-avg-exports-csv", "data"),
+        Input("btn-avg-exports-csv", "n_clicks"),
+        [State("avg-exports-table", "data"),
+         State("avg-exports-table", "columns")],
+        prevent_initial_call=True,
+    )
+    def export_avg_exports_csv(n_clicks, table_data, columns):
+        if not table_data:
+            return None
+        df = pd.DataFrame(table_data)
+        
+        # Map column IDs to display names (handling MultiIndex lists)
+        col_id_to_name = {}
+        for col in columns:
+            name = col['name']
+            if isinstance(name, list):
+                # Clean up empty strings and join
+                name = " ".join([part for part in name if part.strip()])
+            col_id_to_name[col['id']] = name
+        
+        df = df.rename(columns=col_id_to_name)
+        return dcc.send_data_frame(df.to_csv, "average_seaborne_exports.csv", index=False)
+
+    @callback(
+        Output("download-yoy-change-csv", "data"),
+        Input("btn-yoy-change-csv", "n_clicks"),
+        State("yoy-change-table", "data"),
+        prevent_initial_call=True,
+    )
+    def export_yoy_change_csv(n_clicks, table_data):
+        if not table_data:
+            return None
+        df = pd.DataFrame(table_data)
+        # The column names are already correct in the data
+        return dcc.send_data_frame(df.to_csv, "yoy_change_seaborne_exports.csv", index=False)
 
     @callback(
         Output('seaborne-map', 'figure'),
