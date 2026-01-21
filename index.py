@@ -28,7 +28,7 @@ from pages import (
     projects_latest,
     projects_tracker,
     projects_carbon,
-    # Russian Analytics
+    # Russian Analytics Pages
     crude_seaborne,
     crude_pipeline,
     product_output,
@@ -78,6 +78,11 @@ from callbacks import (
     projects_latest_callbacks,
     projects_tracker_callbacks,
     projects_carbon_callbacks,
+    # Russian Analytics Callbacks
+    crude_seaborne_callbacks,
+    crude_pipeline_callbacks,
+    product_output_callbacks,
+    product_exports_callbacks,
     # Gas Analytics Callbacks
     gas_europe_dashboard_callbacks,
     gas_europe_pipeline_flows_callbacks,
@@ -97,8 +102,7 @@ from callbacks import (
     low_carbon_dashboard_callbacks,
     low_carbon_investments_list_callbacks,
     low_carbon_activity_by_date_callbacks,
-    low_carbon_activity_by_region_callbacks,
-    crude_seaborne_callbacks,
+    low_carbon_activity_by_region_callbacks,    
 )
 
 CALLBACK_REGISTRARS = [
@@ -123,6 +127,11 @@ CALLBACK_REGISTRARS = [
     projects_latest_callbacks.register_callbacks,
     projects_tracker_callbacks.register_callbacks,
     projects_carbon_callbacks.register_callbacks,
+    # Russian Analytics Callbacks
+    crude_seaborne_callbacks.register_callbacks,
+    crude_pipeline_callbacks.register_callbacks,
+    product_output_callbacks.register_callbacks,
+    product_exports_callbacks.register_callbacks,
     # Gas Analytics Callbacks
     gas_europe_dashboard_callbacks.register_callbacks,
     gas_europe_pipeline_flows_callbacks.register_callbacks,
@@ -142,8 +151,7 @@ CALLBACK_REGISTRARS = [
     low_carbon_dashboard_callbacks.register_callbacks,
     low_carbon_investments_list_callbacks.register_callbacks,
     low_carbon_activity_by_date_callbacks.register_callbacks,
-    low_carbon_activity_by_region_callbacks.register_callbacks,
-    crude_seaborne_callbacks.register_callbacks,
+    low_carbon_activity_by_region_callbacks.register_callbacks,    
 ]
 
 _callbacks_initialized = False
