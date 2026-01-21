@@ -522,37 +522,50 @@ def register_callbacks(dash_app, server):
             print(f"Error loading yoy change: {e}")
             return [], []
 
-    @callback(
-        Output('seaborne-bar-highlight-store', 'data'),
+    from dash import clientside_callback
+    clientside_callback(
+        """
+        function(clickData, currentStore) {
+            if (!clickData || !clickData.points || clickData.points.length === 0) {
+                return [currentStore, window.dash_clientside.no_update];
+            }
+            
+            const point = clickData.points[0];
+            const traceIdx = point.curveNumber;
+            let newVal = null;
+            let type = null;
+
+            if (traceIdx === 0) {
+                newVal = point.x;
+                type = 'bar';
+            } else if (traceIdx === 1) {
+                const cd = point.customdata;
+                newVal = Array.isArray(cd) ? cd[0] : cd;
+                type = 'year';
+            } else {
+                return [currentStore, null];
+            }
+
+            let nextStore = {type: type, value: newVal};
+            if (currentStore && currentStore.type === type) {
+                const currV = String(currentStore.value).replace(/[\[\]\s]/g, '');
+                const newV = String(newVal).replace(/[\[\]\s]/g, '');
+                if (currV === newV) {
+                    nextStore = null;
+                }
+            }
+            
+            // We return the new store state AND clear clickData to null 
+            // so the next click (even if on same year) always triggers a change
+            return [nextStore, null];
+        }
+        """,
+        [Output('seaborne-bar-highlight-store', 'data'),
+         Output('seaborne-bar-chart', 'clickData')],
         Input('seaborne-bar-chart', 'clickData'),
         State('seaborne-bar-highlight-store', 'data'),
         prevent_initial_call=True
     )
-    def update_bar_highlight(clickData, current_highlight):
-        if not clickData or 'points' not in clickData:
-            return current_highlight
-        
-        point = clickData['points'][0]
-        trace_idx = point.get('curveNumber')
-        
-        # We'll use trace 0 for bars, trace 1 for year labels
-        if trace_idx == 0:
-            # Bar clicked - use x index for stability
-            new_val = point.get('x')
-            new_highlight = {'type': 'bar', 'value': new_val}
-        elif trace_idx == 1:
-            # Year clicked - get year from text or customdata
-            new_val = point.get('customdata')
-            new_highlight = {'type': 'year', 'value': new_val}
-        else:
-            return None
-
-        # Toggle logic
-        if current_highlight and current_highlight['type'] == new_highlight['type'] and \
-           str(current_highlight['value']) == str(new_highlight['value']):
-            return None
-            
-        return new_highlight
 
     @callback(
         Output('seaborne-bar-chart', 'figure'),
@@ -609,10 +622,12 @@ def register_callbacks(dash_app, server):
                 else:
                     is_selected = False
                     if highlight['type'] == 'bar':
-                        if i == highlight['value']:
+                        # Use strings for index comparison
+                        if str(i) == str(highlight['value']):
                             is_selected = True
                     elif highlight['type'] == 'year':
-                        if row['year'] == highlight['value']:
+                        # Use strings for year comparison
+                        if str(row['year']) == str(highlight['value']):
                             is_selected = True
                     
                     if is_selected:
