@@ -164,52 +164,77 @@ def create_layout():
         ], style={'padding': '0 20px'})
     ], style={'backgroundColor': 'white', 'fontFamily': 'Arial, sans-serif'})
 
-@callback(
-    Output('treemap-selection', 'data'),
-    [Input('product-exports-treemap', 'clickData')],
-    [State('treemap-selection', 'data')],
-    prevent_initial_call=True
-)
-def update_treemap_selection(click_data, current_selection):
-    if not click_data:
-        return None  # Reset selection on background click
-    try:
-        point = click_data['points'][0]
-        # Treemap customdata is [commodity, vol, percentage]
-        if 'customdata' not in point or not point['customdata']:
-            return None
-        clicked_commodity = str(point['customdata'][0]).strip()
-        # Toggle
-        if clicked_commodity == current_selection:
-            return None
-        return clicked_commodity
-    except (KeyError, IndexError):
-        return None
+# Consolidated Clientside Callbacks to handle selection toggling and reset clickData to null
+# This resolves circular dependencies while enabling reset-on-click functionality
 
-@callback(
-    Output('bar-selection', 'data'),
-    [Input('product-exports-bar', 'clickData')],
-    [State('bar-selection', 'data')],
+from dash import clientside_callback
+
+# 1. Treemap Selection + Reset
+clientside_callback(
+    """
+    function(clickData, currentSelection) {
+        if (!clickData || !clickData.points || clickData.points.length === 0) {
+            return [currentSelection, window.dash_clientside.no_update];
+        }
+        
+        const point = clickData.points[0];
+        if (!point.customdata) {
+            return [null, null];
+        }
+
+        const clickedCommodity = String(point.customdata[0]).trim();
+        let nextSelection = clickedCommodity;
+        
+        // Toggle logic
+        if (currentSelection && String(currentSelection).trim() === clickedCommodity) {
+            nextSelection = null;
+        }
+        
+        // Always return null for clickData to ensure Dash triggers on the next click
+        return [nextSelection, null];
+    }
+    """,
+    [Output('treemap-selection', 'data'),
+     Output('product-exports-treemap', 'clickData')],
+    Input('product-exports-treemap', 'clickData'),
+    State('treemap-selection', 'data'),
     prevent_initial_call=True
 )
-def update_bar_selection(click_data, current_selection):
-    if not click_data:
-        return None  # Reset selection on background click
-    try:
-        point = click_data['points'][0]
-        # Bar customdata is [commodity, hover_date]
-        if 'customdata' not in point or not point['customdata']:
-            return None
-        commodity = str(point['customdata'][0]).strip()
-        date = str(point['customdata'][1]).strip()
-        clicked_id = f"{commodity}|{date}"
+
+# 2. Bar Selection + Reset
+clientside_callback(
+    """
+    function(clickData, currentSelection) {
+        if (!clickData || !clickData.points || clickData.points.length === 0) {
+            return [currentSelection, window.dash_clientside.no_update];
+        }
         
-        # Toggle
-        if clicked_id == current_selection:
-            return None
-        return clicked_id
-    except (KeyError, IndexError):
-        return None
+        const point = clickData.points[0];
+        if (!point.customdata) {
+            return [null, null];
+        }
+
+        const commodity = String(point.customdata[0]).trim();
+        const date = String(point.customdata[1]).trim();
+        const clickedId = commodity + "|" + date;
+        
+        let nextSelection = clickedId;
+        
+        // Toggle logic
+        if (currentSelection && String(currentSelection).trim() === clickedId) {
+            nextSelection = null;
+        }
+        
+        // Always return null for clickData to ensure Dash triggers on the next click
+        return [nextSelection, null];
+    }
+    """,
+    [Output('bar-selection', 'data'),
+     Output('product-exports-bar', 'clickData')],
+    Input('product-exports-bar', 'clickData'),
+    State('bar-selection', 'data'),
+    prevent_initial_call=True
+)
 @callback(
     Output('download-treemap-csv', 'data'),
     Input('btn-export-treemap', 'n_clicks'),
@@ -258,28 +283,6 @@ def export_bar_data(n_clicks, sel_commodity):
             return dcc.send_data_frame(df.to_csv, filename=filename, index=False)
     return None
 
-# Clientside callbacks to reset clickData, ensuring every click triggers the toggle logic
-dash.clientside_callback(
-    """
-    function(selection) {
-        return null; // Reset clickData
-    }
-    """,
-    Output('product-exports-treemap', 'clickData'),
-    Input('treemap-selection', 'data'),
-    prevent_initial_call=True
-)
-
-dash.clientside_callback(
-    """
-    function(selection) {
-        return null; // Reset clickData
-    }
-    """,
-    Output('product-exports-bar', 'clickData'),
-    Input('bar-selection', 'data'),
-    prevent_initial_call=True
-)
 
 @callback(
     [Output('product-exports-treemap', 'figure'),
