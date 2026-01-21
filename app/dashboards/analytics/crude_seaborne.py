@@ -269,10 +269,12 @@ def register_callbacks(dash_app, server):
             if time_visibility.get('Day'):
                 active_time_dims.append('day_of_date')
             
-            group_cols = ['loading_port'] + active_time_dims
-            num_levels = len(active_time_dims)
+            # Cleanup raw data
+            if 'month_of_date' in df.columns:
+                df['month_of_date'] = df['month_of_date'].str.strip()
             
             # Aggregate data
+            group_cols = ['loading_port'] + active_time_dims
             agg_df = df.groupby(group_cols)['vol_kbpd'].mean().reset_index()
             agg_df['vol_kbpd'] = agg_df['vol_kbpd'].round().fillna(0).astype(int)
             
@@ -284,44 +286,43 @@ def register_callbacks(dash_app, server):
                 values='vol_kbpd'
             )
             
-            # Month sorting order
+            # Determine header depth
+            num_time_levels = len(active_time_dims)
+            header_depth = max(2, num_time_levels) # min 2 to keep Port below Year
+            
+            # Sorting logic
             month_order = {
                 'January': 1, 'February': 2, 'March': 3, 'April': 4, 'May': 5, 'June': 6,
                 'July': 7, 'August': 8, 'September': 9, 'October': 10, 'November': 11, 'December': 12
             }
             
-            # Get and sort data columns
             data_cols = pivot_df.columns.tolist()
-            
             def col_sort_key(c):
-                if isinstance(c, tuple):
-                    key = []
-                    key.append(-int(c[0])) # Year DESC
-                    if len(c) > 1: key.append(c[1]) # Quarter ASC
-                    if len(c) > 2: key.append(month_order.get(c[2].strip(), 0)) # Month ASC
-                    if len(c) > 3: key.append(int(c[3])) # Day ASC
-                    return tuple(key)
-                else:
-                    return (-int(c),)
+                # Ensure c is a tuple matching active_time_dims
+                c_tuple = c if isinstance(c, tuple) else (c,)
+                key = [-int(c_tuple[0])] # Year DESC
+                if len(c_tuple) > 1: key.append(str(c_tuple[1])) # Quarter
+                if len(c_tuple) > 2: key.append(month_order.get(c_tuple[2], 0)) # Month
+                if len(c_tuple) > 3: key.append(int(c_tuple[3])) # Day
+                return tuple(key)
 
             sorted_data_cols = sorted(data_cols, key=col_sort_key)
             
-            # Build Dash DataTable columns with hierarchy
-            # Loading Port header should be at the bottom level, padded with empty strings above
-            loading_port_name = [""] * (num_levels - 1) + ["Loading Port"] if num_levels > 1 else ["Loading Port"]
-            dash_columns = [{"name": loading_port_name, "id": "loading_port"}]
+            # Build Dash DataTable columns
+            # Loading Port aligns with the bottom-most level
+            lp_header = [""] * (header_depth - 1) + ["Loading Port"]
+            dash_columns = [{"name": lp_header, "id": "loading_port"}]
             
             for col in sorted_data_cols:
-                col_id = "_".join(map(str, col)) if isinstance(col, tuple) else str(col)
+                col_tuple = col if isinstance(col, tuple) else (col,)
+                # Force ID to be unique and consistent
+                col_id = "_".join(map(str, col_tuple))
                 
-                # Construct name array with exact num_levels depth
-                if isinstance(col, tuple):
-                    name_parts = [str(x) for x in col]
-                    # Ensure name_parts is exactly num_levels (it should be, but just in case)
-                    while len(name_parts) < num_levels:
-                        name_parts.append("")
-                else:
-                    name_parts = [str(col)]
+                # Build header hierarchy with constant depth
+                name_parts = [""] * header_depth
+                for i, val in enumerate(col_tuple):
+                    if i < header_depth:
+                        name_parts[i] = str(val)
                 
                 dash_columns.append({
                     "name": name_parts,
@@ -329,27 +330,29 @@ def register_callbacks(dash_app, server):
                     "type": "numeric"
                 })
             
-            # Build Dash DataTable rows
-            data = []
+            # Build data rows
+            data_rows = []
             for port, row in pivot_df.iterrows():
                 item = {"loading_port": port}
                 for col in sorted_data_cols:
-                    col_id = "_".join(map(str, col)) if isinstance(col, tuple) else str(col)
+                    col_tuple = col if isinstance(col, tuple) else (col,)
+                    col_id = "_".join(map(str, col_tuple))
                     val = row[col]
                     item[col_id] = f"{int(val):,}" if pd.notnull(val) else ""
-                data.append(item)
+                data_rows.append(item)
             
-            # Add Total Row
-            if data:
+            # Add Total row
+            if data_rows:
                 total_row = {"loading_port": "Total"}
                 column_sums = pivot_df.sum(axis=0)
                 for col in sorted_data_cols:
-                    col_id = "_".join(map(str, col)) if isinstance(col, tuple) else str(col)
+                    col_tuple = col if isinstance(col, tuple) else (col,)
+                    col_id = "_".join(map(str, col_tuple))
                     sum_val = column_sums[col]
                     total_row[col_id] = f"{int(sum_val):,}" if pd.notnull(sum_val) else "0"
-                data.append(total_row)
+                data_rows.append(total_row)
 
-            return data, dash_columns
+            return data_rows, dash_columns
         except Exception as e:
             print(f"Error loading avg exports: {e}")
             import traceback
