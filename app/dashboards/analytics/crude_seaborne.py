@@ -20,6 +20,7 @@ def create_layout():
         # Stores for table highlighting state
         dcc.Store(id='avg-exports-highlight-store', data=None),
         dcc.Store(id='yoy-change-highlight-store', data=None),
+        dcc.Store(id='seaborne-bar-highlight-store', data=None),
 
         # Header Row
         html.Div([
@@ -522,10 +523,43 @@ def register_callbacks(dash_app, server):
             return [], []
 
     @callback(
-        Output('seaborne-bar-chart', 'figure'),
-        Input('seaborne-year-selector', 'value')
+        Output('seaborne-bar-highlight-store', 'data'),
+        Input('seaborne-bar-chart', 'clickData'),
+        State('seaborne-bar-highlight-store', 'data'),
+        prevent_initial_call=True
     )
-    def update_bar_chart(selected_year):
+    def update_bar_highlight(clickData, current_highlight):
+        if not clickData or 'points' not in clickData:
+            return current_highlight
+        
+        point = clickData['points'][0]
+        trace_idx = point.get('curveNumber')
+        
+        # We'll use trace 0 for bars, trace 1 for year labels
+        if trace_idx == 0:
+            # Bar clicked - use x index for stability
+            new_val = point.get('x')
+            new_highlight = {'type': 'bar', 'value': new_val}
+        elif trace_idx == 1:
+            # Year clicked - get year from text or customdata
+            new_val = point.get('customdata')
+            new_highlight = {'type': 'year', 'value': new_val}
+        else:
+            return None
+
+        # Toggle logic
+        if current_highlight and current_highlight['type'] == new_highlight['type'] and \
+           str(current_highlight['value']) == str(new_highlight['value']):
+            return None
+            
+        return new_highlight
+
+    @callback(
+        Output('seaborne-bar-chart', 'figure'),
+        [Input('seaborne-year-selector', 'value'),
+         Input('seaborne-bar-highlight-store', 'data')]
+    )
+    def update_bar_chart(selected_year, highlight):
         query = """
         SELECT
             EXTRACT(YEAR FROM date)::int AS year,
@@ -550,15 +584,58 @@ def register_callbacks(dash_app, server):
                          7: 'Ju..', 8: 'A..', 9: 'Se..', 10: 'O..', 11: 'N..', 12: 'D..'}
             df['month_label'] = df['month'].map(month_map)
             
-            # Create unique x coordinates to prevent Plotly multi-category squishing
+            # Create unique x coordinates
             df['x_idx'] = range(len(df))
             
+            # Prepare markers and colors
+            bar_colors = []
+            line_widths = []
+            line_colors = []
+            
+            def hex_to_rgba(hex_color, opacity):
+                hex_color = hex_color.lstrip('#')
+                if len(hex_color) == 6:
+                    r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+                else:
+                    return f'rgba(242, 142, 43, {opacity})' # Fallback
+                return f'rgba({r},{g},{b},{opacity})'
+
+            for i, row in df.iterrows():
+                if not highlight:
+                    # Normal State: Strong Orange for all
+                    bar_colors.append(hex_to_rgba("#f28e2b", 1.0))
+                    line_widths.append(0)
+                    line_colors.append('rgba(0,0,0,0)')
+                else:
+                    is_selected = False
+                    if highlight['type'] == 'bar':
+                        if i == highlight['value']:
+                            is_selected = True
+                    elif highlight['type'] == 'year':
+                        if row['year'] == highlight['value']:
+                            is_selected = True
+                    
+                    if is_selected:
+                        # Highlighted State: Strong Orange with border for bars
+                        bar_colors.append(hex_to_rgba("#f28e2b", 1.0))
+                        line_widths.append(2 if highlight['type'] == 'bar' else 0)
+                        line_colors.append('black')
+                    else:
+                        # Dimmed State: Faint Orange/Peach
+                        bar_colors.append(hex_to_rgba("#f28e2b", 0.2))
+                        line_widths.append(0)
+                        line_colors.append('rgba(0,0,0,0)')
+
             fig = go.Figure()
             
+            # Trace 0: Bars
             fig.add_trace(go.Bar(
                 x=df['x_idx'],
                 y=df['total_vol'],
-                marker_color='#f28e2b',
+                marker=dict(
+                    color=bar_colors,
+                    line=dict(color=line_colors, width=line_widths)
+                ),
                 width=0.8,
                 hovertext=[
                     f"Date: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{row['full_month']} {row['year']}</b><br>"
@@ -601,23 +678,55 @@ def register_callbacks(dash_app, server):
                     zeroline=True,
                     zerolinecolor='#ccc'
                 ),
+                yaxis2=dict(
+                    overlaying='y',
+                    side='right',
+                    visible=False,
+                    range=[0, 1.2],
+                    fixedrange=True
+                ),
                 font=dict(family="Lato, sans-serif"),
                 bargap=0.15
             )
             
-            # Add vertical lines and year annotations
+            # Add vertical lines and YEAR LABELS trace
             shapes = []
-            annotations = []
             
             years = sorted(df['year'].unique())
+            year_labels_x = []
+            year_labels_text = []
+            year_labels_colors = []
+            
             for year in years:
                 year_data = df[df['year'] == year]
                 if not year_data.empty:
-                    # Start and end indices for this year
                     start_idx = year_data['x_idx'].min()
                     end_idx = year_data['x_idx'].max()
                     center_idx = (start_idx + end_idx) / 2
                     
+                    year_labels_x.append(center_idx)
+                    year_labels_text.append(f"<b>{year}</b>")
+                    
+                    is_year_highlighted = highlight and highlight['type'] == 'year' and highlight['value'] == year
+                    
+                    # Highlight background for year if active
+                    if is_year_highlighted:
+                        shapes.append(dict(
+                            type='rect',
+                            x0=start_idx - 0.5,
+                            x1=end_idx + 0.5,
+                            y0=1.03,
+                            y1=1.13,
+                            xref='x',
+                            yref='paper',
+                            fillcolor='#ADD8E6', # LightBlue as per Fig 2
+                            line=dict(width=0),
+                            layer='below'
+                        ))
+                        year_labels_colors.append(EI_DARK_BLUE)
+                    else:
+                        year_labels_colors.append(EI_DARK_BLUE)
+
                     # Vertical line to separate years
                     if year != years[-1]:
                         shapes.append(dict(
@@ -629,23 +738,26 @@ def register_callbacks(dash_app, server):
                             yref='paper',
                             line=dict(color='#ddd', width=1)
                         ))
-                    
-                    # Year label at the top
-                    annotations.append(dict(
-                        x=center_idx,
-                        y=1.08,
-                        xref="x",
-                        yref="paper",
-                        text=f"<b>{year}</b>",
-                        showarrow=False,
-                        font=dict(size=13, color=EI_DARK_BLUE)
-                    ))
             
-            fig.update_layout(shapes=shapes, annotations=annotations)
+            # Trace 1: Year Labels (Interactive)
+            fig.add_trace(go.Scatter(
+                x=year_labels_x,
+                y=[1.08] * len(years),
+                yaxis='y2',
+                mode='text',
+                text=year_labels_text,
+                textfont=dict(size=13, color=year_labels_colors),
+                hoverinfo='none',
+                customdata=years # Pass raw year for callback
+            ))
+
+            fig.update_layout(shapes=shapes)
             
             return fig
         except Exception as e:
             print(f"Error loading bar chart: {e}")
+            import traceback
+            traceback.print_exc()
             return go.Figure()
 
     # CSV Export Callbacks
