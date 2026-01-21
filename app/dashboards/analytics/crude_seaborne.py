@@ -806,11 +806,14 @@ def register_callbacks(dash_app, server):
                         const [r, c] = id.split(':::');
                         spreadsheet.querySelectorAll(`td[data-dash-column="${c}"][data-dash-row="${r}"]`).forEach(td => td.classList.add('highlighted'));
                     } else if (type === 'column') {
-                        spreadsheet.querySelectorAll(`td[data-dash-column="${id}"]`).forEach(td => td.classList.add('highlighted'));
+                        // For hierarchical highlighting, id is a list of column names or a range
+                        const columnIds = id.split(';;;');
+                        columnIds.forEach(colId => {
+                            spreadsheet.querySelectorAll(`td[data-dash-column="${colId}"]`).forEach(td => td.classList.add('highlighted'));
+                        });
                     }
                 };
 
-                // Single robust click listener
                 if (!table_div.dataset.listenerAttached) {
                     table_div.addEventListener('click', (e) => {
                         const cell = e.target.closest('td.dash-cell');
@@ -821,7 +824,43 @@ def register_callbacks(dash_app, server):
 
                         if (header) {
                             hType = 'column';
-                            hId = header.getAttribute('data-dash-column');
+                            const isExportsTable = table_id.includes('avg-exports');
+                            
+                            if (isExportsTable) {
+                                // Hierarchical logic: find all columns within the horizontal bounds of this header
+                                const rect = header.getBoundingClientRect();
+                                const center = rect.left + rect.width / 2;
+                                
+                                // We need to find all terminal columns (bottom-row headers or data cells)
+                                // that fall within [rect.left, rect.right]
+                                const terminalHeaders = spreadsheet.querySelectorAll('.dash-spreadsheet tr:last-child .dash-header');
+                                const targetColIds = [];
+                                
+                                // Actually, it's easier to check the terminal headers in the bottom row of the header section
+                                // or just check the first row of data cells
+                                const sampleCells = spreadsheet.querySelectorAll('.dash-spreadsheet tr:first-child td.dash-cell');
+                                sampleCells.forEach(td => {
+                                    const cRect = td.getBoundingClientRect();
+                                    const cCenter = cRect.left + cRect.width / 2;
+                                    if (cCenter >= rect.left - 1 && cCenter <= rect.right + 1) {
+                                        const colId = td.getAttribute('data-dash-column');
+                                        if (colId && colId !== 'loading_port' && colId !== 'port_name') {
+                                            targetColIds.push(colId);
+                                        }
+                                    }
+                                });
+                                
+                                if (targetColIds.length === 0) {
+                                    // Maybe it's the Loading Port header itself
+                                    const colId = header.getAttribute('data-dash-column');
+                                    if (colId) targetColIds.push(colId);
+                                }
+                                
+                                hId = targetColIds.join(';;;');
+                            } else {
+                                // Single column logic for YOY table
+                                hId = header.getAttribute('data-dash-column');
+                            }
                         } else if (cell) {
                             const rowIdx = cell.getAttribute('data-dash-row');
                             const colId = cell.getAttribute('data-dash-column');
@@ -846,7 +885,6 @@ def register_callbacks(dash_app, server):
                     table_div.dataset.listenerAttached = 'true';
                 }
 
-                // Re-apply on data change or initial render
                 setTimeout(() => {
                     const current = JSON.parse(table_div.dataset.highlightState || '{}');
                     if (current.type) {
