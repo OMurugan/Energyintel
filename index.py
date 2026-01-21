@@ -98,6 +98,7 @@ from callbacks import (
     low_carbon_investments_list_callbacks,
     low_carbon_activity_by_date_callbacks,
     low_carbon_activity_by_region_callbacks,
+    crude_seaborne_callbacks,
 )
 
 CALLBACK_REGISTRARS = [
@@ -142,6 +143,7 @@ CALLBACK_REGISTRARS = [
     low_carbon_investments_list_callbacks.register_callbacks,
     low_carbon_activity_by_date_callbacks.register_callbacks,
     low_carbon_activity_by_region_callbacks.register_callbacks,
+    crude_seaborne_callbacks.register_callbacks,
 ]
 
 _callbacks_initialized = False
