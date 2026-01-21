@@ -1,0 +1,29 @@
+/* CSS for custom-chart bars and legend pointer cursors */
+
+/* Bars */
+.custom-chart .point path,
+.custom-chart .barlayer .point path,
+.custom-chart .points path {
+    cursor: pointer !important;
+}
+
+/* Legend items */
+.custom-chart .legend .legendpts path,
+.custom-chart .legend .legendtext,
+.custom-chart .legend .legendtoggle,
+.custom-chart .legend .groups {
+    cursor: pointer !important;
+}
+
+/* Plotly interaction layers - override the '+' crosshair everywhere in the chart */
+.custom-chart .draglayer,
+.custom-chart .nsewdrag,
+.custom-chart .drag,
+.custom-chart .cursor-crosshair {
+    cursor: pointer !important;
+}
+
+/* Tooltips shouldn't stay under the cursor */
+.custom-chart .hoverlayer {
+    pointer-events: none !important;
+}
