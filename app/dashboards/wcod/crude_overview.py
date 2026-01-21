@@ -5317,7 +5317,7 @@ def register_callbacks(dash_app, server):
 
 
 
-    @callback(
+    @dash_app.callback(
         Output("download-map-csv", "data"),
         Input("btn-export-map-csv", "n_clicks"),
         [State("crude-main-tabs", "value"),

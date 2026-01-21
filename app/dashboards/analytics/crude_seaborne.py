@@ -225,14 +225,14 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register all callbacks for Crude Seaborne Analytics"""
 
-    @callback(
+    @dash_app.callback(
         Output('seaborne-title', 'children'),
         Input('seaborne-year-selector', 'value')
     )
     def update_title(year):
         return f"{year} SEABORNE CRUDE EXPORTS BY MAIN LOADING PORT"
 
-    @callback(
+    @dash_app.callback(
         [Output('seaborne-time-visibility-store', 'data'),
          Output('seaborne-toggle-quarter-btn', 'children'),
          Output('seaborne-toggle-month-btn', 'children'),
@@ -279,7 +279,7 @@ def register_callbacks(dash_app, server):
             '-' if new_visibility['Day'] else '+'
         )
 
-    @callback(
+    @dash_app.callback(
         [Output('avg-exports-table', 'data'),
          Output('avg-exports-table', 'columns')],
         [Input('seaborne-year-selector', 'value'),
@@ -416,7 +416,7 @@ def register_callbacks(dash_app, server):
             import traceback
             traceback.print_exc()
             return [], []
-    @callback(
+    @dash_app.callback(
         [Output('yoy-change-table', 'data'),
          Output('yoy-change-table', 'columns')],
         Input('seaborne-year-selector', 'value')
@@ -567,7 +567,7 @@ def register_callbacks(dash_app, server):
         prevent_initial_call=True
     )
 
-    @callback(
+    @dash_app.callback(
         Output('seaborne-bar-chart', 'figure'),
         [Input('seaborne-year-selector', 'value'),
          Input('seaborne-bar-highlight-store', 'data')]
@@ -776,7 +776,7 @@ def register_callbacks(dash_app, server):
             return go.Figure()
 
     # CSV Export Callbacks
-    @callback(
+    @dash_app.callback(
         Output("download-seaborne-map-csv", "data"),
         Input("btn-seaborne-map-csv", "n_clicks"),
         State("seaborne-year-selector", "value"),
@@ -802,7 +802,7 @@ def register_callbacks(dash_app, server):
             print(f"Error exporting map csv: {e}")
             return None
 
-    @callback(
+    @dash_app.callback(
         Output("download-seaborne-bar-csv", "data"),
         Input("btn-seaborne-bar-csv", "n_clicks"),
         prevent_initial_call=True,
@@ -826,7 +826,7 @@ def register_callbacks(dash_app, server):
             print(f"Error exporting bar csv: {e}")
             return None
 
-    @callback(
+    @dash_app.callback(
         Output("download-avg-exports-csv", "data"),
         Input("btn-avg-exports-csv", "n_clicks"),
         [State("avg-exports-table", "data"),
@@ -850,7 +850,7 @@ def register_callbacks(dash_app, server):
         df = df.rename(columns=col_id_to_name)
         return dcc.send_data_frame(df.to_csv, "average_seaborne_exports.csv", index=False)
 
-    @callback(
+    @dash_app.callback(
         Output("download-yoy-change-csv", "data"),
         Input("btn-yoy-change-csv", "n_clicks"),
         State("yoy-change-table", "data"),
@@ -863,7 +863,7 @@ def register_callbacks(dash_app, server):
         # The column names are already correct in the data
         return dcc.send_data_frame(df.to_csv, "yoy_change_seaborne_exports.csv", index=False)
 
-    @callback(
+    @dash_app.callback(
         Output('seaborne-map', 'figure'),
         Input('seaborne-year-selector', 'value')
     )

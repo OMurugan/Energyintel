@@ -119,12 +119,6 @@ def create_layout():
     default_years = available_years[:4] if len(available_years) >= 4 else available_years
 
     return html.Div([
-        html.H1("Crude Pipeline Analytics"),
-        html.P("This page is under construction.")
-    ])
-
-def register_callbacks(dash_app, server):
-    """Register all callbacks for Crude Pipeline Analytics"""    
         # Stores for interactive selection state
         dcc.Store(id='selected-seaborne', data=None),
         dcc.Store(id='selected-pipeline', data=None),
@@ -277,21 +271,15 @@ def generate_timeline_data(years):
     month_separators = []
     year_separators = []
     
-    year_centers = []
-    
     current_global_x = 0
     num_years = len(years)
     
     for y_idx, y in enumerate(years):
-        year_center = current_global_x + 6.0
-        year_centers.append({'year': y, 'x': year_center})
-        
-        # Restore visual annotations, but adjust y position for the new layout domains
-        # Use 'y2' reference to position relative to the header subplot, not the whole paper
+        year_center = current_global_x + 5.5
         year_annotations.append(dict(
-            x=year_center, y=0.5, xref="x", yref="y2", # Centered vertically in the header area
+            x=year_center, y=1.12, xref="x", yref="paper",
             text=f"<b>{y}</b>", showarrow=False, font=dict(size=14, color="black"),
-            xanchor="center", yanchor="middle"
+            xanchor="center", yanchor="bottom"
         ))
         
         for m_idx, m_name in enumerate(MONTH_ORDER):
@@ -322,21 +310,21 @@ def generate_timeline_data(years):
                 'year': y, 'month_name': m_name, 'month_idx': m_idx,
                 'short_label': short_label, 
                 'full_label': m_name,
-                'x_pos': current_global_x + 0.5
+                'x_pos': current_global_x
             })
             
-            line_x = current_global_x + 1.0
+            line_x = current_global_x + 0.5
             if m_idx < 11:
                 month_separators.append(dict(
-                    type="line", x0=line_x, x1=line_x, y0=0, y1=0.85, # Aligned with new yaxis domain
+                    type="line", x0=line_x, x1=line_x, y0=0, y1=1.09,
                     xref="x", yref="paper", line=dict(color="#999999", width=1)
                 ))
             current_global_x += 1
             
         if y_idx < len(years) - 1:
-            sep_x = current_global_x
+            sep_x = current_global_x - 0.5
             y_sep = dict(
-                type="line", x0=sep_x, x1=sep_x, y0=0, y1=1, # Full height
+                type="line", x0=sep_x, x1=sep_x, y0=0, y1=1.1,
                 xref="x", yref="paper", line=dict(color="#000000", width=1)
             )
             year_separators.append(y_sep)
@@ -344,172 +332,97 @@ def generate_timeline_data(years):
             current_global_x += 0.5
             
     df = pd.DataFrame(timeline)
-    return df, year_annotations, month_separators, year_separators, num_years, year_centers
+    return df, year_annotations, month_separators, year_separators, num_years
 
 # --- Callbacks ---
 
 @callback(
-    [Output('selected-seaborne', 'data'),
-     Output('selected-pipeline', 'data'),
-     Output('seaborne-chart', 'clickData'),
-     Output('pipeline-chart', 'clickData')],
+    Output('selected-seaborne', 'data'),
     [Input('seaborne-chart', 'clickData'),
-     Input('pipeline-chart', 'clickData'),
-     Input('seaborne-chart', 'restyleData'),
-     Input('pipeline-chart', 'restyleData'),
-     Input('year-check-filter', 'value'),
-     Input('direction-dropdown', 'value')],
+     Input('seaborne-chart', 'restyleData')],
     [State('selected-seaborne', 'data'),
-     State('selected-pipeline', 'data'),
-     State('seaborne-chart', 'figure'),
-     State('pipeline-chart', 'figure')]
+     State('seaborne-chart', 'figure')]
 )
-def update_chart_selections(sea_click, pipe_click, sea_restyle, pipe_restyle, year_filter, dir_filter, 
-                            sea_sel, pipe_sel, sea_fig, pipe_fig):
+def update_seaborne_selection(click_data, restyle_data, current_selection, fig):
     ctx = callback_context
     if not ctx.triggered:
-        return no_update, no_update, no_update, no_update
+        return no_update
     
     trigger_id = ctx.triggered[0]['prop_id']
     
-    # Reset selections if year filter or direction filter changes
-    if 'year-check-filter' in trigger_id or 'direction-dropdown' in trigger_id:
-        sea_reset = None if sea_sel else no_update
-        pipe_reset = None if pipe_sel else no_update
-        return sea_reset, pipe_reset, None, None
+    if 'clickData' in trigger_id and click_data:
+        point = click_data['points'][0]
+        cdata = point.get('customdata', [])
+        if cdata:
+            new_selection = {
+                'year': cdata[0],
+                'month': cdata[1],
+                'type': cdata[2],
+                'is_categorical': False
+            }
+            if (current_selection and isinstance(current_selection, dict) and not current_selection.get('is_categorical') and
+                current_selection['year'] == new_selection['year'] and 
+                current_selection['month'] == new_selection['month'] and 
+                current_selection['type'] == new_selection['type']):
+                return None
+            return new_selection
+
+    if 'restyleData' in trigger_id and restyle_data:
+        if 'visible' in restyle_data[0]:
+            curve_idx = restyle_data[1][0]
+            if fig and 'data' in fig:
+                type_name = fig['data'][curve_idx]['name']
+                new_selection = {'type': type_name, 'is_categorical': True}
+                if (current_selection and isinstance(current_selection, dict) and current_selection.get('is_categorical') and 
+                    current_selection['type'] == type_name):
+                    return None
+                return new_selection
+
+    return no_update
+
+@callback(
+    Output('selected-pipeline', 'data'),
+    [Input('pipeline-chart', 'clickData'),
+     Input('pipeline-chart', 'restyleData')],
+    [State('selected-pipeline', 'data'),
+     State('pipeline-chart', 'figure')]
+)
+def update_pipeline_selection(click_data, restyle_data, current_selection, fig):
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update
     
-    # --- Seaborne Logic ---
-    if 'seaborne-chart.clickData' in trigger_id or 'seaborne-chart.restyleData' in trigger_id:
-        new_sea_sel = no_update
-        
-        if 'seaborne-chart.clickData' in trigger_id and sea_click:
-            point = sea_click['points'][0]
-            cdata = point.get('customdata', [])
+    trigger_id = ctx.triggered[0]['prop_id']
+    
+    if 'clickData' in trigger_id and click_data:
+        point = click_data['points'][0]
+        cdata = point.get('customdata', [])
+        if cdata:
+            new_selection = {
+                'year': cdata[0],
+                'month': cdata[1],
+                'destination': cdata[2],
+                'is_categorical': False
+            }
+            if (current_selection and isinstance(current_selection, dict) and not current_selection.get('is_categorical') and
+                current_selection.get('year') == new_selection['year'] and 
+                current_selection.get('month') == new_selection['month'] and 
+                current_selection.get('destination') == new_selection['destination']):
+                return None
+            return new_selection
             
-            # Year Header Click
-            if cdata and isinstance(cdata, list) and len(cdata) > 0 and cdata[-1] == 'YEAR_HEADER':
-                clicked_year = cdata[0]
-                # Toggle logic: Check string equality to handle potential type mismatches
-                if (sea_sel and isinstance(sea_sel, dict) and 
-                    sea_sel.get('mode') == 'year_only' and 
-                    str(sea_sel.get('year')) == str(clicked_year)):
-                    new_sea_sel = None
-                else:
-                    new_sea_sel = {'year': clicked_year, 'mode': 'year_only'}
+    if 'restyleData' in trigger_id and restyle_data:
+        if 'visible' in restyle_data[0]:
+            curve_idx = restyle_data[1][0]
+            if fig and 'data' in fig:
+                destination = fig['data'][curve_idx]['name']
+                new_selection = {'destination': destination, 'is_categorical': True}
+                if (current_selection and isinstance(current_selection, dict) and current_selection.get('is_categorical') and 
+                    current_selection.get('destination') == destination):
+                    return None
+                return new_selection
 
-            # Month Header Click
-            elif cdata and isinstance(cdata, list) and len(cdata) > 0 and cdata[-1] == 'MONTH_HEADER':
-                clicked_year = cdata[0]
-                clicked_month = cdata[1]
-                # Toggle
-                if (sea_sel and isinstance(sea_sel, dict) and 
-                    sea_sel.get('mode') == 'month_only' and 
-                    str(sea_sel.get('year')) == str(clicked_year) and
-                    sea_sel.get('month') == clicked_month):
-                    new_sea_sel = None
-                else:
-                    new_sea_sel = {'year': clicked_year, 'month': clicked_month, 'mode': 'month_only'}
-            
-            # Normal Bar Click
-            elif cdata:
-                candidate = {
-                    'year': cdata[0],
-                    'month': cdata[1],
-                    'type': cdata[2],
-                    'is_categorical': False
-                }
-                if (sea_sel and isinstance(sea_sel, dict) and not sea_sel.get('is_categorical') and
-                    not sea_sel.get('mode') and
-                    str(sea_sel.get('year')) == str(candidate['year']) and 
-                    sea_sel.get('month') == candidate['month'] and 
-                    sea_sel.get('type') == candidate['type']):
-                    new_sea_sel = None
-                else:
-                    new_sea_sel = candidate
-        
-        elif 'seaborne-chart.restyleData' in trigger_id and sea_restyle:
-            if 'visible' in sea_restyle[0]:
-                curve_idx = sea_restyle[1][0]
-                if sea_fig and 'data' in sea_fig:
-                    type_name = sea_fig['data'][curve_idx]['name']
-                    candidate = {'type': type_name, 'is_categorical': True}
-                    if (sea_sel and isinstance(sea_sel, dict) and sea_sel.get('is_categorical') and 
-                        sea_sel.get('type') == type_name):
-                        new_sea_sel = None
-                    else:
-                        new_sea_sel = candidate
-        
-        # If Seaborne updated, force Pipeline reset ONLY if it has data
-        if new_sea_sel != no_update:
-            pipe_reset = None if pipe_sel else no_update
-            return new_sea_sel, pipe_reset, None, None
-            
-    # --- Pipeline Logic ---
-    if 'pipeline-chart.clickData' in trigger_id or 'pipeline-chart.restyleData' in trigger_id:
-        new_pipe_sel = no_update
-        
-        if 'pipeline-chart.clickData' in trigger_id and pipe_click:
-            point = pipe_click['points'][0]
-            cdata = point.get('customdata', [])
-            
-            # Year Header Click
-            if cdata and isinstance(cdata, list) and len(cdata) > 0 and cdata[-1] == 'YEAR_HEADER':
-                clicked_year = cdata[0]
-                if (pipe_sel and isinstance(pipe_sel, dict) and 
-                    pipe_sel.get('mode') == 'year_only' and 
-                    str(pipe_sel.get('year')) == str(clicked_year)):
-                    new_pipe_sel = None
-                else:
-                    new_pipe_sel = {'year': clicked_year, 'mode': 'year_only'}
-
-            # Month Header Click
-            elif cdata and isinstance(cdata, list) and len(cdata) > 0 and cdata[-1] == 'MONTH_HEADER':
-                clicked_year = cdata[0]
-                clicked_month = cdata[1]
-                # Toggle
-                if (pipe_sel and isinstance(pipe_sel, dict) and 
-                    pipe_sel.get('mode') == 'month_only' and 
-                    str(pipe_sel.get('year')) == str(clicked_year) and
-                    pipe_sel.get('month') == clicked_month):
-                    new_pipe_sel = None
-                else:
-                    new_pipe_sel = {'year': clicked_year, 'month': clicked_month, 'mode': 'month_only'}
-            
-            # Normal Bar Click
-            elif cdata:
-                candidate = {
-                    'year': cdata[0],
-                    'month': cdata[1],
-                    'destination': cdata[2],
-                    'is_categorical': False
-                }
-                if (pipe_sel and isinstance(pipe_sel, dict) and not pipe_sel.get('is_categorical') and
-                    not pipe_sel.get('mode') and
-                    str(pipe_sel.get('year')) == str(candidate['year']) and 
-                    pipe_sel.get('month') == candidate['month'] and 
-                    pipe_sel.get('destination') == candidate['destination']):
-                    new_pipe_sel = None
-                else:
-                    new_pipe_sel = candidate
-                    
-        elif 'pipeline-chart.restyleData' in trigger_id and pipe_restyle:
-            if 'visible' in pipe_restyle[0]:
-                curve_idx = pipe_restyle[1][0]
-                if pipe_fig and 'data' in pipe_fig:
-                    destination = pipe_fig['data'][curve_idx]['name']
-                    candidate = {'destination': destination, 'is_categorical': True}
-                    if (pipe_sel and isinstance(pipe_sel, dict) and pipe_sel.get('is_categorical') and 
-                        pipe_sel.get('destination') == destination):
-                        new_pipe_sel = None
-                    else:
-                        new_pipe_sel = candidate
-
-        # If Pipeline updated, force Seaborne reset ONLY if it has data
-        if new_pipe_sel != no_update:
-            sea_reset = None if sea_sel else no_update
-            return sea_reset, new_pipe_sel, None, None
-            
-    return no_update, no_update, no_update, no_update
+    return no_update
 
 @callback(
     Output('selected-seaborne', 'data', allow_duplicate=True),
@@ -561,18 +474,10 @@ def update_seaborne_chart(selected_years, sel_sea):
     
     try:
         years = sorted([int(y) for y in selected_years])
-        timeline_df, year_annotations, month_separators, _, num_years, year_centers = generate_timeline_data(years)
+        timeline_df, year_annotations, month_separators, _, num_years = generate_timeline_data(years)
         
         df_sea = load_seaborne_data(years)
         fig_sea = go.Figure()
-        
-        # Add visual logic: specific highlighting for year mode
-        selected_year_mode = (sel_sea and isinstance(sel_sea, dict) and sel_sea.get('mode') == 'year_only')
-        target_year = sel_sea.get('year') if selected_year_mode else None
-                
-        selected_month_mode = (sel_sea and isinstance(sel_sea, dict) and sel_sea.get('mode') == 'month_only')
-        target_month = sel_sea.get('month') if selected_month_mode else None
-        target_month_year = sel_sea.get('year') if selected_month_mode else None
 
         if not df_sea.empty:
             df_sea['year'] = df_sea['date'].dt.year
@@ -587,24 +492,10 @@ def update_seaborne_chart(selected_years, sel_sea):
                 base_color = COLOR_MAP.get(t_name, '#333')
                 colors, line_colors, line_widths = [], [], []
                 for _, row in df.iterrows():
+                    is_pin = (sel_sea and isinstance(sel_sea, dict) and not sel_sea.get('is_categorical') and sel_sea['type'] == t_name and sel_sea['year'] == row['year'] and sel_sea['month'] == row['month_name'])
                     is_cat = (sel_sea and isinstance(sel_sea, dict) and sel_sea.get('is_categorical') and sel_sea['type'] == t_name)
-                    is_pin = (sel_sea and isinstance(sel_sea, dict) and not sel_sea.get('is_categorical') and not sel_sea.get('mode') and
-                              sel_sea.get('type') == t_name and str(sel_sea.get('year')) == str(row['year']) and sel_sea.get('month') == row['month_name'])
-                    
                     if not sel_sea:
                         colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                    elif selected_year_mode:
-                        # Year Highlight Mode
-                        if str(row['year']) == str(target_year):
-                            colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                        else:
-                            colors.append(hex_to_rgba(base_color, 0.15)); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                    elif selected_month_mode:
-                        # Month Highlight Mode
-                        if str(row['year']) == str(target_month_year) and row['month_name'] == target_month:
-                            colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                        else:
-                            colors.append(hex_to_rgba(base_color, 0.15)); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
                     elif is_pin or is_cat:
                         colors.append(base_color); line_colors.append('black'); line_widths.append(2)
                     else:
@@ -618,72 +509,12 @@ def update_seaborne_chart(selected_years, sel_sea):
                                    customdata=t2_data.apply(lambda r: [r['year'], r['month_name'], t2_name], axis=1),
                                    hovertemplate="<span style='color: grey'>Date:</span> %{customdata[1]} %{customdata[0]}<br><span style='color: grey'>Exports ('000 b/d):</span> %{y:,.0f}<extra></extra>"))
     
-            # Add Clickable Year Header Bars (Background + Click Target)
-            header_x = [yc['x'] for yc in year_centers]
-            header_y = [1] * len(header_x) # Full height of yaxis2
-            # Width is approx 12 (number of months) - padding
-            # We can calculate it based on x positions, but for simple year/month structure, 12 is close enough 
-            # or we can be precise: (num_months * 1)
-            # Center is at sum(months)/2. width is num_months.
-            # In generate_timeline, we increment by 1 per month. width should be roughly 12.
-            header_widths = [12] * len(header_x) 
-            
-            # Determine colors based on selection
-            header_colors = []
-            for yc in year_centers:
-                y = yc['year']
-                if selected_year_mode and str(target_year) == str(y):
-                    header_colors.append("rgba(0, 109, 156, 0.4)") # Selected Blue
-                else:
-                    header_colors.append("rgba(0, 0, 0, 0)") # Transparent for unselected
-            
-            fig_sea.add_trace(go.Bar(
-                x=header_x, y=header_y,
-                width=header_widths,
-                yaxis='y2',
-                marker=dict(color=header_colors, line=dict(width=0)), # No border
-                hoverinfo='text',
-                hovertext=[f"Click to filter {yc['year']}" for yc in year_centers],
-                showlegend=False,
-                customdata=[[yc['year'], 'YEAR_HEADER'] for yc in year_centers]
-            ))
-
-            # Month Header Trace (Clickable Labels)
-            label_size = 13 if num_years == 1 else (11 if num_years == 2 else (10 if num_years <= 6 else 9))
-            fig_sea.add_trace(go.Bar(
-                x=timeline_df['x_pos'], y=[1] * len(timeline_df),
-                width=1, yaxis='y3',
-                marker=dict(color='rgba(0,0,0,0)'),
-                text=timeline_df['short_label'], textposition='inside',
-                textangle=0,
-                textfont=dict(color="grey", size=label_size),
-                hoverinfo='none', showlegend=False,
-                customdata=timeline_df.apply(lambda r: [r['year'], r['month_name'], 'MONTH_HEADER'], axis=1)
-            ))
-
-            # Adjust separators height to match new yaxis domain (0.80) to prevent overlap with header
-            shapes = []
-            for s in month_separators:
-                new_s = s.copy()
-                if new_s.get('line', {}).get('color') == '#999999': # Month separator
-                     new_s['y1'] = 0.78
-                     new_s['y0'] = 0 # Adjusted for yaxis domain (Bottom up)
-                shapes.append(new_s)
-
-
-                
-            # Calculate strict x-range to remove start/end gaps
-            max_x = timeline_df['x_pos'].max() + 0.6
-
             fig_sea.update_layout(
-                template="simple_white", barmode='group', height=300, margin=dict(l=40, r=40, t=30, b=10), showlegend=False,
-                xaxis=dict(title=None, range=[0, max_x], side='top', tickmode='array', tickvals=timeline_df['x_pos'], ticktext=timeline_df['short_label'], tickangle=0, showgrid=False, showline=True, linecolor='#000', ticks="", showticklabels=False),
-                yaxis=dict(title=None, showgrid=True, gridcolor='#eee', dtick=1000, tickfont=dict(color="grey"), domain=[0, 0.78]),
-                # yaxis2 for Year headers
-                yaxis2=dict(title=None, range=[0, 1], showgrid=False, showticklabels=False, visible=False, fixedrange=True, domain=[0.88, 1]),
-                # yaxis3 for Month headers (Moved to Top)
-                yaxis3=dict(title=None, range=[0, 1], showgrid=False, showticklabels=False, visible=False, fixedrange=True, domain=[0.78, 0.88]),
-                dragmode=False, hovermode="closest", bargap=0.1, bargroupgap=0.05, shapes=shapes, annotations=year_annotations,
+                template="simple_white", barmode='group', height=300, margin=dict(l=40, r=40, t=80, b=10), showlegend=False,
+                xaxis=dict(title=None, side='top', tickmode='array', tickvals=timeline_df['x_pos'], ticktext=timeline_df['short_label'], tickangle=0, showgrid=False, showline=True, linecolor='#000', ticks="",
+                           tickfont=dict(color="grey", size=13 if num_years == 1 else (11 if num_years == 2 else (10 if num_years <= 6 else 9)))),
+                yaxis=dict(title=None, showgrid=True, gridcolor='#eee', dtick=1000, tickfont=dict(color="grey")),
+                dragmode=False, hovermode="closest", bargap=0.1, bargroupgap=0.05, shapes=month_separators, annotations=year_annotations,
                 hoverlabel=dict(bgcolor="white", font_size=13, font_color="black", bordercolor="#cccccc")
             )
         return fig_sea
@@ -705,7 +536,7 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe):
     
     try:
         years = sorted([int(y) for y in selected_years])
-        timeline_df, year_annotations, _, year_separators, num_years, year_centers = generate_timeline_data(years)
+        timeline_df, year_annotations, _, year_separators, num_years = generate_timeline_data(years)
         
         # Title and Legends
         if direction_val == 'China':
@@ -724,14 +555,6 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe):
 
         df_pipe = load_pipeline_data(years)
         fig_pipe = go.Figure()
-
-        # Add visual logic: specific highlighting for year mode
-        selected_year_mode = (sel_pipe and isinstance(sel_pipe, dict) and sel_pipe.get('mode') == 'year_only')
-        target_year = sel_pipe.get('year') if selected_year_mode else None
-
-        selected_month_mode = (sel_pipe and isinstance(sel_pipe, dict) and sel_pipe.get('mode') == 'month_only')
-        target_month = sel_pipe.get('month') if selected_month_mode else None
-        target_month_year = sel_pipe.get('year') if selected_month_mode else None
 
         if not df_pipe.empty:
             df_pipe['year'] = df_pipe['date'].dt.year
@@ -752,27 +575,15 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe):
                 colors, line_colors, line_widths = [], [], []
                 
                 for _, row in dest_series.iterrows():
+                    is_pin = (sel_pipe and isinstance(sel_pipe, dict) and not sel_pipe.get('is_categorical') and 
+                             sel_pipe.get('destination') == dest and 
+                             sel_pipe.get('year') == row['year'] and 
+                             sel_pipe.get('month') == row['month_name'])
                     is_cat = (sel_pipe and isinstance(sel_pipe, dict) and sel_pipe.get('is_categorical') and 
                              sel_pipe.get('destination') == dest)
-                    is_pin = (sel_pipe and isinstance(sel_pipe, dict) and not sel_pipe.get('is_categorical') and not sel_pipe.get('mode') and
-                              sel_pipe.get('destination') == dest and 
-                              str(sel_pipe.get('year')) == str(row['year']) and 
-                              sel_pipe.get('month') == row['month_name'])
-
+                    
                     if not sel_pipe:
                         colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                    elif selected_year_mode:
-                        # Year Highlight Mode
-                        if str(row['year']) == str(target_year):
-                            colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                        else:
-                            colors.append(hex_to_rgba(base_color, 0.15)); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                    elif selected_month_mode:
-                        # Month Highlight Mode
-                        if str(row['year']) == str(target_month_year) and row['month_name'] == target_month:
-                            colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                        else:
-                            colors.append(hex_to_rgba(base_color, 0.15)); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
                     elif is_pin or is_cat:
                         colors.append(base_color); line_colors.append('black'); line_widths.append(2)
                     else:
@@ -782,56 +593,13 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe):
                                         marker=dict(color=colors, line=dict(color=line_colors, width=line_widths)),
                                         customdata=dest_series.apply(lambda r: [r['year'], r['month_name'], dest], axis=1),
                                         hovertemplate="<span style='color: grey'>Date:</span> %{customdata[1]} %{customdata[0]}<br><span style='color: grey'>Destination:</span> %{customdata[2]}<br><span style='color: grey'>Exports(000b/d):</span> %{y:,.0f}<extra></extra>"))
-            
-            # Add Clickable Year Header Bars (Background + Click Target)
-            header_x = [yc['x'] for yc in year_centers]
-            header_y = [1] * len(header_x)
-            header_widths = [12] * len(header_x) 
-            
-            header_colors = []
-            for yc in year_centers:
-                y = yc['year']
-                if selected_year_mode and str(target_year) == str(y):
-                    header_colors.append("rgba(0, 109, 156, 0.4)")
-                else:
-                    header_colors.append("rgba(0, 0, 0, 0)")
-            
-            fig_pipe.add_trace(go.Bar(
-                x=header_x, y=header_y,
-                width=header_widths,
-                yaxis='y2',
-                marker=dict(color=header_colors, line=dict(width=0)),
-                hoverinfo='text',
-                hovertext=[f"Click to filter {yc['year']}" for yc in year_centers],
-                showlegend=False,
-                customdata=[[yc['year'], 'YEAR_HEADER'] for yc in year_centers]
-            ))
-
-            # Month Header Trace (Clickable Labels)
-            label_size = 13 if num_years == 1 else (11 if num_years == 2 else (10 if num_years <= 6 else 9))
-            fig_pipe.add_trace(go.Bar(
-                x=timeline_df['x_pos'], y=[1] * len(timeline_df),
-                width=1, yaxis='y3',
-                marker=dict(color='rgba(0,0,0,0)'),
-                text=timeline_df['full_label'], textposition='inside',
-                textangle=-90,
-                textfont=dict(color="grey", size=label_size),
-                hoverinfo='none', showlegend=False,
-                customdata=timeline_df.apply(lambda r: [r['year'], r['month_name'], 'MONTH_HEADER'], axis=1)
-            ))
-            
-            shapes = list(year_separators)
-            max_x = timeline_df['x_pos'].max() + 0.6
-
+                
             fig_pipe.update_layout(
-                template="simple_white", barmode='stack' if direction_val == 'Druzhba' else 'group', height=300, margin=dict(l=40, r=40, t=30, b=10), showlegend=False,
-                xaxis=dict(title=None, range=[0, max_x], tickmode='array', tickvals=timeline_df['x_pos'], ticktext=timeline_df['full_label'], tickangle=-90, showgrid=False, showline=True, linecolor='#000', ticks="", showticklabels=False),
-                yaxis=dict(title=None, showgrid=True, gridcolor='#eee', tickfont=dict(color="grey"), domain=[0.15, 0.80]),
-                # yaxis2 for headers
-                yaxis2=dict(title=None, range=[0, 1], showgrid=False, showticklabels=False, visible=False, fixedrange=True, domain=[0.85, 1]),
-                # yaxis3 for Month headers
-                yaxis3=dict(title=None, range=[0, 1], showgrid=False, showticklabels=False, visible=False, fixedrange=True, domain=[0, 0.12]),
-                dragmode=False, hovermode="closest", bargap=0.25, shapes=shapes, annotations=year_annotations,
+                template="simple_white", barmode='stack' if direction_val == 'Druzhba' else 'group', height=300, margin=dict(l=40, r=40, t=55, b=80), showlegend=False,
+                xaxis=dict(title=None, tickmode='array', tickvals=timeline_df['x_pos'], ticktext=timeline_df['full_label'], tickangle=-90, showgrid=False, showline=True, linecolor='#000', ticks="",
+                           tickfont=dict(color="grey", size=13 if num_years == 1 else (11 if num_years == 2 else (10 if num_years <= 6 else 9)))),
+                yaxis=dict(title=None, showgrid=True, gridcolor='#eee', tickfont=dict(color="grey")),
+                dragmode=False, hovermode="closest", bargap=0.25, shapes=year_separators, annotations=year_annotations,
                 hoverlabel=dict(bgcolor="white", font_size=13, font_color="black", bordercolor="#cccccc")
             )
         return fig_pipe, pipe_title, pipe_legend_items
@@ -923,3 +691,12 @@ def export_pipeline_data(n_clicks, selected_years, direction_val):
     except Exception as e:
         print(f"Error exporting pipeline data: {e}")
         return no_update
+
+def register_callbacks(dash_app, server):
+    """Register all callbacks for Crude Pipeline Analytics
+    
+    Note: Callbacks are already registered via @callback decorators when this module is imported.
+    This function exists for consistency with other dashboard modules.
+    """
+    # Callbacks are already registered via @callback decorators above
+    pass
