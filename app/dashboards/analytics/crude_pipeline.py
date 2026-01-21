@@ -123,15 +123,43 @@ def create_layout():
         dcc.Store(id='selected-seaborne', data=None),
         dcc.Store(id='selected-pipeline', data=None),
         
+        # Download components
+        dcc.Download(id="download-seaborne-csv"),
+        dcc.Download(id="download-pipeline-csv"),
+        
         # Style for the hand cursor
         html.Div(id='cursor-style-container'),
         
         html.Div([
             # Left Column: Charts (Flexible width)
             html.Div([
-                # Title
-                html.H1("SEABORNE CRUDE OIL EXPORTS ('000 b/d)", 
-                        style={'color': '#d35400', 'fontSize': '18px', 'fontWeight': 'bold', 'marginBottom': '10px', 'fontFamily': 'sans-serif'}),
+                # Title 1 + Export
+                html.Div([
+                    html.H1("SEABORNE CRUDE OIL EXPORTS ('000 b/d)", 
+                            style={'color': '#d35400', 'fontSize': '18px', 'fontWeight': 'bold', 'margin': '0', 'fontFamily': 'sans-serif'}),
+                    dcc.Loading(
+                        id="loading-export-seaborne",
+                        type="default",
+                        color="#fe5000",
+                        children=[
+                            html.Button(
+                                "Export to CSV",
+                                id="export-seaborne-btn",
+                                n_clicks=0,
+                                style={
+                                    "backgroundColor": "white",
+                                    "color": "#2c3e50",
+                                    "border": "1px solid #dee2e6",
+                                    "padding": "6px 12px",
+                                    "borderRadius": "4px",
+                                    "cursor": "pointer",
+                                    "fontSize": "12px",
+                                    "fontWeight": "normal",
+                                },
+                            )
+                        ]
+                    )
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                 
                 # Chart 1
                 html.Div(dcc.Loading(
@@ -140,10 +168,34 @@ def create_layout():
                 
                 html.Hr(style={'margin': '5px 0', 'border': '0', 'borderTop': '1px solid #eee', 'clear': 'both'}),
                 
-                # Title 2
-                html.H1(id='pipeline-title', 
-                        children="PIPELINE CRUDE EXPORTS TO EUROPE VIA DRUZHBA ('000 b/d)",
-                        style={'color': '#d35400', 'fontSize': '18px', 'fontWeight': 'bold', 'margin': '0 0 10px 0', 'fontFamily': 'sans-serif'}),
+                # Title 2 + Export
+                html.Div([
+                    html.H1(id='pipeline-title', 
+                            children="PIPELINE CRUDE EXPORTS TO EUROPE VIA DRUZHBA ('000 b/d)",
+                            style={'color': '#d35400', 'fontSize': '18px', 'fontWeight': 'bold', 'margin': '0', 'fontFamily': 'sans-serif'}),
+                    dcc.Loading(
+                        id="loading-export-pipeline",
+                        type="default",
+                        color="#fe5000",
+                        children=[
+                            html.Button(
+                                "Export to CSV",
+                                id="export-pipeline-btn",
+                                n_clicks=0,
+                                style={
+                                    "backgroundColor": "white",
+                                    "color": "#2c3e50",
+                                    "border": "1px solid #dee2e6",
+                                    "padding": "6px 12px",
+                                    "borderRadius": "4px",
+                                    "cursor": "pointer",
+                                    "fontSize": "12px",
+                                    "fontWeight": "normal",
+                                },
+                            )
+                        ]
+                    )
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                 
                 # Chart 2
                 html.Div(dcc.Loading(
@@ -554,3 +606,88 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe):
     except Exception as e:
         print(f"Error in pipeline chart: {e}")
         return go.Figure().update_layout(title=f"Error: {e}"), "Error", []
+
+@callback(
+    Output("download-seaborne-csv", "data"),
+    Input("export-seaborne-btn", "n_clicks"),
+    State("year-check-filter", "value"),
+    prevent_initial_call=True
+)
+def export_seaborne_data(n_clicks, selected_years):
+    if not n_clicks or not selected_years:
+        return no_update
+        
+    try:
+        years = sorted([int(y) for y in selected_years])
+        df_sea = load_seaborne_data(years)
+        
+        if df_sea.empty:
+            return no_update
+            
+        df_sea['year'] = df_sea['date'].dt.year
+        df_sea['month_num'] = df_sea['date'].dt.month
+        df_sea['month_name'] = df_sea['date'].dt.strftime('%B')
+        
+        # Aggregate to match chart data, including month_num for sorting
+        sea_grouped = df_sea.groupby(['year', 'month_num', 'month_name', 'type'])['vol_kbpd'].sum().reset_index()
+        
+        # Sort by year and month number
+        sea_grouped = sea_grouped.sort_values(['year', 'month_num'])
+        
+        # Drop month_num before export
+        sea_grouped = sea_grouped.drop(columns=['month_num'])
+        
+        # Add timestamp to filename
+        timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"seaborne_exports_{timestamp}.csv"
+        
+        return dcc.send_data_frame(sea_grouped.to_csv, filename, index=False)
+    except Exception as e:
+        print(f"Error exporting seaborne data: {e}")
+        return no_update
+
+@callback(
+    Output("download-pipeline-csv", "data"),
+    Input("export-pipeline-btn", "n_clicks"),
+    [State("year-check-filter", "value"),
+     State("direction-dropdown", "value")],
+    prevent_initial_call=True
+)
+def export_pipeline_data(n_clicks, selected_years, direction_val):
+    if not n_clicks or not selected_years:
+        return no_update
+        
+    try:
+        years = sorted([int(y) for y in selected_years])
+        df_pipe = load_pipeline_data(years)
+        
+        if df_pipe.empty:
+            return no_update
+            
+        df_pipe['year'] = df_pipe['date'].dt.year
+        df_pipe['month_num'] = df_pipe['date'].dt.month
+        df_pipe['month_name'] = df_pipe['date'].dt.strftime('%B')
+        
+        if direction_val == 'China':
+            df_pipe = df_pipe[df_pipe['destination'] == 'China']
+        else:
+            df_pipe = df_pipe[df_pipe['destination'].isin(DRUZHBA_DESTINATIONS)]
+        
+        # Aggregate to match chart data, including month_num for sorting
+        pipe_grouped = df_pipe.groupby(['year', 'month_num', 'month_name', 'destination'])['vol_kbpd'].sum().reset_index()
+        
+        # Sort by year and month number
+        pipe_grouped = pipe_grouped.sort_values(['year', 'month_num'])
+        
+        # Drop month_num before export
+        pipe_grouped = pipe_grouped.drop(columns=['month_num'])
+        
+        # Add timestamp to filename
+        timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+        filename_prefix = "pipeline_exports_china" if direction_val == 'China' else "pipeline_exports_druzhba"
+        filename = f"{filename_prefix}_{timestamp}.csv"
+        
+        return dcc.send_data_frame(pipe_grouped.to_csv, filename, index=False)
+    except Exception as e:
+        print(f"Error exporting pipeline data: {e}")
+        return no_update
