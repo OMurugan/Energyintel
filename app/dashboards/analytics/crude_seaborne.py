@@ -17,6 +17,9 @@ def create_layout():
     return html.Div([
         # Store for time dimension visibility for Seaborne Exports
         dcc.Store(id='seaborne-time-visibility-store', data={'Quarter': False, 'Month': False, 'Day': False}),
+        # Stores for table highlighting state
+        dcc.Store(id='avg-exports-highlight-store', data=None),
+        dcc.Store(id='yoy-change-highlight-store', data=None),
 
         # Header Row
         html.Div([
@@ -125,7 +128,9 @@ def create_layout():
                         style_header={'backgroundColor': 'white', 'fontWeight': 'bold', 'borderBottom': '1px solid #ddd', 'color': EI_DARK_BLUE, 'fontSize': '11px'},
                         style_cell={'padding': '3px 6px', 'fontSize': '10px', 'fontFamily': 'Lato, sans-serif', 'border': 'none', 'textAlign': 'right', 'color': '#333'},
                         style_cell_conditional=[{'if': {'column_id': 'loading_port'}, 'textAlign': 'left', 'minWidth': '110px'}],
-                        style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'}]
+                        style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'}],
+                        css=[{'selector': '.dash-spreadsheet td.highlighted', 'rule': f'background-color: {EI_LIGHT_BLUE} !important; opacity: 1 !important;'},
+                             {'selector': '.highlight-mode td:not(.highlighted)', 'rule': 'opacity: 0.3; transition: opacity 0.2s;'}]
                     )
                 ], style={'marginBottom': '20px', 'padding': '5px'}),
 
@@ -148,7 +153,9 @@ def create_layout():
                             {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'},
                             {'if': {'column_id': 'period'}, 'borderRight': '1px solid #eee'}
                         ],
-                        css=[{'selector': 'td[data-dash-column="period"]', 'rule': 'writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: auto; text-align: center; vertical-align: middle;'}]
+                        css=[{'selector': 'td[data-dash-column="period"]', 'rule': 'writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: auto; text-align: center; vertical-align: middle;'},
+                             {'selector': '.dash-spreadsheet td.highlighted', 'rule': f'background-color: {EI_LIGHT_BLUE} !important; opacity: 1 !important;'},
+                             {'selector': '.highlight-mode td:not(.highlighted)', 'rule': 'opacity: 0.3; transition: opacity 0.2s;'}]
                     )
                 ], style={'padding': '5px'})
             ], style={'width': '30%', 'paddingLeft': '15px'})
@@ -774,3 +781,88 @@ def register_callbacks(dash_app, server):
         State('seaborne-map', 'figure'),
         prevent_initial_call=True
     )
+
+    # Generic Table Highlighting Clientside Callback
+    def create_table_highlighting_callback(table_id, store_id):
+        clientside_callback(
+            """
+            function(active_cell, table_data, current_store) {
+                const table_div = document.getElementById(table_id);
+                if (!table_div) return window.dash_clientside.no_update;
+                
+                const spreadsheet = table_div.querySelector('.dash-spreadsheet-container');
+                if (!spreadsheet) return window.dash_clientside.no_update;
+
+                const clearHighlights = () => {
+                    spreadsheet.classList.remove('highlight-mode');
+                    spreadsheet.querySelectorAll('td').forEach(td => td.classList.remove('highlighted'));
+                };
+
+                const applyHighlight = (type, id) => {
+                    spreadsheet.classList.add('highlight-mode');
+                    if (type === 'row') {
+                        spreadsheet.querySelectorAll(`td[data-dash-row="${id}"]`).forEach(td => td.classList.add('highlighted'));
+                    } else if (type === 'cell') {
+                        const [r, c] = id.split(':::');
+                        spreadsheet.querySelectorAll(`td[data-dash-column="${c}"][data-dash-row="${r}"]`).forEach(td => td.classList.add('highlighted'));
+                    } else if (type === 'column') {
+                        spreadsheet.querySelectorAll(`td[data-dash-column="${id}"]`).forEach(td => td.classList.add('highlighted'));
+                    }
+                };
+
+                // Single robust click listener
+                if (!table_div.dataset.listenerAttached) {
+                    table_div.addEventListener('click', (e) => {
+                        const cell = e.target.closest('td.dash-cell');
+                        const header = e.target.closest('.dash-header');
+                        
+                        let hType = null;
+                        let hId = null;
+
+                        if (header) {
+                            hType = 'column';
+                            hId = header.getAttribute('data-dash-column');
+                        } else if (cell) {
+                            const rowIdx = cell.getAttribute('data-dash-row');
+                            const colId = cell.getAttribute('data-dash-column');
+                            const isPortCol = colId === 'loading_port' || colId === 'port_name';
+                            hType = isPortCol ? 'row' : 'cell';
+                            hId = isPortCol ? rowIdx : `${rowIdx}:::${colId}`;
+                        }
+
+                        if (hType && hId) {
+                            const current = JSON.parse(table_div.dataset.highlightState || '{}');
+                            const same = current.type === hType && current.id == hId;
+                            
+                            clearHighlights();
+                            if (same) {
+                                table_div.dataset.highlightState = '{}';
+                            } else {
+                                applyHighlight(hType, hId);
+                                table_div.dataset.highlightState = JSON.stringify({type: hType, id: hId});
+                            }
+                        }
+                    });
+                    table_div.dataset.listenerAttached = 'true';
+                }
+
+                // Re-apply on data change or initial render
+                setTimeout(() => {
+                    const current = JSON.parse(table_div.dataset.highlightState || '{}');
+                    if (current.type) {
+                        clearHighlights();
+                        applyHighlight(current.type, current.id);
+                    }
+                }, 50);
+
+                return window.dash_clientside.no_update;
+            }
+            """.replace('table_id', f"'{table_id}'"),
+            Output(store_id, 'data'),
+            [Input(table_id, 'active_cell'),
+             Input(table_id, 'data')],
+            [State(store_id, 'data')]
+        )
+
+    create_table_highlighting_callback('avg-exports-table', 'avg-exports-highlight-store')
+    create_table_highlighting_callback('yoy-change-table', 'yoy-change-highlight-store')
