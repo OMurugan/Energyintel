@@ -115,10 +115,19 @@ def create_layout():
                 ),
                 
                 # Footer Source
-                html.P("Energy Intelligence; data as of December 2025", 
-                       style={'fontSize': '12px', 'color': '#666', 'marginTop': '10px', 'fontStyle': 'italic'}),
+                html.Div([
+                    html.A("Energy Intelligence; data as of December 2025", 
+                           id='footer-source-text',
+                           className='source-link footer-source-link',
+                           style={
+                               'width': '100%', 'display': 'block', 'padding': '8px 10px', 
+                               'fontStyle': 'italic', 'fontSize': '12px', 'marginTop': '10px',
+                               'color': '#1b365d'
+                           },
+                           tabIndex=0)
+                ], className='source-container'),
 
-            ], style={'width': '80%', 'display': 'inline-block', 'verticalAlign': 'top'}),
+            ], style={'width': '88%', 'display': 'inline-block', 'verticalAlign': 'top'}),
 
             # Right side: Controls and Legend
             html.Div([
@@ -136,7 +145,7 @@ def create_layout():
                         value=2025,
                         labelStyle={'display': 'block', 'marginBottom': '5px', 'fontSize': '14px'}
                     )
-                ], style={'marginBottom': '30px', 'padding': '10px', 'border': '1px solid #eee', 'borderRadius': '5px'}),
+                ], style={'marginBottom': '30px', 'padding': '10px 0', 'border': 'none', 'borderRadius': '0'}),
 
                 # Commodity Legend
                 html.Div([
@@ -148,8 +157,8 @@ def create_layout():
                         ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'})
                         for commodity in reversed(BAR_STACK_ORDER)
                     ])
-                ], style={'padding': '10px', 'border': '1px solid #eee', 'borderRadius': '5px'})
-            ], style={'width': '18%', 'display': 'inline-block', 'marginLeft': '2%', 'verticalAlign': 'top'})
+                ], style={'padding': '10px 0', 'border': 'none', 'borderRadius': '0'})
+            ], style={'width': '10%', 'display': 'inline-block', 'marginLeft': '2%', 'verticalAlign': 'top'})
         ], style={'padding': '0 20px'})
     ], style={'backgroundColor': 'white', 'fontFamily': 'Arial, sans-serif'})
 
@@ -161,10 +170,10 @@ def create_layout():
 )
 def update_treemap_selection(click_data, current_selection):
     if not click_data:
-        return current_selection
+        return None  # Reset selection on background click
     try:
         point = click_data['points'][0]
-        # In treemaps, clicking background/root usually has no customdata or is empty
+        # Treemap customdata is [commodity, vol, percentage]
         if 'customdata' not in point or not point['customdata']:
             return None
         clicked_commodity = str(point['customdata'][0]).strip()
@@ -183,17 +192,20 @@ def update_treemap_selection(click_data, current_selection):
 )
 def update_bar_selection(click_data, current_selection):
     if not click_data:
-        return current_selection
+        return None  # Reset selection on background click
     try:
         point = click_data['points'][0]
         # Bar customdata is [commodity, hover_date]
         if 'customdata' not in point or not point['customdata']:
             return None
-        clicked_commodity = str(point['customdata'][0]).strip()
+        commodity = str(point['customdata'][0]).strip()
+        date = str(point['customdata'][1]).strip()
+        clicked_id = f"{commodity}|{date}"
+        
         # Toggle
-        if clicked_commodity == current_selection:
+        if clicked_id == current_selection:
             return None
-        return clicked_commodity
+        return clicked_id
     except (KeyError, IndexError):
         return None
 @callback(
@@ -229,23 +241,43 @@ def export_treemap_data(n_clicks, selected_year, sel_commodity):
     prevent_initial_call=True
 )
 def export_bar_data(n_clicks, sel_commodity):
-    if not n_clicks:
-        return dash.no_update
-    
-    query = "SELECT date, category, commodity, vol_kbpd FROM russia_master_data WHERE category = 'Exports' AND date >= '2022-01-01'"
-    if sel_commodity:
-        query += f" AND commodity = '{sel_commodity}'"
-        
-    try:
-        results = execute_query(query)
-        if not results:
-            return dash.no_update
+    if n_clicks > 0:
+        query = f"SELECT date, category, commodity, vol_kbpd FROM russia_master_data WHERE category = 'Exports' AND date >= '2022-01-01';"
+        results = execute_query(query) or []
         df = pd.DataFrame(results)
-        filename = f"bar_chart_data_{sel_commodity or 'all'}.csv"
-        return dcc.send_data_frame(df.to_csv, filename, index=False)
-    except Exception as e:
-        logger.error(f"Bar Export Error: {str(e)}")
-        return dash.no_update
+        if not df.empty:
+            df['date'] = pd.to_datetime(df['date'])
+            if sel_commodity:
+                # Extract commodity name if it's a point-specific selection
+                sel_category = sel_commodity.split('|')[0] if '|' in sel_commodity else sel_commodity
+                df = df[df['commodity'].str.strip() == sel_category]
+            
+            filename = f"product_exports_{sel_commodity.replace('|','_') if sel_commodity else 'all'}.csv"
+            return dcc.send_data_frame(df.to_csv, filename=filename, index=False)
+    return None
+
+# Clientside callbacks to reset clickData, ensuring every click triggers the toggle logic
+dash.clientside_callback(
+    """
+    function(selection) {
+        return null; // Reset clickData
+    }
+    """,
+    Output('product-exports-treemap', 'clickData'),
+    Input('treemap-selection', 'data'),
+    prevent_initial_call=True
+)
+
+dash.clientside_callback(
+    """
+    function(selection) {
+        return null; // Reset clickData
+    }
+    """,
+    Output('product-exports-bar', 'clickData'),
+    Input('bar-selection', 'data'),
+    prevent_initial_call=True
+)
 
 @callback(
     [Output('product-exports-treemap', 'figure'),
@@ -293,11 +325,10 @@ def update_charts(selected_year, sel_treemap, sel_bar):
     df_b = df_b[df_b['commodity'].isin(valid_commodities)] if not df_b.empty else df_b
 
     # Headers (Independent)
-    treemap_sel_text = f" -- {sel_treemap}" if sel_treemap else " -- All"
-    bar_sel_text = f" -- {sel_bar}" if sel_bar else " -- All"
-    
-    treemap_header = f"EXPORT OF OIL PRODUCTS IN {selected_year} ('000 b/d){treemap_sel_text}"
-    bar_header = f"PRODUCT EXPORTS ('000 b/d){bar_sel_text}"
+    # Based on live site images, the treemap header often stays "-- All" or shows selection differently
+    treemap_header = f"EXPORT OF OIL PRODUCTS IN {selected_year} ('000 b/d) -- All"
+    # Live image shows "-- All" for bars even when a segment is highlighted
+    bar_header = f"PRODUCT EXPORTS ('000 b/d) -- All"
 
     # 1. Treemap Logic
     if df_t.empty:
@@ -312,10 +343,11 @@ def update_charts(selected_year, sel_treemap, sel_bar):
         treemap_df['percentage'] = (treemap_df['vol_kbpd'] / total_val * 100) if total_val > 0 else 0
         treemap_df = treemap_df.sort_values('vol_kbpd', ascending=False)
 
-        labels, values, colors, custom_data = [], [], [], []
+        labels, values, colors, custom_data, ids = [], [], [], [], []
         line_widths, line_colors = [], []
         for _, row in treemap_df.iterrows():
             commodity = row['commodity']
+            ids.append(commodity)
             labels.append(f"<b>{commodity}</b><br>{row['vol_kbpd']:.1f} ('000 b/d)<br>{row['percentage']:.2f}%")
             values.append(row['vol_kbpd'])
             
@@ -336,19 +368,21 @@ def update_charts(selected_year, sel_treemap, sel_bar):
             custom_data.append([commodity, row['vol_kbpd'], row['percentage']])
 
         fig_treemap = go.Figure(go.Treemap(
+            ids=ids,
             labels=labels,
             parents=[""] * len(labels),
             values=values,
             textinfo="label",
-            marker=dict(colors=colors, line=dict(width=1, color='white')),
+            marker=dict(colors=colors, line=dict(width=line_widths, color=line_colors)),
             customdata=custom_data,
             hovertemplate="Product: %{customdata[0]}<br>Volume ('000 b/d): %{customdata[1]:.1f}<br>% of Total: %{customdata[2]:.2f}%<extra></extra>",
             tiling=dict(pad=2),
+            maxdepth=1,
             hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"))
         ))
         fig_treemap.update_layout(
             margin=dict(t=0, b=0, l=0, r=0), 
-            uirevision="static",
+            uirevision=f"{selected_year}-{sel_treemap}", # Force reset on any selection change
             clickmode='event'
         )
 
@@ -387,11 +421,35 @@ def update_charts(selected_year, sel_treemap, sel_bar):
             reindexed_hdates = hdate_map.reindex(month_displays)['hover_date'].tolist()
             
             base_color = COMMODITY_COLORS.get(commodity, '#CCCCCC')
-            marker_color = hex_to_rgba(base_color, 0.15) if sel_bar and commodity != sel_bar else base_color
+            
+            # Point-specific highlighting logic
+            marker_colors = []
+            marker_line_widths = []
+            marker_line_colors = []
+            
+            for _, bar_row in comm_data.iterrows():
+                point_id = f"{commodity}|{bar_row['hover_date']}"
+                if sel_bar and point_id == sel_bar:
+                    marker_colors.append(base_color)
+                    marker_line_widths.append(3) # Thick border for the selected point
+                    marker_line_colors.append('black')
+                elif sel_bar:
+                    # Dim all other points if something is selected
+                    marker_colors.append(hex_to_rgba(base_color, 0.15))
+                    marker_line_widths.append(0)
+                    marker_line_colors.append('rgba(0,0,0,0)')
+                else:
+                    # No selection - show full colors
+                    marker_colors.append(base_color)
+                    marker_line_widths.append(0)
+                    marker_line_colors.append('rgba(0,0,0,0)')
 
             fig_bar.add_trace(go.Bar(
                 name=commodity, x=comm_data['month_display'], y=comm_data['vol_kbpd'],
-                marker_color=marker_color,
+                marker=dict(
+                    color=marker_colors,
+                    line=dict(width=marker_line_widths, color=marker_line_colors)
+                ),
                 customdata=[[commodity, d] for d in reindexed_hdates],
                 hovertemplate="Commodity: %{customdata[0]}<br>Date: %{customdata[1]}<br>Volume ('000 b/d): %{y:,.0f}<extra></extra>",
                 hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"))
@@ -412,7 +470,7 @@ def update_charts(selected_year, sel_treemap, sel_bar):
             ),
             margin=dict(t=10, b=50, l=50, r=10),
             paper_bgcolor='white', plot_bgcolor='white',
-            showlegend=False, uirevision="static",
+            showlegend=False, uirevision=f"static-{sel_bar}", 
             hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"), bordercolor="#dddddd")
         )
 
