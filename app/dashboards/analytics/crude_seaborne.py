@@ -261,20 +261,23 @@ def register_callbacks(dash_app, server):
                 return [], []
             
             # Identify active dimensions
-            group_cols = ['loading_port', 'year_of_date']
+            active_time_dims = ['year_of_date']
             if time_visibility.get('Quarter'):
-                group_cols.append('quarter_of_date')
+                active_time_dims.append('quarter_of_date')
             if time_visibility.get('Month'):
-                group_cols.append('month_of_date')
+                active_time_dims.append('month_of_date')
             if time_visibility.get('Day'):
-                group_cols.append('day_of_date')
+                active_time_dims.append('day_of_date')
+            
+            group_cols = ['loading_port'] + active_time_dims
+            num_levels = len(active_time_dims)
             
             # Aggregate data
             agg_df = df.groupby(group_cols)['vol_kbpd'].mean().reset_index()
             agg_df['vol_kbpd'] = agg_df['vol_kbpd'].round().fillna(0).astype(int)
             
-            # Pivot the data - keeping loading_port as index for easier iteration
-            pivot_columns = group_cols[1:] # Everything except loading_port
+            # Pivot the data
+            pivot_columns = active_time_dims
             pivot_df = agg_df.pivot_table(
                 index='loading_port',
                 columns=pivot_columns,
@@ -304,19 +307,21 @@ def register_callbacks(dash_app, server):
             sorted_data_cols = sorted(data_cols, key=col_sort_key)
             
             # Build Dash DataTable columns with hierarchy
-            dash_columns = [{"name": ["", "", "", "Loading Port"], "id": "loading_port"}]
+            # Loading Port header should be at the bottom level, padded with empty strings above
+            loading_port_name = [""] * (num_levels - 1) + ["Loading Port"] if num_levels > 1 else ["Loading Port"]
+            dash_columns = [{"name": loading_port_name, "id": "loading_port"}]
             
-            # Level mapping for name_parts
             for col in sorted_data_cols:
                 col_id = "_".join(map(str, col)) if isinstance(col, tuple) else str(col)
                 
-                # Construct name array (4 levels deep for consistency)
-                name_parts = ["", "", "", ""]
+                # Construct name array with exact num_levels depth
                 if isinstance(col, tuple):
-                    for i, val in enumerate(col):
-                        if i < 4: name_parts[i] = str(val)
+                    name_parts = [str(x) for x in col]
+                    # Ensure name_parts is exactly num_levels (it should be, but just in case)
+                    while len(name_parts) < num_levels:
+                        name_parts.append("")
                 else:
-                    name_parts[0] = str(col)
+                    name_parts = [str(col)]
                 
                 dash_columns.append({
                     "name": name_parts,
