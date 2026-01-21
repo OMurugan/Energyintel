@@ -81,6 +81,7 @@ def create_layout():
                 dcc.Loading(
                     id="loading-treemap",
                     type="default",
+                    color='#FF4500',
                     children=dcc.Graph(
                         id='product-exports-treemap',
                         config={'displayModeBar': False},
@@ -107,6 +108,7 @@ def create_layout():
                 dcc.Loading(
                     id="loading-bar",
                     type="default",
+                    color='#FF4500',
                     children=dcc.Graph(
                         id='product-exports-bar',
                         config={'displayModeBar': False},
@@ -281,56 +283,40 @@ dash.clientside_callback(
 
 @callback(
     [Output('product-exports-treemap', 'figure'),
-     Output('product-exports-bar', 'figure'),
-     Output('treemap-header', 'children'),
-     Output('bar-header', 'children')],
+     Output('treemap-header', 'children')],
     [Input('year-selector', 'value'),
-     Input('treemap-selection', 'data'),
-     Input('bar-selection', 'data')]
+     Input('treemap-selection', 'data')]
 )
-def update_charts(selected_year, sel_treemap, sel_bar):
-    # Using '' prefix for stability, search path might vary
+def update_treemap(selected_year, sel_treemap):
     query_treemap = f"SELECT date, category, commodity, vol_kbpd FROM russia_master_data WHERE category = 'Exports' AND EXTRACT(YEAR FROM date) = {selected_year};"
-    query_bar = "SELECT date, category, commodity, vol_kbpd FROM russia_master_data WHERE category = 'Exports' AND date >= '2022-01-01';"
     
     try:
         results_t = execute_query(query_treemap) or []
         df_t = pd.DataFrame(results_t)
-        results_b = execute_query(query_bar) or []
-        df_b = pd.DataFrame(results_b)
         
         # Fallback if dev schema fails
-        if df_t.empty and df_b.empty:
+        if df_t.empty:
             query_treemap = query_treemap.replace('', '')
-            query_bar = query_bar.replace('', '')
             results_t = execute_query(query_treemap) or []
             df_t = pd.DataFrame(results_t)
-            results_b = execute_query(query_bar) or []
-            df_b = pd.DataFrame(results_b)
 
     except Exception as e:
-        df_t, df_b = pd.DataFrame(), pd.DataFrame()
+        df_t = pd.DataFrame()
 
     # Data Coercion
-    for df in [df_t, df_b]:
-        if not df.empty:
-            df['date'] = pd.to_datetime(df['date'])
-            df['vol_kbpd'] = pd.to_numeric(df['vol_kbpd'], errors='coerce').fillna(0)
-            df['commodity'] = df['commodity'].astype(str).str.strip()
-            df['category'] = df['category'].astype(str).str.strip()
+    if not df_t.empty:
+        df_t['date'] = pd.to_datetime(df_t['date'])
+        df_t['vol_kbpd'] = pd.to_numeric(df_t['vol_kbpd'], errors='coerce').fillna(0)
+        df_t['commodity'] = df_t['commodity'].astype(str).str.strip()
+        df_t['category'] = df_t['category'].astype(str).str.strip()
 
     # Filtering
     valid_commodities = list(COMMODITY_COLORS.keys())
     df_t = df_t[df_t['commodity'].isin(valid_commodities)] if not df_t.empty else df_t
-    df_b = df_b[df_b['commodity'].isin(valid_commodities)] if not df_b.empty else df_b
 
-    # Headers (Independent)
-    # Based on live site images, the treemap header often stays "-- All" or shows selection differently
+    # Header
     treemap_header = f"EXPORT OF OIL PRODUCTS IN {selected_year} ('000 b/d) -- All"
-    # Live image shows "-- All" for bars even when a segment is highlighted
-    bar_header = f"PRODUCT EXPORTS ('000 b/d) -- All"
 
-    # 1. Treemap Logic
     if df_t.empty:
         fig_treemap = go.Figure()
         fig_treemap.add_annotation(text=f"No data for {selected_year}", showarrow=False, font=dict(size=14, color="grey"))
@@ -358,7 +344,7 @@ def update_charts(selected_year, sel_treemap, sel_bar):
                 line_colors.append('rgba(0,0,0,0)')
             elif sel_treemap and commodity == sel_treemap:
                 colors.append(base_color)
-                line_widths.append(4) # Keep selection border for clarity
+                line_widths.append(4)
                 line_colors.append('black')
             else:
                 colors.append(base_color)
@@ -382,7 +368,7 @@ def update_charts(selected_year, sel_treemap, sel_bar):
         ))
         fig_treemap.update_layout(
             margin=dict(t=0, b=0, l=0, r=0), 
-            uirevision=f"{selected_year}-{sel_treemap}", # Force reset on any selection change
+            uirevision=f"{selected_year}-{sel_treemap}",
             clickmode='event'
         )
 
@@ -391,8 +377,42 @@ def update_charts(selected_year, sel_treemap, sel_bar):
         font=dict(family="Arial, sans-serif"),
         hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"), bordercolor="#dddddd")
     )
+    return fig_treemap, treemap_header
 
-    # 2. Stacked Bar Chart Logic
+@callback(
+    [Output('product-exports-bar', 'figure'),
+     Output('bar-header', 'children')],
+    [Input('bar-selection', 'data')]
+)
+def update_bar_chart(sel_bar):
+    query_bar = "SELECT date, category, commodity, vol_kbpd FROM russia_master_data WHERE category = 'Exports' AND date >= '2022-01-01';"
+    
+    try:
+        results_b = execute_query(query_bar) or []
+        df_b = pd.DataFrame(results_b)
+        
+        if df_b.empty:
+            query_bar = query_bar.replace('', '')
+            results_b = execute_query(query_bar) or []
+            df_b = pd.DataFrame(results_b)
+
+    except Exception as e:
+        df_b = pd.DataFrame()
+
+    # Data Coercion
+    if not df_b.empty:
+        df_b['date'] = pd.to_datetime(df_b['date'])
+        df_b['vol_kbpd'] = pd.to_numeric(df_b['vol_kbpd'], errors='coerce').fillna(0)
+        df_b['commodity'] = df_b['commodity'].astype(str).str.strip()
+        df_b['category'] = df_b['category'].astype(str).str.strip()
+
+    # Filtering
+    valid_commodities = list(COMMODITY_COLORS.keys())
+    df_b = df_b[df_b['commodity'].isin(valid_commodities)] if not df_b.empty else df_b
+
+    # Header
+    bar_header = f"PRODUCT EXPORTS ('000 b/d) -- All"
+
     if df_b.empty:
         fig_bar = go.Figure()
         fig_bar.add_annotation(text="No historical trend data", showarrow=False, font=dict(size=14, color="grey"))
@@ -412,17 +432,13 @@ def update_charts(selected_year, sel_treemap, sel_bar):
         for commodity in BAR_STACK_ORDER:
             comm_data = bar_df[bar_df['commodity'] == commodity]
             if comm_data.empty:
-                # Add trace anyway to maintain legend order if needed, or skip
                 continue
                 
             comm_data = comm_data.set_index('month_display').reindex(month_displays).fillna({'vol_kbpd': 0}).reset_index()
-            # Link hover dates properly
             hdate_map = bar_df[['month_display', 'hover_date']].drop_duplicates().set_index('month_display')
             reindexed_hdates = hdate_map.reindex(month_displays)['hover_date'].tolist()
             
             base_color = COMMODITY_COLORS.get(commodity, '#CCCCCC')
-            
-            # Point-specific highlighting logic
             marker_colors = []
             marker_line_widths = []
             marker_line_colors = []
@@ -431,15 +447,13 @@ def update_charts(selected_year, sel_treemap, sel_bar):
                 point_id = f"{commodity}|{bar_row['hover_date']}"
                 if sel_bar and point_id == sel_bar:
                     marker_colors.append(base_color)
-                    marker_line_widths.append(3) # Thick border for the selected point
+                    marker_line_widths.append(3)
                     marker_line_colors.append('black')
                 elif sel_bar:
-                    # Dim all other points if something is selected
                     marker_colors.append(hex_to_rgba(base_color, 0.15))
                     marker_line_widths.append(0)
                     marker_line_colors.append('rgba(0,0,0,0)')
                 else:
-                    # No selection - show full colors
                     marker_colors.append(base_color)
                     marker_line_widths.append(0)
                     marker_line_colors.append('rgba(0,0,0,0)')
@@ -474,4 +488,4 @@ def update_charts(selected_year, sel_treemap, sel_bar):
             hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"), bordercolor="#dddddd")
         )
 
-    return fig_treemap, fig_bar, treemap_header, bar_header
+    return fig_bar, bar_header
