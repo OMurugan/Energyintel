@@ -10,14 +10,16 @@ import sys
 from dotenv import load_dotenv
 
 from core.raw_data import load_all_data
+from dash_embedded import EmbeddedAuth
+
 
 # Configure logging early
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=LOG_LEVEL,
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
-    # filename="energy.log",
-    # filemode="a",
+    filename="energy.log",
+    filemode="a",
 )
 logger = logging.getLogger(__name__)
 
@@ -68,6 +70,12 @@ except Exception as e:
 
 # Import the shared Dash instance
 from app_instance import app, server  # noqa: E402
+
+# Skip EmbeddedAuth initialization for testing custom TokenAuth overlay functionality
+# if os.getenv("IS_EMBEDDED"):
+#     secret_key = os.getenv("EMBEDDED_SECRET_KEY", "secret_key")
+#     claims = {"iss": "DASH EMBEDDED"}
+#     auth = EmbeddedAuth([app], secret_key, claims, algorithm="HS512")
 
 # Import index to register layout, navigation, and callbacks
 import index  # noqa: E402,F401
