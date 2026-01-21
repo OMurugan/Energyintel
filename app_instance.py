@@ -147,23 +147,28 @@ def after_request(response):
     return response
 
 # Initialize authentication (optional - can be disabled via env var)
-# Note: When IS_EMBEDDED=true, EmbeddedAuth from dash_embedded is used instead (see app_entry_point.py)
+# Note: For testing overlay functionality, we're using custom TokenAuth instead of EmbeddedAuth
 _auth_instance = None
 is_embedded = os.environ.get('IS_EMBEDDED', 'false').lower() == 'true'
 enable_auth = os.environ.get('ENABLE_AUTH', 'false').lower() == 'true'
 
-# Only initialize custom TokenAuth when not in embedded mode and auth is enabled
-# For embedded applications, we should NOT use custom TokenAuth even if ENABLE_AUTH=true
-if enable_auth and not is_embedded:
-    # Use custom TokenAuth only when not in embedded mode
+# Force use of custom TokenAuth for testing overlay functionality
+# This will replace EmbeddedAuth with our custom authentication that includes overlay
+if enable_auth:
+    # Use custom TokenAuth for testing overlay functionality
     from auth import init_auth
     _auth_instance = init_auth(app)
     # Store auth instance reference for utils to access
     server._auth_instance = _auth_instance
+    print("DEBUG: Using custom TokenAuth with overlay functionality")
 elif is_embedded:
-    # EmbeddedAuth will be initialized in app_entry_point.py
-    # Store a placeholder to indicate embedded auth is being used
-    server._auth_instance = 'embedded'
+    # For now, also use custom TokenAuth in embedded mode for testing
+    from auth import init_auth
+    _auth_instance = init_auth(app)
+    # Store auth instance reference for utils to access
+    server._auth_instance = _auth_instance
+    print("DEBUG: Using custom TokenAuth in embedded mode for testing")
 else:
     # No authentication - store None to indicate auth is disabled
     server._auth_instance = None
+    print("DEBUG: Authentication disabled")
