@@ -84,7 +84,7 @@ def create_layout():
                     children=dcc.Graph(
                         id='product-exports-treemap',
                         config={'displayModeBar': False},
-                        style={'height': '400px', 'marginBottom': '30px'}
+                        style={'height': '330px', 'marginBottom': '30px'}
                     )
                 ),
 
@@ -110,7 +110,7 @@ def create_layout():
                     children=dcc.Graph(
                         id='product-exports-bar',
                         config={'displayModeBar': False},
-                        style={'height': '400px'}
+                        style={'height': '330px'}
                     )
                 ),
                 
@@ -354,16 +354,16 @@ def update_charts(selected_year, sel_treemap, sel_bar):
             base_color = COMMODITY_COLORS.get(commodity, '#CCCCCC')
             if sel_treemap and commodity != sel_treemap:
                 colors.append(hex_to_rgba(base_color, 0.15))
-                line_widths.append(1)
-                line_colors.append('white')
+                line_widths.append(0)
+                line_colors.append('rgba(0,0,0,0)')
             elif sel_treemap and commodity == sel_treemap:
                 colors.append(base_color)
-                line_widths.append(4) # Thick border
+                line_widths.append(4) # Keep selection border for clarity
                 line_colors.append('black')
             else:
                 colors.append(base_color)
-                line_widths.append(1)
-                line_colors.append('white')
+                line_widths.append(0)
+                line_colors.append('rgba(0,0,0,0)')
                 
             custom_data.append([commodity, row['vol_kbpd'], row['percentage']])
 
