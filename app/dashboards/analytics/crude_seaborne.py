@@ -874,11 +874,39 @@ def register_callbacks(dash_app, server):
             po.latitude,
             po.longitude,
             ru.country,
-            ROUND(AVG(ru.vol_kbpd)) AS total_vol
+
+            -- Average volume
+            ROUND(AVG(ru.vol_kbpd)) AS total_vol,
+
+            -- Crude mapping
+            CASE
+                WHEN po.port_name = 'Baltics' THEN 'Urals'
+                WHEN po.port_name = 'Kozmino Bay' THEN 'ESPO Blend'
+                WHEN po.port_name = 'Novorossiysk' THEN 'Urals, Siberian Light'
+                WHEN po.port_name = 'DeKastri' THEN 'Sokol'
+                WHEN po.port_name = 'Varandey' THEN 'Varandey'
+                WHEN po.port_name = 'Prigorodnoye' THEN 'Sakhalin Blend'
+                ELSE 'na'
+            END AS crude,
+
+            -- Storage capacity (000 b/d)
+            CASE
+                WHEN po.port_name = 'DeKastri' THEN 700
+                WHEN po.port_name = 'Varandey' THEN 240
+                ELSE NULL
+            END AS storage_cap
+
         FROM dev.russia_master_data ru
-        JOIN dev.dim_ports po ON ru.destination = po.port_name
-        WHERE ru.type = 'Seaborne' AND EXTRACT(YEAR FROM ru.date) = :year
-        GROUP BY po.port_name, po.latitude, po.longitude, ru.country;
+        JOIN dev.dim_ports po
+            ON ru.destination = po.port_name
+        WHERE
+            ru.type = 'Seaborne'
+            AND EXTRACT(YEAR FROM ru.date) = :year
+        GROUP BY
+            po.port_name,
+            po.latitude,
+            po.longitude,
+            ru.country;
         """
         try:
             results = execute_query(query, {'year': selected_year})
@@ -962,7 +990,9 @@ def register_callbacks(dash_app, server):
                     textfont=dict(size=11, color='#333', family="Lato, sans-serif"),
                     hovertext=[
                         f"Port: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{row['port_name']}</b><br>"
-                        f"Exports ('000 b/d): &nbsp;&nbsp;<b>{int(row['total_vol']):,}</b>"
+                        f"Exports ('000 b/d): &nbsp;&nbsp;<b>{int(row['total_vol']):,}</b>" +
+                        (f"<br>Crude: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{row['crude']}</b>" if row.get('crude') != 'na' else "") + 
+                        (f"<br>Storage Capacity (000 b/d): <b>{int(row['storage_cap'])}</b>" if pd.notnull(row.get('storage_cap')) else "")
                         for _, row in df_ports.iterrows()
                     ],
                     hoverinfo='text'
