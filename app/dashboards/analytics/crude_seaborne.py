@@ -15,6 +15,9 @@ MAP_RUSSIA_BLUE = "#4682B4" # SteelBlue
 def create_layout():
     """Create the Crude Seaborne Analytics layout"""
     return html.Div([
+        # Store for time dimension visibility for Seaborne Exports
+        dcc.Store(id='seaborne-time-visibility-store', data={'Quarter': False, 'Month': False, 'Day': False}),
+
         # Header Row
         html.Div([
             html.Div([
@@ -83,9 +86,41 @@ def create_layout():
                         html.H4("AVERAGE SEABORNE EXPORTS BY", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'margin': '0'}),
                         html.H4("LOADING PORT ('000 b/d)", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'margin': '0'}),
                     ], style={'marginBottom': '8px'}),
+
+                    # Time Dimension Toggles
+                    html.Div([
+                        html.Div([
+                            html.Span("Quarter of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='seaborne-toggle-quarter-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Month of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='seaborne-toggle-month-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Day of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='seaborne-toggle-day-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center'})
+                    ], style={'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px'}),
+
                     dash_table.DataTable(
                         id='avg-exports-table',
                         fixed_rows={'headers': True},
+                        merge_duplicate_headers=True,
                         style_table={'height': '260px', 'overflowY': 'auto'},
                         style_header={'backgroundColor': 'white', 'fontWeight': 'bold', 'borderBottom': '1px solid #ddd', 'color': EI_DARK_BLUE, 'fontSize': '11px'},
                         style_cell={'padding': '3px 6px', 'fontSize': '10px', 'fontFamily': 'Lato, sans-serif', 'border': 'none', 'textAlign': 'right', 'color': '#333'},
@@ -140,26 +175,84 @@ def register_callbacks(dash_app, server):
         return f"{year} SEABORNE CRUDE EXPORTS BY MAIN LOADING PORT"
 
     @callback(
+        [Output('seaborne-time-visibility-store', 'data'),
+         Output('seaborne-toggle-quarter-btn', 'children'),
+         Output('seaborne-toggle-month-btn', 'children'),
+         Output('seaborne-toggle-day-btn', 'children')],
+        [Input('seaborne-toggle-quarter-btn', 'n_clicks'),
+         Input('seaborne-toggle-month-btn', 'n_clicks'),
+         Input('seaborne-toggle-day-btn', 'n_clicks')],
+        [State('seaborne-time-visibility-store', 'data')]
+    )
+    def toggle_time_visibility(q_clicks, m_clicks, d_clicks, current_visibility):
+        from dash import callback_context
+        ctx = callback_context
+        if not ctx.triggered:
+            return current_visibility, '+', '+', '+'
+        
+        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        new_visibility = current_visibility.copy()
+        
+        if button_id == 'seaborne-toggle-quarter-btn':
+            new_visibility['Quarter'] = not current_visibility['Quarter']
+            # If hiding quarter, must also hide month and day
+            if not new_visibility['Quarter']:
+                new_visibility['Month'] = False
+                new_visibility['Day'] = False
+        elif button_id == 'seaborne-toggle-month-btn':
+            new_visibility['Month'] = not current_visibility['Month']
+            # If showing month, must also show quarter
+            if new_visibility['Month']:
+                new_visibility['Quarter'] = True
+            # If hiding month, must also hide day
+            if not new_visibility['Month']:
+                new_visibility['Day'] = False
+        elif button_id == 'seaborne-toggle-day-btn':
+            new_visibility['Day'] = not current_visibility['Day']
+            # If showing day, must also show quarter and month
+            if new_visibility['Day']:
+                new_visibility['Quarter'] = True
+                new_visibility['Month'] = True
+        
+        return (
+            new_visibility, 
+            '-' if new_visibility['Quarter'] else '+',
+            '-' if new_visibility['Month'] else '+',
+            '-' if new_visibility['Day'] else '+'
+        )
+
+    @callback(
         [Output('avg-exports-table', 'data'),
          Output('avg-exports-table', 'columns')],
-        Input('seaborne-year-selector', 'value')
+        [Input('seaborne-year-selector', 'value'),
+         Input('seaborne-time-visibility-store', 'data')]
     )
-    def update_avg_exports_table(selected_year):
+    def update_avg_exports_table(selected_year, time_visibility):
+        if time_visibility is None:
+            time_visibility = {'Quarter': False, 'Month': False, 'Day': False}
+        
         query = """
         SELECT
-            po.port_name AS loading_port,
-            ROUND(AVG(CASE WHEN EXTRACT(YEAR FROM ru.date) = 2025 THEN ru.vol_kbpd END)) AS "2025",
-            ROUND(AVG(CASE WHEN EXTRACT(YEAR FROM ru.date) = 2024 THEN ru.vol_kbpd END)) AS "2024",
-            ROUND(AVG(CASE WHEN EXTRACT(YEAR FROM ru.date) = 2023 THEN ru.vol_kbpd END)) AS "2023",
-            ROUND(AVG(CASE WHEN EXTRACT(YEAR FROM ru.date) = 2022 THEN ru.vol_kbpd END)) AS "2022"
+            po.port_name                     AS loading_port,
+            EXTRACT(YEAR FROM ru.date)::INT  AS year_of_date,
+            'Q' || EXTRACT(QUARTER FROM ru.date)::INT AS quarter_of_date,
+            TO_CHAR(ru.date, 'Month')        AS month_of_date,
+            EXTRACT(DAY FROM ru.date)::INT   AS day_of_date,
+            ru.vol_kbpd
         FROM dev.russia_master_data ru
-        LEFT JOIN dev.dim_ports po ON ru.destination = po.port_name
-        WHERE po.port_name IS NOT NULL
-          AND po.port_name NOT IN ('Hungary', 'Czech Republic')
-          AND ru.type = 'Seaborne'
-          AND EXTRACT(YEAR FROM ru.date) IN (2025, 2024, 2023, 2022)
-        GROUP BY po.port_name
-        ORDER BY po.port_name ASC;
+        LEFT JOIN dev.dim_ports po
+            ON ru.destination = po.port_name
+        WHERE
+            po.port_name IS NOT NULL
+            AND po.port_name NOT IN ('Hungary', 'Czech Republic')
+            AND ru.type = 'Seaborne'
+            AND EXTRACT(YEAR FROM ru.date) IN (2025, 2024, 2023, 2022)
+        ORDER BY
+            po.port_name,
+            year_of_date,
+            quarter_of_date,
+            month_of_date,
+            day_of_date;
         """
         try:
             results = execute_query(query)
@@ -167,37 +260,96 @@ def register_callbacks(dash_app, server):
             if df.empty:
                 return [], []
             
-            # Show columns: Port, then years 2025 down to 2022
-            cols_to_show = ['loading_port', '2025', '2024', '2023', '2022']
-            available_cols = [c for c in cols_to_show if c in df.columns]
-            df_display = df[available_cols].copy()
+            # Identify active dimensions
+            group_cols = ['loading_port', 'year_of_date']
+            if time_visibility.get('Quarter'):
+                group_cols.append('quarter_of_date')
+            if time_visibility.get('Month'):
+                group_cols.append('month_of_date')
+            if time_visibility.get('Day'):
+                group_cols.append('day_of_date')
             
-            # Format columns
-            columns = []
-            for col in df_display.columns:
-                columns.append({
-                    "name": "Loading Port" if col == 'loading_port' else col,
-                    "id": col,
-                    "type": "numeric" if col != 'loading_port' else "text"
+            # Aggregate data
+            agg_df = df.groupby(group_cols)['vol_kbpd'].mean().reset_index()
+            agg_df['vol_kbpd'] = agg_df['vol_kbpd'].round().fillna(0).astype(int)
+            
+            # Pivot the data - keeping loading_port as index for easier iteration
+            pivot_columns = group_cols[1:] # Everything except loading_port
+            pivot_df = agg_df.pivot_table(
+                index='loading_port',
+                columns=pivot_columns,
+                values='vol_kbpd'
+            )
+            
+            # Month sorting order
+            month_order = {
+                'January': 1, 'February': 2, 'March': 3, 'April': 4, 'May': 5, 'June': 6,
+                'July': 7, 'August': 8, 'September': 9, 'October': 10, 'November': 11, 'December': 12
+            }
+            
+            # Get and sort data columns
+            data_cols = pivot_df.columns.tolist()
+            
+            def col_sort_key(c):
+                if isinstance(c, tuple):
+                    key = []
+                    key.append(-int(c[0])) # Year DESC
+                    if len(c) > 1: key.append(c[1]) # Quarter ASC
+                    if len(c) > 2: key.append(month_order.get(c[2].strip(), 0)) # Month ASC
+                    if len(c) > 3: key.append(int(c[3])) # Day ASC
+                    return tuple(key)
+                else:
+                    return (-int(c),)
+
+            sorted_data_cols = sorted(data_cols, key=col_sort_key)
+            
+            # Build Dash DataTable columns with hierarchy
+            dash_columns = [{"name": ["", "", "", "Loading Port"], "id": "loading_port"}]
+            
+            # Level mapping for name_parts
+            for col in sorted_data_cols:
+                col_id = "_".join(map(str, col)) if isinstance(col, tuple) else str(col)
+                
+                # Construct name array (4 levels deep for consistency)
+                name_parts = ["", "", "", ""]
+                if isinstance(col, tuple):
+                    for i, val in enumerate(col):
+                        if i < 4: name_parts[i] = str(val)
+                else:
+                    name_parts[0] = str(col)
+                
+                dash_columns.append({
+                    "name": name_parts,
+                    "id": col_id,
+                    "type": "numeric"
                 })
             
-            # Format numbers with commas
+            # Build Dash DataTable rows
             data = []
-            for _, row in df_display.iterrows():
-                formatted_row = {}
-                for col in df_display.columns:
+            for port, row in pivot_df.iterrows():
+                item = {"loading_port": port}
+                for col in sorted_data_cols:
+                    col_id = "_".join(map(str, col)) if isinstance(col, tuple) else str(col)
                     val = row[col]
-                    if col != 'loading_port' and pd.notnull(val):
-                        formatted_row[col] = f"{int(val):,}"
-                    else:
-                        formatted_row[col] = val
-                data.append(formatted_row)
+                    item[col_id] = f"{int(val):,}" if pd.notnull(val) else ""
+                data.append(item)
+            
+            # Add Total Row
+            if data:
+                total_row = {"loading_port": "Total"}
+                column_sums = pivot_df.sum(axis=0)
+                for col in sorted_data_cols:
+                    col_id = "_".join(map(str, col)) if isinstance(col, tuple) else str(col)
+                    sum_val = column_sums[col]
+                    total_row[col_id] = f"{int(sum_val):,}" if pd.notnull(sum_val) else "0"
+                data.append(total_row)
 
-            return data, columns
+            return data, dash_columns
         except Exception as e:
             print(f"Error loading avg exports: {e}")
+            import traceback
+            traceback.print_exc()
             return [], []
-
     @callback(
         [Output('yoy-change-table', 'data'),
          Output('yoy-change-table', 'columns')],
