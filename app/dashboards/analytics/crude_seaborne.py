@@ -21,6 +21,7 @@ def create_layout():
         dcc.Store(id='avg-exports-highlight-store', data=None),
         dcc.Store(id='yoy-change-highlight-store', data=None),
         dcc.Store(id='seaborne-bar-highlight-store', data=None),
+        dcc.Store(id='seaborne-bar-granularity-store', data='MONTHLY'),
 
         # Header Row
         html.Div([
@@ -89,12 +90,56 @@ def create_layout():
                             id='btn-seaborne-bar-csv',
                             n_clicks=0,
                             style={
-                                'position': 'absolute', 'top': '0px', 'right': '10px', 'zIndex': '1000',
+                                'position': 'absolute', 'top': '25px', 'right': '10px', 'zIndex': '1000',
                                 'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
                                 'padding': '4px 8px', 'borderRadius': '4px', 'fontSize': '11px', 'cursor': 'pointer'
                             }
                         ),
                         dcc.Download(id="download-seaborne-bar-csv"),
+                        
+                        # Bar Chart Time Granularity Buttons
+                        html.Div([
+                            html.Div([
+                                html.Span("Year of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                                html.Button('+', id='seaborne-bar-toggle-year-btn', n_clicks=0, style={
+                                    'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                    'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                    'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                                })
+                            ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                            
+                            html.Div([
+                                html.Span("Quarter of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                                html.Button('+', id='seaborne-bar-toggle-quarter-btn', n_clicks=0, style={
+                                    'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                    'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                    'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                                })
+                            ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                            
+                            html.Div([
+                                html.Span("Month of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                                html.Button('+', id='seaborne-bar-toggle-month-btn', n_clicks=0, style={
+                                    'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                    'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
+                                    'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                                })
+                            ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                            
+                            html.Div([
+                                html.Span("Day of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                                html.Button('+', id='seaborne-bar-toggle-day-btn', n_clicks=0, style={
+                                    'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                    'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                    'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                                })
+                            ], style={'display': 'flex', 'alignItems': 'center'})
+                        ], style={
+                            'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+                            'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '5px',
+                            'position': 'absolute', 'top': '25px', 'left': '60px', 'zIndex': '1000'
+                        }),
+
                         dcc.Loading(
                             id='loading-seaborne-bar-chart',
                             type='circle',
@@ -277,6 +322,44 @@ def register_callbacks(dash_app, server):
             '-' if new_visibility['Quarter'] else '+',
             '-' if new_visibility['Month'] else '+',
             '-' if new_visibility['Day'] else '+'
+        )
+
+    @dash_app.callback(
+        [Output('seaborne-bar-granularity-store', 'data'),
+         Output('seaborne-bar-toggle-year-btn', 'children'),
+         Output('seaborne-bar-toggle-quarter-btn', 'children'),
+         Output('seaborne-bar-toggle-month-btn', 'children'),
+         Output('seaborne-bar-toggle-day-btn', 'children')],
+        [Input('seaborne-bar-toggle-year-btn', 'n_clicks'),
+         Input('seaborne-bar-toggle-quarter-btn', 'n_clicks'),
+         Input('seaborne-bar-toggle-month-btn', 'n_clicks'),
+         Input('seaborne-bar-toggle-day-btn', 'n_clicks')],
+        [State('seaborne-bar-granularity-store', 'data')]
+    )
+    def toggle_bar_granularity(y_clicks, q_clicks, m_clicks, d_clicks, current_granularity):
+        from dash import callback_context
+        ctx = callback_context
+        if not ctx.triggered:
+            return current_granularity, '+', '+', '-', '+'
+        
+        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        
+        new_granularity = current_granularity
+        if button_id == 'seaborne-bar-toggle-year-btn':
+            new_granularity = 'YEARLY'
+        elif button_id == 'seaborne-bar-toggle-quarter-btn':
+            new_granularity = 'QUARTERLY'
+        elif button_id == 'seaborne-bar-toggle-month-btn':
+            new_granularity = 'MONTHLY'
+        elif button_id == 'seaborne-bar-toggle-day-btn':
+            new_granularity = 'DATE'
+            
+        return (
+            new_granularity,
+            '-' if new_granularity == 'YEARLY' else '+',
+            '-' if new_granularity == 'QUARTERLY' else '+',
+            '-' if new_granularity == 'MONTHLY' else '+',
+            '-' if new_granularity == 'DATE' else '+'
         )
 
     @dash_app.callback(
@@ -570,18 +653,41 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         Output('seaborne-bar-chart', 'figure'),
         [Input('seaborne-year-selector', 'value'),
-         Input('seaborne-bar-highlight-store', 'data')]
+         Input('seaborne-bar-highlight-store', 'data'),
+         Input('seaborne-bar-granularity-store', 'data')]
     )
-    def update_bar_chart(selected_year, highlight):
-        query = """
+    def update_bar_chart(selected_year, highlight, period):
+        query = f"""
+        WITH params AS (
+            SELECT '{period}'::text AS period
+        ),
+        base AS (
+            SELECT
+                r.date,
+                r.vol_kbpd,
+                EXTRACT(YEAR FROM r.date)::int    AS year_of_date,
+                EXTRACT(QUARTER FROM r.date)::int AS quarter_of_date,
+                EXTRACT(MONTH FROM r.date)::int   AS month_of_date,
+                p.period
+            FROM dev.russia_master_data r
+            CROSS JOIN params p
+            WHERE r.type = 'Seaborne'
+              AND EXTRACT(YEAR FROM r.date) > 2021
+        )
         SELECT
-            EXTRACT(YEAR FROM date)::int AS year,
-            EXTRACT(MONTH FROM date)::int AS month,
+            year_of_date,
+            CASE WHEN period IN ('QUARTERLY', 'MONTHLY', 'DATE') THEN quarter_of_date END AS quarter_of_date,
+            CASE WHEN period IN ('MONTHLY', 'DATE') THEN month_of_date END AS month_of_date,
+            CASE WHEN period = 'DATE' THEN date END AS date_of_date,
             SUM(vol_kbpd) AS total_vol
-        FROM dev.russia_master_data
-        WHERE type = 'Seaborne' AND EXTRACT(YEAR FROM date) > 2021
-        GROUP BY year, month
-        ORDER BY year, month;
+        FROM base
+        GROUP BY
+            year_of_date,
+            CASE WHEN period IN ('QUARTERLY', 'MONTHLY', 'DATE') THEN quarter_of_date END,
+            CASE WHEN period IN ('MONTHLY', 'DATE') THEN month_of_date END,
+            CASE WHEN period = 'DATE' THEN date END
+        ORDER BY
+            year_of_date, quarter_of_date, month_of_date, date_of_date;
         """
         try:
             results = execute_query(query)
@@ -589,13 +695,35 @@ def register_callbacks(dash_app, server):
             if df.empty:
                 return go.Figure()
 
-            full_month_map = {1: 'January', 2: 'February', 3: 'March', 4: 'April', 5: 'May', 6: 'June', 
-                              7: 'July', 8: 'August', 9: 'September', 10: 'October', 11: 'November', 12: 'December'}
-            df['full_month'] = df['month'].map(full_month_map)
-            
-            month_map = {1: 'Ja..', 2: 'Fe..', 3: 'M..', 4: 'A..', 5: 'M..', 6: 'Ju..', 
-                         7: 'Ju..', 8: 'A..', 9: 'Se..', 10: 'O..', 11: 'N..', 12: 'D..'}
-            df['month_label'] = df['month'].map(month_map)
+            # Define label logic based on period
+            def get_label(row):
+                if period == 'YEARLY':
+                    return f"{row['year_of_date']}"
+                if period == 'QUARTERLY':
+                    return f"Q{int(row['quarter_of_date'])}"
+                if period == 'MONTHLY':
+                    month_abbr = {1:'Ja..', 2:'Fe..', 3:'M..', 4:'A..', 5:'M..', 6:'Ju..', 7:'Ju..', 8:'A..', 9:'Se..', 10:'O..', 11:'N..', 12:'D..'}
+                    return month_abbr.get(int(row['month_of_date']), '')
+                if period == 'DATE':
+                    if pd.notnull(row['date_of_date']):
+                        return pd.to_datetime(row['date_of_date']).strftime('%d %b')
+                return ""
+
+            def get_full_date_string(row):
+                if period == 'YEARLY':
+                    return f"{row['year_of_date']}"
+                if period == 'QUARTERLY':
+                    return f"Q{int(row['quarter_of_date'])} {row['year_of_date']}"
+                if period == 'MONTHLY':
+                    month_full = {1:'January', 2:'February', 3:'March', 4:'April', 5:'May', 6:'June', 7:'July', 8:'August', 9:'September', 10:'October', 11:'November', 12:'December'}
+                    return f"{month_full.get(int(row['month_of_date']), '')} {row['year_of_date']}"
+                if period == 'DATE':
+                    if pd.notnull(row['date_of_date']):
+                        return pd.to_datetime(row['date_of_date']).strftime('%d %B %Y')
+                return ""
+
+            df['label'] = df.apply(get_label, axis=1)
+            df['full_label'] = df.apply(get_full_date_string, axis=1)
             
             # Create unique x coordinates
             df['x_idx'] = range(len(df))
@@ -627,7 +755,7 @@ def register_callbacks(dash_app, server):
                             is_selected = True
                     elif highlight['type'] == 'year':
                         # Use strings for year comparison
-                        if str(row['year']) == str(highlight['value']):
+                        if str(row['year_of_date']) == str(highlight['value']):
                             is_selected = True
                     
                     if is_selected:
@@ -653,7 +781,7 @@ def register_callbacks(dash_app, server):
                 ),
                 width=0.8,
                 hovertext=[
-                    f"Date: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{row['full_month']} {row['year']}</b><br>"
+                    f"Date: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{row['full_label']}</b><br>"
                     f"Volume ('000 b/d): <b>{int(row['total_vol'] if pd.notnull(row['total_vol']) else 0):,}</b>" 
                     for _, row in df.iterrows()
                 ],
@@ -677,8 +805,8 @@ def register_callbacks(dash_app, server):
                     showgrid=False,
                     tickmode='array',
                     tickvals=df['x_idx'],
-                    ticktext=df['month_label'],
-                    tickfont=dict(size=9, color='#666'),
+                    ticktext=df['label'],
+                    tickfont=dict(size=9 if period != 'DATE' else 7, color='#666'),
                     fixedrange=True,
                     zeroline=True,
                     zerolinecolor='#ccc'
@@ -701,19 +829,19 @@ def register_callbacks(dash_app, server):
                     fixedrange=True
                 ),
                 font=dict(family="Lato, sans-serif"),
-                bargap=0.15
+                bargap=0.15 if period != 'DATE' else 0.05
             )
             
             # Add vertical lines and YEAR LABELS trace
             shapes = []
             
-            years = sorted(df['year'].unique())
+            years = sorted(df['year_of_date'].unique())
             year_labels_x = []
             year_labels_text = []
             year_labels_colors = []
             
             for year in years:
-                year_data = df[df['year'] == year]
+                year_data = df[df['year_of_date'] == year]
                 if not year_data.empty:
                     start_idx = year_data['x_idx'].min()
                     end_idx = year_data['x_idx'].max()
@@ -805,23 +933,48 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         Output("download-seaborne-bar-csv", "data"),
         Input("btn-seaborne-bar-csv", "n_clicks"),
+        State("seaborne-bar-granularity-store", "data"),
         prevent_initial_call=True,
     )
-    def export_bar_csv(n_clicks):
-        query = """
+    def export_bar_csv(n_clicks, period):
+        query = f"""
+        WITH params AS (
+            SELECT '{period}'::text AS period
+        ),
+        base AS (
+            SELECT
+                r.date,
+                r.vol_kbpd,
+                EXTRACT(YEAR FROM r.date)::int    AS year_of_date,
+                EXTRACT(QUARTER FROM r.date)::int AS quarter_of_date,
+                EXTRACT(MONTH FROM r.date)::int   AS month_of_date,
+                p.period
+            FROM dev.russia_master_data r
+            CROSS JOIN params p
+            WHERE r.type = 'Seaborne'
+              AND EXTRACT(YEAR FROM r.date) > 2021
+        )
         SELECT
-            EXTRACT(YEAR FROM date)::int AS year,
-            EXTRACT(MONTH FROM date)::int AS month,
+            year_of_date,
+            CASE WHEN period IN ('QUARTERLY', 'MONTHLY', 'DATE') THEN quarter_of_date END AS quarter_of_date,
+            CASE WHEN period IN ('MONTHLY', 'DATE') THEN month_of_date END AS month_of_date,
+            CASE WHEN period = 'DATE' THEN date END AS date_of_date,
             SUM(vol_kbpd) AS total_vol_kbpd
-        FROM dev.russia_master_data
-        WHERE type = 'Seaborne' AND EXTRACT(YEAR FROM date) > 2021
-        GROUP BY year, month
-        ORDER BY year, month;
+        FROM base
+        GROUP BY
+            year_of_date,
+            CASE WHEN period IN ('QUARTERLY', 'MONTHLY', 'DATE') THEN quarter_of_date END,
+            CASE WHEN period IN ('MONTHLY', 'DATE') THEN month_of_date END,
+            CASE WHEN period = 'DATE' THEN date END
+        ORDER BY
+            year_of_date, quarter_of_date, month_of_date, date_of_date;
         """
         try:
             results = execute_query(query)
             df = pd.DataFrame(results)
-            return dcc.send_data_frame(df.to_csv, "seaborne_historical_exports.csv", index=False)
+            # Remove empty columns (like quarter/month/date when in yearly mode)
+            df.dropna(axis=1, how='all', inplace=True)
+            return dcc.send_data_frame(df.to_csv, f"seaborne_bar_data_{period.lower()}.csv", index=False)
         except Exception as e:
             print(f"Error exporting bar csv: {e}")
             return None
