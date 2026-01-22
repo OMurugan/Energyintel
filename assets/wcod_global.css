@@ -728,3 +728,31 @@ div[id*="range-slider"] {
     border-color: #2c3e50 !important;
     z-index: 10;
 }
+
+/* Product Output Dashboard Custom Tabs */
+.custom-tabs-container {
+    display: flex;
+    justify-content: flex-start;
+    padding: 10px 20px 0 20px;
+    background-color: #f8f9fa;
+}
+
+.custom-tab {
+    flex: 0 0 45%; 
+    background-color: #b0b8c1 !important;
+    color: #4a4a4a !important;
+    border: 1px solid transparent !important;
+    padding: 6px 0 !important;
+    font-size: 15px !important;
+    font-weight: bold !important;
+    text-align: center !important;
+    cursor: pointer !important;
+    margin-right: 10px;
+    border-radius: 2px;
+}
+
+.custom-tab--selected {
+    background-color: white !important;
+    color: #FF4500 !important;
+    border: 2px solid #FF4500 !important;
+}
