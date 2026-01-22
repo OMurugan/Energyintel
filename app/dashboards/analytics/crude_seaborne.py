@@ -90,7 +90,7 @@ def create_layout():
                             id='btn-seaborne-bar-csv',
                             n_clicks=0,
                             style={
-                                'position': 'absolute', 'top': '0px', 'right': '10px', 'zIndex': '1000',
+                                'position': 'absolute', 'top': '25px', 'right': '10px', 'zIndex': '1000',
                                 'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
                                 'padding': '4px 8px', 'borderRadius': '4px', 'fontSize': '11px', 'cursor': 'pointer'
                             }
@@ -137,7 +137,7 @@ def create_layout():
                         ], style={
                             'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
                             'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '5px',
-                            'position': 'absolute', 'top': '15px', 'left': '60px', 'zIndex': '1000'
+                            'position': 'absolute', 'top': '25px', 'left': '60px', 'zIndex': '1000'
                         }),
 
                         dcc.Loading(
@@ -972,6 +972,8 @@ def register_callbacks(dash_app, server):
         try:
             results = execute_query(query)
             df = pd.DataFrame(results)
+            # Remove empty columns (like quarter/month/date when in yearly mode)
+            df.dropna(axis=1, how='all', inplace=True)
             return dcc.send_data_frame(df.to_csv, f"seaborne_bar_data_{period.lower()}.csv", index=False)
         except Exception as e:
             print(f"Error exporting bar csv: {e}")
