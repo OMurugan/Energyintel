@@ -28,6 +28,10 @@ app = Dash(
 # Expose server for gunicorn
 server = app.server
 
+# CRITICAL: Configure Flask secret key for sessions
+server.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
+print(f"DEBUG: Flask secret key configured: {'*' * len(server.secret_key)}")
+
 # Configure CORS for embedded access
 # Allow the host application to access the Dash app when embedded
 cors_origins = [
@@ -151,6 +155,81 @@ def after_request(response):
 _auth_instance = None
 is_embedded = os.environ.get('IS_EMBEDDED', 'false').lower() == 'true'
 enable_auth = os.environ.get('ENABLE_AUTH', 'false').lower() == 'true'
+
+# CRITICAL: Add immediate authentication check before any processing
+@server.before_request
+def immediate_auth_check():
+    """Immediate authentication check - runs before everything else."""
+    from flask import request, redirect
+    
+    # Skip for OPTIONS and static assets
+    if request.method == 'OPTIONS':
+        return None
+        
+    path = request.path.lower()
+    static_paths = [
+        '/_dash-layout',
+        '/_dash-dependencies', 
+        '/_dash-component-suites/',
+        '/_dash-update-component',
+        '_reload-hash',
+        '/assets/', 
+        '/_favicon.ico', 
+        '/static/',
+        '/health',
+        '/_resources',
+        '/portal'
+    ]
+    
+    if any(x in path for x in static_paths):
+        return None
+    
+    print(f"🚨 IMMEDIATE AUTH CHECK: {request.path}")
+    print(f"🚨 Host: {request.host}")
+    print(f"🚨 Environment: {os.environ.get('DASH_ENV')}")
+    
+    # Check environment
+    dash_env = os.environ.get('DASH_ENV', '').lower()
+    
+    # CRITICAL: In development mode, bypass ALL authentication
+    if dash_env == 'development':
+        print("🚨 Development mode - bypassing ALL immediate auth")
+        return None
+    
+    # Production mode - check authentication
+    if (dash_env == 'production' or not dash_env) and request.host and 'data.energyintel.com' in request.host:
+        print("🚨 PRODUCTION + data.energyintel.com - checking auth")
+        
+        # Check for embedded access (stricter check)
+        is_embedded_access = False
+        if request.referrer:
+            ref_low = request.referrer.lower()
+            if ('energyintel.com' in ref_low or 'www.energyintel.com' in ref_low) and \
+               'data.energyintel.com' not in ref_low:
+                is_embedded_access = True
+        
+        if is_embedded_access:
+            print(f"🚨 Embedded access from {request.referrer} - allowing")
+            return None
+        
+        # Check for tokens
+        production_tokens = ['pelcro.user.auth.token', 'kcToken', 'kcIdToken']
+        tokens_found = 0
+        
+        for token_name in production_tokens:
+            token_value = request.cookies.get(token_name)
+            if token_value and len(token_value) > 10:
+                tokens_found += 1
+        
+        print(f"🚨 Tokens found: {tokens_found}")
+        
+        if tokens_found == 0:
+            print("🚨 NO TOKENS - IMMEDIATE BLOCK")
+            portal_url = os.environ.get('PORTAL_URL', 'https://data.energyintel.com').rstrip('/') + "/portal"
+            print(f"🚨 IMMEDIATE REDIRECT TO: {portal_url}")
+            return redirect(portal_url)
+    
+    return None
 
 # Force use of custom TokenAuth for testing overlay functionality
 # This will replace EmbeddedAuth with our custom authentication that includes overlay

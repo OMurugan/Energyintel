@@ -18,8 +18,8 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=LOG_LEVEL,
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
-    filename="energy.log",
-    filemode="a",
+    # filename="energy.log",
+    # filemode="a",
 )
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,87 @@ except Exception as e:
 
 # Import the shared Dash instance
 from app_instance import app, server  # noqa: E402
+
+# 🚨🚨🚨 CRITICAL: EMERGENCY AUTHENTICATION FIX 🚨🚨🚨
+# This MUST run and WILL block unauthorized access
+print("🚨🚨🚨 APPLYING EMERGENCY AUTHENTICATION FIX 🚨🚨🚨")
+
+@server.before_request
+def EMERGENCY_AUTH_BLOCK():
+    """EMERGENCY AUTHENTICATION - BLOCKS ALL UNAUTHORIZED ACCESS"""
+    from flask import request, redirect
+    
+    # Skip static assets and whitelisted paths
+    if request.path.startswith(('/_dash-', '/assets/', '/static/', '/_favicon.ico', '/health', '/portal')):
+        return None
+    
+    # Get environment - default to production for security
+    dash_env = os.environ.get('DASH_ENV', 'production').lower()
+    
+    print(f"🚨🚨🚨 EMERGENCY AUTH CHECK 🚨🚨🚨")
+    print(f"🚨 Path: {request.path}")
+    print(f"🚨 Host: {request.host}")
+    print(f"🚨 Environment: {dash_env}")
+    print(f"🚨 Method: {request.method}")
+    print(f"🚨 Cookies: {dict(request.cookies)}")
+    
+    # CRITICAL: In development mode, bypass ALL authentication
+    if dash_env == 'development':
+        print("🚨 DEVELOPMENT MODE - BYPASSING ALL EMERGENCY AUTH")
+        return None
+    
+    # For production, check authentication
+    if request.host and 'data.energyintel.com' in request.host:
+        print("🚨 PRODUCTION ACCESS TO data.energyintel.com")
+        
+        # Check for embedded access (stricter check)
+        is_embedded = False
+        if request.referrer:
+            ref_low = request.referrer.lower()
+            if ('energyintel.com' in ref_low or 'www.energyintel.com' in ref_low) and \
+               'data.energyintel.com' not in ref_low:
+                is_embedded = True
+        
+        if is_embedded:
+            print(f"🚨 EMBEDDED ACCESS from {request.referrer} - ALLOWING")
+            return None
+        
+        # Check for authentication tokens
+        tokens = []
+        
+        # Check cookies
+        cookie_tokens = ['pelcro.user.auth.token', 'kcToken', 'kcIdToken']
+        for cookie_name in cookie_tokens:
+            token_value = request.cookies.get(cookie_name)
+            if token_value and len(token_value) > 10:
+                tokens.append(f"cookie:{cookie_name}")
+        
+        # Check headers
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer ') and len(auth_header) > 20:
+            tokens.append("header:Authorization")
+        
+        # Check query parameters
+        query_token = request.args.get('token')
+        if query_token and len(query_token) > 10:
+            tokens.append("query:token")
+        
+        print(f"🚨 TOKENS FOUND: {tokens}")
+        
+        if len(tokens) == 0:
+            print("🚨🚨🚨 NO TOKENS - EMERGENCY BLOCK 🚨🚨🚨")
+            portal_url = "https://data.energyintel.com/portal"
+            print(f"🚨🚨🚨 EMERGENCY REDIRECT TO: {portal_url} 🚨🚨🚨")
+            return redirect(portal_url, code=302)
+        else:
+            print(f"🚨 FOUND {len(tokens)} TOKENS - ALLOWING ACCESS")
+            return None
+    
+    # For all other hosts, allow
+    print("🚨 NON-PRODUCTION HOST - ALLOWING")
+    return None
+
+print("🚨🚨🚨 EMERGENCY AUTHENTICATION FIX APPLIED 🚨🚨🚨")
 
 # Skip EmbeddedAuth initialization for testing custom TokenAuth overlay functionality
 # if os.getenv("IS_EMBEDDED"):

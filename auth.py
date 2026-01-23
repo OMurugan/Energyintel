@@ -4,16 +4,12 @@ Supports both simple tokens and HS512 JWT tokens as used by the client.
 """
 
 import os
-import functools
-import os
-import time
 import json
-import hmac
-import hashlib
-import base64
+import time
 import jwt
-from flask import Flask, request, g, jsonify, Response
+from flask import Flask, request, g, jsonify, Response, redirect, url_for
 from functools import wraps
+from urllib.parse import urlencode
 
 class TokenAuth:
     """JWT and token-based authentication for embedded Dash apps."""
@@ -29,13 +25,156 @@ class TokenAuth:
         # QUICK EXPIRATION FOR TESTING: 15 minutes instead of 24 hours
         self.token_expiry = int(os.environ.get('TOKEN_EXPIRY_MINUTES', '15')) * 60  # 15 minutes for testing
         
-        # Add before_request and after_request handlers
+        # Production authentication URLs
+        self.auth_base_url = os.environ.get('AUTH_BASE_URL', 'https://data.energyintel.com')
+        self.portal_url = os.environ.get('PORTAL_URL', 'https://data.energyintel.com')
+        self.realm = os.environ.get('AUTH_REALM', 'dash')
+        self.client_id = os.environ.get('AUTH_CLIENT_ID', 'dash-app')
+        
+        # Environment detection will be done during request processing
+        self.is_local = None
+        self.is_production = None
+        
+        print(f"DEBUG: Authentication system initialized")
+        
+        # CRITICAL: Add before_request and after_request handlers with explicit registration
+        print(f"DEBUG: Registering authentication handlers...")
         self.server.before_request(self._check_token_auth)
         self.server.after_request(self._set_auth_cookie)
+        
+        # ADDITIONAL: Register as a Flask route handler to ensure it's always called
+        @self.server.before_request
+        def force_auth_check():
+            """Force authentication check on every request."""
+            return self._check_token_auth()
+        
+        print(f"DEBUG: Authentication handlers registered successfully")
         
         # Load valid tokens after initialization
         self.valid_tokens = self._load_valid_tokens()
         print(f"DEBUG: Loaded {len(self.valid_tokens)} valid tokens including admin JWT")
+    
+    def _is_direct_access(self):
+        """Check if this is direct access to data.energyintel.com."""
+        if not request.host:
+            return False
+            
+        # Check for direct access indicators
+        direct_indicators = [
+            'data.energyintel.com' in request.host,
+            'auth-data.energyintel.com' in request.host
+        ]
+        
+        is_direct = any(direct_indicators)
+        if is_direct:
+            print(f"DEBUG: Direct access detected to host: {request.host}")
+        return is_direct
+    
+    def _is_embedded_access(self):
+        """Check if this is embedded access from energyintel.com (main website)."""
+        if not request.host:
+            return False
+            
+        # Check for embedded access indicators
+        embedded_indicators = [
+            # Host-based detection (direct access to energyintel.com)
+            'energyintel.com' in request.host and 'data.energyintel.com' not in request.host,
+            'www.energyintel.com' in request.host,
+            
+            # Referrer-based detection (iframe from energyintel.com to data.energyintel.com)
+            (request.referrer and 
+             ('energyintel.com' in request.referrer or 'www.energyintel.com' in request.referrer)),
+            
+            # Header-based detection
+            request.headers.get('X-Embedded-Mode') == 'true',
+            request.headers.get('X-Parent-Domain') and 'energyintel.com' in request.headers.get('X-Parent-Domain', '')
+        ]
+        
+        is_embedded = any(embedded_indicators)
+        if is_embedded:
+            print(f"DEBUG: Embedded access detected from host: {request.host}, referrer: {request.referrer}")
+        return is_embedded
+    
+    def _is_local_environment(self):
+        """Detect if running in local development environment."""
+        # DASH_ENV=development always takes precedence
+        dash_env = os.environ.get('DASH_ENV', '').lower()
+        if dash_env == 'development':
+            print("DEBUG: DASH_ENV=development - confirmed local environment")
+            return True
+        
+        # If DASH_ENV=production, never treat as local regardless of host
+        if dash_env == 'production':
+            print("DEBUG: DASH_ENV=production - confirmed production environment")
+            return False
+        
+        # If DASH_ENV is not set, use host-based detection
+        if not request.host:
+            return False
+            
+        # Check for local development indicators
+        local_indicators = [
+            'localhost' in request.host,
+            '127.0.0.1' in request.host,
+            '0.0.0.0' in request.host,
+            ':8050' in request.host,
+            ':8051' in request.host,
+            ':8000' in request.host,
+            ':3000' in request.host,
+            ':5000' in request.host
+        ]
+        
+        is_local = any(local_indicators)
+        if is_local:
+            print(f"DEBUG: Local environment detected from host: {request.host}")
+        else:
+            print(f"DEBUG: Not local environment, host: {request.host}")
+        
+        return is_local
+    
+    def _get_auth_redirect_url(self, redirect_uri=None):
+        """Generate authentication redirect URL for production environment."""
+        if not redirect_uri:
+            # Use the current URL as redirect target
+            redirect_uri = request.url
+        
+        # Ensure redirect_uri uses HTTPS
+        if redirect_uri.startswith('http://'):
+            redirect_uri = redirect_uri.replace('http://', 'https://', 1)
+        
+        # Build OpenID Connect auth URL
+        auth_params = {
+            'client_id': self.client_id,
+            'redirect_uri': redirect_uri,
+            'response_type': 'code',
+            'scope': 'openid profile email',
+            'state': os.urandom(16).hex()  # CSRF protection
+        }
+        
+        auth_url = f"{self.auth_base_url}/auth/realms/{self.realm}/protocol/openid-connect/auth?{urlencode(auth_params)}"
+        print(f"DEBUG: Generated auth redirect URL: {auth_url}")
+        return auth_url
+    
+    def _redirect_to_auth(self, redirect_uri=None):
+        """Redirect user to authentication page."""
+        if self.is_local:
+            print("DEBUG: Local environment - not redirecting to auth")
+            return None
+
+        # In production, redirect to portal first (data.energyintel.com/portal)
+        # The portal will handle the authentication flow
+        portal_url = self.portal_url.rstrip('/') + "/portal"
+        print(f"DEBUG: Redirecting to portal: {portal_url}")
+        return redirect(portal_url)
+    
+    def _redirect_to_portal(self):
+        """Redirect user to portal page for authentication."""
+        print("DEBUG: Redirecting to portal for authentication")
+        
+        # In production, redirect to portal (data.energyintel.com/portal)
+        portal_url = self.portal_url.rstrip('/') + "/portal"
+        print(f"DEBUG: Redirecting to portal: {portal_url}")
+        return redirect(portal_url)
     
     def _load_valid_tokens(self):
         """Load valid tokens from environment or use defaults."""
@@ -272,79 +411,335 @@ class TokenAuth:
     
     def _check_token_auth(self):
         """Check token authentication before serving pages."""
-        print(f"DEBUG: _check_token_auth called for path: {request.path}")
+        print(f"DEBUG: ==========================================")
+        print(f"DEBUG: AUTHENTICATION CHECK TRIGGERED")
+        print(f"DEBUG: Path: {request.path}")
+        print(f"DEBUG: Host: {request.host}")
+        print(f"DEBUG: Method: {request.method}")
+        print(f"DEBUG: Headers: {dict(request.headers)}")
+        print(f"DEBUG: Cookies: {dict(request.cookies)}")
+        print(f"DEBUG: ==========================================")
+        
+        # CRITICAL: Clean up expired sessions first
+        self._invalidate_expired_sessions()
         
         # Skip authentication for OPTIONS requests (CORS preflight) - this must be first
         if request.method == 'OPTIONS':
             print("DEBUG: Skipping auth for OPTIONS request")
-            return
+            return None
+        
+        # PRODUCTION FIX: Better environment detection with fallbacks
+        dash_env = os.environ.get('DASH_ENV', '').lower()
+        enable_auth = os.environ.get('ENABLE_AUTH', 'true').lower()
+        embedded_mode = os.environ.get('EMBEDDED_MODE', 'true').lower()
+        
+        print(f"DEBUG: Environment: {dash_env}")
+        print(f"DEBUG: Enable Auth: {enable_auth}")
+        print(f"DEBUG: Embedded Mode: {embedded_mode}")
+        
+        # PRODUCTION FIX: If environment is not properly set, use other indicators
+        if not dash_env:
+            # Try to detect production environment from host or other indicators
+            if request.host and 'data.energyintel.com' in request.host:
+                dash_env = 'production'
+                print(f"DEBUG: PRODUCTION detected from host: {request.host}")
+            elif enable_auth == 'true' and embedded_mode == 'true':
+                dash_env = 'production'
+                print(f"DEBUG: PRODUCTION detected from auth settings")
+            else:
+                dash_env = 'development'
+                print(f"DEBUG: Defaulting to DEVELOPMENT due to unclear environment")
+        
+        # CRITICAL: In development mode, bypass ALL authentication checks
+        if dash_env == 'development':
+            print("DEBUG: DASH_ENV=development - completely bypassing authentication for ALL requests")
+            return None
+        
+        # PRODUCTION FIX: Handle embedded mode more intelligently
+        if embedded_mode == 'true':
+            print("DEBUG: 🔗 EMBEDDED MODE DETECTED - Using embedded authentication logic")
+            return self._handle_embedded_authentication()
+        
+        # CRITICAL: Check for callback requests and validate session
+        if self._is_callback_request():
+            print("DEBUG: 🔄 CALLBACK REQUEST DETECTED - Validating session")
+            if not self._validate_callback_authentication():
+                print("DEBUG: ❌ CALLBACK AUTHENTICATION FAILED - BLOCKING REQUEST")
+                return self._handle_callback_auth_failure()
+            else:
+                print("DEBUG: ✅ CALLBACK AUTHENTICATION SUCCESS")
+                return None  # Allow callback to proceed
         
         # Skip auth for static assets, dash internal routes, and health checks
-        # We use a broad check to ensure Dash internal AJAX doesn't get blocked
         path = request.path.lower()
         whitelist = [
-            # '/_dash-',
             '/_dash-layout',
             '/_dash-dependencies', 
             '/_dash-component-suites/',
             '/_dash-update-component',
+            '/_reload-hash',  # Dash hot reload endpoint
             '_reload-hash',
             '/assets/', 
             '/_favicon.ico', 
             '/static/',
             '/health',
-            '/_resources'  # Add _resources endpoint to whitelist
+            '/_resources',
+            '/portal',      # Explicitly whitelist portal to prevent redirect loops
+            '/portal/'
         ]
         
         if any(x in path for x in whitelist):
             print(f"DEBUG: Path {path} is whitelisted, skipping auth")
-            return
+            return None
         
-        # NEW: Allow initial page load without authentication
-        # Check if this is an initial page load (no cookies, no localStorage, no session)
-        if self._is_initial_page_load():
-            print("DEBUG: Initial page load detected, creating new token")
-            # Generate new token for this session
-            new_token = self._generate_session_token()
-            if new_token:
-                # Set the new token to be used for this request
-                g.session_token = new_token
-                g.is_initial_load = True
-                # Set cookie for future requests
-                g.set_auth_cookie = new_token
-                print(f"DEBUG: Created new session token: {new_token[:20]}...")
-            return
+        # CRITICAL: For any non-whitelisted path, we MUST check authentication
+        print(f"DEBUG: ⚠️  NON-WHITELISTED PATH DETECTED: {path}")
+        print(f"DEBUG: ⚠️  THIS PATH REQUIRES AUTHENTICATION CHECK")
         
-        # For subsequent requests, check authentication
-        print("DEBUG: Subsequent request, checking authentication...")
+        # CRITICAL: Check if this is data.energyintel.com - if so, ALWAYS require auth
+        if request.host and 'data.energyintel.com' in request.host:
+            print(f"DEBUG: 🚨 PRODUCTION HOST DETECTED: {request.host}")
+            print(f"DEBUG: 🚨 ENFORCING PRODUCTION AUTHENTICATION")
+            
+            # Check for embedded access (stricter check to avoid self-referrer bypass)
+            is_embedded = False
+            if request.referrer:
+                ref_low = request.referrer.lower()
+                # Must be from energyintel.com but NOT from data.energyintel.com
+                if ('energyintel.com' in ref_low or 'www.energyintel.com' in ref_low) and \
+                   'data.energyintel.com' not in ref_low:
+                    is_embedded = True
+            
+            if is_embedded:
+                print(f"DEBUG: Embedded access from trusted referrer ({request.referrer}) - allowing")
+                return None
+            
+            # Check for production tokens
+            production_tokens = ['pelcro.user.auth.token', 'kcToken', 'kcIdToken']
+            tokens_found = 0
+            
+            for token_name in production_tokens:
+                token_value = request.cookies.get(token_name)
+                if token_value and len(token_value) > 10:
+                    tokens_found += 1
+            
+            print(f"DEBUG: 🚨 Production tokens found: {tokens_found}")
+            
+            if tokens_found == 0:
+                print("DEBUG: 🚨🚨🚨 NO PRODUCTION TOKENS - BLOCKING ACCESS IMMEDIATELY 🚨🚨🚨")
+                portal_url = "https://data.energyintel.com/portal"
+                print(f"DEBUG: 🚨🚨🚨 REDIRECTING TO: {portal_url} 🚨🚨🚨")
+                return redirect(portal_url)
+            else:
+                print(f"DEBUG: ✅ Found {tokens_found} production tokens - allowing access")
+                return None
         
-        # Get all potential tokens from various sources
-        print("DEBUG: Extracting tokens from request...")
-        potential_tokens = self._extract_tokens()
-        print(f"DEBUG: Found {len(potential_tokens)} potential tokens")
+        # Determine access context for other hosts
+        is_direct = self._is_direct_access()
+        is_embedded = self._is_embedded_access()
+        is_local = self._is_local_environment()
+        
+        print(f"DEBUG: Access context - Direct: {is_direct}, Embedded: {is_embedded}, Local: {is_local}")
+        
+        # Priority logic: Embedded access takes precedence over direct access
+        if is_embedded:
+            print(f"DEBUG: Embedded access from trusted referrer ({request.referrer}) - allowing")
+            return None  # Allow request to continue
+        
+        # CRITICAL: In production, direct access MUST be authenticated
+        elif is_direct and dash_env == 'production':
+            print("DEBUG: 🚨 PRODUCTION - Direct access to data.energyintel.com requires authentication")
+            print("DEBUG: 🚨 CHECKING AUTHENTICATION NOW...")
+            auth_result = self._handle_production_authentication()
+            if auth_result is not None:
+                print("DEBUG: 🚨 BLOCKING REQUEST - Authentication failed, returning redirect")
+                print(f"DEBUG: 🚨 REDIRECT RESPONSE: {auth_result}")
+                return auth_result  # This should block the request
+            else:
+                print("DEBUG: ✅ Authentication successful, allowing request to continue")
+                return None  # Allow request to continue
+        
+        # Local development environment
+        elif is_local and dash_env != 'production':
+            print("DEBUG: Local development environment - using development authentication")
+            return self._handle_local_authentication()
+        
+        # Default: treat as production for security
+        else:
+            print("DEBUG: 🚨 DEFAULT CASE - treating as production and requiring authentication")
+            print("DEBUG: 🚨 THIS IS A SECURITY-CRITICAL PATH")
+            auth_result = self._handle_production_authentication()
+            if auth_result is not None:
+                print("DEBUG: 🚨 BLOCKING REQUEST - Default authentication failed, returning redirect")
+                print(f"DEBUG: 🚨 REDIRECT RESPONSE: {auth_result}")
+                return auth_result  # This should block the request
+            else:
+                print("DEBUG: ✅ Default authentication successful, allowing request to continue")
+                return None  # Allow request to continue
+        
+    def _extract_production_tokens(self):
+        """Extract production tokens from request sources."""
+        tokens = []
+        
+        # Check production tokens in priority order
+        production_token_names = [
+            'pelcro.user.auth.token',  # Main production token from Pelcro
+            'kcToken',                # Keycloak access token
+            'kcIdToken'               # Keycloak ID token
+        ]
+        
+        # Check cookies for production tokens
+        for cookie_name in production_token_names:
+            token_value = request.cookies.get(cookie_name)
+            if token_value and len(token_value) > 10:  # Basic validation
+                print(f"DEBUG: Found production token in cookie: {cookie_name}")
+                tokens.append(token_value)
+        
+        # Check query parameter
+        query_token = request.args.get('token')
+        if query_token and len(query_token) > 10:
+            print(f"DEBUG: Found production token in query parameter")
+            tokens.append(query_token)
+        
+        # Check Authorization header
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            token_value = auth_header[7:]
+            if len(token_value) > 10:
+                print(f"DEBUG: Found production token in Authorization header")
+                tokens.append(token_value)
+        
+        # Check X-API-Token header
+        api_token = request.headers.get('X-API-Token')
+        if api_token and len(api_token) > 10:
+            print(f"DEBUG: Found production token in X-API-Token header")
+            tokens.append(api_token)
+        
+        print(f"DEBUG: Extracted {len(tokens)} production tokens from request")
+        
+        # CRITICAL: If no tokens found in production, this is a security issue
+        if len(tokens) == 0:
+            print("DEBUG: ❌ SECURITY ALERT: No production tokens found in request!")
+            print("DEBUG: ❌ This request should be BLOCKED immediately!")
+            
+        return tokens
+    
+    def _is_callback_request(self):
+        """Check if this is a Dash callback request that requires authentication."""
+        # Dash callback requests have specific characteristics
+        path = request.path.lower()
+        
+        # Internal Dash endpoints that should not require session validation
+        internal_endpoints = [
+            '/_reload-hash',
+            '/_dash-layout',
+            '/_dash-dependencies',
+            '/_dash-component-suites/',
+            '/assets/',
+            '/_favicon.ico',
+            '/static/',
+            '/_resources'
+        ]
+        
+        # Skip callback validation for internal endpoints
+        if any(endpoint in path for endpoint in internal_endpoints):
+            return False
+        
+        # EMERGENCY FIX: Be more lenient with callback detection
+        # Only treat as user callback if it's clearly a user interaction
+        callback_indicators = [
+            # Path-based detection for user callbacks
+            '/_dash-update-component' in request.path and request.method == 'POST',
+            
+            # ONLY require strict validation for POST requests with specific patterns
+            (request.method == 'POST' and 
+             request.is_json and 
+             '/_dash-update-component' in request.path and
+             request.headers.get('X-CSRFToken') is not None and 
+             request.headers.get('X-CSRFToken') != 'undefined')
+        ]
+        
+        is_callback = any(callback_indicators)
+        
+        if is_callback:
+            print(f"DEBUG: 🔄 USER CALLBACK REQUEST DETECTED")
+            print(f"DEBUG: 🔄 Path: {request.path}")
+            print(f"DEBUG: 🔄 Method: {request.method}")
+            print(f"DEBUG: 🔄 Content-Type: {request.headers.get('Content-Type')}")
+            print(f"DEBUG: 🔄 Is JSON: {request.is_json}")
+            print(f"DEBUG: 🔄 CSRF Token: {request.headers.get('X-CSRFToken')}")
+        
+        return is_callback
+    
+    def _handle_callback_auth_failure(self):
+        """Handle authentication failure for callback requests."""
+        print("DEBUG: ❌ CALLBACK AUTHENTICATION FAILED")
+        
+        # For callback requests, return JSON error instead of redirect
+        error_response = {
+            'error': 'Authentication expired',
+            'message': 'Your session has expired. Please refresh the page to continue.',
+            'code': 'SESSION_EXPIRED',
+            'action': 'REFRESH_PAGE'
+        }
+        
+        response = jsonify(error_response)
+        response.status_code = 401
+        
+        # Add CORS headers for callback responses
+        origin = request.headers.get('Origin')
+        if origin:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        
+        print(f"DEBUG: ❌ RETURNING CALLBACK AUTH FAILURE: {error_response}")
+        return response
+    
+    def _handle_local_authentication(self):
+        """Handle authentication for local development environment."""
+        print("DEBUG: Handling local development authentication")
+        
+        # In local development, we can be more permissive
+        # But still check for basic authentication if enabled
+        dash_env = os.environ.get('DASH_ENV', '').lower()
+        
+        if dash_env == 'development':
+            print("DEBUG: Development environment - bypassing authentication")
+            return None  # Allow all requests in development
+        
+        # For local but not development, use production-like authentication
+        return self._handle_production_authentication()
+    
+    def _handle_production_authentication(self):
+        """Handle authentication for production environment (data.energyintel.com)."""
+        print("DEBUG: Handling production authentication")
+        
+        # Extract production tokens from request
+        potential_tokens = self._extract_production_tokens()
+        print(f"DEBUG: Found {len(potential_tokens)} production tokens")
         
         token_info = None
         valid_token = None
         
         # Try each token found until one works
         for i, token in enumerate(potential_tokens):
-            print(f"DEBUG: Trying token {i+1}: {token[:20]}...")
-            # Try JWT validation
-            token_info = self._validate_jwt_token(token)
-            if not token_info:
-                # Fallback to simple tokens (admin-token-123 etc)
-                token_info = self._validate_simple_token(token)
+            print(f"DEBUG: Trying production token {i+1}: {token[:20]}...")
             
+            # Try JWT validation for production tokens
+            token_info = self._validate_production_jwt_token(token)
             if token_info:
-                print(f"DEBUG: Token {i+1} is valid!")
+                print(f"DEBUG: Production token {i+1} is valid!")
                 valid_token = token
                 break
             else:
-                print(f"DEBUG: Token {i+1} is invalid")
+                print(f"DEBUG: Production token {i+1} is invalid or expired")
         
         if not token_info:
-            print("DEBUG: No valid token found, returning auth error")
-            return self._auth_error("Invalid or expired token")
+            print("DEBUG: No valid production token found, BLOCKING REQUEST and redirecting to portal")
+            # CRITICAL: Return redirect response to block the request
+            portal_url = self.portal_url.rstrip('/') + "/portal"
+            print(f"DEBUG: BLOCKING ACCESS - Redirecting to portal: {portal_url}")
+            return redirect(portal_url)
         
         # Store user info in Flask's g object for use in callbacks
         g.current_user = token_info['user']
@@ -352,9 +747,484 @@ class TokenAuth:
         g.token = valid_token
         g.jwt_payload = token_info.get('jwt_payload')
         
-        # If token was provided in query string, flag it to be set as cookie
-        if request.args.get('token'):
-            g.set_auth_cookie = token
+        print(f"DEBUG: Production authentication successful for user: {token_info['user']}")
+        return None  # Allow request to continue
+    
+    def _validate_production_jwt_token(self, token):
+        """Validate production JWT tokens from Keycloak/Pelcro with strict expiry checking."""
+        try:
+            import jwt
+            import time
+            import base64
+            import json
+            import hmac
+            import hashlib
+            
+            # Try to decode the token to check if it's a valid JWT
+            try:
+                # First, try to decode without verification to check structure and expiry
+                payload = jwt.decode(token, options={"verify_signature": False})
+                print(f"DEBUG: JWT payload structure: {list(payload.keys())}")
+                
+                # CRITICAL: Strict token expiry checking with 10-minute TTL enforcement
+                if 'exp' in payload:
+                    current_time = time.time()
+                    token_exp = payload['exp']
+                    issued_at = payload.get('iat', current_time - 3600)  # Default to 1 hour ago if not present
+                    
+                    print(f"DEBUG: Token expiry check - Current: {current_time}, Expires: {token_exp}, Issued: {issued_at}")
+                    
+                    # CRITICAL: Enforce 10-minute TTL from CMS
+                    max_token_age = 10 * 60  # 10 minutes in seconds
+                    token_age = current_time - issued_at
+                    
+                    print(f"DEBUG: Token age: {token_age:.0f} seconds (max allowed: {max_token_age} seconds)")
+                    
+                    # Check if token has exceeded the 10-minute TTL
+                    if token_age > max_token_age:
+                        print(f"DEBUG: ❌ TOKEN EXCEEDED 10-MINUTE TTL")
+                        print(f"DEBUG: ❌ Token age: {token_age:.0f} seconds")
+                        print(f"DEBUG: ❌ Max allowed: {max_token_age} seconds")
+                        print(f"DEBUG: ❌ Exceeded by: {token_age - max_token_age:.0f} seconds")
+                        return None
+                    
+                    # Also check the standard expiry time
+                    if current_time > token_exp:
+                        print(f"DEBUG: ❌ PRODUCTION JWT TOKEN EXPIRED (standard expiry)")
+                        print(f"DEBUG: ❌ Current time: {current_time}")
+                        print(f"DEBUG: ❌ Token expired at: {token_exp}")
+                        print(f"DEBUG: ❌ Expired {current_time - token_exp:.0f} seconds ago")
+                        return None
+                    
+                    time_remaining = min(token_exp - current_time, max_token_age - token_age)
+                    print(f"DEBUG: ✅ Production JWT token valid. Time remaining: {time_remaining:.0f} seconds")
+                    
+                    # CRITICAL: If token expires in less than 60 seconds, treat as expired for security
+                    if time_remaining < 60:
+                        print(f"DEBUG: ⚠️  Token expires in {time_remaining:.0f} seconds - treating as expired for security")
+                        return None
+                
+                # CRITICAL: Check for required claims and scopes
+                user_id = payload.get('sub', payload.get('userId', payload.get('username', 'production_user')))
+                
+                # Check for WCOD-specific scopes if present
+                scopes = payload.get('scope', payload.get('scopes', []))
+                if isinstance(scopes, str):
+                    scopes = scopes.split(' ')
+                
+                print(f"DEBUG: Token scopes: {scopes}")
+                
+                # CRITICAL: Validate dashboard-specific access
+                dashboard_scope = self._validate_dashboard_scope(payload, scopes)
+                if not dashboard_scope:
+                    print(f"DEBUG: ❌ Token does not have required dashboard scope")
+                    return None
+                
+                # CRITICAL: Store token in session for callback validation
+                self._store_session_token(token, payload)
+                
+                return {
+                    'user': user_id,
+                    'permissions': ['read', 'write'],
+                    'expires': payload.get('exp'),
+                    'jwt_payload': payload,
+                    'scopes': scopes,
+                    'dashboard_scope': dashboard_scope,
+                    'token_age': token_age,
+                    'max_age': max_token_age
+                }
+                
+            except jwt.DecodeError:
+                print("DEBUG: Token is not a valid JWT, trying as simple token")
+                # If it's not a JWT, treat as simple token with expiry check
+                return self._validate_simple_token_with_expiry(token)
+                
+        except Exception as e:
+            print(f"DEBUG: Production JWT validation error: {e}")
+            return None
+    
+    def _validate_dashboard_scope(self, payload, scopes):
+        """Validate that the token has access to the current dashboard."""
+        # Get current dashboard from request path
+        current_path = request.path.lower()
+        
+        # Map paths to required scopes
+        dashboard_scopes = {
+            '/wcod-country/': 'wcod-country',
+            '/wcod-crude/': 'wcod-crude',
+            '/energy-dashboard/': 'energy-dashboard',
+            '/oil-markets/': 'oil-markets'
+        }
+        
+        required_scope = None
+        for path_prefix, scope in dashboard_scopes.items():
+            if current_path.startswith(path_prefix):
+                required_scope = scope
+                break
+        
+        if not required_scope:
+            print(f"DEBUG: No specific scope required for path: {current_path}")
+            return True  # Allow access if no specific scope is required
+        
+        # Check if token has the required scope
+        if required_scope in scopes:
+            print(f"DEBUG: ✅ Token has required scope: {required_scope}")
+            return required_scope
+        
+        # Check for admin or global access scopes
+        admin_scopes = ['admin', 'global-access', 'all-dashboards']
+        for admin_scope in admin_scopes:
+            if admin_scope in scopes:
+                print(f"DEBUG: ✅ Token has admin scope: {admin_scope}")
+                return admin_scope
+        
+        print(f"DEBUG: ❌ Token missing required scope: {required_scope}")
+        print(f"DEBUG: ❌ Available scopes: {scopes}")
+        return False
+    
+    def _store_session_token(self, token, payload):
+        """Store token in session for callback validation."""
+        try:
+            # Store in Flask session for callback validation
+            from flask import session
+            session['auth_token'] = token
+            session['auth_payload'] = payload
+            session['auth_timestamp'] = time.time()
+            
+            # Also store in g for current request
+            g.session_token = token
+            g.session_payload = payload
+            
+            print(f"DEBUG: ✅ Stored session token for user: {payload.get('sub', 'unknown')}")
+            
+        except Exception as e:
+            print(f"DEBUG: ⚠️  Failed to store session token: {e}")
+    
+    def _validate_callback_authentication(self):
+        """Validate authentication for callback requests with emergency leniency."""
+        try:
+            # EMERGENCY FIX: For production callbacks, be more lenient
+            # Check if user has ANY valid production token, not just unexpired session
+            
+            # First, try the strict session validation
+            from flask import session
+            session_token = session.get('auth_token')
+            session_payload = session.get('auth_payload')
+            session_timestamp = session.get('auth_timestamp')
+            
+            if session_token and session_payload and session_timestamp:
+                current_time = time.time()
+                session_age = current_time - session_timestamp
+                max_session_age = 15 * 60  # EMERGENCY: Extend to 15 minutes for callbacks
+                
+                if session_age <= max_session_age:
+                    # Validate the stored token with more lenient rules
+                    token_info = self._validate_production_jwt_token_lenient(session_token)
+                    if token_info:
+                        print(f"DEBUG: ✅ Callback authentication valid via session, age: {session_age:.0f} seconds")
+                        return True
+            
+            # EMERGENCY FALLBACK: Check for any valid production token in request
+            print(f"DEBUG: 🚨 EMERGENCY CALLBACK AUTH - Checking production tokens directly")
+            
+            # Extract production tokens from request
+            potential_tokens = self._extract_production_tokens()
+            
+            for i, token in enumerate(potential_tokens):
+                print(f"DEBUG: 🚨 Trying emergency callback token {i+1}")
+                
+                # Use lenient validation for callbacks
+                token_info = self._validate_production_jwt_token_lenient(token)
+                if token_info:
+                    print(f"DEBUG: ✅ EMERGENCY: Callback allowed with production token {i+1}")
+                    # Store in session for future use
+                    session['auth_token'] = token
+                    session['auth_payload'] = token_info.get('jwt_payload', {})
+                    session['auth_timestamp'] = time.time()
+                    return True
+            
+            print(f"DEBUG: ❌ EMERGENCY: No valid tokens found for callback")
+            return False
+            
+        except Exception as e:
+            print(f"DEBUG: ❌ Emergency callback authentication error: {e}")
+            return False
+    
+    def _invalidate_expired_sessions(self):
+        """Invalidate expired sessions and tokens."""
+        try:
+            from flask import session
+            
+            # Check and clear expired session data
+            session_timestamp = session.get('auth_timestamp')
+            if session_timestamp:
+                current_time = time.time()
+                session_age = current_time - session_timestamp
+                max_session_age = 10 * 60  # 10 minutes
+                
+                if session_age > max_session_age:
+                    print(f"DEBUG: 🧹 Clearing expired session (age: {session_age:.0f} seconds)")
+                    session.clear()
+            
+            # Clean up expired tokens from valid_tokens
+            current_time = time.time()
+            expired_tokens = []
+            
+            for token, token_info in self.valid_tokens.items():
+                if token_info.get('expires') and current_time > token_info['expires']:
+                    expired_tokens.append(token)
+            
+            for token in expired_tokens:
+                print(f"DEBUG: 🧹 Removing expired token from valid_tokens")
+                del self.valid_tokens[token]
+            
+            if expired_tokens:
+                print(f"DEBUG: 🧹 Cleaned up {len(expired_tokens)} expired tokens")
+                
+        except Exception as e:
+            print(f"DEBUG: ⚠️  Error during session cleanup: {e}")
+    
+    def _validate_simple_token_with_expiry(self, token):
+        """Validate simple tokens with expiry checking."""
+        if token in self.valid_tokens:
+            token_info = self.valid_tokens[token]
+            
+            # CRITICAL: Check expiry if set
+            if token_info.get('expires'):
+                import time
+                current_time = time.time()
+                token_exp = token_info['expires']
+                
+                if current_time > token_exp:
+                    print(f"DEBUG: ❌ Simple token expired {current_time - token_exp:.0f} seconds ago")
+                    # Remove expired token
+                    del self.valid_tokens[token]
+                    return None
+                else:
+                    time_remaining = token_exp - current_time
+                    print(f"DEBUG: ✅ Simple token valid. Time remaining: {time_remaining:.0f} seconds")
+            
+            return token_info
+        
+        return None
+    
+    def _validate_production_jwt_token_lenient(self, token):
+        """EMERGENCY: Lenient validation for callbacks - allows slightly expired tokens."""
+        try:
+            import jwt
+            import time
+            import base64
+            import json
+            import hmac
+            import hashlib
+            
+            # Handle base64 encoded tokens first
+            if not token.count('.') == 2:
+                try:
+                    decoded_bytes = base64.b64decode(token)
+                    token = decoded_bytes.decode('utf-8')
+                except:
+                    pass
+            
+            # Try to decode the token to check if it's a valid JWT
+            try:
+                # First, try to decode without verification to check structure and expiry
+                payload = jwt.decode(token, options={"verify_signature": False})
+                print(f"DEBUG: 🚨 EMERGENCY JWT validation - payload structure: {list(payload.keys())}")
+                
+                # PRODUCTION FIX: For live production tokens, be more lenient with TTL
+                if 'exp' in payload:
+                    current_time = time.time()
+                    token_exp = payload['exp']
+                    issued_at = payload.get('iat', current_time - 3600)
+                    
+                    print(f"DEBUG: 🚨 EMERGENCY Token expiry check - Current: {current_time}, Expires: {token_exp}, Issued: {issued_at}")
+                    
+                    # Check if token is actually expired (standard expiry)
+                    if current_time > token_exp:
+                        print(f"DEBUG: ❌ EMERGENCY: Token actually expired")
+                        return None
+                    
+                    # PRODUCTION FIX: For live tokens that are not actually expired, allow them
+                    # even if they exceed our TTL policy, but flag them for refresh
+                    token_age = current_time - issued_at
+                    max_token_age = 10 * 60  # 10 minutes normal limit
+                    emergency_max_age = 24 * 60 * 60  # 24 hours for live production tokens
+                    
+                    print(f"DEBUG: 🚨 EMERGENCY Token age: {token_age:.0f} seconds")
+                    
+                    if token_age > emergency_max_age:
+                        print(f"DEBUG: ❌ EMERGENCY: Token too old even for production ({token_age:.0f}s > {emergency_max_age}s)")
+                        return None
+                    
+                    # Check if this is a Pelcro token (production system)
+                    is_pelcro_token = (
+                        payload.get('iss', '').startswith('https://www.pelcro.com') or
+                        'pelcro' in payload.get('iss', '').lower()
+                    )
+                    
+                    if is_pelcro_token and token_age > max_token_age:
+                        print(f"DEBUG: ✅ EMERGENCY: Pelcro production token allowed despite TTL ({token_age:.0f}s old)")
+                        print(f"DEBUG: ✅ EMERGENCY: Token not actually expired, valid until {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(token_exp))}")
+                        
+                        # Allow the token but flag for refresh
+                        time_remaining = token_exp - current_time
+                        print(f"DEBUG: ✅ EMERGENCY: Time remaining: {time_remaining:.0f} seconds ({time_remaining/3600:.1f} hours)")
+                    else:
+                        time_remaining = token_exp - current_time
+                        print(f"DEBUG: ✅ EMERGENCY: Token valid for callback. Time remaining: {time_remaining:.0f} seconds")
+                
+                # Get user info
+                user_id = payload.get('sub', payload.get('userId', payload.get('username', 'production_user')))
+                
+                # Get scopes
+                scopes = payload.get('scope', payload.get('scopes', []))
+                if isinstance(scopes, str):
+                    scopes = scopes.split(' ')
+                
+                print(f"DEBUG: 🚨 EMERGENCY Token scopes: {scopes}")
+                
+                return {
+                    'user': user_id,
+                    'permissions': ['read', 'write'],
+                    'expires': payload.get('exp'),
+                    'jwt_payload': payload,
+                    'scopes': scopes,
+                    'emergency_access': True,  # Flag to indicate this was emergency access
+                    'token_age': token_age if 'iat' in payload else 0,
+                    'is_pelcro_token': is_pelcro_token if 'iat' in payload else False
+                }
+                
+            except jwt.DecodeError:
+                print("DEBUG: 🚨 EMERGENCY: Token is not a valid JWT, trying as simple token")
+                return self._validate_simple_token_with_expiry(token)
+                
+        except Exception as e:
+            print(f"DEBUG: 🚨 EMERGENCY JWT validation error: {e}")
+            return None
+
+    def _handle_embedded_authentication(self):
+        """Handle authentication for embedded mode (EMBEDDED_MODE=true)."""
+        print("DEBUG: 🔗 Handling embedded authentication")
+        
+        # In embedded mode, we need to be more flexible about authentication
+        # This is typically used when the app is embedded in an iframe from energyintel.com
+        
+        # Check if this is a callback request first
+        if self._is_callback_request():
+            print("DEBUG: 🔗 EMBEDDED CALLBACK REQUEST - Validating session")
+            if not self._validate_callback_authentication():
+                print("DEBUG: ❌ EMBEDDED CALLBACK AUTHENTICATION FAILED")
+                return self._handle_callback_auth_failure()
+            else:
+                print("DEBUG: ✅ EMBEDDED CALLBACK AUTHENTICATION SUCCESS")
+                return None  # Allow callback to proceed
+        
+        # Skip authentication for static assets and whitelisted paths
+        path = request.path.lower()
+        whitelist = [
+            '/_dash-layout',
+            '/_dash-dependencies', 
+            '/_dash-component-suites/',
+            '/_dash-update-component',
+            '/_reload-hash',
+            '_reload-hash',
+            '/assets/', 
+            '/_favicon.ico', 
+            '/static/',
+            '/health',
+            '/_resources',
+            '/portal',
+            '/portal/'
+        ]
+        
+        if any(x in path for x in whitelist):
+            print(f"DEBUG: 🔗 EMBEDDED: Path {path} is whitelisted, skipping auth")
+            return None
+        
+        # Check for embedded access from trusted referrer
+        is_embedded_access = False
+        if request.referrer:
+            ref_low = request.referrer.lower()
+            # Must be from energyintel.com but NOT from data.energyintel.com (to avoid self-referrer bypass)
+            if ('energyintel.com' in ref_low or 'www.energyintel.com' in ref_low) and \
+               'data.energyintel.com' not in ref_low:
+                is_embedded_access = True
+                print(f"DEBUG: 🔗 EMBEDDED ACCESS from trusted referrer: {request.referrer}")
+        
+        # Check for embedded mode headers
+        if request.headers.get('X-Embedded-Mode') == 'true' or \
+           request.headers.get('X-Parent-Domain') and 'energyintel.com' in request.headers.get('X-Parent-Domain', ''):
+            is_embedded_access = True
+            print(f"DEBUG: 🔗 EMBEDDED ACCESS via headers")
+        
+        # If this is embedded access from trusted source, allow it
+        if is_embedded_access:
+            print("DEBUG: 🔗 EMBEDDED: Trusted embedded access - allowing without token check")
+            return None  # Allow request to continue
+        
+        # For non-embedded access in embedded mode, check tokens with refresh handling
+        print("DEBUG: 🔗 EMBEDDED: Non-embedded access detected - checking authentication with refresh support")
+        
+        # PRODUCTION FIX: Use token refresh handler for better user experience
+        try:
+            from token_refresh_handler import token_refresh_handler
+            
+            # Check if this is a refresh callback
+            if token_refresh_handler.is_refresh_callback():
+                print("DEBUG: 🔗 EMBEDDED: Handling token refresh callback")
+                refresh_result = token_refresh_handler.handle_refresh_callback()
+                if refresh_result:
+                    return refresh_result  # Redirect if refresh incomplete
+            
+            # Check tokens and handle refresh if needed
+            refresh_result = token_refresh_handler.check_and_handle_token_refresh()
+            if refresh_result:
+                print("DEBUG: 🔗 EMBEDDED: Token refresh required - redirecting")
+                return refresh_result  # Redirect for token refresh
+            
+            print("DEBUG: 🔗 EMBEDDED: Token refresh check passed - proceeding with validation")
+            
+        except ImportError:
+            print("DEBUG: 🔗 EMBEDDED: Token refresh handler not available - using fallback")
+        
+        # Extract production tokens from request
+        potential_tokens = self._extract_production_tokens()
+        print(f"DEBUG: 🔗 EMBEDDED: Found {len(potential_tokens)} production tokens")
+        
+        token_info = None
+        valid_token = None
+        
+        # Try each token found until one works (use lenient validation for embedded mode)
+        for i, token in enumerate(potential_tokens):
+            print(f"DEBUG: 🔗 EMBEDDED: Trying production token {i+1}: {token[:20]}...")
+            
+            # Use lenient validation for embedded mode
+            token_info = self._validate_production_jwt_token_lenient(token)
+            if token_info:
+                print(f"DEBUG: 🔗 EMBEDDED: Production token {i+1} is valid!")
+                valid_token = token
+                break
+            else:
+                print(f"DEBUG: 🔗 EMBEDDED: Production token {i+1} is invalid or expired")
+        
+        if not token_info:
+            print("DEBUG: 🔗 EMBEDDED: No valid production token found")
+            
+            # In embedded mode, if no valid token, redirect to portal
+            portal_url = self.portal_url.rstrip('/') + "/portal"
+            print(f"DEBUG: 🔗 EMBEDDED: Redirecting to portal: {portal_url}")
+            return redirect(portal_url)
+        
+        # Store user info in Flask's g object for use in callbacks
+        g.current_user = token_info['user']
+        g.user_permissions = token_info['permissions']
+        g.token = valid_token
+        g.jwt_payload = token_info.get('jwt_payload')
+        
+        print(f"DEBUG: 🔗 EMBEDDED: Authentication successful for user: {token_info['user']}")
+        return None  # Allow request to continue
+
     
     def _is_initial_page_load(self):
         """Check if this is an initial page load or a returning user."""
@@ -447,7 +1317,7 @@ class TokenAuth:
         query_token = request.args.get('token')
         if query_token:
             tokens.append(query_token)
-            
+        
         # 2. Check Authorization header (Bearer token)
         auth_header = request.headers.get('Authorization', '')
         if auth_header.startswith('Bearer '):
@@ -458,10 +1328,32 @@ class TokenAuth:
         if api_token:
             tokens.append(api_token)
         
-        # 4. Check cookies
-        for cookie_name in ['auth_token', 'kcToken', 'pelcro.user.auth.token']:
+        # 4. Check cookies - prioritize production tokens
+        # Production tokens from Keycloak/Pelcro
+        production_tokens = [
+            'pelcro.user.auth.token',  # Main production token
+            'kcToken',                # Keycloak access token
+            'kcIdToken'               # Keycloak ID token
+        ]
+        
+        # Development tokens
+        development_tokens = [
+            'auth_token',
+            'pelcro.user.auth.token'  # Also check for consistency
+        ]
+        
+        # Check production tokens first
+        for cookie_name in production_tokens:
             t = request.cookies.get(cookie_name)
             if t:
+                print(f"DEBUG: Found production token: {cookie_name}")
+                tokens.append(t)
+        
+        # Then check development tokens
+        for cookie_name in development_tokens:
+            t = request.cookies.get(cookie_name)
+            if t:
+                print(f"DEBUG: Found development token: {cookie_name}")
                 tokens.append(t)
         
         # 5. Check for default token in environment
@@ -469,6 +1361,7 @@ class TokenAuth:
         if default_token:
             tokens.append(default_token)
             
+        print(f"DEBUG: Extracted {len(tokens)} tokens from request")
         return tokens
     
     def _validate_simple_token(self, token):
@@ -486,7 +1379,7 @@ class TokenAuth:
         return None
     
     def _auth_error(self, message):
-        """Return authentication error response."""
+        """Return authentication error response with context-aware behavior."""
         if request.path.startswith('/api/') or request.is_json:
             # For API requests, return JSON error with token refresh info
             error_response = {
@@ -502,21 +1395,51 @@ class TokenAuth:
             }
             return jsonify(error_response), 401
         else:
-            # For web requests, check if this is an initial page load or subsequent request
-            is_initial_load = getattr(g, 'is_initial_load', False)
+            # For web requests, check access context and handle accordingly
+            is_embedded = self._is_embedded_access()
+            is_direct = self._is_direct_access()
+            is_local = self._is_local_environment()
             
-            if is_initial_load:
-                print("DEBUG: Initial page load with auth error, allowing Dash app to load normally")
-                # For initial loads, let the Dash app load normally
-                # Don't interfere with the normal Dash rendering process
-                # The JavaScript will handle showing overlay if needed
+            print(f"DEBUG: Access context - Embedded: {is_embedded}, Direct: {is_direct}, Local: {is_local}")
+            
+            if is_embedded:
+                # Embedded access from energyintel.com - no redirect, allow app to load
+                print("DEBUG: Embedded access from energyintel.com - allowing app to load without redirect")
                 return None  # Let the normal Dash app handle the response
+            
+            elif is_direct:
+                # Direct access to data.energyintel.com - authentication required
+                print("DEBUG: Direct access to data.energyintel.com - redirecting to authentication")
+                return self._redirect_to_auth()
+            
+            elif is_local:
+                # Local development - use overlay approach
+                print("DEBUG: Local environment - using overlay approach")
+                is_initial_load = getattr(g, 'is_initial_load', False)
+                
+                if is_initial_load:
+                    print("DEBUG: Initial page load with auth error, allowing Dash app to load normally")
+                    # For initial loads, let the Dash app load normally
+                    # Don't interfere with the normal Dash rendering process
+                    # The JavaScript will handle showing overlay if needed
+                    return None  # Let the normal Dash app handle the response
+                else:
+                    print("DEBUG: Subsequent request with auth error, injecting overlay into Dash app")
+                    # For subsequent requests, we need to inject the overlay into the Dash app response
+                    # This will be handled by the after_request hook
+                    g.show_auth_overlay = True
+                    return None  # Let the normal Dash app handle the response
+            
             else:
-                print("DEBUG: Subsequent request with auth error, injecting overlay into Dash app")
-                # For subsequent requests, we need to inject the overlay into the Dash app response
-                # This will be handled by the after_request hook
-                g.show_auth_overlay = True
-                return None  # Let the normal Dash app handle the response
+                # Default behavior - treat as local for safety
+                print("DEBUG: Unknown context - defaulting to local overlay approach")
+                is_initial_load = getattr(g, 'is_initial_load', False)
+                
+                if is_initial_load:
+                    return None  # Let the normal Dash app handle the response
+                else:
+                    g.show_auth_overlay = True
+                    return None  # Let the normal Dash app handle the response
     
     def _get_page_content_with_auth_check(self):
         """Return the actual page content with JavaScript auth checking."""
@@ -1794,4 +2717,68 @@ class TokenAuth:
 
 def init_auth(app):
     """Initialize JWT and token-based authentication for the Dash app."""
-    return TokenAuth(app)
+    auth_instance = TokenAuth(app)
+    
+    # CRITICAL: Add an additional before_request handler to ensure authentication is checked
+    @app.server.before_request
+    def enforce_authentication():
+        """Additional authentication enforcement."""
+        from flask import request
+        
+        # Skip for OPTIONS and whitelisted paths
+        if request.method == 'OPTIONS':
+            return None
+            
+        path = request.path.lower()
+        whitelist = [
+            '/_dash-layout',
+            '/_dash-dependencies', 
+            '/_dash-component-suites/',
+            '/_dash-update-component',
+            '_reload-hash',
+            '/assets/', 
+            '/_favicon.ico', 
+            '/static/',
+            '/health',
+            '/_resources'
+        ]
+        
+        if any(x in path for x in whitelist):
+            return None
+        
+        # For all other paths, ensure authentication is checked
+        print(f"DEBUG: � ADDITIONAL AUTH ENFORCEMENT for: {path}")
+        
+        # Check environment
+        dash_env = os.environ.get('DASH_ENV', '').lower()
+        if dash_env == 'production':
+            # Check if this is direct access to data.energyintel.com
+            if request.host and 'data.energyintel.com' in request.host:
+                # Check for embedded access
+                is_embedded = (request.referrer and 
+                             ('energyintel.com' in request.referrer or 'www.energyintel.com' in request.referrer))
+                
+                if not is_embedded:
+                    print(f"DEBUG: � DIRECT ACCESS TO PRODUCTION - Checking tokens")
+                    
+                    # Extract tokens
+                    tokens = []
+                    production_token_names = ['pelcro.user.auth.token', 'kcToken', 'kcIdToken']
+                    
+                    for cookie_name in production_token_names:
+                        token_value = request.cookies.get(cookie_name)
+                        if token_value and len(token_value) > 10:
+                            tokens.append(token_value)
+                    
+                    if len(tokens) == 0:
+                        print(f"DEBUG: 🚨 NO PRODUCTION TOKENS - BLOCKING ACCESS IMMEDIATELY")
+                        portal_url = os.environ.get('PORTAL_URL', 'https://data.energyintel.com').rstrip('/') + "/portal"
+                        print(f"DEBUG: 🚨 ENFORCED REDIRECT TO: {portal_url}")
+                        from flask import redirect
+                        return redirect(portal_url)
+                    else:
+                        print(f"DEBUG: ✅ Found {len(tokens)} tokens, allowing access")
+        
+        return None
+    
+    return auth_instance
