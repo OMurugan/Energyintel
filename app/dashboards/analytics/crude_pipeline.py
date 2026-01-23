@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from core.data_helpers import execute_query
 from datetime import datetime
 import json
+import numpy as np
 
 # --- Constants & Config ---
 
@@ -26,6 +27,8 @@ MONTH_ORDER = [
     'January', 'February', 'March', 'April', 'May', 'June', 
     'July', 'August', 'September', 'October', 'November', 'December'
 ]
+
+EI_DARK_BLUE = "#1b365d"
 
 # --- Data Loading Functions ---
 
@@ -122,8 +125,8 @@ def create_layout():
         # Stores for interactive selection state
         dcc.Store(id='selected-seaborne', data=None),
         dcc.Store(id='selected-pipeline', data=None),
-        dcc.Store(id='seaborne-agg-state', data='monthly'),
-        dcc.Store(id='pipeline-agg-state', data='monthly'),
+        dcc.Store(id='seaborne-agg-state', data='MONTHLY'),
+        dcc.Store(id='pipeline-agg-state', data='MONTHLY'),
         
         # Download components
         dcc.Download(id="download-seaborne-csv"),
@@ -163,10 +166,56 @@ def create_layout():
                     )
                 ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                 
-                # Chart 1
-                html.Div(dcc.Loading(
-                    dcc.Graph(id='seaborne-chart', className='custom-chart', config={'displayModeBar': False}, style={'height': '300px'})
-                ), style={'cursor': 'pointer'}),
+                # Seaborne Container
+                html.Div([
+                    # Seaborne Granularity Controls
+                    html.Div([
+                        html.Div([
+                            html.Span("Year of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='pipeline-seaborne-toggle-year-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Quarter of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='pipeline-seaborne-toggle-quarter-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Month of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='pipeline-seaborne-toggle-month-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Day of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='pipeline-seaborne-toggle-day-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center'})
+                    ], style={
+                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+                        'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '0px',
+                        'position': 'absolute', 'top': '15px', 'left': '60px', 'zIndex': '10'
+                    }),
+
+                    # Chart 1
+                    html.Div(dcc.Loading(
+                        dcc.Graph(id='seaborne-chart', className='custom-chart', config={'displayModeBar': False}, style={'height': '340px'})
+                    ), style={'cursor': 'pointer'})
+                ], style={'position': 'relative'}),
                 
                 html.Hr(style={'margin': '5px 0', 'border': '0', 'borderTop': '1px solid #eee', 'clear': 'both'}),
                 
@@ -174,7 +223,7 @@ def create_layout():
                 html.Div([
                     html.H1(id='pipeline-title', 
                             children="PIPELINE CRUDE EXPORTS TO EUROPE VIA DRUZHBA ('000 b/d)",
-                            style={'color': '#d35400', 'fontSize': '18px', 'fontWeight': 'bold', 'margin': '0', 'fontFamily': 'sans-serif'}),
+                            style={'color': '#d35400', 'fontSize': '18px', 'fontWeight': 'bold', 'margin': '0', 'fontFamily': 'sans-serif', 'display': 'block'}),
                     dcc.Loading(
                         id="loading-export-pipeline",
                         type="default",
@@ -197,12 +246,58 @@ def create_layout():
                             )
                         ]
                     )
-                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px', 'marginTop': '30px'}),
                 
-                # Chart 2
-                html.Div(dcc.Loading(
-                    dcc.Graph(id='pipeline-chart', className='custom-chart', config={'displayModeBar': False}, style={'height': '350px'})
-                ), style={'cursor': 'pointer'})
+                # Pipeline Container
+                html.Div([
+                    # Pipeline Granularity Controls
+                    html.Div([
+                        html.Div([
+                            html.Span("Year of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='pipeline-pipeline-toggle-year-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Quarter of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='pipeline-pipeline-toggle-quarter-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Month of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='pipeline-pipeline-toggle-month-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Day of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='pipeline-pipeline-toggle-day-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center'})
+                    ], style={
+                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+                        'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '0px',
+                        'position': 'absolute', 'top': '15px', 'left': '60px', 'zIndex': '10'
+                    }),
+
+                    # Chart 2
+                    html.Div(dcc.Loading(
+                        dcc.Graph(id='pipeline-chart', className='custom-chart', config={'displayModeBar': False}, style={'height': '380px'})
+                    ), style={'cursor': 'pointer'})
+                ], style={'position': 'relative'}),
                 
             ], style={'flex': '1', 'marginRight': '30px', 'minWidth': '0'}),
             
@@ -266,131 +361,141 @@ def hex_to_rgba(h, a):
     rgb = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
     return f'rgba({rgb[0]},{rgb[1]},{rgb[2]},{a})'
 
-def generate_timeline_data(years, mode='monthly'):
+def generate_timeline_data(years, mode='MONTHLY'):
     """
     Generate timeline mapping, labels, and separators for a set of years based on aggregation mode.
-    Modes: 'monthly', 'quarterly', 'yearly'
+    Modes: 'MONTHLY', 'QUARTERLY', 'YEARLY', 'DATE'
     """
     timeline = []
     year_annotations = []
     month_separators = []
     year_separators = []
-    
-    year_centers = [] # Used for Header placement (and Icon placement)
+    year_centers = [] 
     
     current_global_x = 0
     num_years = len(years)
+    mode = (mode or 'MONTHLY').upper()
+
+    # If mode is DATE, we technically want the same 12-slot structure as MONTHLY,
+    # but with different labeling (short_label='1' for the tick, but we still need the month name for the header).
+    # The chart callbacks will handle the visual distinction (tick vs annotation).
+    # So we can merge DATE logic into the standard loop but setting a flag.
     
-    # Configuration based on mode
-    if mode == 'monthly':
-        slots_per_year = 12
-        slot_width = 1.0
-        # X-axis labels
-        sub_labels = MONTH_ORDER
-    elif mode == 'quarterly':
-        slots_per_year = 4
-        slot_width = 1.0
-        sub_labels = ['Q1', 'Q2', 'Q3', 'Q4']
-    elif mode == 'yearly':
-        slots_per_year = 1
-        slot_width = 1.0 # One bar per year
-        sub_labels = [''] # No sub-labels for yearly
+    active_mode = mode
+    is_date_mode = False
+    
+    if mode == 'DATE':
+        active_mode = 'MONTHLY'
+        is_date_mode = True
         
-    for y_idx, y in enumerate(years):
-        # Calculate visual center for the year header
-        # Center is at start + (total_width / 2)
-        # total_width = slots_per_year * slot_width
-        year_width = slots_per_year * slot_width
-        year_center = current_global_x + (year_width / 2)
-        
-        # Icon position: To the left of the center (roughly same relative pos as Tableau)
-        # Or just use the center and offset text? Tableau puts icon left of text.
-        # We'll store year_center for the text.
-        year_centers.append({'year': y, 'x': year_center, 'width': year_width})
-        
-        # Add Year Annotation (Header)
-        # Offset x for icon can be handled in the chart trace
-        year_annotations.append(dict(
-             x=year_center, y=0.5, xref="x", yref="y2",
-             text=f"<b>{y}</b>", showarrow=False, font=dict(size=14, color="black"),
-             xanchor="center", yanchor="middle"
-        ))
-        
-        for s_idx, label in enumerate(sub_labels):
-            # Shortening logic only applies to Monthly mode really
-            final_label = label
-            if mode == 'monthly':
-                m_name = label
-                if num_years == 1:
-                    short_label = m_name
-                elif num_years == 2:
-                    two_year_mapping = {"September": "Septem..", "November": "Novem..", "December": "Decem.."}
-                    short_label = two_year_mapping.get(m_name, m_name)
-                elif num_years <= 6:
-                    mapping = {
-                        "January": "Ja..", "February": "Fe..", "March": "Ma..",
-                        "April": "Ap..", "May": "Ma..", "June": "Ju..",
-                        "July": "Ju..", "August": "Au..", "September": "Se..",
-                        "October": "Oc..", "November": "No..", "December": "De.."
-                    }
-                    short_label = mapping.get(m_name, m_name[:3] + "..")
+    if True: # Indentation wrapper to match previous structure
+        if active_mode == 'MONTHLY':
+            slots_per_year = 12
+            slot_width = 1.0
+            sub_labels = MONTH_ORDER
+        elif active_mode == 'QUARTERLY':
+            slots_per_year = 4
+            slot_width = 1.0
+            sub_labels = ['Q1', 'Q2', 'Q3', 'Q4']
+        elif active_mode == 'YEARLY':
+            slots_per_year = 1
+            slot_width = 1.0 
+            sub_labels = [''] 
+        else: # Fallback to Monthly
+            slots_per_year = 12
+            slot_width = 1.0
+            sub_labels = MONTH_ORDER
+            active_mode = 'MONTHLY'
+            
+        for y_idx, y in enumerate(years):
+            year_width = slots_per_year * slot_width
+            year_center = current_global_x + (year_width / 2)
+            year_centers.append({'year': y, 'x': year_center, 'width': year_width})
+            
+            year_annotations.append(dict(
+                 x=year_center, y=0.5, xref="x", yref="y2",
+                 text=f"<b>{y}</b>", showarrow=False, font=dict(size=14, color="black"),
+                 xanchor="center", yanchor="middle"
+            ))
+            
+            for s_idx, label in enumerate(sub_labels):
+                final_label = label
+                if active_mode == 'MONTHLY':
+                    m_name = label
+                    if num_years == 1:
+                        short_label = m_name
+                    elif num_years == 2:
+                        two_year_mapping = {"September": "Septem..", "November": "Novem..", "December": "Decem.."}
+                        short_label = two_year_mapping.get(m_name, m_name)
+                    elif num_years <= 6:
+                         mapping = {
+                            "January": "Ja..", "February": "Fe..", "March": "Ma..",
+                            "April": "Ap..", "May": "Ma..", "June": "Ju..",
+                            "July": "Ju..", "August": "Au..", "September": "Se..",
+                            "October": "Oc..", "November": "No..", "December": "De.."
+                        }
+                         short_label = mapping.get(m_name, m_name[:3] + "..")
+                    else:
+                        ultra_mapping = {
+                            "January": "J", "February": "F", "March": "M",
+                            "April": "A", "May": "M", "June": "J",
+                            "July": "J", "August": "A", "September": "S",
+                            "October": "O", "November": "N", "December": "D"
+                        }
+                        short_label = ultra_mapping.get(m_name, m_name[0])
+                    final_label = short_label
+                
+                item = {
+                    'year': y,
+                    'x_pos': current_global_x + (slot_width / 2),
+                    'short_label': final_label, # Used for Month Header (y3)
+                    'full_label': label 
+                }
+                
+                # Tick Label Logic: If DATE mode, tick is "1"
+                if is_date_mode:
+                    item['tick_label'] = '1'
                 else:
-                    ultra_mapping = {
-                        "January": "J", "February": "F", "March": "M",
-                        "April": "A", "May": "M", "June": "J",
-                        "July": "J", "August": "A", "September": "S",
-                        "October": "O", "November": "N", "December": "D"
-                    }
-                    short_label = ultra_mapping.get(m_name, m_name[0])
-                final_label = short_label
-            
-            # For timeline mapping
-            item = {
-                'year': y,
-                'x_pos': current_global_x + (slot_width / 2),
-                'short_label': final_label,
-                'full_label': label # This might be month name or Qx
-            }
-            if mode == 'monthly':
-                item['month_name'] = label
-                item['month_idx'] = s_idx
-            elif mode == 'quarterly':
-                item['quarter'] = label
-            
-            timeline.append(item)
-            
-            # Separators (between months/quarters)
-            line_x = current_global_x + slot_width
-            if s_idx < len(sub_labels) - 1:
-                month_separators.append(dict(
-                    type="line", x0=line_x, x1=line_x, y0=0, y1=0.88, 
-                    xref="x", yref="paper", line=dict(color="#999999", width=1),
+                    item['tick_label'] = ''
+
+
+                if active_mode == 'MONTHLY':
+                    item['month_name'] = label
+                    item['month_idx'] = s_idx
+                elif active_mode == 'QUARTERLY':
+                    item['quarter'] = label
+                
+                timeline.append(item)
+                
+                # Separators
+                line_x = current_global_x + slot_width
+                
+                # Different logic for separators?
+                # In DATE mode (which is visual Monthly), we might want gap?
+                # No, user wants "same month chart". So standard monthly separators.
+
+                if s_idx < len(sub_labels) - 1:
+                    month_separators.append(dict(
+                        type="line", x0=line_x, x1=line_x, y0=0, y1=0.88, 
+                        xref="x", yref="paper", line=dict(color="#999999", width=1),
+                        layer='below'
+                    ))
+                
+                current_global_x += slot_width
+
+            # Year Separator
+            if y_idx < len(years) - 1:
+                sep_x = current_global_x
+                y_sep = dict(
+                    type="line", x0=sep_x, x1=sep_x, y0=0, y1=1,
+                    xref="x", yref="paper", line=dict(color="#000000", width=1),
                     layer='below'
-                ))
-            
-            current_global_x += slot_width
-            
-        # Year Separator
-        if y_idx < len(years) - 1:
-            sep_x = current_global_x
-            y_sep = dict(
-                type="line", x0=sep_x, x1=sep_x, y0=0, y1=1,
-                xref="x", yref="paper", line=dict(color="#000000", width=1),
-                layer='below'
-            )
-            year_separators.append(y_sep)
-            month_separators.append(y_sep) # Add to general list too
-            
-            # Add a small gap between years? No, continuous line.
-            # current_global_x += 0.5 # REMOVED gap to match Tableau compact style for non-monthly
-            # For 'monthly' we had a gap. Let's keep consistency.
-            if mode == 'monthly':
-                 current_global_x += 0.5 
-            elif mode == 'quarterly':
-                 current_global_x += 0.25 # Smaller gap
-            else:
-                 current_global_x += 0.25
-            
+                )
+                year_separators.append(y_sep)
+                month_separators.append(y_sep) 
+                
+                current_global_x += (0.5 if active_mode == 'MONTHLY' else 0.25)
+    
     df = pd.DataFrame(timeline)
     return df, year_annotations, month_separators, year_separators, num_years, year_centers
 
@@ -406,14 +511,16 @@ def generate_timeline_data(years, mode='monthly'):
      Input('seaborne-chart', 'restyleData'),
      Input('pipeline-chart', 'restyleData'),
      Input('year-check-filter', 'value'),
-     Input('direction-dropdown', 'value')],
+     Input('direction-dropdown', 'value'),
+     Input('seaborne-agg-state', 'data'),
+     Input('pipeline-agg-state', 'data')],
     [State('selected-seaborne', 'data'),
      State('selected-pipeline', 'data'),
      State('seaborne-chart', 'figure'),
      State('pipeline-chart', 'figure')]
 )
 def update_chart_selections(sea_click, pipe_click, sea_restyle, pipe_restyle, year_filter, dir_filter, 
-                            sea_sel, pipe_sel, sea_fig, pipe_fig):
+                            sea_agg, pipe_agg, sea_sel, pipe_sel, sea_fig, pipe_fig):
     ctx = callback_context
     if not ctx.triggered:
         return no_update, no_update, no_update, no_update
@@ -421,10 +528,9 @@ def update_chart_selections(sea_click, pipe_click, sea_restyle, pipe_restyle, ye
     trigger_id = ctx.triggered[0]['prop_id']
     
     # Reset selections if year filter or direction filter changes
-    if 'year-check-filter' in trigger_id or 'direction-dropdown' in trigger_id:
-        sea_reset = None if sea_sel else no_update
-        pipe_reset = None if pipe_sel else no_update
-        return sea_reset, pipe_reset, None, None
+    # Reset selections if filter or granularity changes
+    if any(x in trigger_id for x in ['year-check-filter', 'direction-dropdown', 'agg-state']):
+        return None, None, None, None
     
     # --- Seaborne Logic ---
     if 'seaborne-chart.clickData' in trigger_id or 'seaborne-chart.restyleData' in trigger_id:
@@ -499,15 +605,8 @@ def update_chart_selections(sea_click, pipe_click, sea_restyle, pipe_restyle, ye
             point = pipe_click['points'][0]
             cdata = point.get('customdata', [])
             
-            # Check for Icon Click (Year Toggle)
-            if cdata and isinstance(cdata, list) and len(cdata) > 0 and cdata[-1] == 'YEAR_ICON':
-                # This is handled in a separate callback or we need to output to the store here
-                # But current callback outputs to 'selected-seaborne'/'selected-pipeline'.
-                # We need a NEW callback for aggregation state.
-                pass 
-
             # Year Header Click
-            elif cdata and isinstance(cdata, list) and len(cdata) > 0 and cdata[-1] == 'YEAR_HEADER':
+            if cdata and isinstance(cdata, list) and len(cdata) > 0 and cdata[-1] == 'YEAR_HEADER':
                 clicked_year = cdata[0]
                 if (pipe_sel and isinstance(pipe_sel, dict) and 
                     pipe_sel.get('mode') == 'year_only' and 
@@ -567,46 +666,83 @@ def update_chart_selections(sea_click, pipe_click, sea_restyle, pipe_restyle, ye
 
 @callback(
     [Output('seaborne-agg-state', 'data'),
-     Output('pipeline-agg-state', 'data')],
-    [Input('seaborne-chart', 'clickData'),
-     Input('pipeline-chart', 'clickData')],
-    [State('seaborne-agg-state', 'data'),
-     State('pipeline-agg-state', 'data')]
+     Output('pipeline-seaborne-toggle-year-btn', 'children'),
+     Output('pipeline-seaborne-toggle-quarter-btn', 'children'),
+     Output('pipeline-seaborne-toggle-month-btn', 'children'),
+     Output('pipeline-seaborne-toggle-day-btn', 'children')],
+    [Input('pipeline-seaborne-toggle-year-btn', 'n_clicks'),
+     Input('pipeline-seaborne-toggle-quarter-btn', 'n_clicks'),
+     Input('pipeline-seaborne-toggle-month-btn', 'n_clicks'),
+     Input('pipeline-seaborne-toggle-day-btn', 'n_clicks')],
+    [State('seaborne-agg-state', 'data')]
 )
-def update_aggregation_state(sea_click, pipe_click, current_sea_agg, current_pipe_agg):
+def pipeline_seaborne_granularity_handler(y_c, q_c, m_c, d_c, current_gran):
     ctx = callback_context
     if not ctx.triggered:
-        return no_update, no_update
-    
-    trigger_id = ctx.triggered[0]['prop_id']
-    
-    # Seaborne Icon Click
-    if 'seaborne-chart.clickData' in trigger_id and sea_click:
-        point = sea_click['points'][0]
-        cdata = point.get('customdata', [])
-        if cdata and isinstance(cdata, list) and len(cdata) > 0 and cdata[-1] == 'YEAR_ICON':
-            if current_sea_agg == 'monthly':
-                new_agg = 'yearly'
-            elif current_sea_agg == 'yearly':
-                new_agg = 'quarterly'
-            else: # quarterly
-                new_agg = 'yearly'
-            return new_agg, no_update
+        cg = current_gran or 'MONTHLY'
+        return (cg, 
+                '-' if cg == 'YEARLY' else '+',
+                '-' if cg == 'QUARTERLY' else '+',
+                '-' if cg == 'MONTHLY' else '+',
+                '-' if cg == 'DATE' else '+')
 
-    # Pipeline Icon Click
-    if 'pipeline-chart.clickData' in trigger_id and pipe_click:
-        point = pipe_click['points'][0]
-        cdata = point.get('customdata', [])
-        if cdata and isinstance(cdata, list) and len(cdata) > 0 and cdata[-1] == 'YEAR_ICON':
-            if current_pipe_agg == 'monthly':
-                new_agg = 'yearly'
-            elif current_pipe_agg == 'yearly':
-                new_agg = 'quarterly'
-            else: # quarterly
-                new_agg = 'yearly'
-            return no_update, new_agg
-            
-    return no_update, no_update
+    btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+    new_gran = 'MONTHLY'
+    if 'year' in btn_id:
+        new_gran = 'YEARLY'
+    elif 'quarter' in btn_id:
+        new_gran = 'QUARTERLY'
+    elif 'month' in btn_id:
+        new_gran = 'MONTHLY'
+    elif 'day' in btn_id:
+        new_gran = 'DATE'
+        
+    return (new_gran,
+            '-' if new_gran == 'YEARLY' else '+',
+            '-' if new_gran == 'QUARTERLY' else '+',
+            '-' if new_gran == 'MONTHLY' else '+',
+            '-' if new_gran == 'DATE' else '+')
+
+@callback(
+    [Output('pipeline-agg-state', 'data'),
+     Output('pipeline-pipeline-toggle-year-btn', 'children'),
+     Output('pipeline-pipeline-toggle-quarter-btn', 'children'),
+     Output('pipeline-pipeline-toggle-month-btn', 'children'),
+     Output('pipeline-pipeline-toggle-day-btn', 'children')],
+    [Input('pipeline-pipeline-toggle-year-btn', 'n_clicks'),
+     Input('pipeline-pipeline-toggle-quarter-btn', 'n_clicks'),
+     Input('pipeline-pipeline-toggle-month-btn', 'n_clicks'),
+     Input('pipeline-pipeline-toggle-day-btn', 'n_clicks')],
+    [State('pipeline-agg-state', 'data')]
+)
+def pipeline_pipeline_granularity_handler(y_c, q_c, m_c, d_c, current_gran):
+    ctx = callback_context
+    if not ctx.triggered:
+        cg = current_gran or 'MONTHLY'
+        return (cg, 
+                '-' if cg == 'YEARLY' else '+',
+                '-' if cg == 'QUARTERLY' else '+',
+                '-' if cg == 'MONTHLY' else '+',
+                '-' if cg == 'DATE' else '+')
+
+    btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+    new_gran = 'MONTHLY'
+    if 'year' in btn_id:
+        new_gran = 'YEARLY'
+    elif 'quarter' in btn_id:
+        new_gran = 'QUARTERLY'
+    elif 'month' in btn_id:
+        new_gran = 'MONTHLY'
+    elif 'day' in btn_id:
+        new_gran = 'DATE'
+        
+    return (new_gran,
+            '-' if new_gran == 'YEARLY' else '+',
+            '-' if new_gran == 'QUARTERLY' else '+',
+            '-' if new_gran == 'MONTHLY' else '+',
+            '-' if new_gran == 'DATE' else '+')
 
 @callback(
     Output('selected-seaborne', 'data', allow_duplicate=True),
@@ -658,7 +794,7 @@ def update_seaborne_chart(selected_years, sel_sea, agg_mode):
         return go.Figure().update_layout(template="simple_white", title="No years selected"), []
     
     try:
-        agg_mode = agg_mode if agg_mode else 'monthly'
+        agg_mode = (agg_mode or 'MONTHLY').upper()
         
         years = sorted([int(y) for y in selected_years])
         timeline_df, year_annotations, month_separators, year_separators, num_years, year_centers = generate_timeline_data(years, mode=agg_mode)
@@ -676,76 +812,115 @@ def update_seaborne_chart(selected_years, sel_sea, agg_mode):
 
         if not df_sea.empty:
             df_sea['year'] = df_sea['date'].dt.year
-            # Aggregation grouping keys
-            if agg_mode == 'monthly':
+            if agg_mode == 'DATE':
+                 # Treat DATE as MONTHLY for aggregation
                  df_sea['group_key'] = df_sea['date'].dt.strftime('%B')
-            elif agg_mode == 'quarterly':
+            elif agg_mode == 'MONTHLY':
+                 df_sea['group_key'] = df_sea['date'].dt.strftime('%B')
+            elif agg_mode == 'QUARTERLY':
                  df_sea['group_key'] = df_sea['date'].dt.to_period('Q').astype(str).str[-2:] # Q1, Q2 etc
-            elif agg_mode == 'yearly':
+            elif agg_mode == 'YEARLY':
                  df_sea['group_key'] = '' # Single group per year
+            else: 
+                 df_sea['group_key'] = df_sea['date'].dt.strftime('%B')
 
             sea_grouped = df_sea.groupby(['year', 'group_key', 'type'])['vol_kbpd'].sum().reset_index()
-            # If monthly, calc mean? No, user said "Y-axis rescales automatically... Monthly -> High... Yearly -> Highest".
-            # Usually export data is sum per period. If viewing yearly, it should be sum of year?
-            # User says "Y-axis rescales to higher values". So SUM is correct.
             
             # Merge keys need to match generate_timeline_data columns
-            merge_col = 'month_name' if agg_mode == 'monthly' else ('quarter' if agg_mode == 'quarterly' else 'dummy')
+            merge_col = 'month_name' if (agg_mode == 'MONTHLY' or agg_mode == 'DATE') else ('quarter' if agg_mode == 'QUARTERLY' else 'dummy')
             
             # Prepare dataframes for merge
-            if agg_mode == 'monthly':
+            if agg_mode == 'MONTHLY' or agg_mode == 'DATE':
                 sea_grouped = sea_grouped.rename(columns={'group_key': 'month_name'})
                 join_on = ['year', 'month_name']
-            elif agg_mode == 'quarterly':
+            elif agg_mode == 'QUARTERLY':
                 sea_grouped = sea_grouped.rename(columns={'group_key': 'quarter'})
                 join_on = ['year', 'quarter']
-            else: # Yearly
+            elif agg_mode == 'YEARLY':
                 sea_grouped['dummy'] = ''
                 timeline_df['dummy'] = ''
                 join_on = ['year', 'dummy']
+            else: # Fallback
+                sea_grouped = sea_grouped.rename(columns={'group_key': 'month_name'})
+                join_on = ['year', 'month_name']
             
             t1_name, t2_name = "Transneft Seaborne", "Bypassing Transneft"
             t1_data = timeline_df.merge(sea_grouped[sea_grouped['type'] == t1_name], on=join_on, how='left').fillna({'vol_kbpd': 0})
             t2_data = timeline_df.merge(sea_grouped[sea_grouped['type'] == t2_name], on=join_on, how='left').fillna({'vol_kbpd': 0})
             
+            # Ensure display columns exist
+            for df_temp in [t1_data, t2_data]:
+                if 'month_name' not in df_temp.columns: df_temp['month_name'] = ''
+                if 'quarter' not in df_temp.columns: df_temp['quarter'] = ''
+            
             def get_marker(df, t_name):
                 base_color = COLOR_MAP.get(t_name, '#333')
-                colors, line_colors, line_widths = [], [], []
-                for _, row in df.iterrows():
-                    # Simplified highlighting for aggregated modes - usually disable detailed highlighting or keep year highlight
-                    is_cat = (sel_sea and isinstance(sel_sea, dict) and sel_sea.get('is_categorical') and sel_sea['type'] == t_name)
-                    
-                    is_pin = False
-                    if agg_mode == 'monthly':
-                        is_pin = (sel_sea and isinstance(sel_sea, dict) and not sel_sea.get('is_categorical') and not sel_sea.get('mode') and
-                                  sel_sea.get('type') == t_name and str(sel_sea.get('year')) == str(row['year']) and sel_sea.get('month') == row['month_name'])
+                faded_color = hex_to_rgba(base_color, 0.15)
+                
+                # Check global selection states
+                is_cat = (sel_sea and isinstance(sel_sea, dict) and sel_sea.get('is_categorical') and sel_sea['type'] == t_name)
+                is_pin_base = (sel_sea and isinstance(sel_sea, dict) and not sel_sea.get('is_categorical') and not sel_sea.get('mode') and sel_sea.get('type') == t_name)
+                
+                sel_year_str = str(sel_sea.get('year')) if sel_sea else None
+                sel_month = sel_sea.get('month') if sel_sea else None
+                
+                # Convert to numpy/list for fast iteration
+                years = df['year'].astype(str).values
+                # Determine which field to compare against based on agg_mode
+                if agg_mode == 'QUARTERLY':
+                    comp_vals = df['quarter'].fillna('').values
+                elif agg_mode in ['MONTHLY', 'DATE']:
+                    comp_vals = df['month_name'].fillna('').values
+                else: # YEARLY
+                    comp_vals = [''] * len(df)
+                
+                colors = []
+                line_colors = []
+                line_widths = []
+                
+                if not sel_sea:
+                    # No selection - all active
+                    count = len(df)
+                    colors = [base_color] * count
+                    line_colors = ['rgba(0,0,0,0)'] * count
+                    line_widths = [0] * count
+                    return dict(color=colors, line=dict(color=line_colors, width=line_widths))
 
-                    if not sel_sea:
-                        colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                    elif selected_year_mode:
-                        # Year Highlight Mode
-                        if str(row['year']) == str(target_year):
+                for r_year, r_val in zip(years, comp_vals):
+                    is_pin = False
+                    # is_pin_base is true if the clicked 'type' matches t_name
+                    if is_pin_base:
+                         # Compare year and the slot value (month or quarter)
+                         if sel_year_str == r_year and sel_month == r_val:
+                             is_pin = True
+
+                    if selected_year_mode:
+                        # Year Highlight (from Year Header click)
+                        if r_year == str(target_year):
                             colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
                         else:
-                            colors.append(hex_to_rgba(base_color, 0.15)); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                    elif selected_month_mode and agg_mode == 'monthly':
-                        # Month Highlight Mode only in monthly
-                        if str(row['year']) == str(target_month_year) and row['month_name'] == target_month:
+                            colors.append(faded_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
+                    elif selected_month_mode:
+                        # Month/Quarter Highlight (from Month/Quarter Header click)
+                        if r_year == str(target_month_year) and r_val == target_month:
                             colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
                         else:
-                            colors.append(hex_to_rgba(base_color, 0.15)); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
+                            colors.append(faded_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
                     elif is_pin or is_cat:
+                        # Specific bar click or Legend click
                         colors.append(base_color); line_colors.append('black'); line_widths.append(2)
                     else:
-                        colors.append(hex_to_rgba(base_color, 0.15)); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
+                        # Other bars fade out
+                        colors.append(faded_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
+                        
                 return dict(color=colors, line=dict(color=line_colors, width=line_widths))
 
             fig_sea.add_trace(go.Bar(name=t1_name, x=t1_data['x_pos'], y=t1_data['vol_kbpd'], marker=get_marker(t1_data, t1_name),
-                                   customdata=t1_data.apply(lambda r: [r['year'], r.get('month_name', ''), t1_name], axis=1),
+                                   customdata=t1_data.apply(lambda r: [r['year'], r['month_name'] or r['quarter'], t1_name], axis=1),
                                    hovertemplate="<span style='color: grey'>Date:</span> %{customdata[1]} %{customdata[0]}<br><span style='color: grey'>Exports ('000 b/d):</span> %{y:,.0f}<extra></extra>"))
             fig_sea.add_trace(go.Bar(name=t2_name, x=t2_data['x_pos'], y=t2_data['vol_kbpd'], marker=get_marker(t2_data, t2_name),
-                                   customdata=t2_data.apply(lambda r: [r['year'], r.get('month_name', ''), t2_name], axis=1),
-                                   hovertemplate="<span style='color: grey'>Date:</span> %{customdata[1]} %{customdata[0]}<br><span style='color: grey'>Exports ('000 b/d):</span> %{y:,.0f}<extra></extra>"))
+                                    customdata=t2_data.apply(lambda r: [r['year'], r['month_name'] or r['quarter'], t2_name], axis=1),
+                                    hovertemplate="<span style='color: grey'>Date:</span> %{customdata[1]} %{customdata[0]}<br><span style='color: grey'>Exports ('000 b/d):</span> %{y:,.0f}<extra></extra>"))
     
             # Add Clickable Year Header Bars (Background + Click Target)
             header_x = [yc['x'] for yc in year_centers]
@@ -772,37 +947,8 @@ def update_seaborne_chart(selected_years, sel_sea, agg_mode):
                 customdata=[[yc['year'], 'YEAR_HEADER'] for yc in year_centers]
             ))
             
-            # Year Icons (Interactive Traces)
-            # White square with gray border and text, placed in the left margin area
-            icon_symbol_text = "+" if agg_mode == 'yearly' else "-"
-            
-            # Dynamic margins to prevent "gap" in yearly mode
-            if agg_mode == 'monthly':
-                icon_x = -0.6
-                margin_min = -1.2
-            elif agg_mode == 'quarterly':
-                icon_x = -0.2
-                margin_min = -0.4
-            else: # yearly
-                icon_x = -0.08
-                margin_min = -0.15
-            
-            fig_sea.add_trace(go.Scatter(
-                x=[icon_x], 
-                y=[0.5], # Middle of yaxis2
-                yaxis='y2',
-                mode='markers+text',
-                marker=dict(symbol='square', size=12, color='white', line=dict(color='#d0d0d0', width=1)),
-                text=[icon_symbol_text],
-                textfont=dict(color='#505050', size=10, family='Arial'),
-                textposition='middle center',
-                hoverinfo='none',
-                showlegend=False,
-                customdata=[[year_centers[0]['year'], 'YEAR_ICON']] if year_centers else []
-            ))
-
-            # Month Header Trace (Only if Monthly or Quarterly)
-            if agg_mode in ['monthly', 'quarterly']:
+            # Month Header Trace (Only if Monthly or Quarterly or Date)
+            if agg_mode in ['MONTHLY', 'QUARTERLY', 'DATE']:
                 label_size = 13 if num_years == 1 else (11 if num_years == 2 else (10 if num_years <= 6 else 9))
                 fig_sea.add_trace(go.Bar(
                     x=timeline_df['x_pos'], y=[1] * len(timeline_df),
@@ -820,7 +966,7 @@ def update_seaborne_chart(selected_years, sel_sea, agg_mode):
             for s in month_separators:
                 new_s = s.copy()
                 if new_s.get('line', {}).get('color') == '#999999': # Month separator
-                     new_s['y1'] = 0.88 
+                     new_s['y1'] = 0.85 
                      new_s['y0'] = 0 
                 else:
                      # Year separator
@@ -828,30 +974,44 @@ def update_seaborne_chart(selected_years, sel_sea, agg_mode):
                      new_s['y0'] = 0
                 shapes.append(new_s)
 
-            # Add horizontal line extension for visual continuity (Chart 1)
-            shapes.append(dict(
-                type="line",
-                xref="paper", yref="paper",
-                x0=-0.06, x1=1, # Extends into the left margin to cover axis ticks
-                y0=0.78, y1=0.78, # At the top of the data area
-                line=dict(color="#000", width=1),
-                layer="below"
-            ))
+            max_x = timeline_df['x_pos'].max() + (0.6 if agg_mode == 'MONTHLY' else 0.5)
 
-            max_x = timeline_df['x_pos'].max() + (0.6 if agg_mode == 'monthly' else 0.5)
+            # Define margins to prevent excessive whitespace
+            if agg_mode == 'MONTHLY':
+                margin_min = -0.5
+            elif agg_mode == 'QUARTERLY':
+                margin_min = -0.3
+            elif agg_mode == 'YEARLY':
+                margin_min = -0.15
+            elif agg_mode == 'DATE':
+                margin_min = -5
+            else:
+                margin_min = -0.5
 
             # Determine Visibility of Month Headers
-            show_month_headers = (agg_mode != 'yearly')
+            # Show headers for MONTHLY, QUARTERLY, and DATE (hidden only for YEARLY)
+            show_month_headers = (agg_mode != 'YEARLY')
             yaxis3_visible = show_month_headers
 
+            # Adjust separators logic
+            shapes = []
+            for s in month_separators:
+                new_s = s.copy()
+                if new_s.get('line', {}).get('color') == '#999999': # Month separator
+                     new_s['y1'] = 0.94 # Bottom of Year Header
+                     new_s['y0'] = 0 
+                else:
+                     # Year separator
+                     new_s['y1'] = 1
+                     new_s['y0'] = 0
+                shapes.append(new_s)
+
             fig_sea.update_layout(
-                template="simple_white", barmode='group', height=300, margin=dict(l=40, r=40, t=30, b=10), showlegend=False,
-                xaxis=dict(title=None, range=[margin_min, max_x], side='top', tickmode='array', tickvals=timeline_df['x_pos'], ticktext=timeline_df['short_label'] if show_month_headers else [], tickangle=0, showgrid=False, showline=True, linecolor='#000', ticks="", showticklabels=False),
-                yaxis=dict(title=None, showgrid=True, gridcolor='#eee', dtick=(1000 if agg_mode=='monthly' else None), tickfont=dict(color="grey"), domain=[0, 0.78]),
-                # yaxis2 for Year headers - enable line for left border
-                yaxis2=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='black', showticklabels=False, visible=True, fixedrange=True, domain=[0.88, 1], ticks=""),
-                # yaxis3 for Month headers - enable line for left border
-                yaxis3=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='black', showticklabels=False, visible=yaxis3_visible, fixedrange=True, domain=[0.78, 0.88], ticks=""),
+                template="simple_white", barmode='group', height=380, margin=dict(l=40, r=40, t=60, b=10), showlegend=False,
+                xaxis=dict(title=None, range=[margin_min if 'margin_min' in locals() else -1.2, max_x], side='top', anchor='y', tickmode='array', tickvals=timeline_df['x_pos'], ticktext=timeline_df['tick_label'].tolist(), tickangle=0, showgrid=False, showline=True, linecolor='#000', ticks="", showticklabels=(agg_mode == 'DATE')),
+                yaxis=dict(title=None, showgrid=True, gridcolor='#eee', dtick=(1000 if agg_mode=='MONTHLY' else None), tickfont=dict(color="grey"), domain=[0, 0.82]),
+                yaxis2=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='black', showticklabels=False, visible=True, fixedrange=True, domain=[0.94, 1], ticks=""),
+                yaxis3=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='black', showticklabels=False, visible=yaxis3_visible, fixedrange=True, domain=[0.86, 0.94], ticks=""),
                 dragmode=False, hovermode="closest", bargap=0.1, bargroupgap=0.05, shapes=shapes, annotations=year_annotations,
                 hoverlabel=dict(bgcolor="white", font_size=13, font_color="black", bordercolor="#cccccc")
             )
@@ -874,6 +1034,8 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe, agg_mode):
         return go.Figure().update_layout(template="simple_white", title="No years selected"), "PIPELINE CRUDE EXPORTS ('000 b/d)", []
     
     try:
+        agg_mode = (agg_mode or 'MONTHLY').upper()
+        
         years = sorted([int(y) for y in selected_years])
         timeline_df, year_annotations, month_separators, year_separators, num_years, year_centers = generate_timeline_data(years, mode=agg_mode)
         
@@ -905,13 +1067,17 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe, agg_mode):
 
         if not df_pipe.empty:
             df_pipe['year'] = df_pipe['date'].dt.year
-            # Aggregation keys
-            if agg_mode == 'monthly':
+            if agg_mode == 'DATE':
+                 # DATE mode uses MONTHLY aggregation
                  df_pipe['group_key'] = df_pipe['date'].dt.strftime('%B')
-            elif agg_mode == 'quarterly':
+            elif agg_mode == 'MONTHLY':
+                 df_pipe['group_key'] = df_pipe['date'].dt.strftime('%B')
+            elif agg_mode == 'QUARTERLY':
                  df_pipe['group_key'] = df_pipe['date'].dt.to_period('Q').astype(str).str[-2:]
-            elif agg_mode == 'yearly':
+            elif agg_mode == 'YEARLY':
                  df_pipe['group_key'] = ''
+            else: 
+                 df_pipe['group_key'] = df_pipe['date'].dt.strftime('%B')
 
             if direction_val == 'China':
                 df_pipe = df_pipe[df_pipe['destination'] == 'China']
@@ -922,59 +1088,86 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe, agg_mode):
             
             pipe_grouped = df_pipe.groupby(['year', 'group_key', 'destination'])['vol_kbpd'].sum().reset_index()
             
-            # Merge keys
-            merge_col = 'month_name' if agg_mode == 'monthly' else ('quarter' if agg_mode == 'quarterly' else 'dummy')
-            
-            if agg_mode == 'monthly':
+            if agg_mode == 'MONTHLY' or agg_mode == 'DATE':
                 pipe_grouped = pipe_grouped.rename(columns={'group_key': 'month_name'})
                 join_on = ['year', 'month_name']
-            elif agg_mode == 'quarterly':
+            elif agg_mode == 'QUARTERLY':
                 pipe_grouped = pipe_grouped.rename(columns={'group_key': 'quarter'})
                 join_on = ['year', 'quarter']
-            else:
+            elif agg_mode == 'YEARLY':
                 pipe_grouped['dummy'] = ''
                 timeline_df['dummy'] = ''
                 join_on = ['year', 'dummy']
+            else:
+                pipe_grouped = pipe_grouped.rename(columns={'group_key': 'month_name'})
+                join_on = ['year', 'month_name']
             
             for dest in destinations:
                 dest_series = timeline_df.merge(pipe_grouped[pipe_grouped['destination'] == dest], on=join_on, how='left').fillna({'vol_kbpd': 0})
-                base_color = COLOR_MAP.get(dest, '#333')
-                colors, line_colors, line_widths = [], [], []
                 
-                for _, row in dest_series.iterrows():
-                    is_cat = (sel_pipe and isinstance(sel_pipe, dict) and sel_pipe.get('is_categorical') and 
-                             sel_pipe.get('destination') == dest)
-                    
-                    is_pin = False
-                    if agg_mode == 'monthly':
-                        is_pin = (sel_pipe and isinstance(sel_pipe, dict) and not sel_pipe.get('is_categorical') and not sel_pipe.get('mode') and
-                                  sel_pipe.get('destination') == dest and 
-                                  str(sel_pipe.get('year')) == str(row['year']) and 
-                                  sel_pipe.get('month') == row.get('month_name', ''))
+                # Ensure display columns
+                if 'month_name' not in dest_series.columns: dest_series['month_name'] = ''
+                if 'quarter' not in dest_series.columns: dest_series['quarter'] = ''
 
-                    if not sel_pipe:
-                        colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                    elif selected_year_mode:
-                        # Year Highlight Mode
-                        if str(row['year']) == str(target_year):
-                            colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
+                base_color = COLOR_MAP.get(dest, '#333')
+                faded_color = hex_to_rgba(base_color, 0.15)
+                
+                # Check global selection states
+                is_cat = (sel_pipe and isinstance(sel_pipe, dict) and sel_pipe.get('is_categorical') and sel_pipe.get('destination') == dest)
+                is_pin_base = (sel_pipe and isinstance(sel_pipe, dict) and not sel_pipe.get('is_categorical') and not sel_pipe.get('mode') and sel_pipe.get('destination') == dest)
+                
+                sel_year_str = str(sel_pipe.get('year')) if sel_pipe else None
+                sel_month = sel_pipe.get('month') if sel_pipe else None
+                
+                # Convert to numpy/list for fast iteration
+                years = dest_series['year'].astype(str).values
+                # Determine which field to compare against based on agg_mode
+                if agg_mode == 'QUARTERLY':
+                    comp_vals = dest_series['quarter'].fillna('').values
+                elif agg_mode in ['MONTHLY', 'DATE']:
+                    comp_vals = dest_series['month_name'].fillna('').values
+                else: # YEARLY
+                    comp_vals = [''] * len(dest_series)
+                
+                colors = []
+                line_colors = []
+                line_widths = []
+                
+                if not sel_pipe:
+                    # No selection - all active
+                    count = len(dest_series)
+                    colors = [base_color] * count
+                    line_colors = ['rgba(0,0,0,0)'] * count
+                    line_widths = [0] * count
+                else: 
+                    for r_year, r_val in zip(years, comp_vals):
+                        is_pin = False
+                        if is_pin_base:
+                             if sel_year_str == r_year and sel_month == r_val:
+                                 is_pin = True
+
+                        if selected_year_mode:
+                            # Year Highlight
+                            if r_year == str(target_year):
+                                colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
+                            else:
+                                colors.append(faded_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
+                        elif selected_month_mode:
+                            # Month/Quarter Highlight
+                            if r_year == str(target_month_year) and r_val == target_month:
+                                colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
+                            else:
+                                colors.append(faded_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
+                        elif is_pin or is_cat:
+                            colors.append(base_color); line_colors.append('black'); line_widths.append(2)
                         else:
-                            colors.append(hex_to_rgba(base_color, 0.15)); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                    elif selected_month_mode and agg_mode == 'monthly':
-                        # Month Highlight Mode
-                        if str(row['year']) == str(target_month_year) and row['month_name'] == target_month:
-                            colors.append(base_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                        else:
-                            colors.append(hex_to_rgba(base_color, 0.15)); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
-                    elif is_pin or is_cat:
-                        colors.append(base_color); line_colors.append('black'); line_widths.append(2)
-                    else:
-                        colors.append(hex_to_rgba(base_color, 0.15)); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
+                            colors.append(faded_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
 
                 fig_pipe.add_trace(go.Bar(name=dest, x=dest_series['x_pos'], y=dest_series['vol_kbpd'],
                                         marker=dict(color=colors, line=dict(color=line_colors, width=line_widths)),
-                                        customdata=dest_series.apply(lambda r: [r['year'], r.get('month_name', r.get('quarter','')), dest], axis=1),
+                                        customdata=dest_series.apply(lambda r: [r['year'], r['month_name'] or r['quarter'], dest], axis=1),
                                         hovertemplate="<span style='color: grey'>Date:</span> %{customdata[1]} %{customdata[0]}<br><span style='color: grey'>Destination:</span> %{customdata[2]}<br><span style='color: grey'>Exports(000b/d):</span> %{y:,.0f}<extra></extra>"))
+            
             
             # Add Clickable Year Header Bars (Background + Click Target)
             header_x = [yc['x'] for yc in year_centers]
@@ -1000,42 +1193,16 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe, agg_mode):
                 customdata=[[yc['year'], 'YEAR_HEADER'] for yc in year_centers]
             ))
 
-            # Icon Trace (Year Toggle)
-            icon_symbol_text = "+" if agg_mode == 'yearly' else "-"
-            
-            if agg_mode == 'monthly':
-                icon_x = -0.6
-                margin_min = -1.2
-            elif agg_mode == 'quarterly':
-                icon_x = -0.2
-                margin_min = -0.4
-            else: # yearly
-                icon_x = -0.08
-                margin_min = -0.15
-            
-            fig_pipe.add_trace(go.Scatter(
-                x=[icon_x], 
-                y=[0.5], # Middle of yaxis2
-                yaxis='y2',
-                mode='markers+text',
-                marker=dict(symbol='square', size=12, color='white', line=dict(color='#d0d0d0', width=1)),
-                text=[icon_symbol_text],
-                textfont=dict(color='#505050', size=10, family='Arial'),
-                textposition='middle center',
-                hoverinfo='none',
-                showlegend=False,
-                customdata=[[year_centers[0]['year'], 'YEAR_ICON']] if year_centers else []
-            ))
-
             # Month Header Trace (Clickable Labels)
-            if agg_mode in ['monthly', 'quarterly']:
+            if agg_mode in ['MONTHLY', 'QUARTERLY', 'DATE']:
                 label_size = 13 if num_years == 1 else (11 if num_years == 2 else (10 if num_years <= 6 else 9))
+                # Use short_label and horizontal angle for consistency with Seaborne
                 fig_pipe.add_trace(go.Bar(
                     x=timeline_df['x_pos'], y=[1] * len(timeline_df),
                     width=1, yaxis='y3',
                     marker=dict(color='rgba(0,0,0,0)'),
-                    text=timeline_df['full_label'], textposition='inside',
-                    textangle=-90,
+                    text=timeline_df['short_label'], textposition='inside',
+                    textangle=0,
                     textfont=dict(color="grey", size=label_size),
                     hoverinfo='none', showlegend=False,
                     customdata=timeline_df.apply(lambda r: [r['year'], r.get('month_name', r.get('quarter','')), 'MONTH_HEADER'], axis=1)
@@ -1046,7 +1213,7 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe, agg_mode):
                 new_s = s.copy()
                 new_s['layer'] = 'below'
                 if new_s.get('line', {}).get('color') == '#999999': # Month separator
-                     new_s['y1'] = 0.85 # Touches the bottom of Year Header
+                     new_s['y1'] = 0.94 
                      new_s['y0'] = 0 
                 else:
                      # Year separator
@@ -1054,20 +1221,32 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe, agg_mode):
                      new_s['y0'] = 0
                 shapes.append(new_s)
             
-            max_x = timeline_df['x_pos'].max() + (0.6 if agg_mode == 'monthly' else 0.5)
+            max_x = timeline_df['x_pos'].max() + (0.6 if agg_mode == 'MONTHLY' else 0.5)
+
+            # Define margins to prevent excessive whitespace
+            if agg_mode == 'MONTHLY':
+                margin_min = -0.5
+            elif agg_mode == 'QUARTERLY':
+                margin_min = -0.3
+            elif agg_mode == 'YEARLY':
+                margin_min = -0.15
+            elif agg_mode == 'DATE':
+                margin_min = -5
+            else:
+                margin_min = -0.5
 
             # Determine Visibility of Month Headers
-            show_month_headers = (agg_mode != 'yearly')
+            show_month_headers = (agg_mode != 'YEARLY')
             yaxis3_visible = show_month_headers
 
             fig_pipe.update_layout(
-                template="simple_white", barmode='stack' if direction_val == 'Druzhba' else 'group', height=300, margin=dict(l=40, r=40, t=30, b=10), showlegend=False,
-                xaxis=dict(title=None, range=[margin_min, max_x], tickmode='array', tickvals=timeline_df['x_pos'], ticktext=timeline_df['full_label'] if show_month_headers else [], tickangle=-90, showgrid=False, showline=True, linecolor='#000', ticks="", showticklabels=False),
-                yaxis=dict(title=None, showgrid=True, gridcolor='#eee', dtick=(500 if agg_mode == 'quarterly' else None), tickfont=dict(color="grey"), domain=[0.15, 0.80]),
+                template="simple_white", barmode='stack' if direction_val == 'Druzhba' else 'group', height=380, margin=dict(l=40, r=40, t=60, b=10), showlegend=False,
+                xaxis=dict(title=None, range=[margin_min if 'margin_min' in locals() else -1.2, max_x], side='top', anchor='y', tickmode='array', tickvals=timeline_df['x_pos'], ticktext=timeline_df['tick_label'].tolist(), tickangle=0, showgrid=False, showline=True, linecolor='#000', ticks="", showticklabels=(agg_mode == 'DATE')),
+                yaxis=dict(title=None, showgrid=True, gridcolor='#eee', dtick=(500 if agg_mode == 'QUARTERLY' else None), tickfont=dict(color="grey"), domain=[0, 0.82]),
                 # yaxis2 for headers - enable line for left border
-                yaxis2=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='black', showticklabels=False, visible=True, fixedrange=True, domain=[0.85, 1], ticks=""),
+                yaxis2=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='black', showticklabels=False, visible=True, fixedrange=True, domain=[0.94, 1], ticks=""),
                 # yaxis3 for Month headers - enable line for left border
-                yaxis3=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='black', showticklabels=False, visible=yaxis3_visible, fixedrange=True, domain=[0, 0.12], ticks=""),
+                yaxis3=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='black', showticklabels=False, visible=yaxis3_visible, fixedrange=True, domain=[0.86, 0.94], ticks=""),
                 dragmode=False, hovermode="closest", bargap=0.25, shapes=shapes, annotations=year_annotations,
                 hoverlabel=dict(bgcolor="white", font_size=13, font_color="black", bordercolor="#cccccc")
             )
