@@ -25,160 +25,169 @@ def create_layout():
 
         # Header Row
         html.Div([
-            html.Div([
-                html.H3(id='seaborne-title', style={
-                    'color': EI_ORANGE,
-                    'fontWeight': 'bold',
-                    'fontSize': '24px',
-                    'margin': '0',
-                    'fontFamily': 'Lato, sans-serif'
-                })
-            ], style={'flex': '1'}),
-            
-            # Year Selector (Moved to a position that will be 'inbetween' top elements conceptually)
-            html.Div([
-                dcc.RadioItems(
-                    id='seaborne-year-selector',
-                    options=[
-                        {'label': '2022', 'value': 2022},
-                        {'label': '2023', 'value': 2023},
-                        {'label': '2024', 'value': 2024},
-                        {'label': '2025', 'value': 2025},
-                    ],
-                    value=2025,
-                    style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'display': 'flex', 'gap': '15px'},
-                    labelStyle={'display': 'inline-block', 'margin': '0', 'cursor': 'pointer'}
-                )
-            ], style={'marginRight': '380px', 'paddingTop': '10px'}) # Offset to align 'between' map and right tables
-        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '5px', 'padding': '0 15px'}),
+            html.H3(id='seaborne-title', style={
+                'color': EI_ORANGE,
+                'fontWeight': 'bold',
+                'fontSize': '24px',
+                'margin': '0',
+                'fontFamily': 'Lato, sans-serif'
+            })
+        ], style={'marginBottom': '5px', 'padding': '0 15px'}),
 
-        # Main Content "Single Rectangle" Container
+        # Top Row: Map + Year Selector + Average Exports Table
         html.Div([
-            # Left Column (Map and Bar Chart)
+            # Left: Map (64%)
             html.Div([
-                # Map
                 html.Div([
-                    html.Div([
-                        html.Button(
-                            'Export to CSV',
-                            id='btn-seaborne-map-csv',
-                            n_clicks=0,
-                            style={
-                                'position': 'absolute', 'top': '10px', 'right': '10px', 'zIndex': '1000',
-                                'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
-                                'padding': '4px 8px', 'borderRadius': '4px', 'fontSize': '11px', 'cursor': 'pointer'
-                            }
-                        ),
-                        dcc.Download(id="download-seaborne-map-csv"),
-                        dcc.Loading(
-                            id='loading-seaborne-map',
-                            type='circle',
-                            children=dcc.Graph(
-                                id='seaborne-map',
-                                style={'height': '380px'},
-                                config={'displayModeBar': False}
-                            )
+                    html.Button(
+                        'Export to CSV',
+                        id='btn-seaborne-map-csv',
+                        n_clicks=0,
+                        style={
+                            'position': 'absolute', 'top': '10px', 'right': '10px', 'zIndex': '1000',
+                            'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
+                            'padding': '4px 8px', 'borderRadius': '4px', 'fontSize': '11px', 'cursor': 'pointer'
+                        }
+                    ),
+                    dcc.Download(id="download-seaborne-map-csv"),
+                    dcc.Loading(
+                        id='loading-seaborne-map',
+                        type='circle',
+                        children=dcc.Graph(
+                            id='seaborne-map',
+                            style={'height': '380px'},
+                            config={'displayModeBar': False}
                         )
-                    ], style={'position': 'relative'})
-                ], style={'marginBottom': '0'}),
+                    )
+                ], style={'position': 'relative'})
+            ], style={'width': '64%', 'paddingRight': '10px', 'borderRight': '1px solid #eee'}),
 
-                # Bar Chart
-                html.Div([
-                    html.Div([
-                        html.Button(
-                            'Export to CSV',
-                            id='btn-seaborne-bar-csv',
-                            n_clicks=0,
-                            style={
-                                'position': 'absolute', 'top': '0px', 'right': '10px', 'zIndex': '1000',
-                                'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
-                                'padding': '4px 8px', 'borderRadius': '4px', 'fontSize': '11px', 'cursor': 'pointer'
-                            }
-                        ),
-                        dcc.Download(id="download-seaborne-bar-csv"),
-                        
-                        # Bar Chart Time Granularity Buttons
-                        html.Div([
-                            html.Div([
-                                html.Span("Year of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                                html.Button('+', id='seaborne-bar-toggle-year-btn', n_clicks=0, style={
-                                    'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                                    'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                                    'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-                                })
-                            ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
-                            
-                            html.Div([
-                                html.Span("Quarter of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                                html.Button('+', id='seaborne-bar-toggle-quarter-btn', n_clicks=0, style={
-                                    'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                                    'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                                    'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-                                })
-                            ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
-                            
-                            html.Div([
-                                html.Span("Month of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                                html.Button('+', id='seaborne-bar-toggle-month-btn', n_clicks=0, style={
-                                    'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                                    'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
-                                    'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-                                })
-                            ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
-                            
-                            html.Div([
-                                html.Span("Day of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                                html.Button('+', id='seaborne-bar-toggle-day-btn', n_clicks=0, style={
-                                    'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                                    'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                                    'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-                                })
-                            ], style={'display': 'flex', 'alignItems': 'center'})
-                        ], style={
-                            'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
-                            'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '5px',
-                            'position': 'absolute', 'top': '15px', 'left': '60px', 'zIndex': '1000'
-                        }),
-
-                        dcc.Loading(
-                            id='loading-seaborne-bar-chart',
-                            type='circle',
-                            children=dcc.Graph(
-                                id='seaborne-bar-chart',
-                                style={'height': '320px'},
-                                config={'displayModeBar': False}
-                            )
-                        )
-                    ], style={'position': 'relative', 'marginTop': '-20px'})
-                ]) # Tightly pack chart under map
-            ], style={'width': '64%', 'paddingRight': '15px', 'borderRight': '1px solid #eee'}),
-
-            # Right Column (Tables)
+            # Middle: Year Selector (6%)
             html.Div([
-                # Average Exports Table
+                html.Div([
+                    html.Div("", style={
+                        'fontSize': '12px', 
+                        'fontWeight': 'bold', 
+                        'color': EI_DARK_BLUE, 
+                        'marginBottom': '10px',
+                        'textAlign': 'center'
+                    }),
+                    dcc.RadioItems(
+                        id='seaborne-year-selector',
+                        options=[
+                            {'label': '2022', 'value': 2022},
+                            {'label': '2023', 'value': 2023},
+                            {'label': '2024', 'value': 2024},
+                            {'label': '2025', 'value': 2025},
+                        ],
+                        value=2025,
+                        style={'fontSize': '11px', 'color': EI_DARK_BLUE},
+                        labelStyle={'display': 'block', 'margin': '8px 0', 'cursor': 'pointer', 'textAlign': 'center'}
+                    )
+                ], style={
+                    'position': 'relative',
+                    'top': '0px',
+                    'backgroundColor': '#f8f9fa',
+                    'padding': '0px 5px',
+                    'borderRadius': '4px',
+                    'border': '1px solid #ddd',
+                    'height': 'fit-content'
+                })
+            ], style={'width': '6%', 'paddingLeft': '10px', 'paddingRight': '10px'}),
+
+            # Right: Average Exports Table (30%)
+            html.Div([
                 html.Div([
                     html.Div([
-                        html.Div([
-                            html.H4("AVERAGE SEABORNE EXPORTS BY", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'margin': '0'}),
-                            html.H4("LOADING PORT ('000 b/d)", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'margin': '0'}),
-                        ], style={'flex': '1'}),
-                        html.Button(
-                            'Export to CSV',
-                            id='btn-avg-exports-csv',
-                            n_clicks=0,
-                            style={
-                                'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
-                                'padding': '2px 6px', 'borderRadius': '4px', 'fontSize': '10px', 'cursor': 'pointer'
-                            }
-                        ),
-                        dcc.Download(id="download-avg-exports-csv")
-                    ], style={'display': 'flex', 'alignItems': 'flex-start', 'marginBottom': '8px'}),
+                        html.H4("AVERAGE SEABORNE EXPORTS BY", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'margin': '0'}),
+                        html.H4("LOADING PORT ('000 b/d)", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'margin': '0'}),
+                    ], style={'flex': '1'}),
+                    html.Button(
+                        'Export to CSV',
+                        id='btn-avg-exports-csv',
+                        n_clicks=0,
+                        style={
+                            'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
+                            'padding': '2px 6px', 'borderRadius': '4px', 'fontSize': '10px', 'cursor': 'pointer'
+                        }
+                    ),
+                    dcc.Download(id="download-avg-exports-csv")
+                ], style={'display': 'flex', 'alignItems': 'flex-start', 'marginBottom': '8px'}),
 
-                    # Time Dimension Toggles
+                # Time Dimension Toggles
+                html.Div([
+                    html.Div([
+                        html.Span("Quarter of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                        html.Button('+', id='seaborne-toggle-quarter-btn', n_clicks=0, style={
+                            'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                            'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                            'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                        })
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                    
+                    html.Div([
+                        html.Span("Month of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                        html.Button('+', id='seaborne-toggle-month-btn', n_clicks=0, style={
+                            'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                            'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                            'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                        })
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                    
+                    html.Div([
+                        html.Span("Day of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                        html.Button('+', id='seaborne-toggle-day-btn', n_clicks=0, style={
+                            'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                            'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                            'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                        })
+                    ], style={'display': 'flex', 'alignItems': 'center'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px'}),
+
+                dash_table.DataTable(
+                    id='avg-exports-table',
+                    fixed_rows={'headers': True},
+                    merge_duplicate_headers=True,
+                    style_table={'height': '320px', 'overflowY': 'auto'},
+                    style_header={'backgroundColor': 'white', 'fontWeight': 'bold', 'borderBottom': '1px solid #ddd', 'color': EI_DARK_BLUE, 'fontSize': '11px'},
+                    style_cell={'padding': '3px 6px', 'fontSize': '10px', 'fontFamily': 'Lato, sans-serif', 'border': 'none', 'textAlign': 'right', 'color': '#333'},
+                    style_cell_conditional=[{'if': {'column_id': 'loading_port'}, 'textAlign': 'left', 'minWidth': '110px'}],
+                    style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'}],
+                    css=[{'selector': '.dash-spreadsheet td.highlighted', 'rule': f'background-color: {EI_LIGHT_BLUE} !important; opacity: 1 !important;'},
+                         {'selector': '.highlight-mode td:not(.highlighted)', 'rule': 'opacity: 0.3; transition: opacity 0.2s;'}]
+                )
+            ], style={'width': '30%', 'paddingLeft': '10px'})
+        ], style={
+            'display': 'flex', 
+            'backgroundColor': 'white', 
+            'border': '1px solid #eee', 
+            'padding': '10px', 
+            'borderRadius': '4px',
+            'marginBottom': '15px'
+        }),
+
+        # Bottom Row: Bar Chart + YOY Change Table
+        html.Div([
+            # Left: Bar Chart (70%)
+            html.Div([
+                html.Div([
+                    html.Button(
+                        'Export to CSV',
+                        id='btn-seaborne-bar-csv',
+                        n_clicks=0,
+                        style={
+                            'position': 'absolute', 'top': '25px', 'right': '10px', 'zIndex': '1000',
+                            'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
+                            'padding': '4px 8px', 'borderRadius': '4px', 'fontSize': '11px', 'cursor': 'pointer'
+                        }
+                    ),
+                    dcc.Download(id="download-seaborne-bar-csv"),
+                    
+                    # Bar Chart Time Granularity Buttons
                     html.Div([
                         html.Div([
-                            html.Span("Quarter of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                            html.Button('+', id='seaborne-toggle-quarter-btn', n_clicks=0, style={
+                            html.Span("Year of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='seaborne-bar-toggle-year-btn', n_clicks=0, style={
                                 'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
                                 'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
                                 'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
@@ -186,74 +195,84 @@ def create_layout():
                         ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
                         
                         html.Div([
-                            html.Span("Month of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                            html.Button('+', id='seaborne-toggle-month-btn', n_clicks=0, style={
+                            html.Span("Quarter of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='seaborne-bar-toggle-quarter-btn', n_clicks=0, style={
                                 'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
                                 'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Month of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                            html.Button('+', id='seaborne-bar-toggle-month-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
                                 'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
                             })
                         ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
                         
                         html.Div([
                             html.Span("Day of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                            html.Button('+', id='seaborne-toggle-day-btn', n_clicks=0, style={
+                            html.Button('+', id='seaborne-bar-toggle-day-btn', n_clicks=0, style={
                                 'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
                                 'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
                                 'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
                             })
                         ], style={'display': 'flex', 'alignItems': 'center'})
-                    ], style={'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px'}),
+                    ], style={
+                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+                        'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '5px',
+                        'position': 'absolute', 'top': '25px', 'left': '60px', 'zIndex': '1000'
+                    }),
 
-                    dash_table.DataTable(
-                        id='avg-exports-table',
-                        fixed_rows={'headers': True},
-                        merge_duplicate_headers=True,
-                        style_table={'height': '260px', 'overflowY': 'auto'},
-                        style_header={'backgroundColor': 'white', 'fontWeight': 'bold', 'borderBottom': '1px solid #ddd', 'color': EI_DARK_BLUE, 'fontSize': '11px'},
-                        style_cell={'padding': '3px 6px', 'fontSize': '10px', 'fontFamily': 'Lato, sans-serif', 'border': 'none', 'textAlign': 'right', 'color': '#333'},
-                        style_cell_conditional=[{'if': {'column_id': 'loading_port'}, 'textAlign': 'left', 'minWidth': '110px'}],
-                        style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'}],
-                        css=[{'selector': '.dash-spreadsheet td.highlighted', 'rule': f'background-color: {EI_LIGHT_BLUE} !important; opacity: 1 !important;'},
-                             {'selector': '.highlight-mode td:not(.highlighted)', 'rule': 'opacity: 0.3; transition: opacity 0.2s;'}]
+                    dcc.Loading(
+                        id='loading-seaborne-bar-chart',
+                        type='circle',
+                        children=dcc.Graph(
+                            id='seaborne-bar-chart',
+                            style={'height': '320px'},
+                            config={'displayModeBar': False}
+                        )
                     )
-                ], style={'marginBottom': '20px', 'padding': '5px'}),
+                ], style={'position': 'relative'})
+            ], style={'width': '70%', 'paddingRight': '15px', 'borderRight': '1px solid #eee'}),
 
-                # YOY Change Table
+            # Right: YOY Change Table (30%)
+            html.Div([
                 html.Div([
-                    html.Div([
-                        html.H4("YOY % CHANGE BY LOADING PORT", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'margin': '0', 'flex': '1'}),
-                        html.Button(
-                            'Export to CSV',
-                            id='btn-yoy-change-csv',
-                            n_clicks=0,
-                            style={
-                                'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
-                                'padding': '2px 6px', 'borderRadius': '4px', 'fontSize': '10px', 'cursor': 'pointer'
-                            }
-                        ),
-                        dcc.Download(id="download-yoy-change-csv")
-                    ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '8px'}),
-                    dash_table.DataTable(
-                        id='yoy-change-table',
-                        style_table={'height': '360px', 'overflowY': 'auto', 'overflowX': 'auto'},
-                        fixed_rows={'headers': True},
-                        style_header={'backgroundColor': 'white', 'fontWeight': 'bold', 'borderBottom': '1px solid #ddd', 'color': EI_DARK_BLUE, 'fontSize': '11px'},
-                        style_cell={'padding': '3px 6px', 'fontSize': '10px', 'fontFamily': 'Lato, sans-serif', 'border': 'none', 'textAlign': 'right', 'color': '#333'},
-                        style_cell_conditional=[
-                            {'if': {'column_id': 'period'}, 'width': '30px', 'textAlign': 'center', 'fontWeight': 'bold'},
-                            {'if': {'column_id': 'port_name'}, 'textAlign': 'left', 'minWidth': '100px'},
-                            {'if': {'column_id': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']}, 'width': '50px'}
-                        ],
-                        style_data_conditional=[
-                            {'if': {'filter_query': '{yoy_pct} < 0'}, 'color': '#d9534f'},
-                            {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'},
-                            {'if': {'column_id': 'period'}, 'borderRight': '1px solid #eee'}
-                        ],
-                        css=[{'selector': 'td[data-dash-column="period"]', 'rule': 'writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: auto; text-align: center; vertical-align: middle;'},
-                             {'selector': '.dash-spreadsheet td.highlighted', 'rule': f'background-color: {EI_LIGHT_BLUE} !important; opacity: 1 !important;'},
-                             {'selector': '.highlight-mode td:not(.highlighted)', 'rule': 'opacity: 0.3; transition: opacity 0.2s;'}]
-                    )
-                ], style={'padding': '5px'})
+                    html.H4("YOY % CHANGE BY LOADING PORT", style={'color': EI_ORANGE, 'fontSize': '15px', 'fontWeight': 'bold', 'margin': '0', 'flex': '1'}),
+                    html.Button(
+                        'Export to CSV',
+                        id='btn-yoy-change-csv',
+                        n_clicks=0,
+                        style={
+                            'backgroundColor': 'white', 'color': EI_DARK_BLUE, 'border': '1px solid #ddd',
+                            'padding': '2px 6px', 'borderRadius': '4px', 'fontSize': '10px', 'cursor': 'pointer'
+                        }
+                    ),
+                    dcc.Download(id="download-yoy-change-csv")
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '8px'}),
+                dash_table.DataTable(
+                    id='yoy-change-table',
+                    style_table={'height': '280px', 'overflowY': 'auto', 'overflowX': 'auto'},
+                    fixed_rows={'headers': True},
+                    style_header={'backgroundColor': 'white', 'fontWeight': 'bold', 'borderBottom': '1px solid #ddd', 'color': EI_DARK_BLUE, 'fontSize': '11px'},
+                    style_cell={'padding': '3px 6px', 'fontSize': '10px', 'fontFamily': 'Lato, sans-serif', 'border': 'none', 'textAlign': 'right', 'color': '#333'},
+                    style_cell_conditional=[
+                        {'if': {'column_id': 'period'}, 'width': '30px', 'textAlign': 'center', 'fontWeight': 'bold'},
+                        {'if': {'column_id': 'port_name'}, 'textAlign': 'left', 'minWidth': '100px'},
+                        {'if': {'column_id': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']}, 'width': '50px'}
+                    ],
+                    style_data_conditional=[
+                        {'if': {'filter_query': '{yoy_pct} < 0'}, 'color': '#d9534f'},
+                        {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'},
+                        {'if': {'column_id': 'period'}, 'borderRight': '1px solid #eee'}
+                    ],
+                    css=[{'selector': 'td[data-dash-column="period"]', 'rule': 'writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: auto; text-align: center; vertical-align: middle;'},
+                         {'selector': '.dash-spreadsheet td.highlighted', 'rule': f'background-color: {EI_LIGHT_BLUE} !important; opacity: 1 !important;'},
+                         {'selector': '.highlight-mode td:not(.highlighted)', 'rule': 'opacity: 0.3; transition: opacity 0.2s;'}]
+                )
             ], style={'width': '30%', 'paddingLeft': '15px'})
         ], style={
             'display': 'flex', 
@@ -972,6 +991,8 @@ def register_callbacks(dash_app, server):
         try:
             results = execute_query(query)
             df = pd.DataFrame(results)
+            # Remove empty columns (like quarter/month/date when in yearly mode)
+            df.dropna(axis=1, how='all', inplace=True)
             return dcc.send_data_frame(df.to_csv, f"seaborne_bar_data_{period.lower()}.csv", index=False)
         except Exception as e:
             print(f"Error exporting bar csv: {e}")
