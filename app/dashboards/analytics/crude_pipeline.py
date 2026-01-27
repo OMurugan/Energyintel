@@ -984,7 +984,7 @@ def update_seaborne_chart(selected_years, sel_sea, agg_mode):
             elif agg_mode == 'YEARLY':
                 margin_min = -0.15
             elif agg_mode == 'DATE':
-                margin_min = -5
+                margin_min = -0.5
             else:
                 margin_min = -0.5
 
@@ -1231,7 +1231,7 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe, agg_mode):
             elif agg_mode == 'YEARLY':
                 margin_min = -0.15
             elif agg_mode == 'DATE':
-                margin_min = -5
+                margin_min = -0.5
             else:
                 margin_min = -0.5
 
