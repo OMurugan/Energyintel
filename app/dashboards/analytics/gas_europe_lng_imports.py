@@ -547,7 +547,7 @@ def register_callbacks(dash_app, server):
             chart_df = chart_df_orig.copy()
             table_df = table_df_orig.copy()
             
-            # --- Robust Date Filtering ---
+            # --- Robust Date Filtering (applies to both chart and table) ---
             try:
                 start_dt = pd.to_datetime(start_date, errors='coerce')
                 end_dt = pd.to_datetime(end_date, errors='coerce')
@@ -563,39 +563,39 @@ def register_callbacks(dash_app, server):
             except Exception as e:
                 print(f"Date conversion error: {e}")
 
-            # --- Multi-select Filtering ---
+            # --- Country and Terminal Filtering (CHART ONLY) ---
             if not selected_countries: 
                 selected_countries = []
             if isinstance(selected_countries, str): 
                 selected_countries = [selected_countries]
             
-            # Handle country filtering
+            # Handle country filtering for CHART only
             if not selected_countries or (selected_countries and '(All)' not in selected_countries and len(selected_countries) == 0):
-                # Empty selection - show no data
+                # Empty selection - show no chart data
                 chart_df = chart_df.iloc[0:0]  # Empty dataframe with same structure
-                table_df = table_df.iloc[0:0]
             elif selected_countries and '(All)' not in selected_countries:
-                # Specific countries selected - filter data
+                # Specific countries selected - filter chart data only
                 chart_df = chart_df[chart_df['Point'].isin(table_df_orig[table_df_orig['Target Country'].isin(selected_countries)]['Point'].unique())]
-                table_df = table_df[table_df['Target Country'].isin(selected_countries)]
                 
             if not selected_terminals: 
                 selected_terminals = []
             if isinstance(selected_terminals, str): 
                 selected_terminals = [selected_terminals]
 
-            # Handle terminal filtering
+            # Handle terminal filtering for CHART only
             if not selected_terminals or (selected_terminals and '(All)' not in selected_terminals and len(selected_terminals) == 0):
-                # Empty selection - show no data
+                # Empty selection - show no chart data
                 chart_df = chart_df.iloc[0:0]  # Empty dataframe with same structure
-                table_df = table_df.iloc[0:0]
             elif selected_terminals and '(All)' not in selected_terminals:
-                # Specific terminals selected - filter data
+                # Specific terminals selected - filter chart data only
                 chart_df = chart_df[chart_df['Point'].isin(selected_terminals)]
-                table_df = table_df[table_df['Point'].isin(selected_terminals)]
 
-            # --- Point Legend Visual Emphasis (don't filter data) ---
+            # --- Point Legend Filter (visual emphasis for chart, data filter for table) ---
             selected_points_for_chart = selected_points if selected_points and len(selected_points) < len(chart_df['Point'].unique()) else []
+            
+            # Apply Point legend filter to TABLE data only (not chart data)
+            if selected_points_for_chart:
+                table_df = table_df[table_df['Point'].isin(selected_points_for_chart)]
 
             # --- Chart Rendering ---
             if chart_df.empty:
@@ -645,13 +645,13 @@ def register_callbacks(dash_app, server):
                         title=""  # Explicitly set empty title
                     )
                     
-                    # Apply opacity based on legend selection
+                    # Apply opacity based on Point legend selection for visual emphasis
                     if selected_points_for_chart:
                         for trace in fig.data:
                             if hasattr(trace, 'name') and trace.name not in selected_points_for_chart:
-                                trace.opacity = 0.3
+                                trace.opacity = 0.3  # Dim non-selected terminals
                             else:
-                                trace.opacity = 1.0
+                                trace.opacity = 1.0  # Keep selected terminals fully visible
                     
                     fig.update_layout(
                         barmode='stack',
@@ -688,17 +688,8 @@ def register_callbacks(dash_app, server):
 
             # --- Table Rendering ---
             if table_df.empty:
-                # Check if empty due to no selections
-                empty_countries = not selected_countries or (selected_countries and '(All)' not in selected_countries and len(selected_countries) == 0)
-                empty_terminals = not selected_terminals or (selected_terminals and '(All)' not in selected_terminals and len(selected_terminals) == 0)
-                
-                if empty_countries:
-                    message = "No countries selected - please select countries to view data"
-                elif empty_terminals:
-                    message = "No terminals selected - please select terminals to view data"
-                else:
-                    message = "No table data found for selected filters"
-                
+                # Table is only empty if Point legend filter results in no data or date filters exclude all data
+                message = "No table data found for selected filters"
                 table_output = html.Div(message, style={'padding': '20px', 'textAlign': 'center', 'color': '#666', 'fontSize': '14px'})
             else:
                 # Pivot and group
