@@ -570,7 +570,7 @@ def create_layout():
     return html.Div(
         [
             dcc.Store(id="projects-selected-country", data=None),
-            dcc.Store(id="projects-country-filter-previous", data=[]),
+            dcc.Store(id="projects-country-filter-previous", data=default_country_values),
             dcc.Store(id="projects-likely-filter-previous", data=["Y"]),
             
             # Download components
