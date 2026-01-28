@@ -1,6 +1,6 @@
 import pandas as pd
 import plotly.express as px
-from dash import dcc, html, Input, Output, dash_table, State, ALL, ctx
+from dash import dcc, html, Input, Output, dash_table, State, ALL, ctx, no_update
 import os
 from datetime import datetime, timedelta
 import psycopg2
@@ -224,14 +224,10 @@ def create_layout():
         dcc.Store(id='terminal-filter-previous', data={'all_selected': True}),  # Initialize with all selected
         dcc.Store(id='selected-terminals-store', data=[]),
         
-        # Header
-        html.Div([
-            html.H1("LNG Imports By Terminal - All - Billion Cubic Meters (v2)", style={
-                'color': '#fe5000', 'fontSize': '20px', 'fontWeight': 'bold',
-                'fontFamily': 'Arial, sans-serif', 'margin': '25px 0 15px 40px'
-            }),
-        ]),
-
+        # Download components
+        dcc.Download(id="download-lng-chart-csv"),
+        dcc.Download(id="download-lng-table-csv"),
+        
         html.Div([
             # Side Filter Panel (on the right)
             html.Div([
@@ -270,20 +266,28 @@ def create_layout():
                         }
                     ),
                     
-                    html.Label("Start Date", style={'fontWeight': 'normal', 'color': '#555', 'fontSize': '13px'}),
-                    dcc.Input(
+                    html.Label("Start Date", style={'fontWeight': 'normal', 'color': '#555', 'fontSize': '13px', 'marginBottom': '5px'}),
+                    dcc.DatePickerSingle(
                         id='start-date-input',
-                        type='text',
-                        value=min_date_val.strftime('%-m/%-d/%Y') if pd.notnull(min_date_val) else "1/1/2021",
-                        style={'width': '90%', 'marginBottom': '15px', 'padding': '5px', 'border': '1px solid #ccc', 'fontSize': '12px'}
+                        date=min_date_val.date() if pd.notnull(min_date_val) else pd.Timestamp('2021-01-01').date(),
+                        min_date_allowed=min_date_val.date() if pd.notnull(min_date_val) else pd.Timestamp('2021-01-01').date(),
+                        max_date_allowed=max_date_val.date() if pd.notnull(max_date_val) else pd.Timestamp('2026-01-01').date(),
+                        display_format='M/D/YYYY',
+                        placeholder='Select start date',
+                        style={'width': '100%', 'marginBottom': '15px', 'fontSize': '12px'},
+                        className='custom-date-picker'
                     ),
                     
-                    html.Label("End Date", style={'fontWeight': 'normal', 'color': '#555', 'fontSize': '13px'}),
-                    dcc.Input(
+                    html.Label("End Date", style={'fontWeight': 'normal', 'color': '#555', 'fontSize': '13px', 'marginBottom': '5px'}),
+                    dcc.DatePickerSingle(
                         id='end-date-input',
-                        type='text',
-                        value=max_date_val.strftime('%-m/%-d/%Y') if pd.notnull(max_date_val) else "1/1/2026",
-                        style={'width': '90%', 'marginBottom': '15px', 'padding': '5px', 'border': '1px solid #ccc', 'fontSize': '12px'}
+                        date=max_date_val.date() if pd.notnull(max_date_val) else pd.Timestamp('2026-01-01').date(),
+                        min_date_allowed=min_date_val.date() if pd.notnull(min_date_val) else pd.Timestamp('2021-01-01').date(),
+                        max_date_allowed=max_date_val.date() if pd.notnull(max_date_val) else pd.Timestamp('2026-01-01').date(),
+                        display_format='M/D/YYYY',
+                        placeholder='Select end date',
+                        style={'width': '100%', 'marginBottom': '15px', 'fontSize': '12px'},
+                        className='custom-date-picker'
                     ),
                     
                     html.Label("Point", style={'fontWeight': 'bold', 'color': '#555', 'fontSize': '13px', 'marginBottom': '10px'}),
@@ -300,6 +304,34 @@ def create_layout():
 
             # Main content area
             html.Div([
+                # Header section moved here
+                html.Div([
+                    html.Div([
+                        html.H1("LNG Imports By Terminal - All - Billion Cubic Meters", style={
+                            'color': '#fe5000', 'fontSize': '20px', 'fontWeight': 'bold',
+                            'fontFamily': 'Arial, sans-serif', 'margin': '25px 0 15px 0'
+                        }),
+                    ], style={'flex': '1'}),
+                    html.Div([
+                        html.Button(
+                            "Export Chart to CSV",
+                            id="export-lng-chart-btn",
+                            n_clicks=0,
+                            style={
+                                "backgroundColor": "white",
+                                "color": "#2c3e50",
+                                "border": "1px solid #dee2e6",
+                                "padding": "6px 12px",
+                                "borderRadius": "4px",
+                                "cursor": "pointer",
+                                "fontSize": "12px",
+                                "fontWeight": "normal",
+                                "marginRight": "10px",
+                            },
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center'})
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'padding': '0 20px', 'marginBottom': '20px'}),
+                
                 dcc.Loading(
                     id="loading-chart",
                     type="circle",
@@ -307,10 +339,31 @@ def create_layout():
                 ),
                 
                 html.Div([
-                    html.H2("LNG Imports By Terminal- Billion Cubic Meters", style={
-                        'color': '#fe5000', 'fontSize': '18px', 'fontWeight': 'bold',
-                        'marginTop': '30px', 'marginBottom': '20px'
-                    }),
+                    html.Div([
+                        html.H2("LNG Imports By Terminal- Billion Cubic Meters", style={
+                            'color': '#fe5000', 'fontSize': '18px', 'fontWeight': 'bold',
+                            'marginTop': '30px', 'marginBottom': '20px'
+                        }),
+                    ], style={'flex': '1'}),
+                    html.Div([
+                        html.Button(
+                            "Export Table to CSV",
+                            id="export-lng-table-btn",
+                            n_clicks=0,
+                            style={
+                                "backgroundColor": "white",
+                                "color": "#2c3e50",
+                                "border": "1px solid #dee2e6",
+                                "padding": "6px 12px",
+                                "borderRadius": "4px",
+                                "cursor": "pointer",
+                                "fontSize": "12px",
+                                "fontWeight": "normal",
+                            },
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center'})
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'padding': '0 20px'}),
+                html.Div([
                     dcc.Loading(
                         id="loading-table",
                         type="circle",
@@ -534,8 +587,8 @@ def register_callbacks(dash_app, server):
          Output('lng-imports-table-container', 'children')],
         [Input('country-checklist', 'value'),
          Input('terminal-checklist', 'value'),
-         Input('start-date-input', 'value'),
-         Input('end-date-input', 'value'),
+         Input('start-date-input', 'date'),
+         Input('end-date-input', 'date'),
          Input('selected-terminals-store', 'data')]
     )
     def update_dashboard(selected_countries, selected_terminals, start_date, end_date, selected_points):
@@ -548,20 +601,42 @@ def register_callbacks(dash_app, server):
             table_df = table_df_orig.copy()
             
             # --- Robust Date Filtering (applies to both chart and table) ---
+            date_filter_applied = False
+            start_dt = None
+            end_dt = None
+            
             try:
-                start_dt = pd.to_datetime(start_date, errors='coerce')
-                end_dt = pd.to_datetime(end_date, errors='coerce')
+                start_dt = pd.to_datetime(start_date, errors='coerce') if start_date else None
+                end_dt = pd.to_datetime(end_date, errors='coerce') if end_date else None
                 
-                if pd.notnull(start_dt):
+                print(f"DEBUG: Date inputs - start_date: {start_date}, end_date: {end_date}")
+                print(f"DEBUG: Parsed dates - start_dt: {start_dt}, end_dt: {end_dt}")
+                print(f"DEBUG: Original data shape: {chart_df.shape}")
+                
+                if start_dt and pd.notnull(start_dt):
                     chart_df = chart_df[chart_df['Date'] >= start_dt]
                     table_df = table_df[table_df['Date'] >= start_dt]
-                if pd.notnull(end_dt):
+                    date_filter_applied = True
+                    print(f"DEBUG: After start date filter: {chart_df.shape}")
+                    
+                if end_dt and pd.notnull(end_dt):
                     # Ensure we include the entire month of the end date
                     adjusted_end_dt = end_dt + pd.offsets.MonthEnd(0)
                     chart_df = chart_df[chart_df['Date'] <= adjusted_end_dt]
                     table_df = table_df[table_df['Date'] <= adjusted_end_dt]
+                    date_filter_applied = True
+                    print(f"DEBUG: After end date filter (adjusted to {adjusted_end_dt}): {chart_df.shape}")
+                    
+                print(f"DEBUG: Date filter applied: {date_filter_applied}")
+                    
             except Exception as e:
                 print(f"Date conversion error: {e}")
+                import traceback
+                traceback.print_exc()
+                # Reset variables on error
+                start_dt = None
+                end_dt = None
+                date_filter_applied = False
 
             # --- Country and Terminal Filtering (CHART ONLY) ---
             if not selected_countries: 
@@ -635,6 +710,18 @@ def register_callbacks(dash_app, server):
                     
                     unique_labels = chart_df.sort_values('Date')['Month_Label'].unique()
                     
+                    # Create chart title with date range info if filtering is applied
+                    chart_title = ""
+                    if date_filter_applied:
+                        date_range_text = ""
+                        if start_dt and end_dt:
+                            date_range_text = f" ({start_dt.strftime('%b %Y')} - {end_dt.strftime('%b %Y')})"
+                        elif start_dt:
+                            date_range_text = f" (from {start_dt.strftime('%b %Y')})"
+                        elif end_dt:
+                            date_range_text = f" (until {end_dt.strftime('%b %Y')})"
+                        chart_title = f"Filtered Data{date_range_text}"
+                    
                     fig = px.bar(
                         chart_df, 
                         x='Month_Label', 
@@ -642,7 +729,7 @@ def register_callbacks(dash_app, server):
                         color='Point',
                         color_discrete_map=TERMINAL_COLORS,
                         category_orders={'Month_Label': unique_labels},
-                        title=""  # Explicitly set empty title
+                        title=chart_title
                     )
                     
                     # Apply opacity based on Point legend selection for visual emphasis
@@ -657,7 +744,7 @@ def register_callbacks(dash_app, server):
                         barmode='stack',
                         plot_bgcolor='white',
                         paper_bgcolor='white',
-                        title={'text': "", 'x': 0.5},  # Explicitly set title
+                        title={'text': chart_title, 'x': 0.5, 'font': {'size': 14, 'color': '#666'}},
                         xaxis={
                             'tickangle': -90, 
                             'showgrid': True, 
@@ -671,7 +758,7 @@ def register_callbacks(dash_app, server):
                             'title': 'Billion Cubic Meters',
                             'rangemode': 'tozero'
                         },
-                        margin={'t': 20, 'b': 80, 'l': 60, 'r': 30},  # Increased bottom and left margins
+                        margin={'t': 40 if chart_title else 20, 'b': 80, 'l': 60, 'r': 30},
                         height=450,
                         showlegend=False
                     )
@@ -759,3 +846,167 @@ def register_callbacks(dash_app, server):
         except Exception as outer_e:
             print(f"DASHBOARD CALLBACK ERROR: {outer_e}")
             return px.bar(title="Dashboard error - check logs"), html.Div(f"Error: {outer_e}")
+
+    # CSV Export Callbacks
+    @dash_app.callback(
+        Output("download-lng-chart-csv", "data"),
+        Input("export-lng-chart-btn", "n_clicks"),
+        [State('country-checklist', 'value'),
+         State('terminal-checklist', 'value'),
+         State('start-date-input', 'date'),
+         State('end-date-input', 'date')],
+        prevent_initial_call=True,
+    )
+    def export_chart_data(n_clicks, selected_countries, selected_terminals, start_date, end_date):
+        """Export chart data to CSV."""
+        if n_clicks == 0:
+            return no_update
+            
+        try:
+            chart_df_orig, _ = load_data()
+            if chart_df_orig.empty:
+                return no_update
+
+            chart_df = chart_df_orig.copy()
+            
+            # Apply same filtering logic as the chart
+            try:
+                start_dt = pd.to_datetime(start_date, errors='coerce') if start_date else None
+                end_dt = pd.to_datetime(end_date, errors='coerce') if end_date else None
+                
+                if start_dt and pd.notnull(start_dt):
+                    chart_df = chart_df[chart_df['Date'] >= start_dt]
+                if end_dt and pd.notnull(end_dt):
+                    adjusted_end_dt = end_dt + pd.offsets.MonthEnd(0)
+                    chart_df = chart_df[chart_df['Date'] <= adjusted_end_dt]
+            except Exception as e:
+                print(f"Date conversion error in export: {e}")
+
+            # Country filtering
+            if not selected_countries: 
+                selected_countries = []
+            if isinstance(selected_countries, str): 
+                selected_countries = [selected_countries]
+            
+            if not selected_countries or (selected_countries and '(All)' not in selected_countries and len(selected_countries) == 0):
+                chart_df = chart_df.iloc[0:0]
+            elif selected_countries and '(All)' not in selected_countries:
+                # Get table data for country-terminal mapping
+                _, table_df_orig = load_data()
+                if not table_df_orig.empty:
+                    country_points = table_df_orig[table_df_orig['Target Country'].isin(selected_countries)]['Point'].unique()
+                    chart_df = chart_df[chart_df['Point'].isin(country_points)]
+                
+            # Terminal filtering
+            if not selected_terminals: 
+                selected_terminals = []
+            if isinstance(selected_terminals, str): 
+                selected_terminals = [selected_terminals]
+
+            if not selected_terminals or (selected_terminals and '(All)' not in selected_terminals and len(selected_terminals) == 0):
+                chart_df = chart_df.iloc[0:0]
+            elif selected_terminals and '(All)' not in selected_terminals:
+                chart_df = chart_df[chart_df['Point'].isin(selected_terminals)]
+
+            if chart_df.empty:
+                return no_update
+                
+            # Prepare export data - sort by date and clean up columns
+            export_df = chart_df.sort_values('Date')[['Month of Date', 'Point', 'Target Country', 'flows_bcm']].copy()
+            export_df = export_df.rename(columns={
+                'Month of Date': 'Month',
+                'Point': 'Terminal',
+                'Target Country': 'Country',
+                'flows_bcm': 'Flows (BCM)'
+            })
+            
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"lng_imports_chart_{timestamp}.csv"
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+            
+        except Exception as e:
+            print(f"Error exporting chart data: {e}")
+            return no_update
+
+    @dash_app.callback(
+        Output("download-lng-table-csv", "data"),
+        Input("export-lng-table-btn", "n_clicks"),
+        [State('country-checklist', 'value'),
+         State('terminal-checklist', 'value'),
+         State('start-date-input', 'date'),
+         State('end-date-input', 'date'),
+         State('selected-terminals-store', 'data')],
+        prevent_initial_call=True,
+    )
+    def export_table_data(n_clicks, selected_countries, selected_terminals, start_date, end_date, selected_points):
+        """Export table data to CSV."""
+        if n_clicks == 0:
+            return no_update
+            
+        try:
+            chart_df_orig, table_df_orig = load_data()
+            if table_df_orig.empty:
+                return no_update
+
+            table_df = table_df_orig.copy()
+            
+            # Apply same filtering logic as the table
+            try:
+                start_dt = pd.to_datetime(start_date, errors='coerce') if start_date else None
+                end_dt = pd.to_datetime(end_date, errors='coerce') if end_date else None
+                
+                if start_dt and pd.notnull(start_dt):
+                    table_df = table_df[table_df['Date'] >= start_dt]
+                if end_dt and pd.notnull(end_dt):
+                    adjusted_end_dt = end_dt + pd.offsets.MonthEnd(0)
+                    table_df = table_df[table_df['Date'] <= adjusted_end_dt]
+            except Exception as e:
+                print(f"Date conversion error in table export: {e}")
+
+            # Apply Point legend filter to table data (same as in main callback)
+            selected_points_for_chart = selected_points if selected_points and len(selected_points) < len(chart_df_orig['Point'].unique()) else []
+            if selected_points_for_chart:
+                table_df = table_df[table_df['Point'].isin(selected_points_for_chart)]
+
+            if table_df.empty:
+                return no_update
+                
+            # Create pivot table same as in main callback
+            pivot_table = table_df.pivot_table(
+                index=['Month of Date', 'Date'], 
+                columns=['Target Country', 'Point'], 
+                values='flows_bcm', 
+                aggfunc='sum'
+            ).reset_index()
+            
+            pivot_table = pivot_table.sort_values('Date', ascending=False)
+            
+            # Flatten the multi-level columns for CSV export
+            export_df = pivot_table.copy()
+            
+            # Rename columns to be more CSV-friendly
+            new_columns = ['Month of Date']
+            for col in export_df.columns[2:]:  # Skip 'Month of Date' and 'Date'
+                if isinstance(col, tuple) and len(col) == 2:
+                    country, terminal = col
+                    new_columns.append(f"{country} - {terminal}")
+                else:
+                    new_columns.append(str(col))
+            
+            # Apply new column names
+            export_df.columns = ['Month of Date', 'Date'] + new_columns[1:]
+            
+            # Drop the Date column (keep only Month of Date for export)
+            export_df = export_df.drop(columns=['Date'])
+            
+            # Fill NaN values with 0 and format numbers
+            for col in export_df.columns[1:]:  # Skip 'Month of Date'
+                export_df[col] = export_df[col].fillna(0).round(3)
+            
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"lng_imports_table_{timestamp}.csv"
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+            
+        except Exception as e:
+            print(f"Error exporting table data: {e}")
+            return no_update

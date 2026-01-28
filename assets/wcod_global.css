@@ -756,3 +756,31 @@ div[id*="range-slider"] {
     color: #FF4500 !important;
     border: 2px solid #FF4500 !important;
 }
+
+/* Date Picker Styling for LNG Imports Dashboard */
+.custom-date-picker .DateInput_input {
+    font-size: 12px !important;
+    padding: 4px 8px !important;
+    height: 28px !important;
+    line-height: 1.2 !important;
+    border: 1px solid #e0e0e0 !important;
+    border-radius: 4px !important;
+}
+
+.custom-date-picker .DateInput {
+    width: 100% !important;
+}
+
+.custom-date-picker .SingleDatePickerInput {
+    width: 100% !important;
+    display: block !important;
+}
+
+.custom-date-picker .DateInput_input__focused {
+    font-size: 12px !important;
+    border-color: #007ba7 !important;
+}
+
+.custom-date-picker .SingleDatePickerInput__display-text {
+    font-size: 12px !important;
+}
