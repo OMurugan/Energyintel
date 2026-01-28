@@ -59,6 +59,22 @@ def hex_to_rgba(hex_color, alpha=1.0):
     except:
         return f"rgba(200, 200, 200, {alpha})"
 
+# Mapping from Treemap selection (Refinery Output) to Breakdown Chart (Refining And Products Output)
+REFINERY_TO_BREAKDOWN_MAP = {
+    'Diesel': 'Diesel And Gasoil',
+    'Gasoline': 'Gasoline',
+    'Heavy Fuel Oils': 'VGO',
+    'Mazut': 'Fuel Oil',
+    'Naphtha': 'Naphtha',
+    'Jet Fuel': 'Jet Fuel And Kerosene',
+    'Petroleum Coke': 'Petroleum Coke',
+    'Bitumen-Residues': 'Bitumen And Residue'
+}
+
+PRODUCT_DISPLAY_OVERRIDES = {
+    'Bitumen-Residues': 'Other'
+}
+
 def create_layout():
     """Create the Product Output layout with Tabs"""
     return html.Div([
@@ -67,7 +83,7 @@ def create_layout():
         dcc.Store(id='company-bar-selection', data=None),
         dcc.Store(id='product-treemap-selection', data=None),
         dcc.Store(id='product-company-selection', data=None),
-        dcc.Store(id='product-expansion-store', data={'year': True, 'q1': True, 'q2': True, 'q3': True, 'q4': True, 'm': {str(i): False for i in range(1, 13)}}), 
+        dcc.Store(id='product-expansion-store', data={'Year': False, 'Quarter': False, 'Month': True, 'Day': False}), 
 
         # Main Tab Container
         dcc.Tabs(id='product-output-tabs', value='by-company', children=[
@@ -76,7 +92,13 @@ def create_layout():
         ], className='custom-tabs-container'),
 
         # Tab Content
-        html.Div(id='product-output-content', style={'padding': '20px'})
+        html.Div(id='product-output-content', style={'padding': '20px'}),
+
+        # Downloads
+        dcc.Download(id="download-company-treemap"),
+        dcc.Download(id="download-company-bar"),
+        dcc.Download(id="download-product-treemap"),
+        dcc.Download(id="download-product-bar"),
     ], style={'backgroundColor': '#f8f9fa', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'})
 
 # Clientside callbacks for fast interactivity
@@ -189,42 +211,49 @@ clientside_callback(
     [State('product-expansion-store', 'data')],
     prevent_initial_call=True
 )
-def update_expansion_state(y_c, q_c, m_c, d_c, current_state):
-    ctx = dash.callback_context
+def update_expansion_state(y_c, q_c, m_c, d_c, current_visibility):
+    from dash import callback_context
+    ctx = callback_context
     if not ctx.triggered:
-        return current_state, dash.no_update, dash.no_update, dash.no_update, dash.no_update
-
+        return current_visibility, '+', '+', '-', '+'
+    
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
-    # Initialize state if None (Default to MONTHLY view)
-    if not current_state:
-        current_state = {'year': True, 'q1': True, 'q2': True, 'q3': True, 'q4': True, 'm': {str(i): False for i in range(1, 13)}}
-
-    new_granularity = 'MONTHLY'
-    if 'year' in button_id:
-        new_granularity = 'YEARLY'
-    elif 'quarter' in button_id:
-        new_granularity = 'QUARTERLY'
-    elif 'month' in button_id:
-        new_granularity = 'MONTHLY'
-    elif 'day' in button_id:
-        new_granularity = 'DATE'
-
-    # Map granularity back to hierarchical flags
-    if new_granularity == 'YEARLY':
-        current_state = {'year': False, 'q1': False, 'q2': False, 'q3': False, 'q4': False, 'm': {str(i): False for i in range(1, 13)}}
-    elif new_granularity == 'QUARTERLY':
-        current_state = {'year': True, 'q1': False, 'q2': False, 'q3': False, 'q4': False, 'm': {str(i): False for i in range(1, 13)}}
-    elif new_granularity == 'MONTHLY':
-        current_state = {'year': True, 'q1': True, 'q2': True, 'q3': True, 'q4': True, 'm': {str(i): False for i in range(1, 13)}}
-    elif new_granularity == 'DATE':
-        current_state = {'year': True, 'q1': True, 'q2': True, 'q3': True, 'q4': True, 'm': {str(i): True for i in range(1, 13)}}
-
-    return (current_state,
-            '-' if new_granularity == 'YEARLY' else '+',
-            '-' if new_granularity == 'QUARTERLY' else '+',
-            '-' if new_granularity == 'MONTHLY' else '+',
-            '-' if new_granularity == 'DATE' else '+')
+    new_visibility = current_visibility.copy() if current_visibility else {'Year': False, 'Quarter': False, 'Month': False, 'Day': False}
+    
+    if button_id == 'btn-expand-year':
+        new_visibility['Year'] = not new_visibility.get('Year', False)
+        if not new_visibility['Year']:
+            new_visibility['Quarter'] = False
+            new_visibility['Month'] = False
+            new_visibility['Day'] = False
+    elif button_id == 'btn-expand-quarter':
+        new_visibility['Quarter'] = not new_visibility.get('Quarter', False)
+        if new_visibility['Quarter']:
+            new_visibility['Year'] = True
+        else:
+            new_visibility['Month'] = False
+            new_visibility['Day'] = False
+    elif button_id == 'btn-expand-month':
+        new_visibility['Month'] = not new_visibility.get('Month', False)
+        if new_visibility['Month']:
+            new_visibility['Year'] = True
+            new_visibility['Quarter'] = True
+        else:
+            new_visibility['Day'] = False
+    elif button_id == 'btn-expand-day':
+        new_visibility['Day'] = not new_visibility.get('Day', False)
+        if new_visibility['Day']:
+            new_visibility['Year'] = True
+            new_visibility['Quarter'] = True
+            new_visibility['Month'] = True
+    
+    return (
+        new_visibility, 
+        '-' if new_visibility.get('Year') else '+',
+        '-' if new_visibility.get('Quarter') else '+',
+        '-' if new_visibility.get('Month') else '+',
+        '-' if new_visibility.get('Day') else '+'
+    )
 
 def create_by_company_layout():
     """Layout for the 'By Company' tab"""
@@ -233,8 +262,14 @@ def create_by_company_layout():
             # Left side: Charts
             html.Div([
                 # Treemap Header
-                html.H3(id='treemap-company-header', 
-                        style={'margin': '0 0 10px 0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                html.Div([
+                    html.H3(id='treemap-company-header', 
+                            style={'margin': '0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                    html.Button("Export to CSV", id="btn-export-company-treemap", style={
+                        'backgroundColor': 'white', 'color': '#2c3e50', 'border': '1px solid #dee2e6',
+                        'padding': '5px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'
+                    })
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                 
                 # Treemap Chart
                 dcc.Loading(
@@ -249,8 +284,14 @@ def create_by_company_layout():
                 ),
 
                 # Stacked Bar Header
-                html.H3(id='bar-company-header', 
-                        style={'margin': '20px 0 10px 0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                html.Div([
+                    html.H3(id='bar-company-header', 
+                            style={'margin': '0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                    html.Button("Export to CSV", id="btn-export-company-bar", style={
+                        'backgroundColor': 'white', 'color': '#2c3e50', 'border': '1px solid #dee2e6',
+                        'padding': '5px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'
+                    })
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'margin': '20px 0 10px 0'}),
                 
                 # Stacked Bar Chart
                 dcc.Loading(
@@ -321,8 +362,14 @@ def create_by_product_layout():
             # Left side: Charts
             html.Div([
                 # Treemap Header
-                html.H3(id='treemap-product-header', 
-                        style={'margin': '0 0 10px 0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                html.Div([
+                    html.H3(id='treemap-product-header', 
+                            style={'margin': '0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                    html.Button("Export to CSV", id="btn-export-product-treemap", style={
+                        'backgroundColor': 'white', 'color': '#2c3e50', 'border': '1px solid #dee2e6',
+                        'padding': '5px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'
+                    })
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                 
                 # Treemap Chart
                 dcc.Loading(
@@ -337,8 +384,14 @@ def create_by_product_layout():
                 ),
 
                 # Stacked Bar Header
-                html.H3(id='bar-product-header', 
-                        style={'margin': '25px 0 10px 0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                html.Div([
+                    html.H3(id='bar-product-header', 
+                            style={'margin': '0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                    html.Button("Export to CSV", id="btn-export-product-bar", style={
+                        'backgroundColor': 'white', 'color': '#2c3e50', 'border': '1px solid #dee2e6',
+                        'padding': '5px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'
+                    })
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'margin': '25px 0 10px 0'}),
                 
                 # Stacked Bar Chart with Overlay Controls
                 html.Div([
@@ -707,17 +760,6 @@ def register_callbacks(dash_app, server):
         if not expansion_state:
             expansion_state = {'year': True, 'q1': True, 'q2': True, 'q3': True, 'q4': True, 'm': {}}
             
-        # Mapping from Treemap selection (Refinery Output) to Breakdown Chart (Refining And Products Output)
-        REFINERY_TO_BREAKDOWN_MAP = {
-            'Diesel': 'Diesel And Gasoil',
-            'Gasoline': 'Gasoline',
-            'Heavy Fuel Oils': 'VGO',
-            'Mazut': 'Fuel Oil',
-            'Naphtha': 'Naphtha',
-            'Jet Fuel': 'Jet Fuel And Kerosene',
-            'Petroleum Coke': 'Petroleum Coke',
-            'Bitumen-Residues': 'Bitumen And Residue'
-        }
 
         try:
             # 1. TOP TREEMAP: Production of Oil Products by Commodity (Category: Refinery Output)
@@ -776,9 +818,6 @@ def register_callbacks(dash_app, server):
                     'Petroleum Coke': '#FF4500'
                 }
                 
-                PRODUCT_DISPLAY_OVERRIDES = {
-                    'Bitumen-Residues': 'Other'
-                }
 
                 ids = []
                 marker_colors = []
@@ -850,36 +889,25 @@ def register_callbacks(dash_app, server):
                 available_months = sorted(df_bar['date'].dt.month.unique()) if not df_bar.empty else range(1, 13)
                 
                 slots = []
-                # Each slot: {'type': 'year'|'quarter'|'month'|'day', 'id': label/number, 'label': display_text}
+                # Determine granularity level
+                gran_level = 'YEAR'
+                if expansion_state.get('Day'): gran_level = 'DAY'
+                elif expansion_state.get('Month'): gran_level = 'MONTH'
+                elif expansion_state.get('Quarter'): gran_level = 'QUARTER'
                 
-                if not expansion_state.get('year', False):
-                    # Year collapsed
+                if gran_level == 'YEAR':
                     slots.append({'type': 'year', 'id': selected_year, 'label': str(selected_year)})
-                else:
-                    # Year expanded -> check quarters
+                elif gran_level == 'QUARTER':
                     for q in [1, 2, 3, 4]:
-                        q_key = f'q{q}'
                         q_month_range = {1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12]}[q]
-                        
-                        # Only show quarters that have at least one month of data
-                        q_available = [m for m in q_month_range if m in available_months]
-                        if not q_available:
-                            continue
-
-                        if not expansion_state.get(q_key, False):
-                            # Quarter collapsed
+                        if any(m in available_months for m in q_month_range):
                             slots.append({'type': 'quarter', 'id': q, 'label': f'Q{q}'})
-                        else:
-                            # Quarter expanded -> show months
-                            for m in q_month_range:
-                                if m not in available_months:
-                                    continue
-                                if not expansion_state.get('m', {}).get(str(m), False):
-                                    # Month collapsed
-                                    slots.append({'type': 'month', 'id': m, 'label': month_names[m-1]})
-                                else:
-                                    # Month expanded -> show Day (Day 1)
-                                    slots.append({'type': 'day', 'id': m, 'label': month_names[m-1], 'sub_label': '1'})
+                elif gran_level == 'MONTH':
+                    for m in available_months:
+                        slots.append({'type': 'month', 'id': m, 'label': month_names[m-1]})
+                elif gran_level == 'DAY':
+                    for m in available_months:
+                        slots.append({'type': 'day', 'id': m, 'label': month_names[m-1], 'sub_label': '1'})
 
                 num_slots = len(slots)
                 total_chart_width = 1.0
@@ -1035,7 +1063,7 @@ def register_callbacks(dash_app, server):
                             top2_color = get_label_color(top2_name, curr_slot_id)
                             bar_fig.add_annotation(
                                 text=f"<b>{DISPLAY_NAMES.get(top2_name, top2_name)}</b><br>{top2_vol:,.1f} ('000 b/d)<br>{top2_pct:.2f}%",
-                                x=center_x, y=0.55,
+                                x=center_x, y=0.54,
                                 xref="paper", yref="paper",
                                 showarrow=False,
                                 font=dict(size=label_font_size, color=top2_color),
@@ -1075,3 +1103,149 @@ def register_callbacks(dash_app, server):
             empty_fig = go.Figure()
             empty_fig.add_annotation(text="Error loading data", showarrow=False)
             return empty_fig, "Error", empty_fig, "Error"
+
+    @callback(
+        Output("download-company-treemap", "data"),
+        Input("btn-export-company-treemap", "n_clicks"),
+        [State('company-year-selector', 'value'),
+         State('company-product-selector', 'value')],
+        prevent_initial_call=True
+    )
+    def export_company_treemap(n_clicks, selected_year, selected_product):
+        if not n_clicks: return dash.no_update
+        try:
+            query = f"""
+            SELECT company, date, vol_kbpd 
+            FROM russia_master_data 
+            WHERE category = 'Refining And Products Output' 
+            AND commodity = '{selected_product}'
+            AND date >= '2022-01-01'
+            """
+            results = execute_query(query)
+            df = pd.DataFrame(results)
+            if df.empty: return dash.no_update
+            
+            df['date'] = pd.to_datetime(df['date'])
+            df['vol_kbpd'] = pd.to_numeric(df['vol_kbpd'], errors='coerce').fillna(0)
+            
+            if selected_year == 'All':
+                latest_date = df['date'].max()
+                export_df = df[df['date'] == latest_date]
+                filename = f"company_market_share_{selected_product.replace(' ', '_')}_latest.csv"
+            else:
+                target_year = int(selected_year)
+                export_df = df[(df['date'].dt.year == target_year) & (df['date'].dt.month == 1)]
+                filename = f"company_market_share_{selected_product.replace(' ', '_')}_{selected_year}.csv"
+                
+            export_df = export_df.groupby('company')['vol_kbpd'].sum().reset_index()
+            export_df = export_df.sort_values('vol_kbpd', ascending=False)
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+        except Exception as e:
+            logger.error(f"Error exporting company treemap: {str(e)}")
+            return dash.no_update
+
+    @callback(
+        Output("download-company-bar", "data"),
+        Input("btn-export-company-bar", "n_clicks"),
+        [State('company-year-selector', 'value'),
+         State('company-product-selector', 'value'),
+         State('company-treemap-selection', 'data')],
+        prevent_initial_call=True
+    )
+    def export_company_bar(n_clicks, selected_year, selected_product, treemap_sel):
+        if not n_clicks: return dash.no_update
+        try:
+            query = f"""
+            SELECT company, date, vol_kbpd 
+            FROM russia_master_data 
+            WHERE category = 'Refining And Products Output' 
+            AND commodity = '{selected_product}'
+            AND date >= '2022-01-01'
+            """
+            results = execute_query(query)
+            df = pd.DataFrame(results)
+            if df.empty: return dash.no_update
+            
+            df['date'] = pd.to_datetime(df['date'])
+            df['vol_kbpd'] = pd.to_numeric(df['vol_kbpd'], errors='coerce').fillna(0)
+            
+            if treemap_sel:
+                df = df[df['company'] == treemap_sel]
+                
+            export_df = df.groupby(['date', 'company'])['vol_kbpd'].sum().reset_index()
+            export_df = export_df.sort_values(['date', 'company'])
+            
+            filename = f"production_timeseries_{selected_product.replace(' ', '_')}.csv"
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+        except Exception as e:
+            logger.error(f"Error exporting company bar: {str(e)}")
+            return dash.no_update
+
+    @callback(
+        Output("download-product-treemap", "data"),
+        Input("btn-export-product-treemap", "n_clicks"),
+        State('product-year-selector', 'value'),
+        prevent_initial_call=True
+    )
+    def export_product_treemap(n_clicks, selected_year):
+        if not n_clicks: return dash.no_update
+        try:
+            query = f"""
+            SELECT commodity, date, vol_kbpd 
+            FROM russia_master_data 
+            WHERE category = 'Refinery Output' 
+            AND EXTRACT(YEAR FROM date) = {selected_year}
+            """
+            results = execute_query(query)
+            df = pd.DataFrame(results)
+            if df.empty: return dash.no_update
+            
+            df['vol_kbpd'] = pd.to_numeric(df['vol_kbpd'], errors='coerce').fillna(0)
+            df['date'] = pd.to_datetime(df['date'])
+            
+            # Annual Average of Monthly Sums:
+            monthly_sums = df.groupby(['commodity', 'date'])['vol_kbpd'].sum().reset_index()
+            export_df = monthly_sums.groupby('commodity')['vol_kbpd'].mean().reset_index()
+            export_df = export_df.sort_values('vol_kbpd', ascending=False)
+            
+            filename = f"oil_products_production_mix_{selected_year}.csv"
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+        except Exception as e:
+            logger.error(f"Error exporting product treemap: {str(e)}")
+            return dash.no_update
+
+    @callback(
+        Output("download-product-bar", "data"),
+        Input("btn-export-product-bar", "n_clicks"),
+        [State('product-year-selector', 'value'),
+         State('product-treemap-selection', 'data')],
+        prevent_initial_call=True
+    )
+    def export_product_bar(n_clicks, selected_year, product_sel):
+        if not n_clicks: return dash.no_update
+        try:
+            target_product = product_sel if product_sel else 'Gasoline' 
+            breakdown_product = REFINERY_TO_BREAKDOWN_MAP.get(target_product, target_product)
+            
+            query = f"""
+            SELECT company, date, vol_kbpd 
+            FROM russia_master_data 
+            WHERE category = 'Refining And Products Output' 
+            AND commodity = '{breakdown_product}'
+            AND EXTRACT(YEAR FROM date) = {selected_year}
+            """
+            results = execute_query(query)
+            df = pd.DataFrame(results)
+            if df.empty: return dash.no_update
+            
+            df['date'] = pd.to_datetime(df['date'])
+            df['vol_kbpd'] = pd.to_numeric(df['vol_kbpd'], errors='coerce').fillna(0)
+            
+            export_df = df.groupby(['date', 'company'])['vol_kbpd'].sum().reset_index()
+            export_df = export_df.sort_values(['date', 'company'])
+            
+            filename = f"{breakdown_product.replace(' ', '_')}_by_company_{selected_year}.csv"
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+        except Exception as e:
+            logger.error(f"Error exporting product bar: {str(e)}")
+            return dash.no_update
