@@ -547,7 +547,7 @@ def create_layout():
                     dcc.Download(id="download-chart1-csv"),
                     dcc.Download(id="download-chart2-csv"),
                     dcc.Download(id="download-chart3-csv"),
-                    dcc.Download(id="download-table-csv"),
+                    dcc.Download(id="download-table-csv-unique"),
 
                     html.Div([
                         html.Label("Flow Type", style={'fontWeight': 'normal', 'fontSize': '13px', 'color': '#333'}),
@@ -787,6 +787,51 @@ def register_callbacks(dash_app, server):
         df = load_data(c3_query, {**params, 'origins': tuple(origins_filtered)})
         return dcc.send_data_frame(df.to_csv, "all_gas_imports_daily.csv", index=False)
 
+    # Export callback for Table
+    @dash_app.callback(
+        Output("download-table-csv-unique", "data"),
+        Input("export-table-btn", "n_clicks"),
+        [State('country-dropdown', 'value'),
+         State('start-date-picker', 'value'),
+         State('end-date-picker', 'value'),
+         State('selected-origins-store', 'data')],
+        prevent_initial_call=True
+    )
+    def export_table_csv(n_clicks, country, start_date, end_date, origins):
+        if n_clicks is None or n_clicks == 0:
+            return no_update
+
+        where_clause, country_clause, params, origins_filtered, _, _ = get_query_params(country, start_date, end_date, origins, [], [])
+        
+        # We need the pivoted table data
+        table_query = f"""
+        SELECT 
+            DATE_TRUNC('month', tr.date) AS month_raw,
+            TO_CHAR(DATE_TRUNC('month', tr.date), 'Month YYYY') AS "Month",
+            tr.source_country AS "Origin", 
+            tr.target_country AS "Destination", 
+            SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
+        FROM dev.european_gas_trade tr 
+        {where_clause} 
+        {country_clause}
+        AND tr.source_country IN :origins
+        GROUP BY 1, 2, 3, 4
+        ORDER BY 1 DESC;
+        """
+        df = load_data(table_query, {**params, 'origins': tuple(origins_filtered)})
+        
+        pivot = df.pivot_table(
+            index=['Month'], 
+            columns=['Origin', 'Destination'], 
+            values='Billion Cubic Meters', 
+            aggfunc='sum'
+        ).fillna(0)
+        
+        # Flatten columns for CSV
+        pivot.columns = [f'{c[0]} -> {c[1]}' for c in pivot.columns]
+        pivot.reset_index(inplace=True)
+        
+        return dcc.send_data_frame(pivot.to_csv, "gas_flows_to_europe_matrix.csv", index=False)
 
     @dash_app.callback(
         [Output('gas-origin-legend-container', 'children'),
