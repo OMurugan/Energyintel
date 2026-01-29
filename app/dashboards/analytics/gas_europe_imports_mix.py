@@ -713,24 +713,15 @@ def register_callbacks(dash_app, server):
         [Input('chart-1', 'clickData'),
          Input('chart-2', 'clickData'),
          Input('chart-3', 'clickData'),
-         Input('country-dropdown', 'value'),
-         Input('start-date-picker', 'value'),
-         Input('end-date-picker', 'value'),
-         Input('flow-type-1', 'value'),
-         Input('flow-type-2', 'value'),
          Input('chart1-agg-state', 'data'),
          Input('chart2-agg-state', 'data')],
         [State('chart1-selection', 'data'),
          State('chart2-selection', 'data'),
          State('chart3-selection', 'data')]
     )
-    def update_chart_selections(c1_click, c2_click, c3_click, country, start, end, f1, f2, agg1, agg2, s1, s2, s3):
+    def update_chart_selections(c1_click, c2_click, c3_click, agg1, agg2, s1, s2, s3):
         triggered_id = str(ctx.triggered_id)
         if not triggered_id or triggered_id == 'None': return no_update
-        
-        # 1. Reset all selections if global filters change
-        if any(x in triggered_id for x in ['dropdown', 'picker', 'flow-type']):
-            return None, None, None, None, None, None
 
         # 2. Reset only Chart 1 selection if its granularity changes
         if 'chart1-agg-state' in triggered_id:
@@ -825,10 +816,9 @@ def register_callbacks(dash_app, server):
          Input('end-date-picker', 'value'),
          Input('flow-type-1', 'value'),
          Input('chart1-selection', 'data'),
-         Input('chart3-selection', 'data'),
          Input('chart1-agg-state', 'data')]
     )
-    def update_chart_1(country, start_date, end_date, flow1, sel1, sel3, agg_mode):
+    def update_chart_1(country, start_date, end_date, flow1, sel1, agg_mode):
         try:
             where_clause, country_clause, params, _, f1_filtered, _ = get_query_params(country, start_date, end_date, [], flow1, [])
             agg_mode = (agg_mode or 'YEARLY').upper()
@@ -894,8 +884,6 @@ def register_callbacks(dash_app, server):
                             if ry_str != str(sel1['year']): is_dim = True
                         elif sel1['mode'] == 'bar':
                             if not (ry_str == str(sel1['year']) and flow_name == sel1['flow']): is_dim = True
-                    elif sel3:
-                        if flow_name.upper() != sel3.upper(): is_dim = True
                     
                     colors.append(GREY_OUT if is_dim else base_color)
 
@@ -907,18 +895,39 @@ def register_callbacks(dash_app, server):
                     hovertemplate="Flow Type: <span style='color:black'><b>"+flow_name+"</b></span><br>Date: <span style='color:black'><b>%{customdata[0]}</b></span><br>Flow (BCM): <span style='color:black'><b>%{y:.1f}</b></span><extra></extra>"
                 ))
 
-            # Year Headers (Original style if Yearly)
+            # Year Headers matching Image 1 structure
             if agg_mode == 'YEARLY':
-                max_val = c1_grouped['flow_bcm'].max() if not c1_grouped.empty else 10
+                # Shift header area up to avoid overlap with bar labels (which go up to ~550)
+                HEADER_Y_BOTTOM = 640
+                HEADER_Y_TOP = 710
+                LABEL_Y = 675
+                
                 fig1.update_layout(xaxis=dict(showticklabels=False))
                 fig1.add_trace(go.Scatter(
-                    x=x_order, y=[max_val * 1.15] * len(x_order), mode='text', 
+                    x=x_order, y=[LABEL_Y] * len(x_order), mode='text', 
                     text=[f"<b>{x}</b>" for x in x_order],
-                    textposition='bottom center', textfont=dict(size=14, color='#333'),
+                    textposition='middle center', textfont=dict(size=13, color='#333'),
                     customdata=[[x, "", "YEAR_CLICK"] for x in x_order], showlegend=False, hoverinfo='none', marker=dict(opacity=0)
                 ))
-                fig1.update_yaxes(range=[0, max_val * 1.3])
-                fig1.add_shape(type="line", x0=-0.5, x1=len(x_order)-0.5, y0=max_val*1.22, y1=max_val*1.22, line=dict(color="#dee2e6", width=1))
+                
+                # Add "Year of Date" label above the grid center
+                fig1.add_annotation(
+                    x=(len(x_order)-1)/2, y=LABEL_Y + 45, xref='x', yref='y',
+                    text="Year of Date", showarrow=False,
+                    font=dict(size=11, color='#666')
+                )
+                
+                # Set range to fit header, but keep ticks visible only up to 600
+                fig1.update_yaxes(range=[0, LABEL_Y + 70], tickvals=[0, 100, 200, 300, 400, 500, 600])
+                
+                # Header horizontal lines
+                fig1.add_shape(type="line", x0=-0.5, x1=len(x_order)-0.5, y0=HEADER_Y_TOP, y1=HEADER_Y_TOP, line=dict(color="#d1d7de", width=1.5))
+                fig1.add_shape(type="line", x0=-0.5, x1=len(x_order)-0.5, y0=HEADER_Y_BOTTOM, y1=HEADER_Y_BOTTOM, line=dict(color="#333", width=1.2))
+                
+                # Vertical separators between years
+                for i in range(len(x_order) + 1):
+                    x_pos = i - 0.5
+                    fig1.add_shape(type="line", x0=x_pos, x1=x_pos, y0=0, y1=HEADER_Y_TOP, line=dict(color="#dee2e6", width=1), layer='below')
 
             x_axis_config = dict(title="", tickfont=dict(size=11, color='#666'), showgrid=False)
             if agg_mode == 'DATE':
@@ -1141,10 +1150,9 @@ def register_callbacks(dash_app, server):
          Input('start-date-picker', 'value'),
          Input('end-date-picker', 'value'),
          Input('flow-type-2', 'value'),
-         Input('chart3-selection', 'data'),
-         Input('chart1-selection', 'data')]
+         Input('chart3-selection', 'data')]
     )
-    def update_chart_3(country, start_date, end_date, flow2, sel3, sel1):
+    def update_chart_3(country, start_date, end_date, flow2, sel3):
         where_clause, country_clause, params, _, _, flow2_filtered = get_query_params(country, start_date, end_date, [], [], flow2)
         
         # Smooth transition
@@ -1164,8 +1172,6 @@ def register_callbacks(dash_app, server):
         
         # Determine current highlight category
         tgt = sel3
-        if not tgt and sel1 and sel1.get('mode') == 'bar':
-            tgt = sel1.get('flow')
 
         # Z-order: Put active line on top
         if tgt:
@@ -1212,10 +1218,9 @@ def register_callbacks(dash_app, server):
          Input('start-date-picker', 'value'),
          Input('end-date-picker', 'value'),
          Input('selected-origins-store', 'data'),
-         Input('chart2-selection', 'data'),
          Input('table-highlight-state', 'data')],
     )
-    def update_table(country, start_date, end_date, origins, sel2, highlight_state):
+    def update_table(country, start_date, end_date, origins, highlight_state):
         where_clause, country_clause, params, origins_filtered, _, _ = get_query_params(country, start_date, end_date, origins, [], [])
         if not origins_filtered: 
             return [], [], [], [], []
@@ -1250,13 +1255,8 @@ def register_callbacks(dash_app, server):
                 curr[c['id']] = f"{val:.3f}"
             rows.append(curr)
         
-        # Build highlighting for selected month
+        # Build highlighting for selected month - Disabled as per decoupling requirements
         highlight_month = ""
-        if sel2:
-            try:
-                highlight_month = pd.to_datetime(sel2).strftime('%B %Y')
-            except: 
-                pass
 
         # Style conditional for cells
         style_cell_conditional = [
