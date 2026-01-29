@@ -158,34 +158,41 @@ def create_layout():
                     )
                 ),
                 
-                # Table Area with export button
+                # Table Area with header and export button
                 html.Div([
-                    html.Button(
-                        "Export to CSV",
-                        id="export-gas-flows-table-btn",
-                        n_clicks=0,
-                        style={
-                            'backgroundColor': '#f8f9fa',
-                            'color': '#666',
-                            'border': '1px solid #ddd',
-                            'padding': '6px 12px',
-                            'borderRadius': '4px',
-                            'fontSize': '11px',
-                            'fontFamily': 'Inter, sans-serif',
-                            'cursor': 'pointer',
-                            'position': 'absolute',
-                            'top': '10px',
-                            'right': '15px',
-                            'zIndex': '10'
-                        }
-                    ),
+                    # Table header with export button
+                    html.Div([
+                        html.H4("Pipeline Flow Details", style={
+                            'color': EI_DARK_BLUE,
+                            'fontSize': '16px',
+                            'fontWeight': 'bold',
+                            'margin': '0',
+                            'fontFamily': 'Inter, sans-serif'
+                        }),
+                        html.Button(
+                            "Export to CSV",
+                            id="export-gas-flows-table-btn",
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': '#f8f9fa',
+                                'color': '#666',
+                                'border': '1px solid #ddd',
+                                'padding': '6px 12px',
+                                'borderRadius': '4px',
+                                'fontSize': '11px',
+                                'fontFamily': 'Inter, sans-serif',
+                                'cursor': 'pointer'
+                            }
+                        )
+                    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px', 'paddingTop': '10px'}),
+                    
                     dcc.Loading(
                         id='loading-gas-flows-table',
                         type='circle',
                         color=EI_ORANGE,
                         children=html.Div(id='gas-flows-table-container')
                     )
-                ], style={'position': 'relative', 'marginTop': '20px'}),
+                ], style={'marginTop': '20px'}),
                 
                 # Hidden div for clientside callback anchor
                 html.Div(id='gas-flows-table-enhancer-anchor', style={'display': 'none'}),
