@@ -788,3 +788,29 @@ div[id*="range-slider"] {
 .custom-date-picker .SingleDatePickerInput__display-text {
     font-size: 12px !important;
 }
+
+/* Compact DatePicker for Sidebars */
+.compact-date-picker .DateInput,
+.compact-date-picker .DateInput_input {
+    height: 28px !important;
+    line-height: 28px !important;
+    font-size: 11px !important;
+    padding: 0 5px !important;
+}
+
+.compact-date-picker .DateInput_input {
+    border-bottom: none !important;
+    /* Remove varying border if present */
+}
+
+/* Specific fix for the input container to prevent overflow */
+.compact-date-picker .SingleDatePickerInput {
+    border-radius: 4px !important;
+    border: 1px solid #ccc !important;
+    display: block !important;
+}
+
+/* Ensure the input takes strict height */
+.compact-date-picker .DateInput {
+    width: 100% !important;
+}
