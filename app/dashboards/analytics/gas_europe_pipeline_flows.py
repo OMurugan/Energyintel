@@ -2,7 +2,7 @@
 European Gas Trade - Pipeline Flows to Europe
 Pipeline flow analytics for European gas trade
 """
-from dash import dcc, html, Input, Output, callback, State, dash_table, clientside_callback, ClientsideFunction
+from dash import dcc, html, Input, Output, callback, State, dash_table, clientside_callback, ClientsideFunction, no_update
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
@@ -118,13 +118,34 @@ def create_layout():
             
             # Content Area (Left side)
             html.Div([
-                html.H3("Gas Pipeline Flows to Europe-Billion Cubic Meters", style={
-                    'color': EI_ORANGE,
-                    'fontSize': '20px',
-                    'fontWeight': 'bold',
-                    'margin': '0 0 10px 0',
-                    'fontFamily': 'Inter, sans-serif'
-                }),
+                # Chart Section with title and export button
+                html.Div([
+                    html.H3("Gas Pipeline Flows to Europe-Billion Cubic Meters", style={
+                        'color': EI_ORANGE,
+                        'fontSize': '20px',
+                        'fontWeight': 'bold',
+                        'margin': '0 0 10px 0',
+                        'fontFamily': 'Inter, sans-serif'
+                    }),
+                    html.Button(
+                        "Export to CSV",
+                        id="export-gas-flows-chart-btn",
+                        n_clicks=0,
+                        style={
+                            'backgroundColor': '#f8f9fa',
+                            'color': '#666',
+                            'border': '1px solid #ddd',
+                            'padding': '6px 12px',
+                            'borderRadius': '4px',
+                            'fontSize': '11px',
+                            'fontFamily': 'Inter, sans-serif',
+                            'cursor': 'pointer',
+                            'position': 'absolute',
+                            'top': '10px',
+                            'right': '15px'
+                        }
+                    )
+                ], style={'position': 'relative', 'marginBottom': '10px'}),
                 
                 dcc.Loading(
                     id='loading-gas-flows-chart',
@@ -137,19 +158,44 @@ def create_layout():
                     )
                 ),
                 
-                # Table Area Placeholder
-                dcc.Loading(
-                    id='loading-gas-flows-table',
-                    type='circle',
-                    color=EI_ORANGE,
-                    children=html.Div(id='gas-flows-table-container', style={'marginTop': '20px'})
-                ),
+                # Table Area with export button
+                html.Div([
+                    html.Button(
+                        "Export to CSV",
+                        id="export-gas-flows-table-btn",
+                        n_clicks=0,
+                        style={
+                            'backgroundColor': '#f8f9fa',
+                            'color': '#666',
+                            'border': '1px solid #ddd',
+                            'padding': '6px 12px',
+                            'borderRadius': '4px',
+                            'fontSize': '11px',
+                            'fontFamily': 'Inter, sans-serif',
+                            'cursor': 'pointer',
+                            'position': 'absolute',
+                            'top': '10px',
+                            'right': '15px',
+                            'zIndex': '10'
+                        }
+                    ),
+                    dcc.Loading(
+                        id='loading-gas-flows-table',
+                        type='circle',
+                        color=EI_ORANGE,
+                        children=html.Div(id='gas-flows-table-container')
+                    )
+                ], style={'position': 'relative', 'marginTop': '20px'}),
                 
                 # Hidden div for clientside callback anchor
                 html.Div(id='gas-flows-table-enhancer-anchor', style={'display': 'none'}),
                 
                 # Selection store
-                dcc.Store(id='gas-flows-table-selection-store', data={'selected_column_id': None})
+                dcc.Store(id='gas-flows-table-selection-store', data={'selected_column_id': None}),
+                
+                # Download components
+                dcc.Download(id="download-gas-flows-chart-csv"),
+                dcc.Download(id="download-gas-flows-table-csv")
             ], style={'flex': '1', 'order': '1', 'minWidth': '0', 'overflow': 'hidden'})
             
         ], style={'display': 'flex', 'padding': '15px'})
@@ -690,3 +736,166 @@ def register_callbacks(dash_app, server):
             import traceback
             traceback.print_exc()
             return html.Div(f"Error loading table: {str(e)}", style={'color': 'red'})
+
+    # CSV Export Callbacks
+    @dash_app.callback(
+        Output("download-gas-flows-chart-csv", "data"),
+        Input("export-gas-flows-chart-btn", "n_clicks"),
+        [State('gas-flows-start-date', 'value'),
+         State('gas-flows-end-date', 'value'),
+         State('gas-origin-checklist', 'value')],
+        prevent_initial_call=True,
+    )
+    def export_chart_data(n_clicks, start_date, end_date, selected_origins):
+        """Export chart data to CSV."""
+        if n_clicks == 0:
+            return no_update
+            
+        try:
+            if not selected_origins:
+                return no_update
+                
+            # Use same query logic as the chart
+            query_origins = selected_origins.copy()
+            if 'Azerbaijan' in selected_origins and 'Turkey' not in query_origins:
+                query_origins.append('Turkey')
+
+            query = f"""
+            SELECT
+                tr.source_country AS gas_origin,
+                tr.point_label,
+                tr.date AS date,
+                tr.value / 1000.0 AS flows_bcm
+            FROM dev.glng_gas_trade tr
+            LEFT JOIN dev.dim_country co
+                ON co.dim_country_id = tr.target_country_id
+            WHERE tr.flow_type = 'natural gas'
+              AND tr.date >= :start_date
+              AND tr.date <= :end_date
+              AND tr.unit = 'Mcm'
+              AND co.region = 'Europe'
+              AND tr.source_country = ANY(:origins)
+            ORDER BY tr.date;
+            """
+            
+            results = execute_query(query, {
+                'start_date': start_date,
+                'end_date': end_date,
+                'origins': query_origins
+            })
+            df = pd.DataFrame(results)
+            
+            if df.empty:
+                return no_update
+
+            # Apply same transformations as chart
+            df['flows_bcm'] = pd.to_numeric(df['flows_bcm'], errors='coerce').fillna(0).astype(float)
+            df['date'] = pd.to_datetime(df['date'])
+            
+            # Azerbaijan mapping
+            aze_points = ['Kipi', 'Nea Mesimvria', 'Strandzha 2', 'Malkoclar']
+            mask_aze = (df['gas_origin'] == 'Turkey') & (df['point_label'].str.contains('|'.join(aze_points), na=False, case=False))
+            df.loc[mask_aze, 'gas_origin'] = 'Azerbaijan'
+            
+            if 'Turkey' not in selected_origins:
+                df = df[df['gas_origin'] != 'Turkey']
+            
+            # Aggregate by date and origin
+            df = df.groupby(['date', 'gas_origin'])['flows_bcm'].sum().reset_index()
+            
+            # Prepare export data
+            export_df = df.sort_values(['date', 'gas_origin']).copy()
+            export_df['date'] = export_df['date'].dt.strftime('%Y-%m-%d')
+            export_df = export_df.rename(columns={
+                'date': 'Date',
+                'gas_origin': 'Gas Origin',
+                'flows_bcm': 'Flows (BCM)'
+            })
+            
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"gas_pipeline_flows_chart_{timestamp}.csv"
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+            
+        except Exception as e:
+            print(f"Error exporting chart data: {e}")
+            return no_update
+
+    @dash_app.callback(
+        Output("download-gas-flows-table-csv", "data"),
+        Input("export-gas-flows-table-btn", "n_clicks"),
+        [State('gas-flows-start-date', 'value'),
+         State('gas-flows-end-date', 'value'),
+         State('gas-origin-checklist', 'value')],
+        prevent_initial_call=True,
+    )
+    def export_table_data(n_clicks, start_date, end_date, selected_origins):
+        """Export table data to CSV."""
+        if n_clicks == 0:
+            return no_update
+            
+        try:
+            if not selected_origins:
+                return no_update
+
+            query_origins = selected_origins.copy()
+            if 'Azerbaijan' in selected_origins and 'Turkey' not in query_origins:
+                query_origins.append('Turkey')
+
+            query = f"""
+            SELECT
+                tr.date AS "Day of Date",
+                'Exporter' AS "Header_Exporter",
+                tr.source_country AS gas_origin,
+                'Importer' AS "Header_Importer",
+                tr.target_country AS target_country,
+                tr.pointlabel AS "Interconnection Point",
+                tr."flow_mcm/d" / 1000.0 AS flows_bcm
+            FROM dev.european_gas_trade tr
+            WHERE tr.source_country IN ('Algeria','Azerbaijan','Libya','Norway','Russia')
+            AND tr.date >= :start_date
+            AND tr.date <= :end_date
+            ORDER BY tr.date DESC;
+            """
+
+            results = execute_query(query, {
+                'start_date': start_date,
+                'end_date': end_date,
+            })
+            df = pd.DataFrame(results)
+            
+            if df.empty:
+                return no_update
+
+            # Apply same transformations as table
+            df['flows_bcm'] = pd.to_numeric(df['flows_bcm'], errors='coerce').fillna(0)
+            df['Day of Date'] = pd.to_datetime(df['Day of Date'])
+
+            # Azerbaijan mapping
+            aze_points = ['Kipi', 'Nea Mesimvria', 'Strandzha 2', 'Malkoclar']
+            mask_aze = (df['gas_origin'] == 'Turkey') & (df['Interconnection Point'].str.contains('|'.join(aze_points), na=False, case=False))
+            df.loc[mask_aze, 'gas_origin'] = 'Azerbaijan'
+            
+            if 'Turkey' not in selected_origins:
+                df = df[df['gas_origin'] != 'Turkey']
+
+            # Aggregate
+            df = df.groupby(['Day of Date', 'gas_origin', 'target_country', 'Interconnection Point'])['flows_bcm'].sum().reset_index()
+
+            # Prepare export data - flatten the hierarchical structure for CSV
+            export_df = df.sort_values('Day of Date', ascending=False).copy()
+            export_df['Day of Date'] = export_df['Day of Date'].dt.strftime('%Y-%m-%d')
+            export_df = export_df.rename(columns={
+                'Day of Date': 'Date',
+                'gas_origin': 'Gas Origin',
+                'target_country': 'Target Country',
+                'Interconnection Point': 'Interconnection Point',
+                'flows_bcm': 'Flows (BCM)'
+            })
+            
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"gas_pipeline_flows_table_{timestamp}.csv"
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+            
+        except Exception as e:
+            print(f"Error exporting table data: {e}")
+            return no_update
