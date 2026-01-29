@@ -1,0 +1,84 @@
+/* Custom CSS for compact DatePicker in European Gas Imports Mix */
+
+.custom-date-picker .DateInput_input {
+    font-size: 11px !important;
+    padding: 4px 6px !important;
+    height: 28px !important;
+    line-height: normal !important;
+    border: 1px solid #ccc !important;
+    border-radius: 4px !important;
+}
+
+.custom-date-picker .DateInput {
+    width: 100% !important;
+    border-radius: 4px !important;
+}
+
+.custom-date-picker .SingleDatePickerInput__withBorder {
+    border: none !important;
+    display: block !important;
+    width: 100% !important;
+}
+
+.SingleDatePicker_picker {
+    transform: scale(0.75);
+    transform-origin: top left;
+    z-index: 1000 !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+.CalendarMonth_caption {
+    font-size: 13px !important;
+    padding-top: 10px !important;
+    padding-bottom: 30px !important;
+}
+
+.DayPicker_weekHeader {
+    font-size: 10px !important;
+    top: 50px !important;
+}
+
+.CalendarDay {
+    font-size: 10px !important;
+    padding: 0 !important;
+    width: 30px !important;
+    height: 28px !important;
+}
+
+.DayPickerNavigation_button {
+    padding: 4px !important;
+}
+
+.CalendarMonth_table {
+    border-collapse: separate !important;
+    border-spacing: 0px !important;
+}
+
+/* Hide the default Dash Enterprise teal focus */
+.DateInput_input__focused {
+    border-bottom: 1px solid #ccc !important;
+}
+
+.custom-date-picker .SingleDatePickerInput_calendarIcon {
+    display: none;
+}
+
+/* Change cursor to hand for interactive chart elements */
+#chart-1 .main-svg,
+#chart-2 .main-svg,
+#chart-3 .main-svg {
+    cursor: default;
+}
+
+#chart-1 .nsewdrag,
+#chart-2 .nsewdrag,
+#chart-3 .nsewdrag {
+    cursor: pointer !important;
+}
+
+/* Specific targeting for bars and points */
+#chart-1 .point,
+#chart-2 .point,
+#chart-3 .point {
+    cursor: pointer !important;
+}
