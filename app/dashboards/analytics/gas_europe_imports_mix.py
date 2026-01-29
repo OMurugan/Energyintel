@@ -267,8 +267,20 @@ def create_layout():
             html.Div([
                 # Chart 1
                 html.Div([
-                    html.H2("European Gas Imports - Pipeline vs. LNG - Billion Cubic Meters",
-                            style={'color': TITLE_COLOR, 'fontSize': '18px', 'marginBottom': '10px', 'fontFamily': 'Lato, sans-serif'}),
+                    html.Div([
+                        html.H2("European Gas Imports - Pipeline vs. LNG - Billion Cubic Meters",
+                                style={'color': TITLE_COLOR, 'fontSize': '18px', 'marginBottom': '0px', 'fontFamily': 'Lato, sans-serif'}),
+                        html.Button("Export to CSV", id="export-chart1-btn", n_clicks=0, style={
+                            "backgroundColor": "white",
+                            "color": "#2c3e50",
+                            "border": "1px solid #dee2e6",
+                            "padding": "6px 12px",
+                            "borderRadius": "4px",
+                            "cursor": "pointer",
+                            "fontSize": "12px",
+                            "fontWeight": "normal",
+                        })
+                    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                     
                     # Chart 1 Granularity Controls
                     html.Div([
@@ -318,8 +330,20 @@ def create_layout():
 
                 # Chart 2
                 html.Div([
-                    html.H2("All Monthly Gas Imports by Source-Billion Cubic Meters",
-                            style={'color': TITLE_COLOR, 'fontSize': '18px', 'marginBottom': '10px', 'fontFamily': 'Lato, sans-serif'}),
+                    html.Div([
+                        html.H2("All Monthly Gas Imports by Source-Billion Cubic Meters",
+                                style={'color': TITLE_COLOR, 'fontSize': '18px', 'marginBottom': '0px', 'fontFamily': 'Lato, sans-serif'}),
+                        html.Button("Export to CSV", id="export-chart2-btn", n_clicks=0, style={
+                            "backgroundColor": "white",
+                            "color": "#2c3e50",
+                            "border": "1px solid #dee2e6",
+                            "padding": "6px 12px",
+                            "borderRadius": "4px",
+                            "cursor": "pointer",
+                            "fontSize": "12px",
+                            "fontWeight": "normal",
+                        })
+                    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                     
                     # Chart 2 Granularity Controls
                     html.Div([
@@ -369,15 +393,39 @@ def create_layout():
 
                 # Chart 3
                 html.Div([
-                    html.H2("All Gas Imports Daily - Pipeline vs. LNG - Billion Cubic Meters",
-                            style={'color': TITLE_COLOR, 'fontSize': '18px', 'marginBottom': '10px', 'fontFamily': 'Lato, sans-serif'}),
+                    html.Div([
+                        html.H2("All Gas Imports Daily - Pipeline vs. LNG - Billion Cubic Meters",
+                                style={'color': TITLE_COLOR, 'fontSize': '18px', 'marginBottom': '0px', 'fontFamily': 'Lato, sans-serif'}),
+                        html.Button("Export to CSV", id="export-chart3-btn", n_clicks=0, style={
+                            "backgroundColor": "white",
+                            "color": "#2c3e50",
+                            "border": "1px solid #dee2e6",
+                            "padding": "6px 12px",
+                            "borderRadius": "4px",
+                            "cursor": "pointer",
+                            "fontSize": "12px",
+                            "fontWeight": "normal",
+                        })
+                    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                     dcc.Loading(dcc.Graph(id='chart-3', config={'displayModeBar': False}, figure={}))
                 ], style={'marginBottom': '30px', 'backgroundColor': 'white', 'padding': '10px'}),
 
                 # Chart 4 (Table)
                 html.Div([
-                    html.H2("Gas Flows to Europe by Country and Source-Billion Cubic Meters",
-                            style={'color': TITLE_COLOR, 'fontSize': '18px', 'marginBottom': '10px', 'fontFamily': 'Lato, sans-serif'}),
+                    html.Div([
+                        html.H2("Gas Flows to Europe by Country and Source-Billion Cubic Meters",
+                                style={'color': TITLE_COLOR, 'fontSize': '18px', 'marginBottom': '0px', 'fontFamily': 'Lato, sans-serif'}),
+                        html.Button("Export to CSV", id="export-table-btn", n_clicks=0, style={
+                            "backgroundColor": "white",
+                            "color": "#2c3e50",
+                            "border": "1px solid #dee2e6",
+                            "padding": "6px 12px",
+                            "borderRadius": "4px",
+                            "cursor": "pointer",
+                            "fontSize": "12px",
+                            "fontWeight": "normal",
+                        })
+                    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                     dcc.Loading(
                         id="loading-gas-table",
                         type="default",
@@ -495,6 +543,11 @@ def create_layout():
                     dcc.Store(id='chart1-agg-state', data='YEARLY'),
                     dcc.Store(id='chart2-agg-state', data='MONTHLY'),
                     dcc.Store(id='table-highlight-state', data=None),
+                    html.Div(id='table-side-dummy-output', style={'display': 'none'}),
+                    dcc.Download(id="download-chart1-csv"),
+                    dcc.Download(id="download-chart2-csv"),
+                    dcc.Download(id="download-chart3-csv"),
+                    dcc.Download(id="download-table-csv-unique"),
 
                     html.Div([
                         html.Label("Flow Type", style={'fontWeight': 'normal', 'fontSize': '13px', 'color': '#333'}),
@@ -638,6 +691,148 @@ def register_callbacks(dash_app, server):
         if '(All)' not in selected and len(selected) == 2: return ['(All)'] + all_vals
         return selected
 
+    # Export callback for Chart 1
+    @dash_app.callback(
+        Output("download-chart1-csv", "data"),
+        Input("export-chart1-btn", "n_clicks"),
+        [State('country-dropdown', 'value'),
+         State('start-date-picker', 'value'),
+         State('end-date-picker', 'value'),
+         State('flow-type-1', 'value'),
+         State('chart1-agg-state', 'data')],
+        prevent_initial_call=True
+    )
+    def export_chart1_csv(n_clicks, country, start_date, end_date, flow1, agg_mode):
+        if n_clicks is None or n_clicks == 0:
+            return no_update
+        
+        where_clause, country_clause, params, _, f1_filtered, _ = get_query_params(country, start_date, end_date, [], flow1, [])
+        agg_mode = (agg_mode or 'YEARLY').upper()
+
+        if agg_mode == 'YEARLY':
+            time_sql = "EXTRACT(YEAR FROM tr.date)::int AS \"Year\""
+        elif agg_mode == 'QUARTERLY':
+            time_sql = "DATE_TRUNC('quarter', tr.date) AS \"Quarter\""
+        else: # MONTHLY
+            time_sql = "DATE_TRUNC('month', tr.date) AS \"Month\""
+
+        c1_query = f"""
+        SELECT {time_sql}, tr.flow_type AS "Type", SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
+        FROM dev.european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow_types
+        GROUP BY 1, 2
+        ORDER BY 1;
+        """
+        df = load_data(c1_query, {**params, 'flow_types': tuple(f1_filtered)})
+        return dcc.send_data_frame(df.to_csv, "european_gas_imports_pipeline_vs_lng.csv", index=False)
+
+    # Export callback for Chart 2
+    @dash_app.callback(
+        Output("download-chart2-csv", "data"),
+        Input("export-chart2-btn", "n_clicks"),
+        [State('country-dropdown', 'value'),
+         State('start-date-picker', 'value'),
+         State('end-date-picker', 'value'),
+         State('selected-origins-store', 'data'),
+         State('flow-type-2', 'value'),
+         State('chart2-agg-state', 'data')],
+        prevent_initial_call=True
+    )
+    def export_chart2_csv(n_clicks, country, start_date, end_date, origins, flow2, agg_mode):
+        if n_clicks is None or n_clicks == 0:
+            return no_update
+
+        where_clause, country_clause, params, origins_filtered, _, f2_filtered = get_query_params(country, start_date, end_date, origins, [], flow2)
+        agg_mode = (agg_mode or 'MONTHLY').upper()
+
+        if agg_mode == 'YEARLY':
+            time_sql = "EXTRACT(YEAR FROM tr.date)::int AS \"Year\""
+        elif agg_mode == 'QUARTERLY':
+            time_sql = "DATE_TRUNC('quarter', tr.date) AS \"Quarter\""
+        elif agg_mode == 'DATE':
+            time_sql = "tr.date AS \"Date\""
+        else: # MONTHLY
+            time_sql = "DATE_TRUNC('month', tr.date) AS \"Month\""
+
+        c2_query = f"""
+        SELECT {time_sql}, tr.source_country AS "Gas Origin", SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
+        FROM dev.european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins AND LOWER(tr.flow_type) IN :flow_types
+        GROUP BY 1, 2
+        ORDER BY 1;
+        """
+        df = load_data(c2_query, {**params, 'origins': tuple(origins_filtered), 'flow_types': tuple(f2_filtered)})
+        return dcc.send_data_frame(df.to_csv, "monthly_gas_imports_by_source.csv", index=False)
+
+    # Export callback for Chart 3
+    @dash_app.callback(
+        Output("download-chart3-csv", "data"),
+        Input("export-chart3-btn", "n_clicks"),
+        [State('country-dropdown', 'value'),
+         State('start-date-picker', 'value'),
+         State('end-date-picker', 'value'),
+         State('selected-origins-store', 'data')],
+        prevent_initial_call=True
+    )
+    def export_chart3_csv(n_clicks, country, start_date, end_date, origins):
+        if n_clicks is None or n_clicks == 0:
+            return no_update
+
+        where_clause, country_clause, params, origins_filtered, _, _ = get_query_params(country, start_date, end_date, origins, [], [])
+
+        c3_query = f"""
+        SELECT tr.date AS "Date", tr.flow_type AS "Type", SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
+        FROM dev.european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins
+        GROUP BY 1, 2
+        ORDER BY 1;
+        """
+        df = load_data(c3_query, {**params, 'origins': tuple(origins_filtered)})
+        return dcc.send_data_frame(df.to_csv, "all_gas_imports_daily.csv", index=False)
+
+    # Export callback for Table
+    @dash_app.callback(
+        Output("download-table-csv-unique", "data"),
+        Input("export-table-btn", "n_clicks"),
+        [State('country-dropdown', 'value'),
+         State('start-date-picker', 'value'),
+         State('end-date-picker', 'value'),
+         State('selected-origins-store', 'data')],
+        prevent_initial_call=True
+    )
+    def export_table_csv(n_clicks, country, start_date, end_date, origins):
+        if n_clicks is None or n_clicks == 0:
+            return no_update
+
+        where_clause, country_clause, params, origins_filtered, _, _ = get_query_params(country, start_date, end_date, origins, [], [])
+        
+        # We need the pivoted table data
+        table_query = f"""
+        SELECT 
+            DATE_TRUNC('month', tr.date) AS month_raw,
+            TO_CHAR(DATE_TRUNC('month', tr.date), 'Month YYYY') AS "Month",
+            tr.source_country AS "Origin", 
+            tr.target_country AS "Destination", 
+            SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
+        FROM dev.european_gas_trade tr 
+        {where_clause} 
+        {country_clause}
+        AND tr.source_country IN :origins
+        GROUP BY 1, 2, 3, 4
+        ORDER BY 1 DESC;
+        """
+        df = load_data(table_query, {**params, 'origins': tuple(origins_filtered)})
+        
+        pivot = df.pivot_table(
+            index=['Month'], 
+            columns=['Origin', 'Destination'], 
+            values='Billion Cubic Meters', 
+            aggfunc='sum'
+        ).fillna(0)
+        
+        # Flatten columns for CSV
+        pivot.columns = [f'{c[0]} -> {c[1]}' for c in pivot.columns]
+        pivot.reset_index(inplace=True)
+        
+        return dcc.send_data_frame(pivot.to_csv, "gas_flows_to_europe_matrix.csv", index=False)
+
     @dash_app.callback(
         [Output('gas-origin-legend-container', 'children'),
          Output('selected-origins-store', 'data', allow_duplicate=True)],
@@ -675,10 +870,6 @@ def register_callbacks(dash_app, server):
         items = []
         is_all_selected = '(All)' in (selected or [])
         
-        items.append(html.Div([
-            html.Div(style={'width': '12px', 'height': '12px', 'marginRight': '8px', 'border': '1px solid #ccc', 'backgroundColor': '#fff' if is_all_selected else 'transparent'}),
-            html.Span("(All)", style={'fontSize': '11px', 'fontWeight': 'bold' if is_all_selected else 'normal', 'color': '#333' if is_all_selected else '#999'})
-        ], id={'type': 'origin-legend-item', 'index': '(All)'}, style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px', 'cursor': 'pointer'}))
 
         for i, origin in enumerate(origins):
             is_sel = origin in (selected or [])
@@ -713,24 +904,15 @@ def register_callbacks(dash_app, server):
         [Input('chart-1', 'clickData'),
          Input('chart-2', 'clickData'),
          Input('chart-3', 'clickData'),
-         Input('country-dropdown', 'value'),
-         Input('start-date-picker', 'value'),
-         Input('end-date-picker', 'value'),
-         Input('flow-type-1', 'value'),
-         Input('flow-type-2', 'value'),
          Input('chart1-agg-state', 'data'),
          Input('chart2-agg-state', 'data')],
         [State('chart1-selection', 'data'),
          State('chart2-selection', 'data'),
          State('chart3-selection', 'data')]
     )
-    def update_chart_selections(c1_click, c2_click, c3_click, country, start, end, f1, f2, agg1, agg2, s1, s2, s3):
+    def update_chart_selections(c1_click, c2_click, c3_click, agg1, agg2, s1, s2, s3):
         triggered_id = str(ctx.triggered_id)
         if not triggered_id or triggered_id == 'None': return no_update
-        
-        # 1. Reset all selections if global filters change
-        if any(x in triggered_id for x in ['dropdown', 'picker', 'flow-type']):
-            return None, None, None, None, None, None
 
         # 2. Reset only Chart 1 selection if its granularity changes
         if 'chart1-agg-state' in triggered_id:
@@ -825,10 +1007,9 @@ def register_callbacks(dash_app, server):
          Input('end-date-picker', 'value'),
          Input('flow-type-1', 'value'),
          Input('chart1-selection', 'data'),
-         Input('chart3-selection', 'data'),
          Input('chart1-agg-state', 'data')]
     )
-    def update_chart_1(country, start_date, end_date, flow1, sel1, sel3, agg_mode):
+    def update_chart_1(country, start_date, end_date, flow1, sel1, agg_mode):
         try:
             where_clause, country_clause, params, _, f1_filtered, _ = get_query_params(country, start_date, end_date, [], flow1, [])
             agg_mode = (agg_mode or 'YEARLY').upper()
@@ -894,8 +1075,6 @@ def register_callbacks(dash_app, server):
                             if ry_str != str(sel1['year']): is_dim = True
                         elif sel1['mode'] == 'bar':
                             if not (ry_str == str(sel1['year']) and flow_name == sel1['flow']): is_dim = True
-                    elif sel3:
-                        if flow_name.upper() != sel3.upper(): is_dim = True
                     
                     colors.append(GREY_OUT if is_dim else base_color)
 
@@ -907,18 +1086,39 @@ def register_callbacks(dash_app, server):
                     hovertemplate="Flow Type: <span style='color:black'><b>"+flow_name+"</b></span><br>Date: <span style='color:black'><b>%{customdata[0]}</b></span><br>Flow (BCM): <span style='color:black'><b>%{y:.1f}</b></span><extra></extra>"
                 ))
 
-            # Year Headers (Original style if Yearly)
+            # Year Headers matching Image 1 structure
             if agg_mode == 'YEARLY':
-                max_val = c1_grouped['flow_bcm'].max() if not c1_grouped.empty else 10
+                # Shift header area up to avoid overlap with bar labels (which go up to ~550)
+                HEADER_Y_BOTTOM = 640
+                HEADER_Y_TOP = 710
+                LABEL_Y = 675
+                
                 fig1.update_layout(xaxis=dict(showticklabels=False))
                 fig1.add_trace(go.Scatter(
-                    x=x_order, y=[max_val * 1.15] * len(x_order), mode='text', 
+                    x=x_order, y=[LABEL_Y] * len(x_order), mode='text', 
                     text=[f"<b>{x}</b>" for x in x_order],
-                    textposition='bottom center', textfont=dict(size=14, color='#333'),
+                    textposition='middle center', textfont=dict(size=13, color='#333'),
                     customdata=[[x, "", "YEAR_CLICK"] for x in x_order], showlegend=False, hoverinfo='none', marker=dict(opacity=0)
                 ))
-                fig1.update_yaxes(range=[0, max_val * 1.3])
-                fig1.add_shape(type="line", x0=-0.5, x1=len(x_order)-0.5, y0=max_val*1.22, y1=max_val*1.22, line=dict(color="#dee2e6", width=1))
+                
+                # Add "Year of Date" label above the grid center
+                fig1.add_annotation(
+                    x=(len(x_order)-1)/2, y=LABEL_Y + 45, xref='x', yref='y',
+                    text="Year of Date", showarrow=False,
+                    font=dict(size=11, color='#666')
+                )
+                
+                # Set range to fit header, but keep ticks visible only up to 600
+                fig1.update_yaxes(range=[0, LABEL_Y + 70], tickvals=[0, 100, 200, 300, 400, 500, 600])
+                
+                # Header horizontal lines
+                fig1.add_shape(type="line", x0=-0.5, x1=len(x_order)-0.5, y0=HEADER_Y_TOP, y1=HEADER_Y_TOP, line=dict(color="#d1d7de", width=1.5))
+                fig1.add_shape(type="line", x0=-0.5, x1=len(x_order)-0.5, y0=HEADER_Y_BOTTOM, y1=HEADER_Y_BOTTOM, line=dict(color="#333", width=1.2))
+                
+                # Vertical separators between years
+                for i in range(len(x_order) + 1):
+                    x_pos = i - 0.5
+                    fig1.add_shape(type="line", x0=x_pos, x1=x_pos, y0=0, y1=HEADER_Y_TOP, line=dict(color="#dee2e6", width=1), layer='below')
 
             x_axis_config = dict(title="", tickfont=dict(size=11, color='#666'), showgrid=False)
             if agg_mode == 'DATE':
@@ -1141,10 +1341,9 @@ def register_callbacks(dash_app, server):
          Input('start-date-picker', 'value'),
          Input('end-date-picker', 'value'),
          Input('flow-type-2', 'value'),
-         Input('chart3-selection', 'data'),
-         Input('chart1-selection', 'data')]
+         Input('chart3-selection', 'data')]
     )
-    def update_chart_3(country, start_date, end_date, flow2, sel3, sel1):
+    def update_chart_3(country, start_date, end_date, flow2, sel3):
         where_clause, country_clause, params, _, _, flow2_filtered = get_query_params(country, start_date, end_date, [], [], flow2)
         
         # Smooth transition
@@ -1164,8 +1363,6 @@ def register_callbacks(dash_app, server):
         
         # Determine current highlight category
         tgt = sel3
-        if not tgt and sel1 and sel1.get('mode') == 'bar':
-            tgt = sel1.get('flow')
 
         # Z-order: Put active line on top
         if tgt:
@@ -1212,10 +1409,9 @@ def register_callbacks(dash_app, server):
          Input('start-date-picker', 'value'),
          Input('end-date-picker', 'value'),
          Input('selected-origins-store', 'data'),
-         Input('chart2-selection', 'data'),
          Input('table-highlight-state', 'data')],
     )
-    def update_table(country, start_date, end_date, origins, sel2, highlight_state):
+    def update_table(country, start_date, end_date, origins, highlight_state):
         where_clause, country_clause, params, origins_filtered, _, _ = get_query_params(country, start_date, end_date, origins, [], [])
         if not origins_filtered: 
             return [], [], [], [], []
@@ -1250,13 +1446,8 @@ def register_callbacks(dash_app, server):
                 curr[c['id']] = f"{val:.3f}"
             rows.append(curr)
         
-        # Build highlighting for selected month
+        # Build highlighting for selected month - Disabled as per decoupling requirements
         highlight_month = ""
-        if sel2:
-            try:
-                highlight_month = pd.to_datetime(sel2).strftime('%B %Y')
-            except: 
-                pass
 
         # Style conditional for cells
         style_cell_conditional = [
@@ -1320,28 +1511,34 @@ def register_callbacks(dash_app, server):
             })
         
         # Add column highlighting based on header clicks
-        if highlight_state and highlight_state.get('origin'):
-            selected_origin = highlight_state['origin']
+        if highlight_state and highlight_state.get('column_id'):
+            sel_col_id = highlight_state['column_id']
             
-            # Highlight selected origin columns with light blue
-            for col in cols[1:]:  # Skip Month column
-                col_id = col['id']
-                origin = col_id.split('_')[0] if '_' in col_id else col_id
-                
-                if origin == selected_origin:
-                    # Highlight selected columns
-                    style_cell_conditional.append({
-                        'if': {'column_id': col_id},
-                        'backgroundColor': '#e0f2fe',  # Light blue
-                        'fontWeight': 'bold'
-                    })
-                else:
-                    # Dim other columns
-                    style_cell_conditional.append({
-                        'if': {'column_id': col_id},
-                        'opacity': '0.3',
-                        'color': '#a0a0a0'
-                    })
+            # Highlight selected column
+            style_cell_conditional.append({
+                'if': {'column_id': sel_col_id},
+                'backgroundColor': '#b3d9ff',
+                'fontWeight': '600',
+                'color': '#1b365d',
+                'opacity': '1'
+            })
+            
+            # Dim all other data columns
+            other_cols = [c['id'] for c in cols[1:] if c['id'] != sel_col_id]
+            for col_id in other_cols:
+                style_cell_conditional.append({
+                    'if': {'column_id': col_id},
+                    'opacity': '0.3',
+                    'color': '#a0a0a0'
+                })
+            
+            # Highlight only the leaf header (index 1 in our 2-level structure)
+            style_header_conditional.append({
+                'if': {'column_id': sel_col_id, 'header_index': 1},
+                'backgroundColor': '#b3d9ff',
+                'color': '#1b365d',
+                'fontWeight': 'bold'
+            })
         
         # Tooltip data
         tooltip_data = []
@@ -1364,27 +1561,204 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         Output('table-highlight-state', 'data'),
         Input('gas-imports-mix-table', 'active_cell'),
-        State('gas-imports-mix-table', 'columns'),
+        State('table-highlight-state', 'data'),
         prevent_initial_call=True
     )
-    def handle_header_click(active_cell, columns):
-        if not active_cell or not columns:
+    def handle_table_highlight(active_cell, current_state):
+        if not active_cell:
             return no_update
-        
-        # Check if clicked cell is in header (row < 0 means header in Dash)
-        # For merged headers, we need to check the column structure
-        col_idx = active_cell.get('column')
-        row_idx = active_cell.get('row')
-        
-        # If row is -1 or -2, it's a header click (depending on header levels)
-        # For our merged headers, clicking the top level (Origin) should highlight that group
-        if col_idx is not None and row_idx is not None and row_idx < 0:
-            # Get the column ID
-            col_id = active_cell.get('column_id')
             
-            if col_id and col_id != 'Month':
-                # Extract origin from column ID (format: "Origin_Target")
-                origin = col_id.split('_')[0] if '_' in col_id else col_id
-                return {'origin': origin}
-        
-        return None
+        col_id = active_cell.get('column_id')
+        if not col_id or col_id == 'Month':
+            return no_update
+            
+        # Toggle logic: if clicking in the same column, clear it
+        if current_state and current_state.get('column_id') == col_id:
+            return None
+            
+        return {'column_id': col_id}
+
+    # High-Performance Clientside Table Highlighting (Ported from price_scorecard.py)
+    dash_app.clientside_callback(
+        """
+        function(n_data, columns, current_state) {
+            try {
+                // Initialize global state if needed
+                if (!window.gasImportsState) {
+                    window.gasImportsState = {
+                        selectedColumnId: null,
+                        lastTableSignature: null
+                    };
+                }
+
+                const tableId = 'gas-imports-mix-table';
+                
+                function clearHighlights(container) {
+                    if (!container) return;
+                    container.querySelectorAll('.column-selected').forEach(el => {
+                        el.classList.remove('column-selected');
+                        el.style.backgroundColor = '';
+                        el.style.color = '';
+                    });
+                    container.querySelectorAll('.column-cell-selected').forEach(el => {
+                        el.classList.remove('column-cell-selected');
+                        el.style.removeProperty('background-color');
+                        el.style.removeProperty('font-weight');
+                        el.style.removeProperty('color');
+                        el.style.removeProperty('opacity');
+                    });
+                    container.classList.remove('column-selection-active');
+                    container.querySelectorAll('td[data-dash-column]:not([data-dash-column="Month"])').forEach(td => {
+                        td.style.removeProperty('opacity');
+                    });
+                }
+
+                function getTableElements() {
+                    const tableEl = document.getElementById(tableId);
+                    if (!tableEl) return null;
+                    // For fixed rows, Dash creates a separate header container sometimes
+                    const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                    return { tableEl, spreadsheet };
+                }
+
+                function enhanceTable() {
+                    const els = getTableElements();
+                    if (!els || !els.spreadsheet) return;
+                    const { tableEl, spreadsheet } = els;
+
+                    if (spreadsheet.dataset.enhanced === 'true') return;
+                    spreadsheet.dataset.enhanced = 'true';
+                    
+                    console.log("Enhancing Gas Imports Table...");
+
+                    spreadsheet.addEventListener('click', function(e) {
+                         // Find the clicked header
+                        const th = e.target.closest('th');
+                        if (!th) return; // Not a header click
+                        
+                        const colId = th.getAttribute('data-dash-column');
+                        const headerText = th.textContent.trim();
+                        
+                        // Ignore non-data headers
+                        if (headerText === 'Month' || colId === 'Month') return;
+                        
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        const row = th.closest('tr');
+                        const thead = th.closest('thead');
+                        if (!thead) return;
+                        const rows = Array.from(thead.querySelectorAll('tr'));
+                        const rowIndex = rows.indexOf(row); // 0 = Parent (Country), 1 = Leaf (Source)
+                        
+                        // Determine which columns to select
+                        let targetColIds = [];
+                        
+                        if (rowIndex === 0 && rows.length > 1) {
+                            // Parent Header Clicked (Level 0)
+                            // We use the columns metadata passed from python to be exact
+                            if (columns) {
+                                targetColIds = columns
+                                    .filter(c => c.name && c.name[0] === headerText && c.id !== 'Month')
+                                    .map(c => c.id);
+                            }
+                        } else {
+                            // Leaf Header Clicked (Level 1) or Single Row Header
+                            if (colId) targetColIds = [colId];
+                        }
+                        
+                        if (targetColIds.length === 0) return;
+
+                        // Toggle logic
+                        const isAlreadySelected = th.classList.contains('column-selected');
+                        clearHighlights(spreadsheet);
+                        
+                        if (isAlreadySelected) {
+                            window.gasImportsState.selectedColumnId = null;
+                        } else {
+                            window.gasImportsState.selectedColumnId = targetColIds[0]; // Mark one as primary
+                            
+                            // Apply visual highlights
+                            th.classList.add('column-selected');
+                            th.style.backgroundColor = '#b3d9ff';
+                            th.style.color = '#1b365d';
+                            
+                            spreadsheet.classList.add('column-selection-active');
+                            
+                            targetColIds.forEach(cid => {
+                                // Highlight data cells
+                                const dataCells = spreadsheet.querySelectorAll('td[data-dash-column="' + cid + '"]');
+                                dataCells.forEach(el => {
+                                    el.classList.add('column-cell-selected');
+                                    el.style.setProperty('background-color', '#b3d9ff', 'important');
+                                    el.style.setProperty('font-weight', '600', 'important');
+                                    el.style.setProperty('color', '#1b365d', 'important');
+                                    el.style.setProperty('opacity', '1', 'important');
+                                });
+                                // Highlight leaf headers if parent was selected
+                                if (rowIndex === 0) {
+                                    const leafHeader = spreadsheet.querySelector('th[data-dash-column="' + cid + '"]');
+                                    if (leafHeader) {
+                                        leafHeader.classList.add('column-selected');
+                                        leafHeader.style.backgroundColor = '#b3d9ff';
+                                    }
+                                }
+                            });
+                            
+                            // Dim all non-selected data cells
+                            const allData = spreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Month"])');
+                            allData.forEach(td => {
+                                if (!td.classList.contains('column-cell-selected')) {
+                                    td.style.setProperty('opacity', '0.3', 'important');
+                                }
+                            });
+                        }
+                    }, true); // Capture phase is critical for Dash tables
+                }
+
+                function tryEnhance() {
+                    const els = getTableElements();
+                    if (!els || !els.spreadsheet) return false;
+                    
+                    // Check if headers are actually rendered
+                    if (els.spreadsheet.querySelectorAll('th').length === 0) return false;
+                    
+                    enhanceTable();
+                    return true;
+                }
+
+                // Retry logic exactly as in price_scorecard.py
+                if (!tryEnhance()) {
+                    setTimeout(() => {
+                        if (!tryEnhance()) {
+                            setTimeout(() => {
+                                if (!tryEnhance()) {
+                                    setTimeout(tryEnhance, 1000);
+                                }
+                            }, 300);
+                        }
+                    }, 100);
+                }
+                
+                // Mutation Observer to handle table re-renders/paging
+                if (!window.gasImportsObserver) {
+                    window.gasImportsObserver = new MutationObserver(function(mutations) {
+                        const els = getTableElements();
+                        if (els && els.spreadsheet) {
+                             if (els.spreadsheet.dataset.enhanced !== 'true') {
+                                 tryEnhance();
+                             }
+                        }
+                    });
+                    window.gasImportsObserver.observe(document.body, { childList: true, subtree: true });
+                }
+
+            } catch (err) { console.error(err); }
+            return "";
+        }
+        """,
+        Output('table-side-dummy-output', 'children'),
+        Input('gas-imports-mix-table', 'data'),
+        [State('gas-imports-mix-table', 'columns'),
+         State('table-highlight-state', 'data')]
+    )
