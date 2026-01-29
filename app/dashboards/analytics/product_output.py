@@ -36,7 +36,8 @@ COMPANY_ORDER = [
 
 # Display name overrides for cleaner labels
 DISPLAY_NAMES = {
-    'Surgutneftegas': 'Surgut'
+    'Surgutneftegas': 'Surgut',
+    'ForteInvest': 'FortelInvest'
 }
 
 # Standard legend order for Gasoline/Oil products
@@ -58,15 +59,31 @@ def hex_to_rgba(hex_color, alpha=1.0):
     except:
         return f"rgba(200, 200, 200, {alpha})"
 
+# Mapping from Treemap selection (Refinery Output) to Breakdown Chart (Refining And Products Output)
+REFINERY_TO_BREAKDOWN_MAP = {
+    'Diesel': 'Diesel And Gasoil',
+    'Gasoline': 'Gasoline',
+    'Heavy Fuel Oils': 'VGO',
+    'Mazut': 'Fuel Oil',
+    'Naphtha': 'Naphtha',
+    'Jet Fuel': 'Jet Fuel And Kerosene',
+    'Petroleum Coke': 'Petroleum Coke',
+    'Bitumen-Residues': 'Bitumen And Residue'
+}
+
+PRODUCT_DISPLAY_OVERRIDES = {
+    'Bitumen-Residues': 'Other'
+}
+
 def create_layout():
     """Create the Product Output layout with Tabs"""
     return html.Div([
         # Selection Stores
         dcc.Store(id='company-treemap-selection', data=None),
         dcc.Store(id='company-bar-selection', data=None),
-        dcc.Store(id='product-treemap-selection', data=None), # Fixed ID match
-        dcc.Store(id='product-expansion-store', data={'year': True, 'q1': True, 'q2': True, 'q3': True, 'q4': True, 'm': {i: False for i in range(1, 13)}}), 
         dcc.Store(id='product-treemap-selection', data=None),
+        dcc.Store(id='product-company-selection', data=None),
+        dcc.Store(id='product-expansion-store', data={'Year': False, 'Quarter': False, 'Month': True, 'Day': False}), 
 
         # Main Tab Container
         dcc.Tabs(id='product-output-tabs', value='by-company', children=[
@@ -75,7 +92,13 @@ def create_layout():
         ], className='custom-tabs-container'),
 
         # Tab Content
-        html.Div(id='product-output-content', style={'padding': '20px'})
+        html.Div(id='product-output-content', style={'padding': '20px'}),
+
+        # Downloads
+        dcc.Download(id="download-company-treemap"),
+        dcc.Download(id="download-company-bar"),
+        dcc.Download(id="download-product-treemap"),
+        dcc.Download(id="download-product-bar"),
     ], style={'backgroundColor': '#f8f9fa', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'})
 
 # Clientside callbacks for fast interactivity
@@ -150,6 +173,88 @@ clientside_callback(
     prevent_initial_call=True
 )
 
+clientside_callback(
+    """
+    function(clickData, currentSelection) {
+        if (!clickData || !clickData.points || clickData.points.length === 0) {
+            return [currentSelection, window.dash_clientside.no_update];
+        }
+        const point = clickData.points[0];
+        if (!point.customdata) return [null, null];
+        const clickedCompany = String(point.customdata[0]).trim();
+        const slotId = String(point.customdata[2]).trim(); // NEW: slotId
+        const clickedId = clickedCompany + "|" + slotId;
+        let nextSelection = clickedId;
+        if (currentSelection && currentSelection === clickedId) {
+            nextSelection = null;
+        }
+        return [nextSelection, null];
+    }
+    """,
+    [Output('product-company-selection', 'data'),
+     Output('product-bar-chart', 'clickData')],
+    Input('product-bar-chart', 'clickData'),
+    State('product-company-selection', 'data'),
+    prevent_initial_call=True
+)
+
+@callback(
+    [Output('product-expansion-store', 'data'),
+     Output('btn-expand-year', 'children'),
+     Output('btn-expand-quarter', 'children'),
+     Output('btn-expand-month', 'children'),
+     Output('btn-expand-day', 'children')],
+    [Input('btn-expand-year', 'n_clicks'),
+     Input('btn-expand-quarter', 'n_clicks'),
+     Input('btn-expand-month', 'n_clicks'),
+     Input('btn-expand-day', 'n_clicks')],
+    [State('product-expansion-store', 'data')],
+    prevent_initial_call=True
+)
+def update_expansion_state(y_c, q_c, m_c, d_c, current_visibility):
+    from dash import callback_context
+    ctx = callback_context
+    if not ctx.triggered:
+        return current_visibility, '+', '+', '-', '+'
+    
+    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    new_visibility = current_visibility.copy() if current_visibility else {'Year': False, 'Quarter': False, 'Month': False, 'Day': False}
+    
+    if button_id == 'btn-expand-year':
+        new_visibility['Year'] = not new_visibility.get('Year', False)
+        if not new_visibility['Year']:
+            new_visibility['Quarter'] = False
+            new_visibility['Month'] = False
+            new_visibility['Day'] = False
+    elif button_id == 'btn-expand-quarter':
+        new_visibility['Quarter'] = not new_visibility.get('Quarter', False)
+        if new_visibility['Quarter']:
+            new_visibility['Year'] = True
+        else:
+            new_visibility['Month'] = False
+            new_visibility['Day'] = False
+    elif button_id == 'btn-expand-month':
+        new_visibility['Month'] = not new_visibility.get('Month', False)
+        if new_visibility['Month']:
+            new_visibility['Year'] = True
+            new_visibility['Quarter'] = True
+        else:
+            new_visibility['Day'] = False
+    elif button_id == 'btn-expand-day':
+        new_visibility['Day'] = not new_visibility.get('Day', False)
+        if new_visibility['Day']:
+            new_visibility['Year'] = True
+            new_visibility['Quarter'] = True
+            new_visibility['Month'] = True
+    
+    return (
+        new_visibility, 
+        '-' if new_visibility.get('Year') else '+',
+        '-' if new_visibility.get('Quarter') else '+',
+        '-' if new_visibility.get('Month') else '+',
+        '-' if new_visibility.get('Day') else '+'
+    )
+
 def create_by_company_layout():
     """Layout for the 'By Company' tab"""
     return html.Div([
@@ -157,8 +262,14 @@ def create_by_company_layout():
             # Left side: Charts
             html.Div([
                 # Treemap Header
-                html.H3(id='treemap-company-header', 
-                        style={'margin': '0 0 10px 0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                html.Div([
+                    html.H3(id='treemap-company-header', 
+                            style={'margin': '0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                    html.Button("Export to CSV", id="btn-export-company-treemap", style={
+                        'backgroundColor': 'white', 'color': '#2c3e50', 'border': '1px solid #dee2e6',
+                        'padding': '5px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'
+                    })
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                 
                 # Treemap Chart
                 dcc.Loading(
@@ -173,8 +284,14 @@ def create_by_company_layout():
                 ),
 
                 # Stacked Bar Header
-                html.H3(id='bar-company-header', 
-                        style={'margin': '20px 0 10px 0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                html.Div([
+                    html.H3(id='bar-company-header', 
+                            style={'margin': '0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                    html.Button("Export to CSV", id="btn-export-company-bar", style={
+                        'backgroundColor': 'white', 'color': '#2c3e50', 'border': '1px solid #dee2e6',
+                        'padding': '5px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'
+                    })
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'margin': '20px 0 10px 0'}),
                 
                 # Stacked Bar Chart
                 dcc.Loading(
@@ -245,8 +362,14 @@ def create_by_product_layout():
             # Left side: Charts
             html.Div([
                 # Treemap Header
-                html.H3(id='treemap-product-header', 
-                        style={'margin': '0 0 10px 0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                html.Div([
+                    html.H3(id='treemap-product-header', 
+                            style={'margin': '0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                    html.Button("Export to CSV", id="btn-export-product-treemap", style={
+                        'backgroundColor': 'white', 'color': '#2c3e50', 'border': '1px solid #dee2e6',
+                        'padding': '5px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'
+                    })
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                 
                 # Treemap Chart
                 dcc.Loading(
@@ -261,11 +384,60 @@ def create_by_product_layout():
                 ),
 
                 # Stacked Bar Header
-                html.H3(id='bar-product-header', 
-                        style={'margin': '25px 0 10px 0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                html.Div([
+                    html.H3(id='bar-product-header', 
+                            style={'margin': '0', 'fontWeight': 'bold', 'color': '#FF4500', 'fontSize': '22px'}),
+                    html.Button("Export to CSV", id="btn-export-product-bar", style={
+                        'backgroundColor': 'white', 'color': '#2c3e50', 'border': '1px solid #dee2e6',
+                        'padding': '5px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'
+                    })
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'margin': '25px 0 10px 0'}),
                 
                 # Stacked Bar Chart with Overlay Controls
                 html.Div([
+                    # Hierarchy Level Controls (+/- buttons in corner)
+                    html.Div([
+                        html.Div([
+                            html.Span("Year", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px', 'fontWeight': 'bold'}),
+                            html.Button('+', id='btn-expand-year', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Quarter", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px', 'fontWeight': 'bold'}),
+                            html.Button('+', id='btn-expand-quarter', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Month", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px', 'fontWeight': 'bold'}),
+                            html.Button('-', id='btn-expand-month', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Day", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px', 'fontWeight': 'bold'}),
+                            html.Button('+', id='btn-expand-day', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center'})
+                    ], style={
+                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+                        'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '0px',
+                        'position': 'absolute', 'top': '0px', 'left': '0px', 'zIndex': '20'
+                    }),
+
                     dcc.Loading(
                         id="loading-product-bar",
                         type="default",
@@ -273,20 +445,19 @@ def create_by_product_layout():
                         children=dcc.Graph(
                             id='product-bar-chart',
                             config={'displayModeBar': False},
-                            style={'height': '420px'} # Set to match the height in callback
+                            style={'height': '420px', 'width': '100%'} 
                         )
                     )
-                ], style={'position': 'relative'}),
+                ], style={'position': 'relative', 'flex': '1', 'marginTop': '10px'}),
                 
                 # Footer Source
                 html.Div([
                     html.P("Energy Intelligence; data as of December 2025", 
                            style={'fontStyle': 'italic', 'fontSize': '12px', 'marginTop': '20px', 'color': '#1b365d'})
                 ])
+            ], style={'flex': '1', 'minWidth': '0'}),
 
-            ], style={'width': '85%', 'display': 'inline-block', 'verticalAlign': 'top'}),
-
-            # Right side: Controls
+            # Right side: Controls & Legend
             html.Div([
                 # Year Selection
                 html.Div([
@@ -304,20 +475,20 @@ def create_by_product_layout():
                     )
                 ], style={'marginBottom': '30px'}),
 
-                # Company Legend (Out of Box)
+                # Company Legend
                 html.Div([
                     html.Label("Company", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#333', 'marginBottom': '10px', 'display': 'block'}),
                     html.Div([
                         html.Div([
                             html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': COMPANY_COLORS.get(comp, DEFAULT_COLOR), 'display': 'inline-block', 'marginRight': '8px'}),
-                            html.Span(DISPLAY_NAMES.get(comp, comp), style={'fontSize': '12px', 'color': '#555'})
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'})
-                        for comp in reversed(LIVE_LEGEND_ORDER)
+                            html.Span(DISPLAY_NAMES.get(comp, comp), style={'fontSize': '13px', 'color': '#555', 'fontWeight': '500'})
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px'})
+                        for comp in LIVE_LEGEND_ORDER
                     ])
                 ], style={'padding': '10px 0'})
 
-            ], style={'width': '13%', 'display': 'inline-block', 'marginLeft': '2%', 'verticalAlign': 'top'})
-        ], style={'display': 'flex', 'justifyContent': 'space-between'})
+            ], style={'width': '160px', 'flexShrink': '0', 'marginLeft': '25px', 'paddingTop': '40px'})
+        ], style={'display': 'flex', 'flexDirection': 'row', 'justifyContent': 'flex-start', 'alignItems': 'flex-start'})
     ])
 
 def register_callbacks(dash_app, server):
@@ -572,42 +743,7 @@ def register_callbacks(dash_app, server):
             empty_fig.add_annotation(text="Error loading data", showarrow=False)
             return empty_fig, "Error Loading", empty_fig, "Error Loading"
 
-    @callback(
-        Output('product-expansion-store', 'data'),
-        [Input('product-bar-chart', 'clickData')],
-        [State('product-expansion-store', 'data')],
-        prevent_initial_call=True
-    )
-    def toggle_product_expansion(clickData, current_expansion):
-        if not clickData or 'points' not in clickData:
-            return current_expansion
-        
-        point = clickData['points'][0]
-        if 'customdata' not in point or not point['customdata']:
-            return current_expansion
-            
-        cd = point['customdata']
-        # We'll use a specific format for customdata in the toggle icons Scatter trace
-        # cd = ['toggle', level, identifier]
-        if cd[0] != 'toggle':
-            return current_expansion
-            
-        level = cd[1]
-        identifier = cd[2]
-        
-        new_expansion = current_expansion.copy()
-        if level == 'year':
-            new_expansion['year'] = not new_expansion['year']
-        elif level == 'quarter':
-            q_key = f'q{identifier}'
-            new_expansion[q_key] = not new_expansion[q_key]
-        elif level == 'month':
-            m_id = str(identifier)
-            if 'm' not in new_expansion:
-                new_expansion['m'] = {}
-            new_expansion['m'][m_id] = not new_expansion['m'].get(m_id, False)
-            
-        return new_expansion
+
 
     @callback(
         [Output('product-treemap', 'figure'),
@@ -616,24 +752,14 @@ def register_callbacks(dash_app, server):
          Output('bar-product-header', 'children')],
         [Input('product-year-selector', 'value'),
          Input('product-treemap-selection', 'data'),
-         Input('product-expansion-store', 'data')]
+         Input('product-expansion-store', 'data'),
+         Input('product-company-selection', 'data')]
     )
-    def update_product_charts(selected_year, product_sel, expansion_state):
+    def update_product_charts(selected_year, product_sel, expansion_state, company_sel):
         # Default expansion state if None
         if not expansion_state:
             expansion_state = {'year': True, 'q1': True, 'q2': True, 'q3': True, 'q4': True, 'm': {}}
             
-        # Mapping from Treemap selection (Refinery Output) to Breakdown Chart (Refining And Products Output)
-        REFINERY_TO_BREAKDOWN_MAP = {
-            'Diesel': 'Diesel And Gasoil',
-            'Gasoline': 'Gasoline',
-            'Heavy Fuel Oils': 'VGO',
-            'Mazut': 'Fuel Oil',
-            'Naphtha': 'Naphtha',
-            'Jet Fuel': 'Jet Fuel And Kerosene',
-            'Petroleum Coke': 'Petroleum Coke',
-            'Bitumen-Residues': 'Bitumen And Residue'
-        }
 
         try:
             # 1. TOP TREEMAP: Production of Oil Products by Commodity (Category: Refinery Output)
@@ -692,15 +818,12 @@ def register_callbacks(dash_app, server):
                     'Petroleum Coke': '#FF4500'
                 }
                 
-                PRODUCT_DISPLAY_OVERRIDES = {
-                    'Bitumen-Residues': 'Other'
-                }
 
                 ids = []
                 marker_colors = []
                 labels = []
                 custom_data = []
-
+                
                 for i, row in treemap_data.iterrows():
                     prod = row['commodity']
                     ids.append(prod)
@@ -753,45 +876,53 @@ def register_callbacks(dash_app, server):
                 bar_fig.add_annotation(text=f"No data for {display_product}", showarrow=False)
                 bar_title = f"{display_product.upper()} PRODUCTION BY COMPANY ('000 b/d)"
             else:
+                bar_fig = go.Figure()
                 df_bar['date'] = pd.to_datetime(df_bar['date'])
                 df_bar['vol_kbpd'] = pd.to_numeric(df_bar['vol_kbpd'], errors='coerce').fillna(0)
                 
+                year_expanded = expansion_state.get('year', False)
                 # --- Hierarchical Slots Calculation ---
                 month_names = ['January', 'February', 'March', 'April', 'May', 'June', 
                                'July', 'August', 'September', 'October', 'November', 'December']
-                slots = []
-                # Each slot: {'type': 'year'|'quarter'|'month'|'day', 'id': label/number, 'label': display_text}
                 
-                if not expansion_state.get('year', False):
-                    # Year collapsed
+                # Get available months for the selected year to avoid showing ghost December (per user feedback)
+                available_months = sorted(df_bar['date'].dt.month.unique()) if not df_bar.empty else range(1, 13)
+                
+                slots = []
+                # Determine granularity level
+                gran_level = 'YEAR'
+                if expansion_state.get('Day'): gran_level = 'DAY'
+                elif expansion_state.get('Month'): gran_level = 'MONTH'
+                elif expansion_state.get('Quarter'): gran_level = 'QUARTER'
+                
+                if gran_level == 'YEAR':
                     slots.append({'type': 'year', 'id': selected_year, 'label': str(selected_year)})
-                else:
-                    # Year expanded -> check quarters
+                elif gran_level == 'QUARTER':
                     for q in [1, 2, 3, 4]:
-                        q_key = f'q{q}'
-                        if not expansion_state.get(q_key, False):
-                            # Quarter collapsed
+                        q_month_range = {1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12]}[q]
+                        if any(m in available_months for m in q_month_range):
                             slots.append({'type': 'quarter', 'id': q, 'label': f'Q{q}'})
-                        else:
-                            # Quarter expanded -> show months
-                            q_months = {
-                                1: [1, 2, 3],
-                                2: [4, 5, 6],
-                                3: [7, 8, 9],
-                                4: [10, 11, 12]
-                            }[q]
-                            for m in q_months:
-                                if not expansion_state.get('m', {}).get(str(m), False):
-                                    # Month collapsed
-                                    slots.append({'type': 'month', 'id': m, 'label': month_names[m-1]})
-                                else:
-                                    # Month expanded -> show Day (Day 1)
-                                    slots.append({'type': 'day', 'id': m, 'label': month_names[m-1], 'sub_label': '1'})
+                elif gran_level == 'MONTH':
+                    for m in available_months:
+                        slots.append({'type': 'month', 'id': m, 'label': month_names[m-1]})
+                elif gran_level == 'DAY':
+                    for m in available_months:
+                        slots.append({'type': 'day', 'id': m, 'label': month_names[m-1], 'sub_label': '1'})
 
                 num_slots = len(slots)
                 total_chart_width = 1.0
                 col_width = total_chart_width / num_slots
-                bar_fig = go.Figure()
+
+                # Add Centered Year Title only if expanded beyond the root root Year pie
+                if expansion_state.get('year', False):
+                    bar_fig.add_annotation(
+                        text=f"<b>{selected_year}</b>",
+                        x=0.5, y=0.97,
+                        xref="paper", yref="paper",
+                        showarrow=False,
+                        font=dict(size=14, color="black"),
+                        xanchor="center"
+                    )
 
                 # Add Gray Bar for Labels
                 bar_fig.add_shape(
@@ -801,32 +932,7 @@ def register_callbacks(dash_app, server):
                     fillcolor="#f8f9fa", line=dict(width=0)
                 )
 
-                # Icon rendering helper
-                def add_toggle_icon(fig, x, y, expanded, level, identifier):
-                    icon = "−" if expanded else "+"
-                    # Draw a square with a border and the icon inside
-                    # We use Scatter for interactivity and easy positioning
-                    fig.add_trace(go.Scatter(
-                        x=[x], y=[y],
-                        mode='text+markers',
-                        text=[icon],
-                        textposition="middle center",
-                        marker=dict(
-                            symbol='square',
-                            size=14,
-                            color='#f9f9f9',
-                            line=dict(color='#ccc', width=1)
-                        ),
-                        textfont=dict(size=10, color='#666', family="Arial Black"),
-                        hoverinfo='none',
-                        customdata=[['toggle', level, identifier]],
-                        showlegend=False,
-                        xaxis='x', yaxis='y' # Use paper-like coordinates if needed, but let's stick to paper-based for icons
-                    ))
-
-                # We'll use a second x-axis for icons to keep them in paper-coordinates or just use the main axes
-                # Actually, let's use annotations for visual and Scatter for click. 
-                # Or just Scatter with specific marker and text.
+                # --- Slots Rendering ---
 
                 for i, slot in enumerate(slots):
                     center_x = i * col_width + (col_width / 2)
@@ -854,17 +960,48 @@ def register_callbacks(dash_app, server):
                         period_data = df_period.groupby('company')['vol_kbpd'].sum().reset_index()
                         period_data = period_data.sort_values('vol_kbpd', ascending=False)
                         total_vol = period_data['vol_kbpd'].sum()
-                        p_colors = [COMPANY_COLORS.get(c, DEFAULT_COLOR) for c in period_data['company']]
-                        
+                        # Parse selection
+                        sel_comp = company_sel.split('|')[0] if company_sel else None
+                        sel_slot = company_sel.split('|')[1] if company_sel else None
+                        curr_slot_id = str(i) # Slot index as ID
+
+                        p_colors = []
+                        p_line_widths = []
+                        p_line_colors = []
+                        for comp in period_data['company']:
+                            base_color = COMPANY_COLORS.get(comp, DEFAULT_COLOR)
+                            if sel_comp:
+                                if curr_slot_id == sel_slot:
+                                    # Inside the clicked month: highlight the company
+                                    if comp == sel_comp:
+                                        p_colors.append(base_color)
+                                        p_line_widths.append(2)
+                                        p_line_colors.append('black')
+                                    else:
+                                        p_colors.append(hex_to_rgba(base_color, 0.2))
+                                        p_line_widths.append(0)
+                                        p_line_colors.append('rgba(0,0,0,0)')
+                                else:
+                                    # Other months: dim everything
+                                    p_colors.append(hex_to_rgba(base_color, 0.15))
+                                    p_line_widths.append(0)
+                                    p_line_colors.append('rgba(0,0,0,0)')
+                            else:
+                                # Default state
+                                p_colors.append(base_color)
+                                p_line_widths.append(0.5)
+                                p_line_colors.append('white')
+
                         bar_fig.add_trace(go.Pie(
                             labels=period_data['company'],
                             values=period_data['vol_kbpd'],
-                            marker=dict(colors=p_colors, line=dict(color='white', width=0.5)),
+                            marker=dict(colors=p_colors, line=dict(color=p_line_colors, width=p_line_widths)),
                             textinfo='none',
                             hole=0,
                             showlegend=False,
-                            customdata=period_data[['company', 'vol_kbpd']].values,
-                            domain={'x': [i*col_width, (i+1)*col_width], 'y': [0.42, 0.74]},
+                            # Pass slot ID to customdata for interactivity
+                            customdata=[[c, v, curr_slot_id] for c, v in period_data[['company', 'vol_kbpd']].values],
+                            domain={'x': [i*col_width, (i+1)*col_width], 'y': [0.645, 0.765]},
                             hovertemplate=(
                                 "Company: %{label}<br>"
                                 "Volume ('000 b/d): %{value:.1f}<br>"
@@ -872,89 +1009,78 @@ def register_callbacks(dash_app, server):
                             )
                         ))
                         
-                        # Main Label
+                        # Month label style
+                        month_label_color = "black" if (sel_slot and curr_slot_id == sel_slot) else "#8d8d8d"
+                        
+                        # Main Label (Month/Quarter name)
                         bar_fig.add_annotation(
-                            text=slot['label'],
-                            x=center_x, y=0.90,
+                            text=f"<b>{slot['label']}</b>" if (sel_slot and curr_slot_id == sel_slot) else slot['label'],
+                            x=center_x, y=0.91,
                             xref="paper", yref="paper",
                             showarrow=False,
-                            font=dict(size=10, color="#8d8d8d")
+                            font=dict(size=12, color=month_label_color)
                         )
 
                         if slot['type'] == 'day':
                             bar_fig.add_annotation(
-                                text='1',
-                                x=center_x, y=0.87,
+                                text=slot.get('sub_label', '1'),
+                                x=center_x, y=0.88,
                                 xref="paper", yref="paper",
                                 showarrow=False,
-                                font=dict(size=9, color="#8d8d8d")
+                                font=dict(size=11, color="#8d8d8d")
                             )
                         
-                        # Top 1 labels
+                        # Helper for labeling style
+                        def get_label_color(comp_name, slot_id):
+                            if sel_comp:
+                                # ONLY black for the clicked company in the clicked month
+                                if slot_id == sel_slot and comp_name == sel_comp:
+                                    return "black"
+                                return "#c0c0c0" # Dimmed gray for everything else
+                            return "black"
+
+                        # Top 1 labels (Above Pie)
                         top1_name = period_data.iloc[0]['company']
                         top1_vol = period_data.iloc[0]['vol_kbpd']
                         top1_pct = (top1_vol / total_vol * 100) if total_vol > 0 else 0
-                        label_font_size = 7 if num_slots > 10 else 9
+                        label_font_size = 9 if num_slots > 10 else 11
+                        top1_color = get_label_color(top1_name, curr_slot_id)
                         
                         bar_fig.add_annotation(
                             text=f"<b>{DISPLAY_NAMES.get(top1_name, top1_name)}</b><br>{top1_vol:,.1f} ('000 b/d)<br>{top1_pct:.2f}%",
-                            x=center_x, y=0.81,
+                            x=center_x, y=0.86,
                             xref="paper", yref="paper",
                             showarrow=False,
-                            font=dict(size=label_font_size, color="black"),
+                            font=dict(size=label_font_size, color=top1_color),
                             align="center"
                         )
                         
-                        # Top 2 labels
+                        # Top 2 labels (Below Pie)
                         if len(period_data) > 1:
                             top2_name = period_data.iloc[1]['company']
                             top2_vol = period_data.iloc[1]['vol_kbpd']
                             top2_pct = (top2_vol / total_vol * 100) if total_vol > 0 else 0
+                            top2_color = get_label_color(top2_name, curr_slot_id)
                             bar_fig.add_annotation(
                                 text=f"<b>{DISPLAY_NAMES.get(top2_name, top2_name)}</b><br>{top2_vol:,.1f} ('000 b/d)<br>{top2_pct:.2f}%",
-                                x=center_x, y=0.32,
+                                x=center_x, y=0.54,
                                 xref="paper", yref="paper",
                                 showarrow=False,
-                                font=dict(size=label_font_size, color="black"),
+                                font=dict(size=label_font_size, color=top2_color),
                                 align="center"
                             )
 
-                    # Icon Logic: Position icon at the left corner of headers
-                    # For hierarchical look, buttons are only on the "first" item of a group or for individual levels
-                    
-                    icon_x = left_x + 0.015 # Tiny offset from left
-                    icon_y = 0.90
-                    
-                    if slot['type'] == 'year':
-                        add_toggle_icon(bar_fig, icon_x, icon_y, expansion_state.get('year'), 'year', selected_year)
-                    elif slot['type'] == 'quarter' or (slot['type'] == 'month' and slot['id'] in [1, 4, 7, 10] and expansion_state.get('year')):
-                        # Show Quarter toggle if Quarter slot, or at the start of each quarter's months
-                        # Mapping month to quarter
-                        q = (slot['id'] - 1) // 3 + 1
-                        is_first_of_q = (slot['id'] - 1) % 3 == 0
-                        if slot['type'] == 'quarter':
-                            add_toggle_icon(bar_fig, icon_x, icon_y, expansion_state.get(f'q{q}'), 'quarter', q)
-                        elif is_first_of_q:
-                             # This handles the case where group label is needed? 
-                             # Actually in the reference, toggle is on the left of Jan, April, July, Oct when Quarters are expanded.
-                             # If Year is expanded, we see a +/- at the top-left of the chart (for Year).
-                             # If Quarters are expanded, we see +/- at the left of the Quarter's months.
-                             add_toggle_icon(bar_fig, icon_x, icon_y, expansion_state.get(f'q{q}'), 'quarter', q)
-                    elif slot['type'] == 'month' or slot['type'] == 'day':
-                        # Month toggle
-                        add_toggle_icon(bar_fig, icon_x, 0.90 if slot['type'] == 'month' else 0.87, expansion_state.get('m', {}).get(str(slot['id']), False), 'month', slot['id'])
+                    # --- Loop logic for per-slot content complete ---
 
                 # Top-level Year label (Title)
                 bar_fig.add_annotation(
                     text=f"<b>{selected_year}</b>",
-                    x=0.5, y=0.97,
+                    x=0.5, y=0.965,
                     xref="paper", yref="paper",
                     showarrow=False,
                     font=dict(size=14, color="#333")
                 )
                 
-                # Global Year Toggle (Top Left)
-                add_toggle_icon(bar_fig, 0.01, 0.97, expansion_state.get('year'), 'year', selected_year)
 
                 bar_fig.update_layout(
                     height=420,
@@ -977,3 +1103,149 @@ def register_callbacks(dash_app, server):
             empty_fig = go.Figure()
             empty_fig.add_annotation(text="Error loading data", showarrow=False)
             return empty_fig, "Error", empty_fig, "Error"
+
+    @callback(
+        Output("download-company-treemap", "data"),
+        Input("btn-export-company-treemap", "n_clicks"),
+        [State('company-year-selector', 'value'),
+         State('company-product-selector', 'value')],
+        prevent_initial_call=True
+    )
+    def export_company_treemap(n_clicks, selected_year, selected_product):
+        if not n_clicks: return dash.no_update
+        try:
+            query = f"""
+            SELECT company, date, vol_kbpd 
+            FROM russia_master_data 
+            WHERE category = 'Refining And Products Output' 
+            AND commodity = '{selected_product}'
+            AND date >= '2022-01-01'
+            """
+            results = execute_query(query)
+            df = pd.DataFrame(results)
+            if df.empty: return dash.no_update
+            
+            df['date'] = pd.to_datetime(df['date'])
+            df['vol_kbpd'] = pd.to_numeric(df['vol_kbpd'], errors='coerce').fillna(0)
+            
+            if selected_year == 'All':
+                latest_date = df['date'].max()
+                export_df = df[df['date'] == latest_date]
+                filename = f"company_market_share_{selected_product.replace(' ', '_')}_latest.csv"
+            else:
+                target_year = int(selected_year)
+                export_df = df[(df['date'].dt.year == target_year) & (df['date'].dt.month == 1)]
+                filename = f"company_market_share_{selected_product.replace(' ', '_')}_{selected_year}.csv"
+                
+            export_df = export_df.groupby('company')['vol_kbpd'].sum().reset_index()
+            export_df = export_df.sort_values('vol_kbpd', ascending=False)
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+        except Exception as e:
+            logger.error(f"Error exporting company treemap: {str(e)}")
+            return dash.no_update
+
+    @callback(
+        Output("download-company-bar", "data"),
+        Input("btn-export-company-bar", "n_clicks"),
+        [State('company-year-selector', 'value'),
+         State('company-product-selector', 'value'),
+         State('company-treemap-selection', 'data')],
+        prevent_initial_call=True
+    )
+    def export_company_bar(n_clicks, selected_year, selected_product, treemap_sel):
+        if not n_clicks: return dash.no_update
+        try:
+            query = f"""
+            SELECT company, date, vol_kbpd 
+            FROM russia_master_data 
+            WHERE category = 'Refining And Products Output' 
+            AND commodity = '{selected_product}'
+            AND date >= '2022-01-01'
+            """
+            results = execute_query(query)
+            df = pd.DataFrame(results)
+            if df.empty: return dash.no_update
+            
+            df['date'] = pd.to_datetime(df['date'])
+            df['vol_kbpd'] = pd.to_numeric(df['vol_kbpd'], errors='coerce').fillna(0)
+            
+            if treemap_sel:
+                df = df[df['company'] == treemap_sel]
+                
+            export_df = df.groupby(['date', 'company'])['vol_kbpd'].sum().reset_index()
+            export_df = export_df.sort_values(['date', 'company'])
+            
+            filename = f"production_timeseries_{selected_product.replace(' ', '_')}.csv"
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+        except Exception as e:
+            logger.error(f"Error exporting company bar: {str(e)}")
+            return dash.no_update
+
+    @callback(
+        Output("download-product-treemap", "data"),
+        Input("btn-export-product-treemap", "n_clicks"),
+        State('product-year-selector', 'value'),
+        prevent_initial_call=True
+    )
+    def export_product_treemap(n_clicks, selected_year):
+        if not n_clicks: return dash.no_update
+        try:
+            query = f"""
+            SELECT commodity, date, vol_kbpd 
+            FROM russia_master_data 
+            WHERE category = 'Refinery Output' 
+            AND EXTRACT(YEAR FROM date) = {selected_year}
+            """
+            results = execute_query(query)
+            df = pd.DataFrame(results)
+            if df.empty: return dash.no_update
+            
+            df['vol_kbpd'] = pd.to_numeric(df['vol_kbpd'], errors='coerce').fillna(0)
+            df['date'] = pd.to_datetime(df['date'])
+            
+            # Annual Average of Monthly Sums:
+            monthly_sums = df.groupby(['commodity', 'date'])['vol_kbpd'].sum().reset_index()
+            export_df = monthly_sums.groupby('commodity')['vol_kbpd'].mean().reset_index()
+            export_df = export_df.sort_values('vol_kbpd', ascending=False)
+            
+            filename = f"oil_products_production_mix_{selected_year}.csv"
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+        except Exception as e:
+            logger.error(f"Error exporting product treemap: {str(e)}")
+            return dash.no_update
+
+    @callback(
+        Output("download-product-bar", "data"),
+        Input("btn-export-product-bar", "n_clicks"),
+        [State('product-year-selector', 'value'),
+         State('product-treemap-selection', 'data')],
+        prevent_initial_call=True
+    )
+    def export_product_bar(n_clicks, selected_year, product_sel):
+        if not n_clicks: return dash.no_update
+        try:
+            target_product = product_sel if product_sel else 'Gasoline' 
+            breakdown_product = REFINERY_TO_BREAKDOWN_MAP.get(target_product, target_product)
+            
+            query = f"""
+            SELECT company, date, vol_kbpd 
+            FROM russia_master_data 
+            WHERE category = 'Refining And Products Output' 
+            AND commodity = '{breakdown_product}'
+            AND EXTRACT(YEAR FROM date) = {selected_year}
+            """
+            results = execute_query(query)
+            df = pd.DataFrame(results)
+            if df.empty: return dash.no_update
+            
+            df['date'] = pd.to_datetime(df['date'])
+            df['vol_kbpd'] = pd.to_numeric(df['vol_kbpd'], errors='coerce').fillna(0)
+            
+            export_df = df.groupby(['date', 'company'])['vol_kbpd'].sum().reset_index()
+            export_df = export_df.sort_values(['date', 'company'])
+            
+            filename = f"{breakdown_product.replace(' ', '_')}_by_company_{selected_year}.csv"
+            return dcc.send_data_frame(export_df.to_csv, filename, index=False)
+        except Exception as e:
+            logger.error(f"Error exporting product bar: {str(e)}")
+            return dash.no_update
