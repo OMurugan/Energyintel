@@ -141,7 +141,7 @@ def create_layout():
                             'fontFamily': 'Inter, sans-serif',
                             'cursor': 'pointer',
                             'position': 'absolute',
-                            'top': '10px',
+                            'top': '0px',
                             'right': '15px'
                         }
                     )
