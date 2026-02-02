@@ -612,20 +612,25 @@ def register_callbacks(dash_app, server):
         has_all = '(All)' in selected_set
         countries_set = set(countries)
         
-        # User unchecked "(All)" while everything else stayed checked => clear all
-        if all_selected and not has_all and selected_set == countries_set:
+        # User unchecked "(All)" => clear all countries
+        if all_selected and not has_all:
             return [], {'all_selected': False}
         
-        # User clicked "(All)" to select everything
+        # User checked "(All)" => select all countries
         if has_all and not all_selected:
             return ['(All)'] + countries, {'all_selected': True}
         
-        # User manually reached full selection without "(All)" checked
+        # User manually selected all countries without "(All)" => add "(All)"
         if not has_all and selected_set == countries_set:
             return ['(All)'] + countries, {'all_selected': True}
         
-        # Regular multi-select - drop "(All)" if present
+        # Regular multi-select - ensure "(All)" is not included if not all countries are selected
         cleaned = [v for v in selection if v != '(All)']
+        
+        # If all countries are manually selected, add "(All)"
+        if set(cleaned) == countries_set:
+            return ['(All)'] + cleaned, {'all_selected': True}
+        
         return cleaned, {'all_selected': False}
 
     # Update country legend
@@ -652,7 +657,7 @@ def register_callbacks(dash_app, server):
         
         # Handle country selection
         if not selected_countries or (selected_countries and '(All)' not in selected_countries and len(selected_countries) == 0):
-            current_selected = []
+            current_selected = []  # Allow empty selection
         elif selected_countries and '(All)' not in selected_countries:
             current_selected = [c for c in selected_countries if c in available_countries]
         else:
@@ -672,9 +677,7 @@ def register_callbacks(dash_app, server):
                     else:
                         current_selected = [clicked_country]
         
-        # If no countries selected or all are selected, keep all selected
-        if not current_selected or len(current_selected) == len(available_countries):
-            current_selected = available_countries.copy()
+        # Don't force all countries to be selected - allow empty selection
         
         # Create legend items
         legend_items = []
@@ -752,9 +755,14 @@ def register_callbacks(dash_app, server):
         if selected_sector and selected_sector != 'All' and 'Sector' in filtered_df.columns:
             filtered_df = filtered_df[filtered_df['Sector'] == selected_sector]
         
-        # Apply country filter
-        if selected_countries:
-            filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
+        # Apply country filter - handle empty selection properly
+        if selected_countries is not None:
+            if len(selected_countries) == 0:
+                # No countries selected - return empty map
+                return create_empty_map("No countries selected", height=700)
+            else:
+                # Filter by selected countries
+                filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
         
         if filtered_df.empty:
             return create_empty_map("No data available for selected filters", height=700)
@@ -1025,9 +1033,15 @@ def register_callbacks(dash_app, server):
         if selected_sector and selected_sector != 'All' and 'Sector' in filtered_df.columns:
             filtered_df = filtered_df[filtered_df['Sector'] == selected_sector]
         
-        # Apply country filter
-        if selected_countries:
-            filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
+        # Apply country filter - handle empty selection properly
+        if selected_countries is not None:
+            if len(selected_countries) == 0:
+                # No countries selected - return empty chart
+                return go.Figure().add_annotation(text="No countries selected", 
+                                                xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            else:
+                # Filter by selected countries
+                filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
         
         if filtered_df.empty:
             return go.Figure().add_annotation(text="No data available for selected filters", 
@@ -1103,9 +1117,14 @@ def register_callbacks(dash_app, server):
         if selected_sector and selected_sector != 'All' and 'Sector' in filtered_df.columns:
             filtered_df = filtered_df[filtered_df['Sector'] == selected_sector]
         
-        # Apply country filter
-        if selected_countries:
-            filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
+        # Apply country filter - handle empty selection properly
+        if selected_countries is not None:
+            if len(selected_countries) == 0:
+                # No countries selected - return empty table
+                return html.Div("No countries selected", style={'padding': '20px', 'textAlign': 'center'})
+            else:
+                # Filter by selected countries
+                filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
         
         if filtered_df.empty:
             return html.Div("No data available for selected filters", style={'padding': '20px', 'textAlign': 'center'})
