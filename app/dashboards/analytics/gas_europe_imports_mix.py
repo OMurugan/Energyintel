@@ -1521,30 +1521,153 @@ def register_callbacks(dash_app, server):
                     const selectedHeaders = spreadsheet.querySelectorAll('th.column-selected');
                     selectedHeaders.forEach(header => {
                         header.classList.remove('column-selected');
-                        header.style.removeProperty('background-color');
-                        header.style.removeProperty('color');
-                        header.style.removeProperty('font-weight');
+                        
+                        // Restore original header styling
+                        const columnId = header.getAttribute('data-dash-column');
+                        const headerRow = header.closest('tr');
+                        const thead = header.closest('thead');
+                        let headerIndex = -1;
+                        
+                        if (thead && headerRow) {
+                            const headerRows = Array.from(thead.querySelectorAll('tr')).filter(tr => 
+                                tr.querySelector('th[data-dash-column]') !== null
+                            );
+                            headerIndex = headerRows.indexOf(headerRow);
+                        }
+                        
+                        // Reset to original background color based on header level and column
+                        if (columnId === 'Month') {
+                            // Month header has special styling based on header level
+                            if (headerIndex === 0) {
+                                header.style.backgroundColor = '#d1d7de';
+                            } else {
+                                header.style.backgroundColor = '#ffffff';
+                            }
+                        } else {
+                            // Regular headers
+                            if (headerIndex === 0) {
+                                header.style.backgroundColor = '#d1d7de';
+                            } else {
+                                header.style.backgroundColor = '#ffffff';
+                            }
+                        }
+                        
+                        header.style.color = 'rgb(27, 54, 93)';
+                        header.style.fontWeight = 'bold'; // Headers are always bold
                     });
                     
                     const selectedCells = spreadsheet.querySelectorAll('td.column-cell-selected');
                     selectedCells.forEach(cell => {
                         cell.classList.remove('column-cell-selected');
-                        cell.style.removeProperty('background-color');
-                        cell.style.removeProperty('font-weight');
-                        cell.style.removeProperty('color');
-                        cell.style.removeProperty('opacity');
+                        
+                        const columnId = cell.getAttribute('data-dash-column');
+                        
+                        if (columnId === 'Month') {
+                            // Restore Month column special styling
+                            cell.style.backgroundColor = '#f8fafc';
+                            cell.style.fontWeight = 'bold';
+                            cell.style.color = 'rgb(27, 54, 93)';
+                            cell.style.textAlign = 'left';
+                        } else {
+                            // Restore regular data cell styling
+                            const row = cell.closest('tr');
+                            const rowIndex = row ? Array.from(row.parentNode.children).indexOf(row) : 0;
+                            
+                            // Restore alternating row colors (odd rows have #f1f5f9)
+                            if (rowIndex % 2 === 1) {
+                                cell.style.backgroundColor = '#f1f5f9';
+                            } else {
+                                cell.style.backgroundColor = '';
+                            }
+                            
+                            cell.style.fontWeight = 'normal'; // Data cells are normal weight
+                            cell.style.color = 'rgb(27, 54, 93)';
+                        }
+                        
+                        cell.style.opacity = '1';
                     });
                     
                     if (spreadsheet.classList.contains('column-selection-active')) {
                         const allDataCells = spreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Month"])');
                         allDataCells.forEach(cell => {
-                            cell.style.removeProperty('opacity');
+                            cell.style.opacity = '1';
+                            
+                            // Restore original alternating row colors for all cells
+                            const row = cell.closest('tr');
+                            const rowIndex = row ? Array.from(row.parentNode.children).indexOf(row) : 0;
+                            
+                            if (rowIndex % 2 === 1) {
+                                cell.style.backgroundColor = '#f1f5f9';
+                            } else {
+                                cell.style.backgroundColor = '';
+                            }
+                        });
+                        
+                        // Ensure Month column cells always have their special styling
+                        const monthCells = spreadsheet.querySelectorAll('td[data-dash-column="Month"]');
+                        monthCells.forEach(cell => {
+                            cell.style.backgroundColor = '#f8fafc';
+                            cell.style.fontWeight = 'bold';
+                            cell.style.color = 'rgb(27, 54, 93)';
+                            cell.style.textAlign = 'left';
+                            cell.style.opacity = '1';
                         });
                         
                         // Also reset any headers that might have had their opacity changed
                         const allHeaders = spreadsheet.querySelectorAll('th[data-dash-column]:not([data-dash-column="Month"])');
                         allHeaders.forEach(header => {
-                            header.style.removeProperty('opacity');
+                            header.style.opacity = '1';
+                            
+                            // Ensure headers also get their original styling back
+                            if (!header.classList.contains('column-selected')) {
+                                const headerRow = header.closest('tr');
+                                const thead = header.closest('thead');
+                                let headerIndex = -1;
+                                
+                                if (thead && headerRow) {
+                                    const headerRows = Array.from(thead.querySelectorAll('tr')).filter(tr => 
+                                        tr.querySelector('th[data-dash-column]') !== null
+                                    );
+                                    headerIndex = headerRows.indexOf(headerRow);
+                                }
+                                
+                                // Reset to original background color based on header level
+                                if (headerIndex === 0) {
+                                    header.style.backgroundColor = '#d1d7de';
+                                } else {
+                                    header.style.backgroundColor = '#ffffff';
+                                }
+                                
+                                header.style.color = 'rgb(27, 54, 93)';
+                                header.style.fontWeight = 'bold';
+                            }
+                        });
+                        
+                        // Ensure Month headers also get their styling back
+                        const monthHeaders = spreadsheet.querySelectorAll('th[data-dash-column="Month"]');
+                        monthHeaders.forEach(header => {
+                            if (!header.classList.contains('column-selected')) {
+                                const headerRow = header.closest('tr');
+                                const thead = header.closest('thead');
+                                let headerIndex = -1;
+                                
+                                if (thead && headerRow) {
+                                    const headerRows = Array.from(thead.querySelectorAll('tr')).filter(tr => 
+                                        tr.querySelector('th[data-dash-column]') !== null
+                                    );
+                                    headerIndex = headerRows.indexOf(headerRow);
+                                }
+                                
+                                if (headerIndex === 0) {
+                                    header.style.backgroundColor = '#d1d7de';
+                                } else {
+                                    header.style.backgroundColor = '#ffffff';
+                                }
+                                
+                                header.style.color = 'rgb(27, 54, 93)';
+                                header.style.fontWeight = 'bold';
+                            }
+                            header.style.opacity = '1';
                         });
                     }
                     spreadsheet.classList.remove('column-selection-active');
@@ -1558,14 +1681,117 @@ def register_callbacks(dash_app, server):
                     const cellsWithProperties = spreadsheet.querySelectorAll('td.row-cell-selected, th.row-cell-selected');
                     cellsWithProperties.forEach(cell => {
                         cell.classList.remove('row-cell-selected');
-                        cell.style.removeProperty('background-color');
-                        cell.style.removeProperty('font-weight');
-                        cell.style.removeProperty('color');
+                        
+                        if (cell.tagName === 'TD') {
+                            const columnId = cell.getAttribute('data-dash-column');
+                            
+                            if (columnId === 'Month') {
+                                // Restore Month column special styling
+                                cell.style.backgroundColor = '#f8fafc';
+                                cell.style.fontWeight = 'bold';
+                                cell.style.color = 'rgb(27, 54, 93)';
+                                cell.style.textAlign = 'left';
+                            } else {
+                                // Restore regular data cell styling
+                                const row = cell.closest('tr');
+                                const rowIndex = row ? Array.from(row.parentNode.children).indexOf(row) : 0;
+                                
+                                // Restore alternating row colors (odd rows have #f1f5f9)
+                                if (rowIndex % 2 === 1) {
+                                    cell.style.backgroundColor = '#f1f5f9';
+                                } else {
+                                    cell.style.backgroundColor = '';
+                                }
+                                
+                                cell.style.fontWeight = 'normal';
+                                cell.style.color = 'rgb(27, 54, 93)';
+                            }
+                        } else if (cell.tagName === 'TH') {
+                            // Restore original header styling
+                            const headerRow = cell.closest('tr');
+                            const thead = cell.closest('thead');
+                            let headerIndex = -1;
+                            
+                            if (thead && headerRow) {
+                                const headerRows = Array.from(thead.querySelectorAll('tr')).filter(tr => 
+                                    tr.querySelector('th[data-dash-column]') !== null
+                                );
+                                headerIndex = headerRows.indexOf(headerRow);
+                            }
+                            
+                            // Reset to original background color based on header level
+                            if (headerIndex === 0) {
+                                cell.style.backgroundColor = '#d1d7de';
+                            } else {
+                                cell.style.backgroundColor = '#ffffff';
+                            }
+                            
+                            cell.style.fontWeight = 'bold';
+                            cell.style.color = 'rgb(27, 54, 93)';
+                        }
                     });
 
                     const allTableCells = spreadsheet.querySelectorAll('td, th');
                     allTableCells.forEach(cell => {
-                        cell.style.removeProperty('opacity');
+                        cell.style.opacity = '1';
+                        
+                        // Restore original styling for all cells
+                        if (cell.tagName === 'TD') {
+                            const columnId = cell.getAttribute('data-dash-column');
+                            
+                            if (columnId === 'Month') {
+                                // Ensure Month column always has its special styling
+                                cell.style.backgroundColor = '#f8fafc';
+                                cell.style.fontWeight = 'bold';
+                                cell.style.color = 'rgb(27, 54, 93)';
+                                cell.style.textAlign = 'left';
+                            } else {
+                                // Restore regular data cell styling
+                                const row = cell.closest('tr');
+                                const rowIndex = row ? Array.from(row.parentNode.children).indexOf(row) : 0;
+                                
+                                if (rowIndex % 2 === 1) {
+                                    cell.style.backgroundColor = '#f1f5f9';
+                                } else {
+                                    cell.style.backgroundColor = '';
+                                }
+                                
+                                cell.style.fontWeight = 'normal';
+                                cell.style.color = 'rgb(27, 54, 93)';
+                            }
+                        } else if (cell.tagName === 'TH') {
+                            const columnId = cell.getAttribute('data-dash-column');
+                            const headerRow = cell.closest('tr');
+                            const thead = cell.closest('thead');
+                            let headerIndex = -1;
+                            
+                            if (thead && headerRow) {
+                                const headerRows = Array.from(thead.querySelectorAll('tr')).filter(tr => 
+                                    tr.querySelector('th[data-dash-column]') !== null
+                                );
+                                headerIndex = headerRows.indexOf(headerRow);
+                            }
+                            
+                            if (columnId === 'Month') {
+                                // Month header has special styling based on header level
+                                if (headerIndex === 0) {
+                                    cell.style.backgroundColor = '#d1d7de';
+                                } else {
+                                    cell.style.backgroundColor = '#ffffff';
+                                }
+                                cell.style.fontWeight = 'bold';
+                                cell.style.color = 'rgb(27, 54, 93)';
+                            } else {
+                                // Regular headers
+                                if (headerIndex === 0) {
+                                    cell.style.backgroundColor = '#d1d7de';
+                                } else {
+                                    cell.style.backgroundColor = '#ffffff';
+                                }
+                                cell.style.fontWeight = 'bold';
+                                cell.style.color = 'rgb(27, 54, 93)';
+                            }
+                        }
                     });
 
                     spreadsheet.classList.remove('row-selection-active');
