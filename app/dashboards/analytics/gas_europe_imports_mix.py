@@ -988,16 +988,60 @@ def register_callbacks(dash_app, server):
 
         # 3. Handle Chart 2 Click
         if triggered_id == 'chart-2':
-            if not c2_click: return no_update
-            try:
-                raw_m = str(c2_click['points'][0].get('x'))
-                clicked_m = pd.to_datetime(raw_m).strftime('%Y-%m-%d')
-            except:
-                return no_update
-
-            if str(s2) == clicked_m:
-                return no_update, None, no_update, no_update, None, no_update
-            return no_update, clicked_m, no_update, no_update, None, no_update
+            if not c2_click or 'points' not in c2_click: return no_update
+            
+            # Get click data
+            point = c2_click['points'][0]
+            customdata = point.get('customdata', [])
+            
+            if customdata and len(customdata) >= 3:
+                x_label = str(customdata[0]).strip()
+                origin = str(customdata[1]).strip()
+                click_type = str(customdata[2])
+                
+                if click_type == 'BAR_CLICK':
+                    new_sel = {'mode': 'bar', 'origin': origin, 'label': x_label}
+                    
+                    # Toggle logic
+                    if isinstance(s2, dict) and s2.get('mode') == 'bar' and \
+                       str(s2.get('origin')).strip() == origin and str(s2.get('label')).strip() == x_label:
+                        return no_update, None, no_update, no_update, None, no_update
+                    
+                    return no_update, new_sel, no_update, no_update, None, no_update
+                    
+                elif click_type == 'LABEL_CLICK':
+                    date_str = str(customdata[1])
+                    new_sel = {'mode': 'month', 'month': date_str, 'label': x_label}
+                    
+                    # Toggle logic
+                    if isinstance(s2, dict) and s2.get('mode') == 'month' and s2.get('month') == date_str:
+                        return no_update, None, no_update, no_update, None, no_update
+                        
+                    return no_update, new_sel, no_update, no_update, None, no_update
+                    
+            elif customdata and len(customdata) >= 2:
+                # Fallback for simpler customdata
+                x_label = str(customdata[0]).strip()
+                second_param = str(customdata[1]).strip()
+                
+                if not second_param: # Likely month
+                    try:
+                        raw_x = str(point.get('x'))
+                        if raw_x:
+                            clicked_date = pd.to_datetime(raw_x).strftime('%Y-%m-%d')
+                            new_sel = {'mode': 'month', 'month': clicked_date, 'label': x_label}
+                            if isinstance(s2, dict) and s2.get('mode') == 'month' and s2.get('month') == clicked_date:
+                                return no_update, None, no_update, no_update, None, no_update
+                            return no_update, new_sel, no_update, no_update, None, no_update
+                    except: pass
+                else: # Likely origin
+                    new_sel = {'mode': 'bar', 'origin': second_param, 'label': x_label}
+                    if isinstance(s2, dict) and s2.get('mode') == 'bar' and \
+                       str(s2.get('origin')).strip() == second_param and str(s2.get('label')).strip() == x_label:
+                        return no_update, None, no_update, no_update, None, no_update
+                    return no_update, new_sel, no_update, no_update, None, no_update
+            
+            return no_update, None, no_update, no_update, None, no_update
 
         # 4. Handle Chart 3 Click
         if triggered_id == 'chart-3':
@@ -1106,21 +1150,31 @@ def register_callbacks(dash_app, server):
                 
                 base_color = PIPELINE_COLOR if ft_key == 'pipeline' else LNG_COLOR
                 colors = []
+                line_widths = []
+                line_colors = []
                 
                 for _, row in subset.iterrows():
                     is_dim = False
-                    ry_str = str(row['x_label'])
+                    is_sel = False
+                    ry_str = str(row['x_label']).strip()
                     if sel1:
-                        if sel1['mode'] == 'year':
-                            if ry_str != str(sel1['year']): is_dim = True
-                        elif sel1['mode'] == 'bar':
-                            if not (ry_str == str(sel1['year']) and flow_name == sel1['flow']): is_dim = True
+                        if sel1.get('mode') == 'year':
+                            if ry_str != str(sel1.get('year')).strip(): is_dim = True
+                            else: is_sel = True
+                        elif sel1.get('mode') == 'bar':
+                            if ry_str == str(sel1.get('year')).strip() and flow_name == sel1.get('flow'):
+                                is_sel = True
+                            else:
+                                is_dim = True
                     
-                    colors.append(GREY_OUT if is_dim else base_color)
+                    colors.append(base_color if not is_dim else '#f2f2f2')
+                    line_widths.append(1.5 if is_sel and sel1 and sel1['mode'] == 'bar' else 0)
+                    line_colors.append('#333' if is_sel and sel1 and sel1['mode'] == 'bar' else 'rgba(0,0,0,0)')
 
                 fig1.add_trace(go.Bar(
                     name=flow_name, x=subset['grp_key_dt'] if agg_mode == 'DATE' else subset['x_label'], 
-                    y=subset['flow_bcm'], marker_color=colors,
+                    y=subset['flow_bcm'], 
+                    marker=dict(color=colors, line=dict(width=line_widths, color=line_colors)),
                     text=subset['flow_bcm'].apply(lambda x: f"{x:.1f}" if x > 1 else ""), textposition='outside',
                     customdata=subset.apply(lambda r: [r['x_label'], flow_name, "BAR_CLICK"], axis=1),
                     hovertemplate="Flow Type: <span style='color:black'><b>"+flow_name+"</b></span><br>Date: <span style='color:black'><b>%{customdata[0]}</b></span><br>Flow (BCM): <span style='color:black'><b>%{y:.1f}</b></span><extra></extra>"
@@ -1246,36 +1300,125 @@ def register_callbacks(dash_app, server):
             fig2 = go.Figure()
             unique_origins = sorted(pivot.columns, reverse=True)
             
-            # --- Main Data Trace (Highly Optimized) ---
-            x_vals = pivot.index if agg_mode == 'DATE' else x_order
+            # --- Selection Logic ---
+            selected_month = None
+            selected_origin = None
+            selected_bar = None # {origin, label}
             
-            # Pre-calculate customdata to avoid apply() in loop
-            # customdata for trace i needs [label, 'BAR_CLICK']
-            base_customdata = [[lbl, 'BAR_CLICK'] for lbl in x_order]
-
+            if sel2:
+                if isinstance(sel2, dict):
+                    if sel2.get('mode') == 'bar':
+                        selected_bar = {'origin': sel2.get('origin'), 'label': sel2.get('label')}
+                    elif sel2.get('mode') == 'month':
+                        selected_month = sel2.get('label')
+                else:
+                    # Backward compatibility for legend click
+                    if sel2 in unique_origins:
+                        selected_origin = sel2
+                    else:
+                        # Try to match as a date - convert sel2 to find matching month
+                        try:
+                            selected_dt = pd.to_datetime(sel2)
+                            # Find the corresponding x_label by matching year and month
+                            for i, ts in enumerate(pivot.index):
+                                if ts.year == selected_dt.year and ts.month == selected_dt.month:
+                                    selected_month = x_order[i]
+                                    break
+                        except:
+                            # If sel2 is not a date, try to match it directly as x_label
+                            if sel2 in x_order:
+                                selected_month = sel2
+            
+            # --- Main Data Trace (with highlighting) ---
+            x_vals = pivot.index if agg_mode == 'DATE' else x_order
+            DIM_COLOR = '#f2f2f2'
+            
             for i, origin in enumerate(unique_origins):
                 y_vals = pivot[origin].values
-                m_color = GAS_ORIGIN_COLORS.get(origin, COLOR_PALETTE[i % len(COLOR_PALETTE)])
+                base_color = GAS_ORIGIN_COLORS.get(origin, COLOR_PALETTE[i % len(COLOR_PALETTE)])
+                
+                colors = []
+                line_widths = []
+                line_colors = []
+                
+                for j, x_label in enumerate(x_order):
+                    is_dim = False
+                    is_sel = False
+                    
+                    if selected_bar:
+                        bar_origin = str(selected_bar.get('origin', '')).strip()
+                        bar_label = str(selected_bar.get('label', '')).strip()
+                        if str(origin).strip() == bar_origin and str(x_label).strip() == bar_label:
+                            is_sel = True
+                        else:
+                            is_dim = True
+                    elif selected_month:
+                        if str(x_label).strip() == str(selected_month).strip():
+                            is_sel = True
+                        else:
+                            is_dim = True
+                    elif selected_origin:
+                        if str(origin).strip() == str(selected_origin).strip():
+                            is_sel = True
+                        else:
+                            is_dim = True
+                    
+                    if is_dim:
+                        colors.append(DIM_COLOR)
+                        line_widths.append(0)
+                        line_colors.append('rgba(0,0,0,0)')
+                    elif is_sel:
+                        colors.append(base_color)
+                        # Only show border if it was an explicit bar click
+                        line_widths.append(1.5 if selected_bar else 0)
+                        line_colors.append('#333' if selected_bar else 'rgba(0,0,0,0)')
+                    else:
+                        # No selection active
+                        colors.append(base_color)
+                        line_widths.append(0)
+                        line_colors.append('rgba(0,0,0,0)')
+                
+                # Create customdata for both bar clicks and origin identification
+                customdata = []
+                for j, x_label in enumerate(x_order):
+                    customdata.append([x_label, origin, 'BAR_CLICK'])
                 
                 fig2.add_trace(go.Bar(
                     x=x_vals, y=y_vals, name=origin, 
-                    marker=dict(color=m_color, line=dict(width=0)), 
+                    marker=dict(color=colors, line=dict(width=line_widths, color=line_colors)), 
                     hovertemplate="Origin: <span style='color:black'><b>"+origin+"</b></span><br>Date: <span style='color:black'><b>%{customdata[0]}</b></span><br>Flow (BCM): <span style='color:black'><b>%{y:.3f}</b></span><extra></extra>",
-                    customdata=base_customdata
+                    customdata=customdata
                 ))
 
-            # footer labels trace (yaxis2)
-            # Hide labels or show very sparingly in daily mode to prevent unreadable overlap
+            # footer labels trace (yaxis2) - for month label clicks
             footer_text = x_order if agg_mode != 'DATE' else ["" for _ in x_order]
+            
+            # Determine footer label colors based on selection
+            footer_colors = []
+            for x_label in x_order:
+                if selected_month and x_label == selected_month:
+                    footer_colors.append('rgba(0,0,0,0.1)')  # Slightly more visible for selected
+                elif selected_bar and x_label == selected_bar['label']:
+                    footer_colors.append('rgba(0,0,0,0.08)')
+                else:
+                    footer_colors.append('rgba(0,0,0,0.03)')  # Normal transparency
+            
+            # Create customdata for footer labels with proper date mapping
+            footer_customdata = []
+            for i, x_label in enumerate(x_order):
+                # Get the corresponding datetime for this x_label
+                corresponding_dt = list(pivot.index)[i]
+                date_str = corresponding_dt.strftime('%Y-%m-%d')
+                footer_customdata.append([x_label, date_str, 'LABEL_CLICK'])
             
             fig2.add_trace(go.Bar(
                 x=x_vals, y=[1] * len(x_vals),
-                yaxis='y2', marker=dict(color='rgba(0,0,0,0.03)', line=dict(width=0)),
+                yaxis='y2', marker=dict(color=footer_colors, line=dict(width=0)),
                 text=footer_text, 
                 textposition='inside', insidetextanchor='middle', textangle=-90 if agg_mode not in ['YEARLY', 'DATE'] else 0, 
                 textfont=dict(size=10, color='#777', family='Lato, sans-serif'),
                 hoverinfo='none', showlegend=False,
-                customdata=[[x, 'LABEL_CLICK'] for x in x_order]
+                customdata=footer_customdata
             ))
 
             x_axis_config = dict(showgrid=False, showticklabels=(agg_mode == 'DATE'), anchor='y2')
