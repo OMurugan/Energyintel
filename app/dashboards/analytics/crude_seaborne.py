@@ -399,8 +399,8 @@ def register_callbacks(dash_app, server):
             TO_CHAR(ru.date, 'Month')        AS month_of_date,
             EXTRACT(DAY FROM ru.date)::INT   AS day_of_date,
             ru.vol_kbpd
-        FROM dev.russia_master_data ru
-        LEFT JOIN dev.dim_ports po
+        FROM russia_master_data ru
+        LEFT JOIN dim_ports po
             ON ru.destination = po.port_name
         WHERE
             po.port_name IS NOT NULL
@@ -531,8 +531,8 @@ def register_callbacks(dash_app, server):
                 EXTRACT(YEAR FROM ru.date)::int AS yr,
                 EXTRACT(MONTH FROM ru.date)::int AS mon,
                 AVG(ru.vol_kbpd) AS avg_vol
-            FROM dev.russia_master_data ru
-            JOIN dev.dim_ports po ON ru.destination = po.port_name
+            FROM russia_master_data ru
+            JOIN dim_ports po ON ru.destination = po.port_name
             WHERE ru.type = 'Seaborne'
             GROUP BY po.port_name, yr, mon
         ),
@@ -688,7 +688,7 @@ def register_callbacks(dash_app, server):
                 EXTRACT(QUARTER FROM r.date)::int AS quarter_of_date,
                 EXTRACT(MONTH FROM r.date)::int   AS month_of_date,
                 p.period
-            FROM dev.russia_master_data r
+            FROM russia_master_data r
             CROSS JOIN params p
             WHERE r.type = 'Seaborne'
               AND EXTRACT(YEAR FROM r.date) > 2021
@@ -935,8 +935,8 @@ def register_callbacks(dash_app, server):
             po.port_name                     AS loading_port,
             EXTRACT(YEAR FROM ru.date)::INT  AS year,
             ROUND(AVG(ru.vol_kbpd))          AS average_vol_kbpd
-        FROM dev.russia_master_data ru
-        JOIN dev.dim_ports po ON ru.destination = po.port_name
+        FROM russia_master_data ru
+        JOIN dim_ports po ON ru.destination = po.port_name
         WHERE ru.type = 'Seaborne' AND EXTRACT(YEAR FROM ru.date) = :year
         GROUP BY po.port_name, year
         ORDER BY average_vol_kbpd DESC;
@@ -968,7 +968,7 @@ def register_callbacks(dash_app, server):
                 EXTRACT(QUARTER FROM r.date)::int AS quarter_of_date,
                 EXTRACT(MONTH FROM r.date)::int   AS month_of_date,
                 p.period
-            FROM dev.russia_master_data r
+            FROM russia_master_data r
             CROSS JOIN params p
             WHERE r.type = 'Seaborne'
               AND EXTRACT(YEAR FROM r.date) > 2021
@@ -1068,8 +1068,8 @@ def register_callbacks(dash_app, server):
                 ELSE NULL
             END AS storage_cap
 
-        FROM dev.russia_master_data ru
-        JOIN dev.dim_ports po
+        FROM russia_master_data ru
+        JOIN dim_ports po
             ON ru.destination = po.port_name
         WHERE
             ru.type = 'Seaborne'

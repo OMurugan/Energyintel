@@ -102,7 +102,7 @@ def load_data():
             target_country,
             pointlabel AS "Point",
             ROUND(SUM("flow_mcm/d") / 1000.0, 3) AS flows_bcm
-        FROM dev.european_gas_trade
+        FROM european_gas_trade
         WHERE flow_type = 'LNG'
         GROUP BY 
             EXTRACT(YEAR FROM date),

@@ -244,7 +244,7 @@ def create_layout():
     # Initial data for filters
     country_query = """
     SELECT DISTINCT tr.target_country
-    FROM dev.european_gas_trade tr
+    FROM european_gas_trade tr
     WHERE tr.target_country IS NOT NULL AND TRIM(tr.target_country) <> ''
     ORDER BY tr.target_country;
     """
@@ -253,7 +253,7 @@ def create_layout():
 
     origin_query = """
     SELECT DISTINCT tr.source_country
-    FROM dev.european_gas_trade tr
+    FROM european_gas_trade tr
     WHERE tr.source_country IS NOT NULL AND TRIM(tr.source_country) <> ''
     ORDER BY tr.source_country;
     """
@@ -480,6 +480,46 @@ def create_layout():
                                 {
                                     'if': {'row_index': 'odd'},
                                     'backgroundColor': '#f1f5f9'
+                                }
+                            ],
+                            style_cell_conditional=[
+                                {
+                                    'if': {'column_id': 'Month'},
+                                    'textAlign': 'left',
+                                    'fontWeight': 'bold',
+                                    'backgroundColor': '#f8fafc',
+                                    'minWidth': '100px',
+                                    'width': '100px',
+                                    'position': 'sticky',
+                                    'left': 0,
+                                    'zIndex': 100,
+                                    'borderRight': '1px solid #9ca3af',
+                                    'color': 'rgb(27, 54, 93)'
+                                }
+                            ],
+                            style_header_conditional=[
+                                {
+                                    'if': {'header_index': 0},
+                                    'backgroundColor': '#d1d7de',
+                                    'color': 'rgb(27, 54, 93)',
+                                    'borderRight': '1px solid #9ca3af',
+                                    'borderBottom': '1px solid #9ca3af'
+                                },
+                                {
+                                    'if': {'header_index': 0, 'column_id': 'Month'},
+                                    'position': 'sticky',
+                                    'left': 0,
+                                    'zIndex': 301,
+                                    'backgroundColor': '#d1d7de',
+                                    'borderRight': '1px solid #9ca3af'
+                                },
+                                {
+                                    'if': {'header_index': 1, 'column_id': 'Month'},
+                                    'position': 'sticky',
+                                    'left': 0,
+                                    'zIndex': 300,
+                                    'backgroundColor': '#ffffff',
+                                    'borderRight': '1px solid #9ca3af'
                                 }
                             ],
                             sort_action='native',
@@ -718,7 +758,7 @@ def register_callbacks(dash_app, server):
 
         c1_query = f"""
         SELECT {time_sql}, tr.flow_type AS "Type", SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
-        FROM dev.european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow_types
+        FROM european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow_types
         GROUP BY 1, 2
         ORDER BY 1;
         """
@@ -755,7 +795,7 @@ def register_callbacks(dash_app, server):
 
         c2_query = f"""
         SELECT {time_sql}, tr.source_country AS "Gas Origin", SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
-        FROM dev.european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins AND LOWER(tr.flow_type) IN :flow_types
+        FROM european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins AND LOWER(tr.flow_type) IN :flow_types
         GROUP BY 1, 2
         ORDER BY 1;
         """
@@ -780,7 +820,7 @@ def register_callbacks(dash_app, server):
 
         c3_query = f"""
         SELECT tr.date AS "Date", tr.flow_type AS "Type", SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
-        FROM dev.european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins
+        FROM european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins
         GROUP BY 1, 2
         ORDER BY 1;
         """
@@ -811,7 +851,7 @@ def register_callbacks(dash_app, server):
             tr.source_country AS "Origin", 
             tr.target_country AS "Destination", 
             SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
-        FROM dev.european_gas_trade tr 
+        FROM european_gas_trade tr 
         {where_clause} 
         {country_clause}
         AND tr.source_country IN :origins
@@ -843,7 +883,7 @@ def register_callbacks(dash_app, server):
     def update_origin_legend(country, selected):
         # 1. If Country changed (or first load), we reset selection to 'All' for that country
         if not ctx.triggered_id or ctx.triggered_id == 'country-dropdown':
-            query = "SELECT DISTINCT source_country FROM dev.european_gas_trade tr WHERE source_country IS NOT NULL AND TRIM(source_country) <> ''"
+            query = "SELECT DISTINCT source_country FROM european_gas_trade tr WHERE source_country IS NOT NULL AND TRIM(source_country) <> ''"
             params = {}
             if country and country != '(All)':
                 query += " AND tr.target_country = :country"
@@ -855,7 +895,7 @@ def register_callbacks(dash_app, server):
             # We return selected here to update the store, and we'll build UI below
         
         # 2. Build UI based on 'selected' and 'country'
-        query = "SELECT DISTINCT source_country FROM dev.european_gas_trade tr WHERE source_country IS NOT NULL AND TRIM(source_country) <> ''"
+        query = "SELECT DISTINCT source_country FROM european_gas_trade tr WHERE source_country IS NOT NULL AND TRIM(source_country) <> ''"
         params = {}
         if country and country != '(All)':
             query += " AND tr.target_country = :country"
@@ -1030,7 +1070,7 @@ def register_callbacks(dash_app, server):
 
             c1_query = f"""
             SELECT {time_sql}, LOWER(tr.flow_type) AS "FlowType", SUM(tr."flow_mcm/d") / 1000.0 AS flow_bcm
-            FROM dev.european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow1 
+            FROM european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow1 
             GROUP BY 1, 2
             ORDER BY 1;
             """
@@ -1171,7 +1211,7 @@ def register_callbacks(dash_app, server):
 
             c2_query = f"""
             SELECT {time_sql}, tr.source_country AS "Gas Origin", SUM(tr."flow_mcm/d") / 1000.0 AS flow_bcm
-            FROM dev.european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins 
+            FROM european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins 
             GROUP BY 1, 2
             ORDER BY 1;
             """
@@ -1354,7 +1394,7 @@ def register_callbacks(dash_app, server):
 
         c3_query = f"""
         SELECT tr.date AS "Day of Date", INITCAP(LOWER(tr.flow_type)) AS "FlowName", SUM(tr."flow_mcm/d") / 1000.0 AS flows_bcm
-        FROM dev.european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow2 GROUP BY 1, 2 ORDER BY 1;
+        FROM european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow2 GROUP BY 1, 2 ORDER BY 1;
         """
         c3_df = load_data(c3_query, {**params, 'flow2': tuple(flow2_filtered)})
         fig3 = go.Figure()
@@ -1398,32 +1438,29 @@ def register_callbacks(dash_app, server):
         fig3.update_yaxes(showgrid=True, gridcolor='#f5f5f5', rangemode='tozero', tickfont=dict(size=10, color='#666'))
         return fig3
 
-    # CALLBACK 4: Table Only
+    # Table callback with enhanced highlighting support
     @dash_app.callback(
         [Output('gas-imports-mix-table', 'data'),
          Output('gas-imports-mix-table', 'columns'),
-         Output('gas-imports-mix-table', 'tooltip_data'),
-         Output('gas-imports-mix-table', 'style_cell_conditional'),
-         Output('gas-imports-mix-table', 'style_header_conditional')],
+         Output('gas-imports-mix-table', 'tooltip_data')],
         [Input('country-dropdown', 'value'),
          Input('start-date-picker', 'value'),
          Input('end-date-picker', 'value'),
-         Input('selected-origins-store', 'data'),
-         Input('table-highlight-state', 'data')],
+         Input('selected-origins-store', 'data')],
     )
-    def update_table(country, start_date, end_date, origins, highlight_state):
+    def update_table(country, start_date, end_date, origins):
         where_clause, country_clause, params, origins_filtered, _, _ = get_query_params(country, start_date, end_date, origins, [], [])
         if not origins_filtered: 
-            return [], [], [], [], []
+            return [], [], []
 
         t_query = f"""
         SELECT TO_CHAR(DATE_TRUNC('month', tr.date), 'FMMonth YYYY') AS "Month of Date", DATE_TRUNC('month', tr.date) as "month_raw",
         tr.source_country AS "Gas Origin", tr.target_country AS "Target Country", SUM(tr."flow_mcm/d") / 1000.0 AS flows_bcm
-        FROM dev.european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins GROUP BY 1, 2, 3, 4 ORDER BY 2 DESC;
+        FROM european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins GROUP BY 1, 2, 3, 4 ORDER BY 2 DESC;
         """
         table_df = load_data(t_query, {**params, 'origins': tuple(origins_filtered)})
         if table_df.empty: 
-            return [], [], [], [], []
+            return [], [], []
 
         pivot = table_df.pivot_table(index=['month_raw', 'Month of Date'], columns=['Gas Origin', 'Target Country'], values='flows_bcm', aggfunc='sum').fillna(0).sort_index(level=0, ascending=False)
         cols = [{"name": ["Gasflows to Europe", "Month"], "id": "Month"}]
@@ -1446,100 +1483,6 @@ def register_callbacks(dash_app, server):
                 curr[c['id']] = f"{val:.3f}"
             rows.append(curr)
         
-        # Build highlighting for selected month - Disabled as per decoupling requirements
-        highlight_month = ""
-
-        # Style conditional for cells
-        style_cell_conditional = [
-            {
-                'if': {'column_id': 'Month'},
-                'textAlign': 'left',
-                'fontWeight': 'bold',
-                'backgroundColor': '#f8fafc',
-                'minWidth': '100px',
-                'width': '100px',
-                'position': 'sticky',
-                'left': 0,
-                'zIndex': 100,
-                'borderRight': '1px solid #9ca3af',
-                'color': 'rgb(27, 54, 93)'
-            }
-        ] + [
-            {
-                'if': {'column_id': c['id']},
-                'minWidth': '60px', 
-                'width': '60px'
-            } for c in cols[1:]
-        ]
-        
-        # Style conditional for headers
-        style_header_conditional = [
-            {
-                'if': {'header_index': 0},
-                'backgroundColor': '#d1d7de',
-                'color': 'rgb(27, 54, 93)',
-                'borderRight': '1px solid #9ca3af',
-                'borderBottom': '1px solid #9ca3af'
-            },
-            {
-                'if': {'header_index': 0, 'column_id': 'Month'},
-                'position': 'sticky',
-                'left': 0,
-                'zIndex': 301,
-                'backgroundColor': '#d1d7de',
-                'borderRight': '1px solid #9ca3af'
-            },
-            {
-                'if': {'header_index': 1, 'column_id': 'Month'},
-                'position': 'sticky',
-                'left': 0,
-                'zIndex': 300,
-                'backgroundColor': '#ffffff',
-                'borderRight': '1px solid #9ca3af'
-            }
-        ]
-        
-        # Add month highlighting to data conditional
-        if highlight_month:
-            style_cell_conditional.append({
-                'if': {
-                    'filter_query': '{Month} = "' + highlight_month + '"'
-                },
-                'backgroundColor': 'rgba(209, 215, 222, 0.4)',
-                'color': 'rgb(27, 54, 93)',
-                'fontWeight': 'bold'
-            })
-        
-        # Add column highlighting based on header clicks
-        if highlight_state and highlight_state.get('column_id'):
-            sel_col_id = highlight_state['column_id']
-            
-            # Highlight selected column
-            style_cell_conditional.append({
-                'if': {'column_id': sel_col_id},
-                'backgroundColor': '#b3d9ff',
-                'fontWeight': '600',
-                'color': '#1b365d',
-                'opacity': '1'
-            })
-            
-            # Dim all other data columns
-            other_cols = [c['id'] for c in cols[1:] if c['id'] != sel_col_id]
-            for col_id in other_cols:
-                style_cell_conditional.append({
-                    'if': {'column_id': col_id},
-                    'opacity': '0.3',
-                    'color': '#a0a0a0'
-                })
-            
-            # Highlight only the leaf header (index 1 in our 2-level structure)
-            style_header_conditional.append({
-                'if': {'column_id': sel_col_id, 'header_index': 1},
-                'backgroundColor': '#b3d9ff',
-                'color': '#1b365d',
-                'fontWeight': 'bold'
-            })
-        
         # Tooltip data
         tooltip_data = []
         for row in rows:
@@ -1555,179 +1498,513 @@ def register_callbacks(dash_app, server):
                         }
             tooltip_data.append(tooltip_row)
         
-        return rows, cols, tooltip_data, style_cell_conditional, style_header_conditional
-    
-    # Callback to handle header clicks for highlighting
-    @dash_app.callback(
-        Output('table-highlight-state', 'data'),
-        Input('gas-imports-mix-table', 'active_cell'),
-        State('table-highlight-state', 'data'),
-        prevent_initial_call=True
-    )
-    def handle_table_highlight(active_cell, current_state):
-        if not active_cell:
-            return no_update
-            
-        col_id = active_cell.get('column_id')
-        if not col_id or col_id == 'Month':
-            return no_update
-            
-        # Toggle logic: if clicking in the same column, clear it
-        if current_state and current_state.get('column_id') == col_id:
-            return None
-            
-        return {'column_id': col_id}
+        return rows, cols, tooltip_data
 
-    # High-Performance Clientside Table Highlighting (Ported from price_scorecard.py)
+
+    # Clean Clientside Table Highlighting (Based on price_scorecard.py)
     dash_app.clientside_callback(
         """
         function(n_data, columns, current_state) {
             try {
-                // Initialize global state if needed
                 if (!window.gasImportsState) {
                     window.gasImportsState = {
                         selectedColumnId: null,
+                        selectedRowIndex: null,
                         lastTableSignature: null
                     };
                 }
 
                 const tableId = 'gas-imports-mix-table';
                 
-                function clearHighlights(container) {
-                    if (!container) return;
-                    container.querySelectorAll('.column-selected').forEach(el => {
-                        el.classList.remove('column-selected');
-                        el.style.backgroundColor = '';
-                        el.style.color = '';
+                function clearAllColumnSelections(spreadsheet) {
+                    if (!spreadsheet) return;
+                    const selectedHeaders = spreadsheet.querySelectorAll('th.column-selected');
+                    selectedHeaders.forEach(header => {
+                        header.classList.remove('column-selected');
+                        header.style.removeProperty('background-color');
+                        header.style.removeProperty('color');
+                        header.style.removeProperty('font-weight');
                     });
-                    container.querySelectorAll('.column-cell-selected').forEach(el => {
-                        el.classList.remove('column-cell-selected');
-                        el.style.removeProperty('background-color');
-                        el.style.removeProperty('font-weight');
-                        el.style.removeProperty('color');
-                        el.style.removeProperty('opacity');
+                    
+                    const selectedCells = spreadsheet.querySelectorAll('td.column-cell-selected');
+                    selectedCells.forEach(cell => {
+                        cell.classList.remove('column-cell-selected');
+                        cell.style.removeProperty('background-color');
+                        cell.style.removeProperty('font-weight');
+                        cell.style.removeProperty('color');
+                        cell.style.removeProperty('opacity');
                     });
-                    container.classList.remove('column-selection-active');
-                    container.querySelectorAll('td[data-dash-column]:not([data-dash-column="Month"])').forEach(td => {
-                        td.style.removeProperty('opacity');
-                    });
+                    
+                    if (spreadsheet.classList.contains('column-selection-active')) {
+                        const allDataCells = spreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Month"])');
+                        allDataCells.forEach(cell => {
+                            cell.style.removeProperty('opacity');
+                        });
+                        
+                        // Also reset any headers that might have had their opacity changed
+                        const allHeaders = spreadsheet.querySelectorAll('th[data-dash-column]:not([data-dash-column="Month"])');
+                        allHeaders.forEach(header => {
+                            header.style.removeProperty('opacity');
+                        });
+                    }
+                    spreadsheet.classList.remove('column-selection-active');
                 }
 
-                function getTableElements() {
-                    const tableEl = document.getElementById(tableId);
-                    if (!tableEl) return null;
-                    // For fixed rows, Dash creates a separate header container sometimes
-                    const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
-                    return { tableEl, spreadsheet };
+                function clearAllRowSelections(spreadsheet) {
+                    if (!spreadsheet) return;
+                    const selectedRows = spreadsheet.querySelectorAll('tr.row-selected');
+                    selectedRows.forEach(row => { row.classList.remove('row-selected'); });
+                    
+                    const cellsWithProperties = spreadsheet.querySelectorAll('td.row-cell-selected, th.row-cell-selected');
+                    cellsWithProperties.forEach(cell => {
+                        cell.classList.remove('row-cell-selected');
+                        cell.style.removeProperty('background-color');
+                        cell.style.removeProperty('font-weight');
+                        cell.style.removeProperty('color');
+                    });
+
+                    const allTableCells = spreadsheet.querySelectorAll('td, th');
+                    allTableCells.forEach(cell => {
+                        cell.style.removeProperty('opacity');
+                    });
+
+                    spreadsheet.classList.remove('row-selection-active');
+                }
+
+                function getCellValue(cell) {
+                    const text = cell.textContent || cell.innerText || '';
+                    return text.trim();
                 }
 
                 function enhanceTable() {
-                    const els = getTableElements();
-                    if (!els || !els.spreadsheet) return;
-                    const { tableEl, spreadsheet } = els;
-
-                    if (spreadsheet.dataset.enhanced === 'true') return;
-                    spreadsheet.dataset.enhanced = 'true';
+                    const tableEl = document.getElementById(tableId);
+                    if (!tableEl) return;
+                    const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet) return;
                     
-                    console.log("Enhancing Gas Imports Table...");
-
-                    spreadsheet.addEventListener('click', function(e) {
-                         // Find the clicked header
-                        const th = e.target.closest('th');
-                        if (!th) return; // Not a header click
-                        
-                        const colId = th.getAttribute('data-dash-column');
-                        const headerText = th.textContent.trim();
-                        
-                        // Ignore non-data headers
-                        if (headerText === 'Month' || colId === 'Month') return;
-                        
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        const row = th.closest('tr');
-                        const thead = th.closest('thead');
-                        if (!thead) return;
-                        const rows = Array.from(thead.querySelectorAll('tr'));
-                        const rowIndex = rows.indexOf(row); // 0 = Parent (Country), 1 = Leaf (Source)
-                        
-                        // Determine which columns to select
-                        let targetColIds = [];
-                        
-                        if (rowIndex === 0 && rows.length > 1) {
-                            // Parent Header Clicked (Level 0)
-                            // We use the columns metadata passed from python to be exact
-                            if (columns) {
-                                targetColIds = columns
-                                    .filter(c => c.name && c.name[0] === headerText && c.id !== 'Month')
-                                    .map(c => c.id);
-                            }
-                        } else {
-                            // Leaf Header Clicked (Level 1) or Single Row Header
-                            if (colId) targetColIds = [colId];
+                    const headers = spreadsheet.querySelectorAll('th[data-dash-column]');
+                    if (headers.length === 0) return;
+                    
+                    let tableSignature = '';
+                    const topRow = spreadsheet.querySelector('thead tr');
+                    if (topRow) {
+                        const topHeaders = Array.from(topRow.querySelectorAll('th')).slice(0, 5);
+                        tableSignature = topHeaders.map(h => h.textContent.trim()).join('|') + '|' + headers.length;
+                    } else tableSignature = headers.length.toString();
+                    
+                    const signatureChanged = window.gasImportsState.lastTableSignature !== tableSignature;
+                    if (signatureChanged) {
+                        spreadsheet.dataset.gasImportsEnhanced = 'false';
+                        if (spreadsheet._gasImportsClickHandler) {
+                            spreadsheet.removeEventListener('click', spreadsheet._gasImportsClickHandler, true);
+                            spreadsheet._gasImportsClickHandler = null;
                         }
-                        
-                        if (targetColIds.length === 0) return;
+                        clearAllColumnSelections(spreadsheet);
+                        clearAllRowSelections(spreadsheet);
+                        window.gasImportsState.lastTableSignature = tableSignature;
+                    }
+                    
+                    if (spreadsheet.dataset.gasImportsEnhanced === 'true' && !signatureChanged) {
+                        return;
+                    }
 
-                        // Toggle logic
-                        const isAlreadySelected = th.classList.contains('column-selected');
-                        clearHighlights(spreadsheet);
+                    spreadsheet.dataset.gasImportsEnhanced = 'true';
+                    
+                    if (spreadsheet._gasImportsClickHandler) {
+                        spreadsheet.removeEventListener('click', spreadsheet._gasImportsClickHandler, true);
+                    }
+                    
+                    const clickHandler = function(event) {
+                        const clickedSpreadsheet = event.target.closest('.dash-spreadsheet-container') || spreadsheet;
+                        if (!clickedSpreadsheet) return;
                         
-                        if (isAlreadySelected) {
-                            window.gasImportsState.selectedColumnId = null;
-                        } else {
-                            window.gasImportsState.selectedColumnId = targetColIds[0]; // Mark one as primary
-                            
-                            // Apply visual highlights
-                            th.classList.add('column-selected');
-                            th.style.backgroundColor = '#b3d9ff';
-                            th.style.color = '#1b365d';
-                            
-                            spreadsheet.classList.add('column-selection-active');
-                            
-                            targetColIds.forEach(cid => {
-                                // Highlight data cells
-                                const dataCells = spreadsheet.querySelectorAll('td[data-dash-column="' + cid + '"]');
-                                dataCells.forEach(el => {
-                                    el.classList.add('column-cell-selected');
-                                    el.style.setProperty('background-color', '#b3d9ff', 'important');
-                                    el.style.setProperty('font-weight', '600', 'important');
-                                    el.style.setProperty('color', '#1b365d', 'important');
-                                    el.style.setProperty('opacity', '1', 'important');
-                                });
-                                // Highlight leaf headers if parent was selected
-                                if (rowIndex === 0) {
-                                    const leafHeader = spreadsheet.querySelector('th[data-dash-column="' + cid + '"]');
-                                    if (leafHeader) {
-                                        leafHeader.classList.add('column-selected');
-                                        leafHeader.style.backgroundColor = '#b3d9ff';
+                        let header = event.target.closest('th[data-dash-column]');
+                        
+                        if (!header) {
+                            const thead = event.target.closest('thead');
+                            if (thead) {
+                                const allHeaders = thead.querySelectorAll('th[data-dash-column]');
+                                for (let h of allHeaders) {
+                                    if (h.contains(event.target) || h === event.target) {
+                                        header = h;
+                                        break;
                                     }
                                 }
-                            });
+                            }
+                        }
+                        
+                        if (header) {
+                            event.stopPropagation();
                             
-                            // Dim all non-selected data cells
-                            const allData = spreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Month"])');
-                            allData.forEach(td => {
-                                if (!td.classList.contains('column-cell-selected')) {
-                                    td.style.setProperty('opacity', '0.3', 'important');
+                            const columnId = header.getAttribute('data-dash-column');
+                            if (!columnId || columnId === 'Month') return;
+                            
+                            const headerRow = header.closest('tr');
+                            const thead = header.closest('thead');
+                            let headerIndex = -1;
+                            let headerRows = [];
+                            
+                            // Get all header rows - try multiple methods
+                            if (thead) {
+                                headerRows = Array.from(thead.querySelectorAll('tr'));
+                            } else {
+                                // Fallback: find header rows in the spreadsheet
+                                headerRows = Array.from(clickedSpreadsheet.querySelectorAll('tr')).filter(tr => 
+                                    tr.querySelector('th') !== null
+                                );
+                            }
+                            
+                            // Filter to rows that actually contain column headers (not just any th)
+                            const dataHeaderRows = headerRows.filter(tr => tr.querySelector('th[data-dash-column]') !== null);
+                            
+                            if (headerRow) {
+                                headerIndex = dataHeaderRows.indexOf(headerRow);
+                                if (headerIndex === -1) {
+                                    // Try with all header rows if not found in data header rows
+                                    headerIndex = headerRows.indexOf(headerRow);
+                                }
+                            }
+                            
+                            // Use data header rows for calculations
+                            const totalHeaderRows = dataHeaderRows.length;
+                            const isBottomHeader = (headerIndex >= 0 && totalHeaderRows > 0 && headerIndex === totalHeaderRows - 1);
+                            const isTopHeader = (headerIndex === 0);
+                            
+                            const selectionKey = columnId + '_' + headerIndex;
+                            const alreadySelected = (window.gasImportsState && window.gasImportsState.selectedColumnId === selectionKey);
+                            
+                            clearAllColumnSelections(clickedSpreadsheet);
+                            clearAllRowSelections(clickedSpreadsheet);
+                            
+                            if (alreadySelected) {
+                                if (window.gasImportsState) {
+                                    window.gasImportsState.selectedColumnId = null;
+                                }
+                                return false;
+                            }
+                            
+                            if (window.gasImportsState) {
+                                window.gasImportsState.selectedColumnId = selectionKey;
+                            }
+                            
+                            if (isTopHeader) {
+                                // Top header - find all columns under this header
+                                const topHeaderText = header.textContent.trim();
+                                const columnIds = new Set();
+                                
+                                // Primary method: Use columns metadata to find matching columns
+                                if (columns) {
+                                    const matchingColumns = columns.filter(c => 
+                                        c.name && c.name[0] === topHeaderText && c.id !== 'Month'
+                                    );
+                                    matchingColumns.forEach(col => {
+                                        columnIds.add(col.id);
+                                    });
+                                }
+                                
+                                // Enhanced fallback: use colspan and comprehensive position detection
+                                if (columnIds.size === 0) {
+                                    const colspan = header.getAttribute('colspan') || header.colSpan;
+                                    const spanCount = colspan ? parseInt(colspan) : 1;
+                                    
+                                    if (spanCount > 1) {
+                                        // Method 1: Position-based detection using header row structure
+                                        const topRow = dataHeaderRows[0];
+                                        const allTopRowCells = Array.from(topRow.querySelectorAll('th'));
+                                        let clickedCellIndex = -1;
+                                        
+                                        // Find the exact position of clicked header
+                                        for (let i = 0; i < allTopRowCells.length; i++) {
+                                            if (allTopRowCells[i] === header) {
+                                                clickedCellIndex = i;
+                                                break;
+                                            }
+                                        }
+                                        
+                                        if (clickedCellIndex >= 0) {
+                                            // Calculate data column start position
+                                            let dataColumnStart = 0;
+                                            for (let i = 0; i < clickedCellIndex; i++) {
+                                                const cell = allTopRowCells[i];
+                                                const cellColId = cell.getAttribute('data-dash-column');
+                                                if (cellColId === 'Month') continue;
+                                                const cellColspan = parseInt(cell.getAttribute('colspan') || cell.colSpan || '1');
+                                                dataColumnStart += cellColspan;
+                                            }
+                                            
+                                            // Get ordered column IDs from bottom row headers
+                                            const bottomRow = dataHeaderRows[dataHeaderRows.length - 1];
+                                            if (bottomRow) {
+                                                const allBottomHeaders = Array.from(bottomRow.querySelectorAll('th[data-dash-column]'));
+                                                const dataColumnHeaders = allBottomHeaders.filter(h => {
+                                                    const colId = h.getAttribute('data-dash-column');
+                                                    return colId && colId !== 'Month';
+                                                });
+                                                
+                                                // Add columns in the span range
+                                                for (let i = dataColumnStart; i < dataColumnStart + spanCount && i < dataColumnHeaders.length; i++) {
+                                                    const colId = dataColumnHeaders[i].getAttribute('data-dash-column');
+                                                    if (colId) {
+                                                        columnIds.add(colId);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        
+                                        // Method 2: If still no columns found, try visual bounds detection
+                                        if (columnIds.size === 0) {
+                                            try {
+                                                const headerRect = header.getBoundingClientRect();
+                                                const headerLeft = headerRect.left;
+                                                const headerRight = headerRect.right;
+                                                
+                                                const bottomRow = dataHeaderRows[dataHeaderRows.length - 1];
+                                                if (bottomRow) {
+                                                    const allBottomHeaders = Array.from(bottomRow.querySelectorAll('th[data-dash-column]'));
+                                                    
+                                                    allBottomHeaders.forEach(bottomHeader => {
+                                                        const colId = bottomHeader.getAttribute('data-dash-column');
+                                                        if (colId && colId !== 'Month') {
+                                                            const bottomRect = bottomHeader.getBoundingClientRect();
+                                                            const bottomCenter = bottomRect.left + (bottomRect.width / 2);
+                                                            
+                                                            // Check if this bottom header is within the bounds of the top header
+                                                            if (bottomCenter >= headerLeft - 5 && bottomCenter <= headerRight + 5) {
+                                                                columnIds.add(colId);
+                                                            }
+                                                        }
+                                                    });
+                                                    
+                                                }
+                                            } catch (e) {
+                                                // Visual bounds detection failed, continue
+                                            }
+                                        }
+                                    } else {
+                                        // Single column header
+                                        columnIds.add(columnId);
+                                    }
+                                }
+                                
+                                // Fallback: if still no columns found, try to find by header text matching
+                                if (columnIds.size === 0) {
+                                    // Look for any headers in lower levels that might be related
+                                    const allHeaders = clickedSpreadsheet.querySelectorAll('th[data-dash-column]');
+                                    allHeaders.forEach(h => {
+                                        const colId = h.getAttribute('data-dash-column');
+                                        if (colId && colId !== 'Month') {
+                                            // Check if this header is visually under the clicked header
+                                            try {
+                                                const hRect = h.getBoundingClientRect();
+                                                const headerRect = header.getBoundingClientRect();
+                                                
+                                                if (hRect.top > headerRect.top && 
+                                                    hRect.left >= headerRect.left - 10 && 
+                                                    hRect.right <= headerRect.right + 10) {
+                                                    columnIds.add(colId);
+                                                }
+                                            } catch (e) {
+                                                // Ignore positioning errors
+                                            }
+                                        }
+                                    });
+                                }
+                                
+                                // Highlight clicked header
+                                header.classList.add('column-selected');
+                                header.style.backgroundColor = '#b3d9ff';
+                                header.style.color = '#1b365d';
+                                header.style.fontWeight = 'bold';
+                                
+                                // Highlight child headers and data cells
+                                if (columnIds.size > 0) {
+                                    columnIds.forEach(colId => {
+                                        // Highlight ALL headers with this column ID (including second-level headers)
+                                        const childHeaders = clickedSpreadsheet.querySelectorAll(`th[data-dash-column="${colId}"]`);
+                                        childHeaders.forEach(childHeader => {
+                                            childHeader.classList.add('column-selected');
+                                            childHeader.style.backgroundColor = '#b3d9ff';
+                                            childHeader.style.color = '#1b365d';
+                                            childHeader.style.fontWeight = 'bold';
+                                        });
+                                        
+                                        const dataCells = clickedSpreadsheet.querySelectorAll(`td[data-dash-column="${colId}"]`);
+                                        dataCells.forEach(cell => {
+                                            cell.classList.add('column-cell-selected');
+                                            cell.style.backgroundColor = '#b3d9ff';
+                                            cell.style.fontWeight = '600';
+                                            cell.style.color = '#1b365d';
+                                            cell.style.opacity = '1';
+                                        });
+                                    });
+                                    
+                                    clickedSpreadsheet.classList.add('column-selection-active');
+                                    
+                                    // Dim other columns
+                                    const allDataCells = clickedSpreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Month"])');
+                                    allDataCells.forEach(cell => {
+                                        const cellColId = cell.getAttribute('data-dash-column');
+                                        if (!columnIds.has(cellColId)) {
+                                            cell.style.opacity = '0.3';
+                                        }
+                                    });
+                                }
+                            } else {
+                                // Bottom header - single column
+                                header.classList.add('column-selected');
+                                header.style.backgroundColor = '#b3d9ff';
+                                header.style.color = '#1b365d';
+                                header.style.fontWeight = 'bold';
+                                
+                                const columnCells = clickedSpreadsheet.querySelectorAll(`td[data-dash-column="${columnId}"]`);
+                                columnCells.forEach(cell => {
+                                    cell.classList.add('column-cell-selected');
+                                    cell.style.backgroundColor = '#b3d9ff';
+                                    cell.style.fontWeight = '600';
+                                    cell.style.color = '#1b365d';
+                                    cell.style.opacity = '1';
+                                });
+                                
+                                clickedSpreadsheet.classList.add('column-selection-active');
+                                
+                                const allDataCells = clickedSpreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Month"])');
+                                allDataCells.forEach(cell => {
+                                    if (!cell.classList.contains('column-cell-selected')) {
+                                        cell.style.opacity = '0.3';
+                                    }
+                                });
+                            }
+                            return false;
+                        }
+                        
+                        // Handle Month cell clicks for row highlighting
+                        const monthCell = event.target.closest('td[data-dash-column="Month"]');
+                        if (monthCell) {
+                            event.stopPropagation();
+                            const cellValue = getCellValue(monthCell);
+                            const row = monthCell.closest('tr');
+                            if (!row) return;
+                            
+                            const rowIndex = row.getAttribute('data-dash-row') || Array.from(row.parentNode.children).indexOf(row).toString();
+
+                            clearAllColumnSelections(clickedSpreadsheet);
+                            
+                            if (window.gasImportsState && window.gasImportsState.selectedRowIndex === ('Month_' + rowIndex + '_' + cellValue)) {
+                                clearAllRowSelections(clickedSpreadsheet);
+                                window.gasImportsState.selectedRowIndex = null;
+                                return;
+                            }
+
+                            clearAllRowSelections(clickedSpreadsheet);
+                            
+                            const allRows = Array.from(clickedSpreadsheet.querySelectorAll('tbody tr'));
+                            const currentRowIndex = allRows.indexOf(row);
+                            
+                            let startIndex = currentRowIndex;
+                            let firstLabelCell = monthCell;
+
+                            if (cellValue === "") {
+                                for (let i = currentRowIndex; i >= 0; i--) {
+                                    const cell = allRows[i].querySelector('td[data-dash-column="Month"]');
+                                    if (getCellValue(cell) !== "") {
+                                        startIndex = i;
+                                        firstLabelCell = cell;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            let endIndex = allRows.length - 1;
+                            for (let i = startIndex + 1; i < allRows.length; i++) {
+                                const val = getCellValue(allRows[i].querySelector('td[data-dash-column="Month"]'));
+                                if (val !== "") {
+                                    endIndex = i - 1;
+                                    break;
+                                }
+                            }
+
+                            const targetRows = allRows.slice(startIndex, endIndex + 1);
+
+                            targetRows.forEach(r => {
+                                r.classList.add('row-selected');
+                                r.querySelectorAll('td').forEach(c => {
+                                    const cColId = c.getAttribute('data-dash-column');
+                                    if (cColId !== 'Month') {
+                                        c.classList.add('row-cell-selected');
+                                        c.style.backgroundColor = '#b3d9ff';
+                                        c.style.fontWeight = '600';
+                                        c.style.opacity = '1';
+                                    }
+                                    if (c === firstLabelCell) {
+                                        c.classList.add('row-cell-selected');
+                                        c.style.backgroundColor = '#b3d9ff';
+                                        c.style.fontWeight = 'bold';
+                                        c.style.opacity = '1';
+                                    }
+                                });
+                            });
+
+                            allRows.forEach(r => {
+                                if (!r.classList.contains('row-selected')) {
+                                    r.querySelectorAll('td').forEach(c => c.style.opacity = '0.3');
                                 }
                             });
+                            clickedSpreadsheet.classList.add('row-selection-active');
+                            window.gasImportsState.selectedRowIndex = 'Month_' + rowIndex + '_' + cellValue;
+                            return;
                         }
-                    }, true); // Capture phase is critical for Dash tables
+                        
+                        // Clear selections on data cell click
+                        const cell = event.target.closest('td[data-dash-column]');
+                        if (cell) {
+                            const columnId = cell.getAttribute('data-dash-column');
+                            if (columnId && columnId !== 'Month') {
+                                clearAllColumnSelections(clickedSpreadsheet);
+                                clearAllRowSelections(clickedSpreadsheet);
+                                if (window.gasImportsState) {
+                                    window.gasImportsState.selectedColumnId = null;
+                                    window.gasImportsState.selectedRowIndex = null;
+                                }
+                            }
+                        }
+                    };
+                    
+                    spreadsheet._gasImportsClickHandler = clickHandler;
+                    spreadsheet.addEventListener('click', spreadsheet._gasImportsClickHandler, true);
+                }
+                
+                // Outside click handler
+                if (!window.gasImportsOutsideClickHandler) {
+                    window.gasImportsOutsideClickHandler = function(event) {
+                        const tableEl = document.getElementById(tableId);
+                        if (!tableEl) return;
+                        const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                        if (!spreadsheet) return;
+                        
+                        if (!spreadsheet.contains(event.target)) {
+                            clearAllColumnSelections(spreadsheet);
+                            clearAllRowSelections(spreadsheet);
+                            if (window.gasImportsState) {
+                                window.gasImportsState.selectedColumnId = null;
+                                window.gasImportsState.selectedRowIndex = null;
+                            }
+                        }
+                    };
+                    document.addEventListener('click', window.gasImportsOutsideClickHandler);
                 }
 
                 function tryEnhance() {
-                    const els = getTableElements();
-                    if (!els || !els.spreadsheet) return false;
+                    const tableEl = document.getElementById(tableId);
+                    if (!tableEl) return false;
+                    const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet) return false;
                     
-                    // Check if headers are actually rendered
-                    if (els.spreadsheet.querySelectorAll('th').length === 0) return false;
+                    if (spreadsheet.querySelectorAll('th').length === 0) return false;
                     
                     enhanceTable();
                     return true;
                 }
 
-                // Retry logic exactly as in price_scorecard.py
                 if (!tryEnhance()) {
                     setTimeout(() => {
                         if (!tryEnhance()) {
@@ -1740,20 +2017,22 @@ def register_callbacks(dash_app, server):
                     }, 100);
                 }
                 
-                // Mutation Observer to handle table re-renders/paging
                 if (!window.gasImportsObserver) {
                     window.gasImportsObserver = new MutationObserver(function(mutations) {
-                        const els = getTableElements();
-                        if (els && els.spreadsheet) {
-                             if (els.spreadsheet.dataset.enhanced !== 'true') {
-                                 tryEnhance();
-                             }
+                        const tableEl = document.getElementById(tableId);
+                        if (tableEl) {
+                            const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                            if (spreadsheet && spreadsheet.dataset.gasImportsEnhanced !== 'true') {
+                                tryEnhance();
+                            }
                         }
                     });
                     window.gasImportsObserver.observe(document.body, { childList: true, subtree: true });
                 }
 
-            } catch (err) { console.error(err); }
+            } catch (err) { 
+                console.error('Gas imports highlighting error:', err); 
+            }
             return "";
         }
         """,
