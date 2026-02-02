@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import create_engine, text
 import time
 import numpy as np
+import hashlib
 
 MONTH_ORDER = [
     'January', 'February', 'March', 'April', 'May', 'June', 
@@ -216,6 +217,18 @@ GAS_ORIGIN_COLORS = {
     'Switzerland': '#444444',
     'United Kingdom': '#d17094',
 }
+
+def get_consistent_color_for_origin(origin):
+    """Get a consistent color for a gas origin, ensuring the same origin always gets the same color"""
+    # First check if we have a predefined color
+    if origin in GAS_ORIGIN_COLORS:
+        return GAS_ORIGIN_COLORS[origin]
+    
+    # For origins not in the predefined mapping, use a hash-based approach
+    # to ensure the same origin always gets the same color regardless of order
+    hash_value = int(hashlib.md5(origin.encode()).hexdigest(), 16)
+    color_index = hash_value % len(COLOR_PALETTE)
+    return COLOR_PALETTE[color_index]
 
 def hex_to_rgba(h, a):
     """Convert hex color to rgba string."""
@@ -913,9 +926,8 @@ def register_callbacks(dash_app, server):
 
         for i, origin in enumerate(origins):
             is_sel = origin in (selected or [])
-            m_color = GAS_ORIGIN_COLORS.get(origin)
-            if not m_color:
-                m_color = COLOR_PALETTE[i % len(COLOR_PALETTE)]
+            # Use consistent color mapping function
+            m_color = get_consistent_color_for_origin(origin)
             
             items.append(html.Div([
                 html.Div(style={
@@ -1335,7 +1347,8 @@ def register_callbacks(dash_app, server):
             
             for i, origin in enumerate(unique_origins):
                 y_vals = pivot[origin].values
-                base_color = GAS_ORIGIN_COLORS.get(origin, COLOR_PALETTE[i % len(COLOR_PALETTE)])
+                # Use consistent color mapping function
+                base_color = get_consistent_color_for_origin(origin)
                 
                 colors = []
                 line_widths = []
