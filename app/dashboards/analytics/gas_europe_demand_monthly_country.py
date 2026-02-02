@@ -10,7 +10,7 @@ import os
 from datetime import datetime, timedelta
 import time
 from core.country_mappings import COUNTRY_TO_ISO, get_iso_code
-from ..wcod.shared_map_utils import (
+from .shared_map_utils import (
     create_choropleth_map, 
     get_mapbox_config, 
     load_world_geojson,
@@ -399,8 +399,7 @@ def create_layout():
                                     'displayModeBar': False,
                                     'scrollZoom': True,
                                     'doubleClick': 'reset'
-                                },
-                                clear_on_unhover=True  # Enable clear on unhover for better hover experience
+                                }
                             )
                         ),
                     ], style={'width': '45%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '0%'}),
@@ -757,12 +756,16 @@ def register_callbacks(dash_app, server):
         
         # Apply country filter - handle empty selection properly
         if selected_countries is not None:
+            print(f"Map update - selected_countries: {selected_countries}")
             if len(selected_countries) == 0:
                 # No countries selected - return empty map
                 return create_empty_map("No countries selected", height=700)
             else:
                 # Filter by selected countries
+                print(f"Filtering map data by countries: {selected_countries}")
+                print(f"Available countries in data: {filtered_df['Country'].unique().tolist()}")
                 filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
+                print(f"Filtered data shape: {filtered_df.shape}")
         
         if filtered_df.empty:
             return create_empty_map("No data available for selected filters", height=700)
@@ -791,15 +794,19 @@ def register_callbacks(dash_app, server):
         
         # Prepare data for the shared map utility
         locations = agg_df['ISO_Code'].astype(str).tolist()
-        country_names = agg_df['Country_DB_Original'].tolist()
+        # Use the original Country column (not Country_DB_Original) to match with filter data
+        country_names = agg_df['Country'].tolist()  # This should match the filter country names
         z_values = agg_df['Value'].tolist()
         max_volume = max(z_values) if z_values else 1
+        
+        print(f"Map country names: {country_names}")
+        print(f"Map locations (ISO): {locations}")
         
         # Create hover text with structured format matching the professional design
         hover_text = agg_df.apply(
             lambda row: (
                 f"&nbsp;<br>"   # Top padding
-                f"&nbsp;&nbsp;<span style='color: #666666; font-family: monospace;'>Country:      </span><b>{row['Country_DB_Original']}</b>&nbsp;&nbsp;<br>"
+                f"&nbsp;&nbsp;<span style='color: #666666; font-family: monospace;'>Country:      </span><b>{row['Country']}</b>&nbsp;&nbsp;<br>"  # Use original Country column
                 f"&nbsp;&nbsp;<span style='color: #666666; font-family: monospace;'>Unit:         </span><b>{selected_unit}</b>&nbsp;&nbsp;<br>"
                 f"&nbsp;&nbsp;<span style='color: #666666; font-family: monospace;'>Demand:       </span><b>{row['Value']:,.0f}</b>&nbsp;&nbsp;"
                 f"<br>&nbsp;"  # Bottom padding
@@ -809,7 +816,7 @@ def register_callbacks(dash_app, server):
         
         # Get country coordinates for labels
         all_countries_df = get_all_countries_with_coordinates()
-        countries_in_map = agg_df['Country_DB_Original'].tolist()
+        countries_in_map = agg_df['Country'].tolist()  # Use original Country column
         countries_df = None
         if not all_countries_df.empty:
             countries_df = all_countries_df[all_countries_df['Country'].isin(countries_in_map)].copy()
@@ -824,8 +831,8 @@ def register_callbacks(dash_app, server):
             single_selected_country = selected_countries[0]
             
             # Find the ISO code for the selected country
-            if single_selected_country in agg_df['Country_DB_Original'].values:
-                selected_iso = agg_df.loc[agg_df['Country_DB_Original'] == single_selected_country, 'ISO_Code'].iloc[0]
+            if single_selected_country in agg_df['Country'].values:  # Use original Country column
+                selected_iso = agg_df.loc[agg_df['Country'] == single_selected_country, 'ISO_Code'].iloc[0]
                 other_isos = [iso for iso in locations if iso != selected_iso]
                 print(f"Map selection: {single_selected_country} (ISO: {selected_iso}), dimming {len(other_isos)} other countries")
         
@@ -1035,13 +1042,17 @@ def register_callbacks(dash_app, server):
         
         # Apply country filter - handle empty selection properly
         if selected_countries is not None:
+            print(f"Chart update - selected_countries: {selected_countries}")
             if len(selected_countries) == 0:
                 # No countries selected - return empty chart
                 return go.Figure().add_annotation(text="No countries selected", 
                                                 xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
             else:
                 # Filter by selected countries
+                print(f"Filtering chart data by countries: {selected_countries}")
+                print(f"Available countries in chart data: {filtered_df['Country'].unique().tolist()}")
                 filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
+                print(f"Filtered chart data shape: {filtered_df.shape}")
         
         if filtered_df.empty:
             return go.Figure().add_annotation(text="No data available for selected filters", 
@@ -1454,32 +1465,53 @@ def register_callbacks(dash_app, server):
     # Map click interaction to update country selection
     @dash_app.callback(
         Output('country-checklist-demand', 'value', allow_duplicate=True),
+        Output('country-filter-previous-demand', 'data', allow_duplicate=True),
         Input('europe-map-demand', 'clickData'),
         State('country-checklist-demand', 'value'),
+        State('country-checklist-demand', 'options'),
         prevent_initial_call=True
     )
-    def handle_map_click(clickData, current_selection):
-        """Handle map clicks to update country selection using shared map utilities"""
-        if not clickData or not clickData.get('points'):
-            return no_update
-        
-        # Get all available countries
-        map_df, chart_df, table_df = load_data()
-        all_countries = []
-        for df in [map_df, chart_df, table_df]:
-            if not df.empty and 'Country' in df.columns:
-                all_countries.extend(df['Country'].unique())
-        available_countries = sorted(list(set(all_countries)))
-        
-        if not available_countries:
-            return no_update
-        
-        # Use shared map click handler
-        updated_selection = handle_map_click_reset(
-            clickData, 
-            current_selection, 
-            available_countries, 
-            all_value='(All)'
-        )
-        
-        return updated_selection
+    def handle_map_click(clickData, current_selection, options):
+        """Handle map clicks to update country selection using shared utility"""
+        if not clickData:
+            return no_update, no_update
+            
+        try:
+            # Extract all country options (excluding "(All)")
+            # This ensures we pass the exact available countries to the reset handler
+            all_countries = []
+            if options:
+                all_countries = [opt['value'] for opt in options if opt['value'] != '(All)']
+            
+            # Fallback: If options didn't give us countries (e.g. state issue), load from data
+            if not all_countries:
+                print("DEBUG: Options empty or missing countries, reloading from data")
+                map_df, chart_df, table_df = load_data()
+                countries_set = set()
+                for df in [map_df, chart_df, table_df]:
+                    if not df.empty and 'Country' in df.columns:
+                        countries_set.update(df['Country'].unique())
+                all_countries = sorted(list(countries_set))
+                
+            if not all_countries:
+                print("DEBUG: Could not determine available countries")
+                return no_update, no_update
+            
+            # Use shared helper to determine new selection
+            new_selection = handle_map_click_reset(
+                clickData, 
+                current_selection, 
+                all_countries,
+                all_value='(All)'
+            )
+            
+            # Determine new state to prevent conflict with checklist callback
+            # If (All) is in selection, we are in all_selected mode
+            is_all_selected = '(All)' in new_selection
+            new_state = {'all_selected': is_all_selected}
+            
+            return new_selection, new_state
+            
+        except Exception as e:
+            print(f"Map click error: {e}")
+            return no_update, no_update
