@@ -35,6 +35,59 @@ COUNTRY_COLORS = {
     'United Kingdom': '#ffff00'     # Bright yellow
 }
 
+def create_period_selector(prefix):
+    """Helper to create independent period selectors for chart or table"""
+    return html.Div([
+        html.Div([
+            html.Span("Year of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('+', id=f'gas-country-toggle-year-btn-{prefix}', n_clicks=0, style={
+                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+            })
+        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+        
+        html.Div([
+            html.Span("Quarter of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('+', id=f'gas-country-toggle-quarter-btn-{prefix}', n_clicks=0, style={
+                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+            })
+        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+        
+        html.Div([
+            html.Span("Month of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('+', id=f'gas-country-toggle-month-btn-{prefix}', n_clicks=0, style={
+                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+            })
+        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+
+        html.Div([
+            html.Span("Week of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('+', id=f'gas-country-toggle-week-btn-{prefix}', n_clicks=0, style={
+                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+            })
+        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+        
+        html.Div([
+            html.Span("Day of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('-', id=f'gas-country-toggle-day-btn-{prefix}', n_clicks=0, style={
+                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
+                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+            })
+        ], style={'display': 'flex', 'alignItems': 'center'})
+    ], style={
+        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+        'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px',
+        'width': 'fit-content'
+    })
+
 def load_data():
     """Load and preprocess data from database - using european_gas_trade table"""
     try:
@@ -84,6 +137,10 @@ def create_layout():
     default_origin = 'Russia' if 'Russia' in origins else (origins[0] if origins else '(All)')
 
     return html.Div([
+        # Selection stores
+        dcc.Store(id='gas-country-chart-period-store', data='DAILY'),
+        dcc.Store(id='gas-country-table-period-store', data='DAILY'),
+        
         # Main container with Flexbox for Sidebar and Content
         html.Div([
             
@@ -116,7 +173,7 @@ def create_layout():
                     dcc.Input(
                         id='gas-country-end-date',
                         type='date',
-                        value=max_date.strftime('%Y-%m-%d') if pd.notnull(max_date) else '2026-01-09',
+                        value='2026-01-09',
                         className='custom-date-input',
                         style={
                             'width': '100%', 'marginBottom': '20px', 'height': '28px',
@@ -128,21 +185,15 @@ def create_layout():
                     # Unified Destination Filter & Legend
                     html.Label("Destination", style={'fontSize': '12px', 'fontWeight': 'bold', 'color': EI_DARK_BLUE, 'marginBottom': '10px', 'display': 'block'}),
                     
+                    # Destination items will be populated by callback
+                    html.Div(id='gas-country-dest-list'),
+                    
+                    # Hidden checklist for maintaining filter functionality
                     dcc.Checklist(
                         id='gas-country-dest-checklist',
-                        className='custom-legend-filter',
-                        options=[
-                            {
-                                'label': html.Div([
-                                    html.Div(style={'width': '14px', 'height': '14px', 'backgroundColor': COUNTRY_COLORS.get(o, '#ccc'), 'marginRight': '10px', 'borderRadius': '1px'}),
-                                    html.Span(o)
-                                ], style={'display': 'flex', 'alignItems': 'center'}),
-                                'value': o
-                            } for o in destinations
-                        ],
+                        options=[{'label': o, 'value': o} for o in destinations],
                         value=destinations[:12],
-                        style={'fontSize': '12px', 'color': '#666', 'backgroundColor': 'transparent', 'maxHeight': '400px', 'overflowY': 'auto'},
-                        labelStyle={'display': 'block', 'marginBottom': '6px', 'marginLeft': '0px'}
+                        style={'display': 'none'}
                     ),
                 ], style={'padding': '0px', 'backgroundColor': 'transparent', 'height': '100%'})
             ], style={'width': '220px', 'order': '2', 'marginLeft': '25px', 'borderLeft': '1px solid #f0f0f0', 'paddingLeft': '20px'}),
@@ -222,6 +273,17 @@ def create_layout():
                 # Hidden div for clientside callback anchor
                 html.Div(id='gas-country-table-enhancer-anchor', style={'display': 'none'}),
                 
+                # Hidden div to store selected destination for chart highlighting
+                html.Div(id='gas-country-selected-destination', style={'display': 'none'}),
+                
+                # Interval component for monitoring destination clicks
+                dcc.Interval(
+                    id='gas-country-legend-interval',
+                    interval=500,  # Check every 500ms
+                    n_intervals=0,
+                    disabled=False
+                ),
+                
                 # Download components
                 dcc.Download(id="download-gas-country-chart-csv"),
                 dcc.Download(id="download-gas-country-table-csv")
@@ -246,7 +308,8 @@ def register_callbacks(dash_app, server):
 
     # NEW CALLBACK: Update destination options based on selected gas origin
     @dash_app.callback(
-        [Output('gas-country-dest-checklist', 'options'),
+        [Output('gas-country-dest-list', 'children'),
+         Output('gas-country-dest-checklist', 'options'),
          Output('gas-country-dest-checklist', 'value')],
         Input('gas-country-origin-radio', 'value')
     )
@@ -275,36 +338,169 @@ def register_callbacks(dash_app, server):
             if results:
                 destinations = [row['target_country'] for row in results if row['target_country']]
                 
-                # Create options with color squares
-                options = [
-                    {
-                        'label': html.Div([
-                            html.Div(style={'width': '14px', 'height': '14px', 'backgroundColor': COUNTRY_COLORS.get(dest, '#ccc'), 'marginRight': '10px', 'borderRadius': '1px'}),
-                            html.Span(dest)
-                        ], style={'display': 'flex', 'alignItems': 'center'}),
-                        'value': dest
-                    } for dest in destinations
-                ]
+                # Create clickable destination items
+                dest_items = []
+                for dest in destinations:
+                    dest_items.append(
+                        html.Div([
+                            html.Div(style={
+                                'width': '14px', 
+                                'height': '14px', 
+                                'backgroundColor': COUNTRY_COLORS.get(dest, '#ccc'), 
+                                'marginRight': '10px', 
+                                'borderRadius': '1px',
+                                'display': 'inline-block'
+                            }),
+                            html.Span(dest, style={'display': 'inline-block'})
+                        ], 
+                        id=f'dest-item-{dest}',
+                        style={
+                            'display': 'flex', 
+                            'alignItems': 'center', 
+                            'padding': '6px 8px',
+                            'cursor': 'pointer',
+                            'borderRadius': '4px',
+                            'marginBottom': '2px',
+                            'transition': 'all 0.2s ease',
+                            'fontSize': '12px',
+                            'color': '#666'
+                        },
+                        className='destination-item',
+                        **{'data-country': dest}
+                        )
+                    )
+                
+                # Create options for hidden checklist
+                options = [{'label': dest, 'value': dest} for dest in destinations]
                 
                 # Select all available destinations by default
-                return options, destinations
+                return dest_items, options, destinations
             else:
-                return [], []
+                return [], [], []
                 
         except Exception as e:
             print(f"Error updating destination options: {e}")
             # Fallback to default destinations
             default_destinations = ['Belgium', 'Bulgaria', 'Denmark', 'Finland', 'France', 'Germany', 'Greece', 'Hungary', 'Italy', 'Lithuania', 'Moldova', 'Netherlands', 'Poland', 'Romania', 'Slovakia', 'Spain']
-            options = [
-                {
-                    'label': html.Div([
-                        html.Div(style={'width': '14px', 'height': '14px', 'backgroundColor': COUNTRY_COLORS.get(dest, '#ccc'), 'marginRight': '10px', 'borderRadius': '1px'}),
-                        html.Span(dest)
-                    ], style={'display': 'flex', 'alignItems': 'center'}),
-                    'value': dest
-                } for dest in default_destinations
-            ]
-            return options, default_destinations[:12]
+            
+            dest_items = []
+            for dest in default_destinations:
+                dest_items.append(
+                    html.Div([
+                        html.Div(style={
+                            'width': '14px', 
+                            'height': '14px', 
+                            'backgroundColor': COUNTRY_COLORS.get(dest, '#ccc'), 
+                            'marginRight': '10px', 
+                            'borderRadius': '1px',
+                            'display': 'inline-block'
+                        }),
+                        html.Span(dest, style={'display': 'inline-block'})
+                    ], 
+                    id=f'dest-item-{dest}',
+                    style={
+                        'display': 'flex', 
+                        'alignItems': 'center', 
+                        'padding': '6px 8px',
+                        'cursor': 'pointer',
+                        'borderRadius': '4px',
+                        'marginBottom': '2px',
+                        'transition': 'all 0.2s ease',
+                        'fontSize': '12px',
+                        'color': '#666'
+                    },
+                    className='destination-item',
+                    **{'data-country': dest}
+                    )
+                )
+            
+            options = [{'label': dest, 'value': dest} for dest in default_destinations]
+            return dest_items, options, default_destinations[:12]
+
+
+    # Clientside callback for destination item clicks
+    dash_app.clientside_callback(
+        """
+        function(children) {
+            if (!children) return window.dash_clientside.no_update;
+            
+            setTimeout(function() {
+                const destItems = document.querySelectorAll('.destination-item');
+                
+                destItems.forEach(function(item) {
+                    // Remove existing listeners
+                    item.removeEventListener('click', item._clickHandler);
+                    
+                    // Add click handler
+                    item._clickHandler = function() {
+                        const country = this.getAttribute('data-country');
+                        const hiddenDiv = document.getElementById('gas-country-selected-destination');
+                        
+                        if (hiddenDiv) {
+                            const currentSelection = hiddenDiv.textContent;
+                            
+                            // Toggle selection
+                            if (currentSelection === country) {
+                                hiddenDiv.textContent = '';  // Deselect
+                                // Reset all items to normal style
+                                destItems.forEach(function(di) {
+                                    di.style.backgroundColor = 'transparent';
+                                    di.style.fontWeight = 'normal';
+                                    di.style.color = '#666';
+                                });
+                            } else {
+                                hiddenDiv.textContent = country;  // Select
+                                // Reset all items first
+                                destItems.forEach(function(di) {
+                                    di.style.backgroundColor = 'transparent';
+                                    di.style.fontWeight = 'normal';
+                                    di.style.color = '#666';
+                                });
+                                // Highlight selected item
+                                this.style.backgroundColor = '#e3f2fd';
+                                this.style.fontWeight = 'bold';
+                                this.style.color = '#1976d2';
+                            }
+                        }
+                    };
+                    
+                    item.addEventListener('click', item._clickHandler);
+                });
+            }, 100);
+            
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('gas-country-selected-destination', 'title'),
+        Input('gas-country-dest-list', 'children')
+    )
+
+    # Monitor destination selection changes
+    dash_app.clientside_callback(
+        """
+        function(n_intervals) {
+            const hiddenDiv = document.getElementById('gas-country-selected-destination');
+            if (!hiddenDiv) return window.dash_clientside.no_update;
+            
+            const currentSelection = hiddenDiv.textContent;
+            
+            // Store previous selection to detect changes
+            if (!window._gasCountryPrevDestSelection) {
+                window._gasCountryPrevDestSelection = '';
+            }
+            
+            // If selection changed, trigger chart update
+            if (window._gasCountryPrevDestSelection !== currentSelection) {
+                window._gasCountryPrevDestSelection = currentSelection;
+                return currentSelection;
+            }
+            
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('gas-country-selected-destination', 'children'),
+        Input('gas-country-legend-interval', 'n_intervals')
+    )
 
 
     @dash_app.callback(
@@ -312,9 +508,10 @@ def register_callbacks(dash_app, server):
         [Input('gas-country-start-date', 'value'),
          Input('gas-country-end-date', 'value'),
          Input('gas-country-origin-radio', 'value'),
-         Input('gas-country-dest-checklist', 'value')]
+         Input('gas-country-dest-checklist', 'value'),
+         Input('gas-country-selected-destination', 'children')]
     )
-    def update_chart(start_date, end_date, selected_origin, selected_dests):
+    def update_chart(start_date, end_date, selected_origin, selected_dests, selected_destination):
         if not selected_origin or not selected_dests:
             return go.Figure()
 
@@ -376,12 +573,27 @@ def register_callbacks(dash_app, server):
                             f"flows_bcm: {row['flows_bcm']:.3f}"
                         )
                     
+                    # Determine line styling based on selection
+                    is_selected = selected_destination == dest if selected_destination else True
+                    line_opacity = 1.0 if is_selected else 0.3
+                    line_width = 3 if is_selected else 1
+                    line_color = COUNTRY_COLORS.get(dest, '#999')
+                    
+                    # If a country is selected, make it more prominent
+                    if selected_destination and is_selected:
+                        line_width = 4
+                        line_opacity = 1.0
+                    elif selected_destination and not is_selected:
+                        line_opacity = 0.2
+                        line_width = 1
+                    
                     fig.add_trace(go.Scatter(
                         x=dest_df['month_date'],
                         y=dest_df['flows_bcm'],
                         name=dest,
                         mode='lines',
-                        line=dict(width=2, color=COUNTRY_COLORS.get(dest, '#999')),
+                        line=dict(width=line_width, color=line_color),
+                        opacity=line_opacity,
                         text=hover_text,
                         hovertemplate="%{text}<extra></extra>",
                         hoverlabel=dict(
@@ -426,9 +638,10 @@ def register_callbacks(dash_app, server):
         [Input('gas-country-start-date', 'value'),
          Input('gas-country-end-date', 'value'),
          Input('gas-country-origin-radio', 'value'),
-         Input('gas-country-dest-checklist', 'value')]
+         Input('gas-country-dest-checklist', 'value'),
+         Input('gas-country-selected-destination', 'children')]
     )
-    def update_table(start_date, end_date, selected_origin, selected_dests):
+    def update_table(start_date, end_date, selected_origin, selected_dests, selected_destination):
         if not selected_origin or not selected_dests:
             return html.Div("Please select filters.", style={'color': '#666', 'fontSize': '12px', 'padding': '20px'})
 
@@ -526,6 +739,65 @@ def register_callbacks(dash_app, server):
                         d_row["_".join(map(str, col))] = ""
                 table_data.append(d_row)
 
+            # Create conditional styling for selected destination
+            style_data_conditional = [
+                {
+                    'if': {'column_id': 'Day of Date'},
+                    'textAlign': 'left',
+                    'fontWeight': 'normal',
+                    'color': '#666',
+                    'minWidth': '180px',
+                    'borderRight': '2px solid #dee2e6'
+                },
+                {
+                    'if': {'row_index': 'odd'},
+                    'backgroundColor': '#f8f9fa'
+                }
+            ]
+            
+            # Add highlighting for selected destination columns
+            if selected_destination:
+                # Find columns that match the selected destination
+                for col in hier_cols:
+                    if col[1] == selected_destination:  # col[1] is the target_country
+                        column_id = "_".join(map(str, col))
+                        style_data_conditional.append({
+                            'if': {'column_id': column_id},
+                            'backgroundColor': '#e3f2fd',
+                            'color': '#1976d2',
+                            'fontWeight': 'bold',
+                            'border': '2px solid #1976d2'
+                        })
+            
+            # Create conditional header styling
+            style_header_conditional = [
+                {
+                    'if': {'header_index': 0}, # This targets the top-most header row (Origin)
+                    'backgroundColor': '#e9ecef',
+                    'color': '#212529',
+                    'fontSize': '12px',
+                    'fontWeight': 'bold'
+                },
+                {
+                    'if': {'header_index': 1}, # This targets the second header row (Interconnection Point)
+                    'backgroundColor': 'white',
+                    'fontSize': '11px',
+                    'color': '#666'
+                }
+            ]
+            
+            # Add header highlighting for selected destination
+            if selected_destination:
+                # Highlight headers for the selected destination
+                for i, col in enumerate(table_columns):
+                    if col["name"][1] == selected_destination:  # Check if this column belongs to selected destination
+                        style_header_conditional.append({
+                            'if': {'column_id': col["id"]},
+                            'backgroundColor': '#1976d2',
+                            'color': 'white',
+                            'fontWeight': 'bold'
+                        })
+
             return dash_table.DataTable(
                 id='gas-country-data-table',
                 columns=table_columns,
@@ -559,35 +831,8 @@ def register_callbacks(dash_app, server):
                     'color': '#333',
                     'minWidth': '100px'
                 },
-                style_data_conditional=[
-                    {
-                        'if': {'column_id': 'Day of Date'},
-                        'textAlign': 'left',
-                        'fontWeight': 'normal',
-                        'color': '#666',
-                        'minWidth': '180px',
-                        'borderRight': '2px solid #dee2e6'
-                    },
-                    {
-                        'if': {'row_index': 'odd'},
-                        'backgroundColor': '#f8f9fa'
-                    }
-                ],
-                style_header_conditional=[
-                    {
-                        'if': {'header_index': 0}, # This targets the top-most header row (Origin)
-                        'backgroundColor': '#e9ecef',
-                        'color': '#212529',
-                        'fontSize': '12px',
-                        'fontWeight': 'bold'
-                    },
-                    {
-                        'if': {'header_index': 1}, # This targets the second header row (Interconnection Point)
-                        'backgroundColor': 'white',
-                        'fontSize': '11px',
-                        'color': '#666'
-                    }
-                ],
+                style_data_conditional=style_data_conditional,
+                style_header_conditional=style_header_conditional,
                 fixed_rows={'headers': True},
                 virtualization=True
             )
