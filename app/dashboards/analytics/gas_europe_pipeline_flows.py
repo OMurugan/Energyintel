@@ -931,10 +931,11 @@ def register_callbacks(dash_app, server):
         Input("export-gas-flows-chart-btn", "n_clicks"),
         [State('gas-flows-start-date', 'value'),
          State('gas-flows-end-date', 'value'),
-         State('gas-origin-checklist', 'value')],
+         State('gas-origin-checklist', 'value'),
+         State('gas-flows-period-store', 'data')],
         prevent_initial_call=True,
     )
-    def export_chart_data(n_clicks, start_date, end_date, selected_origins):
+    def export_chart_data(n_clicks, start_date, end_date, selected_origins, period):
         """Export chart data to CSV."""
         if n_clicks == 0:
             return no_update
@@ -947,29 +948,108 @@ def register_callbacks(dash_app, server):
             query_origins = selected_origins.copy()
             if 'Azerbaijan' in selected_origins and 'Turkey' not in query_origins:
                 query_origins.append('Turkey')
+            
+            # Map UI period to SQL period
+            sql_period = {
+                'DAILY': 'DAILY',
+                'WEEKLY': 'WEEKLY',
+                'MONTHLY': 'MONTHLY',
+                'QUARTERLY': 'QUARTERLY',
+                'YEARLY': 'YEARLY'
+            }.get(period, 'DAILY')
 
             query = f"""
+            WITH base AS (
+                SELECT
+                    tr.date,
+                    tr.source_country AS gas_origin,
+                    tr.point_label,
+                    tr.value / 1000.0 AS flows_bcm
+                FROM glng_gas_trade tr
+                LEFT JOIN dim_country co
+                    ON co.dim_country_id = tr.target_country_id
+                WHERE tr.flow_type = 'natural gas'
+                  AND tr.unit = 'Mcm'
+                  AND co.region = 'Europe'
+                  AND tr.source_country = ANY(:origins)
+                  AND tr.date >= :start_date
+                  AND tr.date <= :end_date
+            )
+            -- DAILY
             SELECT
-                tr.source_country AS gas_origin,
-                tr.point_label,
-                tr.date AS date,
-                tr.value / 1000.0 AS flows_bcm
-            FROM glng_gas_trade tr
-            LEFT JOIN dim_country co
-                ON co.dim_country_id = tr.target_country_id
-            WHERE tr.flow_type = 'natural gas'
-              AND tr.date >= :start_date
-              AND tr.date <= :end_date
-              AND tr.unit = 'Mcm'
-              AND co.region = 'Europe'
-              AND tr.source_country = ANY(:origins)
-            ORDER BY tr.date;
+                'DAILY' AS period,
+                TO_CHAR(date, 'Month DD, YYYY') AS period_of_date,
+                gas_origin,
+                point_label,
+                date AS date,
+                flows_bcm
+            FROM base
+            WHERE :period = 'DAILY'
+
+            UNION ALL
+
+            -- WEEKLY
+            SELECT
+                'WEEKLY' AS period,
+                TO_CHAR((date_trunc('week', date + interval '1 day') - interval '1 day')::date, 'Month DD, YYYY') AS period_of_date,
+                gas_origin,
+                point_label,
+                (date_trunc('week', date + interval '1 day') - interval '1 day')::date AS date,
+                SUM(flows_bcm) AS flows_bcm
+            FROM base
+            WHERE :period = 'WEEKLY'
+            GROUP BY gas_origin, point_label, 5
+
+            UNION ALL
+
+            -- MONTHLY
+            SELECT
+                'MONTHLY' AS period,
+                TO_CHAR(date_trunc('month', date), 'Month YYYY') AS period_of_date,
+                gas_origin,
+                point_label,
+                date_trunc('month', date)::date AS date,
+                SUM(flows_bcm) AS flows_bcm
+            FROM base
+            WHERE :period = 'MONTHLY'
+            GROUP BY gas_origin, point_label, date_trunc('month', date)
+
+            UNION ALL
+
+            -- QUARTERLY
+            SELECT
+                'QUARTERLY' AS period,
+                EXTRACT(YEAR FROM date)::text || ' Q' || EXTRACT(QUARTER FROM date)::text AS period_of_date,
+                gas_origin,
+                point_label,
+                date_trunc('quarter', date)::date AS date,
+                SUM(flows_bcm) AS flows_bcm
+            FROM base
+            WHERE :period = 'QUARTERLY'
+            GROUP BY gas_origin, point_label, EXTRACT(YEAR FROM date), EXTRACT(QUARTER FROM date), date_trunc('quarter', date)
+
+            UNION ALL
+
+            -- YEARLY
+            SELECT
+                'YEARLY' AS period,
+                EXTRACT(YEAR FROM date)::text AS period_of_date,
+                gas_origin,
+                point_label,
+                date_trunc('year', date)::date AS date,
+                SUM(flows_bcm) AS flows_bcm
+            FROM base
+            WHERE :period = 'YEARLY'
+            GROUP BY gas_origin, point_label, EXTRACT(YEAR FROM date), date_trunc('year', date)
+
+            ORDER BY date;
             """
             
             results = execute_query(query, {
                 'start_date': start_date,
                 'end_date': end_date,
-                'origins': query_origins
+                'origins': query_origins,
+                'period': sql_period
             })
             df = pd.DataFrame(results)
             
@@ -988,20 +1068,51 @@ def register_callbacks(dash_app, server):
             if 'Turkey' not in selected_origins:
                 df = df[df['gas_origin'] != 'Turkey']
             
-            # Aggregate by date and origin
-            df = df.groupby(['date', 'gas_origin'])['flows_bcm'].sum().reset_index()
+            # RESAMPLING: For DAILY ONLY, handle Russia monthly granularity in 2025+
+            if period == 'DAILY':
+                final_dfs = []
+                for origin in df['gas_origin'].unique():
+                    origin_df = df[df['gas_origin'] == origin].sort_values('date')
+                    future_data = origin_df[origin_df['date'] >= '2025-01-01']
+                    if not future_data.empty and all(future_data['date'].dt.day == 1):
+                        new_rows = []
+                        for _, row in future_data.iterrows():
+                            days_in_month = row['date'].days_in_month
+                            daily_vol = row['flows_bcm'] / days_in_month
+                            for d in range(days_in_month):
+                                new_date = row['date'] + pd.Timedelta(days=d)
+                                if new_date <= pd.to_datetime(end_date):
+                                    new_rows.append({
+                                        'date': new_date, 
+                                        'period': 'DAILY',
+                                        'gas_origin': origin, 
+                                        'flows_bcm': daily_vol,
+                                        'period_of_date': new_date.strftime('%B %d, %Y')
+                                    })
+                        pre_2025 = origin_df[origin_df['date'] < '2025-01-01']
+                        origin_df = pd.concat([pre_2025, pd.DataFrame(new_rows)])
+                    final_dfs.append(origin_df)
+                if final_dfs:
+                    df = pd.concat(final_dfs).sort_values(['date', 'gas_origin'])
+
+            # Aggregate by date, period, and origin
+            df = df.groupby(['date', 'period_of_date', 'gas_origin'])['flows_bcm'].sum().reset_index()
             
             # Prepare export data
             export_df = df.sort_values(['date', 'gas_origin']).copy()
             export_df['date'] = export_df['date'].dt.strftime('%Y-%m-%d')
             export_df = export_df.rename(columns={
                 'date': 'Date',
+                'period_of_date': 'Period',
                 'gas_origin': 'Gas Origin',
                 'flows_bcm': 'Flows (BCM)'
             })
             
+            # Final column selection and order
+            export_df = export_df[['Date', 'Period', 'Gas Origin', 'Flows (BCM)']]
+            
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"gas_pipeline_flows_chart_{timestamp}.csv"
+            filename = f"gas_pipeline_flows_{period}_{timestamp}.csv"
             return dcc.send_data_frame(export_df.to_csv, filename, index=False)
             
         except Exception as e:
