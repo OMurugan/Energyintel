@@ -23,11 +23,65 @@ GAS_ORIGIN_COLORS = {
     'Libya': '#dadbb1'
 }
 
+def create_period_selector(prefix):
+    """Helper to create independent period selectors for chart or table"""
+    return html.Div([
+        html.Div([
+            html.Span("Year of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('+', id=f'gas-flows-toggle-year-btn-{prefix}', n_clicks=0, style={
+                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+            })
+        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+        
+        html.Div([
+            html.Span("Quarter of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('+', id=f'gas-flows-toggle-quarter-btn-{prefix}', n_clicks=0, style={
+                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+            })
+        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+        
+        html.Div([
+            html.Span("Month of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('+', id=f'gas-flows-toggle-month-btn-{prefix}', n_clicks=0, style={
+                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+            })
+        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+
+        html.Div([
+            html.Span("Week of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('+', id=f'gas-flows-toggle-week-btn-{prefix}', n_clicks=0, style={
+                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+            })
+        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+        
+        html.Div([
+            html.Span("Day of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('-', id=f'gas-flows-toggle-day-btn-{prefix}', n_clicks=0, style={
+                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
+                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+            })
+        ], style={'display': 'flex', 'alignItems': 'center'})
+    ], style={
+        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+        'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px',
+        'width': 'fit-content'
+    })
+
 def create_layout():
     """Create the European Pipeline Flows layout"""
     return html.Div([
         # Selection stores
-        dcc.Store(id='gas-flows-period-store', data='DAILY'),
+        dcc.Store(id='gas-flows-chart-period-store', data='DAILY'),
+        dcc.Store(id='gas-flows-table-period-store', data='DAILY'),
         dcc.Store(id='gas-flows-table-selection-store', data={'selected_column_id': None}),
 
         # Main container with Flexbox for Sidebar and Content
@@ -151,57 +205,8 @@ def create_layout():
                     )
                 ], style={'position': 'relative', 'marginBottom': '10px'}),
                 
-                # Period Selector (as per Fig 1)
-                html.Div([
-                    html.Div([
-                        html.Span("Year of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                        html.Button('+', id='gas-flows-toggle-year-btn', n_clicks=0, style={
-                            'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                            'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                            'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-                        })
-                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
-                    
-                    html.Div([
-                        html.Span("Quarter of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                        html.Button('+', id='gas-flows-toggle-quarter-btn', n_clicks=0, style={
-                            'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                            'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                            'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-                        })
-                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
-                    
-                    html.Div([
-                        html.Span("Month of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                        html.Button('+', id='gas-flows-toggle-month-btn', n_clicks=0, style={
-                            'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                            'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                            'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-                        })
-                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
-
-                    html.Div([
-                        html.Span("Week of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                        html.Button('+', id='gas-flows-toggle-week-btn', n_clicks=0, style={
-                            'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                            'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                            'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-                        })
-                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
-                    
-                    html.Div([
-                        html.Span("Day of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                        html.Button('-', id='gas-flows-toggle-day-btn', n_clicks=0, style={
-                            'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                            'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
-                            'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-                        })
-                    ], style={'display': 'flex', 'alignItems': 'center'})
-                ], style={
-                    'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
-                    'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px',
-                    'width': 'fit-content'
-                }),
+                # Period Selector for Chart
+                create_period_selector('chart'),
                 
                 dcc.Loading(
                     id='loading-gas-flows-chart',
@@ -241,6 +246,9 @@ def create_layout():
                             }
                         )
                     ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px', 'paddingTop': '10px'}),
+                    
+                    # Period Selector for Table
+                    create_period_selector('table'),
                     
                     dcc.Loading(
                         id='loading-gas-flows-table',
@@ -444,38 +452,22 @@ def register_callbacks(dash_app, server):
         Input('gas-flows-table-enhancer-anchor', 'id')
     )
 
-    @dash_app.callback(
-        [Output('gas-flows-period-store', 'data'),
-         Output('gas-flows-toggle-year-btn', 'children'),
-         Output('gas-flows-toggle-quarter-btn', 'children'),
-         Output('gas-flows-toggle-month-btn', 'children'),
-         Output('gas-flows-toggle-week-btn', 'children'),
-         Output('gas-flows-toggle-day-btn', 'children')],
-        [Input('gas-flows-toggle-year-btn', 'n_clicks'),
-         Input('gas-flows-toggle-quarter-btn', 'n_clicks'),
-         Input('gas-flows-toggle-month-btn', 'n_clicks'),
-         Input('gas-flows-toggle-week-btn', 'n_clicks'),
-         Input('gas-flows-toggle-day-btn', 'n_clicks')],
-        [State('gas-flows-period-store', 'data')]
-    )
-    def toggle_gas_flows_period(y_clicks, q_clicks, m_clicks, w_clicks, d_clicks, current_period):
-        from dash import callback_context
-        ctx = callback_context
-        if not ctx.triggered:
+    # Combined helper for both toggle callbacks to minimize duplication
+    def get_period_toggle_updates(button_id, current_period, prefix):
+        from dash import no_update
+        if not button_id:
             return current_period, '+', '+', '+', '+', '-'
-        
-        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
-        
+            
         new_period = current_period
-        if button_id == 'gas-flows-toggle-year-btn':
+        if f'gas-flows-toggle-year-btn-{prefix}' in button_id:
             new_period = 'YEARLY'
-        elif button_id == 'gas-flows-toggle-quarter-btn':
+        elif f'gas-flows-toggle-quarter-btn-{prefix}' in button_id:
             new_period = 'QUARTERLY'
-        elif button_id == 'gas-flows-toggle-month-btn':
+        elif f'gas-flows-toggle-month-btn-{prefix}' in button_id:
             new_period = 'MONTHLY'
-        elif button_id == 'gas-flows-toggle-week-btn':
+        elif f'gas-flows-toggle-week-btn-{prefix}' in button_id:
             new_period = 'WEEKLY'
-        elif button_id == 'gas-flows-toggle-day-btn':
+        elif f'gas-flows-toggle-day-btn-{prefix}' in button_id:
             new_period = 'DAILY'
             
         return (
@@ -486,13 +478,57 @@ def register_callbacks(dash_app, server):
             '-' if new_period == 'WEEKLY' else '+',
             '-' if new_period == 'DAILY' else '+'
         )
+
+    # Independent store/button callback for Chart
+    @dash_app.callback(
+        [Output('gas-flows-chart-period-store', 'data'),
+         Output('gas-flows-toggle-year-btn-chart', 'children'),
+         Output('gas-flows-toggle-quarter-btn-chart', 'children'),
+         Output('gas-flows-toggle-month-btn-chart', 'children'),
+         Output('gas-flows-toggle-week-btn-chart', 'children'),
+         Output('gas-flows-toggle-day-btn-chart', 'children')],
+        [Input('gas-flows-toggle-year-btn-chart', 'n_clicks'),
+         Input('gas-flows-toggle-quarter-btn-chart', 'n_clicks'),
+         Input('gas-flows-toggle-month-btn-chart', 'n_clicks'),
+         Input('gas-flows-toggle-week-btn-chart', 'n_clicks'),
+         Input('gas-flows-toggle-day-btn-chart', 'n_clicks')],
+        [State('gas-flows-chart-period-store', 'data')]
+    )
+    def toggle_gas_flows_chart_period(*args):
+        from dash import callback_context
+        ctx = callback_context
+        button_id = ctx.triggered[0]['prop_id'] if ctx.triggered else None
+        current_period = args[-1]
+        return get_period_toggle_updates(button_id, current_period, 'chart')
+
+    # Independent store/button callback for Table
+    @dash_app.callback(
+        [Output('gas-flows-table-period-store', 'data'),
+         Output('gas-flows-toggle-year-btn-table', 'children'),
+         Output('gas-flows-toggle-quarter-btn-table', 'children'),
+         Output('gas-flows-toggle-month-btn-table', 'children'),
+         Output('gas-flows-toggle-week-btn-table', 'children'),
+         Output('gas-flows-toggle-day-btn-table', 'children')],
+        [Input('gas-flows-toggle-year-btn-table', 'n_clicks'),
+         Input('gas-flows-toggle-quarter-btn-table', 'n_clicks'),
+         Input('gas-flows-toggle-month-btn-table', 'n_clicks'),
+         Input('gas-flows-toggle-week-btn-table', 'n_clicks'),
+         Input('gas-flows-toggle-day-btn-table', 'n_clicks')],
+        [State('gas-flows-table-period-store', 'data')]
+    )
+    def toggle_gas_flows_table_period(*args):
+        from dash import callback_context
+        ctx = callback_context
+        button_id = ctx.triggered[0]['prop_id'] if ctx.triggered else None
+        current_period = args[-1]
+        return get_period_toggle_updates(button_id, current_period, 'table')
     
     @dash_app.callback(
         Output('gas-flows-wave-chart', 'figure'),
         [Input('gas-flows-start-date', 'value'),
          Input('gas-flows-end-date', 'value'),
          Input('gas-origin-checklist', 'value'),
-         Input('gas-flows-period-store', 'data')]
+         Input('gas-flows-chart-period-store', 'data')]
     )
     def update_gas_flows_chart(start_date, end_date, selected_origins, period):
         if not selected_origins:
@@ -701,11 +737,11 @@ def register_callbacks(dash_app, server):
                 # Exact 26 weeks to match Sundays in Fig 1
                 xaxis_config.update(dtick=26 * 7 * 86400000, tickformat="%b %d, %y")
             elif period == 'MONTHLY':
-                xaxis_config.update(dtick="M6", tickformat="%b-%y")
+                xaxis_config.update(dtick="M12", tickformat="%Y")
             elif period == 'QUARTERLY':
                 xaxis_config.update(dtick="M12", tickformat="%Y")
             elif period == 'YEARLY':
-                xaxis_config.update(dtick="M24", tickformat="%Y")
+                xaxis_config.update(dtick="M12", tickformat="%Y")
 
             fig.update_layout(
                 margin=dict(l=40, r=20, t=10, b=40),
@@ -718,11 +754,24 @@ def register_callbacks(dash_app, server):
                     showgrid=True,
                     gridcolor='#f5f5f5',
                     tickfont=dict(size=10, color='#999'),
-                    dtick=1.0 if period == 'WEEKLY' else (0.05 if len(selected_origins) == 1 else 0.1),
+                    dtick=(
+                        50.0 if period == 'YEARLY' else
+                        10.0 if period == 'QUARTERLY' else
+                        5.0 if period == 'MONTHLY' else
+                        1.0 if period == 'WEEKLY' else
+                        (0.05 if len(selected_origins) == 1 else 0.1)
+                    ),
                     fixedrange=True,
                     zeroline=True,
                     zerolinecolor='#f5f5f5',
-                    range=[0, max(df['flows_bcm'].max() * 1.2 if not df.empty else 1.0, 1.0)]
+                    range=[0, (
+                        300 if period == 'YEARLY' else
+                        80 if period == 'QUARTERLY' else
+                        30 if period == 'MONTHLY' else
+                        7 if period == 'WEEKLY' else
+                        1.0 if period == 'DAILY' else
+                        max(df['flows_bcm'].max() * 1.2 if not df.empty else 1.0, 1.0)
+                    )]
                 ),
                 font=dict(family="Inter, sans-serif")
             )
@@ -739,9 +788,10 @@ def register_callbacks(dash_app, server):
         Output('gas-flows-table-container', 'children'),
         [Input('gas-flows-start-date', 'value'),
          Input('gas-flows-end-date', 'value'),
-         Input('gas-origin-checklist', 'value')]
+         Input('gas-origin-checklist', 'value'),
+         Input('gas-flows-table-period-store', 'data')]
     )
-    def update_gas_flows_table(start_date, end_date, selected_origins):
+    def update_gas_flows_table(start_date, end_date, selected_origins, period):
         if not selected_origins:
             return html.Div("Please select at least one gas origin.", style={'color': '#666', 'fontSize': '12px', 'padding': '20px'})
 
@@ -749,27 +799,47 @@ def register_callbacks(dash_app, server):
         if 'Azerbaijan' in selected_origins and 'Turkey' not in query_origins:
             query_origins.append('Turkey')
 
+        # Map UI period to SQL granularity
+        time_gran = {
+            'DAILY': 'DAY',
+            'WEEKLY': 'WEEK',
+            'MONTHLY': 'MONTH',
+            'QUARTERLY': 'QUARTER',
+            'YEARLY': 'YEAR'
+        }.get(period, 'DAY')
+
         query = f"""
         SELECT
-            tr.date AS "Day of Date",
+            CASE
+                WHEN :time_granularity = 'DAY' THEN tr.date
+                WHEN :time_granularity = 'WEEK' THEN (date_trunc('week', tr.date + interval '1 day') - interval '1 day')::date
+                WHEN :time_granularity = 'MONTH' THEN date_trunc('month', tr.date)::date
+                WHEN :time_granularity = 'QUARTER' THEN date_trunc('quarter', tr.date)::date
+                WHEN :time_granularity = 'YEAR' THEN date_trunc('year', tr.date)::date
+            END AS "Period of Date",
             'Exporter' AS "Header_Exporter",
             tr.source_country AS gas_origin,
             'Importer' AS "Header_Importer",
             tr.target_country AS target_country,
             tr.pointlabel AS "Interconnection Point",
-            tr."flow_mcm/d" / 1000.0 AS flows_bcm
+            ROUND(SUM(tr."flow_mcm/d") / 1000.0, 6) AS flows_bcm
         FROM european_gas_trade tr
-        WHERE tr.source_country IN ('Algeria','Azerbaijan','Libya','Norway','Russia')
-        AND tr.date >= :start_date
-        AND tr.date <= :end_date
-        ORDER BY tr.date DESC;
+        WHERE tr.source_country = ANY(:origins)
+          AND tr.date BETWEEN :start_date AND :end_date
+        GROUP BY
+            "Period of Date",
+            tr.source_country,
+            tr.target_country,
+            tr.pointlabel
+        ORDER BY "Period of Date" DESC;
         """
 
         try:
             results = execute_query(query, {
                 'start_date': start_date,
                 'end_date': end_date,
-                # 'origins': query_origins
+                'time_granularity': time_gran,
+                'origins': query_origins
             })
             df = pd.DataFrame(results)
             if df.empty:
@@ -777,7 +847,7 @@ def register_callbacks(dash_app, server):
 
             # Convert types
             df['flows_bcm'] = pd.to_numeric(df['flows_bcm'], errors='coerce').fillna(0)
-            df['Day of Date'] = pd.to_datetime(df['Day of Date'])
+            df['Period of Date'] = pd.to_datetime(df['Period of Date'])
 
             # Mapping for Azerbaijan
             aze_points = ['Kipi', 'Nea Mesimvria', 'Strandzha 2', 'Malkoclar']
@@ -787,13 +857,10 @@ def register_callbacks(dash_app, server):
             if 'Turkey' not in selected_origins:
                 df = df[df['gas_origin'] != 'Turkey']
 
-            # Aggregate
-            df = df.groupby(['Day of Date', 'gas_origin', 'target_country', 'Interconnection Point'])['flows_bcm'].sum().reset_index()
-
-            # Pivot
+            # Pivot with 5 levels as requested
             pivot_df = df.pivot_table(
-                index='Day of Date',
-                columns=['gas_origin', 'target_country', 'Interconnection Point'],
+                index='Period of Date',
+                columns=['Header_Exporter', 'gas_origin', 'Header_Importer', 'target_country', 'Interconnection Point'],
                 values='flows_bcm'
             ).reset_index()
             
@@ -804,36 +871,42 @@ def register_callbacks(dash_app, server):
             origin_order = ['Algeria', 'Azerbaijan', 'Libya', 'Norway', 'Russia']
             
             def sort_columns_key(col):
-                if col[0] == 'Day of Date':
+                if col[0] == 'Period of Date':
                     return (-1, "")
-                origin = col[0]
+                # col is (Header_Exporter, gas_origin, Header_Importer, target_country, Interconnection Point)
+                origin = col[1]
                 order = origin_order.index(origin) if origin in origin_order else 99
-                return (order, str(col[2]))
+                return (order, str(col[4])) # Sort by point label
 
-            # Determine the actual column name for the date (could be a string or a tuple)
+            # Determine the actual column name for the date
             date_col_name = pivot_df.columns[0]
-            
-            # Get hierarchical columns (excluding the date column)
             hier_cols = [c for c in pivot_df.columns if c != date_col_name]
             hier_cols.sort(key=sort_columns_key)
             
-            table_columns = [{"name": ["", "", "Day of Date"], "id": "Day of Date"}]
+            # Date column header alignment (empty labels for the top 4 rows)
+            date_header_name = ["", "", "", "", "Period of Date"]
+            table_columns = [{"name": date_header_name, "id": "Period of Date"}]
             for col in hier_cols:
                 table_columns.append({
                     "name": list(col),
                     "id": "_".join(map(str, col))
                 })
 
-            # Prepare data
-            # Convert date to string after sorting but before iteration to avoid index issues
-            pivot_df[date_col_name] = pd.to_datetime(pivot_df[date_col_name], errors='coerce').dt.strftime('%B %d, %Y')
-            
+            # Formatting based on period
+            def format_period_date(dt, p):
+                if pd.isnull(dt): return ""
+                if p == 'YEARLY': return dt.strftime('%Y')
+                if p == 'MONTHLY': return dt.strftime('%B %Y')
+                if p == 'QUARTERLY': 
+                    q = (dt.month - 1) // 3 + 1
+                    return f"{dt.year} Q{q}"
+                return dt.strftime('%B %d, %Y')
+
             table_data = []
             for _, row in pivot_df.iterrows():
-                d_row = {"Day of Date": row[date_col_name]}
+                d_row = {"Period of Date": format_period_date(row[date_col_name], period)}
                 for col in hier_cols:
                     val = row[col]
-                    # Format as float only if it's numeric
                     if pd.notnull(val):
                         try:
                             d_row["_".join(map(str, col))] = f"{float(val):.4f}"
@@ -878,7 +951,7 @@ def register_callbacks(dash_app, server):
                 },
                 style_data_conditional=[
                     {
-                        'if': {'column_id': 'Day of Date'},
+                        'if': {'column_id': 'Period of Date'},
                         'textAlign': 'left',
                         'fontWeight': 'normal',
                         'color': '#666',
@@ -902,14 +975,14 @@ def register_callbacks(dash_app, server):
                 ],
                 style_header_conditional=[
                     {
-                        'if': {'header_index': 0}, # This targets the top-most header row (Origin)
+                        'if': {'header_index': 1}, # Gas Origin row
                         'backgroundColor': '#e9ecef',
                         'color': '#212529',
                         'fontSize': '12px',
                         'fontWeight': 'bold'
                     },
                     {
-                        'if': {'header_index': 1}, # This targets the second header row (Interconnection Point)
+                        'if': {'header_index': 4}, # Interconnection Point row
                         'backgroundColor': 'white',
                         'fontSize': '11px',
                         'color': '#666'
@@ -932,7 +1005,7 @@ def register_callbacks(dash_app, server):
         [State('gas-flows-start-date', 'value'),
          State('gas-flows-end-date', 'value'),
          State('gas-origin-checklist', 'value'),
-         State('gas-flows-period-store', 'data')],
+         State('gas-flows-chart-period-store', 'data')],
         prevent_initial_call=True,
     )
     def export_chart_data(n_clicks, start_date, end_date, selected_origins, period):
@@ -1124,10 +1197,11 @@ def register_callbacks(dash_app, server):
         Input("export-gas-flows-table-btn", "n_clicks"),
         [State('gas-flows-start-date', 'value'),
          State('gas-flows-end-date', 'value'),
-         State('gas-origin-checklist', 'value')],
+         State('gas-origin-checklist', 'value'),
+         State('gas-flows-table-period-store', 'data')],
         prevent_initial_call=True,
     )
-    def export_table_data(n_clicks, start_date, end_date, selected_origins):
+    def export_table_data(n_clicks, start_date, end_date, selected_origins, period):
         """Export table data to CSV."""
         if n_clicks == 0:
             return no_update
@@ -1140,25 +1214,44 @@ def register_callbacks(dash_app, server):
             if 'Azerbaijan' in selected_origins and 'Turkey' not in query_origins:
                 query_origins.append('Turkey')
 
+            # Map UI period to SQL granularity
+            time_gran = {
+                'DAILY': 'DAY',
+                'WEEKLY': 'WEEK',
+                'MONTHLY': 'MONTH',
+                'QUARTERLY': 'QUARTER',
+                'YEARLY': 'YEAR'
+            }.get(period, 'DAY')
+
             query = f"""
             SELECT
-                tr.date AS "Day of Date",
-                'Exporter' AS "Header_Exporter",
+                CASE
+                    WHEN :time_granularity = 'DAY' THEN tr.date
+                    WHEN :time_granularity = 'WEEK' THEN (date_trunc('week', tr.date + interval '1 day') - interval '1 day')::date
+                    WHEN :time_granularity = 'MONTH' THEN date_trunc('month', tr.date)::date
+                    WHEN :time_granularity = 'QUARTER' THEN date_trunc('quarter', tr.date)::date
+                    WHEN :time_granularity = 'YEAR' THEN date_trunc('year', tr.date)::date
+                END AS "Period of Date",
                 tr.source_country AS gas_origin,
-                'Importer' AS "Header_Importer",
                 tr.target_country AS target_country,
                 tr.pointlabel AS "Interconnection Point",
-                tr."flow_mcm/d" / 1000.0 AS flows_bcm
+                ROUND(SUM(tr."flow_mcm/d") / 1000.0, 6) AS flows_bcm
             FROM european_gas_trade tr
-            WHERE tr.source_country IN ('Algeria','Azerbaijan','Libya','Norway','Russia')
-            AND tr.date >= :start_date
-            AND tr.date <= :end_date
-            ORDER BY tr.date DESC;
+            WHERE tr.source_country = ANY(:origins)
+              AND tr.date BETWEEN :start_date AND :end_date
+            GROUP BY
+                "Period of Date",
+                tr.source_country,
+                tr.target_country,
+                tr.pointlabel
+            ORDER BY "Period of Date" DESC;
             """
 
             results = execute_query(query, {
                 'start_date': start_date,
                 'end_date': end_date,
+                'time_granularity': time_gran,
+                'origins': query_origins
             })
             df = pd.DataFrame(results)
             
@@ -1167,7 +1260,7 @@ def register_callbacks(dash_app, server):
 
             # Apply same transformations as table
             df['flows_bcm'] = pd.to_numeric(df['flows_bcm'], errors='coerce').fillna(0)
-            df['Day of Date'] = pd.to_datetime(df['Day of Date'])
+            df['Period of Date'] = pd.to_datetime(df['Period of Date'])
 
             # Azerbaijan mapping
             aze_points = ['Kipi', 'Nea Mesimvria', 'Strandzha 2', 'Malkoclar']
@@ -1178,13 +1271,23 @@ def register_callbacks(dash_app, server):
                 df = df[df['gas_origin'] != 'Turkey']
 
             # Aggregate
-            df = df.groupby(['Day of Date', 'gas_origin', 'target_country', 'Interconnection Point'])['flows_bcm'].sum().reset_index()
+            df = df.groupby(['Period of Date', 'gas_origin', 'target_country', 'Interconnection Point'])['flows_bcm'].sum().reset_index()
 
-            # Prepare export data - flatten the hierarchical structure for CSV
-            export_df = df.sort_values('Day of Date', ascending=False).copy()
-            export_df['Day of Date'] = export_df['Day of Date'].dt.strftime('%Y-%m-%d')
+            # Prepare export data
+            export_df = df.sort_values('Period of Date', ascending=False).copy()
+            
+            def format_period_date(dt, p):
+                if pd.isnull(dt): return ""
+                if p == 'YEARLY': return dt.strftime('%Y')
+                if p == 'MONTHLY': return dt.strftime('%B %Y')
+                if p == 'QUARTERLY': 
+                    q = (dt.month - 1) // 3 + 1
+                    return f"{dt.year} Q{q}"
+                return dt.strftime('%Y-%m-%d')
+
+            export_df['Period of Date'] = export_df['Period of Date'].apply(lambda x: format_period_date(x, period))
             export_df = export_df.rename(columns={
-                'Day of Date': 'Date',
+                'Period of Date': 'Date/Period',
                 'gas_origin': 'Gas Origin',
                 'target_country': 'Target Country',
                 'Interconnection Point': 'Interconnection Point',
@@ -1192,7 +1295,7 @@ def register_callbacks(dash_app, server):
             })
             
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"gas_pipeline_flows_table_{timestamp}.csv"
+            filename = f"gas_pipeline_flows_table_{period}_{timestamp}.csv"
             return dcc.send_data_frame(export_df.to_csv, filename, index=False)
             
         except Exception as e:
