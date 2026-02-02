@@ -519,8 +519,8 @@ def register_callbacks(dash_app, server):
                 tr.source_country AS gas_origin,
                 tr.point_label,
                 tr.value / 1000.0 AS flows_bcm
-            FROM dev.glng_gas_trade tr
-            LEFT JOIN dev.dim_country co
+            FROM glng_gas_trade tr
+            LEFT JOIN dim_country co
                 ON co.dim_country_id = tr.target_country_id
             WHERE tr.flow_type = 'natural gas'
               AND tr.unit = 'Mcm'
@@ -758,7 +758,7 @@ def register_callbacks(dash_app, server):
             tr.target_country AS target_country,
             tr.pointlabel AS "Interconnection Point",
             tr."flow_mcm/d" / 1000.0 AS flows_bcm
-        FROM dev.european_gas_trade tr
+        FROM european_gas_trade tr
         WHERE tr.source_country IN ('Algeria','Azerbaijan','Libya','Norway','Russia')
         AND tr.date >= :start_date
         AND tr.date <= :end_date
@@ -954,8 +954,8 @@ def register_callbacks(dash_app, server):
                 tr.point_label,
                 tr.date AS date,
                 tr.value / 1000.0 AS flows_bcm
-            FROM dev.glng_gas_trade tr
-            LEFT JOIN dev.dim_country co
+            FROM glng_gas_trade tr
+            LEFT JOIN dim_country co
                 ON co.dim_country_id = tr.target_country_id
             WHERE tr.flow_type = 'natural gas'
               AND tr.date >= :start_date
@@ -1038,7 +1038,7 @@ def register_callbacks(dash_app, server):
                 tr.target_country AS target_country,
                 tr.pointlabel AS "Interconnection Point",
                 tr."flow_mcm/d" / 1000.0 AS flows_bcm
-            FROM dev.european_gas_trade tr
+            FROM european_gas_trade tr
             WHERE tr.source_country IN ('Algeria','Azerbaijan','Libya','Norway','Russia')
             AND tr.date >= :start_date
             AND tr.date <= :end_date
