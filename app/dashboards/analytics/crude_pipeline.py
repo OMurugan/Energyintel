@@ -36,7 +36,7 @@ def get_available_years():
     """Fetch distinct years from the database for the filter."""
     query = """
     SELECT DISTINCT EXTRACT(YEAR FROM date)::INT AS year
-    FROM dev.russia_master_data
+    FROM russia_master_data
     ORDER BY year DESC;
     """
     try:
@@ -63,7 +63,7 @@ def load_seaborne_data(years):
         ru.commodity,
         ru.category,
         ru.vol_kbpd
-    FROM dev.russia_master_data ru
+    FROM russia_master_data ru
     WHERE ru.type IN ('Transneft Seaborne', 'Bypassing Transneft')
       AND EXTRACT(YEAR FROM ru.date) IN ({years_str})
     ORDER BY ru.date
@@ -96,7 +96,7 @@ def load_pipeline_data(years):
         ru.commodity,
         ru.category,
         ru.vol_kbpd
-    FROM dev.russia_master_data ru
+    FROM russia_master_data ru
     WHERE ru.type = 'Pipeline'
       AND EXTRACT(YEAR FROM ru.date) IN ({years_str})
     ORDER BY ru.date

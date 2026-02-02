@@ -244,7 +244,7 @@ def create_layout():
     # Initial data for filters
     country_query = """
     SELECT DISTINCT tr.target_country
-    FROM dev.european_gas_trade tr
+    FROM european_gas_trade tr
     WHERE tr.target_country IS NOT NULL AND TRIM(tr.target_country) <> ''
     ORDER BY tr.target_country;
     """
@@ -253,7 +253,7 @@ def create_layout():
 
     origin_query = """
     SELECT DISTINCT tr.source_country
-    FROM dev.european_gas_trade tr
+    FROM european_gas_trade tr
     WHERE tr.source_country IS NOT NULL AND TRIM(tr.source_country) <> ''
     ORDER BY tr.source_country;
     """
@@ -758,7 +758,7 @@ def register_callbacks(dash_app, server):
 
         c1_query = f"""
         SELECT {time_sql}, tr.flow_type AS "Type", SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
-        FROM dev.european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow_types
+        FROM european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow_types
         GROUP BY 1, 2
         ORDER BY 1;
         """
@@ -795,7 +795,7 @@ def register_callbacks(dash_app, server):
 
         c2_query = f"""
         SELECT {time_sql}, tr.source_country AS "Gas Origin", SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
-        FROM dev.european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins AND LOWER(tr.flow_type) IN :flow_types
+        FROM european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins AND LOWER(tr.flow_type) IN :flow_types
         GROUP BY 1, 2
         ORDER BY 1;
         """
@@ -820,7 +820,7 @@ def register_callbacks(dash_app, server):
 
         c3_query = f"""
         SELECT tr.date AS "Date", tr.flow_type AS "Type", SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
-        FROM dev.european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins
+        FROM european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins
         GROUP BY 1, 2
         ORDER BY 1;
         """
@@ -851,7 +851,7 @@ def register_callbacks(dash_app, server):
             tr.source_country AS "Origin", 
             tr.target_country AS "Destination", 
             SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
-        FROM dev.european_gas_trade tr 
+        FROM european_gas_trade tr 
         {where_clause} 
         {country_clause}
         AND tr.source_country IN :origins
@@ -883,7 +883,7 @@ def register_callbacks(dash_app, server):
     def update_origin_legend(country, selected):
         # 1. If Country changed (or first load), we reset selection to 'All' for that country
         if not ctx.triggered_id or ctx.triggered_id == 'country-dropdown':
-            query = "SELECT DISTINCT source_country FROM dev.european_gas_trade tr WHERE source_country IS NOT NULL AND TRIM(source_country) <> ''"
+            query = "SELECT DISTINCT source_country FROM european_gas_trade tr WHERE source_country IS NOT NULL AND TRIM(source_country) <> ''"
             params = {}
             if country and country != '(All)':
                 query += " AND tr.target_country = :country"
@@ -895,7 +895,7 @@ def register_callbacks(dash_app, server):
             # We return selected here to update the store, and we'll build UI below
         
         # 2. Build UI based on 'selected' and 'country'
-        query = "SELECT DISTINCT source_country FROM dev.european_gas_trade tr WHERE source_country IS NOT NULL AND TRIM(source_country) <> ''"
+        query = "SELECT DISTINCT source_country FROM european_gas_trade tr WHERE source_country IS NOT NULL AND TRIM(source_country) <> ''"
         params = {}
         if country and country != '(All)':
             query += " AND tr.target_country = :country"
@@ -1070,7 +1070,7 @@ def register_callbacks(dash_app, server):
 
             c1_query = f"""
             SELECT {time_sql}, LOWER(tr.flow_type) AS "FlowType", SUM(tr."flow_mcm/d") / 1000.0 AS flow_bcm
-            FROM dev.european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow1 
+            FROM european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow1 
             GROUP BY 1, 2
             ORDER BY 1;
             """
@@ -1211,7 +1211,7 @@ def register_callbacks(dash_app, server):
 
             c2_query = f"""
             SELECT {time_sql}, tr.source_country AS "Gas Origin", SUM(tr."flow_mcm/d") / 1000.0 AS flow_bcm
-            FROM dev.european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins 
+            FROM european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins 
             GROUP BY 1, 2
             ORDER BY 1;
             """
@@ -1394,7 +1394,7 @@ def register_callbacks(dash_app, server):
 
         c3_query = f"""
         SELECT tr.date AS "Day of Date", INITCAP(LOWER(tr.flow_type)) AS "FlowName", SUM(tr."flow_mcm/d") / 1000.0 AS flows_bcm
-        FROM dev.european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow2 GROUP BY 1, 2 ORDER BY 1;
+        FROM european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow2 GROUP BY 1, 2 ORDER BY 1;
         """
         c3_df = load_data(c3_query, {**params, 'flow2': tuple(flow2_filtered)})
         fig3 = go.Figure()
@@ -1456,7 +1456,7 @@ def register_callbacks(dash_app, server):
         t_query = f"""
         SELECT TO_CHAR(DATE_TRUNC('month', tr.date), 'FMMonth YYYY') AS "Month of Date", DATE_TRUNC('month', tr.date) as "month_raw",
         tr.source_country AS "Gas Origin", tr.target_country AS "Target Country", SUM(tr."flow_mcm/d") / 1000.0 AS flows_bcm
-        FROM dev.european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins GROUP BY 1, 2, 3, 4 ORDER BY 2 DESC;
+        FROM european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins GROUP BY 1, 2, 3, 4 ORDER BY 2 DESC;
         """
         table_df = load_data(t_query, {**params, 'origins': tuple(origins_filtered)})
         if table_df.empty: 
