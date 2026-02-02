@@ -148,28 +148,7 @@ def create_layout():
                     # Legend as per Fig 2
                     html.Div([
                         html.Label("Gas Origin", style={'fontSize': '12px', 'fontWeight': 'bold', 'color': EI_DARK_BLUE, 'marginTop': '20px', 'display': 'block'}),
-                        html.Div([
-                            html.Div([
-                                html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': GAS_ORIGIN_COLORS['Russia'], 'marginRight': '8px'}),
-                                html.Span("Russia", style={'fontSize': '11px', 'color': '#666'})
-                            ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'}),
-                            html.Div([
-                                html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': GAS_ORIGIN_COLORS['Norway'], 'marginRight': '8px'}),
-                                html.Span("Norway", style={'fontSize': '11px', 'color': '#666'})
-                            ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'}),
-                            html.Div([
-                                html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': GAS_ORIGIN_COLORS['Algeria'], 'marginRight': '8px'}),
-                                html.Span("Algeria", style={'fontSize': '11px', 'color': '#666'})
-                            ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'}),
-                            html.Div([
-                                html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': GAS_ORIGIN_COLORS['Azerbaijan'], 'marginRight': '8px'}),
-                                html.Span("Azerbaijan", style={'fontSize': '11px', 'color': '#666'})
-                            ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'}),
-                            html.Div([
-                                html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': GAS_ORIGIN_COLORS['Libya'], 'marginRight': '8px'}),
-                                html.Span("Libya", style={'fontSize': '11px', 'color': '#666'})
-                            ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'}),
-                        ])
+                        html.Div(id='gas-origin-legend-items')
                     ])
                 ], style={'padding': '15px', 'backgroundColor': '#fcfcfc', 'border': '1px solid #eee', 'height': '100%'})
             ], style={'width': '200px', 'order': '2', 'marginLeft': '15px'}),
@@ -451,6 +430,30 @@ def register_callbacks(dash_app, server):
         Output('gas-flows-table-enhancer-anchor', 'children'),
         Input('gas-flows-table-enhancer-anchor', 'id')
     )
+
+    @dash_app.callback(
+        Output('gas-origin-legend-items', 'children'),
+        [Input('gas-origin-checklist', 'value')]
+    )
+    def update_gas_origin_legend(selected_origins):
+        if not selected_origins:
+            return []
+            
+        # Maintain order from Fig 2: Russia, Norway, Algeria, Azerbaijan, Libya
+        origin_order = ['Russia', 'Norway', 'Algeria', 'Azerbaijan', 'Libya']
+        items = []
+        for origin in origin_order:
+            if origin in selected_origins:
+                items.append(html.Div([
+                    html.Div(style={
+                        'width': '12px', 
+                        'height': '12px', 
+                        'backgroundColor': GAS_ORIGIN_COLORS.get(origin, '#ccc'), 
+                        'marginRight': '8px'
+                    }),
+                    html.Span(origin, style={'fontSize': '11px', 'color': '#666'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'}))
+        return items
 
     # Combined helper for both toggle callbacks to minimize duplication
     def get_period_toggle_updates(button_id, current_period, prefix):
