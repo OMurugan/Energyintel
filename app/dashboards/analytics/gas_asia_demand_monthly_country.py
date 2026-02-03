@@ -418,7 +418,7 @@ def create_layout():
                                 }
                             )
                         ),
-                    ], style={'width': '45%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '0%'}),
+                    ], style={'width': '50%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '0%'}),
                     
                     # Right Side - Line Chart
                     html.Div([
@@ -449,7 +449,7 @@ def create_layout():
                             type="circle",
                             children=dcc.Graph(id='asia-chart-demand', config={'displayModeBar': False})
                         ),
-                    ], style={'width': '55%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginLeft': '0%'}),
+                    ], style={'width': '50%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginLeft': '0%'}),
                 ], style={'marginBottom': '30px', 'width': '100%'}),
                 
                 # Table Section
@@ -486,7 +486,7 @@ def create_layout():
                     children=html.Div(id='asia-table-demand')
                 ),
                 
-            ], style={'marginRight': '180px', 'padding': '0 10px'})  # Increased margin and reduced padding
+            ], style={'marginRight': '150px', 'padding': '0 10px'})  # Increased margin and reduced padding
         ])
     ], className='tab-content', style={'backgroundColor': '#ffffff', 'minHeight': '100vh'})
 
