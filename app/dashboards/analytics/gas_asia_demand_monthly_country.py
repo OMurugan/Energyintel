@@ -670,27 +670,37 @@ def register_callbacks(dash_app, server):
         if not available_countries:
             return [], []
         
-        # Handle country selection logic
-        if not selected_countries or (selected_countries and '(All)' not in selected_countries and len(selected_countries) == 0):
-            current_selected = []  # Allow empty selection
-        elif selected_countries and '(All)' not in selected_countries:
-            current_selected = [c for c in selected_countries if c in available_countries]
+        # Handle country selection logic based on trigger
+        trigger_id = ctx.triggered[0]['prop_id'] if ctx.triggered else '.'
+        
+        # Default to using checklist value if not triggered by legend
+        # or if it's the initial load
+        if 'legend-item-asia-demand' not in trigger_id:
+            if not selected_countries or (selected_countries and '(All)' not in selected_countries and len(selected_countries) == 0):
+                current_selected = []  # Allow empty selection
+            elif selected_countries and '(All)' not in selected_countries:
+                current_selected = [c for c in selected_countries if c in available_countries]
+            else:
+                current_selected = available_countries.copy()
         else:
-            current_selected = available_countries.copy()
+            # If triggered by legend, use the stored state as the baseline
+            # Ensure current_selected is a list
+            if current_selected is None:
+                current_selected = available_countries.copy()
         
         # Handle legend item clicks
-        if ctx.triggered and ctx.triggered[0]['prop_id'] != '.':
-            triggered_id = ctx.triggered[0]['prop_id']
-            if 'legend-item-asia-demand' in triggered_id:
-                import json
-                prop_data = json.loads(triggered_id.split('.')[0])
-                clicked_country = available_countries[prop_data['index']] if prop_data['index'] < len(available_countries) else None
-                
-                if clicked_country:
-                    if len(current_selected) == 1 and clicked_country in current_selected:
-                        current_selected = available_countries.copy()
-                    else:
-                        current_selected = [clicked_country]
+        if 'legend-item-asia-demand' in trigger_id:
+            import json
+            prop_data = json.loads(trigger_id.split('.')[0])
+            clicked_country = available_countries[prop_data['index']] if prop_data['index'] < len(available_countries) else None
+            
+            if clicked_country:
+                # If the clicked country is the ONLY currently selected one, toggle back to ALL
+                if len(current_selected) == 1 and clicked_country in current_selected:
+                    current_selected = available_countries.copy()
+                else:
+                    # Otherwise, select ONLY this country
+                    current_selected = [clicked_country]
         
         # Create legend items
         legend_items = []
