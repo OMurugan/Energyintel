@@ -88,6 +88,8 @@ COUNTRY_TO_ISO = {
     "Bangladesh": "BGD",
     "Pakistan": "PAK",
     "Sri Lanka": "LKA",
+    "Taiwan": "TWN",
+    "New Zealand": "NZL",
     
     # Additional countries from projects_by_country.py
     "Belarus": "BLR",
