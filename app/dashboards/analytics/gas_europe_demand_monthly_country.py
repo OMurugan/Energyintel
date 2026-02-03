@@ -808,7 +808,7 @@ def register_callbacks(dash_app, server):
                 f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
                 f"<span style='color: #000000; font-weight: bold;'>{row['Country']}</span><br>"
                 f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
-                f"<span style='color: #000000; font-weight: bold;'>{_index_to_date(slider_range[1], [pd.to_datetime(d) for d in date_list_iso]).year if slider_range and len(slider_range) == 2 and date_list_iso else 2025}</span><br>"
+                f"<span style='color: #000000; font-weight: bold;'>{int(filtered_df[filtered_df['Country'] == row['Country']]['Year of Date'].iloc[0]) if not filtered_df[filtered_df['Country'] == row['Country']].empty else 2024}</span><br>"
                 f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
                 f"<span style='color: #000000; font-weight: bold;'>{row['Value']:,.1f}</span><br>"
                 f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
@@ -884,14 +884,13 @@ def register_callbacks(dash_app, server):
                     country_data = agg_df[agg_df['Country'] == country]
                     if not country_data.empty:
                         value = country_data.iloc[0]['Value']
-                        # Extract year from the filtered data date range
-                        if slider_range and len(slider_range) == 2 and date_list_iso:
-                            date_list = [pd.to_datetime(d) for d in date_list_iso]
-                            end_date = _index_to_date(slider_range[1], date_list)
-                            year = end_date.year
+                        # Get actual Year of Date from the filtered CSV data
+                        country_filtered_data = filtered_df[filtered_df['Country'] == country]
+                        if not country_filtered_data.empty and 'Year of Date' in country_filtered_data.columns:
+                            year = int(country_filtered_data['Year of Date'].iloc[0])
                         else:
                             # Fallback to latest year in data
-                            year = 2025
+                            year = 2024
                         
                         hover_text = (
                             f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
@@ -904,13 +903,12 @@ def register_callbacks(dash_app, server):
                             f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
                         )
                     else:
-                        # Fallback if no data found
-                        if slider_range and len(slider_range) == 2 and date_list_iso:
-                            date_list = [pd.to_datetime(d) for d in date_list_iso]
-                            end_date = _index_to_date(slider_range[1], date_list)
-                            year = end_date.year
+                        # Fallback if no data found - use CSV Year of Date if available
+                        country_filtered_data = filtered_df[filtered_df['Country'] == country]
+                        if not country_filtered_data.empty and 'Year of Date' in country_filtered_data.columns:
+                            year = int(country_filtered_data['Year of Date'].iloc[0])
                         else:
-                            year = 2025
+                            year = 2024
                             
                         hover_text = (
                             f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
@@ -970,14 +968,13 @@ def register_callbacks(dash_app, server):
                     country_data = agg_df[agg_df['Country'] == country]
                     if not country_data.empty:
                         value = country_data.iloc[0]['Value']
-                        # Extract year from the filtered data date range
-                        if slider_range and len(slider_range) == 2 and date_list_iso:
-                            date_list = [pd.to_datetime(d) for d in date_list_iso]
-                            end_date = _index_to_date(slider_range[1], date_list)
-                            year = end_date.year
+                        # Get actual Year of Date from the filtered CSV data
+                        country_filtered_data = filtered_df[filtered_df['Country'] == country]
+                        if not country_filtered_data.empty and 'Year of Date' in country_filtered_data.columns:
+                            year = int(country_filtered_data['Year of Date'].iloc[0])
                         else:
                             # Fallback to latest year in data
-                            year = 2025
+                            year = 2024
                         
                         hover_text = (
                             f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
@@ -990,13 +987,12 @@ def register_callbacks(dash_app, server):
                             f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
                         )
                     else:
-                        # Fallback if no data found
-                        if slider_range and len(slider_range) == 2 and date_list_iso:
-                            date_list = [pd.to_datetime(d) for d in date_list_iso]
-                            end_date = _index_to_date(slider_range[1], date_list)
-                            year = end_date.year
+                        # Fallback if no data found - use CSV Year of Date if available
+                        country_filtered_data = filtered_df[filtered_df['Country'] == country]
+                        if not country_filtered_data.empty and 'Year of Date' in country_filtered_data.columns:
+                            year = int(country_filtered_data['Year of Date'].iloc[0])
                         else:
-                            year = 2025
+                            year = 2024
                             
                         hover_text = (
                             f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
