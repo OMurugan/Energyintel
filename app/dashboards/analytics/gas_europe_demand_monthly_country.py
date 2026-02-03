@@ -369,7 +369,7 @@ def create_layout():
                     # Left Side - Europe Map
                     html.Div([
                         html.Div([
-                            html.H3("", style={
+                            html.H3("Europe Map – Demand by Year", style={
                                 'color': '#1b365d', 'fontSize': '16px', 'fontWeight': 'bold',
                                 'marginBottom': '15px', 'textAlign': 'center', 'flex': '1'
                             }),
@@ -407,7 +407,7 @@ def create_layout():
                     # Right Side - Line Chart
                     html.Div([
                         html.Div([
-                            html.H3("", style={
+                            html.H3("Europe Line Chart – Total Demand by Country", style={
                                 'color': '#1b365d', 'fontSize': '16px', 'fontWeight': 'bold',
                                 'marginBottom': '15px', 'textAlign': 'center', 'flex': '1'
                             }),
@@ -805,11 +805,14 @@ def register_callbacks(dash_app, server):
         # Create hover text with structured format matching the professional design
         hover_text = agg_df.apply(
             lambda row: (
-                f"&nbsp;<br>"   # Top padding
-                f"&nbsp;&nbsp;<span style='color: #666666; font-family: monospace;'>Country:      </span><b>{row['Country']}</b>&nbsp;&nbsp;<br>"  # Use original Country column
-                f"&nbsp;&nbsp;<span style='color: #666666; font-family: monospace;'>Unit:         </span><b>{selected_unit}</b>&nbsp;&nbsp;<br>"
-                f"&nbsp;&nbsp;<span style='color: #666666; font-family: monospace;'>Demand:       </span><b>{row['Value']:,.0f}</b>&nbsp;&nbsp;"
-                f"<br>&nbsp;"  # Bottom padding
+                f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                f"<span style='color: #000000; font-weight: bold;'>{row['Country']}</span><br>"
+                f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                f"<span style='color: #000000; font-weight: bold;'>{_index_to_date(slider_range[1], [pd.to_datetime(d) for d in date_list_iso]).year if slider_range and len(slider_range) == 2 and date_list_iso else 2025}</span><br>"
+                f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                f"<span style='color: #000000; font-weight: bold;'>{row['Value']:,.1f}</span><br>"
+                f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
             ),
             axis=1,
         ).tolist()
@@ -873,7 +876,53 @@ def register_callbacks(dash_app, server):
             if unique_isos:
                 # Add country choropleth layer for hover interactions
                 country_values = [1] * len(unique_isos)  # Uniform values for consistent hover
-                country_hover_text = [f"Country: <b>{country}</b><br>Click to select" for country in valid_countries]
+                
+                # Create dynamic hover text with actual data for each country
+                country_hover_text = []
+                for country in valid_countries:
+                    # Get actual data for this country from the aggregated data
+                    country_data = agg_df[agg_df['Country'] == country]
+                    if not country_data.empty:
+                        value = country_data.iloc[0]['Value']
+                        # Extract year from the filtered data date range
+                        if slider_range and len(slider_range) == 2 and date_list_iso:
+                            date_list = [pd.to_datetime(d) for d in date_list_iso]
+                            end_date = _index_to_date(slider_range[1], date_list)
+                            year = end_date.year
+                        else:
+                            # Fallback to latest year in data
+                            year = 2025
+                        
+                        hover_text = (
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{value:,.1f}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
+                        )
+                    else:
+                        # Fallback if no data found
+                        if slider_range and len(slider_range) == 2 and date_list_iso:
+                            date_list = [pd.to_datetime(d) for d in date_list_iso]
+                            end_date = _index_to_date(slider_range[1], date_list)
+                            year = end_date.year
+                        else:
+                            year = 2025
+                            
+                        hover_text = (
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>No data</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
+                        )
+                    country_hover_text.append(hover_text)
                 
                 fig.add_trace(
                     go.Choroplethmapbox(
@@ -913,7 +962,53 @@ def register_callbacks(dash_app, server):
             
             if unique_isos:
                 country_values = [1] * len(unique_isos)
-                country_hover_text = [f"Country: <b>{country}</b><br>Click to select" for country in valid_countries]
+                
+                # Create dynamic hover text with actual data for each country
+                country_hover_text = []
+                for country in valid_countries:
+                    # Get actual data for this country from the aggregated data
+                    country_data = agg_df[agg_df['Country'] == country]
+                    if not country_data.empty:
+                        value = country_data.iloc[0]['Value']
+                        # Extract year from the filtered data date range
+                        if slider_range and len(slider_range) == 2 and date_list_iso:
+                            date_list = [pd.to_datetime(d) for d in date_list_iso]
+                            end_date = _index_to_date(slider_range[1], date_list)
+                            year = end_date.year
+                        else:
+                            # Fallback to latest year in data
+                            year = 2025
+                        
+                        hover_text = (
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{value:,.1f}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
+                        )
+                    else:
+                        # Fallback if no data found
+                        if slider_range and len(slider_range) == 2 and date_list_iso:
+                            date_list = [pd.to_datetime(d) for d in date_list_iso]
+                            end_date = _index_to_date(slider_range[1], date_list)
+                            year = end_date.year
+                        else:
+                            year = 2025
+                            
+                        hover_text = (
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>No data</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
+                        )
+                    country_hover_text.append(hover_text)
                 
                 fig.add_trace(
                     go.Choropleth(
@@ -1065,8 +1160,23 @@ def register_callbacks(dash_app, server):
             y='Value',
             color='Country',
             color_discrete_map=COUNTRY_COLORS,
-            title=''
+            title='',
+            hover_data={'Date': False, 'Value': False, 'Country': False}  # Hide default hover data
         )
+        
+        # Add custom hover template for professional formatting
+        for trace in fig.data:
+            trace.hovertemplate = (
+                "<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                "<span style='color: #000000; font-weight: bold;'>%{fullData.name}</span><br>"
+                "<span style='color: #666666; font-family: Arial, sans-serif;'>Month of Date: </span>"
+                "<span style='color: #000000; font-weight: bold;'>%{x|%d %b %Y}</span><br>"
+                "<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                "<span style='color: #000000; font-weight: bold;'>%{y:,.2f}</span><br>"
+                "<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                "<span style='color: #000000; font-weight: bold;'>" + selected_unit + "</span>"
+                "<extra></extra>"  # Remove trace box
+            )
         
         # Update layout
         fig.update_layout(
@@ -1076,7 +1186,17 @@ def register_callbacks(dash_app, server):
             plot_bgcolor='white',
             xaxis_title="",  # Remove x-axis title
             yaxis_title="",  # Remove y-axis title
-            showlegend=False  # Remove legend from chart
+            showlegend=False,  # Remove legend from chart
+            hoverlabel=dict(
+                bgcolor="white",
+                bordercolor="#cccccc",
+                font=dict(
+                    family="Arial, sans-serif",
+                    size=12,
+                    color="black"
+                ),
+                align="left"
+            )
         )
         
         # Set x-axis range to show the full selected date range
