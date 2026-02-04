@@ -369,7 +369,7 @@ def create_layout():
                     # Left Side - Europe Map
                     html.Div([
                         html.Div([
-                            html.H3("", style={
+                            html.H3("Europe Map – Demand by Year", style={
                                 'color': '#1b365d', 'fontSize': '16px', 'fontWeight': 'bold',
                                 'marginBottom': '15px', 'textAlign': 'center', 'flex': '1'
                             }),
@@ -402,12 +402,12 @@ def create_layout():
                                 }
                             )
                         ),
-                    ], style={'width': '45%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '0%'}),
+                    ], style={'width': '50%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '0%'}),
                     
                     # Right Side - Line Chart
                     html.Div([
                         html.Div([
-                            html.H3("", style={
+                            html.H3("Europe Line Chart – Total Demand by Country", style={
                                 'color': '#1b365d', 'fontSize': '16px', 'fontWeight': 'bold',
                                 'marginBottom': '15px', 'textAlign': 'center', 'flex': '1'
                             }),
@@ -433,7 +433,7 @@ def create_layout():
                             type="circle",
                             children=dcc.Graph(id='europe-chart-demand', config={'displayModeBar': False})
                         ),
-                    ], style={'width': '55%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginLeft': '0%'}),
+                    ], style={'width': '50%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginLeft': '0%'}),
                 ], style={'marginBottom': '30px', 'width': '100%'}),
                 
                 # Table Section
@@ -470,7 +470,7 @@ def create_layout():
                     children=html.Div(id='europe-table-demand')
                 ),
                 
-            ], style={'marginRight': '180px', 'padding': '0 10px'})  # Increased margin and reduced padding
+            ], style={'marginRight': '150px', 'padding': '0 10px'})  # Increased margin and reduced padding
         ])
     ], className='tab-content', style={'backgroundColor': '#ffffff', 'minHeight': '100vh'})
 
@@ -654,27 +654,37 @@ def register_callbacks(dash_app, server):
         if not available_countries:
             return [], []
         
-        # Handle country selection
-        if not selected_countries or (selected_countries and '(All)' not in selected_countries and len(selected_countries) == 0):
-            current_selected = []  # Allow empty selection
-        elif selected_countries and '(All)' not in selected_countries:
-            current_selected = [c for c in selected_countries if c in available_countries]
+        # Handle country selection logic based on trigger
+        trigger_id = ctx.triggered[0]['prop_id'] if ctx.triggered else '.'
+        
+        # Default to using checklist value if not triggered by legend
+        # or if it's the initial load
+        if 'legend-item-demand' not in trigger_id:
+            if not selected_countries or (selected_countries and '(All)' not in selected_countries and len(selected_countries) == 0):
+                current_selected = []  # Allow empty selection
+            elif selected_countries and '(All)' not in selected_countries:
+                current_selected = [c for c in selected_countries if c in available_countries]
+            else:
+                current_selected = available_countries.copy()
         else:
-            current_selected = available_countries.copy()
+            # If triggered by legend, use the stored state as the baseline
+            # Ensure current_selected is a list
+            if current_selected is None:
+                current_selected = available_countries.copy()
         
         # Handle legend item clicks
-        if ctx.triggered and ctx.triggered[0]['prop_id'] != '.':
-            triggered_id = ctx.triggered[0]['prop_id']
-            if 'legend-item-demand' in triggered_id:
-                import json
-                prop_data = json.loads(triggered_id.split('.')[0])
-                clicked_country = available_countries[prop_data['index']] if prop_data['index'] < len(available_countries) else None
-                
-                if clicked_country:
-                    if len(current_selected) == 1 and clicked_country in current_selected:
-                        current_selected = available_countries.copy()
-                    else:
-                        current_selected = [clicked_country]
+        if 'legend-item-demand' in trigger_id:
+            import json
+            prop_data = json.loads(trigger_id.split('.')[0])
+            clicked_country = available_countries[prop_data['index']] if prop_data['index'] < len(available_countries) else None
+            
+            if clicked_country:
+                # If the clicked country is the ONLY currently selected one, toggle back to ALL
+                if len(current_selected) == 1 and clicked_country in current_selected:
+                    current_selected = available_countries.copy()
+                else:
+                    # Otherwise, select ONLY this country
+                    current_selected = [clicked_country]
         
         # Don't force all countries to be selected - allow empty selection
         
@@ -805,11 +815,14 @@ def register_callbacks(dash_app, server):
         # Create hover text with structured format matching the professional design
         hover_text = agg_df.apply(
             lambda row: (
-                f"&nbsp;<br>"   # Top padding
-                f"&nbsp;&nbsp;<span style='color: #666666; font-family: monospace;'>Country:      </span><b>{row['Country']}</b>&nbsp;&nbsp;<br>"  # Use original Country column
-                f"&nbsp;&nbsp;<span style='color: #666666; font-family: monospace;'>Unit:         </span><b>{selected_unit}</b>&nbsp;&nbsp;<br>"
-                f"&nbsp;&nbsp;<span style='color: #666666; font-family: monospace;'>Demand:       </span><b>{row['Value']:,.0f}</b>&nbsp;&nbsp;"
-                f"<br>&nbsp;"  # Bottom padding
+                f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                f"<span style='color: #000000; font-weight: bold;'>{row['Country']}</span><br>"
+                f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                f"<span style='color: #000000; font-weight: bold;'>{int(filtered_df[filtered_df['Country'] == row['Country']]['Year of Date'].iloc[0]) if not filtered_df[filtered_df['Country'] == row['Country']].empty else 2024}</span><br>"
+                f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                f"<span style='color: #000000; font-weight: bold;'>{row['Value']:,.1f}</span><br>"
+                f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
             ),
             axis=1,
         ).tolist()
@@ -873,7 +886,51 @@ def register_callbacks(dash_app, server):
             if unique_isos:
                 # Add country choropleth layer for hover interactions
                 country_values = [1] * len(unique_isos)  # Uniform values for consistent hover
-                country_hover_text = [f"Country: <b>{country}</b><br>Click to select" for country in valid_countries]
+                
+                # Create dynamic hover text with actual data for each country
+                country_hover_text = []
+                for country in valid_countries:
+                    # Get actual data for this country from the aggregated data
+                    country_data = agg_df[agg_df['Country'] == country]
+                    if not country_data.empty:
+                        value = country_data.iloc[0]['Value']
+                        # Get actual Year of Date from the filtered CSV data
+                        country_filtered_data = filtered_df[filtered_df['Country'] == country]
+                        if not country_filtered_data.empty and 'Year of Date' in country_filtered_data.columns:
+                            year = int(country_filtered_data['Year of Date'].iloc[0])
+                        else:
+                            # Fallback to latest year in data
+                            year = 2024
+                        
+                        hover_text = (
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{value:,.1f}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
+                        )
+                    else:
+                        # Fallback if no data found - use CSV Year of Date if available
+                        country_filtered_data = filtered_df[filtered_df['Country'] == country]
+                        if not country_filtered_data.empty and 'Year of Date' in country_filtered_data.columns:
+                            year = int(country_filtered_data['Year of Date'].iloc[0])
+                        else:
+                            year = 2024
+                            
+                        hover_text = (
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>No data</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
+                        )
+                    country_hover_text.append(hover_text)
                 
                 fig.add_trace(
                     go.Choroplethmapbox(
@@ -913,7 +970,51 @@ def register_callbacks(dash_app, server):
             
             if unique_isos:
                 country_values = [1] * len(unique_isos)
-                country_hover_text = [f"Country: <b>{country}</b><br>Click to select" for country in valid_countries]
+                
+                # Create dynamic hover text with actual data for each country
+                country_hover_text = []
+                for country in valid_countries:
+                    # Get actual data for this country from the aggregated data
+                    country_data = agg_df[agg_df['Country'] == country]
+                    if not country_data.empty:
+                        value = country_data.iloc[0]['Value']
+                        # Get actual Year of Date from the filtered CSV data
+                        country_filtered_data = filtered_df[filtered_df['Country'] == country]
+                        if not country_filtered_data.empty and 'Year of Date' in country_filtered_data.columns:
+                            year = int(country_filtered_data['Year of Date'].iloc[0])
+                        else:
+                            # Fallback to latest year in data
+                            year = 2024
+                        
+                        hover_text = (
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{value:,.1f}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
+                        )
+                    else:
+                        # Fallback if no data found - use CSV Year of Date if available
+                        country_filtered_data = filtered_df[filtered_df['Country'] == country]
+                        if not country_filtered_data.empty and 'Year of Date' in country_filtered_data.columns:
+                            year = int(country_filtered_data['Year of Date'].iloc[0])
+                        else:
+                            year = 2024
+                            
+                        hover_text = (
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>No data</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
+                        )
+                    country_hover_text.append(hover_text)
                 
                 fig.add_trace(
                     go.Choropleth(
@@ -1065,8 +1166,23 @@ def register_callbacks(dash_app, server):
             y='Value',
             color='Country',
             color_discrete_map=COUNTRY_COLORS,
-            title=''
+            title='',
+            hover_data={'Date': False, 'Value': False, 'Country': False}  # Hide default hover data
         )
+        
+        # Add custom hover template for professional formatting
+        for trace in fig.data:
+            trace.hovertemplate = (
+                "<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                "<span style='color: #000000; font-weight: bold;'>%{fullData.name}</span><br>"
+                "<span style='color: #666666; font-family: Arial, sans-serif;'>Month of Date: </span>"
+                "<span style='color: #000000; font-weight: bold;'>%{x|%d %b %Y}</span><br>"
+                "<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                "<span style='color: #000000; font-weight: bold;'>%{y:,.2f}</span><br>"
+                "<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                "<span style='color: #000000; font-weight: bold;'>" + selected_unit + "</span>"
+                "<extra></extra>"  # Remove trace box
+            )
         
         # Update layout
         fig.update_layout(
@@ -1076,7 +1192,17 @@ def register_callbacks(dash_app, server):
             plot_bgcolor='white',
             xaxis_title="",  # Remove x-axis title
             yaxis_title="",  # Remove y-axis title
-            showlegend=False  # Remove legend from chart
+            showlegend=False,  # Remove legend from chart
+            hoverlabel=dict(
+                bgcolor="white",
+                bordercolor="#cccccc",
+                font=dict(
+                    family="Arial, sans-serif",
+                    size=12,
+                    color="black"
+                ),
+                align="left"
+            )
         )
         
         # Set x-axis range to show the full selected date range
