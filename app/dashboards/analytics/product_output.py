@@ -102,28 +102,34 @@ def create_layout():
     ], style={'backgroundColor': '#f8f9fa', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'})
 
 # Clientside callbacks for fast interactivity
-clientside_callback(
-    """
-    function(clickData, currentSelection) {
-        if (!clickData || !clickData.points || clickData.points.length === 0) {
-            return [currentSelection, window.dash_clientside.no_update];
-        }
-        const point = clickData.points[0];
-        if (!point.customdata) return [null, null];
-        const clickedCompany = String(point.customdata[0]).trim();
-        let nextSelection = clickedCompany;
-        if (currentSelection && currentSelection === clickedCompany) {
-            nextSelection = null;
-        }
-        return [nextSelection, null];
-    }
-    """,
-    [Output('company-treemap-selection', 'data'),
-     Output('company-treemap', 'clickData')],
-    Input('company-treemap', 'clickData'),
-    State('company-treemap-selection', 'data'),
-    prevent_initial_call=True
-)
+# Temporarily disable this clientside callback to test
+# clientside_callback(
+#     """
+#     function(clickData, currentSelection) {
+#         if (!clickData || !clickData.points || clickData.points.length === 0) {
+#             return [currentSelection, window.dash_clientside.no_update];
+#         }
+#         const point = clickData.points[0];
+#         if (!point.customdata || !Array.isArray(point.customdata) || point.customdata.length < 1) {
+#             return [null, null];
+#         }
+#         const clickedCompany = String(point.customdata[0] || '').trim();
+#         if (!clickedCompany) {
+#             return [null, null];
+#         }
+#         let nextSelection = clickedCompany;
+#         if (currentSelection && currentSelection === clickedCompany) {
+#             nextSelection = null;
+#         }
+#         return [nextSelection, null];
+#     }
+#     """,
+#     [Output('company-treemap-selection', 'data'),
+#      Output('company-treemap', 'clickData')],
+#     Input('company-treemap', 'clickData'),
+#     State('company-treemap-selection', 'data'),
+#     prevent_initial_call=True
+# )
 
 clientside_callback(
     """
@@ -132,8 +138,13 @@ clientside_callback(
             return [currentSelection, window.dash_clientside.no_update];
         }
         const point = clickData.points[0];
-        if (!point.customdata) return [null, null];
-        const clickedProduct = String(point.customdata[0]).trim();
+        if (!point.customdata || !Array.isArray(point.customdata) || point.customdata.length < 1) {
+            return [null, null];
+        }
+        const clickedProduct = String(point.customdata[0] || '').trim();
+        if (!clickedProduct) {
+            return [null, null];
+        }
         let nextSelection = clickedProduct;
         if (currentSelection && currentSelection === clickedProduct) {
             nextSelection = null;
@@ -155,9 +166,14 @@ clientside_callback(
             return [currentSelection, window.dash_clientside.no_update];
         }
         const point = clickData.points[0];
-        if (!point.customdata) return [null, null];
-        const company = String(point.customdata[0]).trim();
-        const date = String(point.customdata[1]).trim();
+        if (!point.customdata || !Array.isArray(point.customdata) || point.customdata.length < 2) {
+            return [null, null];
+        }
+        const company = String(point.customdata[0] || '').trim();
+        const date = String(point.customdata[1] || '').trim();
+        if (!company || !date) {
+            return [null, null];
+        }
         const clickedId = company + "|" + date;
         let nextSelection = clickedId;
         if (currentSelection && currentSelection === clickedId) {
@@ -180,9 +196,14 @@ clientside_callback(
             return [currentSelection, window.dash_clientside.no_update];
         }
         const point = clickData.points[0];
-        if (!point.customdata) return [null, null];
-        const clickedCompany = String(point.customdata[0]).trim();
-        const slotId = String(point.customdata[2]).trim(); // NEW: slotId
+        if (!point.customdata || !Array.isArray(point.customdata) || point.customdata.length < 3) {
+            return [null, null];
+        }
+        const clickedCompany = String(point.customdata[0] || '').trim();
+        const slotId = String(point.customdata[2] || '').trim(); // NEW: slotId
+        if (!clickedCompany || !slotId) {
+            return [null, null];
+        }
         const clickedId = clickedCompany + "|" + slotId;
         let nextSelection = clickedId;
         if (currentSelection && currentSelection === clickedId) {
@@ -311,7 +332,7 @@ def create_by_company_layout():
                            style={'fontStyle': 'italic', 'fontSize': '12px', 'marginTop': '20px', 'color': '#1b365d'})
                 ])
 
-            ], style={'width': '85%', 'display': 'inline-block', 'verticalAlign': 'top'}),
+            ], style={'width': '88%', 'display': 'inline-block', 'verticalAlign': 'top'}),
 
             # Right side: Controls
             html.Div([
@@ -351,7 +372,7 @@ def create_by_company_layout():
                         labelStyle={'display': 'block', 'marginBottom': '2px', 'fontSize': '13px'}
                     )
                 ])
-            ], style={'width': '13%', 'display': 'inline-block', 'marginLeft': '2%', 'verticalAlign': 'top'})
+            ], style={'width': '10%', 'display': 'inline-block', 'marginLeft': '2%', 'verticalAlign': 'top'})
         ], style={'display': 'flex', 'justifyContent': 'space-between'})
     ])
 
@@ -598,8 +619,20 @@ def register_callbacks(dash_app, server):
                     precision = ".1f" if selected_product == 'VGO' else ".0f"
                     
                     labels.append(f"<b>{display_name}</b><br>{row['vol_kbpd']:{precision}} ('000 b/d)<br>{row['percentage']:.2f}%")
-                    # CRITICAL: Keep original 'company' in customdata[0] for interactivity
-                    custom_data.append([company, row['vol_kbpd'], row['percentage']])
+                    # CRITICAL: Keep original 'company' in customdata[0] for interactivity - ensure all elements exist
+                    # Add safety checks to ensure no None/NaN values
+                    company_str = str(company) if company is not None else 'Unknown'
+                    vol_float = float(row['vol_kbpd']) if pd.notna(row['vol_kbpd']) else 0.0
+                    pct_float = float(row['percentage']) if pd.notna(row['percentage']) else 0.0
+                    custom_data.append([company_str, vol_float, pct_float])
+
+                # Ensure customdata is never empty - add a fallback
+                if not custom_data:
+                    custom_data = [['No Data', 0.0, 0.0]]
+                    ids = ['no-data']
+                    labels = ['No Data Available']
+                    marker_colors = ['#CCCCCC']
+                    treemap_data = pd.DataFrame({'vol_kbpd': [0]})
 
                 tree_fig = go.Figure(go.Treemap(
                     ids=ids,
@@ -608,8 +641,6 @@ def register_callbacks(dash_app, server):
                     values=treemap_data['vol_kbpd'],
                     textinfo="label",
                     marker=dict(colors=marker_colors, line=dict(width=line_widths, color=line_colors)),
-                    customdata=custom_data,
-                    hovertemplate=f"Company: %{{customdata[0]}}<br>Volume: %{{customdata[1]:{precision}}}<extra></extra>",
                     tiling=dict(pad=2),
                     maxdepth=1,
                     hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"))
@@ -691,8 +722,8 @@ def register_callbacks(dash_app, server):
                     x=comp_df['month_display'],
                     y=comp_df['vol_kbpd'],
                     marker=dict(color=marker_colors, line=dict(width=line_widths, color=line_colors)),
-                    customdata=comp_df[['company', 'hover_date']].values.tolist(),
-                    hovertemplate="Company: %{customdata[0]}<br>Date: %{customdata[1]}<br>Volume: %{y:,.0f} ('000 b/d)<extra></extra>",
+                    customdata=[[str(company), str(date)] for date in comp_df['hover_date']],  # Simple customdata for callbacks
+                    hovertemplate="Company: " + company + "<br>Volume: %{y:,.0f} ('000 b/d)<extra></extra>",
                     hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"))
                 ))
 
@@ -837,7 +868,19 @@ def register_callbacks(dash_app, server):
                     
                     marker_colors.append(clr)
                     labels.append(f"<b>{display_name}</b><br>{row['vol_kbpd']:,.0f} ('000 b/d)<br>{row['percentage']:.2f}%")
-                    custom_data.append([display_name, row['vol_kbpd'], row['percentage']])
+                    # Add safety checks to ensure no None/NaN values
+                    display_name_str = str(display_name) if display_name is not None else 'Unknown'
+                    vol_float = float(row['vol_kbpd']) if pd.notna(row['vol_kbpd']) else 0.0
+                    pct_float = float(row['percentage']) if pd.notna(row['percentage']) else 0.0
+                    custom_data.append([display_name_str, vol_float, pct_float])
+
+                # Ensure customdata is never empty - add a fallback
+                if not custom_data:
+                    custom_data = [['No Data', 0.0, 0.0]]
+                    ids = ['no-data']
+                    labels = ['No Data Available']
+                    marker_colors = ['#CCCCCC']
+                    treemap_data = pd.DataFrame({'vol_kbpd': [0]})
 
                 tree_fig = go.Figure(go.Treemap(
                     ids=ids,
@@ -846,13 +889,7 @@ def register_callbacks(dash_app, server):
                     values=treemap_data['vol_kbpd'],
                     textinfo="label",
                     marker=dict(colors=marker_colors),
-                    customdata=custom_data,
-                    hovertemplate=(
-                        "Product: %{customdata[0]}<br>"
-                        "Volume ('000 b/d) : %{customdata[1]:,.0f}<br>"
-                        "% of Total: %{customdata[2]:.2f}%"
-                        "<extra></extra>"
-                    ),
+                    customdata=custom_data,  # Keep for clientside callbacks
                     hoverlabel=dict(
                         bgcolor="white",
                         font_size=12,
@@ -999,14 +1036,8 @@ def register_callbacks(dash_app, server):
                             textinfo='none',
                             hole=0,
                             showlegend=False,
-                            # Pass slot ID to customdata for interactivity
-                            customdata=[[c, v, curr_slot_id] for c, v in period_data[['company', 'vol_kbpd']].values],
-                            domain={'x': [i*col_width, (i+1)*col_width], 'y': [0.645, 0.765]},
-                            hovertemplate=(
-                                "Company: %{label}<br>"
-                                "Volume ('000 b/d): %{value:.1f}<br>"
-                                "% of Total: %{percent}<extra></extra>"
-                            )
+                            customdata=[[str(c), float(v), str(curr_slot_id)] for c, v in period_data[['company', 'vol_kbpd']].values],  # Simple customdata for callbacks
+                            domain={'x': [i*col_width, (i+1)*col_width], 'y': [0.645, 0.765]}
                         ))
                         
                         # Month label style
