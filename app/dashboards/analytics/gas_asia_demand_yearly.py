@@ -185,6 +185,9 @@ def build_chart(df, sector_filter, unit):
                 val = agg_df[(agg_df['Year of Date'] == y) & (agg_df['Sector'] == sector)]['adjusted_unit_value']
                 y_vals.append(val.iloc[0] if not val.empty else 0)
             
+            # Determine format string based on unit
+            val_fmt = ",.1f" if unit == 'Billion Cubic Meter' else ",.0f"
+            
             fig.add_trace(go.Bar(
                 name=sector,
                 x=years,
@@ -195,7 +198,18 @@ def build_chart(df, sector_filter, unit):
                 textposition='inside',
                 insidetextanchor='middle',
                 textfont=dict(size=11, color='white'),
-                hoverinfo='y+name'
+                hovertemplate=(
+                    "<span style='color: #777'>Sector:</span> <span style='color: black'>%{data.name}</span><br>" +
+                    "<span style='color: #777'>Year of Date:</span> <span style='color: black'>%{x}</span><br>" +
+                    "<span style='color: #777'>Value:</span> <span style='color: black'>%{y:" + val_fmt + "}</span><br>" +
+                    f"<span style='color: #777'>Unit:</span> <span style='color: black'>{unit}</span>" +
+                    "<extra></extra>"
+                ),
+                hoverlabel=dict(
+                    bgcolor="white",
+                    font_size=12,
+                    font_family="Arial"
+                )
             ))
         
         totals = []
@@ -211,7 +225,8 @@ def build_chart(df, sector_filter, unit):
             textposition='top center',
             showlegend=False,
             textfont=dict(size=12, color='black'),
-            cliponaxis=False
+            cliponaxis=False,
+            hoverinfo='skip'
         ))
         fig.update_layout(barmode='stack')
     else:
@@ -220,6 +235,8 @@ def build_chart(df, sector_filter, unit):
             val = agg_df[(agg_df['Year of Date'] == y) & (agg_df['Sector'] == sector_filter)]['adjusted_unit_value']
             y_vals.append(val.iloc[0] if not val.empty else 0)
             
+        val_fmt = ",.1f" if unit == 'Billion Cubic Meter' else ",.0f"
+
         fig.add_trace(go.Bar(
             name=sector_filter,
             x=years,
@@ -228,7 +245,19 @@ def build_chart(df, sector_filter, unit):
             text=[f"<b>{v:,.1f}</b>" if unit == 'Billion Cubic Meter' else f"<b>{v:,.0f}</b>" for v in y_vals],
             textposition='outside',
             textfont=dict(size=12, color='black'),
-            cliponaxis=False
+            cliponaxis=False,
+            hovertemplate=(
+                "<span style='color: #777'>Sector:</span> <span style='color: black'>%{data.name}</span><br>" +
+                "<span style='color: #777'>Year of Date:</span> <span style='color: black'>%{x}</span><br>" +
+                "<span style='color: #777'>Value:</span> <span style='color: black'>%{y:" + val_fmt + "}</span><br>" +
+                f"<span style='color: #777'>Unit:</span> <span style='color: black'>{unit}</span>" +
+                "<extra></extra>"
+            ),
+            hoverlabel=dict(
+                bgcolor="white",
+                font_size=12,
+                font_family="Arial"
+            )
         ))
 
     fig.update_layout(
@@ -477,126 +506,251 @@ def register_callbacks(dash_app, server):
         
         return fig, table
 
-    # Clientside Callback for Header Highlighting
+    # Clientside Callback for Header Highlighting and Row Highlighting
     dash_app.clientside_callback(
         """
         function(n_data, columns, current_state) {
             try {
-                // Optimized Highlighting Logic
                 const tableId = 'asia-gas-demand-table';
                 
-                // Inject Styles efficiently only once
-                if (!document.getElementById('asia-gas-styles')) {
-                    const style = document.createElement('style');
+                // 1. Inject or Update CSS
+                let style = document.getElementById('asia-gas-styles');
+                if (!style) {
+                    style = document.createElement('style');
                     style.id = 'asia-gas-styles';
-                    style.innerHTML = `
-                        .asia-col-selected { background-color: #cfe8ef !important; }
-                        .asia-dimmed { opacity: 0.3 !important; }
-                        td[data-dash-column="Country"], td[data-dash-column="Sector"] { opacity: 1 !important; }
-                        th.asia-col-selected { background-color: #cfe8ef !important; }
-                    `;
                     document.head.appendChild(style);
                 }
+                
+                style.innerHTML = `
+                    .asia-col-selected { background-color: #cfe8ef !important; }
+                    .asia-row-selected { background-color: #cfe8ef !important; }
+                    .asia-dimmed { opacity: 0.3 !important; }
+                    
+                    /* Column Selection: Country/Sector remain visible (100% opacity) but NOT blue */
+                    .asia-col-selection-active td[data-dash-column="Country"], 
+                    .asia-col-selection-active td[data-dash-column="Sector"] { 
+                        opacity: 1 !important; 
+                        background-color: transparent !important; 
+                    }
+                    
+                    /* Row Selection: The Highlighted Row(s) - FORCE BLUE ON ALL CELLS */
+                    .asia-row-selection-active tr.asia-row-highlighted td {
+                        opacity: 1 !important;
+                        background-color: #cfe8ef !important;
+                        color: black !important;
+                    }
+
+                    /* Row Selection: Non-selected rows dimmed */
+                    .asia-row-selection-active tr:not(.asia-row-trip-wire) td {
+                        opacity: 0.3 !important;
+                    }
+
+                    /* Headers */
+                    th.asia-col-selected { background-color: #cfe8ef !important; }
+                `;
 
                 if (!window.asiaGasState) {
-                    window.asiaGasState = { selectedColumnId: null };
+                    window.asiaGasState = { 
+                        selectedColumnId: null,
+                        selectedRowIndices: null // String "start_end" or null
+                    };
                 }
 
+                // 2. Helper Logic
                 function clearAll(spreadsheet) {
-                    // Fast class removal
-                    const selected = spreadsheet.querySelectorAll('.asia-col-selected, .asia-dimmed');
+                    spreadsheet.classList.remove('asia-col-selection-active');
+                    spreadsheet.classList.remove('asia-row-selection-active');
+                    
+                    const selected = spreadsheet.querySelectorAll('.asia-col-selected, .asia-dimmed, .asia-row-highlighted, .asia-row-trip-wire');
                     selected.forEach(el => {
                         el.classList.remove('asia-col-selected');
                         el.classList.remove('asia-dimmed');
+                        el.classList.remove('asia-row-highlighted');
+                        el.classList.remove('asia-row-trip-wire');
                     });
+                }
+                
+                function applyState(spreadsheet, n_data) {
+                    clearAll(spreadsheet);
+
+                    // COLUMN HIGHLIGHTING
+                    if (window.asiaGasState.selectedColumnId) {
+                        const targetIds = window.asiaGasState.selectedColumnId.split(',');
+                        if (targetIds.length === 0) return;
+
+                        spreadsheet.classList.add('asia-col-selection-active');
+
+                        // Headers
+                        targetIds.forEach(id => {
+                            const ths = spreadsheet.querySelectorAll(`th[data-dash-column="${id}"]`);
+                            ths.forEach(th => th.classList.add('asia-col-selected'));
+                        });
+
+                        // Body Cells
+                        const allCells = spreadsheet.querySelectorAll('td[data-dash-column]');
+                        allCells.forEach(cell => {
+                            const cId = cell.getAttribute('data-dash-column');
+                            if (cId === 'Country' || cId === 'Sector') return;
+
+                            if (targetIds.includes(cId)) {
+                                cell.classList.add('asia-col-selected');
+                            } else {
+                                cell.classList.add('asia-dimmed');
+                            }
+                        });
+                        return;
+                    }
+
+                    // ROW HIGHLIGHTING
+                    if (window.asiaGasState.selectedRowIndices) {
+                        const [start, end] = window.asiaGasState.selectedRowIndices.split('_').map(Number);
+                        
+                        spreadsheet.classList.add('asia-row-selection-active');
+                        
+                        // Handle Split Tables (Fixed Columns vs Data Columns)
+                        // Dash often renders multiple TBodies or multiple Tables inside the container.
+                        const tbodies = spreadsheet.querySelectorAll('tbody');
+                        
+                        tbodies.forEach(tbody => {
+                            const rows = tbody.querySelectorAll('tr');
+                            rows.forEach((row, idx) => {
+                                if (idx >= start && idx <= end) {
+                                    row.classList.add('asia-row-highlighted');
+                                    row.classList.add('asia-row-trip-wire');
+                                }
+                            });
+                        });
+                    }
                 }
 
                 function setupTable() {
                     const tableEl = document.getElementById(tableId);
                     if (!tableEl) return;
                     const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                    
+                    // Always try to re-apply state
+                    if (spreadsheet && (window.asiaGasState.selectedColumnId || window.asiaGasState.selectedRowIndices)) {
+                        applyState(spreadsheet, n_data);
+                    }
+                    
                     if (!spreadsheet || spreadsheet.dataset.enhanced === 'true') return;
 
                     spreadsheet.dataset.enhanced = 'true';
                     
-                    // Main Click Handler
+                    // Click Handler
                     spreadsheet.addEventListener('click', function(e) {
+                         // 1. Column Header Click
                         const header = e.target.closest('th[data-dash-column]');
-                        if (!header) return;
+                        if (header) {
+                            e.stopPropagation();
+                            const colId = header.getAttribute('data-dash-column');
+                            if (colId === 'Country' || colId === 'Sector') return;
 
-                        e.stopPropagation();
-                        const colId = header.getAttribute('data-dash-column');
-                        if (colId === 'Country' || colId === 'Sector') return;
-
-                        // Determine if Top Header (Year) or Bottom Header (Month)
-                        // In Dash, merged headers are tricky.
-                        // Simple heuristic: If the text content is just a Year (formatting), it's a Year header.
-                        // Or check if it has colspan > 1 (implied, though single column "years" exist).
-                        // Better: Use `columns` prop passed to function to match ID prefixes.
-                        
-                        const headerContent = header.innerText.trim();
-                        const isYearHeader = /^\d{4}$/.test(headerContent); 
-                        
-                        let targetIds = [];
-                        if (isYearHeader) {
-                            // Find all columns starting with this year
-                            if (columns) {
+                            const headerContent = header.innerText.trim();
+                            let isYearHeader = /^\d{4}$/.test(headerContent);
+                            let targetIds = [];
+                            if (isYearHeader && columns) {
                                 columns.forEach(c => {
                                     if (c.id.startsWith(headerContent + '_')) targetIds.push(c.id);
                                 });
+                            } else {
+                                targetIds.push(colId);
                             }
-                        } else {
-                            targetIds.push(colId);
-                        }
 
-                        // Toggle Logic
-                        const selectionKey = targetIds.join(',');
-                        if (window.asiaGasState.selectedColumnId === selectionKey) {
-                            clearAll(spreadsheet);
-                            window.asiaGasState.selectedColumnId = null;
+                            const selectionKey = targetIds.join(',');
+                            
+                            if (window.asiaGasState.selectedColumnId === selectionKey) {
+                                window.asiaGasState.selectedColumnId = null;
+                            } else {
+                                window.asiaGasState.selectedColumnId = selectionKey;
+                                window.asiaGasState.selectedRowIndices = null; // Clear rows
+                            }
+                            applyState(spreadsheet, n_data);
                             return;
                         }
 
-                        // Apply Selection
-                        clearAll(spreadsheet);
-                        window.asiaGasState.selectedColumnId = selectionKey;
-
-                        if (targetIds.length > 0) {
+                        // 2. Row Data Click (Country/Sector)
+                        const cell = e.target.closest('td[data-dash-column]');
+                        if (cell) {
+                            const colId = cell.getAttribute('data-dash-column');
                             
-                            // Highlight Headers
-                            targetIds.forEach(id => {
-                                const ths = spreadsheet.querySelectorAll(`th[data-dash-column="${id}"]`);
-                                ths.forEach(th => th.classList.add('asia-col-selected'));
-                            });
+                            if (colId === 'Country' || colId === 'Sector') {
+                                e.stopPropagation();
+                                const row = cell.closest('tr');
+                                const tbody = row.closest('tbody');
+                                // Calculate Index carefully relative to this specific tbody
+                                const allRows = Array.from(tbody.querySelectorAll('tr'));
+                                const rowIndex = allRows.indexOf(row);
+                         
+                                let startIndex = rowIndex;
+                                let endIndex = rowIndex;
 
-                            // Highlight Cells & Dim Others
-                            const allCells = spreadsheet.querySelectorAll('td[data-dash-column]');
-                            allCells.forEach(cell => {
-                                const cId = cell.getAttribute('data-dash-column');
-                                if (cId === 'Country' || cId === 'Sector') return;
+                                if (colId === 'Country') {
+                                    // Use n_data (Data Driven) Grouping
+                                    // Scan UP in data to find the "head" (non-empty Country)
+                                    if (n_data) {
+                                        let curr = rowIndex;
+                                        // Scan up
+                                        while (curr >= 0) {
+                                            if (n_data[curr] && n_data[curr]['Country']) {
+                                                startIndex = curr;
+                                                break;
+                                            }
+                                            curr--;
+                                        }
+                                        if (curr < 0) startIndex = 0; // Fallback
 
-                                if (targetIds.includes(cId)) {
-                                    cell.classList.add('asia-col-selected');
+                                        // Scan down
+                                        curr = startIndex + 1;
+                                        endIndex = n_data.length - 1;
+                                        while (curr < n_data.length) {
+                                            if (n_data[curr] && n_data[curr]['Country']) {
+                                                // Found next country
+                                                endIndex = curr - 1;
+                                                break;
+                                            }
+                                            curr++;
+                                        }
+                                    }
+                                } 
+                                // Else if Sector: startIndex = endIndex = rowIndex (already set)
+                                
+                                const selectionKey = `${startIndex}_${endIndex}`;
+                                
+                                if (window.asiaGasState.selectedRowIndices === selectionKey) {
+                                    window.asiaGasState.selectedRowIndices = null;
                                 } else {
-                                    cell.classList.add('asia-dimmed');
+                                    window.asiaGasState.selectedRowIndices = selectionKey;
+                                    window.asiaGasState.selectedColumnId = null; // Clear cols
                                 }
-                            });
+                                applyState(spreadsheet, n_data);
+                            } else {
+                                // Clicked a data cell
+                                if (window.asiaGasState.selectedColumnId || window.asiaGasState.selectedRowIndices) {
+                                     window.asiaGasState.selectedColumnId = null;
+                                     window.asiaGasState.selectedRowIndices = null;
+                                     applyState(spreadsheet, n_data);
+                                }
+                            }
                         }
                     });
-
-                    // Clear on Outside Click
+                    
+                    // Outside Click
                     document.addEventListener('click', function(e) {
-                        if (!spreadsheet.contains(e.target)) {
-                            clearAll(spreadsheet);
+                        if (spreadsheet && !spreadsheet.contains(e.target)) {
                             window.asiaGasState.selectedColumnId = null;
+                            window.asiaGasState.selectedRowIndices = null;
+                            applyState(spreadsheet, n_data);
                         }
                     });
                 }
 
-                // Initial setup and observer for re-renders
                 setupTable();
+                
                 if (!window.asiaGasObserver) {
-                    window.asiaGasObserver = new MutationObserver(() => setupTable());
+                    window.asiaGasObserver = new MutationObserver(() => {
+                        setupTable();
+                    });
                     window.asiaGasObserver.observe(document.body, { childList: true, subtree: true });
                 }
 
