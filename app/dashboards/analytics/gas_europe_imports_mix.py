@@ -149,29 +149,6 @@ def generate_timeline_data(years, mode='MONTHLY'):
     df = pd.DataFrame(timeline)
     return df, year_annotations, month_separators, year_separators, num_years, year_centers
 
-# Database connection
-_engine = None
-
-def get_db_connection():
-    """Get database connection using existing config with singleton pattern"""
-    global _engine
-    if _engine is None:
-        try:
-            from core.data_helpers import get_db_connection_string
-            _engine = create_engine(
-                get_db_connection_string(),
-                pool_size=5,
-                max_overflow=10,
-                pool_recycle=3600,
-                pool_pre_ping=True,
-                pool_timeout=30,
-                echo=False
-            )
-        except Exception as e:
-            print(f"Database connection error: {e}")
-            return None
-    return _engine
-
 # Constants
 LNG_COLOR = '#1f77b4'  # Blue
 PIPELINE_COLOR = '#ff7f0e'  # Orange
@@ -241,13 +218,15 @@ def hex_to_rgba(h, a):
 
 def load_data(query, params=None):
     """Execute query and return DataFrame"""
-    engine = get_db_connection()
-    if not engine:
-        return pd.DataFrame()
     try:
-        with engine.connect() as connection:
-            df = pd.read_sql(text(query), connection, params=params)
-        return df
+        from core.data_helpers import execute_query
+        rows = execute_query(query, params)
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame(rows)
+    except Exception as e:
+        print(f"Database query error: {e}")
+        return pd.DataFrame()
     except Exception as e:
         print(f"Query error: {e}")
         return pd.DataFrame()
