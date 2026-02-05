@@ -466,7 +466,7 @@ def create_layout():
                             html.Label(
                                 id="demand-date-range-end-label",
                                 children='12/31/2026',  # Default end date
-                                style={'float': 'right', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '12px', 'fontWeight': 'bold'}
+                                style={'float': 'right', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '28px', 'fontWeight': 'bold'}
                             ),
                         ], style={'width': '100%', 'marginBottom': '2px', 'position': 'relative'}),
                         html.Div([

@@ -20,9 +20,9 @@ from .shared_map_utils import (
     MAP_LAND_COLOR as SHARED_MAP_LAND_COLOR
 )
 
-# Cache configuration
-_cached_data = None
-_cache_timestamp = None
+# Cache configuration - now includes sector-specific caching
+_cached_data = {}
+_cache_timestamp = {}
 CACHE_DURATION = 300  # 5 minutes cache
 
 # Helper functions for date slider
@@ -121,65 +121,288 @@ def get_all_countries_with_coordinates():
         print(f"Error getting all countries with coordinates: {e}")
         return pd.DataFrame(columns=['Country', 'ISO_Code', 'Latitude', 'Longitude'])
 
-def load_data():
-    """Load and preprocess data from CSV files with caching"""
+def load_data(selected_sector=None):
+    """Load and preprocess data from database with caching"""
     global _cached_data, _cache_timestamp
     
-    # Check if we have valid cached data
+    # Create cache key based on sector
+    cache_key = selected_sector or 'All'
+    
+    # Check if we have valid cached data for this sector
     current_time = time.time()
-    if (_cached_data is not None and 
-        _cache_timestamp is not None and 
-        (current_time - _cache_timestamp) < CACHE_DURATION):
-        print("Using cached data")
-        return _cached_data
+    if (cache_key in _cached_data and 
+        cache_key in _cache_timestamp and 
+        (current_time - _cache_timestamp[cache_key]) < CACHE_DURATION):
+        print(f"Using cached data for sector: {cache_key}")
+        return _cached_data[cache_key]
     
     try:
-        # Get the directory path
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        data_dir = os.path.join(base_dir, '..', 'data', 'Asian-Gas-Demand-Monthly-Demand-by-Country')
+        # Import database query function
+        from core.data_helpers import execute_query
         
-        # Load the three CSV files
-        map_file = os.path.join(data_dir, 'Asia Map_Demand by Year_data.csv')
-        chart_file = os.path.join(data_dir, 'Asia Line Chart_Total Demand by Country_data.csv')
-        table_file = os.path.join(data_dir, 'Total Gas Demand by Country_data.csv')
+        # Build sector filter condition
+        if selected_sector and selected_sector != 'All':
+            sector_condition = f"AND p.sector = '{selected_sector}'"
+        else:
+            sector_condition = "AND p.sector IN ('Household', 'Industrial', 'Other', 'Power')"
         
-        # Load map data (annual data by country)
-        map_df = pd.read_csv(map_file)
+        # Map Query: Replacement of csv file Asia Map_Demand by Year_data.csv
+        map_query = f"""
+        SELECT
+            p.country AS "Country",
+            EXTRACT(YEAR FROM p.date) AS "Year of Date",
+            CASE 
+                WHEN p.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN p.unit = 'GWh' THEN 'Gigawatt-hour'
+                ELSE p.unit
+            END AS "Unit",
+            q.latitude AS "Latitude",
+            q.longitude AS "Longitude",
+            CASE 
+                WHEN p.unit = 'Mcm' THEN ROUND(SUM(p.value) / 1000.0, 6)
+                ELSE ROUND(SUM(p.value), 6)
+            END AS "Value"
+        FROM dev.glng_gas_demand p
+        LEFT JOIN dim_country q
+        ON q.dim_country_id = p.country_id
+        WHERE LOWER(q.region) = 'asia' 
+        AND q.latitude IS NOT NULL 
+        {sector_condition}
+        GROUP BY
+            p.country,
+            EXTRACT(YEAR FROM p.date),
+            CASE 
+                WHEN p.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN p.unit = 'GWh' THEN 'Gigawatt-hour'
+                ELSE p.unit
+            END,
+            q.latitude,
+            q.longitude,
+            p.unit
+        ORDER BY
+            p.country DESC,
+            EXTRACT(YEAR FROM p.date) DESC;
+        """
+        
+        # Chart Query Day of Month: Replacement of csv file Asia Line Chart_Total Demand by Country_data.csv
+        chart_query = f"""
+        SELECT
+            DATE_TRUNC('month', p.date)::date AS "Day of Date",
+            p.country AS "Country",
+            CASE 
+                WHEN p.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN p.unit = 'GWh' THEN 'Gigawatt-hour'
+                ELSE p.unit
+            END AS "Unit",
+            CASE 
+                WHEN p.unit = 'Mcm' THEN ROUND(SUM(p.value) / 1000.0, 3)
+                ELSE ROUND(SUM(p.value), 2)
+            END AS "Value"
+        FROM dev.glng_gas_demand p
+        LEFT JOIN dim_country q
+        ON q.dim_country_id = p.country_id
+        WHERE LOWER(q.region) = 'asia'
+        AND q.latitude IS NOT NULL
+        {sector_condition}
+        GROUP BY
+            DATE_TRUNC('month', p.date),
+            p.country,
+            CASE 
+                WHEN p.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN p.unit = 'GWh' THEN 'Gigawatt-hour'
+                ELSE p.unit
+            END,
+            p.unit
+        ORDER BY
+            "Day of Date",
+            "Country";
+        """
+        
+        # Datatable Query: Replacement of csv file Total Gas Demand by Country_data.csv
+        table_query = f"""
+        SELECT
+            p.country AS "Country",
+            EXTRACT(YEAR FROM p.date) AS "Year of Date",
+            CONCAT('Q', EXTRACT(QUARTER FROM p.date)) AS "Quarter of Date",
+            TO_CHAR(p.date, 'FMMonth') AS "Month of Date",
+            1 AS "Day of Date",
+            CASE 
+                WHEN p.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN p.unit = 'GWh' THEN 'Gigawatt-hour'
+                ELSE p.unit
+            END AS "Unit",
+            CASE 
+                WHEN p.unit = 'Mcm' THEN ROUND(SUM(p.value) / 1000.0, 6)
+                ELSE ROUND(SUM(p.value), 6)
+            END AS "Value",
+            DATE_TRUNC('month', p.date) AS month_sort
+        FROM dev.glng_gas_demand p
+        LEFT JOIN dim_country q
+        ON q.dim_country_id = p.country_id
+        WHERE LOWER(q.region) = 'asia'
+        AND q.latitude IS NOT NULL
+        {sector_condition}
+        GROUP BY
+            p.country,
+            EXTRACT(YEAR FROM p.date),
+            EXTRACT(QUARTER FROM p.date),
+            TO_CHAR(p.date, 'FMMonth'),
+            DATE_TRUNC('month', p.date),
+            CASE 
+                WHEN p.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN p.unit = 'GWh' THEN 'Gigawatt-hour'
+                ELSE p.unit
+            END,
+            p.unit
+        ORDER BY
+            p.country,
+            month_sort DESC;
+        """
+        
+        print("Executing database queries...")
+        
+        # Execute queries using centralized data helpers
+        map_rows = execute_query(map_query)
+        chart_rows = execute_query(chart_query)
+        table_rows = execute_query(table_query)
+        
+        if not map_rows or not chart_rows or not table_rows:
+            print("WARNING: One or more database queries returned no data")
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        
+        # Convert to DataFrames
+        map_df = pd.DataFrame(map_rows)
+        chart_df = pd.DataFrame(chart_rows)
+        table_df = pd.DataFrame(table_rows)
+        
+        print(f"Queries returned - Map: {len(map_df)} rows, Chart: {len(chart_df)} rows, Table: {len(table_df)} rows")
+        
+        if map_df.empty or chart_df.empty or table_df.empty:
+            print("WARNING: One or more database queries returned empty data")
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        
+        # Process map data
         map_df['Date'] = pd.to_datetime(map_df['Year of Date'], format='%Y')
-        map_df['Unit'] = map_df['adjusted_unit']
-        map_df['Value'] = map_df['adjusted_unit_value']
+        # Rename columns to match expected format
+        map_df = map_df.rename(columns={
+            'Latitude': 'Latitude (generated)',
+            'Longitude': 'Longitude (generated)'
+        })
         
-        # Load chart data (monthly time series)
-        chart_df = pd.read_csv(chart_file)
+        # Process chart data
         chart_df['Date'] = pd.to_datetime(chart_df['Day of Date'], errors='coerce')
         chart_df = chart_df.dropna(subset=['Date'])
-        chart_df['Unit'] = chart_df['adjusted_unit']
-        chart_df['Value'] = chart_df['adjusted_unit_value']
         
-        # Load table data (monthly breakdown)
-        table_df = pd.read_csv(table_file)
-        table_df['Date'] = pd.to_datetime(table_df['Year of Date'].astype(str) + '-' + 
-                                         table_df['Month of Date'].astype(str), 
-                                         format='%Y-%B', errors='coerce')
+        # Process table data
+        # Create proper Date column from Year and Month
+        table_df['Date'] = pd.to_datetime(
+            table_df['Year of Date'].astype(str) + '-' + table_df['Month of Date'].astype(str), 
+            format='%Y-%B', 
+            errors='coerce'
+        )
         table_df = table_df.dropna(subset=['Date'])
-        table_df['Unit'] = table_df['adjusted_unit']
-        table_df['Value'] = table_df['adjusted_unit_value']
         
-        # Add sector information (assuming all data is total demand)
+        # Add sector information based on the filter used
+        sector_label = selected_sector if selected_sector and selected_sector != 'All' else 'Total'
         for df in [map_df, chart_df, table_df]:
             if 'Sector' not in df.columns:
-                df['Sector'] = 'Total'
+                df['Sector'] = sector_label
         
-        # Cache the data
-        _cached_data = (map_df, chart_df, table_df)
-        _cache_timestamp = current_time
-        print(f"Data loaded and cached. Map: {len(map_df)} rows, Chart: {len(chart_df)} rows, Table: {len(table_df)} rows")
+        print(f"SUCCESS: Processed {len(map_df)} map rows, {len(chart_df)} chart rows and {len(table_df)} table rows from database")
         
-        return _cached_data
+        # Cache the results for this sector
+        _cached_data[cache_key] = (map_df, chart_df, table_df)
+        _cache_timestamp[cache_key] = current_time
+        
+        return _cached_data[cache_key]
         
     except Exception as e:
-        print(f"Error loading data: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        print(f"CRITICAL: Database query failed: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Return cached data if available, even if expired
+        if cache_key in _cached_data:
+            print("Returning expired cached data due to database error")
+            return _cached_data[cache_key]
+        
+        print("Falling back to CSV data loading...")
+        
+        # Fallback to original CSV loading
+        try:
+            # Get the directory path
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            data_dir = os.path.join(base_dir, '..', 'data', 'Asian-Gas-Demand-Monthly-Demand-by-Country')
+            
+            # Load the three CSV files
+            map_file = os.path.join(data_dir, 'Asia Map_Demand by Year_data.csv')
+            chart_file = os.path.join(data_dir, 'Asia Line Chart_Total Demand by Country_data.csv')
+            table_file = os.path.join(data_dir, 'Total Gas Demand by Country_data.csv')
+            
+            # Load map data (annual data by country)
+            map_df = pd.read_csv(map_file)
+            map_df['Date'] = pd.to_datetime(map_df['Year of Date'], format='%Y')
+            # Convert unit names to match database output
+            if 'adjusted_unit' in map_df.columns:
+                map_df['Unit'] = map_df['adjusted_unit'].replace({'Mcm': 'Billion Cubic Meter'})
+                # Convert Mcm values to Bcm by dividing by 1000
+                map_df['Value'] = map_df.apply(
+                    lambda row: row['adjusted_unit_value'] / 1000.0 if row['adjusted_unit'] == 'Mcm' 
+                    else row['adjusted_unit_value'], axis=1
+                )
+            else:
+                map_df['Unit'] = 'Billion Cubic Meter'
+                map_df['Value'] = map_df.get('adjusted_unit_value', 0)
+            
+            # Load chart data (monthly time series)
+            chart_df = pd.read_csv(chart_file)
+            chart_df['Date'] = pd.to_datetime(chart_df['Day of Date'], errors='coerce')
+            chart_df = chart_df.dropna(subset=['Date'])
+            # Convert unit names to match database output
+            if 'adjusted_unit' in chart_df.columns:
+                chart_df['Unit'] = chart_df['adjusted_unit'].replace({'Mcm': 'Billion Cubic Meter'})
+                # Convert Mcm values to Bcm by dividing by 1000
+                chart_df['Value'] = chart_df.apply(
+                    lambda row: row['adjusted_unit_value'] / 1000.0 if row['adjusted_unit'] == 'Mcm' 
+                    else row['adjusted_unit_value'], axis=1
+                )
+            else:
+                chart_df['Unit'] = 'Billion Cubic Meter'
+                chart_df['Value'] = chart_df.get('adjusted_unit_value', 0)
+            
+            # Load table data (monthly breakdown)
+            table_df = pd.read_csv(table_file)
+            table_df['Date'] = pd.to_datetime(table_df['Year of Date'].astype(str) + '-' + 
+                                             table_df['Month of Date'].astype(str), 
+                                             format='%Y-%B', errors='coerce')
+            table_df = table_df.dropna(subset=['Date'])
+            # Convert unit names to match database output
+            if 'adjusted_unit' in table_df.columns:
+                table_df['Unit'] = table_df['adjusted_unit'].replace({'Mcm': 'Billion Cubic Meter'})
+                # Convert Mcm values to Bcm by dividing by 1000
+                table_df['Value'] = table_df.apply(
+                    lambda row: row['adjusted_unit_value'] / 1000.0 if row['adjusted_unit'] == 'Mcm' 
+                    else row['adjusted_unit_value'], axis=1
+                )
+            else:
+                table_df['Unit'] = 'Billion Cubic Meter'
+                table_df['Value'] = table_df.get('adjusted_unit_value', 0)
+            
+            # Add sector information (assuming all data is total demand)
+            for df in [map_df, chart_df, table_df]:
+                if 'Sector' not in df.columns:
+                    df['Sector'] = 'Total'
+            
+            # Cache the data
+            _cached_data[cache_key] = (map_df, chart_df, table_df)
+            _cache_timestamp[cache_key] = current_time
+            print(f"Fallback CSV data loaded and cached. Map: {len(map_df)} rows, Chart: {len(chart_df)} rows, Table: {len(table_df)} rows")
+            
+            return _cached_data[cache_key]
+            
+        except Exception as csv_error:
+            print(f"Error loading CSV fallback data: {csv_error}")
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 def create_layout():
     """Create the Asian Monthly Demand by Country layout"""
@@ -203,14 +426,9 @@ def create_layout():
     countries = sorted(list(set(all_countries)))
     
     # Get available sectors - add all required options
-    sectors = ['All', 'Household', 'Industrial', 'Power']
+    sectors = ['All', 'Household', 'Industrial', 'Other', 'Power']
     
-    # Get available units from data
-    all_units = []
-    for df in [map_df, chart_df, table_df]:
-        if not df.empty and 'Unit' in df.columns:
-            all_units.extend(df['Unit'].unique())
-    # units = sorted(list(set(all_units))) if all_units else ['Billion Cubic Meter']
+    # Get available units - add both options
     units = ['Billion Cubic Meter', 'Gigawatt-hour']
     
     # Get date range and create sorted date list
@@ -298,7 +516,7 @@ def create_layout():
                             html.Label(
                                 id="asia-demand-date-range-end-label",
                                 children='12/31/2025',  # Default end date
-                                style={'float': 'right', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '12px', 'fontWeight': 'bold'}
+                                style={'float': 'right', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '28px', 'fontWeight': 'bold'}
                             ),
                         ], style={'width': '100%', 'marginBottom': '2px', 'position': 'relative'}),
                         html.Div([
@@ -608,7 +826,7 @@ def register_callbacks(dash_app, server):
     )
     def handle_country_checklist(selection, country_state):
         """Toggle '(All)' checkbox to select/deselect every country"""
-        map_df, chart_df, table_df = load_data()
+        map_df, chart_df, table_df = load_data()  # Use default sector for country list
         
         # Get all available countries
         all_countries = []
@@ -658,7 +876,7 @@ def register_callbacks(dash_app, server):
     )
     def update_country_legend(selected_countries, legend_clicks, current_selected):
         """Update country legend and handle legend clicks"""
-        map_df, chart_df, table_df = load_data()
+        map_df, chart_df, table_df = load_data()  # Use default sector for country list
         
         # Get all available countries
         all_countries = []
@@ -755,7 +973,7 @@ def register_callbacks(dash_app, server):
     )
     def update_asia_map(slider_range, selected_unit, selected_sector, selected_countries, date_list_iso):
         """Update the Asia map visualization using shared map utilities"""
-        map_df, chart_df, table_df = load_data()
+        map_df, chart_df, table_df = load_data(selected_sector)
         
         if map_df.empty:
             return create_empty_map("No map data available", height=700)
@@ -774,9 +992,7 @@ def register_callbacks(dash_app, server):
         if selected_unit and 'Unit' in filtered_df.columns:
             filtered_df = filtered_df[filtered_df['Unit'] == selected_unit]
         
-        # Apply sector filter
-        if selected_sector and selected_sector != 'All' and 'Sector' in filtered_df.columns:
-            filtered_df = filtered_df[filtered_df['Sector'] == selected_sector]
+        # Note: Sector filtering is now handled at the database level in load_data()
         
         # Apply country filter - handle empty selection properly
         if selected_countries is not None:
@@ -795,7 +1011,7 @@ def register_callbacks(dash_app, server):
             return create_empty_map("No data available for selected filters", height=700)
         
         # Aggregate data by country (sum values across years if multiple)
-        agg_df = filtered_df.groupby(['Country', 'Latitude (generated)', 'Longitude (generated)']).agg({
+        agg_df = filtered_df.groupby(['Country', 'Latitude (generated)', 'Longitude (generated)', 'Year of Date']).agg({
             'Value': 'sum'
         }).reset_index()
         
@@ -832,7 +1048,7 @@ def register_callbacks(dash_app, server):
                 f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
                 f"<span style='color: #000000; font-weight: bold;'>{row['Country']}</span><br>"
                 f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
-                f"<span style='color: #000000; font-weight: bold;'>{int(filtered_df[filtered_df['Country'] == row['Country']]['Year of Date'].iloc[0]) if not filtered_df[filtered_df['Country'] == row['Country']].empty else 2025}</span><br>"
+                f"<span style='color: #000000; font-weight: bold;'>{int(row.get('Year of Date', 2025))}</span><br>"
                 f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
                 f"<span style='color: #000000; font-weight: bold;'>{row['Value']:,.1f}</span><br>"
                 f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
@@ -908,13 +1124,7 @@ def register_callbacks(dash_app, server):
                     country_data = agg_df[agg_df['Country'] == country]
                     if not country_data.empty:
                         value = country_data.iloc[0]['Value']
-                        # Get actual Year of Date from the filtered CSV data
-                        country_filtered_data = filtered_df[filtered_df['Country'] == country]
-                        if not country_filtered_data.empty and 'Year of Date' in country_filtered_data.columns:
-                            year = int(country_filtered_data['Year of Date'].iloc[0])
-                        else:
-                            # Fallback to latest year in data
-                            year = 2025
+                        year = int(country_data.iloc[0]['Year of Date'])
                         
                         hover_text = (
                             f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
@@ -927,12 +1137,8 @@ def register_callbacks(dash_app, server):
                             f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
                         )
                     else:
-                        # Fallback if no data found - use CSV Year of Date if available
-                        country_filtered_data = filtered_df[filtered_df['Country'] == country]
-                        if not country_filtered_data.empty and 'Year of Date' in country_filtered_data.columns:
-                            year = int(country_filtered_data['Year of Date'].iloc[0])
-                        else:
-                            year = 2025
+                        # Fallback if no data found
+                        year = 2025
                             
                         hover_text = (
                             f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
@@ -992,13 +1198,7 @@ def register_callbacks(dash_app, server):
                     country_data = agg_df[agg_df['Country'] == country]
                     if not country_data.empty:
                         value = country_data.iloc[0]['Value']
-                        # Get actual Year of Date from the filtered CSV data
-                        country_filtered_data = filtered_df[filtered_df['Country'] == country]
-                        if not country_filtered_data.empty and 'Year of Date' in country_filtered_data.columns:
-                            year = int(country_filtered_data['Year of Date'].iloc[0])
-                        else:
-                            # Fallback to latest year in data
-                            year = 2025
+                        year = int(country_data.iloc[0]['Year of Date'])
                         
                         hover_text = (
                             f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
@@ -1011,12 +1211,8 @@ def register_callbacks(dash_app, server):
                             f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
                         )
                     else:
-                        # Fallback if no data found - use CSV Year of Date if available
-                        country_filtered_data = filtered_df[filtered_df['Country'] == country]
-                        if not country_filtered_data.empty and 'Year of Date' in country_filtered_data.columns:
-                            year = int(country_filtered_data['Year of Date'].iloc[0])
-                        else:
-                            year = 2025
+                        # Fallback if no data found
+                        year = 2025
                             
                         hover_text = (
                             f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
@@ -1131,7 +1327,7 @@ def register_callbacks(dash_app, server):
     )
     def update_asia_chart(slider_range, selected_unit, selected_sector, selected_countries, date_list_iso):
         """Update the Asia line chart visualization"""
-        map_df, chart_df, table_df = load_data()
+        map_df, chart_df, table_df = load_data(selected_sector)
         
         if chart_df.empty:
             return go.Figure().add_annotation(text="No chart data available", 
@@ -1151,9 +1347,7 @@ def register_callbacks(dash_app, server):
         if selected_unit and 'Unit' in filtered_df.columns:
             filtered_df = filtered_df[filtered_df['Unit'] == selected_unit]
         
-        # Apply sector filter
-        if selected_sector and selected_sector != 'All' and 'Sector' in filtered_df.columns:
-            filtered_df = filtered_df[filtered_df['Sector'] == selected_sector]
+        # Note: Sector filtering is now handled at the database level in load_data()
         
         # Apply country filter - handle empty selection properly
         if selected_countries is not None:
@@ -1245,7 +1439,7 @@ def register_callbacks(dash_app, server):
     )
     def update_asia_table(slider_range, selected_unit, selected_sector, selected_countries, date_list_iso):
         """Update the Asia data table"""
-        map_df, chart_df, table_df = load_data()
+        map_df, chart_df, table_df = load_data(selected_sector)
         
         if table_df.empty:
             return html.Div("No table data available", style={'padding': '20px', 'textAlign': 'center'})
@@ -1264,9 +1458,7 @@ def register_callbacks(dash_app, server):
         if selected_unit and 'Unit' in filtered_df.columns:
             filtered_df = filtered_df[filtered_df['Unit'] == selected_unit]
         
-        # Apply sector filter
-        if selected_sector and selected_sector != 'All' and 'Sector' in filtered_df.columns:
-            filtered_df = filtered_df[filtered_df['Sector'] == selected_sector]
+        # Note: Sector filtering is now handled at the database level in load_data()
         
         # Apply country filter - handle empty selection properly
         if selected_countries is not None:
@@ -1483,7 +1675,7 @@ def register_callbacks(dash_app, server):
         if n_clicks == 0:
             return no_update
         
-        map_df, chart_df, table_df = load_data()
+        map_df, chart_df, table_df = load_data(selected_sector)
         
         if map_df.empty:
             return no_update
@@ -1527,7 +1719,7 @@ def register_callbacks(dash_app, server):
         if n_clicks == 0:
             return no_update
         
-        map_df, chart_df, table_df = load_data()
+        map_df, chart_df, table_df = load_data(selected_sector)
         
         if chart_df.empty:
             return no_update
@@ -1571,7 +1763,7 @@ def register_callbacks(dash_app, server):
         if n_clicks == 0:
             return no_update
         
-        map_df, chart_df, table_df = load_data()
+        map_df, chart_df, table_df = load_data(selected_sector)
         
         if table_df.empty:
             return no_update
@@ -1623,7 +1815,7 @@ def register_callbacks(dash_app, server):
             # Fallback: If options didn't give us countries (e.g. state issue), load from data
             if not all_countries:
                 print("DEBUG: Options empty or missing countries, reloading from data")
-                map_df, chart_df, table_df = load_data()
+                map_df, chart_df, table_df = load_data()  # Use default sector for country list
                 countries_set = set()
                 for df in [map_df, chart_df, table_df]:
                     if not df.empty and 'Country' in df.columns:
