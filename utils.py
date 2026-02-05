@@ -132,6 +132,9 @@ def is_embedded_mode():
     Returns:
         True if running in embedded mode, False otherwise
     """
+    # First check environment variable for embedded mode
+    env_embedded = os.environ.get('EMBEDDED_MODE', 'false').lower() == 'true'
+    
     try:
         from flask import request
         
@@ -140,13 +143,23 @@ def is_embedded_mode():
             # Check if request comes from an iframe or embedded context
             referer = request.headers.get('Referer', '')
             user_agent = request.headers.get('User-Agent', '')
+            origin = request.headers.get('Origin', '')
+            embedded_header = request.headers.get('embedded', '')
             
             # Check for embedded indicators
             if 'dash-embedded' in user_agent.lower():
                 return True
             
-            # Check if referer is from a different domain (indicating embedding)
-            if referer and not referer.startswith(request.host_url):
+            # Check for explicit embedded header
+            if embedded_header.lower() == 'true':
+                return True
+            
+            # Check if origin is from www.energyintel.com (embedded page)
+            if 'www.energyintel.com' in origin.lower():
+                return True
+            
+            # Check if referer is from www.energyintel.com (embedded page)
+            if 'www.energyintel.com' in referer.lower():
                 return True
             
             # Check for specific embedded query parameters
@@ -165,8 +178,8 @@ def is_embedded_mode():
         # Outside of request context or Flask not available
         pass
     
-    # Check environment variable for embedded mode
-    return os.environ.get('EMBEDDED_MODE', 'false').lower() == 'true'
+    # Return environment variable setting
+    return env_embedded
 
 
 def set_embedded_mode(enabled=True):
@@ -197,12 +210,19 @@ def get_auth_instance():
 
 def is_authenticated():
     """
-    Check if the current user is authenticated in token-based context.
+    Check if the current user is authenticated based on current auth mode.
     Returns True if authenticated, False otherwise.
     """
+    # Check if authentication is enabled
+    enable_auth = os.environ.get('ENABLE_AUTH', 'false').lower() == 'true'
+    
+    if not enable_auth:
+        # Authentication disabled - always return True
+        return True
+    
     auth = get_auth_instance()
     if auth is None:
-        # Authentication not enabled, allow access
+        # Authentication not configured, allow access
         return True
     
     try:
@@ -295,6 +315,13 @@ def get_user_permissions():
     Get permissions for the current authenticated user.
     Returns a list of permissions or empty list if not authenticated.
     """
+    # Check if authentication is enabled
+    enable_auth = os.environ.get('ENABLE_AUTH', 'false').lower() == 'true'
+    
+    if not enable_auth:
+        # Authentication disabled - return full permissions
+        return ['read', 'write', 'admin']
+    
     auth = get_auth_instance()
     if auth is None:
         return ['read', 'write', 'admin']  # Default permissions when auth disabled
@@ -348,7 +375,7 @@ def get_embedded_auth_status():
 
 def create_auth_component():
     """
-    Create a Dash component that displays token-based authentication status.
+    Create a Dash component that displays authentication status.
     Useful for embedding in page layouts.
     Only shows authentication UI when authentication is enabled.
     
@@ -358,29 +385,46 @@ def create_auth_component():
     from dash import html, dcc
     
     # Check if authentication is enabled
-    auth_enabled = os.environ.get('ENABLE_AUTH', 'false').lower() == 'true'
+    enable_auth = os.environ.get('ENABLE_AUTH', 'false').lower() == 'true'
+    embedded_mode = os.environ.get('EMBEDDED_MODE', 'false').lower() == 'true'
     
-    if not auth_enabled:
-        # Authentication is disabled, return empty component
-        return html.Div()
+    if not enable_auth:
+        # Authentication is disabled, show status
+        if embedded_mode:
+            return html.Div([
+                html.Span("🌐 Embedded Mode - No Authentication", 
+                         style={'color': '#17a2b8', 'fontWeight': 'bold'}),
+                html.Span(" (EMBEDDED_MODE=true, ENABLE_AUTH=false)", 
+                         style={'color': '#6c757d', 'fontSize': '11px', 'fontStyle': 'italic'})
+            ], style={'padding': '8px 12px', 'backgroundColor': '#d1ecf1', 'borderRadius': '4px', 'border': '1px solid #bee5eb'})
+        else:
+            return html.Div([
+                html.Span("🔓 Open Access - No Authentication Required", 
+                         style={'color': '#17a2b8', 'fontWeight': 'bold'}),
+                html.Span(" (EMBEDDED_MODE=false, ENABLE_AUTH=false)", 
+                         style={'color': '#6c757d', 'fontSize': '11px', 'fontStyle': 'italic'})
+            ], style={'padding': '8px 12px', 'backgroundColor': '#d1ecf1', 'borderRadius': '4px', 'border': '1px solid #bee5eb'})
     
     auth_status = get_embedded_auth_status()
     
     if auth_status['is_authenticated']:
         permissions_text = ', '.join(auth_status['permissions']) if auth_status['permissions'] else 'None'
+        auth_method_text = "JWT Token" if embedded_mode else "Dash Enterprise"
+        
         return html.Div([
             html.Span(f"🔑 Authenticated as: {auth_status['user']}", 
                      style={'marginRight': '15px', 'color': '#28a745', 'fontWeight': 'bold'}),
             html.Span(f"Permissions: {permissions_text}", 
                      style={'marginRight': '15px', 'color': '#6c757d', 'fontSize': '12px'}),
-            html.Span("(Token-based auth)", 
+            html.Span(f"({auth_method_text})", 
                      style={'color': '#6c757d', 'fontSize': '11px', 'fontStyle': 'italic'})
         ], style={'padding': '10px', 'backgroundColor': '#d4edda', 'borderRadius': '4px', 'border': '1px solid #c3e6cb'})
     else:
+        auth_method_text = "JWT Token" if embedded_mode else "Dash Enterprise Login"
         return html.Div([
-            html.Span("🔒 Token authentication required", 
+            html.Span(f"🔒 {auth_method_text} authentication required", 
                      style={'marginRight': '10px', 'color': '#dc3545', 'fontWeight': 'bold'}),
-            html.Span("Add ?token=your-token to URL", 
+            html.Span("Please authenticate to access this application", 
                      style={'color': '#6c757d', 'fontSize': '12px', 'fontStyle': 'italic'})
         ], style={'padding': '10px', 'backgroundColor': '#f8d7da', 'borderRadius': '4px', 'border': '1px solid #f5c6cb'})
 
