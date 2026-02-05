@@ -6,7 +6,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from dash import dcc, html, Input, Output, dash_table, State, ALL, ctx, no_update
-import os
 from datetime import datetime, timedelta
 import time
 from core.country_mappings import COUNTRY_TO_ISO, get_iso_code
@@ -309,50 +308,9 @@ def load_data(selected_sector=None):
             print("Returning expired cached data due to database error")
             return _cached_data[cache_key]
         
-        print("Falling back to CSV data loading...")
-        
-        # Fallback to original CSV loading
-        try:
-            # Get the directory path
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            data_dir = os.path.join(base_dir, '..', 'data', 'European-Gas-Demand-Monthly-Demand-by-Country')
-            
-            # Load the three CSV files
-            map_file = os.path.join(data_dir, 'Europe Map_Demand by Year_data.csv')
-            chart_file = os.path.join(data_dir, 'Europe Line Chart_Total Demand by Country_data.csv')
-            table_file = os.path.join(data_dir, 'Europe Table_Total Demand by Country_data.csv')
-            
-            # Load map data (annual data by country)
-            map_df = pd.read_csv(map_file)
-            map_df['Date'] = pd.to_datetime(map_df['Year of Date'], format='%Y')
-            
-            # Load chart data (weekly/monthly time series)
-            chart_df = pd.read_csv(chart_file)
-            chart_df['Date'] = pd.to_datetime(chart_df['Week of Date'], errors='coerce')
-            chart_df = chart_df.dropna(subset=['Date'])
-            
-            # Load table data (monthly breakdown)
-            table_df = pd.read_csv(table_file)
-            table_df['Date'] = pd.to_datetime(table_df['Year of Date'].astype(str) + '-' + 
-                                             table_df['Month of Date'].astype(str), 
-                                             format='%Y-%B', errors='coerce')
-            table_df = table_df.dropna(subset=['Date'])
-            
-            # Add sector information (assuming all data is total demand)
-            for df in [map_df, chart_df, table_df]:
-                if 'Sector' not in df.columns:
-                    df['Sector'] = 'Total'
-            
-            # Cache the data
-            _cached_data[cache_key] = (map_df, chart_df, table_df)
-            _cache_timestamp[cache_key] = current_time
-            print(f"Fallback CSV data loaded and cached. Map: {len(map_df)} rows, Chart: {len(chart_df)} rows, Table: {len(table_df)} rows")
-            
-            return _cached_data[cache_key]
-            
-        except Exception as csv_error:
-            print(f"Error loading CSV fallback data: {csv_error}")
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        # If no cached data available, return empty DataFrames
+        print("No cached data available, returning empty DataFrames")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 def create_layout():
     """Create the European Monthly Demand by Country layout"""
@@ -364,7 +322,7 @@ def create_layout():
                 'color': '#fe5000', 'fontSize': '20px', 'fontWeight': 'bold',
                 'fontFamily': 'Arial, sans-serif', 'margin': '25px 0 15px 40px'
             }),
-            html.Div("Data could not be loaded from CSV files. Check file paths and data integrity.", 
+            html.Div("Database connection issue. Please check database connectivity and try again.", 
                     style={'padding': '50px', 'color': 'red', 'fontSize': '16px'})
         ])
 
@@ -553,12 +511,12 @@ def create_layout():
                     # Left Side - Europe Map
                     html.Div([
                         html.Div([
-                            html.H3("Europe Map – Demand by Year", style={
+                            html.H3(id="europe-map-title", children="Natural Gas Demand", style={
                                 'color': '#1b365d', 'fontSize': '16px', 'fontWeight': 'bold',
-                                'marginBottom': '15px', 'textAlign': 'center', 'flex': '1'
+                                'marginBottom': '15px', 'textAlign': 'left', 'flex': '1'
                             }),
                             html.Button(
-                                "Export Map CSV",
+                                "Export to CSV",
                                 id="export-demand-map-btn",
                                 n_clicks=0,
                                 style={
@@ -591,12 +549,12 @@ def create_layout():
                     # Right Side - Line Chart
                     html.Div([
                         html.Div([
-                            html.H3("Europe Line Chart – Total Demand by Country", style={
+                            html.H3("", style={
                                 'color': '#1b365d', 'fontSize': '16px', 'fontWeight': 'bold',
                                 'marginBottom': '15px', 'textAlign': 'center', 'flex': '1'
                             }),
                             html.Button(
-                                "Export Chart CSV",
+                                "Export to CSV",
                                 id="export-demand-chart-btn",
                                 n_clicks=0,
                                 style={
@@ -623,14 +581,14 @@ def create_layout():
                 # Table Section
                 html.Div([
                     html.Div([
-                        html.H3("Europe Table – Total Demand by Country", style={
+                        html.H3("", style={
                             'color': '#1b365d', 'fontSize': '16px', 'fontWeight': 'bold',
                             'marginTop': '30px', 'marginBottom': '15px'
                         }),
                     ], style={'flex': '1'}),
                     html.Div([
                         html.Button(
-                            "Export Table CSV",
+                            "Export to CSV",
                             id="export-demand-table-btn",
                             n_clicks=0,
                             style={
@@ -642,11 +600,11 @@ def create_layout():
                                 "cursor": "pointer",
                                 "fontSize": "12px",
                                 "fontWeight": "normal",
-                                "marginRight": "10px",
+                                "marginRight": "0px",
                             },
                         )
                     ], style={'display': 'flex', 'alignItems': 'center'})
-                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'padding': '0 10px', 'marginBottom': '15px'}),
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'padding': '0 0px', 'marginBottom': '15px'}),
                 
                 dcc.Loading(
                     id="loading-table-demand",
@@ -914,6 +872,39 @@ def register_callbacks(dash_app, server):
         
         return legend_items, current_selected
 
+    # Update map title with latest year
+    @dash_app.callback(
+        Output('europe-map-title', 'children'),
+        [Input('sector-radio-demand', 'value'),
+         Input('demand-date-range-slider', 'value')],
+        [State('demand-date-list-store', 'data')]
+    )
+    def update_map_title(selected_sector, slider_range, date_list_iso):
+        """Update map title to show the latest year within the selected date range"""
+        try:
+            map_df, chart_df, table_df = load_data(selected_sector)
+            
+            if map_df.empty:
+                return "Natural Gas Demand"
+            
+            # Apply date filter first
+            filtered_df = map_df.copy()
+            if slider_range and len(slider_range) == 2 and date_list_iso:
+                date_list = [pd.to_datetime(d) for d in date_list_iso]
+                start_date = _index_to_date(slider_range[0], date_list)
+                end_date = _index_to_date(slider_range[1], date_list)
+                filtered_df = filtered_df[(filtered_df['Date'] >= start_date) & (filtered_df['Date'] <= end_date)]
+            
+            # Get the latest year within the filtered range
+            if not filtered_df.empty and 'Year of Date' in filtered_df.columns:
+                latest_year = int(filtered_df['Year of Date'].max())
+                return f"Natural Gas Demand - {latest_year}"
+            else:
+                return "Natural Gas Demand"
+        except Exception as e:
+            print(f"Error updating map title: {e}")
+            return "Natural Gas Demand"
+
     # Update Europe Map
     @dash_app.callback(
         Output('europe-map-demand', 'figure'),
@@ -933,12 +924,20 @@ def register_callbacks(dash_app, server):
         # Filter data
         filtered_df = map_df.copy()
         
-        # Apply date filter using range slider
+        # First apply date filter using range slider
         if slider_range and len(slider_range) == 2 and date_list_iso:
             date_list = [pd.to_datetime(d) for d in date_list_iso]
             start_date = _index_to_date(slider_range[0], date_list)
             end_date = _index_to_date(slider_range[1], date_list)
             filtered_df = filtered_df[(filtered_df['Date'] >= start_date) & (filtered_df['Date'] <= end_date)]
+        
+        # Then for map, show only the latest year data within the filtered date range
+        if not filtered_df.empty and 'Year of Date' in filtered_df.columns:
+            # Get the latest year available in the filtered data
+            latest_year = filtered_df['Year of Date'].max()
+            filtered_df = filtered_df[filtered_df['Year of Date'] == latest_year]
+            print(f"Map showing data for latest year within date range: {latest_year}")
+        
         
         # Apply unit filter
         if selected_unit and 'Unit' in filtered_df.columns:
