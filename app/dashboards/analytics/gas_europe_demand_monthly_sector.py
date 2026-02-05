@@ -5,37 +5,170 @@ Monthly gas demand analytics by sector
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-from dash import dcc, html, dash_table, Input, Output, State, callback
+from dash import dcc, html, dash_table, Input, Output, State, callback, callback_context, no_update
 from datetime import datetime, date
+from core.data_helpers import execute_query
 import os
 
 
-def load_data():
-    """Load the sector demand data"""
+# Button Styles
+GRAN_BTN_CONTAINER_STYLE = {
+    'display': 'flex',
+    'align-items': 'center',
+    'margin-right': '20px'
+}
+
+GRAN_BTN_ACTIVE = {
+    'width': '18px',
+    'height': '18px',
+    'padding': '0',
+    'border': '1px solid #007bff',
+    'backgroundColor': 'white',
+    'color': '#add8e6',
+    'borderRadius': '3px',
+    'cursor': 'pointer',
+    'fontSize': '12px',
+    'fontWeight': 'bold',
+    'display': 'flex',
+    'alignItems': 'center',
+    'justifyContent': 'center'
+}
+
+GRAN_BTN_INACTIVE = {
+    'width': '18px',
+    'height': '18px',
+    'padding': '0',
+    'border': '1px solid #007bff',
+    'backgroundColor': 'white',
+    'color': '#007bff',
+    'borderRadius': '3px',
+    'cursor': 'pointer',
+    'fontSize': '12px',
+    'fontWeight': 'bold',
+    'display': 'flex',
+    'alignItems': 'center',
+    'justifyContent': 'center'
+}
+
+
+def load_data(unit='Million Cubic Meter', granularity='month'):
+    """Load the sector demand data using SQL query"""
     try:
-        # Load table data
-        table_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'sector', 'Table_Demand by Sector_data.csv')
-        df_table = pd.read_csv(table_path)
+        # 1. Fetch all countries in Europe for the query filter
+        country_query = "SELECT DISTINCT country_long_name FROM dev.dim_country WHERE LOWER(region) = 'europe'"
+        try:
+            country_results = execute_query(country_query)
+            countries = [r['country_long_name'] for r in country_results]
+        except Exception as e:
+            print(f"Error loading countries: {e}")
+            countries = []
+
+        if not countries:
+            print("No countries found in Europe region, query may fail returning empty.")
+            return pd.DataFrame(), pd.DataFrame()
+
+        # 2. Prepare main query params
+        unit_map = {'Million Cubic Meter': 'Mcm', 'GWh': 'GWh'}
+        db_unit = unit_map.get(unit, 'Mcm')
         
-        # Load chart data  
-        chart_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'sector', 'Column Chart_Demand by Sector_data.csv')
-        df_chart = pd.read_csv(chart_path)
+        # We fetch all sectors
+        sectors = ['Household', 'Industrial', 'Power']
         
-        # Process table data - create date from year and month
-        df_table['Date'] = pd.to_datetime(df_table['Year of Date'].astype(str) + '-' + df_table['Month of Date'] + '-01')
+        # Query from yearly dashboard (Table Query) with granularity='month'
+        query = """
+        SELECT
+            gd.country                                AS "Country",
+            gd.sector                                 AS "Sector",
+            period                                    AS "_period_sort",
+
+            EXTRACT(YEAR FROM period)::int            AS "Year of Date",
+
+            /* Quarter */
+            CASE
+                WHEN :granularity IN ('quarter','day')
+                THEN 'Q' || EXTRACT(QUARTER FROM period)::int
+                ELSE NULL
+            END AS "Quarter of Date",
+
+            /* Month */
+            CASE
+                WHEN :granularity IN ('month','day')
+                THEN TO_CHAR(period, 'FMMonth')
+                ELSE NULL
+            END AS "Month of Date",
+
+            /* Day */
+            CASE
+                WHEN :granularity = 'day'
+                THEN TO_CHAR(period, 'FMMonth FMDD')
+                ELSE NULL
+            END AS "Day of Date",
+
+            :display_unit                             AS "Unit",
+            ROUND(SUM(gd.value), 9)                   AS "Value"
+
+        FROM dev.glng_gas_demand gd
+        JOIN dev.dim_country dc
+            ON gd.country_id = dc.dim_country_id
+
+        /* 🔹 dynamic time bucket */
+        CROSS JOIN LATERAL (
+            SELECT
+                CASE
+                    WHEN :granularity = 'year'    THEN DATE_TRUNC('year', gd.date)
+                    WHEN :granularity = 'quarter' THEN DATE_TRUNC('quarter', gd.date)
+                    WHEN :granularity = 'month'   THEN DATE_TRUNC('month', gd.date)
+                    WHEN :granularity = 'day'     THEN DATE_TRUNC('day', gd.date)
+                END AS period
+        ) t
+
+        WHERE LOWER(dc.region) = 'europe'
+          AND gd.unit = :unit
+          AND gd.to_be_deleted = false
+          AND gd.sector = ANY(:selected_sectors)
+          AND gd.country = ANY(:selected_countries)
+          AND EXTRACT(YEAR FROM gd.date) >= 2019
+          AND EXTRACT(YEAR FROM gd.date) < 2026
+
+        GROUP BY
+            gd.country,
+            gd.sector,
+            period
+
+        ORDER BY
+            "Year of Date" DESC,
+            "Quarter of Date",
+            "Month of Date",
+            "Day of Date",
+            "Country",
+            "Sector";
+        """
         
-        # Process chart data - parse the Month of Date column
-        df_chart['Date'] = pd.to_datetime(df_chart['Month of Date'], format='%B %Y', errors='coerce')
+        params = {
+            'granularity': granularity,
+            'unit': db_unit,
+            'display_unit': unit,
+            'selected_sectors': sectors,
+            'selected_countries': countries
+        }
         
-        # Filter chart data to only include "In" Europe data and aggregate by sector
-        df_chart_filtered = df_chart[df_chart['In / Out of Europe Country Set'] == 'In'].copy()
+        results = execute_query(query, params)
+        df = pd.DataFrame(results)
         
-        print(f"Loaded table data: {len(df_table)} rows")
-        print(f"Loaded chart data: {len(df_chart_filtered)} rows")
-        print(f"Table columns: {df_table.columns.tolist()}")
-        print(f"Chart columns: {df_chart_filtered.columns.tolist()}")
+        if df.empty:
+            print("Query returned empty results")
+            return pd.DataFrame(), pd.DataFrame()
+            
+        # Process data
+        df['Date'] = pd.to_datetime(df['_period_sort'])
         
-        return df_table, df_chart_filtered
+        # Ensure 'Value' is numeric
+        df['Value'] = pd.to_numeric(df['Value'], errors='coerce').fillna(0)
+        
+        print(f"Loaded SQL data: {len(df)} rows")
+        
+        return df, pd.DataFrame() 
+
     except Exception as e:
         print(f"Error loading data: {e}")
         import traceback
@@ -125,7 +258,12 @@ def create_layout():
     initial_columns = []
     initial_data = []
     
-    if not df_table.empty and not df_chart.empty:
+    # Use table data for chart as load_data returns unified df
+    if not df_table.empty:
+        if df_chart.empty:
+            df_chart = df_table.copy()
+            
+    if not df_table.empty:
         # Create initial chart using chart data
         chart_data = df_chart.groupby(['Date', 'Sector'])['Value'].sum().reset_index()
         chart_data['Year-Month'] = chart_data['Date'].dt.strftime('%b %Y')
@@ -137,13 +275,6 @@ def create_layout():
             'Household': '#006eb0',  # Blue
             'Industrial': '#c5d9a5', # Light Green
             'Power': '#b04e26'       # Brown/Red
-        }
-        
-        # Define dimmed colors for sectors
-        sector_colors_dimmed = {
-            'Household': 'rgba(0, 110, 176, 0.15)',
-            'Industrial': 'rgba(197, 217, 165, 0.15)',
-            'Power': 'rgba(176, 78, 38, 0.15)'
         }
         
         # Add bars for each sector in the correct order (bottom to top: Power, Industrial, Household)
@@ -217,19 +348,15 @@ def create_layout():
             zerolinecolor='#ddd'
         )
         
-        # Adjust Y-axis values to reflect "K" (divide by 1000 if needed, assuming the image shows K)
-        # Based on image, 60K, 50K...
+        # Adjust Y-axis values
         initial_fig.update_yaxes(tickvals=[0, 10000, 20000, 30000, 40000, 50000, 60000], 
                                 ticktext=['0K', '10K', '20K', '30K', '40K', '50K', '60K'])
         
-        # Create initial table data (show all available data, not just recent)
+        # Create initial table data
         table_df = df_table.copy()
         if not table_df.empty:
             table_df['Month'] = table_df['Date'].dt.strftime('%B')
             table_df['Year'] = table_df['Date'].dt.year
-            
-            # Match the table structure from image: Year Grouping (2025, 2024, etc.)
-            # Month columns, and a "Total" for each year.
             
             years = sorted(table_df['Year'].unique(), reverse=True)
             initial_columns = [
@@ -237,17 +364,13 @@ def create_layout():
                 {"name": ["", "Sector"], "id": "Sector"},
             ]
             
-            # Prepare hierarchical data using helper
             processed_data, years = prepare_hierarchical_data(table_df)
             
-            # Build Columns with multi-level headers
             for year in years:
-                # Add months for this year in reverse order
                 year_months = sorted(table_df[table_df['Year'] == year]['Month'].unique(), 
                                    key=lambda m: datetime.strptime(m, '%B').month, reverse=True)
                 for month in year_months:
                     initial_columns.append({"name": [str(year), month], "id": f"{year}_{month}"})
-                # Add Total for this year
                 initial_columns.append({"name": [str(year), "Total"], "id": f"{year}_Total"})
             
             initial_data = processed_data
@@ -257,14 +380,24 @@ def create_layout():
         dcc.Store(id='min-date', data=min_date.isoformat() if not df_table.empty else '2019-01-01'),
         dcc.Store(id='max-date', data=max_date.isoformat() if not df_table.empty else '2025-10-01'),
         dcc.Store(id='sector-demand-selection-store', data={'sector': None, 'x_val': None, 'type': None, 'country': None, 'year': None}),
+        dcc.Store(id='europe-table-highlight-state'),
+        
+        # New Stores for Granularity
+        dcc.Store(id='sector-granularity-store', data='month'),
+        dcc.Store(id='sector-table-granularity-store', data='month'),
+        
+        # Data Caching Stores (Initialized with df_table)
+        dcc.Store(id='sector-chart-data-store', data=df_table.to_dict('records') if not df_table.empty else []),
+        dcc.Store(id='sector-table-data-store', data=df_table.to_dict('records') if not df_table.empty else []),
+
+        html.Div(id='europe-table-dummy-output', style={'display': 'none'}),
         dcc.Input(id='sector-demand-header-click-input', style={'display': 'none'}),
-        html.Div(id='sector-demand-table-enhancer-anchor', style={'display': 'none'}),
         
         # Main container
         html.Div([
             # Main content area (left side)
             html.Div([
-                # Chart
+                # Chart Area
                 html.Div([
                     html.H3("Monthly Gas Demand by Sector", style={
                         'color': '#f45d2d', 
@@ -273,102 +406,104 @@ def create_layout():
                         'fontWeight': 'normal',
                         'fontFamily': 'Georgia, serif'
                     }),
-                    dcc.Graph(
-                        id='sector-demand-chart',
-                        figure=initial_fig,
-                        style={'height': '500px'},
-                        config={'displayModeBar': True, 'displaylogo': False}
+                    
+                    # Chart Granularity Buttons
+                    html.Div([
+                        html.Div([
+                            html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('+', id='sector-toggle-year-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                        html.Div([
+                            html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('+', id='sector-toggle-quarter-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                        html.Div([
+                            html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('-', id='sector-toggle-month-btn', n_clicks=0, style=GRAN_BTN_ACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                        html.Div([
+                            html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('+', id='sector-toggle-day-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                    ], style={'display': 'flex', 'padding': '10px 0', 'marginBottom': '10px', 'backgroundColor': '#fff'}),
+
+                    dcc.Loading(
+                        id="loading-chart",
+                        type="graph",
+                        color="#f45d2d",
+                        children=dcc.Graph(
+                            id='sector-demand-chart',
+                            figure=initial_fig,
+                            style={'height': '500px'},
+                            config={'displayModeBar': True, 'displaylogo': False}
+                        )
                     )
                 ], style={'marginBottom': '30px'}),
                 
-                # Data Table
+                # Data Table Area
                 html.Div([
-                    dash_table.DataTable(
-                        id='sector-demand-table',
-                        columns=initial_columns,
-                        data=initial_data,
-                        merge_duplicate_headers=True,
-                        style_table={'overflowX': 'auto', 'maxHeight': '800px', 'overflowY': 'auto'},
-                        style_cell={
-                            'textAlign': 'right',
-                            'fontSize': '12px',
-                            'fontFamily': 'Arial, sans-serif',
-                            'padding': '8px',
-                            'border': '1px solid #ddd',
-                            'minWidth': '80px',
-                        },
-                        style_cell_conditional=[
-                            {
-                                'if': {'column_id': 'Country'},
-                                'textAlign': 'left',
-                                'borderRight': '1.5px solid #bbb'
+                    # Table Granularity Buttons
+                    html.Div([
+                        html.Div([
+                            html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('+', id='sector-table-toggle-year-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                        html.Div([
+                            html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('+', id='sector-table-toggle-quarter-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                        html.Div([
+                            html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('-', id='sector-table-toggle-month-btn', n_clicks=0, style=GRAN_BTN_ACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                        html.Div([
+                            html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('+', id='sector-table-toggle-day-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                    ], style={'display': 'flex', 'padding': '10px 0', 'marginBottom': '10px', 'backgroundColor': '#fff'}),
+
+                    dcc.Loading(
+                        id="loading-table",
+                        type="circle",
+                        color="#f45d2d",
+                        children=dash_table.DataTable(
+                            id='sector-demand-table',
+                            columns=initial_columns,
+                            data=initial_data,
+                            merge_duplicate_headers=True,
+                            fixed_rows={'headers': True},
+                            fixed_columns={'headers': True, 'data': 2},
+                            style_table={
+                                'minWidth': '100%', 
+                                'height': '600px', 
+                                'overflowY': 'auto', 
+                                'overflowX': 'auto', 
+                                'border': '1px solid #ddd'
                             },
-                            {
-                                'if': {'column_id': 'Sector'},
-                                'textAlign': 'left',
-                                'borderRight': '1.5px solid #bbb'
-                            }
-                        ],
-                        style_header={
-                            'backgroundColor': '#f9f9f9',
-                            'fontWeight': 'bold',
-                            'border': '1px solid #ddd',
-                            'borderRight': '1.5px solid #bbb',
-                            'fontSize': '11px',
-                            'textAlign': 'center',
-                            'color': '#333'
-                        },
-                        style_data_conditional=[
-                            {
-                                'if': {'column_id': 'Country'},
-                                'textAlign': 'left',
+                            style_header={
+                                'backgroundColor': '#ffffff',
                                 'fontWeight': 'bold',
-                                'backgroundColor': '#f9f9f9',
-                                'borderRight': '1.5px solid #bbb'
+                                'textAlign': 'center',
+                                'fontSize': '11px',
+                                'border': 'none', 
+                                'color': '#333',
+                                'height': '25px',
+                                'padding': '2px'
                             },
-                            {
-                                'if': {'column_id': 'Sector'},
-                                'textAlign': 'left',
-                                'paddingLeft': '10px',
-                                'borderRight': '1.5px solid #bbb'
+                            style_cell={
+                                'padding': '0px 5px',
+                                'fontSize': '11px',
+                                'fontFamily': 'Arial, sans-serif',
+                                'border': 'none', 
+                                'minWidth': '70px',
+                                'backgroundColor': '#fff',
+                                'color': '#777',
+                                'height': 'auto'
                             },
-                            # Grey background for Total rows
-                            {
-                                'if': {
-                                    'filter_query': '{Sector} eq "Total"'
-                                },
-                                'fontWeight': 'bold',
-                                'backgroundColor': '#f2f2f2'
-                            },
-                            # Grey background for Total columns
-                            {
-                                'if': {
-                                    'column_id': [c['id'] for c in initial_columns if 'Total' in str(c.get('name', ''))]
-                                },
-                                'fontWeight': 'bold',
-                                'backgroundColor': '#f2f2f2'
-                            }
-                        ],
-                        style_data={
-                            'backgroundColor': 'white',
-                            'color': '#444'
-                        },
-                        css=[
-                            {
-                                'selector': '.dash-spreadsheet-container td',
-                                'rule': 'transition: opacity 0.15s ease-in-out, background-color 0.1s ease;'
-                            },
-                            {
-                                'selector': '.dash-spreadsheet-container.selection-active td',
-                                'rule': 'opacity: 0.3 !important;'
-                            },
-                            {
-                                'selector': '.dash-spreadsheet-container.selection-active td.focused-cell, .dash-spreadsheet-container.selection-active td.active-label, .dash-spreadsheet-container.selection-active td.focused-header, .dash-spreadsheet-container.selection-active th.focused-header',
-                                'rule': 'opacity: 1 !important;'
-                            }
-                        ]
+                            style_as_list_view=False,
+                        )
                     )
-                ])
+                ], id='europe-gas-demand-table-container')
                 
             ], style={
                 'marginRight': '300px',
@@ -476,41 +611,142 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register callbacks for the European Monthly Demand by Sector dashboard"""
     
+    # Chart Granularity Toggle
     @dash_app.callback(
-        [Output('sector-demand-chart', 'figure'),
-         Output('sector-demand-table', 'columns'),
-         Output('sector-demand-table', 'data'),
-         Output('sector-demand-table', 'style_data_conditional'),
-         Output('sector-demand-table', 'style_header_conditional')],
+        [Output('sector-granularity-store', 'data'),
+         Output('sector-toggle-year-btn', 'children'),
+         Output('sector-toggle-quarter-btn', 'children'),
+         Output('sector-toggle-month-btn', 'children'),
+         Output('sector-toggle-day-btn', 'children'),
+         Output('sector-toggle-year-btn', 'style'),
+         Output('sector-toggle-quarter-btn', 'style'),
+         Output('sector-toggle-month-btn', 'style'),
+         Output('sector-toggle-day-btn', 'style')],
+        [Input('sector-toggle-year-btn', 'n_clicks'),
+         Input('sector-toggle-quarter-btn', 'n_clicks'),
+         Input('sector-toggle-month-btn', 'n_clicks'),
+         Input('sector-toggle-day-btn', 'n_clicks')],
+        [State('sector-granularity-store', 'data')]
+    )
+    def toggle_granularity(y_c, q_c, m_c, d_c, current_gran):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+            
+        btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        new_gran = current_gran
+        
+        if btn_id == 'sector-toggle-year-btn': new_gran = 'year'
+        elif btn_id == 'sector-toggle-quarter-btn': new_gran = 'quarter'
+        elif btn_id == 'sector-toggle-month-btn': new_gran = 'month'
+        elif btn_id == 'sector-toggle-day-btn': new_gran = 'day'
+        
+        return (
+            new_gran,
+            '-' if new_gran == 'year' else '+',
+            '-' if new_gran == 'quarter' else '+',
+            '-' if new_gran == 'month' else '+',
+            '-' if new_gran == 'day' else '+',
+            GRAN_BTN_ACTIVE if new_gran == 'year' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'quarter' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'month' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'day' else GRAN_BTN_INACTIVE
+        )
+
+    # Table Granularity Toggle
+    @dash_app.callback(
+        [Output('sector-table-granularity-store', 'data'),
+         Output('sector-table-toggle-year-btn', 'children'),
+         Output('sector-table-toggle-quarter-btn', 'children'),
+         Output('sector-table-toggle-month-btn', 'children'),
+         Output('sector-table-toggle-day-btn', 'children'),
+         Output('sector-table-toggle-year-btn', 'style'),
+         Output('sector-table-toggle-quarter-btn', 'style'),
+         Output('sector-table-toggle-month-btn', 'style'),
+         Output('sector-table-toggle-day-btn', 'style')],
+        [Input('sector-table-toggle-year-btn', 'n_clicks'),
+         Input('sector-table-toggle-quarter-btn', 'n_clicks'),
+         Input('sector-table-toggle-month-btn', 'n_clicks'),
+         Input('sector-table-toggle-day-btn', 'n_clicks')],
+        [State('sector-table-granularity-store', 'data')]
+    )
+    def toggle_table_granularity(y_c, q_c, m_c, d_c, current_gran):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+            
+        btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        new_gran = current_gran
+        
+        if btn_id == 'sector-table-toggle-year-btn': new_gran = 'year'
+        elif btn_id == 'sector-table-toggle-quarter-btn': new_gran = 'quarter'
+        elif btn_id == 'sector-table-toggle-month-btn': new_gran = 'month'
+        elif btn_id == 'sector-table-toggle-day-btn': new_gran = 'day'
+        
+        return (
+            new_gran,
+            '-' if new_gran == 'year' else '+',
+            '-' if new_gran == 'quarter' else '+',
+            '-' if new_gran == 'month' else '+',
+            '-' if new_gran == 'day' else '+',
+            GRAN_BTN_ACTIVE if new_gran == 'year' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'quarter' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'month' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'day' else GRAN_BTN_INACTIVE
+        )
+
+    # FETCH CHART DATA (DB ACCESS)
+    @dash_app.callback(
+        Output('sector-chart-data-store', 'data'),
+        [Input('unit-selector', 'value'),
+         Input('sector-granularity-store', 'data')]
+    )
+    def fetch_chart_data(unit, granularity):
+        if not granularity: granularity = 'month'
+        df, _ = load_data(unit=unit, granularity=granularity)
+        return df.to_dict('records')
+
+    # FETCH TABLE DATA (DB ACCESS)
+    @dash_app.callback(
+        Output('sector-table-data-store', 'data'),
+        [Input('unit-selector', 'value'),
+         Input('sector-table-granularity-store', 'data')]
+    )
+    def fetch_table_data(unit, granularity):
+        if not granularity: granularity = 'month'
+        df, _ = load_data(unit=unit, granularity=granularity)
+        return df.to_dict('records')
+
+    # UPDATE CHART (CLIENT SIDE)
+    @dash_app.callback(
+        Output('sector-demand-chart', 'figure'),
         [Input('date-range-slider', 'value'),
          Input('unit-selector', 'value'),
          Input('country-checklist', 'value'),
          Input('highlight-country', 'value'),
          Input('min-date', 'data'),
          Input('max-date', 'data'),
-         Input('sector-demand-selection-store', 'data')]
+         Input('sector-demand-selection-store', 'data'),
+         Input('sector-granularity-store', 'data'),
+         Input('sector-chart-data-store', 'data')]
     )
-    def update_chart_and_table(date_range, unit, selected_countries, highlight_country, min_date_str, max_date_str, selection):
-        """Update chart and table based on filters"""
-        df_table, df_chart = load_data()
+    def update_chart(date_range, unit, selected_countries, highlight_country, min_date_str, max_date_str, selection, granularity, chart_data):
+        """Update chart based on filters and granularity"""
+        if not granularity: granularity = 'month'
         
-        if df_table.empty and df_chart.empty:
-            print("Both dataframes are empty!")
-            return {}, [], []
-        
-        # Use table data for both chart and table if available
-        if not df_table.empty:
-            df_to_use = df_table.copy()
-        else:
-            df_to_use = df_chart.copy()
-        
-        print(f"Using dataframe with {len(df_to_use)} rows")
+        if not chart_data:
+            return go.Figure()
+
+        df_to_use = pd.DataFrame(chart_data)
+        # Reconstruct Date
+        if 'Date' in df_to_use.columns:
+            df_to_use['Date'] = pd.to_datetime(df_to_use['Date'])
         
         # Convert date strings back to datetime
         min_date = pd.to_datetime(min_date_str)
         max_date = pd.to_datetime(max_date_str)
         
-        # Filter by date range
+        # Filter by date range (using Date column created in load_data)
         date_range_start = min_date + (max_date - min_date) * (date_range[0] / 100)
         date_range_end = min_date + (max_date - min_date) * (date_range[1] / 100)
         
@@ -519,74 +755,98 @@ def register_callbacks(dash_app, server):
             (df_to_use['Date'] <= date_range_end)
         ].copy()
         
-        print(f"After date filtering: {len(df_filtered)} rows")
-        
-        # Handle country filtering - if 'All' is selected or no countries selected, show all
+        # Handle country filtering
         if not selected_countries or 'All' in selected_countries:
-            # Show all countries
             pass
         else:
-            # Filter by selected countries only
             df_filtered = df_filtered[df_filtered['Country'].isin(selected_countries)]
         
-        print(f"After country filtering: {len(df_filtered)} rows")
+        # Create a display label based on granularity
+        if granularity == 'year':
+            df_filtered['TimeLabel'] = df_filtered['Year of Date'].astype(str)
+        elif granularity == 'quarter':
+            df_filtered['TimeLabel'] = df_filtered['Year of Date'].astype(str) + ' ' + df_filtered['Quarter of Date']
+        elif granularity == 'month':
+             df_filtered['TimeLabel'] = df_filtered['Date'].dt.strftime('%b %Y')
+        elif granularity == 'day':
+             df_filtered['TimeLabel'] = df_filtered['Date'].dt.strftime('%d %b %Y')
+        else:
+             df_filtered['TimeLabel'] = df_filtered['Date'].dt.strftime('%b %Y')
+             
+        # Group by TimeLabel and Sector
+        if 'TimeLabel' not in df_filtered.columns:
+             df_filtered['TimeLabel'] = df_filtered['Year of Date'].astype(str) # Fallback
+
+        chart_grp = df_filtered.groupby(['TimeLabel', 'Date', 'Sector'])['Value'].sum().reset_index()
+        chart_grp = chart_grp.sort_values('Date')
         
-        # For chart: Group data by date and sector (sum across all countries)
-        # Use df_filtered to ensure it respects country and date filters
-        chart_data = df_filtered.groupby(['Date', 'Sector'])['Value'].sum().reset_index()
-        
-        chart_data['Year-Month'] = chart_data['Date'].dt.strftime('%b %Y')
-        chart_data['Full-Month'] = chart_data['Date'].dt.strftime('%B %Y')
-        chart_data = chart_data.sort_values('Date')
-        
-        print(f"Chart data: {len(chart_data)} rows")
-        print(f"Unique sectors in chart: {chart_data['Sector'].unique()}")
-        
-        # Create stacked bar chart
         fig = go.Figure()
         
-        # Define colors for sectors (matching the image)
         sector_colors = {
-            'Household': '#006eb0',  # Blue
-            'Industrial': '#c5d9a5', # Light Green
-            'Power': '#b04e26'       # Brown/Red
+            'Household': '#006eb0',
+            'Industrial': '#c5d9a5', 
+            'Power': '#b04e26'
         }
         
-        # Define dimmed colors for sectors
         sector_colors_dimmed = {
             'Household': 'rgba(0, 110, 176, 0.15)',
             'Industrial': 'rgba(197, 217, 165, 0.15)',
             'Power': 'rgba(176, 78, 38, 0.15)'
         }
         
-        # Add bars for each sector in the correct order (bottom to top)
         for sector in ['Power', 'Industrial', 'Household']:
-            sector_data = chart_data[chart_data['Sector'] == sector]
+            sector_data = chart_grp[chart_grp['Sector'] == sector]
             if not sector_data.empty:
-                # Check if this sector is selected
                 selected_sector = selection.get('sector') if selection else None
                 selected_x = selection.get('x_val') if selection else None
                 
-                print(f"DEBUG APP: Sector={sector}, Selection={selection}")
+                # Normalize selected_x for matching against TimeLabel
+                normalized_x = selected_x
+                if selected_x and '_' in str(selected_x):
+                    parts = str(selected_x).split('_')
+                    if len(parts) >= 2:
+                        y = parts[0]
+                        p = '_'.join(parts[1:]) 
+                        
+                        if p == 'Total':
+                            if granularity == 'year':
+                                normalized_x = str(y)
+                            else:
+                                pass # selected_x remains as is (no match)
+                        elif granularity == 'month':
+                            try:
+                                # p is Full Month (September)
+                                # TimeLabel is Sep 2025
+                                dt = datetime.strptime(f"{y}-{p}-01", "%Y-%B-%d")
+                                normalized_x = dt.strftime('%b %Y')
+                            except:
+                                pass
+                        elif granularity == 'quarter':
+                             # p is Q1
+                             # TimeLabel is 2025 Q1
+                             normalized_x = f"{y} {p}"
+                        elif granularity == 'day':
+                             # p is 01 Jan
+                             # TimeLabel is 01 Jan 2025
+                             if ' ' in p:
+                                 normalized_x = f"{p} {y}"
                 
-                # Determine colors and border based on selection
                 marker_colors = []
                 marker_line_widths = []
                 marker_line_colors = []
                 
                 for _, row in sector_data.iterrows():
-                    is_selected = (str(selected_sector) == str(sector) and str(selected_x) == str(row['Year-Month']))
+                    # Matching logic might need adjustment if x_val format differs by granularity
+                    is_selected = (str(selected_sector) == str(sector) and str(normalized_x) == str(row['TimeLabel']))
                     base_color = sector_colors.get(sector, '#1f77b4')
                     dimmed_color = sector_colors_dimmed.get(sector, 'rgba(0,0,0,0.1)')
                     
                     if selection and selection.get('sector') is not None:
-                        # If something is selected, dim others
                         if is_selected:
                             marker_colors.append(base_color)
                             marker_line_widths.append(2)
                             marker_line_colors.append('black')
                         else:
-                            # Dimming non-selected bars
                             marker_colors.append(dimmed_color)
                             marker_line_widths.append(0)
                             marker_line_colors.append('rgba(0,0,0,0)')
@@ -595,41 +855,28 @@ def register_callbacks(dash_app, server):
                         marker_line_widths.append(0)
                         marker_line_colors.append('rgba(0,0,0,0)')
 
-                # Determine country label for tooltip
                 country_label = highlight_country if highlight_country else "*"
                 if not highlight_country and selected_countries and 'All' not in selected_countries:
-                    if len(selected_countries) == 1:
-                        country_label = selected_countries[0]
-                    else:
-                        country_label = "*"
+                     if len(selected_countries) == 1:
+                         country_label = selected_countries[0]
 
                 fig.add_trace(go.Bar(
                     name=sector,
-                    x=sector_data['Year-Month'],
+                    x=sector_data['TimeLabel'],
                     y=sector_data['Value'],
                     marker=dict(
                         color=marker_colors,
-                        line=dict(
-                            width=marker_line_widths,
-                            color=marker_line_colors
-                        )
+                        line=dict(width=marker_line_widths, color=marker_line_colors)
                     ),
-                    customdata=sector_data[['Full-Month', 'Year-Month']],
                     hovertemplate=(
                         f"Sector: <b>{sector}</b><br>"
-                        "Month of Date: %{customdata[0]}<br>"
+                        f"Period: %{{x}}<br>"
                         f"Country: {country_label}<br>"
                         f"Value: %{{y:,.0f}}<br>"
                         f"Unit: {unit}"
                         "<extra></extra>"
                     ),
-                    hoverinfo="all" if not (selection and selection.get('sector') is not None) else ["all" if (str(selected_sector) == str(sector) and str(selected_x) == str(xm)) else "skip" for xm in sector_data['Year-Month']],
-                    hoverlabel=dict(
-                        bgcolor="white",
-                        font_size=12,
-                        font_family="Arial",
-                        font_color="#333"
-                    )
+                    hoverlabel=dict(bgcolor="white", font_size=12, font_family="Arial", font_color="#333")
                 ))
         
         fig.update_layout(
@@ -655,7 +902,6 @@ def register_callbacks(dash_app, server):
             clickmode='event'
         )
         
-        # Update x-axis
         fig.update_xaxes(
             tickangle=-90,
             showgrid=True,
@@ -680,94 +926,189 @@ def register_callbacks(dash_app, server):
         if unit == 'Million Cubic Meter':
             fig.update_yaxes(tickvals=[0, 10000, 20000, 30000, 40000, 50000, 60000], 
                             ticktext=['0K', '10K', '20K', '30K', '40K', '50K', '60K'])
+                            
+        return fig
+
+    # UPDATE TABLE (CLIENT SIDE)
+    @dash_app.callback(
+        [Output('sector-demand-table', 'columns'),
+         Output('sector-demand-table', 'data'),
+         Output('sector-demand-table', 'style_data_conditional'),
+         Output('sector-demand-table', 'style_header_conditional')],
+        [Input('date-range-slider', 'value'),
+         Input('unit-selector', 'value'),
+         Input('country-checklist', 'value'),
+         Input('highlight-country', 'value'),
+         Input('min-date', 'data'),
+         Input('max-date', 'data'),
+         Input('sector-demand-selection-store', 'data'),
+         Input('sector-table-granularity-store', 'data'),
+         Input('sector-table-data-store', 'data')]
+    )
+    def update_table(date_range, unit, selected_countries, highlight_country, min_date_str, max_date_str, selection, granularity, table_data):
+        """Update table based on filters and table granularity"""
+        if not granularity: granularity = 'month'
+
+        if not table_data:
+            return [], [], [], []
+            
+        df_table = pd.DataFrame(table_data)
+        if 'Date' in df_table.columns:
+            df_table['Date'] = pd.to_datetime(df_table['Date'])
+
+        # Convert date strings back to datetime
+        min_date = pd.to_datetime(min_date_str)
+        max_date = pd.to_datetime(max_date_str)
         
-        # Create table data exactly like in the image
-        # Group by Country and Sector, then pivot by months
-        table_df = df_filtered.copy()
+        date_range_start = min_date + (max_date - min_date) * (date_range[0] / 100)
+        date_range_end = min_date + (max_date - min_date) * (date_range[1] / 100)
         
-        if table_df.empty:
-            print("Table dataframe is empty after filtering!")
-            return fig, [], []
+        df_filtered = df_table[
+            (df_table['Date'] >= date_range_start) & 
+            (df_table['Date'] <= date_range_end)
+        ].copy()
         
-        # Prepare hierarchical data using helper
-        processed_data, years = prepare_hierarchical_data(table_df)
+        if not selected_countries or 'All' in selected_countries:
+            pass
+        else:
+            df_filtered = df_filtered[df_filtered['Country'].isin(selected_countries)]
+            
+        if df_filtered.empty:
+            return [], [], [], []
+
+        if 'Year' not in df_filtered.columns:
+            df_filtered['Year'] = df_filtered['Date'].dt.year
+            
+        if granularity == 'year':
+             df_filtered['Month'] = 'Year'
+        elif granularity == 'quarter':
+             df_filtered['Month'] = df_filtered['Quarter of Date']
+        elif granularity == 'month':
+             df_filtered['Month'] = df_filtered['Date'].dt.strftime('%B')
+        elif granularity == 'day':
+             df_filtered['Month'] = df_filtered['Date'].dt.strftime('%d %b')
+        else:
+             df_filtered['Month'] = df_filtered['Date'].dt.strftime('%B')
+        
+        years = sorted(df_filtered['Year'].unique(), reverse=True)
+        sector_list = ['Household', 'Industrial', 'Power']
+        processed_data = []
         
         columns = [
             {"name": ["", "Country"], "id": "Country"},
             {"name": ["", "Sector"], "id": "Sector"},
         ]
         
-        # Build Columns with multi-level headers
+        data_col_ids = []
+        
         for year in years:
-            # Add months for this year in reverse order
-            year_months = sorted(table_df[table_df['Year'] == year]['Month'].unique(), 
-                               key=lambda m: datetime.strptime(m, '%B').month, reverse=True)
-            for month in year_months:
-                columns.append({"name": [str(year), month], "id": f"{year}_{month}"})
-            # Add Total for this year
+            year_df = df_filtered[df_filtered['Year'] == year]
+            if year_df.empty: continue
+            
+            if granularity == 'month':
+                sub_periods = sorted(year_df['Month'].unique(), key=lambda m: datetime.strptime(m, '%B').month, reverse=True)
+            elif granularity == 'day':
+                sub_periods = sorted(year_df['Month'].unique(), key=lambda d: datetime.strptime(d + f" {year}", '%d %b %Y'), reverse=True)
+            else:
+                 sub_periods = sorted(year_df['Month'].unique(), reverse=True)
+            
+            for sp in sub_periods:
+                if granularity == 'year':
+                     col_id = f"{year}_Total"
+                else:
+                     col_id = f"{year}_{sp}"
+                     columns.append({"name": [str(year), sp], "id": col_id})
+                     data_col_ids.append(col_id)
+            
             columns.append({"name": [str(year), "Total"], "id": f"{year}_Total"})
-        
-        data = processed_data
-        
-        # Prepare style_data_conditional for table highlighting
+            data_col_ids.append(f"{year}_Total")
+
+        for country in sorted(df_filtered['Country'].unique()):
+            country_data = df_filtered[df_filtered['Country'] == country]
+            
+            rows = []
+            for i, sector in enumerate(sector_list):
+                row = {"Country": country if i == 0 else "", "Sector": sector, "_Country": country}
+                
+                for year in years:
+                    year_sum = country_data[(country_data['Year'] == year) & (country_data['Sector'] == sector)]['Value'].sum()
+                    
+                    year_df_c = country_data[country_data['Year'] == year]
+                    sub_df = year_df_c[year_df_c['Sector'] == sector]
+                    
+                    for _, r in sub_df.iterrows():
+                        sp = r['Month']
+                        val = r['Value']
+                        if granularity != 'year':
+                            col_id = f"{year}_{sp}"
+                            row[col_id] = int(round(val)) if val > 0 else ""
+
+                    row[f"{year}_Total"] = int(round(year_sum)) if year_sum > 0 else ""
+                
+                rows.append(row)
+            
+            total_row = {"Country": "", "Sector": "Total", "_Country": country}
+            for year in years:
+                 year_sum = country_data[(country_data['Year'] == year)]['Value'].sum()
+                 total_row[f"{year}_Total"] = int(round(year_sum)) if year_sum > 0 else ""
+                 
+                 year_df_c = country_data[country_data['Year'] == year]
+                 if granularity != 'year':
+                     start_agg = year_df_c.groupby('Month')['Value'].sum()
+                     for sp, val in start_agg.items():
+                         col_id = f"{year}_{sp}"
+                         total_row[col_id] = int(round(val)) if val > 0 else ""
+
+            rows.append(total_row)
+            processed_data.extend(rows)
+
         style_data_conditional = [
-            {
-                'if': {'column_id': 'Country'},
-                'textAlign': 'left',
-                'fontWeight': 'bold',
-                'backgroundColor': '#f9f9f9',
-                'minWidth': '120px',
-                'borderRight': '1.5px solid #bbb'
-            },
-            {
-                'if': {'column_id': 'Sector'},
-                'textAlign': 'left',
-                'paddingLeft': '10px',
-                'minWidth': '100px',
-                'borderRight': '1.5px solid #bbb'
-            },
-            # Bold and highlight Total rows (Grey background)
-            {
-                'if': {
-                    'filter_query': '{Sector} eq "Total"'
-                },
-                'fontWeight': 'bold',
-                'backgroundColor': '#f2f2f2'
-            },
-            # Bold and highlight Total columns (Grey background)
-            {
-                'if': {
-                    'column_id': [c['id'] for c in columns if 'Total' in str(c.get('name', ''))]
-                },
-                'fontWeight': 'bold',
-                'backgroundColor': '#f2f2f2'
-            }
-        ]
-        
-        style_header_conditional = [
-            {
-                'if': {'header_index': 0},
-                'backgroundColor': '#f8f9fa',
-                'fontWeight': 'bold',
-                'textAlign': 'center'
-            },
-            {
-                'if': {'header_index': 1},
-                'backgroundColor': '#ffffff',
-                'textAlign': 'center'
-            }
+            {'if': {'row_index': 'odd'}, 'backgroundColor': '#f2f2f2'},
+            {'if': {'column_id': 'Country'}, 'textAlign': 'left', 'fontWeight': 'bold', 'minWidth': '120px', 'color': '#333'},
+            {'if': {'column_id': 'Sector'}, 'textAlign': 'left', 'paddingLeft': '10px', 'minWidth': '100px', 'borderRight': '1px solid #ccc'},
+            {'if': {'column_id': [f"{y}_Total" for y in years]}, 'borderRight': '1px solid #ccc'}
         ]
 
-        # The clientside callback will now handle the "focus" and "dimming" visuals
-        # using CSS classes for a higher performance "Global Price" experience.
+        has_highlight = False
+        highlight_rows_query = []
+        highlight_cols = []
         
-        print(f"Table: {len(data)} rows, {len(columns)} columns")
-        
-        return fig, columns, data, style_data_conditional, style_header_conditional
+        active_country = None
+        if highlight_country:
+            active_country = highlight_country
+            has_highlight = True
+            highlight_rows_query.append(f'{{_Country}} eq "{active_country}"')
+        elif selection:
+            sel_type = selection.get('type')
+            if sel_type == 'table-country':
+                active_country = selection.get('country')
+                if active_country:
+                    has_highlight = True
+                    highlight_rows_query.append(f'{{_Country}} eq "{active_country}"')
+            elif sel_type == 'table-sector':
+                active_sector = selection.get('sector')
+                active_country = selection.get('country')
+                if active_sector:
+                    has_highlight = True
+                    if active_country:
+                        highlight_rows_query.append(f'{{_Country}} eq "{active_country}" && {{Sector}} eq "{active_sector}"')
+                    else:
+                        highlight_rows_query.append(f'{{Sector}} eq "{active_sector}"')
+            elif sel_type == 'chart':
+                x_val = selection.get('x_val')
+                sec = selection.get('sector')
+                if sec:
+                    highlight_rows_query.append(f'{{Sector}} eq "{sec}"')
+                    has_highlight = True
 
-        print(f"Table: {len(data)} rows, {len(columns)} columns")
+        if has_highlight:
+             style_data_conditional.append({'if': {'column_id': data_col_ids}, 'color': '#ccc'})
         
-        return fig, columns, data, style_data_conditional, style_header_conditional
+        for query in highlight_rows_query:
+            style_data_conditional.append({'if': {'filter_query': query}, 'backgroundColor': '#cfe8ef', 'color': 'black'})
+            
+        return columns, processed_data, style_data_conditional, []
+
     # Unified selection callback handler
     @dash_app.callback(
         Output('sector-demand-selection-store', 'data'),
@@ -847,188 +1188,67 @@ def register_callbacks(dash_app, server):
                     
         return new_selection
 
-    # Clientside callback for table highlighting logic (Global Price Style)
+    # Clientside Callback for Header Clicks
     dash_app.clientside_callback(
-        """
-        function(selection, id) {
-            const tableId = 'sector-demand-table';
-            const inputId = 'sector-demand-header-click-input';
-            
-            const tableEl = document.getElementById(tableId);
-            const inputEl = document.querySelector('#sector-demand-header-click-input');
-            if (!tableEl) return null;
-            
-            const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
-            if (!spreadsheet) return null;
-
-            // Ensure Style is injected
-            if (spreadsheet.dataset.globalPriceStyle !== 'true') {
-                spreadsheet.dataset.globalPriceStyle = 'true';
-                const styleId = 'sector-demand-table-focus-css';
-                if (!document.getElementById(styleId)) {
-                    const style = document.createElement('style');
-                    style.id = styleId;
-                    style.innerHTML = `
-                        #sector-demand-table .dash-spreadsheet-container td {
-                            transition: opacity 0.1s ease-in-out, background-color 0.1s ease;
-                        }
-                        /* Selection active state - fade out everything else */
-                        #sector-demand-table .dash-spreadsheet-container.selection-active td {
-                            opacity: 0.3 !important;
-                        }
-                        /* Except the focused cells */
-                        #sector-demand-table .dash-spreadsheet-container.selection-active td.focused-cell,
-                        #sector-demand-table .dash-spreadsheet-container.selection-active td.active-label,
-                        #sector-demand-table .dash-spreadsheet-container.selection-active td.focused-header,
-                        #sector-demand-table .dash-spreadsheet-container th.focused-header {
-                            opacity: 1 !important;
-                        }
-                        /* Focused cell background */
-                        #sector-demand-table .dash-spreadsheet-container td.focused-cell {
-                            background-color: #e7f3ff !important;
-                            color: #333 !important;
-                        }
-                        /* Active label cell */
-                        #sector-demand-table .dash-spreadsheet-container td.active-label {
-                            background-color: #006eb0 !important;
-                            color: white !important;
-                            font-weight: bold !important;
-                        }
-                        /* Header focus */
-                        #sector-demand-table .dash-spreadsheet-container th.focused-header {
-                            background-color: #006eb0 !important;
-                            color: white !important;
-                            font-weight: bold !important;
-                            border-bottom: 2px solid #004a7a !important;
-                        }
-                    `;
-                    document.head.appendChild(style);
-                }
-
-                // Add click listener for headers ONLY (server handles table body clicks via active_cell)
-                spreadsheet.addEventListener('click', function(e) {
-                    const cell = e.target.closest('th');
-                    if (!cell) return;
-                    
-                    const colId = cell.getAttribute('data-dash-column');
-                    const row = cell.closest('tr');
-                    
-                    const isYearRow = row && row.rowIndex === 0;
-                    if (isYearRow) {
-                        const yearText = cell.innerText.trim();
-                        if (/^\\d{4}$/.test(yearText)) {
-                            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                            setter.call(inputEl, 'year|' + yearText + '|' + Date.now());
-                            inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-                            inputEl.dispatchEvent(new Event('change', { bubbles: true }));
-                        }
-                    } else if (colId && colId !== 'Country' && colId !== 'Sector') {
-                        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                        setter.call(inputEl, 'month|' + colId + '|' + Date.now());
-                        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-                        inputEl.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                }, true);
-            }
-
-            // Sync visual state with selection store
-            const clearVisuals = () => {
-                spreadsheet.classList.remove('selection-active');
-                spreadsheet.querySelectorAll('.focused-cell, .active-label, .focused-header').forEach(el => {
-                    el.classList.remove('focused-cell', 'active-label', 'focused-header');
-                });
-            };
-
-            clearVisuals();
-
-            if (selection && selection.type) {
-                spreadsheet.classList.add('selection-active');
-                const selType = selection.type;
-                const selCountry = selection.country;
-                const selSector = selection.sector;
-                const selX = selection.x_val;
-                const selYear = selection.year;
-
-                // Use internal logic to find the Month/Year column ID from Chart label if needed
-                let colId = selX;
-                if (selType === 'chart' && selX) {
-                    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-                    const monthMap = {"Jan": "January", "Feb": "February", "Mar": "March", "Apr": "April", "May": "May", "Jun": "June", "Jul": "July", "Aug": "August", "Sep": "September", "Oct": "October", "Nov": "November", "Dec": "December"};
-                    const parts = selX.split(' ');
-                    if (parts.length === 2) {
-                        const m = monthMap[parts[0]] || parts[0];
-                        colId = parts[1] + '_' + m;
-                    }
-                }
-
-                if ((selType === 'table-country' || selType === 'table-sector') && selCountry) {
-                    // Highlight the country name cell
-                    spreadsheet.querySelectorAll('td[data-dash-column="Country"]').forEach(td => {
-                        if (td.innerText.trim() === selCountry) {
-                            td.classList.add('active-label');
-                            // Highlight all rows in this country's group
-                            let currentRow = td.closest('tr');
-                            while (currentRow) {
-                                // Add focused background to all data cells in this country group
-                                currentRow.querySelectorAll('td:not([data-dash-column="Country"]):not([data-dash-column="Sector"])').forEach(c => {
-                                    c.classList.add('focused-cell');
-                                });
-                                // Highlight the Sector labels in this group
-                                currentRow.querySelectorAll('td[data-dash-column="Sector"]').forEach(c => {
-                                    if (selType === 'table-sector' && c.innerText.trim() === selSector) {
-                                        c.classList.add('active-label');
-                                    } else {
-                                        c.classList.add('focused-cell');
-                                    }
-                                });
-                                
-                                currentRow = currentRow.nextElementSibling;
-                                if (!currentRow || (currentRow.querySelector('td[data-dash-column="Country"]') && currentRow.querySelector('td[data-dash-column="Country"]').innerText.trim() !== "")) {
-                                    break;
-                                }
+        '''
+        function(n_clicks, tableId) {
+            try {
+                if (!tableId) return window.dash_clientside.no_update;
+                
+                const table = document.getElementById(tableId);
+                if (!table) return window.dash_clientside.no_update;
+                
+                const callbackInput = document.getElementById('sector-demand-header-click-input');
+                
+                // Helper to attach listeners safely
+                function attachListeners() {
+                    const ths = table.querySelectorAll('th');
+                    ths.forEach(th => {
+                        if (th.dataset.clickListenerAttached === 'true') return;
+                        th.dataset.clickListenerAttached = 'true';
+                        
+                        th.style.cursor = 'pointer'; // Make it look clickable
+                        
+                        th.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            
+                            const text = th.innerText.trim();
+                            const colId = th.getAttribute('data-dash-column');
+                            
+                            // Detect Year (4 digits, possibly in merged header)
+                            if (/^20\\d{2}$/.test(text)) {
+                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                                nativeInputValueSetter.call(callbackInput, 'year|' + text);
+                                callbackInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                return;
                             }
-                        }
-                    });
-                } else if (selType === 'table-column' && colId) {
-                    spreadsheet.querySelectorAll(`td[data-dash-column="${colId}"]`).forEach(td => {
-                        td.classList.add('focused-cell');
-                    });
-                    spreadsheet.querySelectorAll(`th[data-dash-column="${colId}"]`).forEach(th => {
-                        th.classList.add('focused-header');
-                    });
-                } else if (selType === 'table-year' && selYear) {
-                    const prefix = selYear + '_';
-                    spreadsheet.querySelectorAll(`td[data-dash-column^="${prefix}"]`).forEach(td => {
-                        td.classList.add('focused-cell');
-                    });
-                    spreadsheet.querySelectorAll(`th[data-dash-column^="${prefix}"]`).forEach(th => {
-                        th.classList.add('focused-header');
-                    });
-                } else if (selType === 'chart' && selSector && colId) {
-                    // Intersection highlight
-                    spreadsheet.querySelectorAll(`td[data-dash-column="${colId}"]`).forEach(td => {
-                        const rowSector = td.closest('tr').querySelector('td[data-dash-column="Sector"]');
-                        if (rowSector && rowSector.innerText.trim() === selSector) {
-                            td.classList.add('active-label'); // The core intersection
-                        } else {
-                            td.classList.add('focused-cell'); // The column rest
-                        }
-                    });
-                    spreadsheet.querySelectorAll('td[data-dash-column="Sector"]').forEach(td => {
-                        if (td.innerText.trim() === selSector) {
-                            td.classList.add('active-label');
-                        }
-                    });
-                    spreadsheet.querySelectorAll(`th[data-dash-column="${colId}"]`).forEach(th => {
-                        th.classList.add('focused-header');
+                            
+                            // Detect Month/Column (Must have ID and not be Country/Sector)
+                            if (colId && colId !== 'Country' && colId !== 'Sector') {
+                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                                nativeInputValueSetter.call(callbackInput, 'month|' + colId);
+                                callbackInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            }
+                        });
                     });
                 }
-            }
-
-            return null;
+                
+                // Attach now
+                attachListeners();
+                
+                // Attach on mutation (if pagination or updates rebuild DOM)
+                // We use a simple recurring check or observer
+                if (!window.europeGasHeaderObserver) {
+                    window.europeGasHeaderObserver = new MutationObserver((mutations) => {
+                        attachListeners();
+                    });
+                    window.europeGasHeaderObserver.observe(table, { childList: true, subtree: true });
+                }
+                
+            } catch (e) { console.error(e); }
+            return window.dash_clientside.no_update;
         }
-        """,
-        Output('sector-demand-table-enhancer-anchor', 'children'),
-        [Input('sector-demand-selection-store', 'data'),
-         Input('sector-demand-table-enhancer-anchor', 'id')]
+        ''',
+        Output('sector-demand-header-click-input', 'style'), 
+        [Input('sector-demand-table', 'id')]
     )
