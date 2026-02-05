@@ -3,78 +3,12 @@ import plotly.express as px
 from dash import dcc, html, Input, Output, dash_table, State, ALL, ctx, no_update
 import os
 from datetime import datetime, timedelta
-import psycopg2
-from sqlalchemy import create_engine
 import time
 
-# Database connection - using existing config infrastructure with proper connection management
-_engine = None
-
-def get_db_connection():
-    """Get database connection using existing config with singleton pattern"""
-    global _engine
-    if _engine is None:
-        try:
-            # Import your existing config infrastructure
-            import sys
-            sys.path.append('/var/www/projects/energyintel/energy')
-            from core.data_helpers import get_db_connection_string
-            
-            # Create engine with proper connection pooling settings
-            _engine = create_engine(
-                get_db_connection_string(),
-                pool_size=5,           # Smaller pool size
-                max_overflow=10,       # Allow some overflow
-                pool_recycle=3600,     # Recycle connections after 1 hour
-                pool_pre_ping=True,    # Validate connections before use
-                pool_timeout=30,       # Timeout for getting connection from pool
-                echo=False
-            )
-        except Exception as e:
-            print(f"Database connection error: {e}")
-            return None
-    return _engine
-
-# Database connection - using existing config infrastructure with proper connection management
-_engine = None
+# Cache configuration
 _cached_data = None
 _cache_timestamp = None
 CACHE_DURATION = 300  # 5 minutes cache
-
-def get_db_connection():
-    """Get database connection using existing config with singleton pattern"""
-    global _engine
-    if _engine is None:
-        try:
-            # Import your existing config infrastructure
-            import sys
-            sys.path.append('/var/www/projects/energyintel/energy')
-            from core.data_helpers import get_db_connection_string
-            
-            # Create engine with proper connection pooling settings
-            _engine = create_engine(
-                get_db_connection_string(),
-                pool_size=5,           # Smaller pool size
-                max_overflow=10,       # Allow some overflow
-                pool_recycle=3600,     # Recycle connections after 1 hour
-                pool_pre_ping=True,    # Validate connections before use
-                pool_timeout=30,       # Timeout for getting connection from pool
-                echo=False
-            )
-        except Exception as e:
-            print(f"Database connection error: {e}")
-            return None
-    return _engine
-
-def dispose_db_connection():
-    """Dispose of database connection and clear cache"""
-    global _engine, _cached_data, _cache_timestamp
-    if _engine:
-        _engine.dispose()
-        _engine = None
-    _cached_data = None
-    _cache_timestamp = None
-    print("Database connection disposed and cache cleared")
 
 def load_data():
     """Load and preprocess data from database query with caching"""
@@ -89,10 +23,8 @@ def load_data():
         return _cached_data
     
     try:
-        engine = get_db_connection()
-        if not engine:
-            print("ERROR: Could not establish database connection")
-            return pd.DataFrame(), pd.DataFrame()
+        # Import database query function
+        from core.data_helpers import execute_query
         
         # Chart data query
         chart_query = """
@@ -119,9 +51,13 @@ def load_data():
         
         print("Executing database query...")
         
-        # Use connection context manager to ensure proper cleanup
-        with engine.connect() as connection:
-            chart_df = pd.read_sql(chart_query, connection)
+        # Execute query using centralized data helpers
+        rows = execute_query(chart_query)
+        if not rows:
+            print("WARNING: Database query returned no data")
+            return pd.DataFrame(), pd.DataFrame()
+        
+        chart_df = pd.DataFrame(rows)
         
         print(f"Query returned {len(chart_df)} rows")
         

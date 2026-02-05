@@ -1,0 +1,45 @@
+# This is an example Starter pipeline configuration
+# Use a skeleton to build, test and deploy using manual and parallel steps
+# -----
+# You can specify a custom docker image from Docker Hub as your build environment.
+
+image: atlassian/default-image:latest
+
+pipelines:
+  default:
+    - parallel:
+      - step:
+          name: 'Build and Test'
+          trigger: "automatic"
+          script:
+            - echo "Your build and test goes here..."
+      - step:
+          name: 'Deploy to Development Dash Enterprise'
+          deployment: "development"
+          trigger: "manual"
+          image: python:3.11.7
+          script: 
+            - pip install dash-enterprise-libraries --extra-index-url https://$DASH_ENTERPRISE_HOST_UAT/packages
+
+            - de logout
+
+            - DASH_ENTERPRISE_USERNAME=$DASH_ENTERPRISE_USERNAME_UAT DASH_ENTERPRISE_PASSWORD=$DASH_ENTERPRISE_PASSWORD_UAT de --host $DASH_ENTERPRISE_HOST_UAT --no-keyfile login
+            
+            - de --version
+            
+            - de --host $DASH_ENTERPRISE_HOST_UAT whoami
+            
+            - echo "yes" | de --host $DASH_ENTERPRISE_HOST_UAT deploy --name $DASH_ENTERPRISE_APP_NAME_UAT
+
+      - step:
+          name: 'Deploy to Production Dash Enterprise'
+          deployment: "production"
+          trigger: "manual"
+          image: python:3.11.7
+          script: 
+            - pip install dash-enterprise-libraries --extra-index-url https://$DASH_ENTERPRISE_HOST/packages
+
+            - DASH_ENTERPRISE_USERNAME=$DASH_ENTERPRISE_USERNAME DASH_ENTERPRISE_PASSWORD=$DASH_ENTERPRISE_PASSWORD de --host $DASH_ENTERPRISE_HOST --no-keyfile login
+            # - de --version
+            - de whoami
+            - echo "yes" | de deploy --name $DASH_ENTERPRISE_APP_NAME            

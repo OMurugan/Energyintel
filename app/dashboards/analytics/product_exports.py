@@ -178,11 +178,14 @@ clientside_callback(
         }
         
         const point = clickData.points[0];
-        if (!point.customdata) {
+        if (!point.customdata || !Array.isArray(point.customdata) || point.customdata.length < 1) {
             return [null, null];
         }
 
-        const clickedCommodity = String(point.customdata[0]).trim();
+        const clickedCommodity = String(point.customdata[0] || '').trim();
+        if (!clickedCommodity) {
+            return [null, null];
+        }
         let nextSelection = clickedCommodity;
         
         // Toggle logic
@@ -210,12 +213,15 @@ clientside_callback(
         }
         
         const point = clickData.points[0];
-        if (!point.customdata) {
+        if (!point.customdata || !Array.isArray(point.customdata) || point.customdata.length < 2) {
             return [null, null];
         }
 
-        const commodity = String(point.customdata[0]).trim();
-        const date = String(point.customdata[1]).trim();
+        const commodity = String(point.customdata[0] || '').trim();
+        const date = String(point.customdata[1] || '').trim();
+        if (!commodity || !date) {
+            return [null, null];
+        }
         const clickedId = commodity + "|" + date;
         
         let nextSelection = clickedId;
@@ -295,19 +301,16 @@ def register_callbacks(dash_app, server):
          Input('treemap-selection', 'data')]
     )
     def update_treemap(selected_year, sel_treemap):
+        logger.info(f"Treemap callback triggered: year={selected_year}, selection={sel_treemap}")
         query_treemap = f"SELECT date, category, commodity, vol_kbpd FROM russia_master_data WHERE category = 'Exports' AND EXTRACT(YEAR FROM date) = {selected_year};"
         
         try:
             results_t = execute_query(query_treemap) or []
             df_t = pd.DataFrame(results_t)
-            
-            # Fallback if dev schema fails
-            if df_t.empty:
-                query_treemap = query_treemap.replace('', '')
-                results_t = execute_query(query_treemap) or []
-                df_t = pd.DataFrame(results_t)
+            logger.info(f"Treemap query returned {len(df_t)} rows")
 
         except Exception as e:
+            logger.error(f"Treemap query failed: {str(e)}")
             df_t = pd.DataFrame()
 
         # Data Coercion
@@ -358,7 +361,19 @@ def register_callbacks(dash_app, server):
                     line_widths.append(0)
                     line_colors.append('rgba(0,0,0,0)')
                     
-                custom_data.append([commodity, row['vol_kbpd'], row['percentage']])
+                # Add safety checks to ensure no None/NaN values
+                commodity_str = str(commodity) if commodity is not None else 'Unknown'
+                vol_float = float(row['vol_kbpd']) if pd.notna(row['vol_kbpd']) else 0.0
+                pct_float = float(row['percentage']) if pd.notna(row['percentage']) else 0.0
+                custom_data.append([commodity_str, vol_float, pct_float])
+
+            # Ensure customdata is never empty - add a fallback
+            if not custom_data:
+                custom_data = [['No Data', 0.0, 0.0]]
+                ids = ['no-data']
+                labels = ['No Data Available']
+                colors = ['#CCCCCC']
+                values = [0]
 
             fig_treemap = go.Figure(go.Treemap(
                 ids=ids,
@@ -367,8 +382,7 @@ def register_callbacks(dash_app, server):
                 values=values,
                 textinfo="label",
                 marker=dict(colors=colors, line=dict(width=line_widths, color=line_colors)),
-                customdata=custom_data,
-                hovertemplate="Product: %{customdata[0]}<br>Volume ('000 b/d): %{customdata[1]:.1f}<br>% of Total: %{customdata[2]:.2f}%<extra></extra>",
+                customdata=custom_data,  # Keep for clientside callbacks
                 tiling=dict(pad=2),
                 maxdepth=1,
                 hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"))
@@ -392,18 +406,16 @@ def register_callbacks(dash_app, server):
         [Input('bar-selection', 'data')]
     )
     def update_bar_chart(sel_bar):
+        logger.info(f"Bar chart callback triggered: selection={sel_bar}")
         query_bar = "SELECT date, category, commodity, vol_kbpd FROM russia_master_data WHERE category = 'Exports' AND date >= '2022-01-01';"
         
         try:
             results_b = execute_query(query_bar) or []
             df_b = pd.DataFrame(results_b)
-            
-            if df_b.empty:
-                query_bar = query_bar.replace('', '')
-                results_b = execute_query(query_bar) or []
-                df_b = pd.DataFrame(results_b)
+            logger.info(f"Bar chart query returned {len(df_b)} rows")
 
         except Exception as e:
+            logger.error(f"Bar chart query failed: {str(e)}")
             df_b = pd.DataFrame()
 
         # Data Coercion
@@ -471,8 +483,8 @@ def register_callbacks(dash_app, server):
                         color=marker_colors,
                         line=dict(width=marker_line_widths, color=marker_line_colors)
                     ),
-                    customdata=[[commodity, d] for d in reindexed_hdates],
-                    hovertemplate="Commodity: %{customdata[0]}<br>Date: %{customdata[1]}<br>Volume ('000 b/d): %{y:,.0f}<extra></extra>",
+                    customdata=[[str(commodity), str(d)] for d in reindexed_hdates],  # Simple customdata for callbacks
+                    hovertemplate="Commodity: %{fullData.name}<br>Volume ('000 b/d): %{y:,.0f}<extra></extra>",
                     hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"))
                 ))
 

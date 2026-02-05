@@ -1,6 +1,7 @@
 """
 Shared Dash application instance for Dash Pages.
 This module avoids name collisions with the existing app/ package.
+Uses the same EmbeddedAuth approach as the client demo.
 """
 
 import os
@@ -15,14 +16,16 @@ requests_pathname_prefix = os.environ.get('DASH_ROUTES_PATHNAME_PREFIX', '/')
 host_app_origin = os.environ.get('HOST_APP_ORIGIN', 'https://www.energyintel.com')
 
 # Single global Dash instance with Dash Pages enabled
+# Use Embeddable plugin exactly like the client demo
 app = Dash(
     __name__,
     use_pages=True,
     pages_folder="pages",  # explicitly point to the pages package
     external_stylesheets=[dbc.themes.BOOTSTRAP],
     suppress_callback_exceptions=True,
-    plugins=[Embeddable(origins="*")],
+    plugins=[Embeddable(origins="*")],  # Same as client demo
     requests_pathname_prefix=requests_pathname_prefix,
+    assets_folder="assets",  # Add assets folder for custom JS/CSS
 )
 
 # Expose server for gunicorn
@@ -32,8 +35,7 @@ server = app.server
 server.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
 print(f"DEBUG: Flask secret key configured: {'*' * len(server.secret_key)}")
 
-# Configure CORS for embedded access
-# Allow the host application to access the Dash app when embedded
+# Configure CORS for embedded access (same as client demo approach)
 cors_origins = [
     "https://www.energyintel.com",  # Main host application
     "https://energyintel.com",      # Alternative domain
@@ -150,104 +152,5 @@ def after_request(response):
     
     return response
 
-# Initialize authentication (optional - can be disabled via env var)
-# Note: For testing overlay functionality, we're using custom TokenAuth instead of EmbeddedAuth
-_auth_instance = None
-is_embedded = os.environ.get('IS_EMBEDDED', 'false').lower() == 'true'
-enable_auth = os.environ.get('ENABLE_AUTH', 'false').lower() == 'true'
-
-# CRITICAL: Add immediate authentication check before any processing
-@server.before_request
-def immediate_auth_check():
-    """Immediate authentication check - runs before everything else."""
-    from flask import request, redirect
-    
-    # Skip for OPTIONS and static assets
-    if request.method == 'OPTIONS':
-        return None
-        
-    path = request.path.lower()
-    static_paths = [
-        '/_dash-layout',
-        '/_dash-dependencies', 
-        '/_dash-component-suites/',
-        '/_dash-update-component',
-        '_reload-hash',
-        '/assets/', 
-        '/_favicon.ico', 
-        '/static/',
-        '/health',
-        '/_resources',
-        '/portal'
-    ]
-    
-    if any(x in path for x in static_paths):
-        return None
-    
-    print(f"🚨 IMMEDIATE AUTH CHECK: {request.path}")
-    print(f"🚨 Host: {request.host}")
-    print(f"🚨 Environment: {os.environ.get('DASH_ENV')}")
-    
-    # Check environment
-    dash_env = os.environ.get('DASH_ENV', '').lower()
-    
-    # CRITICAL: In development mode, bypass ALL authentication
-    if dash_env == 'development':
-        print("🚨 Development mode - bypassing ALL immediate auth")
-        return None
-    
-    # Production mode - check authentication
-    if (dash_env == 'production' or not dash_env) and request.host and 'data.energyintel.com' in request.host:
-        print("🚨 PRODUCTION + data.energyintel.com - checking auth")
-        
-        # Check for embedded access (stricter check)
-        is_embedded_access = False
-        if request.referrer:
-            ref_low = request.referrer.lower()
-            if ('energyintel.com' in ref_low or 'www.energyintel.com' in ref_low) and \
-               'data.energyintel.com' not in ref_low:
-                is_embedded_access = True
-        
-        if is_embedded_access:
-            print(f"🚨 Embedded access from {request.referrer} - allowing")
-            return None
-        
-        # Check for tokens
-        production_tokens = ['pelcro.user.auth.token', 'kcToken', 'kcIdToken']
-        tokens_found = 0
-        
-        for token_name in production_tokens:
-            token_value = request.cookies.get(token_name)
-            if token_value and len(token_value) > 10:
-                tokens_found += 1
-        
-        print(f"🚨 Tokens found: {tokens_found}")
-        
-        if tokens_found == 0:
-            print("🚨 NO TOKENS - IMMEDIATE BLOCK")
-            portal_url = os.environ.get('PORTAL_URL', 'https://data.energyintel.com').rstrip('/') + "/portal"
-            print(f"🚨 IMMEDIATE REDIRECT TO: {portal_url}")
-            return redirect(portal_url)
-    
-    return None
-
-# Force use of custom TokenAuth for testing overlay functionality
-# This will replace EmbeddedAuth with our custom authentication that includes overlay
-if enable_auth:
-    # Use custom TokenAuth for testing overlay functionality
-    from auth import init_auth
-    _auth_instance = init_auth(app)
-    # Store auth instance reference for utils to access
-    server._auth_instance = _auth_instance
-    print("DEBUG: Using custom TokenAuth with overlay functionality")
-elif is_embedded:
-    # For now, also use custom TokenAuth in embedded mode for testing
-    from auth import init_auth
-    _auth_instance = init_auth(app)
-    # Store auth instance reference for utils to access
-    server._auth_instance = _auth_instance
-    print("DEBUG: Using custom TokenAuth in embedded mode for testing")
-else:
-    # No authentication - store None to indicate auth is disabled
-    server._auth_instance = None
-    print("DEBUG: Authentication disabled")
+# Authentication will be handled in app_entry_point.py using EmbeddedAuth
+print(f"DEBUG: app_instance.py - Authentication will be handled by EmbeddedAuth in app_entry_point.py")

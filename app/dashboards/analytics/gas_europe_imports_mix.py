@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import create_engine, text
 import time
 import numpy as np
+import hashlib
 
 MONTH_ORDER = [
     'January', 'February', 'March', 'April', 'May', 'June', 
@@ -148,29 +149,6 @@ def generate_timeline_data(years, mode='MONTHLY'):
     df = pd.DataFrame(timeline)
     return df, year_annotations, month_separators, year_separators, num_years, year_centers
 
-# Database connection
-_engine = None
-
-def get_db_connection():
-    """Get database connection using existing config with singleton pattern"""
-    global _engine
-    if _engine is None:
-        try:
-            from core.data_helpers import get_db_connection_string
-            _engine = create_engine(
-                get_db_connection_string(),
-                pool_size=5,
-                max_overflow=10,
-                pool_recycle=3600,
-                pool_pre_ping=True,
-                pool_timeout=30,
-                echo=False
-            )
-        except Exception as e:
-            print(f"Database connection error: {e}")
-            return None
-    return _engine
-
 # Constants
 LNG_COLOR = '#1f77b4'  # Blue
 PIPELINE_COLOR = '#ff7f0e'  # Orange
@@ -217,6 +195,18 @@ GAS_ORIGIN_COLORS = {
     'United Kingdom': '#d17094',
 }
 
+def get_consistent_color_for_origin(origin):
+    """Get a consistent color for a gas origin, ensuring the same origin always gets the same color"""
+    # First check if we have a predefined color
+    if origin in GAS_ORIGIN_COLORS:
+        return GAS_ORIGIN_COLORS[origin]
+    
+    # For origins not in the predefined mapping, use a hash-based approach
+    # to ensure the same origin always gets the same color regardless of order
+    hash_value = int(hashlib.md5(origin.encode()).hexdigest(), 16)
+    color_index = hash_value % len(COLOR_PALETTE)
+    return COLOR_PALETTE[color_index]
+
 def hex_to_rgba(h, a):
     """Convert hex color to rgba string."""
     if not h: return f'rgba(0,0,0,{a})'
@@ -228,13 +218,15 @@ def hex_to_rgba(h, a):
 
 def load_data(query, params=None):
     """Execute query and return DataFrame"""
-    engine = get_db_connection()
-    if not engine:
-        return pd.DataFrame()
     try:
-        with engine.connect() as connection:
-            df = pd.read_sql(text(query), connection, params=params)
-        return df
+        from core.data_helpers import execute_query
+        rows = execute_query(query, params)
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame(rows)
+    except Exception as e:
+        print(f"Database query error: {e}")
+        return pd.DataFrame()
     except Exception as e:
         print(f"Query error: {e}")
         return pd.DataFrame()
@@ -913,9 +905,8 @@ def register_callbacks(dash_app, server):
 
         for i, origin in enumerate(origins):
             is_sel = origin in (selected or [])
-            m_color = GAS_ORIGIN_COLORS.get(origin)
-            if not m_color:
-                m_color = COLOR_PALETTE[i % len(COLOR_PALETTE)]
+            # Use consistent color mapping function
+            m_color = get_consistent_color_for_origin(origin)
             
             items.append(html.Div([
                 html.Div(style={
@@ -988,16 +979,60 @@ def register_callbacks(dash_app, server):
 
         # 3. Handle Chart 2 Click
         if triggered_id == 'chart-2':
-            if not c2_click: return no_update
-            try:
-                raw_m = str(c2_click['points'][0].get('x'))
-                clicked_m = pd.to_datetime(raw_m).strftime('%Y-%m-%d')
-            except:
-                return no_update
-
-            if str(s2) == clicked_m:
-                return no_update, None, no_update, no_update, None, no_update
-            return no_update, clicked_m, no_update, no_update, None, no_update
+            if not c2_click or 'points' not in c2_click: return no_update
+            
+            # Get click data
+            point = c2_click['points'][0]
+            customdata = point.get('customdata', [])
+            
+            if customdata and len(customdata) >= 3:
+                x_label = str(customdata[0]).strip()
+                origin = str(customdata[1]).strip()
+                click_type = str(customdata[2])
+                
+                if click_type == 'BAR_CLICK':
+                    new_sel = {'mode': 'bar', 'origin': origin, 'label': x_label}
+                    
+                    # Toggle logic
+                    if isinstance(s2, dict) and s2.get('mode') == 'bar' and \
+                       str(s2.get('origin')).strip() == origin and str(s2.get('label')).strip() == x_label:
+                        return no_update, None, no_update, no_update, None, no_update
+                    
+                    return no_update, new_sel, no_update, no_update, None, no_update
+                    
+                elif click_type == 'LABEL_CLICK':
+                    date_str = str(customdata[1])
+                    new_sel = {'mode': 'month', 'month': date_str, 'label': x_label}
+                    
+                    # Toggle logic
+                    if isinstance(s2, dict) and s2.get('mode') == 'month' and s2.get('month') == date_str:
+                        return no_update, None, no_update, no_update, None, no_update
+                        
+                    return no_update, new_sel, no_update, no_update, None, no_update
+                    
+            elif customdata and len(customdata) >= 2:
+                # Fallback for simpler customdata
+                x_label = str(customdata[0]).strip()
+                second_param = str(customdata[1]).strip()
+                
+                if not second_param: # Likely month
+                    try:
+                        raw_x = str(point.get('x'))
+                        if raw_x:
+                            clicked_date = pd.to_datetime(raw_x).strftime('%Y-%m-%d')
+                            new_sel = {'mode': 'month', 'month': clicked_date, 'label': x_label}
+                            if isinstance(s2, dict) and s2.get('mode') == 'month' and s2.get('month') == clicked_date:
+                                return no_update, None, no_update, no_update, None, no_update
+                            return no_update, new_sel, no_update, no_update, None, no_update
+                    except: pass
+                else: # Likely origin
+                    new_sel = {'mode': 'bar', 'origin': second_param, 'label': x_label}
+                    if isinstance(s2, dict) and s2.get('mode') == 'bar' and \
+                       str(s2.get('origin')).strip() == second_param and str(s2.get('label')).strip() == x_label:
+                        return no_update, None, no_update, no_update, None, no_update
+                    return no_update, new_sel, no_update, no_update, None, no_update
+            
+            return no_update, None, no_update, no_update, None, no_update
 
         # 4. Handle Chart 3 Click
         if triggered_id == 'chart-3':
@@ -1106,21 +1141,31 @@ def register_callbacks(dash_app, server):
                 
                 base_color = PIPELINE_COLOR if ft_key == 'pipeline' else LNG_COLOR
                 colors = []
+                line_widths = []
+                line_colors = []
                 
                 for _, row in subset.iterrows():
                     is_dim = False
-                    ry_str = str(row['x_label'])
+                    is_sel = False
+                    ry_str = str(row['x_label']).strip()
                     if sel1:
-                        if sel1['mode'] == 'year':
-                            if ry_str != str(sel1['year']): is_dim = True
-                        elif sel1['mode'] == 'bar':
-                            if not (ry_str == str(sel1['year']) and flow_name == sel1['flow']): is_dim = True
+                        if sel1.get('mode') == 'year':
+                            if ry_str != str(sel1.get('year')).strip(): is_dim = True
+                            else: is_sel = True
+                        elif sel1.get('mode') == 'bar':
+                            if ry_str == str(sel1.get('year')).strip() and flow_name == sel1.get('flow'):
+                                is_sel = True
+                            else:
+                                is_dim = True
                     
-                    colors.append(GREY_OUT if is_dim else base_color)
+                    colors.append(base_color if not is_dim else '#f2f2f2')
+                    line_widths.append(1.5 if is_sel and sel1 and sel1['mode'] == 'bar' else 0)
+                    line_colors.append('#333' if is_sel and sel1 and sel1['mode'] == 'bar' else 'rgba(0,0,0,0)')
 
                 fig1.add_trace(go.Bar(
                     name=flow_name, x=subset['grp_key_dt'] if agg_mode == 'DATE' else subset['x_label'], 
-                    y=subset['flow_bcm'], marker_color=colors,
+                    y=subset['flow_bcm'], 
+                    marker=dict(color=colors, line=dict(width=line_widths, color=line_colors)),
                     text=subset['flow_bcm'].apply(lambda x: f"{x:.1f}" if x > 1 else ""), textposition='outside',
                     customdata=subset.apply(lambda r: [r['x_label'], flow_name, "BAR_CLICK"], axis=1),
                     hovertemplate="Flow Type: <span style='color:black'><b>"+flow_name+"</b></span><br>Date: <span style='color:black'><b>%{customdata[0]}</b></span><br>Flow (BCM): <span style='color:black'><b>%{y:.1f}</b></span><extra></extra>"
@@ -1246,36 +1291,126 @@ def register_callbacks(dash_app, server):
             fig2 = go.Figure()
             unique_origins = sorted(pivot.columns, reverse=True)
             
-            # --- Main Data Trace (Highly Optimized) ---
-            x_vals = pivot.index if agg_mode == 'DATE' else x_order
+            # --- Selection Logic ---
+            selected_month = None
+            selected_origin = None
+            selected_bar = None # {origin, label}
             
-            # Pre-calculate customdata to avoid apply() in loop
-            # customdata for trace i needs [label, 'BAR_CLICK']
-            base_customdata = [[lbl, 'BAR_CLICK'] for lbl in x_order]
-
+            if sel2:
+                if isinstance(sel2, dict):
+                    if sel2.get('mode') == 'bar':
+                        selected_bar = {'origin': sel2.get('origin'), 'label': sel2.get('label')}
+                    elif sel2.get('mode') == 'month':
+                        selected_month = sel2.get('label')
+                else:
+                    # Backward compatibility for legend click
+                    if sel2 in unique_origins:
+                        selected_origin = sel2
+                    else:
+                        # Try to match as a date - convert sel2 to find matching month
+                        try:
+                            selected_dt = pd.to_datetime(sel2)
+                            # Find the corresponding x_label by matching year and month
+                            for i, ts in enumerate(pivot.index):
+                                if ts.year == selected_dt.year and ts.month == selected_dt.month:
+                                    selected_month = x_order[i]
+                                    break
+                        except:
+                            # If sel2 is not a date, try to match it directly as x_label
+                            if sel2 in x_order:
+                                selected_month = sel2
+            
+            # --- Main Data Trace (with highlighting) ---
+            x_vals = pivot.index if agg_mode == 'DATE' else x_order
+            DIM_COLOR = '#f2f2f2'
+            
             for i, origin in enumerate(unique_origins):
                 y_vals = pivot[origin].values
-                m_color = GAS_ORIGIN_COLORS.get(origin, COLOR_PALETTE[i % len(COLOR_PALETTE)])
+                # Use consistent color mapping function
+                base_color = get_consistent_color_for_origin(origin)
+                
+                colors = []
+                line_widths = []
+                line_colors = []
+                
+                for j, x_label in enumerate(x_order):
+                    is_dim = False
+                    is_sel = False
+                    
+                    if selected_bar:
+                        bar_origin = str(selected_bar.get('origin', '')).strip()
+                        bar_label = str(selected_bar.get('label', '')).strip()
+                        if str(origin).strip() == bar_origin and str(x_label).strip() == bar_label:
+                            is_sel = True
+                        else:
+                            is_dim = True
+                    elif selected_month:
+                        if str(x_label).strip() == str(selected_month).strip():
+                            is_sel = True
+                        else:
+                            is_dim = True
+                    elif selected_origin:
+                        if str(origin).strip() == str(selected_origin).strip():
+                            is_sel = True
+                        else:
+                            is_dim = True
+                    
+                    if is_dim:
+                        colors.append(DIM_COLOR)
+                        line_widths.append(0)
+                        line_colors.append('rgba(0,0,0,0)')
+                    elif is_sel:
+                        colors.append(base_color)
+                        # Only show border if it was an explicit bar click
+                        line_widths.append(1.5 if selected_bar else 0)
+                        line_colors.append('#333' if selected_bar else 'rgba(0,0,0,0)')
+                    else:
+                        # No selection active
+                        colors.append(base_color)
+                        line_widths.append(0)
+                        line_colors.append('rgba(0,0,0,0)')
+                
+                # Create customdata for both bar clicks and origin identification
+                customdata = []
+                for j, x_label in enumerate(x_order):
+                    customdata.append([x_label, origin, 'BAR_CLICK'])
                 
                 fig2.add_trace(go.Bar(
                     x=x_vals, y=y_vals, name=origin, 
-                    marker=dict(color=m_color, line=dict(width=0)), 
+                    marker=dict(color=colors, line=dict(width=line_widths, color=line_colors)), 
                     hovertemplate="Origin: <span style='color:black'><b>"+origin+"</b></span><br>Date: <span style='color:black'><b>%{customdata[0]}</b></span><br>Flow (BCM): <span style='color:black'><b>%{y:.3f}</b></span><extra></extra>",
-                    customdata=base_customdata
+                    customdata=customdata
                 ))
 
-            # footer labels trace (yaxis2)
-            # Hide labels or show very sparingly in daily mode to prevent unreadable overlap
+            # footer labels trace (yaxis2) - for month label clicks
             footer_text = x_order if agg_mode != 'DATE' else ["" for _ in x_order]
+            
+            # Determine footer label colors based on selection
+            footer_colors = []
+            for x_label in x_order:
+                if selected_month and x_label == selected_month:
+                    footer_colors.append('rgba(0,0,0,0.1)')  # Slightly more visible for selected
+                elif selected_bar and x_label == selected_bar['label']:
+                    footer_colors.append('rgba(0,0,0,0.08)')
+                else:
+                    footer_colors.append('rgba(0,0,0,0.03)')  # Normal transparency
+            
+            # Create customdata for footer labels with proper date mapping
+            footer_customdata = []
+            for i, x_label in enumerate(x_order):
+                # Get the corresponding datetime for this x_label
+                corresponding_dt = list(pivot.index)[i]
+                date_str = corresponding_dt.strftime('%Y-%m-%d')
+                footer_customdata.append([x_label, date_str, 'LABEL_CLICK'])
             
             fig2.add_trace(go.Bar(
                 x=x_vals, y=[1] * len(x_vals),
-                yaxis='y2', marker=dict(color='rgba(0,0,0,0.03)', line=dict(width=0)),
+                yaxis='y2', marker=dict(color=footer_colors, line=dict(width=0)),
                 text=footer_text, 
                 textposition='inside', insidetextanchor='middle', textangle=-90 if agg_mode not in ['YEARLY', 'DATE'] else 0, 
                 textfont=dict(size=10, color='#777', family='Lato, sans-serif'),
                 hoverinfo='none', showlegend=False,
-                customdata=[[x, 'LABEL_CLICK'] for x in x_order]
+                customdata=footer_customdata
             ))
 
             x_axis_config = dict(showgrid=False, showticklabels=(agg_mode == 'DATE'), anchor='y2')
@@ -1521,30 +1656,153 @@ def register_callbacks(dash_app, server):
                     const selectedHeaders = spreadsheet.querySelectorAll('th.column-selected');
                     selectedHeaders.forEach(header => {
                         header.classList.remove('column-selected');
-                        header.style.removeProperty('background-color');
-                        header.style.removeProperty('color');
-                        header.style.removeProperty('font-weight');
+                        
+                        // Restore original header styling
+                        const columnId = header.getAttribute('data-dash-column');
+                        const headerRow = header.closest('tr');
+                        const thead = header.closest('thead');
+                        let headerIndex = -1;
+                        
+                        if (thead && headerRow) {
+                            const headerRows = Array.from(thead.querySelectorAll('tr')).filter(tr => 
+                                tr.querySelector('th[data-dash-column]') !== null
+                            );
+                            headerIndex = headerRows.indexOf(headerRow);
+                        }
+                        
+                        // Reset to original background color based on header level and column
+                        if (columnId === 'Month') {
+                            // Month header has special styling based on header level
+                            if (headerIndex === 0) {
+                                header.style.backgroundColor = '#d1d7de';
+                            } else {
+                                header.style.backgroundColor = '#ffffff';
+                            }
+                        } else {
+                            // Regular headers
+                            if (headerIndex === 0) {
+                                header.style.backgroundColor = '#d1d7de';
+                            } else {
+                                header.style.backgroundColor = '#ffffff';
+                            }
+                        }
+                        
+                        header.style.color = 'rgb(27, 54, 93)';
+                        header.style.fontWeight = 'bold'; // Headers are always bold
                     });
                     
                     const selectedCells = spreadsheet.querySelectorAll('td.column-cell-selected');
                     selectedCells.forEach(cell => {
                         cell.classList.remove('column-cell-selected');
-                        cell.style.removeProperty('background-color');
-                        cell.style.removeProperty('font-weight');
-                        cell.style.removeProperty('color');
-                        cell.style.removeProperty('opacity');
+                        
+                        const columnId = cell.getAttribute('data-dash-column');
+                        
+                        if (columnId === 'Month') {
+                            // Restore Month column special styling
+                            cell.style.backgroundColor = '#f8fafc';
+                            cell.style.fontWeight = 'bold';
+                            cell.style.color = 'rgb(27, 54, 93)';
+                            cell.style.textAlign = 'left';
+                        } else {
+                            // Restore regular data cell styling
+                            const row = cell.closest('tr');
+                            const rowIndex = row ? Array.from(row.parentNode.children).indexOf(row) : 0;
+                            
+                            // Restore alternating row colors (odd rows have #f1f5f9)
+                            if (rowIndex % 2 === 1) {
+                                cell.style.backgroundColor = '#f1f5f9';
+                            } else {
+                                cell.style.backgroundColor = '';
+                            }
+                            
+                            cell.style.fontWeight = 'normal'; // Data cells are normal weight
+                            cell.style.color = 'rgb(27, 54, 93)';
+                        }
+                        
+                        cell.style.opacity = '1';
                     });
                     
                     if (spreadsheet.classList.contains('column-selection-active')) {
                         const allDataCells = spreadsheet.querySelectorAll('td[data-dash-column]:not([data-dash-column="Month"])');
                         allDataCells.forEach(cell => {
-                            cell.style.removeProperty('opacity');
+                            cell.style.opacity = '1';
+                            
+                            // Restore original alternating row colors for all cells
+                            const row = cell.closest('tr');
+                            const rowIndex = row ? Array.from(row.parentNode.children).indexOf(row) : 0;
+                            
+                            if (rowIndex % 2 === 1) {
+                                cell.style.backgroundColor = '#f1f5f9';
+                            } else {
+                                cell.style.backgroundColor = '';
+                            }
+                        });
+                        
+                        // Ensure Month column cells always have their special styling
+                        const monthCells = spreadsheet.querySelectorAll('td[data-dash-column="Month"]');
+                        monthCells.forEach(cell => {
+                            cell.style.backgroundColor = '#f8fafc';
+                            cell.style.fontWeight = 'bold';
+                            cell.style.color = 'rgb(27, 54, 93)';
+                            cell.style.textAlign = 'left';
+                            cell.style.opacity = '1';
                         });
                         
                         // Also reset any headers that might have had their opacity changed
                         const allHeaders = spreadsheet.querySelectorAll('th[data-dash-column]:not([data-dash-column="Month"])');
                         allHeaders.forEach(header => {
-                            header.style.removeProperty('opacity');
+                            header.style.opacity = '1';
+                            
+                            // Ensure headers also get their original styling back
+                            if (!header.classList.contains('column-selected')) {
+                                const headerRow = header.closest('tr');
+                                const thead = header.closest('thead');
+                                let headerIndex = -1;
+                                
+                                if (thead && headerRow) {
+                                    const headerRows = Array.from(thead.querySelectorAll('tr')).filter(tr => 
+                                        tr.querySelector('th[data-dash-column]') !== null
+                                    );
+                                    headerIndex = headerRows.indexOf(headerRow);
+                                }
+                                
+                                // Reset to original background color based on header level
+                                if (headerIndex === 0) {
+                                    header.style.backgroundColor = '#d1d7de';
+                                } else {
+                                    header.style.backgroundColor = '#ffffff';
+                                }
+                                
+                                header.style.color = 'rgb(27, 54, 93)';
+                                header.style.fontWeight = 'bold';
+                            }
+                        });
+                        
+                        // Ensure Month headers also get their styling back
+                        const monthHeaders = spreadsheet.querySelectorAll('th[data-dash-column="Month"]');
+                        monthHeaders.forEach(header => {
+                            if (!header.classList.contains('column-selected')) {
+                                const headerRow = header.closest('tr');
+                                const thead = header.closest('thead');
+                                let headerIndex = -1;
+                                
+                                if (thead && headerRow) {
+                                    const headerRows = Array.from(thead.querySelectorAll('tr')).filter(tr => 
+                                        tr.querySelector('th[data-dash-column]') !== null
+                                    );
+                                    headerIndex = headerRows.indexOf(headerRow);
+                                }
+                                
+                                if (headerIndex === 0) {
+                                    header.style.backgroundColor = '#d1d7de';
+                                } else {
+                                    header.style.backgroundColor = '#ffffff';
+                                }
+                                
+                                header.style.color = 'rgb(27, 54, 93)';
+                                header.style.fontWeight = 'bold';
+                            }
+                            header.style.opacity = '1';
                         });
                     }
                     spreadsheet.classList.remove('column-selection-active');
@@ -1558,14 +1816,117 @@ def register_callbacks(dash_app, server):
                     const cellsWithProperties = spreadsheet.querySelectorAll('td.row-cell-selected, th.row-cell-selected');
                     cellsWithProperties.forEach(cell => {
                         cell.classList.remove('row-cell-selected');
-                        cell.style.removeProperty('background-color');
-                        cell.style.removeProperty('font-weight');
-                        cell.style.removeProperty('color');
+                        
+                        if (cell.tagName === 'TD') {
+                            const columnId = cell.getAttribute('data-dash-column');
+                            
+                            if (columnId === 'Month') {
+                                // Restore Month column special styling
+                                cell.style.backgroundColor = '#f8fafc';
+                                cell.style.fontWeight = 'bold';
+                                cell.style.color = 'rgb(27, 54, 93)';
+                                cell.style.textAlign = 'left';
+                            } else {
+                                // Restore regular data cell styling
+                                const row = cell.closest('tr');
+                                const rowIndex = row ? Array.from(row.parentNode.children).indexOf(row) : 0;
+                                
+                                // Restore alternating row colors (odd rows have #f1f5f9)
+                                if (rowIndex % 2 === 1) {
+                                    cell.style.backgroundColor = '#f1f5f9';
+                                } else {
+                                    cell.style.backgroundColor = '';
+                                }
+                                
+                                cell.style.fontWeight = 'normal';
+                                cell.style.color = 'rgb(27, 54, 93)';
+                            }
+                        } else if (cell.tagName === 'TH') {
+                            // Restore original header styling
+                            const headerRow = cell.closest('tr');
+                            const thead = cell.closest('thead');
+                            let headerIndex = -1;
+                            
+                            if (thead && headerRow) {
+                                const headerRows = Array.from(thead.querySelectorAll('tr')).filter(tr => 
+                                    tr.querySelector('th[data-dash-column]') !== null
+                                );
+                                headerIndex = headerRows.indexOf(headerRow);
+                            }
+                            
+                            // Reset to original background color based on header level
+                            if (headerIndex === 0) {
+                                cell.style.backgroundColor = '#d1d7de';
+                            } else {
+                                cell.style.backgroundColor = '#ffffff';
+                            }
+                            
+                            cell.style.fontWeight = 'bold';
+                            cell.style.color = 'rgb(27, 54, 93)';
+                        }
                     });
 
                     const allTableCells = spreadsheet.querySelectorAll('td, th');
                     allTableCells.forEach(cell => {
-                        cell.style.removeProperty('opacity');
+                        cell.style.opacity = '1';
+                        
+                        // Restore original styling for all cells
+                        if (cell.tagName === 'TD') {
+                            const columnId = cell.getAttribute('data-dash-column');
+                            
+                            if (columnId === 'Month') {
+                                // Ensure Month column always has its special styling
+                                cell.style.backgroundColor = '#f8fafc';
+                                cell.style.fontWeight = 'bold';
+                                cell.style.color = 'rgb(27, 54, 93)';
+                                cell.style.textAlign = 'left';
+                            } else {
+                                // Restore regular data cell styling
+                                const row = cell.closest('tr');
+                                const rowIndex = row ? Array.from(row.parentNode.children).indexOf(row) : 0;
+                                
+                                if (rowIndex % 2 === 1) {
+                                    cell.style.backgroundColor = '#f1f5f9';
+                                } else {
+                                    cell.style.backgroundColor = '';
+                                }
+                                
+                                cell.style.fontWeight = 'normal';
+                                cell.style.color = 'rgb(27, 54, 93)';
+                            }
+                        } else if (cell.tagName === 'TH') {
+                            const columnId = cell.getAttribute('data-dash-column');
+                            const headerRow = cell.closest('tr');
+                            const thead = cell.closest('thead');
+                            let headerIndex = -1;
+                            
+                            if (thead && headerRow) {
+                                const headerRows = Array.from(thead.querySelectorAll('tr')).filter(tr => 
+                                    tr.querySelector('th[data-dash-column]') !== null
+                                );
+                                headerIndex = headerRows.indexOf(headerRow);
+                            }
+                            
+                            if (columnId === 'Month') {
+                                // Month header has special styling based on header level
+                                if (headerIndex === 0) {
+                                    cell.style.backgroundColor = '#d1d7de';
+                                } else {
+                                    cell.style.backgroundColor = '#ffffff';
+                                }
+                                cell.style.fontWeight = 'bold';
+                                cell.style.color = 'rgb(27, 54, 93)';
+                            } else {
+                                // Regular headers
+                                if (headerIndex === 0) {
+                                    cell.style.backgroundColor = '#d1d7de';
+                                } else {
+                                    cell.style.backgroundColor = '#ffffff';
+                                }
+                                cell.style.fontWeight = 'bold';
+                                cell.style.color = 'rgb(27, 54, 93)';
+                            }
+                        }
                     });
 
                     spreadsheet.classList.remove('row-selection-active');
