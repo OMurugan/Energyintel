@@ -18,6 +18,12 @@ SECTOR_COLORS = {
     'Household': '#0075a8'
 }
 
+def hex_to_rgba(hex_color, opacity):
+    hex_color = hex_color.lstrip('#')
+    lv = len(hex_color)
+    rgb = tuple(int(hex_color[i:i + lv // 3], 16) for i in range(0, lv, lv // 3))
+    return f'rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {opacity})'
+
 # Button Styles
 GRAN_BTN_CONTAINER_STYLE = {
     'display': 'flex',
@@ -95,6 +101,7 @@ def create_layout():
     return html.Div([
         dcc.Store(id='gas-europe-granularity-store', data='year'),
         dcc.Store(id='gas-europe-table-granularity-store', data='month'),
+        dcc.Store(id='gas-demand-chart-selection', data=None),
         
         # Header
         html.Div([
@@ -384,14 +391,64 @@ def register_callbacks(dash_app, server):
     def update_title(unit):
         return f"European Natural Gas Demand - {unit}"
 
+    # Handle Chart Selection
+    @dash_app.callback(
+        [Output('gas-demand-chart-selection', 'data'),
+         Output('gas-demand-chart', 'clickData')],
+        [Input('gas-demand-chart', 'clickData'),
+         Input('gas-europe-granularity-store', 'data'),
+         Input('unit-filter', 'value'),
+         Input('sector-filter', 'value'),
+         Input('country-filter', 'value')],
+        State('gas-demand-chart-selection', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_chart_selection(click_data, gran, unit, sectors, countries, current_sel):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update
+            
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        
+        # Reset on filter changes
+        if trigger_id != 'gas-demand-chart':
+            return None, None
+            
+        if not click_data:
+            return no_update, no_update
+            
+        point = click_data['points'][0]
+        # Our customdata is [Sector, Year of Date, Unit]
+        # We also need x_pos to be sure about the time slot
+        if 'customdata' not in point:
+            return no_update, no_update
+            
+        cdata = point['customdata']
+        sector = cdata[0]
+        year = cdata[1]
+        x_pos = point['x']
+        
+        new_sel = {
+            'sector': sector,
+            'year': year,
+            'x_pos': x_pos
+        }
+        
+        # Toggle logic
+        if current_sel and current_sel == new_sel:
+            return None, None
+            
+        return new_sel, None
+
     @dash_app.callback(
         Output('gas-demand-chart', 'figure'),
         [Input('unit-filter', 'value'),
          Input('sector-filter', 'value'),
          Input('country-filter', 'value'),
-         Input('gas-europe-granularity-store', 'data')]
+         Input('gas-europe-granularity-store', 'data'),
+         Input('gas-demand-chart-selection', 'data')]
     )
-    def update_chart(unit, selected_sectors, selected_countries, granularity):
+    def update_chart(unit, selected_sectors, selected_countries, granularity, selection):
         if not selected_sectors or not selected_countries:
             return go.Figure()
 
@@ -568,11 +625,43 @@ def register_callbacks(dash_app, server):
             # Prepare customdata for tooltip: [Sector, Year of Date, Unit]
             custom_data = sector_df[['Sector', 'Year of Date', 'Unit']].values
             
+            # Determine colors and borders based on selection
+            colors = []
+            line_colors = []
+            line_widths = []
+            
+            for _, row in sector_df.iterrows():
+                base_color = SECTOR_COLORS[sector]
+                is_selected = (
+                    selection and 
+                    selection['sector'] == sector and 
+                    selection['x_pos'] == row['x_pos']
+                )
+                
+                if not selection:
+                    # No selection - normal style
+                    colors.append(base_color)
+                    line_colors.append('rgba(0,0,0,0)')
+                    line_widths.append(0)
+                elif is_selected:
+                    # Selected bar - highlighted
+                    colors.append(base_color)
+                    line_colors.append('black')
+                    line_widths.append(2)
+                else:
+                    # Not selected - dimmed
+                    colors.append(hex_to_rgba(base_color, 0.2))
+                    line_colors.append('rgba(0,0,0,0)')
+                    line_widths.append(0)
+
             fig.add_trace(go.Bar(
                 name=sector,
                 x=sector_df['x_pos'],
                 y=sector_df['Value'].tolist(),
-                marker_color=SECTOR_COLORS[sector],
+                marker=dict(
+                    color=colors,
+                    line=dict(color=line_colors, width=line_widths)
+                ),
                 text=sector_df['Value'].apply(lambda l: f"{l:.2f}" if l != 0 else ""),
                 textposition='inside',
                 insidetextanchor='middle',
