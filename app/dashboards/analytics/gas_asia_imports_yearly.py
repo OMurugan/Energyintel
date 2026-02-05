@@ -146,16 +146,16 @@ def create_layout():
                     
                     # Map Section
                     html.Div([
-                        html.H3(id='asia-map-title', children="All Imports by Origin (Bcm) - 2025", style={
+                        html.H3(id='asia-imports-yearly-map-title', children="All Imports by Origin (Bcm) - 2025", style={
                             'color': EI_ORANGE, 'fontSize': '18px', 'fontWeight': 'normal', 
                             'margin': '10px 0', 'fontFamily': 'Lato, sans-serif'
                         }),
                         dcc.Loading(
-                            id='loading-asia-imports-map',
+                            id='loading-asia-imports-yearly-map',
                             type='circle',
                             color=EI_ORANGE,
                             children=dcc.Graph(
-                                id='asia-imports-map',
+                                id='asia-imports-yearly-map',
                                 style={'height': '500px'},
                                 config={'displayModeBar': False}
                             )
@@ -532,21 +532,21 @@ def register_callbacks(dash_app, server):
             return go.Figure(), chart_style, map_style
 
     @dash_app.callback(
-        [Output('asia-imports-map', 'figure'),
-         Output('asia-map-title', 'children'),
+        [Output('asia-imports-yearly-map', 'figure'),
+         Output('asia-imports-yearly-map-title', 'children'),
          Output('asia-origin-dropdown', 'value', allow_duplicate=True)],
         [Input('asia-unit-filter', 'value'),
          Input('asia-flow-type-filter', 'value'),
          Input('asia-destination-dropdown', 'value'),
          Input('asia-origin-dropdown', 'value'),
-         Input('asia-imports-map', 'clickData')],
+         Input('asia-imports-yearly-map', 'clickData')],
         [State('asia-origin-dropdown', 'options')],
         prevent_initial_call='initial_duplicate'
     )
     def update_asia_map(unit, flow_type, dest, origins, click_data, origin_options):
         title = f"All Imports by Origin ({unit}) - 2025"
         # 1. Handle Map Reset
-        if ctx.triggered_id == 'asia-imports-map':
+        if ctx.triggered_id == 'asia-imports-yearly-map':
             all_origin_vals = [opt['value'] for opt in origin_options]
             new_origins = handle_map_click_reset(click_data, origins, all_origin_vals, "(All)")
             if new_origins != origins:

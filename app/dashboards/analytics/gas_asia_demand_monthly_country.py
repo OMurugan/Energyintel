@@ -528,7 +528,7 @@ def create_layout():
                     # Left Side - Asia Map
                     html.Div([
                         html.Div([
-                            html.H3(id="asia-map-title", children="Natural Gas Demand", style={
+                            html.H3(id="asia-map-demand-country-title", children="Natural Gas Demand", style={
                                 'color': '#1b365d', 'fontSize': '16px', 'fontWeight': 'bold',
                                 'marginBottom': '15px', 'textAlign': 'left', 'flex': '1'
                             }),
@@ -889,7 +889,7 @@ def register_callbacks(dash_app, server):
 
     # Update map title with latest year
     @dash_app.callback(
-        Output('asia-map-title', 'children'),
+        Output('asia-map-demand-country-title', 'children'),
         [Input('sector-radio-asia-demand', 'value'),
          Input('asia-demand-date-range-slider', 'value')],
         [State('asia-demand-date-list-store', 'data')]
