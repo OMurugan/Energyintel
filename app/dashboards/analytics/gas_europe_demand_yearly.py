@@ -533,6 +533,14 @@ def register_callbacks(dash_app, server):
             df['Month Init'] = df['Month Label'].map(month_map).fillna(df['Month Label'])
 
 
+        if granularity == 'day':
+            month_map_short = {
+                'January': 'J..', 'February': 'F..', 'March': 'M..', 'April': 'A..',
+                'May': 'M..', 'June': 'J..', 'July': 'J..', 'August': 'A..',
+                'September': 'S..', 'October': 'O..', 'November': 'N..', 'December': 'D..'
+            }
+            df['Month Init'] = df['Month Label'].map(month_map_short).fillna(df['Month Label'])
+
         # Prepare Timeline and x-positions
         # We need a sorted list of unique time units for the x-axis
         timeline_cols = ['Year of Date']
@@ -557,6 +565,9 @@ def register_callbacks(dash_app, server):
             sector_df = df[df['Sector'] == sector]
             if sector_df.empty: continue
             
+            # Prepare customdata for tooltip: [Sector, Year of Date, Unit]
+            custom_data = sector_df[['Sector', 'Year of Date', 'Unit']].values
+            
             fig.add_trace(go.Bar(
                 name=sector,
                 x=sector_df['x_pos'],
@@ -566,7 +577,13 @@ def register_callbacks(dash_app, server):
                 textposition='inside',
                 insidetextanchor='middle',
                 textfont=dict(color='white', size=9),
-                hoverinfo='x+y+name'
+                customdata=custom_data,
+                hovertemplate=(
+                    "<span style='color: #666'>Sector:</span> %{customdata[0]}<br>"
+                    "<span style='color: #666'>Year of Date:</span> %{customdata[1]}<br>"
+                    "<span style='color: #666'>Value:</span> %{y:,.2f}<br>"
+                    "<span style='color: #666'>Unit:</span> %{customdata[2]}<extra></extra>"
+                )
             ))
 
         # 2. Header Traces (Top Labels)
@@ -608,6 +625,23 @@ def register_callbacks(dash_app, server):
             ticktext = timeline_df['Month_Cat']
         elif granularity == 'day':
             ticktext = timeline_df['Day Label']
+            # Add Month Level for Day view
+            m_blocks = timeline_df.groupby(['Year of Date', 'Month_Cat'])['x_pos'].agg(['min', 'max', 'count']).reset_index()
+            # We need the initials for the text
+            m_blocks['Month Init'] = m_blocks['Month_Cat'].map(month_map_short)
+            
+            fig.add_trace(go.Bar(
+                x=(m_blocks['min'] + m_blocks['max']) / 2,
+                y=[1] * len(m_blocks),
+                width=m_blocks['count'],
+                yaxis='y4',
+                marker=dict(color='white', line=dict(color='#f0f0f0', width=0.5)),
+                text=m_blocks['Month Init'],
+                textposition='inside',
+                textfont=dict(color='#999', size=9),
+                hoverinfo='none',
+                showlegend=False
+            ))
         else:
             ticktext = timeline_df['Year of Date']
 
@@ -630,6 +664,27 @@ def register_callbacks(dash_app, server):
                     xref="x", yref="paper", line=dict(color="#ddd", width=1, dash='dot')
                 ))
 
+        # Month separators (only for day view)
+        if granularity == 'day':
+            for i in range(len(m_blocks) - 1):
+                sep_x = m_blocks.iloc[i]['max'] + 0.5
+                shapes.append(dict(
+                    type="line", x0=sep_x, x1=sep_x, y0=0, y1=0.77,
+                    xref="x", yref="paper", line=dict(color="#eee", width=1, dash='dash')
+                ))
+
+        # Dynamic domains
+        if granularity == 'day':
+            main_domain = [0, 0.77]
+            y2_domain = [0.92, 1]
+            y3_domain = [0.85, 0.92]
+            y4_domain = [0.77, 0.85]
+        else:
+            main_domain = [0, 0.85]
+            y2_domain = [0.93, 1]
+            y3_domain = [0.85, 0.93]
+            y4_domain = [0, 0] # Invisible
+
         fig.update_layout(
             barmode='stack',
             plot_bgcolor='white',
@@ -645,7 +700,7 @@ def register_callbacks(dash_app, server):
                 range=[-0.5, len(timeline_df) - 0.5]
             ),
             yaxis=dict(
-                domain=[0, 0.85],
+                domain=main_domain,
                 title='', 
                 showgrid=True, 
                 gridcolor='#eee', 
@@ -656,12 +711,17 @@ def register_callbacks(dash_app, server):
                 tickfont=dict(size=10, color='#333')
             ),
             yaxis2=dict(
-                domain=[0.93, 1],
+                domain=y2_domain,
                 showgrid=False, showline=False, showticklabels=False,
                 zeroline=False, fixedrange=True
             ),
             yaxis3=dict(
-                domain=[0.85, 0.93],
+                domain=y3_domain,
+                showgrid=False, showline=False, showticklabels=False,
+                zeroline=False, fixedrange=True
+            ),
+            yaxis4=dict(
+                domain=y4_domain,
                 showgrid=False, showline=False, showticklabels=False,
                 zeroline=False, fixedrange=True
             ),
@@ -670,7 +730,15 @@ def register_callbacks(dash_app, server):
             showlegend=False,
             height=500,
             font=dict(family="Arial, sans-serif"),
-            bargap=0.2
+            bargap=0.2,
+            hoverlabel=dict(
+                bgcolor="white",
+                font_size=12,
+                font_family="Arial",
+                bordercolor="#ddd",
+                font_color="#333",
+                align="left"
+            )
         )
         
         # Ensure text labels show correctly
