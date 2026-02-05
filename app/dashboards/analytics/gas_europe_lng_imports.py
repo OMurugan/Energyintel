@@ -243,14 +243,14 @@ def create_layout():
                 # Header section moved here
                 html.Div([
                     html.Div([
-                        html.H1("LNG Imports By Terminal - All - Billion Cubic Meters", style={
+                        html.H1(id="lng-imports-title", children="LNG Imports By Terminal - All - Billion Cubic Meters", style={
                             'color': '#fe5000', 'fontSize': '20px', 'fontWeight': 'bold',
                             'fontFamily': 'Arial, sans-serif', 'margin': '25px 0 15px 0'
                         }),
                     ], style={'flex': '1'}),
                     html.Div([
                         html.Button(
-                            "Export Chart to CSV",
+                            "Export to CSV",
                             id="export-lng-chart-btn",
                             n_clicks=0,
                             style={
@@ -283,7 +283,7 @@ def create_layout():
                     ], style={'flex': '1'}),
                     html.Div([
                         html.Button(
-                            "Export Table to CSV",
+                            "Export to CSV",
                             id="export-lng-table-btn",
                             n_clicks=0,
                             style={
@@ -311,6 +311,42 @@ def create_layout():
     ], className='tab-content', style={'backgroundColor': '#ffffff', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'})
 
 def register_callbacks(dash_app, server):
+
+    # Update title based on country selection
+    @dash_app.callback(
+        Output('lng-imports-title', 'children'),
+        Input('country-checklist', 'value')
+    )
+    def update_title(selected_countries):
+        """Update title based on selected countries"""
+        try:
+            if not selected_countries:
+                # No countries selected at all
+                return "LNG Imports By Terminal - None - Billion Cubic Meters"
+            elif '(All)' in selected_countries:
+                # All countries selected
+                return "LNG Imports By Terminal - All - Billion Cubic Meters"
+            
+            # Filter out '(All)' if it exists
+            countries = [c for c in selected_countries if c != '(All)']
+            
+            if len(countries) == 0:
+                # Only '(All)' was selected but filtered out, or empty after filtering
+                return "LNG Imports By Terminal - None - Billion Cubic Meters"
+            elif len(countries) <= 3:
+                # Show all country names for 3 or fewer countries
+                country_list = ", ".join(sorted(countries))
+                return f"LNG Imports By Terminal - {country_list} - Billion Cubic Meters"
+            else:
+                # Show first 3 countries and "X more" for more than 3 countries
+                first_three = sorted(countries)[:3]
+                remaining_count = len(countries) - 3
+                country_list = ", ".join(first_three)
+                return f"LNG Imports By Terminal - {country_list} and {remaining_count} more - Billion Cubic Meters"
+                
+        except Exception as e:
+            print(f"Error updating title: {e}")
+            return "LNG Imports By Terminal - All - Billion Cubic Meters"
 
     # Callback to handle "All" checkbox logic for countries (based on reference implementation)
     @dash_app.callback(
