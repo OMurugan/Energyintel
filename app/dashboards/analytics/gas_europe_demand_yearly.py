@@ -58,17 +58,17 @@ GRAN_BTN_INACTIVE = {
 }
 
 def load_data():
-    """Load and preprocess data from CSV files"""
     try:
-        # Load chart data
-        df_chart = pd.read_csv(CHART_DATA_PATH)
-        df_chart.columns = [c.lstrip('\ufeff').strip() for c in df_chart.columns]
+        # Load chart data - keeping CSV for now if needed or can be removed if chart is fully SQL
+        # Actually user said "remove the csv file of bar chart" in previous prompts, but we did that in update_chart.
+        # Now user says "remove the csv ogf table".
+        # So we can probably remove load_data entirely if we don't need it.
+        # But let's check if df_chart_raw is used elsewhere.
+        # It seems only used in update_chart if we fallback (which we don't anymore).
+        # So I will return empty DFs.
+        pass
         
-        # Load table data
-        df_table = pd.read_csv(TABLE_DATA_PATH)
-        df_table.columns = [c.lstrip('\ufeff').strip() for c in df_table.columns]
-        
-        return df_chart, df_table
+        return pd.DataFrame(), pd.DataFrame()
     except Exception as e:
         print(f"Error loading data: {e}")
         return pd.DataFrame(), pd.DataFrame()
@@ -94,6 +94,7 @@ def create_layout():
 
     return html.Div([
         dcc.Store(id='gas-europe-granularity-store', data='year'),
+        dcc.Store(id='gas-europe-table-granularity-store', data='month'),
         
         # Header
         html.Div([
@@ -137,8 +138,28 @@ def create_layout():
                 
                 # Table Area
                 html.Div([
+                    # Table Buttons Area
+                    html.Div([
+                        html.Div([
+                            html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('+', id='gas-europe-table-toggle-year-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                        html.Div([
+                            html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('+', id='gas-europe-table-toggle-quarter-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                        html.Div([
+                            html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('-', id='gas-europe-table-toggle-month-btn', n_clicks=0, style=GRAN_BTN_ACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                        html.Div([
+                            html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('+', id='gas-europe-table-toggle-day-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                    ], style={'display': 'flex', 'padding': '10px 0', 'backgroundColor': '#fff'}),
+                    
                     html.Div(id='gas-demand-table-container')
-                ], style={'padding': '20px', 'overflowX': 'auto'})
+                ], style={'padding': '20px', 'overflowX': 'auto', 'maxHeight': '600px', 'overflowY': 'auto'})
             ], style={'width': '80%', 'display': 'inline-block', 'verticalAlign': 'top'}),
 
             # Filters Sidebar (Right)
@@ -258,6 +279,49 @@ def register_callbacks(dash_app, server):
             GRAN_BTN_ACTIVE if new_gran == 'day' else GRAN_BTN_INACTIVE
         )
 
+    # Table Granularity Toggle
+    @dash_app.callback(
+        [Output('gas-europe-table-granularity-store', 'data'),
+         Output('gas-europe-table-toggle-year-btn', 'children'),
+         Output('gas-europe-table-toggle-quarter-btn', 'children'),
+         Output('gas-europe-table-toggle-month-btn', 'children'),
+         Output('gas-europe-table-toggle-day-btn', 'children'),
+         Output('gas-europe-table-toggle-year-btn', 'style'),
+         Output('gas-europe-table-toggle-quarter-btn', 'style'),
+         Output('gas-europe-table-toggle-month-btn', 'style'),
+         Output('gas-europe-table-toggle-day-btn', 'style')],
+        [Input('gas-europe-table-toggle-year-btn', 'n_clicks'),
+         Input('gas-europe-table-toggle-quarter-btn', 'n_clicks'),
+         Input('gas-europe-table-toggle-month-btn', 'n_clicks'),
+         Input('gas-europe-table-toggle-day-btn', 'n_clicks')],
+        [State('gas-europe-table-granularity-store', 'data')]
+    )
+    def toggle_table_granularity(y_c, q_c, m_c, d_c, current_gran):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+            
+        btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        new_gran = current_gran
+        
+        if btn_id == 'gas-europe-table-toggle-year-btn': new_gran = 'year'
+        elif btn_id == 'gas-europe-table-toggle-quarter-btn': new_gran = 'quarter'
+        elif btn_id == 'gas-europe-table-toggle-month-btn': new_gran = 'month'
+        elif btn_id == 'gas-europe-table-toggle-day-btn': new_gran = 'day'
+        
+        return (
+            new_gran,
+            '-' if new_gran == 'year' else '+',
+            '-' if new_gran == 'quarter' else '+',
+            '-' if new_gran == 'month' else '+',
+            '-' if new_gran == 'day' else '+',
+            GRAN_BTN_ACTIVE if new_gran == 'year' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'quarter' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'month' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'day' else GRAN_BTN_INACTIVE
+        )
+
+
     # Sector filter sync
     @dash_app.callback(
         [Output('sector-filter', 'value'),
@@ -320,7 +384,6 @@ def register_callbacks(dash_app, server):
     def update_title(unit):
         return f"European Natural Gas Demand - {unit}"
 
-    # Update Chart
     @dash_app.callback(
         Output('gas-demand-chart', 'figure'),
         [Input('unit-filter', 'value'),
@@ -331,6 +394,9 @@ def register_callbacks(dash_app, server):
     def update_chart(unit, selected_sectors, selected_countries, granularity):
         if not selected_sectors or not selected_countries:
             return go.Figure()
+
+        unit_map = {'Million Cubic Meter': 'Mcm', 'GWh': 'GWh'}
+        db_unit = unit_map.get(unit, 'Mcm')
 
         # SQL Query from user
         query = """
@@ -344,21 +410,21 @@ def register_callbacks(dash_app, server):
             END AS "Quarter of Date",
             CASE
                 WHEN :granularity IN ('month','day')
-                THEN TO_CHAR(gd.date, 'FMMonth')
+                THEN EXTRACT(MONTH FROM gd.date)::int
                 ELSE NULL
-            END AS "Month of Date",
+            END AS "Month Num",
             CASE
                 WHEN :granularity = 'day'
                 THEN EXTRACT(DAY FROM gd.date)::int
                 ELSE NULL
             END AS "Day of Date",
             gd.sector AS "Sector",
-            'Million Cubic Meter' AS "Unit",
+            :display_unit AS "Unit",
             ROUND(SUM(gd.value) / 1000.0, 9) AS "Value"
         FROM dev.glng_gas_demand gd
         LEFT JOIN dev.dim_country dc ON gd.country_id = dc.dim_country_id
         WHERE LOWER(dc.region) = 'europe'
-          AND gd.unit = 'Mcm'
+          AND gd.unit = :unit
           AND gd.sector = ANY(:selected_sectors)
           AND dc.country_long_name = ANY(:selected_countries)
           AND gd.to_be_deleted = false
@@ -379,7 +445,7 @@ def register_callbacks(dash_app, server):
             END,
             CASE
                 WHEN :granularity IN ('month','day')
-                THEN TO_CHAR(gd.date, 'FMMonth')
+                THEN EXTRACT(MONTH FROM gd.date)::int
                 ELSE NULL
             END,
             CASE
@@ -391,7 +457,7 @@ def register_callbacks(dash_app, server):
         ORDER BY
             "Year of Date" ASC,
             "Quarter of Date",
-            "Month of Date",
+            "Month Num",
             "Day of Date",
             "Sector";
         """
@@ -399,7 +465,9 @@ def register_callbacks(dash_app, server):
         params = {
             'granularity': granularity,
             'selected_sectors': list(selected_sectors),
-            'selected_countries': list(selected_countries)
+            'selected_countries': list(selected_countries),
+            'unit': db_unit,
+            'display_unit': unit
         }
         
         try:
@@ -414,82 +482,122 @@ def register_callbacks(dash_app, server):
 
         # Ensure numeric and categorical types
         df['Value'] = pd.to_numeric(df['Value'], errors='coerce').fillna(0).astype(float)
-        df['Year of Date'] = df['Year of Date'].astype(str)
+        df['Year Count'] = df['Year of Date'].fillna('').astype(str)
+        df['Quarter Label'] = df['Quarter of Date'].fillna('').astype(str)
+        
+        # Map Month Num to Name
+        month_map_num = {
+            1: 'January', 2: 'February', 3: 'March', 4: 'April', 
+            5: 'May', 6: 'June', 7: 'July', 8: 'August', 
+            9: 'September', 10: 'October', 11: 'November', 12: 'December'
+        }
+        # If Month Num is null (e.g. quarterly view), this maps to NaN
+        df['Month Label'] = df['Month Num'].map(month_map_num)
+        
+        # Fallback if needed (though logic suggests keeping them separate)
+        # If Month Label is NaN, it's likely Year/Quarter view.
+        # But for 'Monthly' view, it MUST be populated.
+        if granularity == 'month' or granularity == 'day':
+             df['Month Label'] = df['Month Label'].fillna('Unknown')
+        else:
+             df['Month Label'] = df['Month Label'].fillna('')
 
-        # Unit Conversion
-        if unit == 'GWh':
-            # This is a bit tricky since the query aggregates to Value (BCM)
-            # 1 BCM ~ 10.55 TWh = 10,550 GWh (approximate conversion factor)
-            # Let's assume we need to scale if GWh is selected.
-            # But the provided query already does BCM.
-            # For now, let's keep it as is or apply a conversion if needed.
-            # Usually dashboards have a separate column for energy.
-            pass
+        # Debug
+        if granularity == 'month':
+            print("DEBUG MONTH DATA FRAME:")
+            print(df[['Year Count', 'Quarter Label', 'Month Num', 'Month Label']].head(10))
 
-        # Sort sectors to match legend order
-        # Ensure chronological sorting for all facets
+        # If month is missing in text, use Quarter/Year to avoid total collapse (only for chart grouping labels if needed?)
+        # Actually, for multicategory, we want robust labels.
+        # For 'Quarter' view, Month Label is empty string.
+        
+        df['Day Label'] = df['Day of Date'].apply(lambda l: str(int(l)) if pd.notnull(l) and str(l) != '' else '')
+
+        # Categorical orders for robust sorting
         month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-        df['Month of Date'] = pd.Categorical(df['Month of Date'], categories=month_order, ordered=True)
+        df['Month_Cat'] = pd.Categorical(df['Month Label'], categories=month_order, ordered=True)
         quarter_order = ['Q1', 'Q2', 'Q3', 'Q4']
-        df['Quarter of Date'] = pd.Categorical(df['Quarter of Date'], categories=quarter_order, ordered=True)
+        df['Quarter_Cat'] = pd.Categorical(df['Quarter Label'], categories=quarter_order, ordered=True)
         df['Sector'] = pd.Categorical(df['Sector'], categories=['Household', 'Industrial', 'Power'], ordered=True)
         
-        # Explicit sorting
-        df = df.sort_values(['Year of Date', 'Quarter of Date', 'Month of Date', 'Day of Date', 'Sector'])
+        # Unified sorting
+        df = df.sort_values(['Year Count', 'Quarter_Cat', 'Month_Cat', 'Day Label', 'Sector'])
+
+        # Compute Month Initials for Daily view
+        if granularity == 'day':
+            month_map = {
+                'January': 'J..', 'February': 'F..', 'March': 'M..', 'April': 'A..',
+                'May': 'M..', 'June': 'J..', 'July': 'J..', 'August': 'A..',
+                'September': 'S..', 'October': 'O..', 'November': 'N..', 'December': 'D..'
+            }
+            df['Month Init'] = df['Month Label'].map(month_map).fillna(df['Month Label'])
 
 
         # Use Plotly Express for robust bar chart creation
-        if granularity == 'year':
-            fig = px.bar(
-                df,
-                x='Year of Date',
-                y='Value',
-                color='Sector',
-                color_discrete_map=SECTOR_COLORS,
-                barmode='stack',
-                text='Value'
-            )
-            fig.update_xaxes(type='category')
-        else:
-            # For multi-level, we'll use multicategory
-            fig = go.Figure()
+        # Chart Construction
+        fig = go.Figure()
+        if granularity != 'year':
+            # Multi-level for Quarter, Month, Day
             for sector in ['Household', 'Industrial', 'Power']:
                 sector_df = df[df['Sector'] == sector]
                 if sector_df.empty: continue
                 
                 if granularity == 'quarter':
-                    # Place Year at index 0 (innermost, closest to bars)
-                    x = [sector_df['Year of Date'].tolist(), sector_df['Quarter of Date'].tolist()]
+                    # Year (Bottom), Quarter (Top)
+                    x = [sector_df['Year Count'].tolist(), sector_df['Quarter Label'].tolist()]
                 elif granularity == 'month':
-                    # Year (innermost), Quarter (middle), Month (outermost)
-                    x = [sector_df['Year of Date'].tolist(), sector_df['Quarter of Date'].tolist(), sector_df['Month of Date'].tolist()]
+                    # Year (Bottom), Quarter (Middle), Month (Top)
+                    x = [sector_df['Year Count'].tolist(), sector_df['Quarter Label'].tolist(), sector_df['Month Label'].tolist()]
                 else: # day
-                    # Year (innermost), Quarter, Month, Day (outermost)
-                    x = [sector_df['Year of Date'].tolist(), sector_df['Quarter of Date'].tolist(), sector_df['Month of Date'].tolist(), sector_df['Day of Date'].tolist()]
+                    # Year (Bottom), Quarter, Month Init, Day (Top)
+                    x = [sector_df['Year Count'].tolist(), sector_df['Quarter Label'].tolist(), sector_df['Month Init'].tolist(), sector_df['Day Label'].tolist()]
                 
                 fig.add_trace(go.Bar(
                     name=sector,
                     x=x,
                     y=sector_df['Value'].tolist(),
                     marker_color=SECTOR_COLORS[sector],
-                    text=sector_df['Value'].apply(lambda x: f"{x:.2f}" if x != 0 else ""),
+                    text=sector_df['Value'].apply(lambda l: f"{l:.2f}" if l != 0 else ""),
                     textposition='inside',
                     insidetextanchor='middle',
                     textfont=dict(color='white', size=9)
                 ))
-            fig.update_layout(barmode='stack')
-            fig.update_xaxes(type='multicategory', dividercolor="#ddd", dividerwidth=1)
+            xaxis_type = 'multicategory'
+        else:
+            # Yearly view
+            for sector in ['Household', 'Industrial', 'Power']:
+                sector_df = df[df['Sector'] == sector]
+                if sector_df.empty: continue
+                fig.add_trace(go.Bar(
+                    name=sector,
+                    x=sector_df['Year Count'],
+                    y=sector_df['Value'].tolist(),
+                    marker_color=SECTOR_COLORS[sector],
+                    text=sector_df['Value'].apply(lambda v: f"{v:.2f}" if v != 0 else ""),
+                    textposition='inside',
+                    insidetextanchor='middle',
+                    textfont=dict(color='white', size=11)
+                ))
+            xaxis_type = 'category'
+        
+        fig.update_layout(barmode='stack')
 
         fig.update_layout(
             plot_bgcolor='white',
             paper_bgcolor='white',
             xaxis=dict(
+                type=xaxis_type,
                 title='', 
                 showgrid=True, 
                 gridcolor='#f0f0f0', 
                 linecolor='#ddd',
-                tickfont=dict(size=10, color='#333')
+                tickfont=dict(size=10, color='#333'),
+                automargin=True,
+                dividercolor="#ddd",
+                dividerwidth=1
             ),
+            bargap=0.1,  # Add gap between months
+            bargroupgap=0.05,
             yaxis=dict(
                 title='', 
                 showgrid=True, 
@@ -501,9 +609,9 @@ def register_callbacks(dash_app, server):
                 type='linear',
                 tickfont=dict(size=10, color='#333')
             ),
-            margin=dict(t=30, b=50, l=50, r=20),
+            margin=dict(t=30, b=80, l=50, r=20), # Increased bottom margin for multi-level labels
             showlegend=False,
-            height=500,
+            height=550, # Increased height slightly for better label spacing
             font=dict(family="Arial, sans-serif")
         )
         
@@ -521,129 +629,280 @@ def register_callbacks(dash_app, server):
     # Update Table
     @dash_app.callback(
         Output('gas-demand-table-container', 'children'),
-        Input('unit-filter', 'value')
+        [Input('unit-filter', 'value'),
+         Input('gas-europe-table-granularity-store', 'data')]
     )
-    def update_table(unit):
-        # Table ignore country and sector filters as per request
-        # Show all sectors and countries present in data
-        
-        # Filter table data only by unit
-        mask = (df_table_raw['Unit'] == unit)
-        filtered_df = df_table_raw[mask].copy()
-        
-        if filtered_df.empty:
-            return html.Div("No data found for selected unit")
+    def update_table(unit, granularity):
+        unit_map = {'Million Cubic Meter': 'Mcm', 'GWh': 'GWh'}
+        db_unit = unit_map.get(unit, 'Mcm')
 
-        selected_countries = sorted(filtered_df['Country'].unique())
-        selected_sectors = sorted(filtered_df['Sector'].unique())
+        # SQL Query
+        query = """
+        SELECT
+            gd.country                                AS "Country",
+            gd.sector                                 AS "Sector",
+            period                                    AS "_period_sort",
 
-        # Create Pivot Table
-        # Columns: Year of Date, Month of Date
+            EXTRACT(YEAR FROM period)::int            AS "Year of Date",
+
+            /* Quarter */
+            CASE
+                WHEN :granularity IN ('quarter','day')
+                THEN 'Q' || EXTRACT(QUARTER FROM period)::int
+                ELSE NULL
+            END AS "Quarter of Date",
+
+            /* Month */
+            CASE
+                WHEN :granularity IN ('month','day')
+                THEN TO_CHAR(period, 'FMMonth')
+                ELSE NULL
+            END AS "Month of Date",
+
+            /* Day */
+            CASE
+                WHEN :granularity = 'day'
+                THEN TO_CHAR(period, 'FMMonth FMDD')
+                ELSE NULL
+            END AS "Day of Date",
+
+            :display_unit                             AS "Unit",
+            ROUND(SUM(gd.value), 9)                   AS "Value"
+
+        FROM dev.glng_gas_demand gd
+        JOIN dev.dim_country dc
+            ON gd.country_id = dc.dim_country_id
+
+        /* 🔹 dynamic time bucket */
+        CROSS JOIN LATERAL (
+            SELECT
+                CASE
+                    WHEN :granularity = 'year'    THEN DATE_TRUNC('year', gd.date)
+                    WHEN :granularity = 'quarter' THEN DATE_TRUNC('quarter', gd.date)
+                    WHEN :granularity = 'month'   THEN DATE_TRUNC('month', gd.date)
+                    WHEN :granularity = 'day'     THEN DATE_TRUNC('day', gd.date)
+                END AS period
+        ) t
+
+        WHERE LOWER(dc.region) = 'europe'
+          AND gd.unit = :unit
+          AND gd.to_be_deleted = false
+          AND gd.sector in ('Industrial','Household','Power')
+          AND EXTRACT(YEAR FROM gd.date) >= 2019
+          AND EXTRACT(YEAR FROM gd.date) < 2025
+
+        GROUP BY
+            gd.country,
+            gd.sector,
+            period
+
+        ORDER BY
+            "Year of Date" DESC,
+            "Quarter of Date",
+            "Month of Date",
+            "Day of Date",
+            "Country",
+            "Sector";
+        
+        """
+        
+        params = {'granularity': granularity, 'unit': db_unit, 'display_unit': unit}
+        
+        try:
+            results = execute_query(query, params)
+            df = pd.DataFrame(results)
+        except Exception as e:
+            return html.Div(f"Error loading table data: {e}")
+        
+        if df.empty:
+            return html.Div("No data found")
+
+        # Determine active hierarchy levels based on data
+        levels = ['Year of Date']
+        if df['Quarter of Date'].notna().any(): levels.append('Quarter of Date')
+        
+        # If we have daily data, we use the combined 'Month Day' label as the bottom level
+        # and skip the independent 'Month' level for a cleaner hierarchy.
+        if df['Day of Date'].notna().any():
+            levels.append('Day of Date')
+        elif df['Month of Date'].notna().any():
+            levels.append('Month of Date')
+        
+        # Sort levels specifically (Month map needed for sorting)
+        month_order = {
+            'January': 1, 'February': 2, 'March': 3, 'April': 4, 'May': 5, 'June': 6,
+            'July': 7, 'August': 8, 'September': 9, 'October': 10, 'November': 11, 'December': 12
+        }
+        
+        # We need to pivot to get columns: Year -> Quarter -> Month -> Day
         # Index: Country, Sector
-        pivot_df = filtered_df.pivot_table(
+        
+        # 1. Build the columns hierarchy
+        # Use _period_sort for reliable time sorting (Year DESC, then internal time ASC)
+        time_cols_df = df[levels + ['_period_sort']].drop_duplicates()
+        
+        # We want Year to be DESC, but Quarters/Months/Days within the year to be ASC
+        time_cols_df = time_cols_df.sort_values(
+            by=['Year of Date', '_period_sort'],
+            ascending=[False, True]
+        )
+        
+        # Create list of tuples for columns
+        cols_tuples = [tuple(row[l] for l in levels) for _, row in time_cols_df.iterrows()]
+        
+        # 2. Pivot the data
+        pivot_df = df.pivot_table(
             index=['Country', 'Sector'],
-            columns=['Year of Date', 'Month of Date'],
+            columns=levels,
             values='Value',
             aggfunc='sum'
         )
         
-        # Add Total row for each country
-        countries_list = filtered_df['Country'].unique()
-        tables = []
+        # Ensure pivot_df columns match cols_tuples order and structure
+        # If levels has only one element, cols_tuples elements are single values, not tuples.
+        # pd.MultiIndex.from_tuples expects tuples.
+        if len(levels) == 1:
+            pivot_df = pivot_df.reindex(columns=[t[0] for t in cols_tuples])
+        else:
+            pivot_df = pivot_df.reindex(columns=pd.MultiIndex.from_tuples(cols_tuples))
         
-        # We need to manually construct the table to match the nested structure and "Total" rows
-        # Months in reverse order as per image: Dec, Nov, Oct...
-        months_order = ['December', 'November', 'October', 'September', 'August', 'July', 
-                        'June', 'May', 'April', 'March', 'February', 'January']
+        # 3. Build HTML Table
+        # Headers
         
-        years = sorted(filtered_df['Year of Date'].unique(), reverse=True)
+        thead_rows = []
         
-        header_rows = []
-        # Header Row 1: Country, Sector, Years (colspan)
-        # Header Row 2: empty, empty, Months
+        num_header_rows = len(levels)
         
-        # For simplicity in Dash, we'll use an HTML Table or DataTable with multi-level columns
-        # But for exact look, HTML table is better.
+        # Fixed headers (Country, Sector)
+        # They span all header rows
         
-        table_header = [
-            html.Thead([
-                html.Tr([
-                    html.Th("Country", rowSpan=2, style={'border': '1px solid #ddd', 'padding': '5px', 'backgroundColor': '#f9f9f9'}),
-                    html.Th("Sector", rowSpan=2, style={'border': '1px solid #ddd', 'padding': '5px', 'backgroundColor': '#f9f9f9'}),
-                    *[html.Th(year, colSpan=13, style={'border': '1px solid #ddd', 'padding': '5px', 'backgroundColor': '#f9f9f9', 'textAlign': 'center'}) for year in years]
-                ]),
-                html.Tr([
-                    *[html.Th(m[:7] if len(m)>7 else m, style={'border': '1px solid #ddd', 'padding': '5px', 'backgroundColor': '#f9f9f9', 'fontSize': '10px'}) for year in years for m in months_order],
-                    *[html.Th("Total", style={'border': '1px solid #ddd', 'padding': '5px', 'backgroundColor': '#f9f9f9', 'fontWeight': 'bold'}) for year in years]
-                ])
-            ])
-        ]
+        # Recursive function to build headers
+        # This is tricky for simple logic.
+        # Let's do a loop for each header row.
         
-        # Wait, the above colSpan=13 (12 months + Total)
-        # Let's fix the header columns properly
+        # We need a list of (label, colspan) for each row.
         
-        header_tr2_cols = []
-        for year in years:
-            for m in months_order:
-                header_tr2_cols.append(html.Th(m, style={'border': '1px solid #ddd', 'padding': '5px', 'backgroundColor': '#f9f9f9', 'fontSize': '10px'}))
-            header_tr2_cols.append(html.Th("Total", style={'border': '1px solid #ddd', 'padding': '5px', 'backgroundColor': '#f9f9f9', 'fontWeight': 'bold'}))
+        # We also need to account for the pivot columns matching exactly.
+        # Let's work with the flat list of `cols_tuples` which represents the leaf nodes (bottom level columns).
+        
+        # Build a tree to calculate colspans
+        # tree = { '2019': { 'Q1': { 'Jan': {}, 'Feb': {} }, 'Q2': ... } }
+        
+        # Simplified Hierarchical Header Construction
+        # We iterate cols_tuples.
+        # For Row 0 (Years):
+        # We count consecutive occurrences of same Year.
+        # [2019, 2019, 2019, 2020, 2020...] -> 2019 (3), 2020 (2)
+        
+        header_rows_content = [[] for _ in range(num_header_rows)]
+        
+        for depth in range(num_header_rows):
+            current_vals_at_depth = [t[depth] for t in cols_tuples]
             
-        table_header = [
-            html.Thead([
-                html.Tr([
-                    html.Th("Country", rowSpan=2, style={'border': '1px solid #ddd', 'padding': '8px', 'backgroundColor': '#fff', 'position': 'sticky', 'top': '0', 'left': '0', 'zIndex': '10'}),
-                    html.Th("Sector", rowSpan=2, style={'border': '1px solid #ddd', 'padding': '8px', 'backgroundColor': '#fff', 'position': 'sticky', 'top': '0', 'left': '80px', 'zIndex': '10'}),
-                    *[html.Th(year, colSpan=13, style={'border': '1px solid #ddd', 'padding': '8px', 'backgroundColor': '#fff', 'textAlign': 'center', 'position': 'sticky', 'top': '0', 'zIndex': '5'}) for year in years]
-                ]),
-                html.Tr(header_tr2_cols)
-            ])
-        ]
-        
-        table_body = []
-        for country in sorted(selected_countries):
-            country_df = filtered_df[filtered_df['Country'] == country]
-            if country_df.empty: continue
+            # Group consecutive
+            grouped = []
+            if current_vals_at_depth:
+                curr_val = current_vals_at_depth[0]
+                count = 0
+                for v in current_vals_at_depth:
+                    if v == curr_val:
+                        count += 1
+                    else:
+                        grouped.append((curr_val, count))
+                        curr_val = v
+                        count = 1
+                grouped.append((curr_val, count)) # Add the last group
             
-            # Sectors in specific order
-            sectors_order = ['Household', 'Industrial', 'Power']
-            sectors_present = [s for s in sectors_order if s in country_df['Sector'].unique()]
-            
-            for i, sector in enumerate(sectors_present):
-                row_cols = []
-                if i == 0:
-                    row_cols.append(html.Td(country, rowSpan=len(sectors_present)+1, 
-                                            style={'border': '1px solid #ddd', 'padding': '8px', 'fontWeight': 'bold', 'verticalAlign': 'top', 'backgroundColor': '#fff', 'position': 'sticky', 'left': '0'}))
+            # Create THs
+            for label, span in grouped:
+                header_rows_content[depth].append(
+                    html.Th(label, colSpan=span, style={'textAlign': 'center', 'border': '1px solid #ddd', 'padding': '5px', 'backgroundColor': '#f9f9f9'})
+                )
                 
-                row_cols.append(html.Td(sector, style={'border': '1px solid #ddd', 'padding': '8px', 'backgroundColor': '#fff', 'position': 'sticky', 'left': '80px'}))
-                
-                for year in years:
-                    year_sector_df = country_df[(country_df['Year of Date'] == year) & (country_df['Sector'] == sector)]
-                    total_val = 0
-                    for m in months_order:
-                        val = year_sector_df[year_sector_df['Month of Date'] == m]['Value'].sum()
-                        total_val += val
-                        row_cols.append(html.Td(f"{val:,.0f}" if val != 0 else "", 
-                                                style={'border': '1px solid #ddd', 'padding': '8px', 'textAlign': 'right'}))
-                    row_cols.append(html.Td(f"{total_val:,.0f}", 
-                                            style={'border': '1px solid #ddd', 'padding': '8px', 'textAlign': 'right', 'fontWeight': 'bold', 'backgroundColor': '#f9f9f9'}))
-                
-                table_body.append(html.Tr(row_cols))
+        # Combine Fixed + Dynamic
+        # Only first row gets fixed headers
+        
+        # First header row (Country, Sector, and top-level time headers)
+        first_header_row_ths = [
+            html.Th("Country", rowSpan=num_header_rows, style={'position': 'sticky', 'left': 0, 'zIndex': 20, 'backgroundColor': 'white', 'border': '1px solid #ddd', 'padding': '8px', 'width': '120px', 'minWidth': '120px'}),
+            html.Th("Sector", rowSpan=num_header_rows, style={'position': 'sticky', 'left': '100px', 'zIndex': 20, 'backgroundColor': 'white', 'border': '1px solid #ddd', 'padding': '8px'})
+        ] + header_rows_content[0]
+        thead_rows.append(html.Tr(first_header_row_ths))
+        
+        # Subsequent header rows (only time headers)
+        for i in range(1, num_header_rows):
+            thead_rows.append(html.Tr(header_rows_content[i]))
             
-            # Subtotal row for country
-            subtotal_row = [html.Td("Total", style={'border': '1px solid #ddd', 'padding': '8px', 'fontWeight': 'bold', 'backgroundColor': '#f2f2f2'})]
-            for year in years:
-                year_df = country_df[country_df['Year of Date'] == year]
-                total_val = 0
-                for m in months_order:
-                    val = year_df[year_df['Month of Date'] == m]['Value'].sum()
-                    total_val += val
-                    subtotal_row.append(html.Td(f"{val:,.0f}" if val != 0 else "", 
-                                                style={'border': '1px solid #ddd', 'padding': '8px', 'textAlign': 'right', 'fontWeight': 'bold', 'backgroundColor': '#f2f2f2'}))
-                subtotal_row.append(html.Td(f"{total_val:,.0f}", 
-                                            style={'border': '1px solid #ddd', 'padding': '8px', 'textAlign': 'right', 'fontWeight': 'bold', 'backgroundColor': '#f2f2f2'}))
-            table_body.append(html.Tr(subtotal_row))
+        # Table Body
+        tbody_rows = []
+        
+        # Get unique countries and sectors
+        # pivot_df index is (Country, Sector)
+        # We need to sort index
+        pivot_df = pivot_df.sort_index()
+        
+        # Group by Country
+        for country, country_grp in pivot_df.groupby(level=0):
+            # Sort sectors
+            sector_order = {'Household': 1, 'Industrial': 2, 'Power': 3}
+            # country_grp is DataFrame with MultiIndex (Country, Sector), Country is constant
+            # Sort by the second level of the index (Sector) using the custom order
+            country_grp = country_grp.sort_index(level=1, key=lambda idx: idx.map(lambda x: sector_order.get(x, 99)))
+            
+            sectors = country_grp.index.get_level_values(1).unique()
+            first_sector = True
+            
+            country_subtotal_vals = [0] * len(cols_tuples)
+            
+            for sector in sectors:
+                row_cells = []
+                # Country Cell (RowSpan)
+                if first_sector:
+                    row_cells.append(html.Td(country, rowSpan=len(sectors)+1, 
+                                            style={'position': 'sticky', 'left': 0, 'zIndex': 10, 'backgroundColor': 'white', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'verticalAlign': 'top', 'padding': '8px', 'width': '120px', 'minWidth': '120px'}))
+                    
+                # Sector Cell
+                row_cells.append(html.Td(sector, style={'position': 'sticky', 'left': '100px', 'zIndex': 10, 'backgroundColor': 'white', 'border': '1px solid #ddd', 'padding': '8px'}))
+                
+                # Data Cells
+                try:
+                    # Accessing pivot with tuple (Country, Sector)
+                    # pivot columns are MultiIndex if len(levels) > 1, otherwise single index
+                    series = country_grp.loc[(country, sector)]
+                    
+                    # Iterate through our defined sorted columns (cols_tuples)
+                    for i, col_tuple in enumerate(cols_tuples):
+                        # col_key needs to match the pivot_df's column structure
+                        col_key = col_tuple if len(levels) > 1 else col_tuple[0]
+                        
+                        val = series.get(col_key, 0)
+                        
+                        # Handle NaN
+                        if pd.isna(val): val = 0
+                        
+                        country_subtotal_vals[i] += val
+                        
+                        row_cells.append(html.Td(f"{val:,.0f}" if val != 0 else "-", 
+                                                style={'textAlign': 'right', 'border': '1px solid #ddd', 'padding': '5px'}))
+                        
+                except KeyError:
+                    # This should ideally not happen if data and pivot are consistent
+                    pass
+                
+                tbody_rows.append(html.Tr(row_cells))
+                first_sector = False
+                
+            # Total Row for Country
+            total_cells = [
+                html.Td("Total", style={'fontWeight': 'bold', 'textAlign': 'left', 'backgroundColor': '#f2f2f2', 'border': '1px solid #ddd', 'position': 'sticky', 'left': '100px', 'zIndex': 10, 'padding': '8px'})
+            ]
+            for v in country_subtotal_vals:
+                total_cells.append(html.Td(f"{v:,.0f}" if v != 0 else "-", 
+                                            style={'fontWeight': 'bold', 'textAlign': 'right', 'backgroundColor': '#f2f2f2', 'border': '1px solid #ddd', 'padding': '5px'}))
+            
+            tbody_rows.append(html.Tr(total_cells))
 
         return html.Table(
-            table_header + [html.Tbody(table_body)],
-            style={'borderCollapse': 'collapse', 'width': '100%', 'fontSize': '12px', 'fontFamily': 'Arial, sans-serif', 'border': '1px solid #ddd'}
+            [html.Thead(thead_rows), html.Tbody(tbody_rows)],
+            style={'borderCollapse': 'collapse', 'width': '100%', 'fontFamily': 'Arial', 'fontSize': '12px'}
         )
