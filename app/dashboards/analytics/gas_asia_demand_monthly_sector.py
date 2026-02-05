@@ -1,29 +1,20 @@
 """
 Asian Gas Demand - Monthly Demand by Sector
 Recreated Tableau dashboard for Asian gas demand by sector and country.
-Strict separation of CSV usage between chart and table.
+Strict separation of CSV usage (Removed) -> Now Database Driven.
 """
 import pandas as pd
 import numpy as np
 from dash import dcc, html, dash_table, Input, Output, State, no_update
+from dash import callback_context as ctx
 import plotly.graph_objects as go
 import os
+import re
 from datetime import datetime
+from sqlalchemy import text
+from core.data_helpers import get_db_engine
 
 # --- Configuration ---
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-# Data dirs
-YEARLY_DATA_DIR = os.path.join(os.path.dirname(CURRENT_DIR), "data", "Asian-gas-demand-yearly")
-SECTOR_DATA_DIR = os.path.join(os.path.dirname(CURRENT_DIR), "data", "Asian-gas-demand-sector")
-
-# Table CSVs (EXISTING - DO NOT CHANGE)
-TABLE_BCM_FILE = os.path.join(YEARLY_DATA_DIR, "Asia Gas Demand by Sector_data_bcm.csv")
-TABLE_GWH_FILE = os.path.join(YEARLY_DATA_DIR, "Asia Gas Demand by Sector_data_gwh.csv")
-
-# Chart CSVs (NEW - ONLY FOR CHART)
-CHART_BCM_FILE = os.path.join(SECTOR_DATA_DIR, "Asia Column Chart_Demand by Sector_data_bcm.csv")
-CHART_GWH_FILE = os.path.join(SECTOR_DATA_DIR, "Asia Column Chart_Demand by Sector_data_gwh.csv")
-
 COLORS = {
     'Industrial': '#B7D28B', # Light Green
     'Power': '#CC5521',      # Orange
@@ -34,56 +25,149 @@ COLORS = {
 # Stack Order: Bottom -> Top
 SECTOR_ORDER = ['Industrial', 'Power', 'Household', 'Other']
 
+# --- Database Queries ---
+
+QUERY_COUNTRIES = """
+SELECT DISTINCT
+    tr.country
+FROM dev.glng_gas_demand tr
+LEFT JOIN dev.dim_country dc
+    ON tr.country_id = dc.dim_country_id
+WHERE LOWER(dc.region) IN ('asia', 'oceania')
+  AND tr.country IS NOT NULL
+  AND TRIM(tr.country) <> ''
+ORDER BY tr.country;
+"""
+
+QUERY_SECTORS = """
+SELECT DISTINCT
+    tr.sector
+FROM dev.glng_gas_demand tr
+LEFT JOIN dev.dim_country dc
+    ON tr.country_id = dc.dim_country_id
+WHERE LOWER(dc.region) IN ('asia', 'oceania')
+  AND tr.sector IS NOT NULL
+  AND TRIM(tr.sector) <> ''
+ORDER BY tr.sector;
+"""
+
+# Base Chart Query (User Provided)
+QUERY_CHART_BASE = """
+SELECT
+    TO_CHAR(DATE_TRUNC('month', gd.date), 'FMMonth YYYY') AS "Month of Date",
+    gd.sector AS "Sector",
+    CASE
+        WHEN gd.unit = 'Mcm' THEN 'Billion Cubic Meter'
+        WHEN gd.unit = 'GWh' THEN 'Gigawatt-hour'
+    END AS "Unit",
+    ROUND(
+        SUM(
+            CASE
+                WHEN gd.unit = 'Mcm' THEN gd.value / 1000.0
+                WHEN gd.unit = 'GWh' THEN gd.value
+            END
+        ),
+        9
+    ) AS "Value"
+FROM dev.glng_gas_demand gd
+LEFT JOIN dev.dim_country dc
+    ON gd.country_id = dc.dim_country_id
+WHERE LOWER(dc.region) IN ('asia', 'oceania')
+  AND gd.unit IN ('Mcm', 'GWh')
+  AND gd.to_be_deleted = false
+  AND gd.date >= DATE '2019-01-01'
+  AND gd.date < DATE '2025-01-01'
+  {country_filter}
+GROUP BY
+    DATE_TRUNC('month', gd.date),
+    gd.sector,
+    gd.unit
+ORDER BY
+    DATE_TRUNC('month', gd.date),
+    gd.sector,
+    "Unit";
+"""
+
+# Base Table Query (User Provided)
+QUERY_TABLE_BASE = """
+SELECT
+    TO_CHAR(DATE_TRUNC('month', gd.date), 'FMMonth YYYY') AS "Month of Date",
+    gd.sector AS "Sector",
+    gd.country AS "Country",
+    CASE
+        WHEN gd.unit = 'Mcm' THEN 'Billion Cubic Meter'
+        WHEN gd.unit = 'GWh' THEN 'Gigawatt-hour'
+    END AS "Unit",
+    ROUND(
+        SUM(
+            CASE
+                WHEN gd.unit = 'Mcm' THEN gd.value / 1000.0
+                WHEN gd.unit = 'GWh' THEN gd.value
+            END
+        ),
+        9
+    ) AS "Value"
+FROM dev.glng_gas_demand gd
+LEFT JOIN dev.dim_country dc
+    ON gd.country_id = dc.dim_country_id
+WHERE LOWER(dc.region) IN ('asia', 'oceania')
+  AND gd.unit IN ('Mcm', 'GWh')
+  AND gd.to_be_deleted = false
+  AND gd.date >= DATE '2019-01-01'
+  AND gd.date < DATE '2025-01-01'
+  {country_filter}
+GROUP BY
+    DATE_TRUNC('month', gd.date),
+    gd.sector,
+    gd.unit,
+    gd.country
+ORDER BY
+    DATE_TRUNC('month', gd.date),
+    gd.sector,
+    "Unit";
+"""
+
+
 # --- Data Loading ---
 
-def load_table_data(unit):
-    """
-    Load data for the TABLE using existing logic and files.
-    """
+def get_db_options():
+    """Fetch dropdown options from DB."""
     try:
-        file_path = TABLE_BCM_FILE if "Billion Cubic Meter" in unit else TABLE_GWH_FILE
-        if not os.path.exists(file_path):
-            print(f"Error: Table file not found at {file_path}")
-            return pd.DataFrame()
-            
-        df = pd.read_csv(file_path, encoding='utf-8-sig')
-        df.columns = [c.lstrip('\ufeff').strip() for c in df.columns]
-        
-        # Existing Logic provided in yearly.py
-        month_map = {
-            'January': 'Q1', 'February': 'Q1', 'March': 'Q1',
-            'April': 'Q2', 'May': 'Q2', 'June': 'Q2',
-            'July': 'Q3', 'August': 'Q3', 'September': 'Q3',
-            'October': 'Q4', 'November': 'Q4', 'December': 'Q4'
-        }
-        df['Quarter'] = df['Month of Date'].map(month_map)
-        
-        # Add Date object for filtering
-        # Assume 'Year of Date' is int and 'Month of Date' is string
-        # format: Month YYYY construction for easy filtering
-        # Note: input df has 'Year of Date' (int) and 'Month of Date' (str name)
-        df['Date_Obj'] = pd.to_datetime(df['Month of Date'] + ' ' + df['Year of Date'].astype(str), format='%B %Y')
-        
-        return df
+        engine = get_db_engine()
+        with engine.connect() as conn:
+            countries = pd.read_sql(text(QUERY_COUNTRIES), conn)['country'].tolist()
+            sectors = pd.read_sql(text(QUERY_SECTORS), conn)['sector'].tolist()
+        return sorted(countries), sorted(sectors)
     except Exception as e:
-        print(f"Error loading table data: {e}")
-        return pd.DataFrame()
+        print(f"Error fetching DB options: {e}")
+        return [], []
 
-def load_chart_data(unit):
+def load_chart_data(country_filter=None):
     """
-    Load data for the CHART using NEW files.
+    Load data for the CHART using SQL.
+    Applies Country filter in SQL if specified.
     """
     try:
-        file_path = CHART_BCM_FILE if "Billion Cubic Meter" in unit else CHART_GWH_FILE
-        if not os.path.exists(file_path):
-            print(f"Error: Chart file not found at {file_path}")
-            return pd.DataFrame()
-            
-        df = pd.read_csv(file_path, encoding='utf-8-sig')
-        df.columns = [c.lstrip('\ufeff').strip() for c in df.columns]
+        engine = get_db_engine()
         
-        # format: September 2025
-        # Parse 'Month of Date' column
+        sql = QUERY_CHART_BASE
+        params = {}
+        
+        # Inject Country Filter
+        if country_filter and country_filter != '(All)':
+            sql = sql.replace("{country_filter}", "AND gd.country = :selected_country")
+            params['selected_country'] = country_filter
+        else:
+            sql = sql.replace("{country_filter}", "")
+            
+        with engine.connect() as conn:
+            df = pd.read_sql(text(sql), conn, params=params)
+        
+        if df.empty:
+            return pd.DataFrame()
+
+        # Post-process for consistency
+        # Parse 'Month of Date' column (FMMonth YYYY) -> Date_Obj
         df['Date_Obj'] = pd.to_datetime(df['Month of Date'], format='%B %Y')
         df['Year'] = df['Date_Obj'].dt.year
         df['Month'] = df['Date_Obj'].dt.strftime('%B')
@@ -93,63 +177,80 @@ def load_chart_data(unit):
         print(f"Error loading chart data: {e}")
         return pd.DataFrame()
 
-def filter_dataframe(df, sector, country, start_date, end_date):
+def load_table_data(country_filter=None):
     """
-    Apply filters to a dataframe (works for both table and chart DFs if they have standard cols).
+    Load data for the TABLE using SQL.
+    Applies Country filter in SQL if specified.
     """
-    dff = df.copy()
-    
-    # Date Range Filter
-    if start_date and end_date:
-        dff = dff[(dff['Date_Obj'] >= start_date) & (dff['Date_Obj'] <= end_date)]
+    try:
+        engine = get_db_engine()
         
-    if sector != '(All)':
-        dff = dff[dff['Sector'] == sector]
-    
-    if country and country != '(All)':
-        dff = dff[dff['Country'] == country]
+        sql = QUERY_TABLE_BASE
+        params = {}
         
-    return dff
+        # Inject Country Filter
+        if country_filter and country_filter != '(All)':
+            sql = sql.replace("{country_filter}", "AND gd.country = :selected_country")
+            params['selected_country'] = country_filter
+        else:
+            # Remove the specific country filter line if present in template or placeholder
+            sql = sql.replace("{country_filter}", "")
+            
+        with engine.connect() as conn:
+            df = pd.read_sql(text(sql), conn, params=params)
+            
+        if df.empty:
+            return pd.DataFrame()
+            
+        # Post-process
+        # Split Month of Date (January 2022) into Month Name and Year for table pivoting
+        df['Date_Obj'] = pd.to_datetime(df['Month of Date'], format='%B %Y')
+        df['Year of Date'] = df['Date_Obj'].dt.year
+        df['Month of Date'] = df['Date_Obj'].dt.strftime('%B') # Just month name for existing Logic
+        
+        # Rename 'Value' to 'adjusted_unit_value' if that's what build_table expects
+        df.rename(columns={'Value': 'adjusted_unit_value'}, inplace=True)
+        
+        return df
+    except Exception as e:
+        print(f"Error loading table data: {e}")
+        return pd.DataFrame()
+
 
 # --- UI Components ---
 
 def create_layout():
-    # Load initial data to get filter options and date range
-    df_chart = load_chart_data("Billion Cubic Meter") # Use chart data for master date range
-    df_table = load_table_data("Billion Cubic Meter")
+    # Load initial data options
+    all_countries, all_sectors = get_db_options()
+    all_sectors = ['(All)'] + all_sectors
+    all_countries = sorted(all_countries)
     
-    if df_chart.empty or df_table.empty:
-        return html.Div("Data failed to load.")
+    # Load initial Chart data (All countries) to setup Date slider
+    df_chart = load_chart_data(country_filter='(All)')
+    
+    if df_chart.empty:
+        # Fallback if DB empty
+        unique_dates = []
+        max_idx = 0
+        date_marks = {}
+        date_map_data = []
+    else:
+        unique_dates = sorted(df_chart['Date_Obj'].unique())
+        max_idx = len(unique_dates) - 1 if unique_dates else 0
+        date_map_data = [d.strftime('%-m/%-d/%Y') for d in unique_dates]
         
-    all_countries = sorted(df_chart['Country'].unique().tolist())
-    all_sectors = ['(All)'] + sorted(df_chart['Sector'].unique().tolist())
-    
-    # Date Range Slider Logic
-    unique_dates = sorted(df_chart['Date_Obj'].unique())
-    if not unique_dates:
-        return html.Div("No date data found.")
-        
-    min_date = unique_dates[0]
-    max_date = unique_dates[-1]
-    
-    # Map dates to numerical marks
-    # We will use unix timestamp chunks or just index if continuous?
-    # Index is safer if data is sparse, but monthly data is usually continuous.
-    # Let's use Index mapping for the Slider
-    date_marks = {}
-    # Show one label per year
-    # Redesign: Only show Start and End Date labels matching Image 2 style
-    # Format: M/D/YYYY e.g. 1/1/2019 and 9/30/2025
-    # Use invisible marks to suppress auto-generated numeric ticks
-    date_marks = {
-        0: {'label': '', 'style': {'display': 'none'}}, 
-        len(unique_dates) - 1: {'label': '', 'style': {'display': 'none'}}
-    } 
+        # Only show Start and End Date labels
+        date_marks = {
+            0: {'label': '', 'style': {'display': 'none'}}, 
+            max_idx: {'label': '', 'style': {'display': 'none'}}
+        }
 
     # Initial Start/End indices
     start_idx = 0
-    end_idx = len(unique_dates) - 1
-    max_idx = len(unique_dates) - 1
+    end_idx = max_idx
+
+    start_date_label = date_map_data[0] if date_map_data else ""
+    end_date_label = date_map_data[-1] if date_map_data else ""
 
     return html.Div([
         # Header Row
@@ -175,9 +276,16 @@ def create_layout():
 
                 # Table Container
                 html.Div(id='asia-gas-monthly-table-container', style={'marginTop': '20px'}),
-                # Stores for Table State (Clientside)
-                dcc.Store(id='asia-table-highlight-state'),
-                html.Div(id='asia-table-dummy-output', style={'display': 'none'})
+                
+                # Stores for State
+                dcc.Store(id='asia-table-highlight-state'), # From Clientside
+                dcc.Store(id='chart-highlight-state', data=None), # Server side Highlight State
+                
+                # Hidden Trigger for X-Axis Click
+                dcc.Input(id='axis-click-trigger', type='text', style={'display': 'none'}),
+                
+                html.Div(id='asia-table-dummy-output', style={'display': 'none'}),
+                html.Div(id='axis-listener-output', style={'display': 'none'}) # Dedicated output
                 
             ], style={'flex': '1', 'padding': '20px', 'overflowX': 'hidden', 'backgroundColor': '#fff'}),
 
@@ -191,14 +299,14 @@ def create_layout():
                         # Relative Container for Slider + Moving Labels
                         html.Div([
                             # Moving Labels (Static Placement, Dynamic Text)
-                            html.Div(id='asia-date-label-start', children=pd.Timestamp(unique_dates[0]).strftime('%-m/%-d/%Y'), style={
+                            html.Div(id='asia-date-label-start', children=start_date_label, style={
                                 'position': 'absolute', 'top': '-30px', 'left': '0', 
                                 'fontSize': '11px', 'color': '#777', 
                                 'whiteSpace': 'nowrap',
                                 'pointerEvents': 'none',
                                 'zIndex': '10'
                             }),
-                            html.Div(id='asia-date-label-end', children=pd.Timestamp(unique_dates[-1]).strftime('%-m/%-d/%Y'), style={
+                            html.Div(id='asia-date-label-end', children=end_date_label, style={
                                 'position': 'absolute', 'top': '-30px', 'right': '0', 
                                 'fontSize': '11px', 'color': '#777', 
                                 'whiteSpace': 'nowrap',
@@ -220,7 +328,7 @@ def create_layout():
                     ], style={'marginBottom': '20px', 'borderBottom': '1px solid #eee', 'paddingBottom': '20px'}),
                     
                     # Store unique dates as JSON and MAX Index for callback math
-                    dcc.Store(id='asia-date-map', data=[d.strftime('%-m/%-d/%Y') for d in unique_dates]),
+                    dcc.Store(id='asia-date-map', data=date_map_data),
                     dcc.Store(id='asia-date-max', data=max_idx),
 
                     # Unit Filter
@@ -285,7 +393,7 @@ def create_layout():
     ], id='gas-asia-monthly-container', style={'backgroundColor': '#ffffff', 'fontFamily': 'Arial, sans-serif'})
 
 
-def build_chart(df, sector_filter, unit):
+def build_chart(df, sector_filter, unit, highlight_state=None):
     # Sort by Date
     df = df.sort_values('Date_Obj')
     
@@ -293,44 +401,84 @@ def build_chart(df, sector_filter, unit):
     # Format for X axis ticks
     x_axis_labels = [pd.Timestamp(d).strftime('%B %Y') for d in unique_dates]
     
+    # Generate tick text with conditional formatting
+    tick_texts = []
+    for d in unique_dates:
+        d_str = pd.Timestamp(d).strftime('%B %Y')
+        is_selected = False
+        if highlight_state and highlight_state.get('type') == 'month':
+            if highlight_state.get('date') == d_str:
+                is_selected = True
+        
+        if is_selected:
+            # Highlight style matching Image 1 (Blue background)
+            # Note: Plotly accepts subset of HTML
+            tick_texts.append(f"<span style='font-weight:bold; color:#000000; background-color:#cfe8ef;'>{d_str}</span>")
+        else:
+            tick_texts.append(d_str)
+
     fig = go.Figure()
     
     # Determine format
     val_fmt = ",.1f" if unit == 'Billion Cubic Meter' else ",.0f"
     
     # Stacked Bar Chart
-    # Order: Industrial (Bottom), Power, Household, Other (Top)
-    # The loop should go in this order so Plotly stacks them correctly (first trace at bottom? Standard bar stack adds on top)
-    # Actually Plotly stacks in order of traces added.
-    
     sectors_to_plot = SECTOR_ORDER if sector_filter == '(All)' else [sector_filter]
     
     for sector in sectors_to_plot:
         # Filter for sector
         sdf = df[df['Sector'] == sector]
         
-        # We need to align with unique_dates to ensure stacking aligns correctly
-        # Create a Series indexed by date
-        # Sum duplicates if any (shouldn't be for Chart data but safety first)
-        sdf_grouped = sdf.groupby('Date_Obj')['adjusted_unit_value'].sum()
+        # Group by Date
+        sdf_grouped = sdf.groupby('Date_Obj')['Value'].sum()
         
         y_vals = []
-        hover_names = []
+        opacities = []
+        line_widths = []
+        line_colors = []
+        
         for d in unique_dates:
             val = sdf_grouped.get(d, 0)
             y_vals.append(val)
-            hover_names.append(sector)
+            
+            # Highlight Logic
+            date_str = pd.Timestamp(d).strftime('%B %Y') # Match format
+            
+            op = 1.0 # Default full opacity
+            lw = 0
+            lc = 'rgba(0,0,0,0)' # Transparent
+            
+            if highlight_state:
+                op = 0.3 # Default dim if highlighting active
+                
+                if highlight_state.get('type') == 'month':
+                    # Highlight entire stack for date
+                    if highlight_state.get('date') == date_str:
+                        op = 1.0
+                        
+                elif highlight_state.get('type') == 'bar':
+                    # Highlight specific segment
+                    if highlight_state.get('date') == date_str and highlight_state.get('sector') == sector:
+                        op = 1.0
+                        lw = 2
+                        lc = 'black' # Black border for selected segment
+            
+            opacities.append(op)
+            line_widths.append(lw)
+            line_colors.append(lc)
 
         fig.add_trace(go.Bar(
             name=sector,
             x=x_axis_labels,
             y=y_vals,
-            marker_color=COLORS.get(sector, '#ccc'),
-            # No text on bars for dense monthly chart usually, unless requested. Image 1 shows no text on bars.
-            # Wait, Image 1 shows... No text labels on the bars themselves in the small view? 
-            # Actually the screenshot might be zoomed out. 
-            # Instructions say: "Bars must be continuous and dense". Suggests no text labels on bars to avoid clutter.
-            # I will omit 'text' argument or leave it empty.
+            marker=dict(
+                color=COLORS.get(sector, '#ccc'),
+                opacity=opacities,
+                line=dict(
+                    width=line_widths,
+                    color=line_colors
+                )
+            ),
             hovertemplate=(
                 "<span style='color: #777'>Sector:</span> <span style='color: black'>%{data.name}</span><br>" +
                 "<span style='color: #777'>Date:</span> <span style='color: black'>%{x}</span><br>" +
@@ -352,8 +500,11 @@ def build_chart(df, sector_filter, unit):
             showgrid=False,
             showline=True,
             linecolor='#ccc',
-            tickangle=-90, # Vertical labels for months often needed
+            tickangle=-90,
             tickfont=dict(size=10, color='#999'),
+            tickmode='array',
+            tickvals=x_axis_labels,
+            ticktext=tick_texts 
         ),
         yaxis=dict(
             title='',
@@ -361,44 +512,41 @@ def build_chart(df, sector_filter, unit):
             showline=False,
             zeroline=True,
             zerolinecolor='#ccc',
-            tickfont=dict(size=10, color='#999') # Show Y axis labels
+            tickfont=dict(size=10, color='#999')
         ),
         plot_bgcolor='white',
         paper_bgcolor='white',
         margin=dict(t=30, b=80, l=40, r=10),
         height=500,
-        showlegend=False # Custom legend in sidebar
+        showlegend=False,
+        clickmode='event+select'
     )
     
     return fig
 
 
 def build_table(df, sector_filter, unit):
-    """
-    Existing Table Logic from yearly.py
-    """
     if df.empty:
         return html.Div("No data found.", style={'padding': '20px', 'textAlign': 'center'})
 
     years = sorted(df['Year of Date'].unique(), reverse=True)
     months_ref = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
     
-    # helper to sort months
     def month_sort_key(m):
-        return months_ref.index(m)
+        try:
+            return months_ref.index(m)
+        except:
+            return -1
 
-    # Pre-calculate active months per year to hide empty columns outside range
     active_months_map = {}
     for y in years:
-        # Get unique months for this year present in data
         m_in_data = df[df['Year of Date'] == y]['Month of Date'].unique().tolist()
-        # Sort them descending (Dec -> Jan) for display
         m_in_data.sort(key=month_sort_key, reverse=True)
         active_months_map[y] = m_in_data
 
     countries = sorted(df['Country'].unique())
-    # Order for table to match Image 1 (Household -> Total)
     table_sector_order = ['Household', 'Industrial', 'Other', 'Power']
+    
     if sector_filter != '(All)':
         sectors_to_show = [sector_filter]
     else:
@@ -412,19 +560,17 @@ def build_table(df, sector_filter, unit):
         for sector in sectors_to_show:
             sector_df = country_df[country_df['Sector'] == sector]
             if sector_df.empty and sector_filter == '(All)':
-                continue
+               continue
                 
             row = {
                 'Country': country if is_first_sector else "", 
                 'Sector': sector,
-                'Country_Full': country # for styling/filtering if needed
+                'Country_Full': country
             }
             is_first_sector = False
             
             for y in years:
-                # Use ONLY active months for this year
                 year_months = active_months_map[y]
-                
                 year_df = sector_df[sector_df['Year of Date'] == y]
                 year_total = 0
                 for m in year_months:
@@ -453,7 +599,6 @@ def build_table(df, sector_filter, unit):
 
     fmt = ',.1f' if unit == 'Billion Cubic Meter' else ',.0f'
     
-    # Columns with multi-level headers [Year, Month]
     columns = [
         {'name': ['\u00A0', 'Country'], 'id': 'Country'},
         {'name': ['\u00A0', 'Sector'], 'id': 'Sector'}
@@ -507,20 +652,19 @@ def build_table(df, sector_filter, unit):
                 'padding': '2px'
             },
             style_cell={
-                'padding': '0px 5px', # Minimal padding for reduced height
+                'padding': '0px 5px',
                 'fontSize': '11px',
                 'fontFamily': 'Arial, sans-serif',
                 'border': 'none', 
                 'minWidth': '70px',
                 'backgroundColor': '#fff',
-                'color': '#777', # Grey text for sectors and data
+                'color': '#777',
                 'height': 'auto',
                 'textAlign': 'right'
             },
             style_header_conditional=[
-                # Apply borders ONLY to data columns (Years/Months)
                 {'if': {'header_index': 0, 'column_id': data_col_ids}, 'borderBottom': '1px solid #d0d0d0'},
-                {'if': {'header_index': 0, 'column_id': data_col_ids}, 'textAlign': 'center'}, # Center Year Headers
+                {'if': {'header_index': 0, 'column_id': data_col_ids}, 'textAlign': 'center'},
                 {'if': {'header_index': 1, 'column_id': data_col_ids}, 'borderTop': '1px solid #d0d0d0'},
                 {'if': {'header_index': 1, 'column_id': data_col_ids}, 'borderBottom': '1px solid #ccc'},
                 {'if': {'column_id': ['Country', 'Sector']}, 'zIndex': 999, 'textAlign': 'left'},
@@ -573,79 +717,173 @@ def build_table(df, sector_filter, unit):
 
 def register_callbacks(dash_app, server):
     # 1. Main Update Callback
+    
     @dash_app.callback(
         [Output('asia-gas-monthly-chart', 'figure'),
-         Output('asia-gas-monthly-table-container', 'children')],
+         Output('asia-gas-monthly-table-container', 'children'),
+         Output('chart-highlight-state', 'data')],
         [Input('asia-unit-filter', 'value'),
          Input('asia-sector-filter', 'value'),
          Input('asia-country-filter', 'value'),
-         Input('asia-date-slider', 'value')],
-        [State('asia-date-map', 'data')]
+         Input('asia-date-slider', 'value'),
+         Input('asia-gas-monthly-chart', 'clickData'),
+         Input('asia-table-highlight-state', 'data'),
+         Input('axis-click-trigger', 'value')],
+        [State('asia-date-map', 'data'),
+         State('chart-highlight-state', 'data')]
     )
-    def update_dashboard(unit, sector, country, date_range_idx, date_map):
-        # 1. Resolve Data Range
-        if date_map and date_range_idx:
-            try:
-                start_date_str = date_map[date_range_idx[0]]
-                end_date_str = date_map[date_range_idx[1]]
-                start_date = pd.to_datetime(start_date_str)
-                end_date = pd.to_datetime(end_date_str)
-            except:
-                start_date = None
-                end_date = None
-        else:
+    def update_dashboard(unit, sector, country, date_range_idx, clickData, table_highlight_state, axis_click_raw, date_map, current_highlight):
+        try:
+            # 0. Determine Trigger
+            triggered_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+            
+            # 1. Resolve Highlight State Change
+            highlight_state = current_highlight # Default keep current
+            
+            # If Filters changed, clear highlight
+            if triggered_id in ['asia-unit-filter', 'asia-sector-filter', 'asia-country-filter', 'asia-date-slider']:
+                highlight_state = None
+                
+            # If Chart Bar Clicked -> Toggle Bar Selection (Image 2 Style)
+            elif triggered_id == 'asia-gas-monthly-chart':
+                if clickData and 'points' in clickData:
+                    point = clickData['points'][0]
+                    clicked_date = point.get('x') # "Month YYYY"
+                    clicked_sector = point.get('data', {}).get('name')
+                    
+                    if clicked_date and clicked_sector:
+                        # Check if same click -> Deselect
+                        if (highlight_state and 
+                            highlight_state.get('type') == 'bar' and 
+                            highlight_state.get('date') == clicked_date and 
+                            highlight_state.get('sector') == clicked_sector):
+                            highlight_state = None
+                        else:
+                            highlight_state = {
+                                'type': 'bar',
+                                'date': clicked_date,
+                                'sector': clicked_sector
+                            }
+            
+            # If Table Highlighted (Header Click) -> Month Selection (Image 1 Style)
+            elif triggered_id == 'asia-table-highlight-state':
+                if not table_highlight_state:
+                     if highlight_state and highlight_state.get('type') == 'month':
+                         highlight_state = None
+                elif isinstance(table_highlight_state, str) and re.match(r'^\d{4}_[A-Za-z]+$', table_highlight_state):
+                    parts = table_highlight_state.split('_')
+                    year = parts[0]
+                    month = parts[1]
+                    chart_date_str = f"{month} {year}"
+                    
+                    if (highlight_state and 
+                        highlight_state.get('type') == 'month' and 
+                        highlight_state.get('date') == chart_date_str):
+                        highlight_state = None
+                    else:
+                        highlight_state = {
+                            'type': 'month',
+                            'date': chart_date_str,
+                            'sector': None
+                        }
+            
+            # If Axis Clicked (Simulated) -> Month Selection (Image 1 Style)
+            elif triggered_id == 'axis-click-trigger':
+                if axis_click_raw:
+                    # Parse "Month YYYY|TIMESTAMP" -> "Month YYYY"
+                    axis_click_date = axis_click_raw.split('|')[0]
+                    
+                    if (highlight_state and 
+                        highlight_state.get('type') == 'month' and 
+                        highlight_state.get('date') == axis_click_date):
+                        highlight_state = None
+                    else:
+                        highlight_state = {
+                            'type': 'month',
+                            'date': axis_click_date,
+                            'sector': None
+                        }
+            
+            # 2. Resolve Data Range
             start_date = None
             end_date = None
-        
-        # 2. LOAD & FILTER: Table (Existing Data)
-        df_table = load_table_data(unit)
-        if df_table.empty:
-            table_comp = html.Div("Data error")
-        else:
-            dff_table = filter_dataframe(df_table, sector, country, start_date, end_date)
-            # Table Logic expects dataframe
-            table_comp = build_table(dff_table, sector, unit)
+            if date_map and date_range_idx:
+                try:
+                    start_date_str = date_map[date_range_idx[0]]
+                    end_date_str = date_map[date_range_idx[1]]
+                    start_date = pd.to_datetime(start_date_str)
+                    end_date = pd.to_datetime(end_date_str)
+                except:
+                    pass
             
-        # 3. LOAD & FILTER: Chart (New Data)
-        df_chart = load_chart_data(unit)
-        if df_chart.empty:
-            fig = go.Figure()
-        else:
-            dff_chart = filter_dataframe(df_chart, sector, country, start_date, end_date)
-            fig = build_chart(dff_chart, sector, unit)
-        
-        return fig, table_comp
+            # 3. LOAD using SQL logic
+            # These functions handle db connection errors internally and return empty DF
+            df_table = load_table_data(country)
+            df_chart = load_chart_data(country)
 
-    # 2. Clientside Callback for tooltips text transformation on Slider
+            # 4. FILTER
+            if not df_table.empty:
+                df_table = df_table[df_table['Unit'] == unit]
+            if not df_chart.empty:
+                df_chart = df_chart[df_chart['Unit'] == unit]
+
+            if sector != '(All)':
+                if not df_table.empty:
+                    df_table = df_table[df_table['Sector'] == sector]
+                if not df_chart.empty:
+                    df_chart = df_chart[df_chart['Sector'] == sector]
+
+            if start_date and end_date:
+                if not df_table.empty:
+                    df_table = df_table[(df_table['Date_Obj'] >= start_date) & (df_table['Date_Obj'] <= end_date)]
+                if not df_chart.empty:
+                    df_chart = df_chart[(df_chart['Date_Obj'] >= start_date) & (df_chart['Date_Obj'] <= end_date)]
+                    
+            # 5. Build Components
+            if df_table.empty:
+                table_comp = html.Div("Data error or empty for selection")
+            else:
+                table_comp = build_table(df_table, sector, unit)
+                
+            if df_chart.empty:
+                fig = go.Figure()
+            else:
+                # IMPORTANT: build_chart handles Plotly construction. 
+                # If highlight_state is corrupt or causes error, we catch it?
+                # We sanitized input logic above.
+                fig = build_chart(df_chart, sector, unit, highlight_state)
+            
+            return fig, table_comp, highlight_state
+
+        except Exception as e:
+            # Fallback to prevent 500 error on frontend
+            print(f"Error in update_dashboard: {e}")
+            fig = go.Figure()
+            fig.update_layout(title=f"Error: {str(e)}")
+            return fig, no_update, no_update
+
+    # 2. Clientside Callback for tooltips text transformation on Slider (No Op, just for output)
+    # 2. Clientside Callback for updating Slider Date Labels
     dash_app.clientside_callback(
         """
         function(value, date_map) {
-            if (!date_map || !value) return "";
-            try {
-                // Return start/end labels potentially?
-                // Actually RangeSlider tooltip `transform` is not supported directly in dcc this way
-                // But we can just use the built-in tooltip which shows value. 
-                // Since value is index, we need a custom transform if supported.
-                // dcc.RangeSlider `tooltip={transform: ...}` is not fully custom JS usually.
-                // It expects a formatted string or simple map. 
-                // We'll rely on the visual marks for now.
-                return ""; 
-            } catch(e) { return ""; }
+            if (!date_map || !value) return ["", ""];
+            return [date_map[value[0]], date_map[value[1]]];
         }
         """,
-        Output('asia-table-dummy-output', 'style'), # Dummy output
+        [Output('asia-date-label-start', 'children'),
+         Output('asia-date-label-end', 'children')],
         Input('asia-date-slider', 'value'),
         State('asia-date-map', 'data')
     )
 
-    # 3. Clientside Callback for Table Highlighting (Reused from Yearly)
+    # 3. Clientside Callback for Table Highlighting (Reused exactly)
     dash_app.clientside_callback(
         """
         function(n_data, columns, current_state) {
             try {
                 const tableId = 'asia-gas-demand-table';
                 
-                // 1. Inject or Update CSS
                 let style = document.getElementById('asia-gas-styles');
                 if (!style) {
                     style = document.createElement('style');
@@ -658,37 +896,32 @@ def register_callbacks(dash_app, server):
                     .asia-row-selected { background-color: #cfe8ef !important; }
                     .asia-dimmed { opacity: 0.3 !important; }
                     
-                    /* Column Selection: Country/Sector remain visible (100% opacity) but NOT blue */
                     .asia-col-selection-active td[data-dash-column="Country"], 
                     .asia-col-selection-active td[data-dash-column="Sector"] { 
                         opacity: 1 !important; 
                         background-color: transparent !important; 
                     }
                     
-                    /* Row Selection: The Highlighted Row(s) - FORCE BLUE ON ALL CELLS */
                     .asia-row-selection-active tr.asia-row-highlighted td {
                         opacity: 1 !important;
                         background-color: #cfe8ef !important;
                         color: black !important;
                     }
 
-                    /* Row Selection: Non-selected rows dimmed */
                     .asia-row-selection-active tr:not(.asia-row-trip-wire) td {
                         opacity: 0.3 !important;
                     }
 
-                    /* Headers */
                     th.asia-col-selected { background-color: #cfe8ef !important; }
                 `;
 
                 if (!window.asiaGasState) {
                     window.asiaGasState = { 
                         selectedColumnId: null,
-                        selectedRowIndices: null // String "start_end" or null
+                        selectedRowIndices: null 
                     };
                 }
 
-                // 2. Helper Logic
                 function clearAll(spreadsheet) {
                     spreadsheet.classList.remove('asia-col-selection-active');
                     spreadsheet.classList.remove('asia-row-selection-active');
@@ -705,20 +938,17 @@ def register_callbacks(dash_app, server):
                 function applyState(spreadsheet, n_data) {
                     clearAll(spreadsheet);
 
-                    // COLUMN HIGHLIGHTING
                     if (window.asiaGasState.selectedColumnId) {
                         const targetIds = window.asiaGasState.selectedColumnId.split(',');
                         if (targetIds.length === 0) return;
 
                         spreadsheet.classList.add('asia-col-selection-active');
 
-                        // Headers
                         targetIds.forEach(id => {
                             const ths = spreadsheet.querySelectorAll(`th[data-dash-column="${id}"]`);
                             ths.forEach(th => th.classList.add('asia-col-selected'));
                         });
 
-                        // Body Cells
                         const allCells = spreadsheet.querySelectorAll('td[data-dash-column]');
                         allCells.forEach(cell => {
                             const cId = cell.getAttribute('data-dash-column');
@@ -733,13 +963,11 @@ def register_callbacks(dash_app, server):
                         return;
                     }
 
-                    // ROW HIGHLIGHTING
                     if (window.asiaGasState.selectedRowIndices) {
                         const [start, end] = window.asiaGasState.selectedRowIndices.split('_').map(Number);
                         
                         spreadsheet.classList.add('asia-row-selection-active');
                         
-                        // Handle Split Tables (Dash)
                         const tbodies = spreadsheet.querySelectorAll('tbody');
                         
                         tbodies.forEach(tbody => {
@@ -759,7 +987,6 @@ def register_callbacks(dash_app, server):
                     if (!tableEl) return;
                     const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
                     
-                    // Always try to re-apply state
                     if (spreadsheet && (window.asiaGasState.selectedColumnId || window.asiaGasState.selectedRowIndices)) {
                         applyState(spreadsheet, n_data);
                     }
@@ -768,9 +995,7 @@ def register_callbacks(dash_app, server):
 
                     spreadsheet.dataset.enhanced = 'true';
                     
-                    // Click Handler
                     spreadsheet.addEventListener('click', function(e) {
-                         // 1. Column Header Click
                         const header = e.target.closest('th[data-dash-column]');
                         if (header) {
                             e.stopPropagation();
@@ -781,8 +1006,6 @@ def register_callbacks(dash_app, server):
                             let isYearHeader = /^\d{4}$/.test(headerContent);
                             let targetIds = [];
                             if (isYearHeader && columns) {
-                                // Select all month columns for this year? 
-                                // Assuming 'columns' var is available and up to date
                                 columns.forEach(c => {
                                     if (c.id.startsWith(headerContent + '_')) targetIds.push(c.id);
                                 });
@@ -796,126 +1019,90 @@ def register_callbacks(dash_app, server):
                                 window.asiaGasState.selectedColumnId = null;
                             } else {
                                 window.asiaGasState.selectedColumnId = selectionKey;
-                                window.asiaGasState.selectedRowIndices = null; // Clear rows
+                                window.asiaGasState.selectedRowIndices = null; 
                             }
                             applyState(spreadsheet, n_data);
                             return;
                         }
-
-                        // 2. Row Data Click (Country/Sector)
+                        
                         const cell = e.target.closest('td[data-dash-column]');
                         if (cell) {
-                            const colId = cell.getAttribute('data-dash-column');
-                            
-                            if (colId === 'Country' || colId === 'Sector') {
-                                e.stopPropagation();
-                                const row = cell.closest('tr');
-                                const tbody = row.closest('tbody');
-                                // Calculate Index carefully relative to this specific tbody
-                                const allRows = Array.from(tbody.querySelectorAll('tr'));
-                                const rowIndex = allRows.indexOf(row);
-                         
-                                let startIndex = rowIndex;
-                                let endIndex = rowIndex;
-
-                                if (colId === 'Country') {
-                                    // Use n_data (Data Driven) Grouping
-                                    if (n_data) {
-                                        let curr = rowIndex;
-                                        // Scan up
-                                        while (curr >= 0) {
-                                            if (n_data[curr] && n_data[curr]['Country']) {
-                                                startIndex = curr;
-                                                break;
-                                            }
-                                            curr--;
-                                        }
-                                        if (curr < 0) startIndex = 0; // Fallback
-
-                                        // Scan down
-                                        curr = startIndex + 1;
-                                        endIndex = n_data.length - 1;
-                                        while (curr < n_data.length) {
-                                            if (n_data[curr] && n_data[curr]['Country']) {
-                                                endIndex = curr - 1;
-                                                break;
-                                            }
-                                            curr++;
-                                        }
-                                    }
-                                } 
-                                
-                                const selectionKey = `${startIndex}_${endIndex}`;
-                                
-                                if (window.asiaGasState.selectedRowIndices === selectionKey) {
-                                    window.asiaGasState.selectedRowIndices = null;
-                                } else {
-                                    window.asiaGasState.selectedRowIndices = selectionKey;
-                                    window.asiaGasState.selectedColumnId = null; // Clear cols
-                                }
-                                applyState(spreadsheet, n_data);
-                            } else {
-                                // Clicked a data cell
-                                if (window.asiaGasState.selectedColumnId || window.asiaGasState.selectedRowIndices) {
-                                     window.asiaGasState.selectedColumnId = null;
-                                     window.asiaGasState.selectedRowIndices = null;
-                                     applyState(spreadsheet, n_data);
-                                }
-                            }
-                        }
-                    });
-                    
-                    // Outside Click
-                    document.addEventListener('click', function(e) {
-                        if (spreadsheet && !spreadsheet.contains(e.target)) {
-                            window.asiaGasState.selectedColumnId = null;
-                            window.asiaGasState.selectedRowIndices = null;
-                            applyState(spreadsheet, n_data);
+                             const row = cell.closest('tr');
+                             const tbody = row.closest('tbody');
+                             const rows = Array.from(tbody.querySelectorAll('tr'));
+                             const idx = rows.indexOf(row);
+                             
+                             const start = idx; 
+                             const end = idx; 
+                             
+                             const newKey = `${start}_${end}`;
+                             
+                             if (window.asiaGasState.selectedRowIndices === newKey) {
+                                  window.asiaGasState.selectedRowIndices = null;
+                             } else {
+                                  window.asiaGasState.selectedRowIndices = newKey;
+                                  window.asiaGasState.selectedColumnId = null;
+                             }
+                             applyState(spreadsheet, n_data);
                         }
                     });
                 }
-
-                setupTable();
                 
-                if (!window.asiaGasObserver) {
-                    window.asiaGasObserver = new MutationObserver(() => {
-                        setupTable();
-                    });
-                    window.asiaGasObserver.observe(document.body, { childList: true, subtree: true });
-                }
+                setTimeout(setupTable, 500); 
+                return window.asiaGasState.selectedColumnId || ""; 
 
-            } catch (e) { console.error(e); }
-            return "";
+            } catch(e) { console.error(e); return ""; }
         }
         """,
-        Output('asia-table-dummy-output', 'children', allow_duplicate=True),
+        Output('asia-table-highlight-state', 'data'),
         Input('asia-gas-demand-table', 'data'),
-        [State('asia-gas-demand-table', 'columns'),
-         State('asia-table-highlight-state', 'data')],
-        prevent_initial_call=True
+        State('asia-gas-demand-table', 'columns'),
+        State('asia-table-highlight-state', 'data')
     )
 
-    # 4. Clientside Callback for Moving Slider Labels
-    # 4. Clientside Callback for Updating Slider Label TEXT Only (Static Position)
+    # 4. Clientside Callback to attach X-Axis Click Listeners
+    # Attaches listener to Plotly Axis Labels and updates 'axis-click-trigger'
     dash_app.clientside_callback(
         """
-        function(value, date_map, max_idx) {
-            if (!value || !date_map || max_idx === undefined) return ["", ""];
-            
-            // Ensure integer indices for array lookup
-            const startIdx = Math.round(value[0]);
-            const endIdx = Math.round(value[1]);
-            
-            // Text lookup
-            const startText = date_map[startIdx] || "";
-            const endText = date_map[endIdx] || "";
-            
-            return [startText, endText];
+        function(fig_data) {
+            // Wait for plot to render
+            setTimeout(function() {
+                try {
+                    const graph = document.getElementById('asia-gas-monthly-chart');
+                    if (!graph) return;
+                    
+                    // x-axis ticks text. Note this selector might need tuning depending on Plotly version
+                    // Usually .xaxislayer-above .xtick text OR .xtick text
+                    // Use a slightly more generic selector for safety
+                    const ticks = graph.querySelectorAll('.xtick text');
+                    
+                    if (ticks.length === 0) return;
+                    
+                    ticks.forEach(t => {
+                        t.style.cursor = 'pointer'; 
+                        
+                        // Prevent attaching multiple times if re-running
+                        if (t.getAttribute('data-click-attached')) return;
+                        t.setAttribute('data-click-attached', 'true');
+                        
+                        t.addEventListener('click', function(e) {
+                            const dateStr = t.textContent; // "May 2020"
+                            const input = document.getElementById('axis-click-trigger');
+                            if (input) {
+                                // Append timestamp to ensure value CHANGE
+                                const payload = dateStr + "|" + Date.now();
+                                
+                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                                nativeInputValueSetter.call(input, payload);
+                                input.dispatchEvent(new Event('input', { bubbles: true }));
+                            }
+                        });
+                    });
+                } catch(e) { console.error("Axis listener error:", e); }
+            }, 1000); 
+            return window.dash_clientside.no_update;
         }
         """,
-        [Output('asia-date-label-start', 'children'),
-         Output('asia-date-label-end', 'children')],
-        Input('asia-date-slider', 'value'),
-        [State('asia-date-map', 'data'),
-         State('asia-date-max', 'data')]
+        Output('axis-listener-output', 'children'), # Dedicated output
+        Input('asia-gas-monthly-chart', 'figure')
     )
