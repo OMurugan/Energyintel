@@ -164,7 +164,7 @@ def load_data(selected_sector=None):
         FROM dev.glng_gas_demand p
         LEFT JOIN dim_country q
         ON q.dim_country_id = p.country_id
-        WHERE LOWER(q.region) = 'asia' 
+        WHERE LOWER(q.region) IN ('asia', 'oceania') 
         AND q.latitude IS NOT NULL 
         {sector_condition}
         GROUP BY
@@ -200,7 +200,7 @@ def load_data(selected_sector=None):
         FROM dev.glng_gas_demand p
         LEFT JOIN dim_country q
         ON q.dim_country_id = p.country_id
-        WHERE LOWER(q.region) = 'asia'
+        WHERE LOWER(q.region) IN ('asia', 'oceania')
         AND q.latitude IS NOT NULL
         {sector_condition}
         GROUP BY
@@ -238,7 +238,7 @@ def load_data(selected_sector=None):
         FROM dev.glng_gas_demand p
         LEFT JOIN dim_country q
         ON q.dim_country_id = p.country_id
-        WHERE LOWER(q.region) = 'asia'
+        WHERE LOWER(q.region) IN ('asia', 'oceania')
         AND q.latitude IS NOT NULL
         {sector_condition}
         GROUP BY
