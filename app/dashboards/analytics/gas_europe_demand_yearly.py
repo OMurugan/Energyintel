@@ -533,86 +533,144 @@ def register_callbacks(dash_app, server):
             df['Month Init'] = df['Month Label'].map(month_map).fillna(df['Month Label'])
 
 
-        # Use Plotly Express for robust bar chart creation
+        # Prepare Timeline and x-positions
+        # We need a sorted list of unique time units for the x-axis
+        timeline_cols = ['Year of Date']
+        if granularity != 'year':
+            timeline_cols.append('Quarter_Cat')
+        if granularity in ['month', 'day']:
+            timeline_cols.append('Month_Cat')
+        if granularity == 'day':
+            timeline_cols.append('Day Label')
+            
+        timeline_df = df[timeline_cols].drop_duplicates().sort_values(timeline_cols)
+        timeline_df['x_pos'] = range(len(timeline_df))
+        
+        # Merge back to main df
+        df = df.merge(timeline_df, on=timeline_cols, how='left')
+
         # Chart Construction
         fig = go.Figure()
-        if granularity != 'year':
-            # Multi-level for Quarter, Month, Day
-            for sector in ['Household', 'Industrial', 'Power']:
-                sector_df = df[df['Sector'] == sector]
-                if sector_df.empty: continue
-                
-                if granularity == 'quarter':
-                    # Year (Bottom), Quarter (Top)
-                    x = [sector_df['Year Count'].tolist(), sector_df['Quarter Label'].tolist()]
-                elif granularity == 'month':
-                    # Year (Bottom), Quarter (Middle), Month (Top)
-                    x = [sector_df['Year Count'].tolist(), sector_df['Quarter Label'].tolist(), sector_df['Month Label'].tolist()]
-                else: # day
-                    # Year (Bottom), Quarter, Month Init, Day (Top)
-                    x = [sector_df['Year Count'].tolist(), sector_df['Quarter Label'].tolist(), sector_df['Month Init'].tolist(), sector_df['Day Label'].tolist()]
-                
-                fig.add_trace(go.Bar(
-                    name=sector,
-                    x=x,
-                    y=sector_df['Value'].tolist(),
-                    marker_color=SECTOR_COLORS[sector],
-                    text=sector_df['Value'].apply(lambda l: f"{l:.2f}" if l != 0 else ""),
-                    textposition='inside',
-                    insidetextanchor='middle',
-                    textfont=dict(color='white', size=9)
-                ))
-            xaxis_type = 'multicategory'
-        else:
-            # Yearly view
-            for sector in ['Household', 'Industrial', 'Power']:
-                sector_df = df[df['Sector'] == sector]
-                if sector_df.empty: continue
-                fig.add_trace(go.Bar(
-                    name=sector,
-                    x=sector_df['Year Count'],
-                    y=sector_df['Value'].tolist(),
-                    marker_color=SECTOR_COLORS[sector],
-                    text=sector_df['Value'].apply(lambda v: f"{v:.2f}" if v != 0 else ""),
-                    textposition='inside',
-                    insidetextanchor='middle',
-                    textfont=dict(color='white', size=11)
-                ))
-            xaxis_type = 'category'
         
-        fig.update_layout(barmode='stack')
+        # 1. Main Data Traces (Stacked Bars)
+        for sector in ['Household', 'Industrial', 'Power']:
+            sector_df = df[df['Sector'] == sector]
+            if sector_df.empty: continue
+            
+            fig.add_trace(go.Bar(
+                name=sector,
+                x=sector_df['x_pos'],
+                y=sector_df['Value'].tolist(),
+                marker_color=SECTOR_COLORS[sector],
+                text=sector_df['Value'].apply(lambda l: f"{l:.2f}" if l != 0 else ""),
+                textposition='inside',
+                insidetextanchor='middle',
+                textfont=dict(color='white', size=9),
+                hoverinfo='x+y+name'
+            ))
+
+        # 2. Header Traces (Top Labels)
+        # Year Headers (Top-most)
+        year_blocks = timeline_df.groupby('Year of Date')['x_pos'].agg(['min', 'max', 'count']).reset_index()
+        fig.add_trace(go.Bar(
+            x=(year_blocks['min'] + year_blocks['max']) / 2,
+            y=[1] * len(year_blocks),
+            width=year_blocks['count'],
+            yaxis='y2',
+            marker=dict(color='#f8f9fa', line=dict(color='#ddd', width=1)),
+            text=year_blocks['Year of Date'],
+            textposition='inside',
+            textfont=dict(color='#333', size=12, family="Arial Bold"),
+            hoverinfo='none',
+            showlegend=False
+        ))
+
+        # Quarter Headers (below Year)
+        if granularity != 'year':
+            q_blocks = timeline_df.groupby(['Year of Date', 'Quarter_Cat'])['x_pos'].agg(['min', 'max', 'count']).reset_index()
+            fig.add_trace(go.Bar(
+                x=(q_blocks['min'] + q_blocks['max']) / 2,
+                y=[1] * len(q_blocks),
+                width=q_blocks['count'],
+                yaxis='y3',
+                marker=dict(color='white', line=dict(color='#eee', width=1)),
+                text=q_blocks['Quarter_Cat'],
+                textposition='inside',
+                textfont=dict(color='#666', size=11),
+                hoverinfo='none',
+                showlegend=False
+            ))
+
+        # 3. Bottom Axis Labels
+        if granularity == 'quarter':
+            ticktext = timeline_df['Quarter_Cat']
+        elif granularity == 'month':
+            ticktext = timeline_df['Month_Cat']
+        elif granularity == 'day':
+            ticktext = timeline_df['Day Label']
+        else:
+            ticktext = timeline_df['Year of Date']
+
+        # 4. Vertical Separators (Shapes)
+        shapes = []
+        # Year separators
+        for i in range(len(year_blocks) - 1):
+            sep_x = year_blocks.iloc[i]['max'] + 0.5
+            shapes.append(dict(
+                type="line", x0=sep_x, x1=sep_x, y0=0, y1=1,
+                xref="x", yref="paper", line=dict(color="#666", width=2)
+            ))
+        
+        # Quarter separators (if month/day view)
+        if granularity in ['month', 'day']:
+            for i in range(len(q_blocks) - 1):
+                sep_x = q_blocks.iloc[i]['max'] + 0.5
+                shapes.append(dict(
+                    type="line", x0=sep_x, x1=sep_x, y0=0, y1=0.85,
+                    xref="x", yref="paper", line=dict(color="#ddd", width=1, dash='dot')
+                ))
 
         fig.update_layout(
+            barmode='stack',
             plot_bgcolor='white',
             paper_bgcolor='white',
             xaxis=dict(
-                type=xaxis_type,
+                tickvals=timeline_df['x_pos'],
+                ticktext=ticktext,
                 title='', 
-                showgrid=True, 
-                gridcolor='#f0f0f0', 
+                showgrid=False,
                 linecolor='#ddd',
                 tickfont=dict(size=10, color='#333'),
                 automargin=True,
-                dividercolor="#ddd",
-                dividerwidth=1
+                range=[-0.5, len(timeline_df) - 0.5]
             ),
-            bargap=0.1,  # Add gap between months
-            bargroupgap=0.05,
             yaxis=dict(
+                domain=[0, 0.85],
                 title='', 
                 showgrid=True, 
                 gridcolor='#eee', 
                 showline=True, 
                 linecolor='#ddd', 
                 zeroline=True, 
-                zerolinecolor='#ddd', 
-                type='linear',
+                zerolinecolor='#ddd',
                 tickfont=dict(size=10, color='#333')
             ),
-            margin=dict(t=30, b=80, l=50, r=20), # Increased bottom margin for multi-level labels
+            yaxis2=dict(
+                domain=[0.93, 1],
+                showgrid=False, showline=False, showticklabels=False,
+                zeroline=False, fixedrange=True
+            ),
+            yaxis3=dict(
+                domain=[0.85, 0.93],
+                showgrid=False, showline=False, showticklabels=False,
+                zeroline=False, fixedrange=True
+            ),
+            shapes=shapes,
+            margin=dict(t=10, b=50, l=50, r=20),
             showlegend=False,
-            height=550, # Increased height slightly for better label spacing
-            font=dict(family="Arial, sans-serif")
+            height=500,
+            font=dict(family="Arial, sans-serif"),
+            bargap=0.2
         )
         
         # Ensure text labels show correctly
