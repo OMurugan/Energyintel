@@ -379,6 +379,11 @@ def create_layout():
         # Store components for data
         dcc.Store(id='min-date', data=min_date.isoformat() if not df_table.empty else '2019-01-01'),
         dcc.Store(id='max-date', data=max_date.isoformat() if not df_table.empty else '2025-10-01'),
+        
+        # Download Components
+        dcc.Download(id='download-sector-chart-csv'),
+        dcc.Download(id='download-sector-table-csv'),
+
         dcc.Store(id='sector-demand-selection-store', data={'sector': None, 'x_val': None, 'type': None, 'country': None, 'year': None}),
         dcc.Store(id='europe-table-highlight-state'),
         
@@ -399,13 +404,25 @@ def create_layout():
             html.Div([
                 # Chart Area
                 html.Div([
-                    html.H3("Monthly Gas Demand by Sector", style={
-                        'color': '#f45d2d', 
-                        'marginBottom': '20px',
-                        'fontSize': '24px',
-                        'fontWeight': 'normal',
-                        'fontFamily': 'Georgia, serif'
-                    }),
+                    html.Div([
+                        html.H3("Monthly Gas Demand by Sector", style={
+                            'color': '#f45d2d', 
+                            'margin': '0',
+                            'fontSize': '24px',
+                            'fontWeight': 'normal',
+                            'fontFamily': 'Georgia, serif'
+                        }),
+                        html.Button(
+                            'Export to CSV',
+                            id='btn-export-chart',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white', 'color': '#2c3e50', 'border': '1px solid #dee2e6',
+                                'padding': '5px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px',
+                                'marginLeft': '15px'
+                            }
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '20px'}),
                     
                     # Chart Granularity Buttons
                     html.Div([
@@ -442,6 +459,22 @@ def create_layout():
                 
                 # Data Table Area
                 html.Div([
+                    # Table Header with Export
+                    html.Div([
+                        html.H4("Sector Demand Data", style={'margin': '0', 'color': '#333', 'display': 'none'}), # Hidden title for spacing/a11y if needed
+                        html.Button(
+                            'Export to CSV',
+                            id='btn-export-table',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white', 'color': '#2c3e50', 'border': '1px solid #dee2e6',
+                                'padding': '5px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px',
+                                'marginBottom': '10px',
+                                'display': 'inline-block' 
+                            }
+                        )
+                    ], style={'textAlign': 'right'}),
+
                     # Table Granularity Buttons
                     html.Div([
                         html.Div([
@@ -797,73 +830,82 @@ def register_callbacks(dash_app, server):
         for sector in ['Power', 'Industrial', 'Household']:
             sector_data = chart_grp[chart_grp['Sector'] == sector]
             if not sector_data.empty:
+                
+                # --- PREPARE SELECTION STATE ---
                 selected_sector = selection.get('sector') if selection else None
                 selected_x = selection.get('x_val') if selection else None
                 
-                # Normalize selected_x for matching against TimeLabel
-                normalized_x = selected_x
-                if selected_x and '_' in str(selected_x):
-                    parts = str(selected_x).split('_')
-                    if len(parts) >= 2:
-                        y = parts[0]
-                        p = '_'.join(parts[1:]) 
-                        
-                        if p == 'Total':
-                            if granularity == 'year':
-                                normalized_x = str(y)
-                            else:
-                                pass # selected_x remains as is (no match)
-                        elif granularity == 'month':
-                            try:
-                                # p is Full Month (September)
-                                # TimeLabel is Sep 2025
-                                dt = datetime.strptime(f"{y}-{p}-01", "%Y-%B-%d")
-                                normalized_x = dt.strftime('%b %Y')
-                            except:
-                                pass
-                        elif granularity == 'quarter':
-                             # p is Q1
-                             # TimeLabel is 2025 Q1
-                             normalized_x = f"{y} {p}"
-                        elif granularity == 'day':
-                             # p is 01 Jan
-                             # TimeLabel is 01 Jan 2025
-                             if ' ' in p:
-                                 normalized_x = f"{p} {y}"
+                # Determine Selection Mode
+                # Mode A: Point Highlight (Sector + Time)
+                is_point_mode = (selected_sector is not None and selected_x is not None)
+                
+                # Mode B: Time Highlight (Time Only - from Table Column Click)
+                is_time_mode = (selected_sector is None and selected_x is not None)
+                
+                # Mode C: Sector Highlight (Sector Only - from Legend/row click)
+                is_sector_mode = (selected_sector is not None and selected_x is None)
+                
+                has_selection = (is_point_mode or is_time_mode or is_sector_mode)
                 
                 marker_colors = []
                 marker_line_widths = []
                 marker_line_colors = []
+                custom_data_list = []
                 
                 for _, row in sector_data.iterrows():
-                    # Matching logic might need adjustment if x_val format differs by granularity
-                    is_selected = (str(selected_sector) == str(sector) and str(normalized_x) == str(row['TimeLabel']))
+                    time_label = str(row['TimeLabel'])
+                    # Create robust customdata: [TimeLabel, Sector, Value]
+                    # We put TimeLabel first for easy access
+                    c_data = [time_label, sector, row['Value']]
+                    custom_data_list.append(c_data)
+                    
                     base_color = sector_colors.get(sector, '#1f77b4')
                     dimmed_color = sector_colors_dimmed.get(sector, 'rgba(0,0,0,0.1)')
                     
-                    if selection and selection.get('sector') is not None:
-                        if is_selected:
-                            marker_colors.append(base_color)
-                            marker_line_widths.append(2)
-                            marker_line_colors.append('black')
-                        else:
-                            marker_colors.append(dimmed_color)
-                            marker_line_widths.append(0)
-                            marker_line_colors.append('rgba(0,0,0,0)')
+                    is_selected = False
+                    
+                    if not has_selection:
+                        is_selected = True # All visible if no selection
                     else:
+                        if is_point_mode:
+                            # Must match BOTH sector and time
+                            if str(selected_sector) == str(sector) and str(selected_x) == time_label:
+                                is_selected = True
+                        elif is_time_mode:
+                            # Must match Time only
+                            if str(selected_x) == time_label:
+                                is_selected = True
+                        elif is_sector_mode:
+                            # Must match Sector only
+                            if str(selected_sector) == str(sector):
+                                is_selected = True
+                    
+                    if is_selected:
                         marker_colors.append(base_color)
+                        # If we are in a specific selection mode, add border to the selected item(s)
+                        # For Sector Mode, we might not want borders on everything, just full color.
+                        # For Point Mode, definitely border.
+                        if is_point_mode:
+                             marker_line_widths.append(3)
+                             marker_line_colors.append('black')
+                        else:
+                             marker_line_widths.append(0)
+                             marker_line_colors.append('rgba(0,0,0,0)')
+                    else:
+                        marker_colors.append(dimmed_color)
                         marker_line_widths.append(0)
                         marker_line_colors.append('rgba(0,0,0,0)')
 
                 country_label = highlight_country if highlight_country else "*"
                 if not highlight_country and selected_countries and 'All' not in selected_countries:
-                     if len(selected_countries) == 1:
-                         country_label = selected_countries[0]
+                        if len(selected_countries) == 1:
+                            country_label = selected_countries[0]
 
                 fig.add_trace(go.Bar(
                     name=sector,
                     x=sector_data['TimeLabel'],
                     y=sector_data['Value'],
+                    customdata=custom_data_list,
                     marker=dict(
                         color=marker_colors,
                         line=dict(width=marker_line_widths, color=marker_line_colors)
@@ -1109,6 +1151,102 @@ def register_callbacks(dash_app, server):
             
         return columns, processed_data, style_data_conditional, []
 
+        return columns, processed_data, style_data_conditional, []
+
+    # EXPORT CHART DATA
+    @dash_app.callback(
+        Output('download-sector-chart-csv', 'data'),
+        Input('btn-export-chart', 'n_clicks'),
+        [State('date-range-slider', 'value'),
+         State('unit-selector', 'value'),
+         State('country-checklist', 'value'),
+         State('min-date', 'data'),
+         State('max-date', 'data'),
+         State('sector-granularity-store', 'data'),
+         State('sector-chart-data-store', 'data')],
+        prevent_initial_call=True
+    )
+    def export_chart_data(n_clicks, date_range, unit, selected_countries, min_date_str, max_date_str, granularity, chart_data):
+        if not n_clicks:
+            return no_update
+            
+        if not chart_data:
+            return no_update
+
+        df_to_use = pd.DataFrame(chart_data)
+        if 'Date' in df_to_use.columns:
+            df_to_use['Date'] = pd.to_datetime(df_to_use['Date'])
+        
+        min_date = pd.to_datetime(min_date_str)
+        max_date = pd.to_datetime(max_date_str)
+        
+        date_range_start = min_date + (max_date - min_date) * (date_range[0] / 100)
+        date_range_end = min_date + (max_date - min_date) * (date_range[1] / 100)
+        
+        df_filtered = df_to_use[
+            (df_to_use['Date'] >= date_range_start) & 
+            (df_to_use['Date'] <= date_range_end)
+        ].copy()
+        
+        if selected_countries and 'All' not in selected_countries:
+            df_filtered = df_filtered[df_filtered['Country'].isin(selected_countries)]
+            
+        # Format for export
+        df_export = df_filtered.copy()
+        df_export['Date'] = df_export['Date'].dt.strftime('%Y-%m-%d')
+        
+        filename = f"gas_demand_chart_data_{unit.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+        return dcc.send_data_frame(df_export.to_csv, filename, index=False)
+
+    # EXPORT TABLE DATA
+    @dash_app.callback(
+        Output('download-sector-table-csv', 'data'),
+        Input('btn-export-table', 'n_clicks'),
+        [State('date-range-slider', 'value'),
+         State('unit-selector', 'value'),
+         State('country-checklist', 'value'),
+         State('min-date', 'data'),
+         State('max-date', 'data'),
+         State('sector-table-granularity-store', 'data'),
+         State('sector-table-data-store', 'data')],
+        prevent_initial_call=True
+    )
+    def export_table_data(n_clicks, date_range, unit, selected_countries, min_date_str, max_date_str, granularity, table_data):
+        if not n_clicks:
+            return no_update
+
+        if not table_data:
+            return no_update
+            
+        df_table = pd.DataFrame(table_data)
+        if 'Date' in df_table.columns:
+            df_table['Date'] = pd.to_datetime(df_table['Date'])
+
+        min_date = pd.to_datetime(min_date_str)
+        max_date = pd.to_datetime(max_date_str)
+        
+        date_range_start = min_date + (max_date - min_date) * (date_range[0] / 100)
+        date_range_end = min_date + (max_date - min_date) * (date_range[1] / 100)
+        
+        df_filtered = df_table[
+            (df_table['Date'] >= date_range_start) & 
+            (df_table['Date'] <= date_range_end)
+        ].copy()
+        
+        if selected_countries and 'All' not in selected_countries:
+            df_filtered = df_filtered[df_filtered['Country'].isin(selected_countries)]
+
+        # Determine granularity for column structure logic or just dump raw filtered data
+        # For simplicity and utility, exporting the raw filtered data (long format) is usually better for analysis
+        # If user wants the pivot view (as seen in table), that requires complex reconstruction.
+        # User request usually implies "the data behind the view".
+        
+        df_export = df_filtered.copy()
+        df_export['Date'] = df_export['Date'].dt.strftime('%Y-%m-%d')
+        
+        filename = f"gas_demand_table_data_{unit.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+        return dcc.send_data_frame(df_export.to_csv, filename, index=False)
+
     # Unified selection callback handler
     @dash_app.callback(
         Output('sector-demand-selection-store', 'data'),
@@ -1130,14 +1268,23 @@ def register_callbacks(dash_app, server):
         if trigger_id == 'sector-demand-chart' and click_data:
             print(f"DEBUG APP: Chart click received")
             point = click_data['points'][0]
-            sector = None
-            if point.get('legendgroup'):
-                sector = str(point.get('legendgroup')).strip()
-            elif point.get('name'):
-                sector = str(point.get('name')).strip()
             
-            custom_data = point.get('customdata')
-            x_val = custom_data[1] if custom_data and len(custom_data) > 1 else point.get('x')
+            # Use customdata if available [TimeLabel, Sector, Value]
+            custom_data = point.get('customdata', [])
+            
+            sector = None
+            x_val = None
+            
+            if custom_data and len(custom_data) >= 2:
+                x_val = custom_data[0] # TimeLabel
+                sector = custom_data[1] # Sector
+            else:
+                 # Fallback
+                if point.get('legendgroup'):
+                    sector = str(point.get('legendgroup')).strip()
+                elif point.get('name'):
+                    sector = str(point.get('name')).strip()
+                x_val = point.get('x')
             
             if not sector or not x_val:
                 return new_selection
