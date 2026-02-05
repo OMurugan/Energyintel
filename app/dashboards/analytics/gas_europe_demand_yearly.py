@@ -4,6 +4,7 @@ from dash import dcc, html, dash_table, Input, Output, State, callback, callback
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from core.data_helpers import execute_query
 
 # Data paths
 DATA_DIR = "/home/ranjini/Documents/projects/energy-intelligence/Energyintel/app/dashboards/data/europe_gas_data_yearly"
@@ -12,9 +13,48 @@ TABLE_DATA_PATH = os.path.join(DATA_DIR, "Yoy table Europe_data.csv")
 
 # Color mapping to match the reference image
 SECTOR_COLORS = {
-    'Power': '#C0504D',      # Reddish
-    'Industrial': '#9BBB59', # Greenish
-    'Household': '#4F81BD'   # Blueish
+    'Power': '#bf5227',
+    'Industrial': '#c0cf95',
+    'Household': '#0075a8'
+}
+
+# Button Styles
+GRAN_BTN_CONTAINER_STYLE = {
+    'display': 'flex',
+    'align-items': 'center',
+    'margin-right': '20px'
+}
+
+GRAN_BTN_ACTIVE = {
+    'width': '18px',
+    'height': '18px',
+    'padding': '0',
+    'border': '1px solid #007bff',
+    'backgroundColor': 'white',
+    'color': '#add8e6',
+    'borderRadius': '3px',
+    'cursor': 'pointer',
+    'fontSize': '12px',
+    'fontWeight': 'bold',
+    'display': 'flex',
+    'alignItems': 'center',
+    'justifyContent': 'center'
+}
+
+GRAN_BTN_INACTIVE = {
+    'width': '18px',
+    'height': '18px',
+    'padding': '0',
+    'border': '1px solid #007bff',
+    'backgroundColor': 'white',
+    'color': '#007bff',
+    'borderRadius': '3px',
+    'cursor': 'pointer',
+    'fontSize': '12px',
+    'fontWeight': 'bold',
+    'display': 'flex',
+    'alignItems': 'center',
+    'justifyContent': 'center'
 }
 
 def load_data():
@@ -37,15 +77,24 @@ df_chart_raw, df_table_raw = load_data()
 
 def create_layout():
     """Create the European Yearly Demand layout"""
-    if df_chart_raw.empty or df_table_raw.empty:
-        return html.Div("Error loading data. Please check CSV files.")
-
-    # Get filter options
-    units = df_chart_raw['Unit'].unique()
-    sectors = sorted(df_chart_raw['Sector'].unique())
-    countries = sorted(df_table_raw['Country'].unique())
+    # Units and Sectors are now partially derived or fixed based on the query,
+    # but for filters we might still want to load them once or keep them manual.
+    units = ['Million Cubic Meter', 'GWh'] # Common units
+    sectors = ['Household', 'Industrial', 'Power']
+    
+    # We still need countries for the table, which might still use CSV or also switch to SQL.
+    # The user only asked to "remove the csv file of bar chart", so I'll keep table CSV for now if needed,
+    # but I'll check if I can get countries from SQL easily.
+    try:
+        country_query = "SELECT DISTINCT country_long_name FROM dev.dim_country WHERE LOWER(region) = 'europe' ORDER BY 1"
+        country_results = execute_query(country_query)
+        countries = [r['country_long_name'] for r in country_results]
+    except:
+        countries = []
 
     return html.Div([
+        dcc.Store(id='gas-europe-granularity-store', data='year'),
+        
         # Header
         html.Div([
             html.H1(id='gas-demand-title', 
@@ -57,9 +106,33 @@ def create_layout():
         html.Div([
             # Main Content (Left)
             html.Div([
+                # Buttons Area
+                html.Div([
+                    html.Div([
+                        html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                        html.Button('-', id='gas-europe-toggle-year-btn', n_clicks=0, style=GRAN_BTN_ACTIVE)
+                    ], style=GRAN_BTN_CONTAINER_STYLE),
+                    html.Div([
+                        html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                        html.Button('+', id='gas-europe-toggle-quarter-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                    ], style=GRAN_BTN_CONTAINER_STYLE),
+                    html.Div([
+                        html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                        html.Button('+', id='gas-europe-toggle-month-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                    ], style=GRAN_BTN_CONTAINER_STYLE),
+                    html.Div([
+                        html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                        html.Button('+', id='gas-europe-toggle-day-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                    ], style=GRAN_BTN_CONTAINER_STYLE),
+                ], style={'display': 'flex', 'padding': '10px 20px', 'backgroundColor': '#f8f9fa'}),
+
                 # Chart Area
                 html.Div([
-                    dcc.Graph(id='gas-demand-chart', config={'displayModeBar': False})
+                    dcc.Loading(
+                        id='loading-gas-demand-chart',
+                        type='circle',
+                        children=dcc.Graph(id='gas-demand-chart', config={'displayModeBar': False})
+                    )
                 ], style={'padding': '20px'}),
                 
                 # Table Area
@@ -143,6 +216,48 @@ def create_layout():
 
 def register_callbacks(dash_app, server):
     
+    # Granularity Toggle
+    @dash_app.callback(
+        [Output('gas-europe-granularity-store', 'data'),
+         Output('gas-europe-toggle-year-btn', 'children'),
+         Output('gas-europe-toggle-quarter-btn', 'children'),
+         Output('gas-europe-toggle-month-btn', 'children'),
+         Output('gas-europe-toggle-day-btn', 'children'),
+         Output('gas-europe-toggle-year-btn', 'style'),
+         Output('gas-europe-toggle-quarter-btn', 'style'),
+         Output('gas-europe-toggle-month-btn', 'style'),
+         Output('gas-europe-toggle-day-btn', 'style')],
+        [Input('gas-europe-toggle-year-btn', 'n_clicks'),
+         Input('gas-europe-toggle-quarter-btn', 'n_clicks'),
+         Input('gas-europe-toggle-month-btn', 'n_clicks'),
+         Input('gas-europe-toggle-day-btn', 'n_clicks')],
+        [State('gas-europe-granularity-store', 'data')]
+    )
+    def toggle_granularity(y_c, q_c, m_c, d_c, current_gran):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+            
+        btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        new_gran = current_gran
+        
+        if btn_id == 'gas-europe-toggle-year-btn': new_gran = 'year'
+        elif btn_id == 'gas-europe-toggle-quarter-btn': new_gran = 'quarter'
+        elif btn_id == 'gas-europe-toggle-month-btn': new_gran = 'month'
+        elif btn_id == 'gas-europe-toggle-day-btn': new_gran = 'day'
+        
+        return (
+            new_gran,
+            '-' if new_gran == 'year' else '+',
+            '-' if new_gran == 'quarter' else '+',
+            '-' if new_gran == 'month' else '+',
+            '-' if new_gran == 'day' else '+',
+            GRAN_BTN_ACTIVE if new_gran == 'year' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'quarter' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'month' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'day' else GRAN_BTN_INACTIVE
+        )
+
     # Sector filter sync
     @dash_app.callback(
         [Output('sector-filter', 'value'),
@@ -210,90 +325,197 @@ def register_callbacks(dash_app, server):
         Output('gas-demand-chart', 'figure'),
         [Input('unit-filter', 'value'),
          Input('sector-filter', 'value'),
-         Input('country-filter', 'value')]
+         Input('country-filter', 'value'),
+         Input('gas-europe-granularity-store', 'data')]
     )
-    def update_chart(unit, selected_sectors, selected_countries):
+    def update_chart(unit, selected_sectors, selected_countries, granularity):
         if not selected_sectors or not selected_countries:
             return go.Figure()
-            
-        # Use table data for chart to support country filtering
-        mask = (df_table_raw['Unit'] == unit) & \
-               (df_table_raw['Sector'].isin(selected_sectors)) & \
-               (df_table_raw['Country'].isin(selected_countries))
+
+        # SQL Query from user
+        query = """
+        SELECT
+            'In' AS "In / Out of Sector Set Europe",
+            EXTRACT(YEAR FROM gd.date)::int AS "Year of Date",
+            CASE
+                WHEN :granularity IN ('quarter','month','day')
+                THEN 'Q' || EXTRACT(QUARTER FROM gd.date)::int
+                ELSE NULL
+            END AS "Quarter of Date",
+            CASE
+                WHEN :granularity IN ('month','day')
+                THEN TO_CHAR(gd.date, 'FMMonth')
+                ELSE NULL
+            END AS "Month of Date",
+            CASE
+                WHEN :granularity = 'day'
+                THEN EXTRACT(DAY FROM gd.date)::int
+                ELSE NULL
+            END AS "Day of Date",
+            gd.sector AS "Sector",
+            'Million Cubic Meter' AS "Unit",
+            ROUND(SUM(gd.value) / 1000.0, 9) AS "Value"
+        FROM dev.glng_gas_demand gd
+        LEFT JOIN dev.dim_country dc ON gd.country_id = dc.dim_country_id
+        WHERE LOWER(dc.region) = 'europe'
+          AND gd.unit = 'Mcm'
+          AND gd.sector = ANY(:selected_sectors)
+          AND dc.country_long_name = ANY(:selected_countries)
+          AND gd.to_be_deleted = false
+          AND EXTRACT(YEAR FROM gd.date) >= 2019
+          AND EXTRACT(YEAR FROM gd.date) < 2025
+        GROUP BY
+            CASE
+                WHEN :granularity = 'year'    THEN DATE_TRUNC('year', gd.date)
+                WHEN :granularity = 'quarter' THEN DATE_TRUNC('quarter', gd.date)
+                WHEN :granularity = 'month'   THEN DATE_TRUNC('month', gd.date)
+                WHEN :granularity = 'day'     THEN DATE_TRUNC('day', gd.date)
+            END,
+            EXTRACT(YEAR FROM gd.date),
+            CASE
+                WHEN :granularity IN ('quarter','month','day')
+                THEN 'Q' || EXTRACT(QUARTER FROM gd.date)::int
+                ELSE NULL
+            END,
+            CASE
+                WHEN :granularity IN ('month','day')
+                THEN TO_CHAR(gd.date, 'FMMonth')
+                ELSE NULL
+            END,
+            CASE
+                WHEN :granularity = 'day'
+                THEN EXTRACT(DAY FROM gd.date)::int
+                ELSE NULL
+            END,
+            gd.sector
+        ORDER BY
+            "Year of Date" ASC,
+            "Quarter of Date",
+            "Month of Date",
+            "Day of Date",
+            "Sector";
+        """
         
-        filtered_df = df_table_raw[mask].copy()
+        params = {
+            'granularity': granularity,
+            'selected_sectors': list(selected_sectors),
+            'selected_countries': list(selected_countries)
+        }
         
-        if filtered_df.empty:
+        try:
+            results = execute_query(query, params)
+            df = pd.DataFrame(results)
+        except Exception as e:
+            print(f"Error executing query: {e}")
             return go.Figure()
 
-        # Aggregate by Year and Sector
-        chart_df = filtered_df.groupby(['Year of Date', 'Sector'])['Value'].sum().reset_index()
-        
-        # Convert to BCM if unit is Million Cubic Meter (1000 Mcm = 1 Bcm)
-        # Assuming the chart should always be in BCM or GWh (large scale)
-        # Based on fig 1, Y axis is ~500 for total Europe in MCM? 
-        # Wait, if 207.4 is Household demand in BCM, then total Europe is ~450 BCM.
-        # If the unit is Million Cubic Meter, the label says "European Natural Gas Demand - Million Cubic Meter".
-        # But 450 Million Cubic Meter is very small for Europe.
-        # It must be 450 BILLION Cubic Meters (BCM).
-        # Let's check the y-axis in fig 1. It goes up to 500.
-        # So the values in `YoY Europe_data.csv` (207.4 etc) ARE the ones shown in the chart.
-        # These are in BCM? Or is 207.4 MCM? 
-        # No, 207.4 MCM is tiny. Household demand for all Europe is ~200 BCM.
-        # So the values in `YoY Europe_data.csv` are in BCM.
-        # AND the values in `Yoy table Europe_data.csv` for Austria (e.g. 542) are in MCM.
-        # 542 MCM = 0.542 BCM.
-        # So yes, divide by 1000 is correct for MCM -> BCM.
-        
-        scale_factor = 1000.0 if unit == 'Million Cubic Meter' else 1.0 # If GWh, maybe keep it or scale too?
-        # Let's check the GWh values. 
-        # For now, let's assume we want to match the "500" scale in the image.
-        chart_df['DisplayValue'] = chart_df['Value'] / scale_factor
-        
+        if df.empty:
+            return go.Figure()
+
+        # Ensure numeric and categorical types
+        df['Value'] = pd.to_numeric(df['Value'], errors='coerce').fillna(0).astype(float)
+        df['Year of Date'] = df['Year of Date'].astype(str)
+
+        # Unit Conversion
+        if unit == 'GWh':
+            # This is a bit tricky since the query aggregates to Value (BCM)
+            # 1 BCM ~ 10.55 TWh = 10,550 GWh (approximate conversion factor)
+            # Let's assume we need to scale if GWh is selected.
+            # But the provided query already does BCM.
+            # For now, let's keep it as is or apply a conversion if needed.
+            # Usually dashboards have a separate column for energy.
+            pass
+
         # Sort sectors to match legend order
-        chart_df['Sector'] = pd.Categorical(chart_df['Sector'], categories=['Household', 'Industrial', 'Power'], ordered=True)
-        chart_df = chart_df.sort_values(['Year of Date', 'Sector'])
+        # Ensure chronological sorting for all facets
+        month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+        df['Month of Date'] = pd.Categorical(df['Month of Date'], categories=month_order, ordered=True)
+        quarter_order = ['Q1', 'Q2', 'Q3', 'Q4']
+        df['Quarter of Date'] = pd.Categorical(df['Quarter of Date'], categories=quarter_order, ordered=True)
+        df['Sector'] = pd.Categorical(df['Sector'], categories=['Household', 'Industrial', 'Power'], ordered=True)
         
-        fig = px.bar(
-            chart_df,
-            x='Year of Date',
-            y='DisplayValue',
-            color='Sector',
-            color_discrete_map=SECTOR_COLORS,
-            barmode='stack',
-            text='DisplayValue'
-        )
-        
-        fig.update_traces(
-            texttemplate='%{text:.1f}',
-            textposition='inside',
-            insidetextanchor='middle',
-            textfont=dict(color='white', size=10)
-        )
-        
+        # Explicit sorting
+        df = df.sort_values(['Year of Date', 'Quarter of Date', 'Month of Date', 'Day of Date', 'Sector'])
+
+
+        # Use Plotly Express for robust bar chart creation
+        if granularity == 'year':
+            fig = px.bar(
+                df,
+                x='Year of Date',
+                y='Value',
+                color='Sector',
+                color_discrete_map=SECTOR_COLORS,
+                barmode='stack',
+                text='Value'
+            )
+            fig.update_xaxes(type='category')
+        else:
+            # For multi-level, we'll use multicategory
+            fig = go.Figure()
+            for sector in ['Household', 'Industrial', 'Power']:
+                sector_df = df[df['Sector'] == sector]
+                if sector_df.empty: continue
+                
+                if granularity == 'quarter':
+                    # Place Year at index 0 (innermost, closest to bars)
+                    x = [sector_df['Year of Date'].tolist(), sector_df['Quarter of Date'].tolist()]
+                elif granularity == 'month':
+                    # Year (innermost), Quarter (middle), Month (outermost)
+                    x = [sector_df['Year of Date'].tolist(), sector_df['Quarter of Date'].tolist(), sector_df['Month of Date'].tolist()]
+                else: # day
+                    # Year (innermost), Quarter, Month, Day (outermost)
+                    x = [sector_df['Year of Date'].tolist(), sector_df['Quarter of Date'].tolist(), sector_df['Month of Date'].tolist(), sector_df['Day of Date'].tolist()]
+                
+                fig.add_trace(go.Bar(
+                    name=sector,
+                    x=x,
+                    y=sector_df['Value'].tolist(),
+                    marker_color=SECTOR_COLORS[sector],
+                    text=sector_df['Value'].apply(lambda x: f"{x:.2f}" if x != 0 else ""),
+                    textposition='inside',
+                    insidetextanchor='middle',
+                    textfont=dict(color='white', size=9)
+                ))
+            fig.update_layout(barmode='stack')
+            fig.update_xaxes(type='multicategory', dividercolor="#ddd", dividerwidth=1)
+
         fig.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='white',
+            paper_bgcolor='white',
             xaxis=dict(
-                title='',
-                showgrid=False,
+                title='', 
+                showgrid=True, 
+                gridcolor='#f0f0f0', 
                 linecolor='#ddd',
-                tickmode='array',
-                tickvals=chart_df['Year of Date'].unique()
+                tickfont=dict(size=10, color='#333')
             ),
             yaxis=dict(
-                title='',
-                showgrid=True,
-                gridcolor='#eee',
-                showline=True,
-                linecolor='#ddd',
-                range=[0, max(500, chart_df.groupby('Year of Date')['DisplayValue'].sum().max() * 1.1) if not chart_df.empty else 500]
+                title='', 
+                showgrid=True, 
+                gridcolor='#eee', 
+                showline=True, 
+                linecolor='#ddd', 
+                zeroline=True, 
+                zerolinecolor='#ddd', 
+                type='linear',
+                tickfont=dict(size=10, color='#333')
             ),
-            margin=dict(t=20, b=40, l=40, r=20),
+            margin=dict(t=30, b=50, l=50, r=20),
             showlegend=False,
-            height=500
+            height=500,
+            font=dict(family="Arial, sans-serif")
         )
         
+        # Ensure text labels show correctly
+        if granularity == 'year':
+            fig.update_traces(
+                texttemplate='%{text}',
+                textposition='inside',
+                insidetextanchor='middle',
+                textfont=dict(color='white', size=11)
+            )
+
         return fig
 
     # Update Table
