@@ -422,7 +422,7 @@ def create_layout():
                                 'marginLeft': '15px'
                             }
                         )
-                    ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '20px'}),
+                    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'width': '100%', 'marginBottom': '20px'}),
                     
                     # Chart Granularity Buttons
                     html.Div([
@@ -461,19 +461,22 @@ def create_layout():
                 html.Div([
                     # Table Header with Export
                     html.Div([
-                        html.H4("Sector Demand Data", style={'margin': '0', 'color': '#333', 'display': 'none'}), # Hidden title for spacing/a11y if needed
+                        html.H4("Sector Demand Data", style={
+                            'margin': '0', 
+                            'color': '#333', 
+                            'fontSize': '18px',
+                            'fontWeight': 'normal'
+                        }), 
                         html.Button(
                             'Export to CSV',
                             id='btn-export-table',
                             n_clicks=0,
                             style={
                                 'backgroundColor': 'white', 'color': '#2c3e50', 'border': '1px solid #dee2e6',
-                                'padding': '5px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px',
-                                'marginBottom': '10px',
-                                'display': 'inline-block' 
+                                'padding': '5px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px'
                             }
                         )
-                    ], style={'textAlign': 'right'}),
+                    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
 
                     # Table Granularity Buttons
                     html.Div([
