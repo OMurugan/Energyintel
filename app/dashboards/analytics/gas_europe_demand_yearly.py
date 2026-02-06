@@ -5,6 +5,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from core.data_helpers import execute_query
+from datetime import datetime, date
 
 # Data paths
 DATA_DIR = "/home/ranjini/Documents/projects/energy-intelligence/Energyintel/app/dashboards/data/europe_gas_data_yearly"
@@ -186,8 +187,51 @@ def create_layout():
                     html.Button("Export to CSV", id="gas-demand-europe-export-table-csv-btn", 
                                 style={**EXPORT_BTN_STYLE, 'position': 'absolute', 'top': '10px', 'right': '20px'}),
                     
-                    html.Div(id='gas-demand-table-container')
-                ], style={'padding': '20px', 'overflowX': 'auto', 'maxHeight': '600px', 'overflowY': 'auto', 'position': 'relative'})
+                    dcc.Store(id='gas-demand-table-selection-store', data={}),
+                    dcc.Store(id='gas-demand-table-highlight-state', data={}),
+                    
+                    dcc.Loading(
+                        id="loading-table",
+                        type="circle",
+                        children=dash_table.DataTable(
+                            id='gas-demand-table',
+                            columns=[],
+                            data=[],
+                            merge_duplicate_headers=True,
+                            fixed_rows={'headers': True},
+                            fixed_columns={'headers': True, 'data': 2},
+                            style_table={
+                                'minWidth': '100%', 
+                                'height': '600px', 
+                                'overflowY': 'auto', 
+                                'overflowX': 'auto', 
+                                'border': '1px solid #ddd'
+                            },
+                            style_header={
+                                'backgroundColor': '#ffffff',
+                                'fontWeight': 'bold',
+                                'textAlign': 'right',
+                                'fontSize': '11px',
+                                'border': 'none', 
+                                'color': '#333',
+                                'height': '25px',
+                                'padding': '2px'
+                            },
+                            style_cell={
+                                'padding': '0px 5px',
+                                'fontSize': '11px',
+                                'fontFamily': 'Arial, sans-serif',
+                                'border': 'none', 
+                                'minWidth': '70px',
+                                'backgroundColor': '#fff',
+                                'color': '#777',
+                                'height': 'auto',
+                                'textAlign': 'right'
+                            },
+                            style_as_list_view=False,
+                        )
+                    )
+                ], style={'padding': '20px', 'overflowX': 'hidden', 'position': 'relative'})
             ], style={'width': '80%', 'display': 'inline-block', 'verticalAlign': 'top'}),
 
             # Filters Sidebar (Right)
@@ -1007,9 +1051,343 @@ def register_callbacks(dash_app, server):
             print(error_msg)
             return dcc.send_string(error_msg, "table_export_error.txt")
 
-    # Update Table
+    # Clientside Callback for Table Highlighting
+    dash_app.clientside_callback(
+        """
+        function(n_data, columns, current_state) {
+            try {
+                const tableId = 'gas-demand-table';
+                
+                // 1. Define Styles if not present
+                let style = document.getElementById('europe-gas-styles');
+                if (!style) {
+                    style = document.createElement('style');
+                    style.id = 'europe-gas-styles';
+                    document.head.appendChild(style);
+                }
+                
+                // Color: #bbe4f2 (Light Blue)
+                // We use !important to override Dash inline styles
+                style.innerHTML = `
+                    .europe-col-selected { background-color: #bbe4f2 !important; }
+                    .europe-row-selected { background-color: #bbe4f2 !important; }
+                    
+                    /* Dimming: reduced opacity or grey text */
+                    /* User requested: Dim other elements. We can gray out text. */
+                    .europe-dimmed { color: #ccc !important; }
+                    
+                    /* Ensure fixed columns (Country/Sector) stay visible/opaque/white background */
+                    .europe-col-selection-active td[data-dash-column="Country"], 
+                    .europe-col-selection-active td[data-dash-column="Sector"] { 
+                        opacity: 1 !important; 
+                        background-color: #fff !important; 
+                        color: #ccc !important; /* Dim text if specific col selected */
+                    }
+                    
+                    /* If a row is highlighted, Country/Sector should be bold/black */
+                    .europe-row-selection-active tr.europe-row-highlighted td {
+                        background-color: #bbe4f2 !important;
+                        color: black !important;
+                        font-weight: bold;
+                    }
+
+                    .europe-row-selection-active tr:not(.europe-row-highlighted) td {
+                        color: #ccc !important;
+                    }
+                    
+                    /* Country Highlight (Multiple Rows) */
+                    .europe-country-highlighted td {
+                        background-color: #bbe4f2 !important;
+                        color: black !important;
+                        font-weight: bold;
+                    }
+                    /* Headers */
+                    th.europe-col-selected { background-color: #bbe4f2 !important; }
+                `;
+
+                if (!window.europeGasState) {
+                    window.europeGasState = { 
+                        selectedColumnId: null,
+                        selectedRowIndices: null,
+                        selectedCountry: null
+                    };
+                }
+                // ALWAYS update columns to fix Stale Closure in Event Listener
+                window.europeGasState.columns = columns;
+
+                // Helper to clear classes
+                function clearAll(spreadsheet) {
+                    spreadsheet.classList.remove('europe-col-selection-active');
+                    spreadsheet.classList.remove('europe-row-selection-active');
+                    
+                    const selected = spreadsheet.querySelectorAll('.europe-col-selected, .europe-dimmed, .europe-row-highlighted, .europe-country-highlighted');
+                    selected.forEach(el => {
+                        el.classList.remove('europe-col-selected');
+                        el.classList.remove('europe-dimmed');
+                        el.classList.remove('europe-row-highlighted');
+                        el.classList.remove('europe-country-highlighted');
+                    });
+                }
+                
+                // Helper to Apply State
+                function applyState(spreadsheet) {
+                    clearAll(spreadsheet);
+                    
+                    const state = window.europeGasState;
+
+                    // 1. COLUMN SELECTION
+                    if (state.selectedColumnId) {
+                        const targetIds = state.selectedColumnId.split(',');
+                        if (targetIds.length > 0) {
+                            spreadsheet.classList.add('europe-col-selection-active');
+
+                            // Headers
+                            targetIds.forEach(id => {
+                                const ths = spreadsheet.querySelectorAll(`th[data-dash-column="${id}"]`);
+                                ths.forEach(th => th.classList.add('europe-col-selected'));
+                            });
+
+                            // Cells - Robust Approach: Iterate all Rows
+                            const tbodies = spreadsheet.querySelectorAll('tbody');
+                            tbodies.forEach(tbody => {
+                                const rows = Array.from(tbody.querySelectorAll('tr'));
+                                rows.forEach(r => {
+                                    const cells = Array.from(r.children);
+                                    cells.forEach(cell => {
+                                        const cId = cell.getAttribute('data-dash-column');
+                                        if (!cId || cId === 'Country' || cId === 'Sector') return;
+                                        
+                                        if (targetIds.includes(cId)) {
+                                            cell.classList.add('europe-col-selected');
+                                            // Ensure not dimmed
+                                            cell.classList.remove('europe-dimmed'); 
+                                        } else {
+                                            cell.classList.add('europe-dimmed');
+                                        }
+                                    });
+                                });
+                            });
+                        }
+                    }
+
+                    // 2. ROW / COUNTRY SELECTION
+                    if (state.selectedRowIndices || state.selectedCountry) {
+                        spreadsheet.classList.add('europe-row-selection-active');
+                        
+                        // Parse Row Indices if any
+                        let targetIndices = [];
+                        if (state.selectedRowIndices) {
+                             targetIndices = state.selectedRowIndices.split(',').map(Number);
+                        }
+
+                        const tbodies = spreadsheet.querySelectorAll('tbody');
+                        tbodies.forEach(tbody => {
+                            const rows = Array.from(tbody.querySelectorAll('tr'));
+                            rows.forEach((row, idx) => {
+                                let match = false;
+                                
+                                // Check Index
+                                if (targetIndices.includes(idx)) match = true;
+                                
+                                // Check Country (Logic: Use internal helper to find country range? 
+                                // Actually, if selectedCountry is set, we expect selectedRowIndices to be set efficiently by the click handler.
+                                // But if we reload, we might lose the indices if data changed.
+                                // For robustness, we mostly rely on indices for the current session.)
+                                
+                                if (match) {
+                                    row.classList.add('europe-row-highlighted');
+                                    if (state.selectedCountry) row.classList.add('europe-country-highlighted');
+                                }
+                            });
+                        });
+                    }
+                }
+
+                function setupTable() {
+                    const tableEl = document.getElementById(tableId);
+                    if (!tableEl) { setTimeout(setupTable, 200); return; }
+                    
+                    const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet) { setTimeout(setupTable, 200); return; }
+                    
+                    // Always re-apply state on draw
+                    applyState(spreadsheet);
+                    
+                    if (spreadsheet.dataset.enhanced === 'true') return;
+                    spreadsheet.dataset.enhanced = 'true';
+                    
+                    // Click Listener
+                    spreadsheet.addEventListener('click', function(e) {
+                        // A. HEADER CLICK
+                        const header = e.target.closest('th[data-dash-column]');
+                        if (header) {
+                            e.stopPropagation();
+                            const colId = header.getAttribute('data-dash-column');
+                            if (colId === 'Country' || colId === 'Sector') return; // Sort click? let it pass? Dash handles sort.
+                            // If we want to capture sort, we might need to be careful.
+                            // Usually header text click triggers sort.
+                            // We might want to restrict to specific areas or override.
+                            // The user wants Header Click -> Highlight Column.
+                            // We can use the event.
+                            
+                            const headerContent = header.innerText.trim();
+                            
+                            // Detect Year group (e.g. 2024)
+                            // We ONLY want to group-select if it's a Year header.
+                            // Quarter/Month/Day headers should be treated as specific columns.
+                            // Detect Year group (e.g. 2024)
+                            // We ONLY want to group-select if it's a Year header.
+                            // Quarter/Month/Day headers should be treated as specific columns.
+                            // Detect Year group (e.g. 2024)
+                            let isYear = /^20\d{2}$/.test(headerContent);
+                            let isQuarter = /^Q[1-4]$/.test(headerContent);
+                            
+                            let targetIds = [];
+                            // Use GLOBAL columns to avoid closure staleness
+                            const currentColumns = window.europeGasState.columns;
+                            
+                            if (isYear && currentColumns) {
+                                currentColumns.forEach(c => {
+                                    if (c.id && c.id.indexOf(headerContent) !== -1) {
+                                        targetIds.push(c.id);
+                                    }
+                                });
+                            } else if (isQuarter && currentColumns) {
+                                // Extract Year from the clicked column ID to ensure scope
+                                // Format: col_2024_Q1_...
+                                const parts = colId.split('_');
+                                let year = null;
+                                parts.forEach(p => { if (/^20\d{2}$/.test(p)) year = p; });
+                                
+                                if (year) {
+                                    // Match standard Year + Quarter pattern in ID
+                                    // e.g. col_2024_Q1_... or just col_2024_Q1 if it exists
+                                    const qStr = `_${year}_${headerContent}`;
+                                    currentColumns.forEach(c => {
+                                        if (c.id && c.id.indexOf(qStr) !== -1) {
+                                            targetIds.push(c.id);
+                                        }
+                                    });
+                                } else {
+                                     // Fallback if year not found (unlikely), select just this column
+                                     targetIds.push(colId);
+                                }
+                            } else {
+                                // Specific Column (Month, Day)
+                                targetIds.push(colId);
+                            }
+
+                            
+                            const newKey = targetIds.join(',');
+                            
+                            // Toggle
+                            if (window.europeGasState.selectedColumnId === newKey) {
+                                window.europeGasState.selectedColumnId = null;
+                            } else {
+                                window.europeGasState.selectedColumnId = newKey;
+                                // Clear Row selections
+                                window.europeGasState.selectedRowIndices = null;
+                                window.europeGasState.selectedCountry = null;
+                            }
+                            applyState(spreadsheet);
+                            return; // Stop propagation to prevent sort? Maybe.
+                        }
+                        
+                        // B. CELL CLICK
+                        const cell = e.target.closest('td[data-dash-column]');
+                        if (cell) {
+                             const colId = cell.getAttribute('data-dash-column');
+                             const row = cell.closest('tr');
+                             const tbody = row.closest('tbody');
+                             const rows = Array.from(tbody.querySelectorAll('tr'));
+                             const clickIdx = rows.indexOf(row);
+                             
+                             let targetIndices = [];
+                             let clickedCountry = null;
+                             
+                             if (colId === 'Country') {
+                                 // Identify Country Block
+                                 // Scan Up
+                                 let start = clickIdx;
+                                 const getCountryText = (r) => {
+                                     // Finding the Country cell. It's usually the first one (displayed or not)
+                                     // data-dash-column="Country"
+                                     const c = r.querySelector('td[data-dash-column="Country"]');
+                                     return c ? c.innerText.trim() : "";
+                                 };
+                                 
+                                 // If current cell empty, scan up for label
+                                 while (start >= 0 && getCountryText(rows[start]) === "") {
+                                     start--;
+                                 }
+                                 if (start < 0) start = 0;
+                                 
+                                 // Scan Down from start to find change
+                                 let end = start;
+                                 while (end + 1 < rows.length) {
+                                     const txt = getCountryText(rows[end + 1]);
+                                     if (txt !== "") break; // Next country started
+                                     end++;
+                                 }
+                                 
+                                 for (let i = start; i <= end; i++) targetIndices.push(i);
+                                 clickedCountry = "CountryBlock"; // Flag
+                                 
+                             } else if (colId === 'Sector') {
+                                 // Just this row
+                                 targetIndices.push(clickIdx);
+                             } else {
+                                 // Data Cell -> Reset
+                                 window.europeGasState.selectedColumnId = null;
+                                 window.europeGasState.selectedRowIndices = null;
+                                 window.europeGasState.selectedCountry = null;
+                                 applyState(spreadsheet);
+                                 return;
+                             }
+                             
+                             const newKey = targetIndices.join(',');
+                             
+                             // Toggle
+                             if (window.europeGasState.selectedRowIndices === newKey) {
+                                  window.europeGasState.selectedRowIndices = null;
+                                  window.europeGasState.selectedCountry = null;
+                             } else {
+                                  window.europeGasState.selectedRowIndices = newKey;
+                                  window.europeGasState.selectedColumnId = null;
+                                  window.europeGasState.selectedCountry = clickedCountry;
+                             }
+                             applyState(spreadsheet);
+                        }
+                    });
+                }
+                
+                // If columns changed (e.g. year toggle), clear column selection if invalid
+                if (columns && window.europeGasState.selectedColumnId) {
+                     // Simple check: clear to be safe
+                     // window.europeGasState.selectedColumnId = null;
+                }
+
+                setTimeout(setupTable, 500);
+                return window.europeGasState;
+
+            } catch(e) { 
+                console.error("European Table Highlight JS Error:", e);
+                return {}; 
+            }
+        }
+        """,
+        Output('gas-demand-table-highlight-state', 'data'),
+        Input('gas-demand-table', 'data'),
+        State('gas-demand-table', 'columns'),
+        State('gas-demand-table-highlight-state', 'data')
+    )
+
+
     @dash_app.callback(
-        Output('gas-demand-table-container', 'children'),
+        [Output('gas-demand-table', 'columns'),
+         Output('gas-demand-table', 'data'),
+         Output('gas-demand-table', 'style_data_conditional'),
+         Output('gas-demand-table', 'style_header_conditional')],
         [Input('unit-filter', 'value'),
          Input('sector-filter', 'value'),
          Input('country-filter', 'value'),
@@ -1017,7 +1395,7 @@ def register_callbacks(dash_app, server):
     )
     def update_table(unit, selected_sectors, selected_countries, granularity):
         if not selected_sectors or not selected_countries:
-            return html.Div("Please select at least one sector and country")
+            return [], [], [], []
 
         unit_map = {'Million Cubic Meter': 'Mcm', 'GWh': 'GWh'}
         db_unit = unit_map.get(unit, 'Mcm')
@@ -1105,17 +1483,17 @@ def register_callbacks(dash_app, server):
             results = execute_query(query, params)
             df = pd.DataFrame(results)
         except Exception as e:
-            return html.Div(f"Error loading table data: {e}")
+            # Return empty structure on error
+            print(f"Error executing query: {e}")
+            return [], [], [], []
         
         if df.empty:
-            return html.Div("No data found")
+            return [], [], [], []
 
         # Determine active hierarchy levels based on data
         levels = ['Year of Date']
         if df['Quarter of Date'].notna().any(): levels.append('Quarter of Date')
         
-        # If we have daily data, we use the combined 'Month Day' label as the bottom level
-        # and skip the independent 'Month' level for a cleaner hierarchy.
         if df['Day of Date'].notna().any():
             levels.append('Day of Date')
         elif df['Month of Date'].notna().any():
@@ -1127,14 +1505,9 @@ def register_callbacks(dash_app, server):
             'July': 7, 'August': 8, 'September': 9, 'October': 10, 'November': 11, 'December': 12
         }
         
-        # We need to pivot to get columns: Year -> Quarter -> Month -> Day
-        # Index: Country, Sector
-        
         # 1. Build the columns hierarchy
-        # Use _period_sort for reliable time sorting (Year DESC, then internal time ASC)
         time_cols_df = df[levels + ['_period_sort']].drop_duplicates()
         
-        # We want Year to be DESC, but Quarters/Months/Days within the year to be ASC
         time_cols_df = time_cols_df.sort_values(
             by=['Year of Date', '_period_sort'],
             ascending=[False, True]
@@ -1151,151 +1524,215 @@ def register_callbacks(dash_app, server):
             aggfunc='sum'
         )
         
-        # Ensure pivot_df columns match cols_tuples order and structure
-        # If levels has only one element, cols_tuples elements are single values, not tuples.
-        # pd.MultiIndex.from_tuples expects tuples.
         if len(levels) == 1:
             pivot_df = pivot_df.reindex(columns=[t[0] for t in cols_tuples])
         else:
             pivot_df = pivot_df.reindex(columns=pd.MultiIndex.from_tuples(cols_tuples))
-        
-        # 3. Build HTML Table
-        # Headers
-        
-        thead_rows = []
-        
-        num_header_rows = len(levels)
-        
-        # Fixed headers (Country, Sector)
-        # They span all header rows
-        
-        # Recursive function to build headers
-        # This is tricky for simple logic.
-        # Let's do a loop for each header row.
-        
-        # We need a list of (label, colspan) for each row.
-        
-        # We also need to account for the pivot columns matching exactly.
-        # Let's work with the flat list of `cols_tuples` which represents the leaf nodes (bottom level columns).
-        
-        # Build a tree to calculate colspans
-        # tree = { '2019': { 'Q1': { 'Jan': {}, 'Feb': {} }, 'Q2': ... } }
-        
-        # Simplified Hierarchical Header Construction
-        # We iterate cols_tuples.
-        # For Row 0 (Years):
-        # We count consecutive occurrences of same Year.
-        # [2019, 2019, 2019, 2020, 2020...] -> 2019 (3), 2020 (2)
-        
-        header_rows_content = [[] for _ in range(num_header_rows)]
-        
-        for depth in range(num_header_rows):
-            current_vals_at_depth = [t[depth] for t in cols_tuples]
             
-            # Group consecutive
-            grouped = []
-            if current_vals_at_depth:
-                curr_val = current_vals_at_depth[0]
-                count = 0
-                for v in current_vals_at_depth:
-                    if v == curr_val:
-                        count += 1
-                    else:
-                        grouped.append((curr_val, count))
-                        curr_val = v
-                        count = 1
-                grouped.append((curr_val, count)) # Add the last group
+        # 3. Construct DataTable Props
+        
+        # COLUMNS
+        # Determine header levels based on granularity
+        is_single_level_header = (granularity == 'year')
+        
+        columns = []
+        if is_single_level_header:
+            columns.append({"name": "Country", "id": "Country"})
+            columns.append({"name": "Sector", "id": "Sector"})
+        else:
+            # Multi-level: Pad with empty strings so "Country" is at the bottom
+            # e.g. for levels=3: ["", "", "Country"]
+            # This ensures Dash treats it as a column spanning the whole height (effectively)
+            # when combined with proper styling (or at least aligns labels to bottom).
             
-            # Create THs
-            for label, span in grouped:
-                header_rows_content[depth].append(
-                    html.Th(label, colSpan=span, style={'textAlign': 'center', 'border': '1px solid #ddd', 'padding': '5px', 'backgroundColor': '#f9f9f9'})
-                )
-                
-        # Combine Fixed + Dynamic
-        # Only first row gets fixed headers
-        
-        # First header row (Country, Sector, and top-level time headers)
-        first_header_row_ths = [
-            html.Th("Country", rowSpan=num_header_rows, style={'position': 'sticky', 'left': 0, 'zIndex': 20, 'backgroundColor': 'white', 'border': '1px solid #ddd', 'padding': '8px', 'width': '120px', 'minWidth': '120px'}),
-            html.Th("Sector", rowSpan=num_header_rows, style={'position': 'sticky', 'left': '100px', 'zIndex': 20, 'backgroundColor': 'white', 'border': '1px solid #ddd', 'padding': '8px'})
-        ] + header_rows_content[0]
-        thead_rows.append(html.Tr(first_header_row_ths))
-        
-        # Subsequent header rows (only time headers)
-        for i in range(1, num_header_rows):
-            thead_rows.append(html.Tr(header_rows_content[i]))
+            # Country
+            country_name = [""] * (len(levels) - 1) + ["Country"]
+            columns.append({"name": country_name, "id": "Country"})
             
-        # Table Body
-        tbody_rows = []
+            # Sector
+            sector_name = [""] * (len(levels) - 1) + ["Sector"]
+            columns.append({"name": sector_name, "id": "Sector"})
         
-        # Get unique countries and sectors
-        # pivot_df index is (Country, Sector)
-        # We need to sort index
+        data_col_ids = []
+        for col_tuple in cols_tuples:
+            if not isinstance(col_tuple, tuple):
+                col_tuple = (col_tuple,)
+            
+            # ID must be string
+            col_id = "col_" + "_".join([str(x).replace(" ", "") for x in col_tuple])
+            data_col_ids.append(col_id)
+            
+            # Name determines header grouping
+            col_name_parts = [str(x) for x in col_tuple]
+            
+            if is_single_level_header:
+                # Flat string for name
+                columns.append({"name": col_name_parts[0], "id": col_id})
+            else:
+                # List for Multi level
+                columns.append({"name": col_name_parts, "id": col_id})
+
+        # DATA & TOTALS
+        data = []
         pivot_df = pivot_df.sort_index()
+        sector_order = {'Household': 1, 'Industrial': 2, 'Power': 3}
         
-        # Group by Country
         for country, country_grp in pivot_df.groupby(level=0):
-            # Sort sectors
-            sector_order = {'Household': 1, 'Industrial': 2, 'Power': 3}
-            # country_grp is DataFrame with MultiIndex (Country, Sector), Country is constant
-            # Sort by the second level of the index (Sector) using the custom order
             country_grp = country_grp.sort_index(level=1, key=lambda idx: idx.map(lambda x: sector_order.get(x, 99)))
-            
+            # first_sector = True # Not needed if index check works
             sectors = country_grp.index.get_level_values(1).unique()
-            first_sector = True
             
-            country_subtotal_vals = [0] * len(cols_tuples)
+            # Track totals for this country
+            country_totals = {cid: 0.0 for cid in data_col_ids}
             
-            for sector in sectors:
-                row_cells = []
-                # Country Cell (RowSpan)
-                if first_sector:
-                    row_cells.append(html.Td(country, rowSpan=len(sectors)+1, 
-                                            style={'position': 'sticky', 'left': 0, 'zIndex': 10, 'backgroundColor': 'white', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'verticalAlign': 'top', 'padding': '8px', 'width': '120px', 'minWidth': '120px'}))
-                    
-                # Sector Cell
-                row_cells.append(html.Td(sector, style={'position': 'sticky', 'left': '100px', 'zIndex': 10, 'backgroundColor': 'white', 'border': '1px solid #ddd', 'padding': '8px'}))
+            for i, sector in enumerate(sectors):
+                row = {}
+                row['Country'] = country if i == 0 else "" 
+                row['Sector'] = sector
+                row['_Country'] = country 
                 
-                # Data Cells
                 try:
-                    # Accessing pivot with tuple (Country, Sector)
-                    # pivot columns are MultiIndex if len(levels) > 1, otherwise single index
                     series = country_grp.loc[(country, sector)]
                     
-                    # Iterate through our defined sorted columns (cols_tuples)
-                    for i, col_tuple in enumerate(cols_tuples):
-                        # col_key needs to match the pivot_df's column structure
+                    for idx, col_tuple in enumerate(cols_tuples):
                         col_key = col_tuple if len(levels) > 1 else col_tuple[0]
-                        
                         val = series.get(col_key, 0)
+                        # Handle NaN and ensure float for stats/formatting
+                        if pd.isna(val): 
+                            val = 0.0
+                        else:
+                            val = float(val)
                         
-                        # Handle NaN
-                        if pd.isna(val): val = 0
+                        col_id = data_col_ids[idx]
+                        row[col_id] = f"{val:,.0f}" if val != 0 else "-"
                         
-                        country_subtotal_vals[i] += val
-                        
-                        row_cells.append(html.Td(f"{val:,.0f}" if val != 0 else "-", 
-                                                style={'textAlign': 'right', 'border': '1px solid #ddd', 'padding': '5px'}))
+                        country_totals[col_id] += val
                         
                 except KeyError:
-                    # This should ideally not happen if data and pivot are consistent
                     pass
                 
-                tbody_rows.append(html.Tr(row_cells))
-                first_sector = False
-                
-            # Total Row for Country
-            total_cells = [
-                html.Td("Total", style={'fontWeight': 'bold', 'textAlign': 'left', 'backgroundColor': '#f2f2f2', 'border': '1px solid #ddd', 'position': 'sticky', 'left': '100px', 'zIndex': 10, 'padding': '8px'})
-            ]
-            for v in country_subtotal_vals:
-                total_cells.append(html.Td(f"{v:,.0f}" if v != 0 else "-", 
-                                            style={'fontWeight': 'bold', 'textAlign': 'right', 'backgroundColor': '#f2f2f2', 'border': '1px solid #ddd', 'padding': '5px'}))
+                data.append(row)
             
-            tbody_rows.append(html.Tr(total_cells))
+            # Total Row
+            total_row = {'Country': '', 'Sector': 'Total', '_Country': country}
+            for col_id in data_col_ids:
+                val = country_totals[col_id]
+                total_row[col_id] = f"{val:,.0f}" if val != 0 else "-"
+            data.append(total_row)
 
-        return html.Table(
-            [html.Thead(thead_rows), html.Tbody(tbody_rows)],
-            style={'borderCollapse': 'collapse', 'width': '100%', 'fontFamily': 'Arial', 'fontSize': '12px'}
-        )
+
+        # CONDITIONAL STYLES
+        styles = []
+        header_styles = []
+        
+        # --- DATA STYLES (Asia Dashboard Replicas) ---
+        
+        # 1. Zebra Striping
+        styles.append({
+            'if': {'row_index': 'odd'},
+            'backgroundColor': '#f2f2f2'
+        })
+        
+        # 2. Total Row Styling
+        styles.append({
+            'if': {'filter_query': '{Sector} eq "Total"'},
+            'fontWeight': 'bold',
+            'color': '#000',
+            'borderBottom': '2px solid #aaa',
+            'borderTop': '1px solid #eee'
+        })
+        
+        # 3. Country Column
+        styles.append({
+            'if': {'column_id': 'Country'},
+            'textAlign': 'left',
+            'fontWeight': 'bold',
+            'minWidth': '120px',
+            'color': '#333',
+            'backgroundColor': '#fff'
+        })
+        
+        # 4. Sector Column (with Divider)
+        styles.append({
+            'if': {'column_id': 'Sector'},
+            'textAlign': 'left',
+            'paddingLeft': '8px',
+            'minWidth': '100px',
+            'borderRight': '1px solid #ccc',
+            'backgroundColor': '#fff'
+        })
+        
+        # 5. Data Columns Right Alignment
+        if is_single_level_header:
+             for cid in data_col_ids:
+                 styles.append({
+                     'if': {'column_id': cid},
+                     'textAlign': 'right'
+                 })
+
+
+        # --- HEADER STYLES ---
+        
+        if is_single_level_header:
+            # Single Header Row Logic
+            header_styles.append({
+                'if': {'header_index': 0, 'column_id': data_col_ids},
+                'borderBottom': '1px solid #ccc',
+                'textAlign': 'right' # Year headers right aligned in Fig 2
+            })
+             # Fixed Columns Header
+            header_styles.append({'if': {'column_id': ['Country', 'Sector']}, 'textAlign': 'left', 'borderBottom': '1px solid #ccc'})
+             # Sector Divider
+            header_styles.append({'if': {'column_id': 'Sector'}, 'borderRight': '1px solid #ccc'})
+
+        else:
+            # Multi Level Logic (Dynamic based on levels)
+            header_rows = len(levels)
+            
+            # 1. Data Columns Styling
+            for i in range(header_rows):
+                # Common
+                header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'textAlign': 'right'}) # Default Right for numbers? Asia uses Center for top/middle.
+                
+                # Top Level (Year)
+                if i == 0:
+                   header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'borderBottom': '1px solid #d0d0d0'})
+                   header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'textAlign': 'center'})
+                
+                # Middle / Bottom Levels
+                if i > 0:
+                   header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'borderTop': '1px solid #d0d0d0'})
+                   header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'borderBottom': '1px solid #ccc'})
+                   
+                   # Justification: For Day view, maybe Center or Right? Asia uses specific logic.
+                   # Let's keep Right for lowest level (Data), Center for Groups.
+                   if i == header_rows - 1:
+                       header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'textAlign': 'right'})
+                   else:
+                       header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'textAlign': 'center'})
+
+            
+            # 2. Fixed Columns Headers (Country, Sector)
+            # We want them to look merged.
+            header_styles.append({'if': {'column_id': ['Country', 'Sector']}, 'zIndex': 999, 'textAlign': 'left', 'backgroundColor': '#ffffff'})
+            
+            for i in range(header_rows):
+                style_def = {
+                    'if': {'header_index': i, 'column_id': ['Country', 'Sector']},
+                    'borderRight': 'none', # We handle Sector right border separately
+                    'borderTop': 'none'
+                }
+                
+                # Only the last row gets a bottom border
+                if i == header_rows - 1:
+                    style_def['borderBottom'] = '1px solid #ccc'
+                else:
+                    style_def['borderBottom'] = 'none' # Merge down
+                
+                header_styles.append(style_def)
+            
+            # Sector Divider in Header (All rows)
+            header_styles.append({'if': {'column_id': 'Sector'}, 'borderRight': '1px solid #ccc'})
+
+        
+        return columns, data, styles, header_styles
