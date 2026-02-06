@@ -234,6 +234,16 @@ def create_layout():
                             style={'height': '320px'},
                             config={'displayModeBar': False}
                         )
+                    ),
+                    html.Div(
+                        "Energy Intelligence; data as of December 2025",
+                        style={
+                            'fontSize': '11px',
+                            'color': EI_DARK_BLUE,
+                            'fontFamily': 'Georgia, serif',
+                            'marginTop': '5px',
+                            'marginLeft': '5px'
+                        }
                     )
                 ], style={'position': 'relative'})
             ], style={'width': '70%', 'paddingRight': '15px', 'borderRight': '1px solid #eee'}),
@@ -721,7 +731,7 @@ def register_callbacks(dash_app, server):
                 if period == 'QUARTERLY':
                     return f"Q{int(row['quarter_of_date'])}"
                 if period == 'MONTHLY':
-                    month_abbr = {1:'Ja..', 2:'Fe..', 3:'M..', 4:'A..', 5:'M..', 6:'Ju..', 7:'Ju..', 8:'A..', 9:'Se..', 10:'O..', 11:'N..', 12:'D..'}
+                    month_abbr = {1:'January', 2:'February', 3:'March', 4:'April', 5:'May', 6:'June', 7:'July', 8:'August', 9:'September', 10:'October', 11:'November', 12:'December'}
                     return month_abbr.get(int(row['month_of_date']), '')
                 if period == 'DATE':
                     if pd.notnull(row['date_of_date']):
@@ -828,7 +838,8 @@ def register_callbacks(dash_app, server):
                     tickfont=dict(size=9 if period != 'DATE' else 7, color='#666'),
                     fixedrange=True,
                     zeroline=True,
-                    zerolinecolor='#ccc'
+                    zerolinecolor='#ccc',
+                    tickangle=-90
                 ),
                 yaxis=dict(
                     title=dict(text="Seaborne Crude Exp...", font=dict(size=10)),
