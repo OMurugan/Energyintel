@@ -35,10 +35,8 @@ COMPANY_ORDER = [
 ]
 
 # Display name overrides for cleaner labels
-DISPLAY_NAMES = {
-    'Surgutneftegas': 'Surgut',
-    'ForteInvest': 'FortelInvest'
-}
+# Removed static mappings - now using dynamic data from database
+DISPLAY_NAMES = {}
 
 # Standard legend order for Gasoline/Oil products
 LIVE_LEGEND_ORDER = [
