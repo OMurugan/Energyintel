@@ -277,7 +277,8 @@ def create_layout():
                     style_data_conditional=[
                         {'if': {'filter_query': '{yoy_pct} < 0'}, 'color': '#d9534f'},
                         {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'},
-                        {'if': {'column_id': 'period'}, 'borderRight': '1px solid #eee'}
+                        {'if': {'column_id': 'period'}, 'borderRight': '1px solid #eee'},
+                        {'if': {'filter_query': '{port_name} eq " "'}, 'borderTop': '2px solid #ccc', 'fontWeight': 'bold'}
                     ],
                     css=[{'selector': 'td[data-dash-column="period"]', 'rule': 'writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: auto; text-align: center; vertical-align: middle;'},
                          {'selector': '.dash-spreadsheet td.highlighted', 'rule': f'background-color: {EI_LIGHT_BLUE} !important; opacity: 1 !important;'},
@@ -546,6 +547,20 @@ def register_callbacks(dash_app, server):
             WHERE ru.type = 'Seaborne'
             GROUP BY po.port_name, yr, mon
         ),
+        monthly_total AS (
+            SELECT
+                'All' as port_name,
+                yr,
+                mon,
+                SUM(avg_vol) as avg_vol
+            FROM monthly_avg
+            GROUP BY yr, mon
+        ),
+        combined_data AS (
+            SELECT * FROM monthly_avg
+            UNION ALL
+            SELECT * FROM monthly_total
+        ),
         yoy AS (
             SELECT
                 cur.port_name,
@@ -555,8 +570,8 @@ def register_callbacks(dash_app, server):
                     ((cur.avg_vol - prev.avg_vol) / NULLIF(prev.avg_vol, 0))::numeric * 100,
                     1
                 ) AS yoy_pct
-            FROM monthly_avg cur
-            JOIN monthly_avg prev ON cur.port_name = prev.port_name
+            FROM combined_data cur
+            JOIN combined_data prev ON cur.port_name = prev.port_name
                AND cur.mon = prev.mon
                AND cur.yr = prev.yr + 1
         )
@@ -588,8 +603,10 @@ def register_callbacks(dash_app, server):
             cols = ['period', 'port_name'] + active_month_names
             pivot_df = pivot_df[cols]
             
-            # Sort by period ascending
-            pivot_df = pivot_df.sort_values(['period', 'port_name'], ascending=[True, True])
+            # Sort by period ascending, but force 'All' to be last in each period
+            pivot_df['port_sort_key'] = pivot_df['port_name'].apply(lambda x: 'ZZZZZZ' if x == 'All' else x)
+            pivot_df = pivot_df.sort_values(['period', 'port_sort_key'], ascending=[True, True])
+            pivot_df.drop('port_sort_key', axis=1, inplace=True)
 
             columns = [
                 {"name": "", "id": "period"},
@@ -618,8 +635,10 @@ def register_callbacks(dash_app, server):
                     if col == 'period': continue
                     val = row[col]
                     if col == 'port_name':
+                        if val == 'All':
+                             formatted_row[col] = " " # Blank string for visual separation as per image 2 where loading port col is blank
                         # Truncate long port names like in fig
-                        if val and len(val) > 13:
+                        elif val and len(val) > 13:
                             formatted_row[col] = val[:11] + ".."
                         else:
                             formatted_row[col] = val
