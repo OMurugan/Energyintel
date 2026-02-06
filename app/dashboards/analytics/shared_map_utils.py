@@ -125,8 +125,8 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
         selected_country: Currently selected country (affects whether layers are added)
         use_mapbox: Whether to use Mapbox or geo coordinates
     """
-    # Always add background click layers to ensure reset functionality works
-    if True:
+    # Only add background click layers if a country is selected (to allow reset)
+    if selected_country:
         # Create a comprehensive grid of ocean points for better coverage
         # Increased density for more reliable clicking
         ocean_lons = []
@@ -153,6 +153,11 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
         # Indian Ocean
         for lon in range(40, 120, 15):
             for lat in range(-60, 30, 15):
+                ocean_lons.append(lon)
+                ocean_lats.append(lat)
+        # Europe/Africa Gap Coverage - VERY DENSE Grid (Critical)
+        for lon in range(-20, 50, 5):
+            for lat in range(30, 75, 5):
                 ocean_lons.append(lon)
                 ocean_lats.append(lat)
         
@@ -252,6 +257,23 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
                     customdata=[["__BACKGROUND_CLICK__"]],
                     showlegend=False,
                     name="pacific_east_fill",
+                    opacity=0.01
+                )
+            )
+
+            # Europe background fill (Critical for reliable clicks)
+            fig.add_trace(
+                go.Scattermapbox(
+                    lon=[-20, 45, 45, -20, -20],
+                    lat=[30, 30, 75, 75, 30],
+                    mode="lines",
+                    line=dict(color="rgba(0,0,0,0)", width=0),
+                    fill="toself",
+                    fillcolor="rgba(255,255,255,0.01)",
+                    hoverinfo="none",
+                    customdata=[["__BACKGROUND_CLICK__"]],
+                    showlegend=False,
+                    name="europe_background_fill",
                     opacity=0.01
                 )
             )
@@ -736,7 +758,7 @@ def handle_map_click_reset(click_data, current_filter, all_countries: list, all_
             if not trace_name and "data" in click_data.get("points", [{}])[0]:
                  trace_name = click_data.get("points", [{}])[0].get("data", {}).get("name", "")
 
-            if trace_name in ["ocean_grid", "world_background", "atlantic_fill", "pacific_west_fill", "pacific_east_fill", "ocean_background", "background_fill"]:
+            if trace_name in ["ocean_grid", "world_background", "atlantic_fill", "pacific_west_fill", "pacific_east_fill", "ocean_background", "background_fill", "europe_background_fill"]:
                 is_background_click = True
         except (KeyError, IndexError, AttributeError):
             pass

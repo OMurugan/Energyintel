@@ -274,7 +274,7 @@ app_mod.app.layout = html.Div(
 )
 
 
-# Callback to update header based on current page and embedded mode
+## Callback to update header based on current page and embedded mode
 # @app_mod.app.callback(
 #     Output("main-header", "children"),
 #     Input("url", "pathname"),
