@@ -400,6 +400,96 @@ def create_layout():
         
         # Main container
         html.Div([
+            # Right sidebar with controls (positioned first for float right)
+            html.Div([
+                # Date Range
+                html.Div([
+                    html.Label("Date", style={'fontWeight': 'bold', 'marginBottom': '10px', 'display': 'block', 'color': '#333', 'fontSize': '14px'}),
+                    html.Div([
+                        html.Span("1/1/2019", style={'fontSize': '12px', 'color': '#666'}),
+                        html.Span("10/1/2025", style={'fontSize': '12px', 'color': '#666', 'float': 'right'})
+                    ], style={'marginBottom': '8px'}),
+                    dcc.RangeSlider(
+                        id='date-range-slider',
+                        min=0,
+                        max=100,
+                        value=[0, 100],
+                        marks={0: '', 100: ''},
+                        tooltip={"placement": "bottom", "always_visible": False},
+                        className='custom-range-slider'
+                    )
+                ], style={'marginBottom': '25px'}),
+                
+                # Unit Selection
+                html.Div([
+                    html.Label("Unit", style={'fontWeight': 'bold', 'marginBottom': '10px', 'display': 'block', 'color': '#333', 'fontSize': '14px'}),
+                    dcc.RadioItems(
+                        id='unit-selector',
+                        options=[
+                            {'label': ' Gigawatt-hour', 'value': 'GWh'},
+                            {'label': ' Million Cubic Meter', 'value': 'Million Cubic Meter'}
+                        ],
+                        value='Million Cubic Meter',
+                        style={'marginBottom': '15px', 'fontSize': '13px'},
+                        inputStyle={"marginRight": "8px", "marginLeft": "0px"}
+                    )
+                ], style={'marginBottom': '25px'}),
+                
+                # Sector Legend
+                html.Div([
+                    html.Label("Sector", style={'fontWeight': 'bold', 'marginBottom': '10px', 'display': 'block', 'color': '#333', 'fontSize': '14px'}),
+                    html.Div([
+                        html.Div([
+                            html.Div(style={'width': '20px', 'height': '15px', 'backgroundColor': '#006eb0', 'display': 'inline-block', 'marginRight': '8px', 'verticalAlign': 'middle'}),
+                            html.Span("Household", style={'fontSize': '13px', 'color': '#666'})
+                        ], style={'marginBottom': '6px'}),
+                        html.Div([
+                            html.Div(style={'width': '20px', 'height': '15px', 'backgroundColor': '#c5d9a5', 'display': 'inline-block', 'marginRight': '8px', 'verticalAlign': 'middle'}),
+                            html.Span("Industrial", style={'fontSize': '13px', 'color': '#666'})
+                        ], style={'marginBottom': '6px'}),
+                        html.Div([
+                            html.Div(style={'width': '20px', 'height': '15px', 'backgroundColor': '#b04e26', 'display': 'inline-block', 'marginRight': '8px', 'verticalAlign': 'middle'}),
+                            html.Span("Power", style={'fontSize': '13px', 'color': '#666'})
+                        ])
+                    ])
+                ], style={'marginBottom': '25px'}),
+                
+                # Country Selection
+                html.Div([
+                    html.Label("Country", style={'fontWeight': 'bold', 'marginBottom': '10px', 'display': 'block', 'color': '#333', 'fontSize': '14px'}),
+                    html.Div([
+                        dcc.Checklist(
+                            id='country-checklist',
+                            options=[{'label': ' (All)', 'value': 'All'}] + [{'label': f' {country}', 'value': country} for country in countries],
+                            value=['All'] + countries,
+                            style={'maxHeight': '280px', 'overflowY': 'auto', 'fontSize': '13px'},
+                            inputStyle={"marginRight": "6px", "marginLeft": "0px"}
+                        )
+                    ])
+                ], style={'marginBottom': '25px'}),
+                
+                # Highlight Country
+                html.Div([
+                    html.Label("Highlight Country", style={'fontWeight': 'bold', 'marginBottom': '10px', 'display': 'block', 'color': '#333', 'fontSize': '14px'}),
+                    dcc.Dropdown(
+                        id='highlight-country',
+                        options=[{'label': country, 'value': country} for country in countries],
+                        placeholder="Highlight Country",
+                        style={'fontSize': '13px'}
+                    )
+                ])
+                
+            ], style={
+                'width': '250px', 
+                'padding': '15px', 
+                'backgroundColor': '#f8f9fa',
+                'overflowY': 'auto',
+                'float': 'right',
+                'borderLeft': '1px solid #dee2e6',
+                'fontFamily': 'Arial, sans-serif',
+                'minHeight': '100vh'
+            }),
+            
             # Main content area (left side)
             html.Div([
                 # Chart Area
@@ -542,102 +632,11 @@ def create_layout():
                 ], id='europe-gas-demand-table-container')
                 
             ], style={
-                'marginRight': '300px',
+                'marginRight': '250px',
                 'padding': '20px',
                 'backgroundColor': '#ffffff',
-                'fontFamily': 'Arial, sans-serif'
-            }),
-            
-            # Right sidebar with controls
-            html.Div([
-                # Date Range
-                html.Div([
-                    html.Label("Date", style={'fontWeight': 'bold', 'marginBottom': '10px', 'display': 'block', 'color': '#333', 'fontSize': '14px'}),
-                    html.Div([
-                        html.Span("1/1/2019", style={'fontSize': '12px', 'color': '#666'}),
-                        html.Span("10/1/2025", style={'fontSize': '12px', 'color': '#666', 'float': 'right'})
-                    ], style={'marginBottom': '8px'}),
-                    dcc.RangeSlider(
-                        id='date-range-slider',
-                        min=0,
-                        max=100,
-                        value=[0, 100],
-                        marks={0: '', 100: ''},
-                        tooltip={"placement": "bottom", "always_visible": False},
-                        className='custom-range-slider'
-                    )
-                ], style={'marginBottom': '25px'}),
-                
-                # Unit Selection
-                html.Div([
-                    html.Label("Unit", style={'fontWeight': 'bold', 'marginBottom': '10px', 'display': 'block', 'color': '#333', 'fontSize': '14px'}),
-                    dcc.RadioItems(
-                        id='unit-selector',
-                        options=[
-                            {'label': ' Gigawatt-hour', 'value': 'GWh'},
-                            {'label': ' Million Cubic Meter', 'value': 'Million Cubic Meter'}
-                        ],
-                        value='Million Cubic Meter',
-                        style={'marginBottom': '15px', 'fontSize': '13px'},
-                        inputStyle={"marginRight": "8px", "marginLeft": "0px"}
-                    )
-                ], style={'marginBottom': '25px'}),
-                
-                # Sector Legend
-                html.Div([
-                    html.Label("Sector", style={'fontWeight': 'bold', 'marginBottom': '10px', 'display': 'block', 'color': '#333', 'fontSize': '14px'}),
-                    html.Div([
-                        html.Div([
-                            html.Div(style={'width': '20px', 'height': '15px', 'backgroundColor': '#006eb0', 'display': 'inline-block', 'marginRight': '8px', 'verticalAlign': 'middle'}),
-                            html.Span("Household", style={'fontSize': '13px', 'color': '#666'})
-                        ], style={'marginBottom': '6px'}),
-                        html.Div([
-                            html.Div(style={'width': '20px', 'height': '15px', 'backgroundColor': '#c5d9a5', 'display': 'inline-block', 'marginRight': '8px', 'verticalAlign': 'middle'}),
-                            html.Span("Industrial", style={'fontSize': '13px', 'color': '#666'})
-                        ], style={'marginBottom': '6px'}),
-                        html.Div([
-                            html.Div(style={'width': '20px', 'height': '15px', 'backgroundColor': '#b04e26', 'display': 'inline-block', 'marginRight': '8px', 'verticalAlign': 'middle'}),
-                            html.Span("Power", style={'fontSize': '13px', 'color': '#666'})
-                        ])
-                    ])
-                ], style={'marginBottom': '25px'}),
-                
-                # Country Selection
-                html.Div([
-                    html.Label("Country", style={'fontWeight': 'bold', 'marginBottom': '10px', 'display': 'block', 'color': '#333', 'fontSize': '14px'}),
-                    html.Div([
-                        dcc.Checklist(
-                            id='country-checklist',
-                            options=[{'label': ' (All)', 'value': 'All'}] + [{'label': f' {country}', 'value': country} for country in countries],
-                            value=['All'] + countries,
-                            style={'maxHeight': '280px', 'overflowY': 'auto', 'fontSize': '13px'},
-                            inputStyle={"marginRight": "6px", "marginLeft": "0px"}
-                        )
-                    ])
-                ], style={'marginBottom': '25px'}),
-                
-                # Highlight Country
-                html.Div([
-                    html.Label("Highlight Country", style={'fontWeight': 'bold', 'marginBottom': '10px', 'display': 'block', 'color': '#333', 'fontSize': '14px'}),
-                    dcc.Dropdown(
-                        id='highlight-country',
-                        options=[{'label': country, 'value': country} for country in countries],
-                        placeholder="Highlight Country",
-                        style={'fontSize': '13px'}
-                    )
-                ])
-                
-            ], style={
-                'width': '280px', 
-                'padding': '15px', 
-                'backgroundColor': '#f8f9fa',
-                'height': '100vh',
-                'overflowY': 'auto',
-                'position': 'fixed',
-                'right': '0',
-                'top': '0',
-                'borderLeft': '1px solid #dee2e6',
-                'fontFamily': 'Arial, sans-serif'
+                'fontFamily': 'Arial, sans-serif',
+                'overflow': 'hidden'
             })
             
         ])
