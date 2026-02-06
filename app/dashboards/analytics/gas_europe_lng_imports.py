@@ -207,6 +207,9 @@ def create_layout():
         dcc.Download(id="download-lng-chart-csv"),
         dcc.Download(id="download-lng-table-csv"),
         
+        # Store for table highlight state
+        dcc.Store(id='lng-table-highlight-state'),
+        
         html.Div([
             # Side Filter Panel (on the right)
             html.Div([
@@ -1310,3 +1313,231 @@ def register_callbacks(dash_app, server):
         except Exception as e:
             print(f"Error exporting table data: {e}")
             return no_update
+
+    # Clientside Callback for Table Column/Row Highlighting
+    dash_app.clientside_callback(
+        """
+        function(table_children) {
+            try {
+                const tableContainerId = 'lng-imports-table-container';
+                
+                let style = document.getElementById('lng-table-styles');
+                if (!style) {
+                    style = document.createElement('style');
+                    style.id = 'lng-table-styles';
+                    document.head.appendChild(style);
+                }
+                
+                style.innerHTML = `
+                    .lng-col-selected { background-color: #cfe8ef !important; }
+                    .lng-row-selected { background-color: #cfe8ef !important; }
+                    .lng-dimmed { opacity: 0.3 !important; }
+                    
+                    .lng-col-selection-active td[data-dash-column="Time_Label"] { 
+                        opacity: 1 !important; 
+                        background-color: transparent !important; 
+                    }
+                    
+                    .lng-row-selection-active tr.lng-row-highlighted td {
+                        opacity: 1 !important;
+                        background-color: #cfe8ef !important;
+                        color: black !important;
+                    }
+
+                    .lng-row-selection-active tr:not(.lng-row-trip-wire) td {
+                        opacity: 0.3 !important;
+                    }
+
+                    th.lng-col-selected { background-color: #cfe8ef !important; }
+                `;
+
+                if (!window.lngTableState) {
+                    window.lngTableState = { 
+                        selectedColumnId: null,
+                        selectedRowIndices: null 
+                    };
+                }
+
+                function clearAll(container) {
+                    const spreadsheet = container.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet) return;
+                    
+                    spreadsheet.classList.remove('lng-col-selection-active');
+                    spreadsheet.classList.remove('lng-row-selection-active');
+                    
+                    const selected = spreadsheet.querySelectorAll('.lng-col-selected, .lng-dimmed, .lng-row-highlighted, .lng-row-trip-wire');
+                    selected.forEach(el => {
+                        el.classList.remove('lng-col-selected');
+                        el.classList.remove('lng-dimmed');
+                        el.classList.remove('lng-row-highlighted');
+                        el.classList.remove('lng-row-trip-wire');
+                    });
+                }
+                
+                function applyState(container) {
+                    const spreadsheet = container.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet) return;
+                    
+                    clearAll(container);
+
+                    if (window.lngTableState.selectedColumnId) {
+                        const targetIds = window.lngTableState.selectedColumnId.split(',');
+                        if (targetIds.length === 0) return;
+
+                        spreadsheet.classList.add('lng-col-selection-active');
+
+                        targetIds.forEach(id => {
+                            const ths = spreadsheet.querySelectorAll(`th[data-dash-column="${id}"]`);
+                            ths.forEach(th => th.classList.add('lng-col-selected'));
+                        });
+
+                        const allCells = spreadsheet.querySelectorAll('td[data-dash-column]');
+                        allCells.forEach(cell => {
+                            const cId = cell.getAttribute('data-dash-column');
+                            if (cId === 'Time_Label') return;
+
+                            if (targetIds.includes(cId)) {
+                                cell.classList.add('lng-col-selected');
+                            } else {
+                                cell.classList.add('lng-dimmed');
+                            }
+                        });
+                        return;
+                    }
+
+                    if (window.lngTableState.selectedRowIndices) {
+                        const [start, end] = window.lngTableState.selectedRowIndices.split('_').map(Number);
+                        
+                        spreadsheet.classList.add('lng-row-selection-active');
+                        
+                        const tbodies = spreadsheet.querySelectorAll('tbody');
+                        
+                        tbodies.forEach(tbody => {
+                            const rows = tbody.querySelectorAll('tr');
+                            rows.forEach((row, idx) => {
+                                if (idx >= start && idx <= end) {
+                                    row.classList.add('lng-row-highlighted');
+                                    row.classList.add('lng-row-trip-wire');
+                                }
+                            });
+                        });
+                    }
+                }
+
+                function setupTable() {
+                    const container = document.getElementById(tableContainerId);
+                    if (!container) {
+                        setTimeout(setupTable, 100);
+                        return;
+                    }
+                    
+                    const spreadsheet = container.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet) {
+                        setTimeout(setupTable, 100);
+                        return;
+                    }
+                    
+                    if (spreadsheet && (window.lngTableState.selectedColumnId || window.lngTableState.selectedRowIndices)) {
+                        applyState(container);
+                    }
+                    
+                    if (spreadsheet.dataset.enhanced === 'true') return;
+
+                    spreadsheet.dataset.enhanced = 'true';
+                    
+                    spreadsheet.addEventListener('click', function(e) {
+                        const header = e.target.closest('th[data-dash-column]');
+                        if (header) {
+                            e.stopPropagation();
+                            const colId = header.getAttribute('data-dash-column');
+                            if (colId === 'Time_Label') return;
+
+                            const headerContent = header.innerText.trim();
+                            
+                            // Check if it's a year header (first level in multi-level headers)
+                            let isYearHeader = /^\\d{4}$/.test(headerContent);
+                            let targetIds = [];
+                            
+                            if (isYearHeader) {
+                                // Find all column headers under this year
+                                // Get all headers in the same column group
+                                const allHeaders = spreadsheet.querySelectorAll('th[data-dash-column]');
+                                const yearHeaders = Array.from(allHeaders).filter(h => {
+                                    const text = h.innerText.trim();
+                                    return /^\\d{4}$/.test(text);
+                                });
+                                
+                                // Find the index of clicked year header
+                                const yearIndex = yearHeaders.indexOf(header);
+                                
+                                // Get all data columns (non-Time_Label)
+                                const dataHeaders = Array.from(allHeaders).filter(h => {
+                                    const id = h.getAttribute('data-dash-column');
+                                    return id && id !== 'Time_Label';
+                                });
+                                
+                                // Estimate columns per year (rough heuristic)
+                                const colsPerYear = Math.floor(dataHeaders.length / yearHeaders.length);
+                                const startIdx = yearIndex * colsPerYear;
+                                const endIdx = startIdx + colsPerYear;
+                                
+                                targetIds = dataHeaders.slice(startIdx, endIdx).map(h => h.getAttribute('data-dash-column'));
+                            } else {
+                                targetIds.push(colId);
+                            }
+
+                            const selectionKey = targetIds.join(',');
+                            
+                            if (window.lngTableState.selectedColumnId === selectionKey) {
+                                window.lngTableState.selectedColumnId = null;
+                            } else {
+                                window.lngTableState.selectedColumnId = selectionKey;
+                                window.lngTableState.selectedRowIndices = null; 
+                            }
+                            applyState(container);
+                            return;
+                        }
+                        
+                        const cell = e.target.closest('td[data-dash-column]');
+                        if (cell) {
+                             const row = cell.closest('tr');
+                             const tbody = row.closest('tbody');
+                             const rows = Array.from(tbody.querySelectorAll('tr'));
+                             const idx = rows.indexOf(row);
+                             
+                             const start = idx; 
+                             const end = idx; 
+                             
+                             const newKey = `${start}_${end}`;
+                             
+                             if (window.lngTableState.selectedRowIndices === newKey) {
+                                  window.lngTableState.selectedRowIndices = null;
+                             } else {
+                                  window.lngTableState.selectedRowIndices = newKey;
+                                  window.lngTableState.selectedColumnId = null;
+                             }
+                             applyState(container);
+                        }
+                    });
+                }
+                
+                // Reset state when table content changes
+                if (table_children) {
+                    // Clear selections on table update
+                    window.lngTableState.selectedColumnId = null;
+                    window.lngTableState.selectedRowIndices = null;
+                }
+                
+                setTimeout(setupTable, 500); 
+                return window.lngTableState.selectedColumnId || ""; 
+
+            } catch(e) { 
+                console.error('LNG table highlighting error:', e); 
+                return ""; 
+            }
+        }
+        """,
+        Output('lng-table-highlight-state', 'data'),
+        Input('lng-imports-table-container', 'children'),
+        prevent_initial_call=False
+    )
