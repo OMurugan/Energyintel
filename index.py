@@ -275,32 +275,32 @@ app_mod.app.layout = html.Div(
 
 
 # Callback to update header based on current page and embedded mode
-@app_mod.app.callback(
-    Output("main-header", "children"),
-    Input("url", "pathname"),
-)
-def update_navigation_and_header(pathname):
-    """Update header visibility based on current page and embedded mode."""
+# @app_mod.app.callback(
+#     Output("main-header", "children"),
+#     Input("url", "pathname"),
+# )
+# def update_navigation_and_header(pathname):
+#     """Update header visibility based on current page and embedded mode."""
     
-    # Process pathname using display_content routing function
-    processed_pathname = utils.display_content(pathname)
+#     # Process pathname using display_content routing function
+#     processed_pathname = utils.display_content(pathname)
     
-    # Check if we're in embedded mode
-    is_embedded = _is_embedded_mode()
+#     # Check if we're in embedded mode
+#     is_embedded = _is_embedded_mode()
     
-    # Only show header on home page when NOT embedded
-    if processed_pathname == "/" and not is_embedded:
-        # Create full header for home page
-        return _create_header()
-    elif not is_embedded:
-        # Show minimal header with just breadcrumbs for other pages when not embedded
-        breadcrumbs = utils.get_page_breadcrumbs(processed_pathname)
-        return html.Div([
-            html.Div(breadcrumbs, style={'padding': '5px 20px'})
-        ])
-    else:
-        # Embedded mode - no header at all
-        return html.Div()  # Empty header
+#     # Only show header on home page when NOT embedded
+#     if processed_pathname == "/" and not is_embedded:
+#         # Create full header for home page
+#         return _create_header()
+#     elif not is_embedded:
+#         # Show minimal header with just breadcrumbs for other pages when not embedded
+#         breadcrumbs = utils.get_page_breadcrumbs(processed_pathname)
+#         return html.Div([
+#             html.Div(breadcrumbs, style={'padding': '5px 20px'})
+#         ])
+#     else:
+#         # Embedded mode - no header at all
+#         return html.Div()  # Empty header
 
 
 # app_mod.app.layout = html.Div(
