@@ -156,50 +156,22 @@ def aggregate_chart_data_by_time_level(df, time_level):
         df['Time_Group'] = df['Date_Obj'].dt.to_period('Q').astype(str)
         df['Time_Label'] = df['Date_Obj'].dt.to_period('Q').astype(str)
     elif time_level == 'DAILY':
-        # For daily view, simulate daily data from monthly data
-        # Create multiple daily entries for each month
-        daily_data = []
-        for _, row in df.iterrows():
-            # Get the month's data
-            month_start = row['Date_Obj'].replace(day=1)
-            days_in_month = pd.Period(month_start, 'M').days_in_month
-            daily_value = row['Value'] / days_in_month  # Distribute monthly value across days
-            
-            # Create daily entries for the month
-            for day in range(1, days_in_month + 1):
-                daily_date = month_start.replace(day=day)
-                daily_row = row.copy()
-                daily_row['Date_Obj'] = daily_date
-                daily_row['Value'] = daily_value
-                daily_row['Time_Group'] = daily_date.strftime('%Y-%m-%d')
-                daily_row['Time_Label'] = str(daily_date.timetuple().tm_yday)  # Day of year
-                daily_data.append(daily_row)
-        
-        if daily_data:
-            df = pd.DataFrame(daily_data)
-        else:
-            # Fallback to original data if simulation fails
-            df['Time_Group'] = df['Date_Obj'].dt.strftime('%Y-%m-%d')
-            df['Time_Label'] = df['Date_Obj'].dt.dayofyear.astype(str)
+        df['Time_Group'] = df['Date_Obj'].dt.strftime('%B %Y')
+        df['Time_Label'] = df['Date_Obj'].dt.strftime('%B 1, %Y')
     else:  # MONTHLY (default)
         df['Time_Group'] = df['Date_Obj'].dt.strftime('%B %Y')
         df['Time_Label'] = df['Date_Obj'].dt.strftime('%B %Y')
     
-    # For daily, we already have the data processed above
-    if time_level == 'DAILY':
-        aggregated = df.groupby(['Time_Group', 'Time_Label', 'Sector', 'Unit'])['Value'].sum().reset_index()
-        aggregated['Date_Obj'] = pd.to_datetime(aggregated['Time_Group'])
-    else:
-        # Aggregate by time group and sector
-        aggregated = df.groupby(['Time_Group', 'Time_Label', 'Sector', 'Unit'])['Value'].sum().reset_index()
-        
-        # Add back Date_Obj for sorting
-        if time_level == 'YEARLY':
-            aggregated['Date_Obj'] = pd.to_datetime(aggregated['Time_Group'] + '-01-01')
-        elif time_level == 'QUARTERLY':
-            aggregated['Date_Obj'] = aggregated['Time_Group'].apply(lambda x: pd.Period(x).start_time)
-        else:  # MONTHLY
-            aggregated['Date_Obj'] = pd.to_datetime(aggregated['Time_Group'], format='%B %Y')
+    # Aggregate by time group and sector
+    aggregated = df.groupby(['Time_Group', 'Time_Label', 'Sector', 'Unit'])['Value'].sum().reset_index()
+    
+    # Add back Date_Obj for sorting
+    if time_level == 'YEARLY':
+        aggregated['Date_Obj'] = pd.to_datetime(aggregated['Time_Group'] + '-01-01')
+    elif time_level == 'QUARTERLY':
+        aggregated['Date_Obj'] = aggregated['Time_Group'].apply(lambda x: pd.Period(x).start_time)
+    else:  # MONTHLY or DAILY
+        aggregated['Date_Obj'] = pd.to_datetime(aggregated['Time_Group'], format='%B %Y')
     
     return aggregated
 
@@ -430,7 +402,14 @@ def create_layout():
                         'position': 'absolute', 'top': '15px', 'left': '60px', 'zIndex': '10'
                     }),
 
-                    dcc.Graph(id='asia-gas-monthly-chart', config={'displayModeBar': False})
+                    dcc.Loading(
+                        [
+                            html.Div(id='loading-trigger-chart', style={'display': 'none'}),
+                            dcc.Graph(id='asia-gas-monthly-chart', config={'displayModeBar': False})
+                        ],
+                        id="loading-asia-chart",
+                        type="circle"
+                    )
                 ], style={'backgroundColor': '#fff', 'padding': '10px', 'position': 'relative'}),
 
                 # Table Container with Hierarchy Icons
@@ -493,7 +472,14 @@ def create_layout():
                         'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px'
                     }),
 
-                    html.Div(id='asia-gas-monthly-table-container')
+                    dcc.Loading(
+                        [
+                            html.Div(id='loading-trigger-table', style={'display': 'none'}),
+                            html.Div(id='asia-gas-monthly-table-container')
+                        ],
+                        id="loading-asia-table",
+                        type="circle"
+                    )
                 ], style={'marginTop': '20px', 'backgroundColor': '#fff', 'padding': '10px'}),
                 
                 # Stores for State
@@ -665,6 +651,8 @@ def build_chart(df, sector_filter, unit, time_level='MONTHLY', highlight_state=N
             
             # Highlight Logic
             date_str = df_agg[df_agg['Date_Obj'] == d]['Time_Label'].iloc[0] if len(df_agg[df_agg['Date_Obj'] == d]) > 0 else ""
+            if date_str:
+                date_str = str(date_str).replace('\xa0', ' ').strip()
             
             op = 1.0 # Default full opacity
             lw = 0
@@ -673,14 +661,17 @@ def build_chart(df, sector_filter, unit, time_level='MONTHLY', highlight_state=N
             if highlight_state:
                 op = 0.3 # Default dim if highlighting active
                 
+                h_date = str(highlight_state.get('date')).replace('\xa0', ' ').strip() if highlight_state.get('date') else ""
+                h_sector = str(highlight_state.get('sector')).replace('\xa0', ' ').strip() if highlight_state.get('sector') else ""
+
                 if highlight_state.get('type') == 'month':
                     # Highlight entire stack for date
-                    if highlight_state.get('date') == date_str:
+                    if h_date.lower() == date_str.lower():
                         op = 1.0
                         
                 elif highlight_state.get('type') == 'bar':
                     # Highlight specific segment
-                    if highlight_state.get('date') == date_str and highlight_state.get('sector') == sector:
+                    if h_date.lower() == date_str.lower() and h_sector.lower() == sector.lower():
                         op = 1.0
                         lw = 2
                         lc = 'black' # Black border for selected segment
@@ -722,13 +713,11 @@ def build_chart(df, sector_filter, unit, time_level='MONTHLY', highlight_state=N
             showgrid=False,
             showline=True,
             linecolor='#ccc',
-            tickangle=-90 if time_level != 'DAILY' else 0,  # Horizontal for daily view
-            tickfont=dict(size=8 if time_level == 'DAILY' else 10, color='#999'),  # Smaller font for daily
-            tickmode='linear' if time_level == 'DAILY' else 'array',
-            tick0=1 if time_level == 'DAILY' else None,
-            dtick=30 if time_level == 'DAILY' else None,  # Show every 30th day
-            tickvals=x_axis_labels if time_level != 'DAILY' else None,
-            ticktext=tick_texts if time_level != 'DAILY' else None
+            tickangle=-90,
+            tickfont=dict(size=10, color='#999'),
+            tickmode='array',
+            tickvals=x_axis_labels,
+            ticktext=tick_texts
         ),
         yaxis=dict(
             title='',
@@ -743,9 +732,8 @@ def build_chart(df, sector_filter, unit, time_level='MONTHLY', highlight_state=N
         margin=dict(t=30, b=80, l=40, r=10),
         height=500,
         showlegend=False,
-        clickmode='event+select',
-        # Make bars wider for daily view
-        bargap=0.1 if time_level == 'DAILY' else 0.2
+        clickmode='event',
+        bargap=0.2
     )
     
     return fig
@@ -1344,15 +1332,6 @@ def build_daily_table(df, sector_filter, unit):
     data_col_ids = []
     
     for y in years:
-        # Append Total column first (Left side of the year)
-        columns.append({
-            'name': [str(y), 'Total', '\u00A0'], 
-            'id': f"{y}_Total", 
-            'type': 'numeric', 
-            'format': {'specifier': fmt}
-        })
-        data_col_ids.append(f"{y}_Total")
-
         year_months = active_months_map[y]
         for i, m in enumerate(year_months):
             col_id = f"{y}_{m}_1"
@@ -1365,6 +1344,15 @@ def build_daily_table(df, sector_filter, unit):
                 'format': {'specifier': fmt}
             })
             data_col_ids.append(col_id)
+
+        # Append Total column last (Right side of the year)
+        columns.append({
+            'name': [str(y), 'Total', '\u00A0'], 
+            'id': f"{y}_Total", 
+            'type': 'numeric', 
+            'format': {'specifier': fmt}
+        })
+        data_col_ids.append(f"{y}_Total")
 
     return html.Div([
         dash_table.DataTable(
@@ -1544,7 +1532,9 @@ def register_callbacks(dash_app, server):
     # 0. Data Fetching Callback
     @dash_app.callback(
         [Output('store-asia-chart-data', 'data'),
-         Output('store-asia-table-data', 'data')],
+         Output('store-asia-table-data', 'data'),
+         Output('loading-trigger-chart', 'children'),
+         Output('loading-trigger-table', 'children')],
         Input('asia-country-filter', 'value')
     )
     def fetch_asia_data(country):
@@ -1554,95 +1544,100 @@ def register_callbacks(dash_app, server):
         
         # We return records. Date objects will be strings.
         # df_chart has Date_Obj column.
-        return df_chart.to_dict('records'), df_table.to_dict('records')
+        return df_chart.to_dict('records'), df_table.to_dict('records'), "", ""
 
     # 1. Main Update Callback
     
     @dash_app.callback(
         [Output('asia-gas-monthly-chart', 'figure'),
-         Output('asia-gas-monthly-table-container', 'children'),
          Output('chart-highlight-state', 'data'),
          Output('asia-gas-monthly-chart', 'clickData')],
         [Input('asia-unit-filter', 'value'),
          Input('asia-sector-filter', 'value'),
          Input('store-asia-chart-data', 'data'),
-         Input('store-asia-table-data', 'data'),
          Input('asia-date-slider', 'value'),
          Input('asia-gas-monthly-chart', 'clickData'),
-         Input('asia-table-highlight-state', 'data'),
          Input('axis-click-trigger', 'value'),
-         Input('chart-time-level', 'data'),
-         Input('table-time-level', 'data')],
+         Input('chart-time-level', 'data')],
         [State('asia-date-map', 'data'),
          State('chart-highlight-state', 'data')]
     )
-    def update_dashboard(unit, sector, chart_data, table_data, date_range_idx, clickData, table_highlight_state, axis_click_raw, 
-                        chart_time_level, table_time_level, date_map, current_highlight):
+    def update_chart(unit, sector, chart_data, date_range_idx, clickData, axis_click_raw, 
+                    chart_time_level, date_map, current_highlight):
         try:
             # 0. Determine Trigger
             triggered_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+            
+            print(f"DEBUG: update_chart triggered by {triggered_id}")
+            if triggered_id == 'asia-gas-monthly-chart':
+                print(f"DEBUG: clickData: {clickData}")
             
             # 1. Resolve Highlight State Change
             highlight_state = current_highlight # Default keep current
             
             # If Filters or Time Levels changed, clear highlight
-            # Note: chart_data/table_data change implies country change usually
             if triggered_id in ['asia-unit-filter', 'asia-sector-filter', 'store-asia-chart-data', 'asia-date-slider', 
-                               'chart-time-level', 'table-time-level']:
+                               'chart-time-level']:
                 highlight_state = None
                 
-            # If Chart Bar Clicked -> Toggle Bar Selection (Image 2 Style)
+            # If Chart Bar Clicked -> Toggle Bar Selection
             elif triggered_id == 'asia-gas-monthly-chart':
+                if not clickData:
+                    return no_update, no_update, no_update
+
                 if clickData and 'points' in clickData:
                     point = clickData['points'][0]
-                    clicked_date = point.get('x') # "Month YYYY"
+                    clicked_date = point.get('x')
+                    
+                    # Try to get sector from data.name, fallback to curveNumber
                     clicked_sector = point.get('data', {}).get('name')
+                    if not clicked_sector:
+                        try:
+                            curve_num = point.get('curveNumber')
+                            sectors_to_plot = SECTOR_ORDER if sector == '(All)' else [sector]
+                            if curve_num is not None and 0 <= curve_num < len(sectors_to_plot):
+                                clicked_sector = sectors_to_plot[curve_num]
+                        except:
+                            pass
+                    
+                    # Robust String Cleaning & Lowercase for matching
+                    if clicked_date:
+                        clicked_date = str(clicked_date).replace('\xa0', ' ').strip()
+                    if clicked_sector:
+                        clicked_sector = str(clicked_sector).replace('\xa0', ' ').strip()
                     
                     if clicked_date and clicked_sector:
-                        # Check if same click -> Deselect
+                        # Prepare for comparison
+                        c_date_lower = clicked_date.lower()
+                        c_sector_lower = clicked_sector.lower()
+                        
+                        current_date = str(highlight_state.get('date')).replace('\xa0', ' ').strip() if highlight_state and highlight_state.get('date') else ""
+                        current_sector = str(highlight_state.get('sector')).replace('\xa0', ' ').strip() if highlight_state and highlight_state.get('sector') else ""
+                        
+                        # Toggle Logic (Case Insensitive)
                         if (highlight_state and 
                             highlight_state.get('type') == 'bar' and 
-                            highlight_state.get('date') == clicked_date and 
-                            highlight_state.get('sector') == clicked_sector):
+                            current_date.lower() == c_date_lower and 
+                            current_sector.lower() == c_sector_lower):
                             highlight_state = None
                         else:
                             highlight_state = {
                                 'type': 'bar',
-                                'date': clicked_date,
+                                'date': clicked_date,   # Store original case for display/matching if needed, but comparisons should remain robust
                                 'sector': clicked_sector
                             }
             
-            # If Table Highlighted (Header Click) -> Month Selection (Image 1 Style)
-            elif triggered_id == 'asia-table-highlight-state':
-                if not table_highlight_state:
-                     if highlight_state and highlight_state.get('type') == 'month':
-                         highlight_state = None
-                elif isinstance(table_highlight_state, str) and re.match(r'^\d{4}_[A-Za-z]+$', table_highlight_state):
-                    parts = table_highlight_state.split('_')
-                    year = parts[0]
-                    month = parts[1]
-                    chart_date_str = f"{month} {year}"
-                    
-                    if (highlight_state and 
-                        highlight_state.get('type') == 'month' and 
-                        highlight_state.get('date') == chart_date_str):
-                        highlight_state = None
-                    else:
-                        highlight_state = {
-                            'type': 'month',
-                            'date': chart_date_str,
-                            'sector': None
-                        }
-            
-            # If Axis Clicked (Simulated) -> Month Selection (Image 1 Style)
+            # If Axis Clicked (Simulated) -> Month Selection
             elif triggered_id == 'axis-click-trigger':
                 if axis_click_raw:
                     # Parse "Month YYYY|TIMESTAMP" -> "Month YYYY"
-                    axis_click_date = axis_click_raw.split('|')[0]
+                    axis_click_date = axis_click_raw.split('|')[0].replace('\xa0', ' ').strip()
+                    
+                    current_date = str(highlight_state.get('date')).replace('\xa0', ' ').strip() if highlight_state and highlight_state.get('date') else ""
                     
                     if (highlight_state and 
                         highlight_state.get('type') == 'month' and 
-                        highlight_state.get('date') == axis_click_date):
+                        current_date.lower() == axis_click_date.lower()):
                         highlight_state = None
                     else:
                         highlight_state = {
@@ -1664,60 +1659,97 @@ def register_callbacks(dash_app, server):
                     pass
             
             # 3. LOAD from Store
-            if chart_data is None or table_data is None:
-                # Stores not ready
-                return no_update, no_update, no_update, None
+            if chart_data is None:
+                return no_update, no_update, None
                 
             df_chart = pd.DataFrame(chart_data)
-            df_table = pd.DataFrame(table_data)
             
             # Post-processing: Restore Dates
             if not df_chart.empty and 'Date_Obj' in df_chart.columns:
                 df_chart['Date_Obj'] = pd.to_datetime(df_chart['Date_Obj'])
             
-            if not df_table.empty and 'Date_Obj' in df_table.columns:
-                df_table['Date_Obj'] = pd.to_datetime(df_table['Date_Obj'])
-
             # 4. FILTER
-            if not df_table.empty:
-                df_table = df_table[df_table['Unit'] == unit]
             if not df_chart.empty:
                 df_chart = df_chart[df_chart['Unit'] == unit]
 
             if sector != '(All)':
-                if not df_table.empty:
-                    df_table = df_table[df_table['Sector'] == sector]
                 if not df_chart.empty:
                     df_chart = df_chart[df_chart['Sector'] == sector]
 
             if start_date and end_date:
-                if not df_table.empty:
-                    df_table = df_table[(df_table['Date_Obj'] >= start_date) & (df_table['Date_Obj'] <= end_date)]
                 if not df_chart.empty:
                     df_chart = df_chart[(df_chart['Date_Obj'] >= start_date) & (df_chart['Date_Obj'] <= end_date)]
                     
-            # 5. Build Components
-            if df_table.empty:
-                table_comp = html.Div("Data error or empty for selection")
-            else:
-                table_comp = build_table(df_table, sector, unit, table_time_level or 'MONTHLY')  # Changed default to MONTHLY
-                
+            # 5. Build Chart
             if df_chart.empty:
                 fig = go.Figure()
             else:
-                # IMPORTANT: build_chart handles Plotly construction. 
-                # If highlight_state is corrupt or causes error, we catch it?
-                # We sanitized input logic above.
                 fig = build_chart(df_chart, sector, unit, chart_time_level or 'MONTHLY', highlight_state)
             
-            return fig, table_comp, highlight_state, None
+            return fig, highlight_state, None
 
         except Exception as e:
-            # Fallback to prevent 500 error on frontend
-            print(f"Error in update_dashboard: {e}")
+            print(f"Error in update_chart: {e}")
             fig = go.Figure()
             fig.update_layout(title=f"Error: {str(e)}")
-            return fig, no_update, no_update, None
+            return fig, no_update, None
+
+    @dash_app.callback(
+        Output('asia-gas-monthly-table-container', 'children'),
+        [Input('asia-unit-filter', 'value'),
+         Input('asia-sector-filter', 'value'),
+         Input('store-asia-table-data', 'data'),
+         Input('asia-date-slider', 'value'),
+         Input('table-time-level', 'data')],
+        [State('asia-date-map', 'data')]
+    )
+    def update_table(unit, sector, table_data, date_range_idx, table_time_level, date_map):
+        try:
+            # 1. Resolve Data Range
+            start_date = None
+            end_date = None
+            if date_map and date_range_idx:
+                try:
+                    start_date_str = date_map[date_range_idx[0]]
+                    end_date_str = date_map[date_range_idx[1]]
+                    start_date = pd.to_datetime(start_date_str)
+                    end_date = pd.to_datetime(end_date_str)
+                except:
+                    pass
+            
+            # 2. LOAD from Store
+            if table_data is None:
+                return no_update
+                
+            df_table = pd.DataFrame(table_data)
+            
+            # Post-processing: Restore Dates
+            if not df_table.empty and 'Date_Obj' in df_table.columns:
+                df_table['Date_Obj'] = pd.to_datetime(df_table['Date_Obj'])
+
+            # 3. FILTER
+            if not df_table.empty:
+                df_table = df_table[df_table['Unit'] == unit]
+
+            if sector != '(All)':
+                if not df_table.empty:
+                    df_table = df_table[df_table['Sector'] == sector]
+
+            if start_date and end_date:
+                if not df_table.empty:
+                    df_table = df_table[(df_table['Date_Obj'] >= start_date) & (df_table['Date_Obj'] <= end_date)]
+                    
+            # 4. Build Table
+            if df_table.empty:
+                table_comp = html.Div("Data error or empty for selection")
+            else:
+                table_comp = build_table(df_table, sector, unit, table_time_level or 'MONTHLY')
+                
+            return table_comp
+
+        except Exception as e:
+            print(f"Error in update_table: {e}")
+            return html.Div(f"Error: {str(e)}")
 
     # 2. Clientside Callback for tooltips text transformation on Slider (No Op, just for output)
     # 2. Clientside Callback for updating Slider Date Labels
