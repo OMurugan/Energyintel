@@ -510,18 +510,24 @@ def register_callbacks(dash_app, server):
             return no_update, no_update
             
         cdata = point['customdata']
+        # customdata format: [Terminal, Time_Label, x_pos]
         terminal = cdata[0] if len(cdata) > 0 else None
-        x_pos = point['x']
+        x_pos = cdata[2] if len(cdata) > 2 else point.get('x')
+        
+        if not terminal or x_pos is None:
+            return no_update, no_update
         
         new_sel = {
             'terminal': terminal,
             'x_pos': x_pos
         }
         
-        # Toggle logic
-        if current_sel and current_sel == new_sel:
+        # Toggle logic - if clicking the same bar, deselect it
+        if current_sel and current_sel.get('terminal') == terminal and current_sel.get('x_pos') == x_pos:
+            print(f"DEBUG: Deselecting bar - Terminal: {terminal}, x_pos: {x_pos}")
             return None, None
-            
+        
+        print(f"DEBUG: Selecting bar - Terminal: {terminal}, x_pos: {x_pos}")
         return new_sel, None
 
     # Update title based on country selection
@@ -935,8 +941,10 @@ def register_callbacks(dash_app, server):
                     for terminal in sorted(chart_df['Point'].unique()):
                         terminal_df = chart_df[chart_df['Point'] == terminal]
                         
-                        # Prepare customdata for tooltip: [Terminal, Time_Label]
-                        custom_data = terminal_df[['Point', 'Time_Label']].values
+                        # Prepare customdata for tooltip: [Terminal, Time_Label, x_pos]
+                        custom_data = []
+                        for _, row in terminal_df.iterrows():
+                            custom_data.append([row['Point'], row['Time_Label'], row['x_pos']])
                         
                         # Determine colors and borders based on selection
                         colors = []
@@ -945,32 +953,43 @@ def register_callbacks(dash_app, server):
                         
                         base_color = TERMINAL_COLORS.get(terminal, '#cccccc')
                         
+                        # Convert hex to RGB for opacity calculations
+                        r = int(base_color[1:3], 16)
+                        g = int(base_color[3:5], 16)
+                        b = int(base_color[5:7], 16)
+                        
                         for _, row in terminal_df.iterrows():
-                            is_selected = (
-                                selection and 
-                                selection['terminal'] == terminal and 
-                                selection['x_pos'] == row['x_pos']
-                            )
+                            x_pos = row['x_pos']
+                            
+                            # Determine if this bar is selected
+                            is_selected = False
+                            has_selection = selection is not None
+                            
+                            if has_selection:
+                                # Check if this specific bar is selected
+                                if (selection.get('terminal') == terminal and 
+                                    selection.get('x_pos') == x_pos):
+                                    is_selected = True
                             
                             # Apply opacity based on Point legend selection
                             is_dimmed_by_legend = selected_points_for_chart and terminal not in selected_points_for_chart
                             
-                            if not selection:
+                            if not has_selection:
                                 # No selection - normal or dimmed by legend
                                 if is_dimmed_by_legend:
-                                    colors.append(f'rgba({int(base_color[1:3], 16)}, {int(base_color[3:5], 16)}, {int(base_color[5:7], 16)}, 0.3)')
+                                    colors.append(f'rgba({r}, {g}, {b}, 0.3)')
                                 else:
                                     colors.append(base_color)
                                 line_colors.append('rgba(0,0,0,0)')
                                 line_widths.append(0)
                             elif is_selected:
-                                # Selected bar - highlighted
+                                # Selected bar - highlighted with black border
                                 colors.append(base_color)
                                 line_colors.append('black')
-                                line_widths.append(2)
+                                line_widths.append(3)
                             else:
-                                # Not selected - dimmed
-                                colors.append(f'rgba({int(base_color[1:3], 16)}, {int(base_color[3:5], 16)}, {int(base_color[5:7], 16)}, 0.2)')
+                                # Not selected - dimmed significantly
+                                colors.append(f'rgba({r}, {g}, {b}, 0.15)')
                                 line_colors.append('rgba(0,0,0,0)')
                                 line_widths.append(0)
                         
