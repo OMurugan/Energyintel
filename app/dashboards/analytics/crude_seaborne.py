@@ -1131,7 +1131,7 @@ def register_callbacks(dash_app, server):
             if not df_map.empty:
                 # Merge DB data with all fallback ports to ensure they exist
                 all_ports_df = pd.DataFrame({'port_name': ports_fallback_list})
-                df_ports = pd.merge(all_ports_df, df_map, on='port_name', how='left')
+                df_ports = pd.merge(all_ports_df, df_map, on='port_name', how='outer')
                 df_ports['total_vol'] = df_ports['total_vol'].fillna(0)
             else:
                 df_ports = pd.DataFrame({'port_name': ports_fallback_list})
