@@ -226,15 +226,17 @@ def create_layout():
                         'position': 'absolute', 'top': '25px', 'left': '60px', 'zIndex': '1000'
                     }),
 
-                    dcc.Loading(
-                        id='loading-seaborne-bar-chart',
-                        type='circle',
-                        children=dcc.Graph(
-                            id='seaborne-bar-chart',
-                            style={'height': '320px'},
-                            config={'displayModeBar': False}
+                    html.Div([
+                        dcc.Loading(
+                            id='loading-seaborne-bar-chart',
+                            type='circle',
+                            children=dcc.Graph(
+                                id='seaborne-bar-chart',
+                                style={'height': '320px'},
+                                config={'displayModeBar': False}
+                            )
                         )
-                    ),
+                    ], id='seaborne-bar-chart-container', n_clicks=0, style={'cursor': 'pointer'}),
                     html.Div(
                         "Energy Intelligence; data as of December 2025",
                         style={
@@ -664,44 +666,65 @@ def register_callbacks(dash_app, server):
 
     clientside_callback(
         """
-        function(clickData, currentStore) {
-            if (!clickData || !clickData.points || clickData.points.length === 0) {
-                return [currentStore, window.dash_clientside.no_update];
-            }
-            
-            const point = clickData.points[0];
-            const traceIdx = point.curveNumber;
-            let newVal = null;
-            let type = null;
+        function(clickData, bgClicks, currentStore) {
+            // Check context to see what triggered
+            const ctx = window.dash_clientside.callback_context;
+            let chartTriggered = false;
+            let bgTriggered = false;
 
-            if (traceIdx === 0) {
-                newVal = point.x;
-                type = 'bar';
-            } else if (traceIdx === 1) {
-                const cd = point.customdata;
-                newVal = Array.isArray(cd) ? cd[0] : cd;
-                type = 'year';
-            } else {
-                return [currentStore, null];
+            if (ctx && ctx.triggered) {
+                ctx.triggered.forEach(t => {
+                   if (t.prop_id.indexOf('seaborne-bar-chart.clickData') !== -1) chartTriggered = true;
+                   if (t.prop_id.indexOf('seaborne-bar-chart-container.n_clicks') !== -1) bgTriggered = true;
+                });
             }
 
-            let nextStore = {type: type, value: newVal};
-            if (currentStore && currentStore.type === type) {
-                const currV = String(currentStore.value).replace(/[\[\]\s]/g, '');
-                const newV = String(newVal).replace(/[\[\]\s]/g, '');
-                if (currV === newV) {
-                    nextStore = null;
+            // 1. Chart Click (Bar Interaction)
+            if (chartTriggered && clickData && clickData.points && clickData.points.length > 0) {
+                const point = clickData.points[0];
+                const traceIdx = point.curveNumber;
+                let newVal = null;
+                let type = null;
+    
+                if (traceIdx === 0) {
+                    newVal = point.x;
+                    type = 'bar';
+                } else if (traceIdx === 1) {
+                    const cd = point.customdata;
+                    newVal = Array.isArray(cd) ? cd[0] : cd;
+                    type = 'year';
+                } else {
+                    return [currentStore, null];
                 }
+    
+                let nextStore = {type: type, value: newVal};
+                if (currentStore && currentStore.type === type) {
+                    const currV = String(currentStore.value).replace(/[\[\]\s]/g, '');
+                    const newV = String(newVal).replace(/[\[\]\s]/g, '');
+                    if (currV === newV) {
+                        nextStore = null;
+                    }
+                }
+                
+                // Return new store state AND clear clickData
+                return [nextStore, null];
+            }
+
+            // 2. Background Click (Container Clicked while no Chart Click)
+            // If clickData is null/empty but callback fired, or explicitly bg frame
+            else if (bgTriggered || (!chartTriggered && bgClicks)) {
+                 if (currentStore) {
+                     return [null, window.dash_clientside.no_update];
+                 }
             }
             
-            // We return the new store state AND clear clickData to null 
-            // so the next click (even if on same year) always triggers a change
-            return [nextStore, null];
+            return [window.dash_clientside.no_update, window.dash_clientside.no_update];
         }
         """,
         [Output('seaborne-bar-highlight-store', 'data'),
          Output('seaborne-bar-chart', 'clickData')],
-        Input('seaborne-bar-chart', 'clickData'),
+        [Input('seaborne-bar-chart', 'clickData'),
+         Input('seaborne-bar-chart-container', 'n_clicks')],
         State('seaborne-bar-highlight-store', 'data'),
         prevent_initial_call=True
     )

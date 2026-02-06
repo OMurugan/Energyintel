@@ -37,6 +37,7 @@ def get_available_years():
     query = """
     SELECT DISTINCT EXTRACT(YEAR FROM date)::INT AS year
     FROM russia_master_data
+    WHERE type IN ('Transneft Seaborne', 'Bypassing Transneft', 'Pipeline')
     ORDER BY year DESC;
     """
     try:
@@ -113,6 +114,28 @@ def load_pipeline_data(years):
     except Exception as e:
         print(f"Error loading pipeline data: {e}")
         return pd.DataFrame()
+
+def get_latest_data_date():
+    """Fetch the latest data date available in the database for relevant series."""
+    query = """
+    SELECT MAX(date) as max_date
+    FROM russia_master_data
+    WHERE type IN ('Transneft Seaborne', 'Bypassing Transneft', 'Pipeline')
+    """
+    try:
+        results = execute_query(query)
+        if results and results[0]['max_date']:
+            latest_date = results[0]['max_date']
+            # If string, parse it. If datetime, format it.
+            if isinstance(latest_date, str):
+                latest_date = pd.to_datetime(latest_date)
+            
+            return latest_date.strftime("%B %Y")
+    except Exception as e:
+        print(f"Error fetching latest date: {e}")
+    
+    # Fallback if query fails
+    return "December 2025"
 
 # --- Layout ---
 
@@ -214,7 +237,7 @@ def create_layout():
                     # Chart 1
                     html.Div(dcc.Loading(
                         dcc.Graph(id='seaborne-chart', className='custom-chart', config={'displayModeBar': False}, style={'height': '340px'})
-                    ), style={'cursor': 'pointer'})
+                    ), id='seaborne-chart-container', n_clicks=0, style={'cursor': 'pointer'})
                 ], style={'position': 'relative'}),
                 
                 html.Hr(style={'margin': '5px 0', 'border': '0', 'borderTop': '1px solid #eee', 'clear': 'both'}),
@@ -296,7 +319,7 @@ def create_layout():
                     # Chart 2
                     html.Div(dcc.Loading(
                         dcc.Graph(id='pipeline-chart', className='custom-chart', config={'displayModeBar': False}, style={'height': '380px'})
-                    ), style={'cursor': 'pointer'})
+                    ), id='pipeline-chart-container', n_clicks=0, style={'cursor': 'pointer'})
                 ], style={'position': 'relative'}),
                 
             ], style={'flex': '1', 'marginRight': '30px', 'minWidth': '0'}),
@@ -349,7 +372,11 @@ def create_layout():
 
             ], style={'width': '160px', 'flexShrink': '0', 'position': 'sticky', 'top': '10px', 'paddingTop': '10px'})
             
-        ], style={'display': 'flex', 'flexDirection': 'row', 'alignItems': 'flex-start'})
+        ], style={'display': 'flex', 'flexDirection': 'row', 'alignItems': 'flex-start'}),
+        
+        # Footer
+        html.Div(f"Energy Intelligence; data as of {get_latest_data_date()}", 
+                 style={'fontSize': '11px', 'color': '#555', 'marginTop': '20px', 'fontStyle': 'italic', 'fontFamily': 'serif'})
         
     ], style={'padding': '15px 25px', 'backgroundColor': '#fff', 'fontFamily': 'sans-serif'})
 
@@ -513,19 +540,22 @@ def generate_timeline_data(years, mode='MONTHLY'):
      Input('year-check-filter', 'value'),
      Input('direction-dropdown', 'value'),
      Input('seaborne-agg-state', 'data'),
-     Input('pipeline-agg-state', 'data')],
+     Input('pipeline-agg-state', 'data'),
+     Input('seaborne-chart-container', 'n_clicks'),
+     Input('pipeline-chart-container', 'n_clicks')],
     [State('selected-seaborne', 'data'),
      State('selected-pipeline', 'data'),
      State('seaborne-chart', 'figure'),
      State('pipeline-chart', 'figure')]
 )
 def update_chart_selections(sea_click, pipe_click, sea_restyle, pipe_restyle, year_filter, dir_filter, 
-                            sea_agg, pipe_agg, sea_sel, pipe_sel, sea_fig, pipe_fig):
+                            sea_agg, pipe_agg, sea_bg_click, pipe_bg_click, sea_sel, pipe_sel, sea_fig, pipe_fig):
     ctx = callback_context
     if not ctx.triggered:
         return no_update, no_update, no_update, no_update
     
-    trigger_id = ctx.triggered[0]['prop_id']
+    triggers = [t['prop_id'] for t in ctx.triggered]
+    trigger_id = triggers[0] # Primary trigger for basic checks
     
     # Reset selections if year filter or direction filter changes
     # Reset selections if filter or granularity changes
@@ -533,7 +563,10 @@ def update_chart_selections(sea_click, pipe_click, sea_restyle, pipe_restyle, ye
         return None, None, None, None
     
     # --- Seaborne Logic ---
-    if 'seaborne-chart.clickData' in trigger_id or 'seaborne-chart.restyleData' in trigger_id:
+    sea_chart_triggered = any('seaborne-chart.clickData' in t or 'seaborne-chart.restyleData' in t for t in triggers)
+    sea_bg_triggered = any('seaborne-chart-container.n_clicks' in t for t in triggers)
+    
+    if sea_chart_triggered:
         new_sea_sel = no_update
         
         if 'seaborne-chart.clickData' in trigger_id and sea_click:
@@ -596,9 +629,18 @@ def update_chart_selections(sea_click, pipe_click, sea_restyle, pipe_restyle, ye
         if new_sea_sel != no_update:
             pipe_reset = None if pipe_sel else no_update
             return new_sea_sel, pipe_reset, None, None
-            
+
+    elif sea_bg_triggered and not sea_chart_triggered:
+        # Background Clicked -> Reset
+        if sea_sel:
+            pipe_reset = None if pipe_sel else no_update
+            return None, pipe_reset, None, None
+
     # --- Pipeline Logic ---
-    if 'pipeline-chart.clickData' in trigger_id or 'pipeline-chart.restyleData' in trigger_id:
+    pipe_chart_triggered = any('pipeline-chart.clickData' in t or 'pipeline-chart.restyleData' in t for t in triggers)
+    pipe_bg_triggered = any('pipeline-chart-container.n_clicks' in t for t in triggers)
+
+    if pipe_chart_triggered:
         new_pipe_sel = no_update
         
         if 'pipeline-chart.clickData' in trigger_id and pipe_click:
@@ -662,6 +704,12 @@ def update_chart_selections(sea_click, pipe_click, sea_restyle, pipe_restyle, ye
             sea_reset = None if sea_sel else no_update
             return sea_reset, new_pipe_sel, None, None
             
+    elif pipe_bg_triggered and not pipe_chart_triggered:
+        # Background Clicked -> Reset
+         if pipe_sel:
+            sea_reset = None if sea_sel else no_update
+            return sea_reset, None, None, None
+
     return no_update, no_update, no_update, no_update
 
 @callback(
@@ -797,9 +845,20 @@ def update_seaborne_chart(selected_years, sel_sea, agg_mode):
         agg_mode = (agg_mode or 'MONTHLY').upper()
         
         years = sorted([int(y) for y in selected_years])
+        df_sea = load_seaborne_data(years)
+
+        # Filter years to only exist in data
+        if not df_sea.empty:
+            present_years = set(df_sea['date'].dt.year.unique())
+            years = [y for y in years if y in present_years]
+        else:
+            years = []
+
+        if not years:
+             return go.Figure().update_layout(template="simple_white", title="No data for selected years"), []
+        
         timeline_df, year_annotations, month_separators, year_separators, num_years, year_centers = generate_timeline_data(years, mode=agg_mode)
         
-        df_sea = load_seaborne_data(years)
         fig_sea = go.Figure()
         
         # Add visual logic: specific highlighting for year mode
@@ -1037,8 +1096,22 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe, agg_mode):
         agg_mode = (agg_mode or 'MONTHLY').upper()
         
         years = sorted([int(y) for y in selected_years])
-        timeline_df, year_annotations, month_separators, year_separators, num_years, year_centers = generate_timeline_data(years, mode=agg_mode)
-        
+        df_pipe = load_pipeline_data(years)
+
+        # Pre-filter by direction
+        if not df_pipe.empty:
+            if direction_val == 'China':
+                df_pipe = df_pipe[df_pipe['destination'] == 'China']
+            else:
+                df_pipe = df_pipe[df_pipe['destination'].isin(DRUZHBA_DESTINATIONS)]
+
+        # Filter years to only exist in data
+        if not df_pipe.empty:
+            present_years = set(df_pipe['date'].dt.year.unique())
+            years = [y for y in years if y in present_years]
+        else:
+            years = []
+
         # Title and Legends
         if direction_val == 'China':
             pipe_title = "PIPELINE CRUDE EXPORTS TO CHINA ('000 b/d)"
@@ -1054,7 +1127,11 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe, agg_mode):
                                            id={'type':'legend-item','chart':'pipeline','value':d})
                                  for d in DRUZHBA_DESTINATIONS if d in COLOR_MAP]
 
-        df_pipe = load_pipeline_data(years)
+        if not years:
+            return go.Figure().update_layout(template="simple_white", title="No data for selected years"), pipe_title, pipe_legend_items
+
+        timeline_df, year_annotations, month_separators, year_separators, num_years, year_centers = generate_timeline_data(years, mode=agg_mode)
+        
         fig_pipe = go.Figure()
 
         # Add visual logic: specific highlighting for year mode
@@ -1080,10 +1157,8 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe, agg_mode):
                  df_pipe['group_key'] = df_pipe['date'].dt.strftime('%B')
 
             if direction_val == 'China':
-                df_pipe = df_pipe[df_pipe['destination'] == 'China']
                 destinations = ['China']
             else:
-                df_pipe = df_pipe[df_pipe['destination'].isin(DRUZHBA_DESTINATIONS)]
                 destinations = sorted(df_pipe['destination'].unique(), reverse=True)
             
             pipe_grouped = df_pipe.groupby(['year', 'group_key', 'destination'])['vol_kbpd'].sum().reset_index()
