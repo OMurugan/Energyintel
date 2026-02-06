@@ -150,6 +150,12 @@ def hex_to_rgba(hex_color, opacity):
 
 def _iso_for_country(country):
     """Return ISO Alpha-3 code for a country, using centralized mapping."""
+    # Manual patches for missing codes
+    if country == 'Luxembourg': return 'LUX'
+    if country == 'Czechia': return 'CZE'
+    if country == 'Moldova': return 'MDA'
+    if country == 'Republic of Moldova': return 'MDA'
+    
     return get_iso_code(country)
 
 def get_all_countries_with_coordinates():
@@ -1117,12 +1123,15 @@ def register_callbacks(dash_app, server):
         # Default to using checklist value if not triggered by legend
         # or if it's the initial load
         if 'legend-item-demand' not in trigger_id:
-            if not selected_countries or (selected_countries and '(All)' not in selected_countries and len(selected_countries) == 0):
+            # When triggered by checklist, use the checklist value directly
+            if not selected_countries:
                 current_selected = []  # Allow empty selection
-            elif selected_countries and '(All)' not in selected_countries:
-                current_selected = [c for c in selected_countries if c in available_countries]
-            else:
+            elif '(All)' in selected_countries:
+                # If (All) is selected, select all countries
                 current_selected = available_countries.copy()
+            else:
+                # Use the checklist selection as-is (filter out any invalid countries)
+                current_selected = [c for c in selected_countries if c in available_countries]
         else:
             # If triggered by legend, use the stored state as the baseline
             # Ensure current_selected is a list
@@ -1142,8 +1151,6 @@ def register_callbacks(dash_app, server):
                 else:
                     # Otherwise, select ONLY this country
                     current_selected = [clicked_country]
-        
-        # Don't force all countries to be selected - allow empty selection
         
         # Create legend items
         legend_items = []
@@ -1252,38 +1259,22 @@ def register_callbacks(dash_app, server):
         
         # Note: Sector filtering is now handled at the database level in load_data()
         
-        # Apply country filter FIRST - handle empty selection properly
-        if selected_countries is not None:
-            print(f"Map update - selected_countries: {selected_countries}")
-            if len(selected_countries) == 0:
-                # No countries selected - return empty map
-                return create_empty_map("No countries selected", height=700)
-            else:
-                # Filter by selected countries
-                print(f"Filtering map data by countries: {selected_countries}")
-                print(f"Available countries in filtered_df BEFORE country filter: {filtered_df['Country'].unique().tolist()}")
-                print(f"filtered_df shape BEFORE country filter: {filtered_df.shape}")
-                filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
-                print(f"Available countries in filtered_df AFTER country filter: {filtered_df['Country'].unique().tolist()}")
-                print(f"Filtered data shape AFTER country filter: {filtered_df.shape}")
+        # Check for empty country selection
+        has_selection = selected_countries is not None and len(selected_countries) > 0
+        
+        if selected_countries is not None and len(selected_countries) == 0:
+             return create_empty_map("No countries selected", height=700)
+        
+        # Filter by selected countries if not (All)
+        if selected_countries and '(All)' not in selected_countries:
+            filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
+        
+        # We also do NOT restrict to the latest year anymore, to ensures that ALL data 
+        # within the selected date range is aggregated and displayed.
+        # This solves the issue of missing countries that might not have data in the absolute latest month.
         
         if filtered_df.empty:
-            print(f"ERROR: filtered_df is empty after country filtering!")
-            print(f"Selected countries: {selected_countries}")
-            return create_empty_map("No data available for selected filters", height=700)
-        
-        # THEN for map, show only the latest year data within the filtered date range
-        # This is done AFTER country filtering to ensure selected countries aren't lost
-        if not filtered_df.empty and 'Year of Date' in filtered_df.columns:
-            # Get the latest year available in the filtered data
-            latest_year = filtered_df['Year of Date'].max()
-            print(f"Map: Latest year in filtered data: {latest_year}")
-            print(f"Map: Countries with data BEFORE year filter: {filtered_df['Country'].unique().tolist()}")
-            print(f"Map: Data shape BEFORE year filter: {filtered_df.shape}")
-            filtered_df = filtered_df[filtered_df['Year of Date'] == latest_year]
-            print(f"Map: Countries with data AFTER year filter (year={latest_year}): {filtered_df['Country'].unique().tolist()}")
-            print(f"Map: Data shape AFTER year filter: {filtered_df.shape}")
-            print(f"Map showing data for latest year within date range: {latest_year}")
+            return create_empty_map("No data available", height=700)
         
         # Aggregate data by country (sum values across years if multiple)
         agg_df = filtered_df.groupby(['Country', 'Latitude (generated)', 'Longitude (generated)', 'Year of Date']).agg({
@@ -1314,8 +1305,6 @@ def register_callbacks(dash_app, server):
         z_values = agg_df['Value'].tolist()
         max_volume = max(z_values) if z_values else 1
         
-        print(f"Map country names: {country_names}")
-        print(f"Map locations (ISO): {locations}")
         
         # Create hover text with structured format matching the professional design
         hover_text = agg_df.apply(
@@ -1339,20 +1328,37 @@ def register_callbacks(dash_app, server):
         if not all_countries_df.empty:
             countries_df = all_countries_df[all_countries_df['Country'].isin(countries_in_map)].copy()
         
-        # Determine selection parameters
+        # Determine selection parameters for visual styling
         selected_iso = None
         other_isos = None
         single_selected_country = None
         
-        # Check if only one country is selected (not all countries)
-        if selected_countries and len(selected_countries) == 1:
-            single_selected_country = selected_countries[0]
+        # Check if we have a subset of countries selected (not all)
+        all_available_countries = agg_df['Country'].unique().tolist()
+        
+        if selected_countries and len(selected_countries) < len(all_available_countries):
+            # Some countries are filtered - we need to show visual distinction
+            selected_country_isos = []
+            other_country_isos = []
             
-            # Find the ISO code for the selected country
-            if single_selected_country in agg_df['Country'].values:  # Use original Country column
-                selected_iso = agg_df.loc[agg_df['Country'] == single_selected_country, 'ISO_Code'].iloc[0]
-                other_isos = [iso for iso in locations if iso != selected_iso]
-                print(f"Map selection: {single_selected_country} (ISO: {selected_iso}), dimming {len(other_isos)} other countries")
+            for _, row in agg_df.iterrows():
+                country = row['Country']
+                iso = row['ISO_Code']
+                
+                if country in selected_countries:
+                    selected_country_isos.append(iso)
+                else:
+                    other_country_isos.append(iso)
+            
+            # If only one country is selected, use single selection mode
+            if len(selected_countries) == 1:
+                single_selected_country = selected_countries[0]
+                if single_selected_country in agg_df['Country'].values:
+                    selected_iso = agg_df.loc[agg_df['Country'] == single_selected_country, 'ISO_Code'].iloc[0]
+                    other_isos = other_country_isos
+            else:
+                # Multiple countries selected - dim the non-selected ones
+                other_isos = other_country_isos
         
         # Create the map using shared utilities
         fig = create_choropleth_map(
@@ -1369,157 +1375,6 @@ def register_callbacks(dash_app, server):
             zmax=max_volume,
             country_names=country_names
         )
-        
-        # Add country hover layer for outline highlighting (similar to country profile)
-        use_mapbox, _, mapbox_layout = get_mapbox_config()
-        geojson = load_world_geojson()
-        
-        # Add country hover layer for better interaction (similar to country_profile.py)
-        if use_mapbox and geojson and locations:
-            # Get all unique countries for hover layer
-            unique_countries = list(set(country_names))
-            unique_isos = []
-            valid_countries = []
-            
-            # Map country names to ISO codes for hover layer
-            for country in unique_countries:
-                iso = _iso_for_country(country)
-                if iso:
-                    unique_isos.append(iso)
-                    valid_countries.append(country)
-            
-            if unique_isos:
-                # Add country choropleth layer for hover interactions
-                country_values = [1] * len(unique_isos)  # Uniform values for consistent hover
-                
-                # Create dynamic hover text with actual data for each country
-                country_hover_text = []
-                for country in valid_countries:
-                    # Get actual data for this country from the aggregated data
-                    country_data = agg_df[agg_df['Country'] == country]
-                    if not country_data.empty:
-                        value = country_data.iloc[0]['Value']
-                        year = int(country_data.iloc[0]['Year of Date'])
-                        
-                        hover_text = (
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>{value:,.1f}</span><br>"
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
-                        )
-                    else:
-                        # Fallback if no data found
-                        hover_text = (
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>N/A</span><br>"
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>No data</span><br>"
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
-                        )
-                    country_hover_text.append(hover_text)
-                
-                fig.add_trace(
-                    go.Choroplethmapbox(
-                        geojson=geojson,
-                        locations=unique_isos,
-                        z=country_values,
-                        featureidkey="id",
-                        colorscale=[[0, 'rgba(200, 230, 200, 0.6)'], [1, 'rgba(200, 230, 200, 0.6)']],
-                        showscale=False,
-                        hoverinfo="text",
-                        hovertext=country_hover_text,
-                        hoverlabel=dict(
-                            bgcolor="white", 
-                            font_size=13, 
-                            font_color="#333", 
-                            bordercolor="#ccc", 
-                            font_family="Arial"
-                        ),
-                        customdata=valid_countries,
-                        marker_line_color="white",
-                        marker_line_width=1,
-                        marker_opacity=0.6,
-                        name="countries"  # Same name as main choropleth for consistent handling
-                    )
-                )
-        elif not use_mapbox and locations:
-            # Fallback geo hover layer
-            unique_countries = list(set(country_names))
-            unique_isos = []
-            valid_countries = []
-            
-            for country in unique_countries:
-                iso = _iso_for_country(country)
-                if iso:
-                    unique_isos.append(iso)
-                    valid_countries.append(country)
-            
-            if unique_isos:
-                country_values = [1] * len(unique_isos)
-                
-                # Create dynamic hover text with actual data for each country
-                country_hover_text = []
-                for country in valid_countries:
-                    # Get actual data for this country from the aggregated data
-                    country_data = agg_df[agg_df['Country'] == country]
-                    if not country_data.empty:
-                        value = country_data.iloc[0]['Value']
-                        year = int(country_data.iloc[0]['Year of Date'])
-                        
-                        hover_text = (
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>{value:,.1f}</span><br>"
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
-                        )
-                    else:
-                        # Fallback if no data found
-                        hover_text = (
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>N/A</span><br>"
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>No data</span><br>"
-                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
-                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
-                        )
-                    country_hover_text.append(hover_text)
-                
-                fig.add_trace(
-                    go.Choropleth(
-                        locations=unique_isos,
-                        z=country_values,
-                        locationmode='ISO-3',
-                        colorscale=[[0, 'rgba(200, 230, 200, 0.6)'], [1, 'rgba(200, 230, 200, 0.6)']],
-                        showscale=False,
-                        hoverinfo="text",
-                        hovertext=country_hover_text,
-                        hoverlabel=dict(
-                            bgcolor="white", 
-                            font_size=13, 
-                            font_color="#333", 
-                            bordercolor="#ccc", 
-                            font_family="Arial"
-                        ),
-                        customdata=valid_countries,
-                        marker_line_width=1,
-                        marker_line_color='white',
-                        marker_opacity=0.6,
-                        name="countries"
-                    )
-                )
         
         # Add custom margin and UI revision for gas demand
         fig.update_layout(
@@ -2325,8 +2180,6 @@ def register_callbacks(dash_app, server):
             return new_selection, new_state
             
         except Exception as e:
-            print(f"Map click error: {e}")
-            return no_update, no_update
             return no_update, no_update
 
     # Map Home Button - Reset map view
