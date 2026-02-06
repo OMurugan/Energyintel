@@ -579,6 +579,7 @@ def create_layout():
                                     "fontSize": "11px",
                                     "fontWeight": "normal",
                                     "marginBottom": "10px",
+                                    "marginRight": "10px",
                                 },
                             )
                         ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '5px'}),
