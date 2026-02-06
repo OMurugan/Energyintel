@@ -8,7 +8,7 @@ import logging
 
 # Set up logging
 logger = logging.getLogger(__name__)
-
+    
 # Color mapping for Companies based on user design
 COMPANY_COLORS = {
     'Rosneft': '#1B365D',
@@ -83,23 +83,24 @@ def create_layout():
         dcc.Store(id='company-bar-selection', data=None),
         dcc.Store(id='product-treemap-selection', data=None),
         dcc.Store(id='product-company-selection', data=None),
-        dcc.Store(id='product-expansion-store', data={'Year': False, 'Quarter': False, 'Month': True, 'Day': False}), 
+        dcc.Store(id='product-expansion-store', data={'Year': False, 'Quarter': False, 'Month': True, 'Day': False}),
+        dcc.Store(id='company-expansion-store', data={'Year': False, 'Quarter': False, 'Month': True, 'Day': False}), 
 
         # Main Tab Container
         dcc.Tabs(id='product-output-tabs', value='by-company', children=[
             dcc.Tab(label='By Company', value='by-company', className='custom-tab', selected_className='custom-tab--selected'),
             dcc.Tab(label='By Product', value='by-product', className='custom-tab', selected_className='custom-tab--selected'),
-        ], className='custom-tabs-container'),
+        ], className='custom-tabs-container', style={'width': '100%'}),
 
         # Tab Content
-        html.Div(id='product-output-content', style={'padding': '20px'}),
+        html.Div(id='product-output-content', style={'padding': '20px', 'width': '100%', 'boxSizing': 'border-box'}),
 
         # Downloads
         dcc.Download(id="download-company-treemap"),
         dcc.Download(id="download-company-bar"),
         dcc.Download(id="download-product-treemap"),
         dcc.Download(id="download-product-bar"),
-    ], style={'backgroundColor': '#f8f9fa', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'})
+    ], style={'backgroundColor': '#f8f9fa', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif', 'width': '100%', 'boxSizing': 'border-box'})
 
 # Clientside callbacks for fast interactivity
 clientside_callback(
@@ -275,6 +276,63 @@ def update_expansion_state(y_c, q_c, m_c, d_c, current_visibility):
         '-' if new_visibility.get('Day') else '+'
     )
 
+@callback(
+    [Output('company-expansion-store', 'data'),
+     Output('btn-company-expand-year', 'children'),
+     Output('btn-company-expand-quarter', 'children'),
+     Output('btn-company-expand-month', 'children'),
+     Output('btn-company-expand-day', 'children')],
+    [Input('btn-company-expand-year', 'n_clicks'),
+     Input('btn-company-expand-quarter', 'n_clicks'),
+     Input('btn-company-expand-month', 'n_clicks'),
+     Input('btn-company-expand-day', 'n_clicks')],
+    [State('company-expansion-store', 'data')],
+    prevent_initial_call=True
+)
+def update_company_expansion_state(y_c, q_c, m_c, d_c, current_visibility):
+    from dash import callback_context
+    ctx = callback_context
+    if not ctx.triggered:
+        return current_visibility, '+', '+', '-', '+'
+    
+    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    new_visibility = current_visibility.copy() if current_visibility else {'Year': False, 'Quarter': False, 'Month': False, 'Day': False}
+    
+    if button_id == 'btn-company-expand-year':
+        new_visibility['Year'] = not new_visibility.get('Year', False)
+        if not new_visibility['Year']:
+            new_visibility['Quarter'] = False
+            new_visibility['Month'] = False
+            new_visibility['Day'] = False
+    elif button_id == 'btn-company-expand-quarter':
+        new_visibility['Quarter'] = not new_visibility.get('Quarter', False)
+        if new_visibility['Quarter']:
+            new_visibility['Year'] = True
+        else:
+            new_visibility['Month'] = False
+            new_visibility['Day'] = False
+    elif button_id == 'btn-company-expand-month':
+        new_visibility['Month'] = not new_visibility.get('Month', False)
+        if new_visibility['Month']:
+            new_visibility['Year'] = True
+            new_visibility['Quarter'] = True
+        else:
+            new_visibility['Day'] = False
+    elif button_id == 'btn-company-expand-day':
+        new_visibility['Day'] = not new_visibility.get('Day', False)
+        if new_visibility['Day']:
+            new_visibility['Year'] = True
+            new_visibility['Quarter'] = True
+            new_visibility['Month'] = True
+    
+    return (
+        new_visibility, 
+        '-' if new_visibility.get('Year') else '+',
+        '-' if new_visibility.get('Quarter') else '+',
+        '-' if new_visibility.get('Month') else '+',
+        '-' if new_visibility.get('Day') else '+'
+    )
+
 def create_by_company_layout():
     """Layout for the 'By Company' tab"""
     return html.Div([
@@ -313,17 +371,61 @@ def create_by_company_layout():
                     })
                 ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'margin': '20px 0 10px 0'}),
                 
-                # Stacked Bar Chart
-                dcc.Loading(
-                    id="loading-company-bar",
-                    type="default",
-                    color='#FF4500',
-                    children=dcc.Graph(
-                        id='company-bar-chart',
-                        config={'displayModeBar': False},
-                        style={'height': '350px'}
+                # Stacked Bar Chart with Hierarchy Controls
+                html.Div([
+                    # Hierarchy Level Controls (+/- buttons)
+                    html.Div([
+                        html.Div([
+                            html.Span("Year of Date", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px', 'fontWeight': 'bold'}),
+                            html.Button('+', id='btn-company-expand-year', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Quarter of Date", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px', 'fontWeight': 'bold'}),
+                            html.Button('+', id='btn-company-expand-quarter', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Month of Date", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px', 'fontWeight': 'bold'}),
+                            html.Button('-', id='btn-company-expand-month', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Day of Date", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px', 'fontWeight': 'bold'}),
+                            html.Button('+', id='btn-company-expand-day', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center'})
+                    ], style={
+                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+                        'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px'
+                    }),
+
+                    dcc.Loading(
+                        id="loading-company-bar",
+                        type="default",
+                        color='#FF4500',
+                        children=dcc.Graph(
+                            id='company-bar-chart',
+                            config={'displayModeBar': False},
+                            style={'height': '350px'}
+                        )
                     )
-                ),
+                ], style={'position': 'relative'}),
                 
                 # Footer Source
                 html.Div([
@@ -331,7 +433,7 @@ def create_by_company_layout():
                            style={'fontStyle': 'italic', 'fontSize': '12px', 'marginTop': '20px', 'color': '#1b365d'})
                 ])
 
-            ], style={'width': '88%', 'display': 'inline-block', 'verticalAlign': 'top'}),
+            ], style={'flex': '1', 'minWidth': '0'}),
 
             # Right side: Controls
             html.Div([
@@ -358,22 +460,22 @@ def create_by_company_layout():
                     dcc.RadioItems(
                         id='company-product-selector',
                         options=[
-                            {'label': ' Bitumen And Resi...', 'value': 'Bitumen And Residues'},
+                            {'label': ' Bitumen And Residues', 'value': 'Bitumen And Residues'},
                             {'label': ' Diesel And Gasoil', 'value': 'Diesel And Gasoil'},
                             {'label': ' Fuel Oil', 'value': 'Fuel Oil'},
                             {'label': ' Gasoline', 'value': 'Gasoline'},
-                            {'label': ' Jet Fuel And Kero...', 'value': 'Jet Fuel And Kerosene'},
+                            {'label': ' Jet Fuel And Kerosene', 'value': 'Jet Fuel And Kerosene'},
                             {'label': ' Naphtha', 'value': 'Naphtha'},
                             {'label': ' Petroleum Coke', 'value': 'Petroleum Coke'},
                             {'label': ' VGO', 'value': 'VGO'}
                         ],
                         value='Diesel And Gasoil',
-                        labelStyle={'display': 'block', 'marginBottom': '2px', 'fontSize': '13px'}
+                        labelStyle={'display': 'block', 'marginBottom': '2px', 'fontSize': '13px', 'whiteSpace': 'normal', 'wordWrap': 'break-word'}
                     )
                 ])
-            ], style={'width': '10%', 'display': 'inline-block', 'marginLeft': '2%', 'verticalAlign': 'top'})
-        ], style={'display': 'flex', 'justifyContent': 'space-between'})
-    ])
+            ], style={'width': '160px', 'flexShrink': '0', 'marginLeft': '25px', 'paddingTop': '0px'})
+        ], style={'display': 'flex', 'flexDirection': 'row', 'justifyContent': 'flex-start', 'alignItems': 'flex-start', 'width': '100%'})
+    ], style={'width': '100%', 'boxSizing': 'border-box'})
 
 def create_by_product_layout():
     """Layout for the 'By Product' tab"""
@@ -508,8 +610,8 @@ def create_by_product_layout():
                 ], style={'padding': '10px 0'})
 
             ], style={'width': '160px', 'flexShrink': '0', 'marginLeft': '25px', 'paddingTop': '40px'})
-        ], style={'display': 'flex', 'flexDirection': 'row', 'justifyContent': 'flex-start', 'alignItems': 'flex-start'})
-    ])
+        ], style={'display': 'flex', 'flexDirection': 'row', 'justifyContent': 'flex-start', 'alignItems': 'flex-start', 'width': '100%'})
+    ], style={'width': '100%', 'boxSizing': 'border-box'})
 
 def register_callbacks(dash_app, server):
     """Register all callbacks for Product Output Analytics"""
@@ -533,9 +635,10 @@ def register_callbacks(dash_app, server):
         [Input('company-year-selector', 'value'),
          Input('company-product-selector', 'value'),
          Input('company-treemap-selection', 'data'),
-         Input('company-bar-selection', 'data')]
+         Input('company-bar-selection', 'data'),
+         Input('company-expansion-store', 'data')]
     )
-    def update_company_charts(selected_year, selected_product, treemap_sel, bar_sel):
+    def update_company_charts(selected_year, selected_product, treemap_sel, bar_sel, expansion_state):
         # Base query for Russia Product Output (Filtered to start from 2022 to match live dash)
         query = f"""
         SELECT company, date, vol_kbpd 
@@ -672,6 +775,7 @@ def register_callbacks(dash_app, server):
                     customdata=custom_data,  # CRITICAL: Add customdata for click interactivity
                     tiling=dict(pad=2),
                     maxdepth=1,
+                    hovertemplate="<b>Company:</b> %{customdata[0]}<br><b>Volume:</b> %{customdata[1]:,.0f} ('000 b/d)<extra></extra>",
                     hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"))
                 ))
                 tree_fig.update_layout(
@@ -681,17 +785,43 @@ def register_callbacks(dash_app, server):
                 )
 
             # --- BAR CHART DATA ---
-            # Group by month and company
-            df['month_sort'] = df['date'].dt.to_period('M')
-            # Use %y for 2-digit year to avoid truncation/splitting like Ma y..
-            df['month_display'] = df['date'].dt.strftime('%b<br>%y') 
-            df['hover_date'] = df['date'].dt.strftime('%b %Y')
+            # Determine granularity level
+            if not expansion_state:
+                expansion_state = {'Year': False, 'Quarter': False, 'Month': True, 'Day': False}
             
-            bar_data = df.groupby(['month_sort', 'month_display', 'hover_date', 'company'])['vol_kbpd'].sum().reset_index()
-            bar_data = bar_data.sort_values('month_sort')
+            gran_level = 'MONTH'  # Default
+            if expansion_state.get('Day'):
+                gran_level = 'DAY'
+            elif expansion_state.get('Month'):
+                gran_level = 'MONTH'
+            elif expansion_state.get('Quarter'):
+                gran_level = 'QUARTER'
+            elif expansion_state.get('Year'):
+                gran_level = 'YEAR'
+            
+            # Group by appropriate time period
+            if gran_level == 'YEAR':
+                df['time_sort'] = df['date'].dt.year
+                df['time_display'] = df['date'].dt.year.astype(str)
+                df['hover_date'] = df['date'].dt.year.astype(str)
+            elif gran_level == 'QUARTER':
+                df['time_sort'] = df['date'].dt.to_period('Q')
+                df['time_display'] = df['date'].dt.to_period('Q').astype(str)
+                df['hover_date'] = df['date'].dt.to_period('Q').astype(str)
+            elif gran_level == 'DAY':
+                df['time_sort'] = df['date']
+                df['time_display'] = df['date'].dt.strftime('%d<br>%b<br>%y')
+                df['hover_date'] = df['date'].dt.strftime('%d %b %Y')
+            else:  # MONTH
+                df['time_sort'] = df['date'].dt.to_period('M')
+                df['time_display'] = df['date'].dt.strftime('%b<br>%y')
+                df['hover_date'] = df['date'].dt.strftime('%b %Y')
+            
+            bar_data = df.groupby(['time_sort', 'time_display', 'hover_date', 'company'])['vol_kbpd'].sum().reset_index()
+            bar_data = bar_data.sort_values('time_sort')
             
             bar_fig = go.Figure()
-            unique_months = bar_data['month_display'].unique()
+            unique_times = bar_data['time_display'].unique()
             
             companies_in_data = bar_data['company'].unique()
             # Calculate total volume per company to sort High to Low (bottom to top) as clarified by user
@@ -704,10 +834,10 @@ def register_callbacks(dash_app, server):
                     continue
 
                 comp_df = bar_data[bar_data['company'] == company]
-                # Reindex to ensure all months are presents
-                comp_df = comp_df.set_index('month_display').reindex(unique_months).fillna({'vol_kbpd': 0, 'company': company})
-                # Recover hover_date and month_display
-                temp_map = bar_data[['month_display', 'hover_date']].drop_duplicates().set_index('month_display')
+                # Reindex to ensure all time periods are present
+                comp_df = comp_df.set_index('time_display').reindex(unique_times).fillna({'vol_kbpd': 0, 'company': company})
+                # Recover hover_date and time_display
+                temp_map = bar_data[['time_display', 'hover_date']].drop_duplicates().set_index('time_display')
                 comp_df['hover_date'] = temp_map.reindex(comp_df.index)['hover_date'].fillna('').values
                 comp_df = comp_df.reset_index()
 
@@ -748,11 +878,11 @@ def register_callbacks(dash_app, server):
 
                 bar_fig.add_trace(go.Bar(
                     name=company,
-                    x=comp_df['month_display'],
+                    x=comp_df['time_display'],
                     y=comp_df['vol_kbpd'],
                     marker=dict(color=marker_colors, line=dict(width=line_widths, color=line_colors)),
                     customdata=[[str(company), str(date)] for date in comp_df['hover_date']],  # Simple customdata for callbacks
-                    hovertemplate="Company: " + company + "<br>Volume: %{y:,.0f} ('000 b/d)<extra></extra>",
+                    hovertemplate="<b>Company:</b> %{customdata[0]}<br><b>Date:</b> %{customdata[1]}<br><b>Volume:</b> %{y:,.0f} ('000 b/d)<extra></extra>",
                     hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"))
                 ))
 
@@ -919,6 +1049,7 @@ def register_callbacks(dash_app, server):
                     textinfo="label",
                     marker=dict(colors=marker_colors),
                     customdata=custom_data,  # Keep for clientside callbacks
+                    hovertemplate="<b>Product:</b> %{customdata[0]}<br><b>Volume:</b> %{customdata[1]:,.0f} ('000 b/d)<extra></extra>",
                     hoverlabel=dict(
                         bgcolor="white",
                         font_size=12,
@@ -1065,7 +1196,9 @@ def register_callbacks(dash_app, server):
                             textinfo='none',
                             hole=0,
                             showlegend=False,
-                            customdata=[[str(c), float(v), str(curr_slot_id)] for c, v in period_data[['company', 'vol_kbpd']].values],  # Simple customdata for callbacks
+                            customdata=[[str(c), float(v), str(curr_slot_id), slot['label']] for c, v in period_data[['company', 'vol_kbpd']].values],  # Added slot label for date
+                            hovertemplate="<b>Company:</b> %{customdata[0]}<br><b>Date:</b> %{customdata[3]} " + str(selected_year) + "<br><b>Volume:</b> %{customdata[1]:,.0f} ('000 b/d)<extra></extra>",
+                            hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial")),
                             domain={'x': [i*col_width, (i+1)*col_width], 'y': [0.645, 0.765]}
                         ))
                         
