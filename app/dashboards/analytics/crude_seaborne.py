@@ -277,10 +277,11 @@ def create_layout():
                     style_data_conditional=[
                         {'if': {'filter_query': '{yoy_pct} < 0'}, 'color': '#d9534f'},
                         {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'},
-                        {'if': {'column_id': 'period'}, 'borderRight': '1px solid #eee'},
-                        {'if': {'filter_query': '{port_name} eq " "'}, 'borderTop': '2px solid #ccc', 'fontWeight': 'bold'}
+                        {'if': {'column_id': 'period'}, 'borderRight': '1px solid #eee', 'backgroundColor': 'white', 'borderBottom': 'none', 'borderTop': 'none'},
+                        {'if': {'filter_query': '{port_name} eq " "'}, 'borderTop': '2px solid #ccc', 'fontWeight': 'bold'},
+                        {'if': {'column_id': 'period', 'filter_query': '{port_name} eq " "'}, 'borderTop': 'none'}
                     ],
-                    css=[{'selector': 'td[data-dash-column="period"]', 'rule': 'writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: auto; text-align: center; vertical-align: middle;'},
+                    css=[{'selector': 'td[data-dash-column="period"]', 'rule': 'writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: auto; text-align: center; vertical-align: middle; padding: 0 !important;'},
                          {'selector': '.dash-spreadsheet td.highlighted', 'rule': f'background-color: {EI_LIGHT_BLUE} !important; opacity: 1 !important;'},
                          {'selector': '.highlight-mode td:not(.highlighted)', 'rule': 'opacity: 0.3; transition: opacity 0.2s;'}]
                 )
@@ -617,26 +618,32 @@ def register_callbacks(dash_app, server):
             
             # Merge logic for period column
             data = []
-            last_period = None
-            for _, row in pivot_df.iterrows():
+            
+            # Calculate middle indices for each period group
+            period_indices = {}
+            current_idx = 0
+            for period, group in pivot_df.groupby('period', sort=False):
+                count = len(group)
+                middle_offset = count // 2
+                period_indices[period] = current_idx + middle_offset
+                current_idx += count
+            
+            for i, row in pivot_df.iterrows():
                 formatted_row = {}
                 current_period = row['period']
                 
-                # Fig looks like it's centered or repeated. 
-                # Let's show it on the first row of each group and keep others empty
-                if current_period != last_period:
+                # Show period label only on the middle row of the group
+                if i == period_indices.get(current_period):
                     formatted_row['period'] = current_period
                 else:
                     formatted_row['period'] = ""
-                
-                last_period = current_period
                 
                 for col in pivot_df.columns:
                     if col == 'period': continue
                     val = row[col]
                     if col == 'port_name':
                         if val == 'All':
-                             formatted_row[col] = " " # Blank string for visual separation as per image 2 where loading port col is blank
+                             formatted_row[col] = " " # Blank string for visual separation
                         # Truncate long port names like in fig
                         elif val and len(val) > 13:
                             formatted_row[col] = val[:11] + ".."
@@ -654,6 +661,7 @@ def register_callbacks(dash_app, server):
             return [], []
 
     from dash import clientside_callback
+
     clientside_callback(
         """
         function(clickData, currentStore) {
