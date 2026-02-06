@@ -102,34 +102,33 @@ def create_layout():
     ], style={'backgroundColor': '#f8f9fa', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'})
 
 # Clientside callbacks for fast interactivity
-# Temporarily disable this clientside callback to test
-# clientside_callback(
-#     """
-#     function(clickData, currentSelection) {
-#         if (!clickData || !clickData.points || clickData.points.length === 0) {
-#             return [currentSelection, window.dash_clientside.no_update];
-#         }
-#         const point = clickData.points[0];
-#         if (!point.customdata || !Array.isArray(point.customdata) || point.customdata.length < 1) {
-#             return [null, null];
-#         }
-#         const clickedCompany = String(point.customdata[0] || '').trim();
-#         if (!clickedCompany) {
-#             return [null, null];
-#         }
-#         let nextSelection = clickedCompany;
-#         if (currentSelection && currentSelection === clickedCompany) {
-#             nextSelection = null;
-#         }
-#         return [nextSelection, null];
-#     }
-#     """,
-#     [Output('company-treemap-selection', 'data'),
-#      Output('company-treemap', 'clickData')],
-#     Input('company-treemap', 'clickData'),
-#     State('company-treemap-selection', 'data'),
-#     prevent_initial_call=True
-# )
+clientside_callback(
+    """
+    function(clickData, currentSelection) {
+        if (!clickData || !clickData.points || clickData.points.length === 0) {
+            return [currentSelection, window.dash_clientside.no_update];
+        }
+        const point = clickData.points[0];
+        if (!point.customdata || !Array.isArray(point.customdata) || point.customdata.length < 1) {
+            return [null, null];
+        }
+        const clickedCompany = String(point.customdata[0] || '').trim();
+        if (!clickedCompany) {
+            return [null, null];
+        }
+        let nextSelection = clickedCompany;
+        if (currentSelection && currentSelection === clickedCompany) {
+            nextSelection = null;
+        }
+        return [nextSelection, null];
+    }
+    """,
+    [Output('company-treemap-selection', 'data'),
+     Output('company-treemap', 'clickData')],
+    Input('company-treemap', 'clickData'),
+    State('company-treemap-selection', 'data'),
+    prevent_initial_call=True
+)
 
 clientside_callback(
     """
@@ -543,7 +542,6 @@ def register_callbacks(dash_app, server):
         FROM russia_master_data 
         WHERE category = 'Refining And Products Output' 
         AND commodity = '{selected_product}'
-        AND date >= '2022-01-01'
         """
         
         try:
@@ -564,10 +562,33 @@ def register_callbacks(dash_app, server):
             
             # --- TREEMAP DATA ---
             if selected_year == 'All':
-                # For 'All Years', use the latest available month snapshot
-                latest_date = df['date'].max()
-                df_tree_snapshot = df[df['date'] == latest_date]
-                year_label = "ALL YEARS"
+                # For 'All Years', user expects sum of annual averages (e.g. 2022 avg + 2023 avg + ...)
+                # derived from comparing ~500 (mean) vs ~2200 (live dashboard) for ~4 years.
+                
+                # 1. Calculate Average volume per Company per Year
+                annual_avgs = df.groupby(['company', 'year'])['vol_kbpd'].mean().reset_index()
+                
+                # 2. Sum these annual averages for each company
+                treemap_data = annual_avgs.groupby('company')['vol_kbpd'].sum().reset_index()
+                
+                # Generate dynamic title: "IN 2022, 2023, 2024 and X more"
+                all_years = sorted(df['year'].unique())
+                
+                # Per user request, prioritize displaying years starting from 2022
+                # But include all data in the "more" count
+                display_candidates = [y for y in all_years if y >= 2022]
+                if not display_candidates:
+                    display_candidates = all_years
+                
+                shown_years = display_candidates[:3]
+                remainder_count = len(all_years) - len(shown_years)
+                
+                if remainder_count > 0:
+                     year_label_str = f"{', '.join(map(str, shown_years))} and {remainder_count} more"
+                else:
+                     year_label_str = ', '.join(map(str, shown_years))
+                year_label = year_label_str 
+                
             else:
                 # For a specific year, use January (Month 1) as requested by the user
                 target_year = int(selected_year)
@@ -576,13 +597,17 @@ def register_callbacks(dash_app, server):
                     (df['date'].dt.month == 1)
                 ]
                 year_label = str(selected_year)
-            
-            if df_tree_snapshot.empty:
+                
+                if df_tree_snapshot.empty:
+                    treemap_data = pd.DataFrame(columns=['company', 'vol_kbpd'])
+                else:
+                    treemap_data = df_tree_snapshot.groupby('company')['vol_kbpd'].sum().reset_index()
+
+            # Shared logic for both branches if data exists
+            if treemap_data.empty:
                 tree_fig = go.Figure()
                 tree_fig.add_annotation(text=f"No data for {year_label}", showarrow=False)
             else:
-                treemap_data = df_tree_snapshot.groupby('company')['vol_kbpd'].sum().reset_index()
-                
                 # Sort by volume descending to match "live" design as requested
                 treemap_data = treemap_data.sort_values('vol_kbpd', ascending=False)
                 
@@ -604,14 +629,17 @@ def register_callbacks(dash_app, server):
                     base_color = COMPANY_COLORS.get(company, DEFAULT_COLOR)
                     
                     if treemap_sel and company != treemap_sel:
-                        marker_colors.append(hex_to_rgba(base_color, 0.2))
+                        # Dim non-selected companies
+                        marker_colors.append(hex_to_rgba(base_color, 0.3))
                         line_widths.append(0)
                         line_colors.append('rgba(0,0,0,0)')
                     elif treemap_sel and company == treemap_sel:
+                        # Highlight selected company with black border
                         marker_colors.append(base_color)
-                        line_widths.append(2)
+                        line_widths.append(3)
                         line_colors.append('black')
                     else:
+                        # Default state - no selection
                         marker_colors.append(base_color)
                         line_widths.append(0)
                         line_colors.append('rgba(0,0,0,0)')
@@ -641,6 +669,7 @@ def register_callbacks(dash_app, server):
                     values=treemap_data['vol_kbpd'],
                     textinfo="label",
                     marker=dict(colors=marker_colors, line=dict(width=line_widths, color=line_colors)),
+                    customdata=custom_data,  # CRITICAL: Add customdata for click interactivity
                     tiling=dict(pad=2),
                     maxdepth=1,
                     hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"))
@@ -1150,7 +1179,6 @@ def register_callbacks(dash_app, server):
             FROM russia_master_data 
             WHERE category = 'Refining And Products Output' 
             AND commodity = '{selected_product}'
-            AND date >= '2022-01-01'
             """
             results = execute_query(query)
             df = pd.DataFrame(results)
@@ -1191,7 +1219,6 @@ def register_callbacks(dash_app, server):
             FROM russia_master_data 
             WHERE category = 'Refining And Products Output' 
             AND commodity = '{selected_product}'
-            AND date >= '2022-01-01'
             """
             results = execute_query(query)
             df = pd.DataFrame(results)
