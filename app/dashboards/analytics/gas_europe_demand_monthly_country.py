@@ -106,7 +106,7 @@ MAP_COLOR_SCALE = [
 GRAN_BTN_CONTAINER_STYLE = {
     'display': 'flex',
     'align-items': 'center',
-    'margin-right': '20px'
+    'margin-right': '10px'
 }
 
 GRAN_BTN_ACTIVE = {
@@ -539,7 +539,7 @@ def create_layout():
                     ),
                 
                 ], style={'padding': '10px', 'backgroundColor': '#fcfcfc', 'borderLeft': '1px solid #eee', 'minHeight': '500px'})
-            ], style={'width': '250px', 'float': 'right', 'position': 'fixed', 'right': 0, 'top': 0, 'height': '100vh', 'overflowY': 'auto', 'zIndex': 100}),
+            ], style={'float': 'right'}),
 
             # Main content area
             html.Div([
@@ -579,6 +579,7 @@ def create_layout():
                                     "fontSize": "11px",
                                     "fontWeight": "normal",
                                     "marginBottom": "10px",
+                                    "marginRight": "20px",
                                 },
                             )
                         ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '5px'}),
@@ -598,31 +599,26 @@ def create_layout():
                     
                     # Right Side - Line Chart
                     html.Div([
-                        # Chart Granularity Buttons
+                        # Chart Granularity Buttons with Export CSV
                         html.Div([
                             html.Div([
-                                html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                                html.Button('+', id='chart-toggle-year-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
-                            ], style=GRAN_BTN_CONTAINER_STYLE),
-                            html.Div([
-                                html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                                html.Button('+', id='chart-toggle-quarter-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
-                            ], style=GRAN_BTN_CONTAINER_STYLE),
-                            html.Div([
-                                html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                                html.Button('-', id='chart-toggle-month-btn-demand', n_clicks=0, style=GRAN_BTN_ACTIVE)
-                            ], style=GRAN_BTN_CONTAINER_STYLE),
-                            html.Div([
-                                html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                                html.Button('+', id='chart-toggle-day-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
-                            ], style=GRAN_BTN_CONTAINER_STYLE),
-                        ], style={'display': 'flex', 'padding': '5px 0', 'backgroundColor': '#f8f9fa', 'marginBottom': '10px', 'borderRadius': '4px'}),
-                        
-                        html.Div([
-                            html.H3("", style={
-                                'color': '#1b365d', 'fontSize': '16px', 'fontWeight': 'bold',
-                                'marginBottom': '15px', 'textAlign': 'center', 'flex': '1'
-                            }),
+                                html.Div([
+                                    html.Span("Yr of Dt", title="Year of Date", style={'fontSize': '11px', 'marginRight': '5px', 'cursor': 'help'}),
+                                    html.Button('+', id='chart-toggle-year-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                                ], style=GRAN_BTN_CONTAINER_STYLE),
+                                html.Div([
+                                    html.Span("Qtr of Dt", title="Quarter of Date", style={'fontSize': '11px', 'marginRight': '5px', 'cursor': 'help'}),
+                                    html.Button('+', id='chart-toggle-quarter-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                                ], style=GRAN_BTN_CONTAINER_STYLE),
+                                html.Div([
+                                    html.Span("Mth of Dt", title="Month of Date", style={'fontSize': '11px', 'marginRight': '5px', 'cursor': 'help'}),
+                                    html.Button('-', id='chart-toggle-month-btn-demand', n_clicks=0, style=GRAN_BTN_ACTIVE)
+                                ], style=GRAN_BTN_CONTAINER_STYLE),
+                                html.Div([
+                                    html.Span("Day of Dt", title="Day of Date", style={'fontSize': '11px', 'marginRight': '5px', 'cursor': 'help'}),
+                                    html.Button('+', id='chart-toggle-day-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                                ], style=GRAN_BTN_CONTAINER_STYLE),
+                            ], style={'display': 'flex', 'flex': '1'}),
                             html.Button(
                                 "Export to CSV",
                                 id="export-demand-chart-btn",
@@ -636,10 +632,11 @@ def create_layout():
                                     "cursor": "pointer",
                                     "fontSize": "11px",
                                     "fontWeight": "normal",
-                                    "marginBottom": "10px",
+                                    "marginLeft": "10px",
                                 },
                             )
-                        ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '5px'}),
+                        ], style={'display': 'flex', 'alignItems': 'center', 'padding': '5px', 'backgroundColor': '#f8f9fa', 'marginBottom': '10px', 'borderRadius': '4px'}),
+                        
                         dcc.Loading(
                             id="loading-chart-demand",
                             type="circle",
@@ -650,33 +647,26 @@ def create_layout():
                 
                 # Table Section
                 html.Div([
-                    # Table Granularity Buttons
+                    # Table Granularity Buttons with Export CSV
                     html.Div([
                         html.Div([
-                            html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                            html.Button('+', id='table-toggle-year-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
-                        ], style=GRAN_BTN_CONTAINER_STYLE),
-                        html.Div([
-                            html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                            html.Button('+', id='table-toggle-quarter-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
-                        ], style=GRAN_BTN_CONTAINER_STYLE),
-                        html.Div([
-                            html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                            html.Button('-', id='table-toggle-month-btn-demand', n_clicks=0, style=GRAN_BTN_ACTIVE)
-                        ], style=GRAN_BTN_CONTAINER_STYLE),
-                        html.Div([
-                            html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                            html.Button('+', id='table-toggle-day-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
-                        ], style=GRAN_BTN_CONTAINER_STYLE),
-                    ], style={'display': 'flex', 'padding': '10px 0', 'backgroundColor': '#f8f9fa', 'marginBottom': '15px', 'borderRadius': '4px'}),
-                    
-                    html.Div([
-                        html.H3("", style={
-                            'color': '#1b365d', 'fontSize': '16px', 'fontWeight': 'bold',
-                            'marginTop': '30px', 'marginBottom': '15px'
-                        }),
-                    ], style={'flex': '1'}),
-                    html.Div([
+                            html.Div([
+                                html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                                html.Button('+', id='table-toggle-year-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                            ], style=GRAN_BTN_CONTAINER_STYLE),
+                            html.Div([
+                                html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                                html.Button('+', id='table-toggle-quarter-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                            ], style=GRAN_BTN_CONTAINER_STYLE),
+                            html.Div([
+                                html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                                html.Button('-', id='table-toggle-month-btn-demand', n_clicks=0, style=GRAN_BTN_ACTIVE)
+                            ], style=GRAN_BTN_CONTAINER_STYLE),
+                            html.Div([
+                                html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                                html.Button('+', id='table-toggle-day-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                            ], style=GRAN_BTN_CONTAINER_STYLE),
+                        ], style={'display': 'flex', 'flex': '1'}),
                         html.Button(
                             "Export to CSV",
                             id="export-demand-table-btn",
@@ -690,24 +680,24 @@ def create_layout():
                                 "cursor": "pointer",
                                 "fontSize": "12px",
                                 "fontWeight": "normal",
-                                "marginRight": "0px",
+                                "marginLeft": "10px",
                             },
                         )
-                    ], style={'display': 'flex', 'alignItems': 'center'})
-                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'padding': '0 0px', 'marginBottom': '15px'}),
+                    ], style={'display': 'flex', 'alignItems': 'center', 'padding': '10px', 'backgroundColor': '#f8f9fa', 'marginBottom': '15px', 'borderRadius': '4px'}),
+                    
+                    dcc.Loading(
+                        id="loading-table-demand",
+                        type="circle",
+                        children=html.Div(
+                            id='europe-table-demand'
+                        )
+                    ),
+                    
+                ], style={'width': '100%'}),  # table section close
                 
-                dcc.Loading(
-                    id="loading-table-demand",
-                    type="circle",
-                    children=html.Div(
-                        id='europe-table-demand',
-                        style={'overflowX': 'auto', 'maxWidth': '100%'}
-                    )
-                ),
-                
-            ], style={'marginRight': '270px', 'padding': '0 10px'})  # Increased margin to accommodate fixed filter panel
-        ])
-    ], className='tab-content', style={'backgroundColor': '#ffffff', 'minHeight': '100vh'})
+            ], style={'marginRight': '150px', 'padding': '0 10px'})  # main content close
+        ])  # outer container close - closes html.Div([ from line 452
+    ], className='tab-content', style={'backgroundColor': '#ffffff', 'minHeight': '100vh'})  # closes return html.Div([ from line 435
 
 
 def register_callbacks(dash_app, server):
@@ -820,20 +810,15 @@ def register_callbacks(dash_app, server):
         if trigger_id != 'europe-chart-demand':
             return None, None
             
-        if not click_data:
+        if not click_data or 'points' not in click_data or len(click_data['points']) == 0:
             return no_update, no_update
             
         point = click_data['points'][0]
         
-        # Extract country from the trace name (which is the country name)
-        country = point.get('curveNumber', None)
-        if country is not None and 'data' in click_data:
-            # Get the trace name from the figure data
-            trace_name = click_data['points'][0].get('data', {}).get('name', '')
-            if not trace_name:
-                # Fallback: use curveNumber to get trace name from the point
-                trace_name = point.get('fullData', {}).get('name', '')
-            country = trace_name
+        # Extract country from customdata (which we set in the chart)
+        country = None
+        if 'customdata' in point and point['customdata'] and len(point['customdata']) > 0:
+            country = point['customdata'][0]  # First element is country name
         
         if not country:
             return no_update, no_update
