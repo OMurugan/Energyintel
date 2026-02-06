@@ -579,22 +579,34 @@ def create_layout():
                                     "fontSize": "11px",
                                     "fontWeight": "normal",
                                     "marginBottom": "10px",
-                                    "marginRight": "20px",
                                 },
                             )
                         ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '5px'}),
-                        dcc.Loading(
-                            id="loading-map-demand",
-                            type="circle",
-                            children=dcc.Graph(
-                                id='europe-map-demand', 
-                                config={
-                                    'displayModeBar': False,
-                                    'scrollZoom': True,
-                                    'doubleClick': 'reset'
-                                }
+                        html.Div([
+                            dcc.Loading(
+                                id="loading-map-demand",
+                                type="circle",
+                                children=dcc.Graph(
+                                    id='europe-map-demand', 
+                                    config={
+                                        'displayModeBar': True,
+                                        'displaylogo': False,
+                                        'modeBarButtons': [
+                                            ['toImage', 'resetScale2d']
+                                        ],
+                                        'scrollZoom': True,
+                                        'doubleClick': 'reset',
+                                        'toImageButtonOptions': {
+                                            'format': 'png',
+                                            'filename': 'europe_gas_demand_map',
+                                            'height': 700,
+                                            'width': 1200,
+                                            'scale': 2
+                                        }
+                                    }
+                                )
                             )
-                        ),
+                        ], style={'position': 'relative'}),
                     ], style={'width': '50%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '0%'}),
                     
                     # Right Side - Line Chart
@@ -637,11 +649,29 @@ def create_layout():
                             )
                         ], style={'display': 'flex', 'alignItems': 'center', 'padding': '5px', 'backgroundColor': '#f8f9fa', 'marginBottom': '10px', 'borderRadius': '4px'}),
                         
-                        dcc.Loading(
-                            id="loading-chart-demand",
-                            type="circle",
-                            children=dcc.Graph(id='europe-chart-demand', config={'displayModeBar': False})
-                        ),
+                        html.Div([
+                            dcc.Loading(
+                                id="loading-chart-demand",
+                                type="circle",
+                                children=dcc.Graph(
+                                    id='europe-chart-demand', 
+                                    config={
+                                        'displayModeBar': True,
+                                        'displaylogo': False,
+                                        'modeBarButtons': [
+                                            ['toImage', 'resetScale2d']
+                                        ],
+                                        'toImageButtonOptions': {
+                                            'format': 'png',
+                                            'filename': 'europe_gas_demand_chart',
+                                            'height': 700,
+                                            'width': 1200,
+                                            'scale': 2
+                                        }
+                                    }
+                                )
+                            )
+                        ], style={'position': 'relative'}),
                     ], style={'width': '50%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginLeft': '0%'}),
                 ], style={'marginBottom': '30px', 'width': '100%'}),
                 
@@ -1215,21 +1245,13 @@ def register_callbacks(dash_app, server):
             end_date = _index_to_date(slider_range[1], date_list)
             filtered_df = filtered_df[(filtered_df['Date'] >= start_date) & (filtered_df['Date'] <= end_date)]
         
-        # Then for map, show only the latest year data within the filtered date range
-        if not filtered_df.empty and 'Year of Date' in filtered_df.columns:
-            # Get the latest year available in the filtered data
-            latest_year = filtered_df['Year of Date'].max()
-            filtered_df = filtered_df[filtered_df['Year of Date'] == latest_year]
-            print(f"Map showing data for latest year within date range: {latest_year}")
-        
-        
         # Apply unit filter
         if selected_unit and 'Unit' in filtered_df.columns:
             filtered_df = filtered_df[filtered_df['Unit'] == selected_unit]
         
         # Note: Sector filtering is now handled at the database level in load_data()
         
-        # Apply country filter - handle empty selection properly
+        # Apply country filter FIRST - handle empty selection properly
         if selected_countries is not None:
             print(f"Map update - selected_countries: {selected_countries}")
             if len(selected_countries) == 0:
@@ -1238,12 +1260,29 @@ def register_callbacks(dash_app, server):
             else:
                 # Filter by selected countries
                 print(f"Filtering map data by countries: {selected_countries}")
-                print(f"Available countries in data: {filtered_df['Country'].unique().tolist()}")
+                print(f"Available countries in filtered_df BEFORE country filter: {filtered_df['Country'].unique().tolist()}")
+                print(f"filtered_df shape BEFORE country filter: {filtered_df.shape}")
                 filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
-                print(f"Filtered data shape: {filtered_df.shape}")
+                print(f"Available countries in filtered_df AFTER country filter: {filtered_df['Country'].unique().tolist()}")
+                print(f"Filtered data shape AFTER country filter: {filtered_df.shape}")
         
         if filtered_df.empty:
+            print(f"ERROR: filtered_df is empty after country filtering!")
+            print(f"Selected countries: {selected_countries}")
             return create_empty_map("No data available for selected filters", height=700)
+        
+        # THEN for map, show only the latest year data within the filtered date range
+        # This is done AFTER country filtering to ensure selected countries aren't lost
+        if not filtered_df.empty and 'Year of Date' in filtered_df.columns:
+            # Get the latest year available in the filtered data
+            latest_year = filtered_df['Year of Date'].max()
+            print(f"Map: Latest year in filtered data: {latest_year}")
+            print(f"Map: Countries with data BEFORE year filter: {filtered_df['Country'].unique().tolist()}")
+            print(f"Map: Data shape BEFORE year filter: {filtered_df.shape}")
+            filtered_df = filtered_df[filtered_df['Year of Date'] == latest_year]
+            print(f"Map: Countries with data AFTER year filter (year={latest_year}): {filtered_df['Country'].unique().tolist()}")
+            print(f"Map: Data shape AFTER year filter: {filtered_df.shape}")
+            print(f"Map showing data for latest year within date range: {latest_year}")
         
         # Aggregate data by country (sum values across years if multiple)
         agg_df = filtered_df.groupby(['Country', 'Latitude (generated)', 'Longitude (generated)', 'Year of Date']).agg({
@@ -2288,3 +2327,82 @@ def register_callbacks(dash_app, server):
             print(f"Map click error: {e}")
             return no_update, no_update
             return no_update, no_update
+
+    # Map Home Button - Reset map view
+    @dash_app.callback(
+        Output('europe-map-demand', 'figure', allow_duplicate=True),
+        Input('map-home-btn-demand', 'n_clicks'),
+        State('europe-map-demand', 'figure'),
+        prevent_initial_call=True
+    )
+    def reset_map_view(n_clicks, current_figure):
+        """Reset map to default view"""
+        if not n_clicks or not current_figure:
+            return no_update
+        
+        # Reset the map layout to default zoom and center
+        if 'layout' in current_figure and 'mapbox' in current_figure['layout']:
+            current_figure['layout']['mapbox']['zoom'] = 3
+            current_figure['layout']['mapbox']['center'] = {'lat': 54, 'lon': 15}
+        
+        return current_figure
+    
+    # Chart Home Button - Reset chart selection
+    @dash_app.callback(
+        Output('chart-selection-store-demand', 'data', allow_duplicate=True),
+        Input('chart-home-btn-demand', 'n_clicks'),
+        prevent_initial_call=True
+    )
+    def reset_chart_selection(n_clicks):
+        """Reset chart selection (clear highlighting)"""
+        if not n_clicks:
+            return no_update
+        return None
+    
+    # Map Camera Button - Download map as image
+    dash_app.clientside_callback(
+        """
+        function(n_clicks) {
+            if (n_clicks) {
+                // Trigger Plotly's download image functionality
+                var mapElement = document.getElementById('europe-map-demand');
+                if (mapElement) {
+                    Plotly.downloadImage(mapElement, {
+                        format: 'png',
+                        width: 1200,
+                        height: 700,
+                        filename: 'europe_gas_demand_map'
+                    });
+                }
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('gas-demand-hover-trigger', 'children', allow_duplicate=True),
+        Input('map-camera-btn-demand', 'n_clicks'),
+        prevent_initial_call=True
+    )
+    
+    # Chart Camera Button - Download chart as image
+    dash_app.clientside_callback(
+        """
+        function(n_clicks) {
+            if (n_clicks) {
+                // Trigger Plotly's download image functionality
+                var chartElement = document.getElementById('europe-chart-demand');
+                if (chartElement) {
+                    Plotly.downloadImage(chartElement, {
+                        format: 'png',
+                        width: 1200,
+                        height: 700,
+                        filename: 'europe_gas_demand_chart'
+                    });
+                }
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('gas-demand-hover-trigger', 'children', allow_duplicate=True),
+        Input('chart-camera-btn-demand', 'n_clicks'),
+        prevent_initial_call=True
+    )
