@@ -54,6 +54,7 @@ def create_layout():
         # Selection Stores (Independent for each chart)
         dcc.Store(id='treemap-selection', data=None),
         dcc.Store(id='bar-selection', data=None),
+        dcc.Store(id='exports-expansion-store', data={'Year': False, 'Quarter': False, 'Month': True, 'Day': False}),
 
         # Download components
         dcc.Download(id='download-treemap-csv'),
@@ -103,6 +104,48 @@ def create_layout():
                         }
                     )
                 ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
+                
+                # Hierarchy Level Controls
+                html.Div([
+                    html.Div([
+                        html.Span("Year of Date", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px', 'fontWeight': 'bold'}),
+                        html.Button('+', id='btn-exports-expand-year', n_clicks=0, style={
+                            'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                            'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                            'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                        })
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                    
+                    html.Div([
+                        html.Span("Quarter of Date", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px', 'fontWeight': 'bold'}),
+                        html.Button('+', id='btn-exports-expand-quarter', n_clicks=0, style={
+                            'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                            'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                            'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                        })
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                    
+                    html.Div([
+                        html.Span("Month of Date", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px', 'fontWeight': 'bold'}),
+                        html.Button('-', id='btn-exports-expand-month', n_clicks=0, style={
+                            'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                            'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
+                            'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                        })
+                    ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                    
+                    html.Div([
+                        html.Span("Day of Date", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px', 'fontWeight': 'bold'}),
+                        html.Button('+', id='btn-exports-expand-day', n_clicks=0, style={
+                            'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                            'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                            'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                        })
+                    ], style={'display': 'flex', 'alignItems': 'center'})
+                ], style={
+                    'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+                    'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px'
+                }),
                 
                 # Stacked Bar Chart
                 dcc.Loading(
@@ -247,6 +290,63 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for Product Exports Analytics"""
 
     @dash_app.callback(
+        [Output('exports-expansion-store', 'data'),
+         Output('btn-exports-expand-year', 'children'),
+         Output('btn-exports-expand-quarter', 'children'),
+         Output('btn-exports-expand-month', 'children'),
+         Output('btn-exports-expand-day', 'children')],
+        [Input('btn-exports-expand-year', 'n_clicks'),
+         Input('btn-exports-expand-quarter', 'n_clicks'),
+         Input('btn-exports-expand-month', 'n_clicks'),
+         Input('btn-exports-expand-day', 'n_clicks')],
+        [State('exports-expansion-store', 'data')],
+        prevent_initial_call=True
+    )
+    def update_exports_expansion_state(y_c, q_c, m_c, d_c, current_visibility):
+        from dash import callback_context
+        ctx = callback_context
+        if not ctx.triggered:
+            return current_visibility, '+', '+', '-', '+'
+        
+        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        new_visibility = current_visibility.copy() if current_visibility else {'Year': False, 'Quarter': False, 'Month': False, 'Day': False}
+        
+        if button_id == 'btn-exports-expand-year':
+            new_visibility['Year'] = not new_visibility.get('Year', False)
+            if not new_visibility['Year']:
+                new_visibility['Quarter'] = False
+                new_visibility['Month'] = False
+                new_visibility['Day'] = False
+        elif button_id == 'btn-exports-expand-quarter':
+            new_visibility['Quarter'] = not new_visibility.get('Quarter', False)
+            if new_visibility['Quarter']:
+                new_visibility['Year'] = True
+            else:
+                new_visibility['Month'] = False
+                new_visibility['Day'] = False
+        elif button_id == 'btn-exports-expand-month':
+            new_visibility['Month'] = not new_visibility.get('Month', False)
+            if new_visibility['Month']:
+                new_visibility['Year'] = True
+                new_visibility['Quarter'] = True
+            else:
+                new_visibility['Day'] = False
+        elif button_id == 'btn-exports-expand-day':
+            new_visibility['Day'] = not new_visibility.get('Day', False)
+            if new_visibility['Day']:
+                new_visibility['Year'] = True
+                new_visibility['Quarter'] = True
+                new_visibility['Month'] = True
+        
+        return (
+            new_visibility, 
+            '-' if new_visibility.get('Year') else '+',
+            '-' if new_visibility.get('Quarter') else '+',
+            '-' if new_visibility.get('Month') else '+',
+            '-' if new_visibility.get('Day') else '+'
+        )
+
+    @dash_app.callback(
         Output('download-treemap-csv', 'data'),
         Input('btn-export-treemap', 'n_clicks'),
         [State('year-selector', 'value'),
@@ -385,6 +485,7 @@ def register_callbacks(dash_app, server):
                 customdata=custom_data,  # Keep for clientside callbacks
                 tiling=dict(pad=2),
                 maxdepth=1,
+                hovertemplate="Product: <b>%{customdata[0]}</b><br>Volume ('000 b/d): <b>%{customdata[1]:,.1f}</b><br>% of Total: %{customdata[2]:.2f}%<extra></etra></extra>",
                 hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"))
             ))
             fig_treemap.update_layout(
@@ -403,9 +504,10 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         [Output('product-exports-bar', 'figure'),
          Output('bar-header', 'children')],
-        [Input('bar-selection', 'data')]
+        [Input('bar-selection', 'data'),
+         Input('exports-expansion-store', 'data')]
     )
-    def update_bar_chart(sel_bar):
+    def update_bar_chart(sel_bar, expansion_state):
         logger.info(f"Bar chart callback triggered: selection={sel_bar}")
         query_bar = "SELECT date, category, commodity, vol_kbpd FROM russia_master_data WHERE category = 'Exports' AND date >= '2022-01-01';"
         
@@ -438,24 +540,53 @@ def register_callbacks(dash_app, server):
             bar_header += " -- No Data"
         else:
             df_b = df_b.sort_values('date')
-            df_b['month_sort'] = df_b['date'].dt.to_period('M')
-            df_b['month_display'] = df_b['date'].dt.strftime('%b<br>20%y')
-            df_b['hover_date'] = df_b['date'].dt.strftime('%b %Y')
             
-            bar_df = df_b.groupby(['month_sort', 'month_display', 'hover_date', 'commodity'])['vol_kbpd'].sum().reset_index()
-            bar_df = bar_df.sort_values('month_sort')
+            # Determine granularity level
+            if not expansion_state:
+                expansion_state = {'Year': False, 'Quarter': False, 'Month': True, 'Day': False}
+            
+            gran_level = 'MONTH'  # Default
+            if expansion_state.get('Day'):
+                gran_level = 'DAY'
+            elif expansion_state.get('Month'):
+                gran_level = 'MONTH'
+            elif expansion_state.get('Quarter'):
+                gran_level = 'QUARTER'
+            elif expansion_state.get('Year'):
+                gran_level = 'YEAR'
+            
+            # Group by appropriate time period
+            if gran_level == 'YEAR':
+                df_b['time_sort'] = df_b['date'].dt.year
+                df_b['time_display'] = df_b['date'].dt.year.astype(str)
+                df_b['hover_date'] = df_b['date'].dt.year.astype(str)
+            elif gran_level == 'QUARTER':
+                df_b['time_sort'] = df_b['date'].dt.to_period('Q')
+                df_b['time_display'] = df_b['date'].dt.to_period('Q').astype(str)
+                df_b['hover_date'] = df_b['date'].dt.to_period('Q').astype(str)
+            elif gran_level == 'DAY':
+                df_b['time_sort'] = df_b['date']
+                df_b['time_display'] = df_b['date'].dt.strftime('%d<br>%b<br>20%y')
+                df_b['hover_date'] = df_b['date'].dt.strftime('%d %b %Y')
+            else:  # MONTH
+                df_b['time_sort'] = df_b['date'].dt.to_period('M')
+                df_b['time_display'] = df_b['date'].dt.strftime('%b<br>20%y')
+                df_b['hover_date'] = df_b['date'].dt.strftime('%b %Y')
+            
+            bar_df = df_b.groupby(['time_sort', 'time_display', 'hover_date', 'commodity'])['vol_kbpd'].sum().reset_index()
+            bar_df = bar_df.sort_values('time_sort')
 
             fig_bar = go.Figure()
-            month_displays = bar_df['month_display'].unique() if not bar_df.empty else []
+            time_displays = bar_df['time_display'].unique() if not bar_df.empty else []
 
             for commodity in BAR_STACK_ORDER:
                 comm_data = bar_df[bar_df['commodity'] == commodity]
                 if comm_data.empty:
                     continue
                     
-                comm_data = comm_data.set_index('month_display').reindex(month_displays).fillna({'vol_kbpd': 0}).reset_index()
-                hdate_map = bar_df[['month_display', 'hover_date']].drop_duplicates().set_index('month_display')
-                reindexed_hdates = hdate_map.reindex(month_displays)['hover_date'].tolist()
+                comm_data = comm_data.set_index('time_display').reindex(time_displays).fillna({'vol_kbpd': 0}).reset_index()
+                hdate_map = bar_df[['time_display', 'hover_date']].drop_duplicates().set_index('time_display')
+                reindexed_hdates = hdate_map.reindex(time_displays)['hover_date'].tolist()
                 
                 base_color = COMMODITY_COLORS.get(commodity, '#CCCCCC')
                 marker_colors = []
@@ -478,7 +609,7 @@ def register_callbacks(dash_app, server):
                         marker_line_colors.append('rgba(0,0,0,0)')
 
                 fig_bar.add_trace(go.Bar(
-                    name=commodity, x=comm_data['month_display'], y=comm_data['vol_kbpd'],
+                    name=commodity, x=comm_data['time_display'], y=comm_data['vol_kbpd'],
                     marker=dict(
                         color=marker_colors,
                         line=dict(width=marker_line_widths, color=marker_line_colors)
