@@ -1112,6 +1112,8 @@ def register_callbacks(dash_app, server):
                         selectedCountry: null
                     };
                 }
+                // ALWAYS update columns to fix Stale Closure in Event Listener
+                window.europeGasState.columns = columns;
 
                 // Helper to clear classes
                 function clearAll(spreadsheet) {
@@ -1145,17 +1147,25 @@ def register_callbacks(dash_app, server):
                                 ths.forEach(th => th.classList.add('europe-col-selected'));
                             });
 
-                            // Cells
-                            const allCells = spreadsheet.querySelectorAll('td[data-dash-column]');
-                            allCells.forEach(cell => {
-                                const cId = cell.getAttribute('data-dash-column');
-                                if (cId === 'Country' || cId === 'Sector') return;
-
-                                if (targetIds.includes(cId)) {
-                                    cell.classList.add('europe-col-selected');
-                                } else {
-                                    cell.classList.add('europe-dimmed');
-                                }
+                            // Cells - Robust Approach: Iterate all Rows
+                            const tbodies = spreadsheet.querySelectorAll('tbody');
+                            tbodies.forEach(tbody => {
+                                const rows = Array.from(tbody.querySelectorAll('tr'));
+                                rows.forEach(r => {
+                                    const cells = Array.from(r.children);
+                                    cells.forEach(cell => {
+                                        const cId = cell.getAttribute('data-dash-column');
+                                        if (!cId || cId === 'Country' || cId === 'Sector') return;
+                                        
+                                        if (targetIds.includes(cId)) {
+                                            cell.classList.add('europe-col-selected');
+                                            // Ensure not dimmed
+                                            cell.classList.remove('europe-dimmed'); 
+                                        } else {
+                                            cell.classList.add('europe-dimmed');
+                                        }
+                                    });
+                                });
                             });
                         }
                     }
@@ -1225,12 +1235,17 @@ def register_callbacks(dash_app, server):
                             // Detect Year group (e.g. 2024)
                             // We ONLY want to group-select if it's a Year header.
                             // Quarter/Month/Day headers should be treated as specific columns.
+                            // Detect Year group (e.g. 2024)
+                            // We ONLY want to group-select if it's a Year header.
+                            // Quarter/Month/Day headers should be treated as specific columns.
                             let isYear = /^20\d{2}$/.test(headerContent);
                             
                             let targetIds = [];
+                            // Use GLOBAL columns to avoid closure staleness
+                            const currentColumns = window.europeGasState.columns;
                             
-                            if (isYear && columns) {
-                                columns.forEach(c => {
+                            if (isYear && currentColumns) {
+                                currentColumns.forEach(c => {
                                     // Match "2024" in ID (e.g. col_2024_Q1)
                                     if (c.id && c.id.indexOf(headerContent) !== -1) {
                                         targetIds.push(c.id);
