@@ -543,7 +543,6 @@ def register_callbacks(dash_app, server):
         FROM russia_master_data 
         WHERE category = 'Refining And Products Output' 
         AND commodity = '{selected_product}'
-        AND date >= '2022-01-01'
         """
         
         try:
@@ -564,10 +563,33 @@ def register_callbacks(dash_app, server):
             
             # --- TREEMAP DATA ---
             if selected_year == 'All':
-                # For 'All Years', use the latest available month snapshot
-                latest_date = df['date'].max()
-                df_tree_snapshot = df[df['date'] == latest_date]
-                year_label = "ALL YEARS"
+                # For 'All Years', user expects sum of annual averages (e.g. 2022 avg + 2023 avg + ...)
+                # derived from comparing ~500 (mean) vs ~2200 (live dashboard) for ~4 years.
+                
+                # 1. Calculate Average volume per Company per Year
+                annual_avgs = df.groupby(['company', 'year'])['vol_kbpd'].mean().reset_index()
+                
+                # 2. Sum these annual averages for each company
+                treemap_data = annual_avgs.groupby('company')['vol_kbpd'].sum().reset_index()
+                
+                # Generate dynamic title: "IN 2022, 2023, 2024 and X more"
+                all_years = sorted(df['year'].unique())
+                
+                # Per user request, prioritize displaying years starting from 2022
+                # But include all data in the "more" count
+                display_candidates = [y for y in all_years if y >= 2022]
+                if not display_candidates:
+                    display_candidates = all_years
+                
+                shown_years = display_candidates[:3]
+                remainder_count = len(all_years) - len(shown_years)
+                
+                if remainder_count > 0:
+                     year_label_str = f"{', '.join(map(str, shown_years))} and {remainder_count} more"
+                else:
+                     year_label_str = ', '.join(map(str, shown_years))
+                year_label = year_label_str 
+                
             else:
                 # For a specific year, use January (Month 1) as requested by the user
                 target_year = int(selected_year)
@@ -576,13 +598,17 @@ def register_callbacks(dash_app, server):
                     (df['date'].dt.month == 1)
                 ]
                 year_label = str(selected_year)
-            
-            if df_tree_snapshot.empty:
+                
+                if df_tree_snapshot.empty:
+                    treemap_data = pd.DataFrame(columns=['company', 'vol_kbpd'])
+                else:
+                    treemap_data = df_tree_snapshot.groupby('company')['vol_kbpd'].sum().reset_index()
+
+            # Shared logic for both branches if data exists
+            if treemap_data.empty:
                 tree_fig = go.Figure()
                 tree_fig.add_annotation(text=f"No data for {year_label}", showarrow=False)
             else:
-                treemap_data = df_tree_snapshot.groupby('company')['vol_kbpd'].sum().reset_index()
-                
                 # Sort by volume descending to match "live" design as requested
                 treemap_data = treemap_data.sort_values('vol_kbpd', ascending=False)
                 
@@ -1150,7 +1176,6 @@ def register_callbacks(dash_app, server):
             FROM russia_master_data 
             WHERE category = 'Refining And Products Output' 
             AND commodity = '{selected_product}'
-            AND date >= '2022-01-01'
             """
             results = execute_query(query)
             df = pd.DataFrame(results)
@@ -1191,7 +1216,6 @@ def register_callbacks(dash_app, server):
             FROM russia_master_data 
             WHERE category = 'Refining And Products Output' 
             AND commodity = '{selected_product}'
-            AND date >= '2022-01-01'
             """
             results = execute_query(query)
             df = pd.DataFrame(results)
