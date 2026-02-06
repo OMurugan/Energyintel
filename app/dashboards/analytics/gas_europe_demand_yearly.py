@@ -1519,8 +1519,18 @@ def register_callbacks(dash_app, server):
             columns.append({"name": "Country", "id": "Country"})
             columns.append({"name": "Sector", "id": "Sector"})
         else:
-            columns.append({"name": ["", "Country"], "id": "Country"})
-            columns.append({"name": ["", "Sector"], "id": "Sector"})
+            # Multi-level: Pad with empty strings so "Country" is at the bottom
+            # e.g. for levels=3: ["", "", "Country"]
+            # This ensures Dash treats it as a column spanning the whole height (effectively)
+            # when combined with proper styling (or at least aligns labels to bottom).
+            
+            # Country
+            country_name = [""] * (len(levels) - 1) + ["Country"]
+            columns.append({"name": country_name, "id": "Country"})
+            
+            # Sector
+            sector_name = [""] * (len(levels) - 1) + ["Sector"]
+            columns.append({"name": sector_name, "id": "Sector"})
         
         data_col_ids = []
         for col_tuple in cols_tuples:
@@ -1655,36 +1665,52 @@ def register_callbacks(dash_app, server):
             header_styles.append({'if': {'column_id': 'Sector'}, 'borderRight': '1px solid #ccc'})
 
         else:
-            # Multi Level Logic (Asia Dashboard Quarterly/Monthly style)
+            # Multi Level Logic (Dynamic based on levels)
+            header_rows = len(levels)
             
-            # Top Level (Year)
-            header_styles.append({'if': {'header_index': 0, 'column_id': data_col_ids}, 'borderBottom': '1px solid #d0d0d0'})
-            header_styles.append({'if': {'header_index': 0, 'column_id': data_col_ids}, 'textAlign': 'center'})
+            # 1. Data Columns Styling
+            for i in range(header_rows):
+                # Common
+                header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'textAlign': 'right'}) # Default Right for numbers? Asia uses Center for top/middle.
+                
+                # Top Level (Year)
+                if i == 0:
+                   header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'borderBottom': '1px solid #d0d0d0'})
+                   header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'textAlign': 'center'})
+                
+                # Middle / Bottom Levels
+                if i > 0:
+                   header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'borderTop': '1px solid #d0d0d0'})
+                   header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'borderBottom': '1px solid #ccc'})
+                   
+                   # Justification: For Day view, maybe Center or Right? Asia uses specific logic.
+                   # Let's keep Right for lowest level (Data), Center for Groups.
+                   if i == header_rows - 1:
+                       header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'textAlign': 'right'})
+                   else:
+                       header_styles.append({'if': {'header_index': i, 'column_id': data_col_ids}, 'textAlign': 'center'})
+
             
-            # Sub Level (Quarter/Month)
-            header_styles.append({'if': {'header_index': 1, 'column_id': data_col_ids}, 'borderTop': '1px solid #d0d0d0'})
-            header_styles.append({'if': {'header_index': 1, 'column_id': data_col_ids}, 'borderBottom': '1px solid #ccc'})
-            header_styles.append({'if': {'header_index': 1, 'column_id': data_col_ids}, 'textAlign': 'right'})
+            # 2. Fixed Columns Headers (Country, Sector)
+            # We want them to look merged.
+            header_styles.append({'if': {'column_id': ['Country', 'Sector']}, 'zIndex': 999, 'textAlign': 'left', 'backgroundColor': '#ffffff'})
             
-            # Fixed Columns Headers
-            header_styles.append({'if': {'column_id': ['Country', 'Sector']}, 'zIndex': 999, 'textAlign': 'left'})
+            for i in range(header_rows):
+                style_def = {
+                    'if': {'header_index': i, 'column_id': ['Country', 'Sector']},
+                    'borderRight': 'none', # We handle Sector right border separately
+                    'borderTop': 'none'
+                }
+                
+                # Only the last row gets a bottom border
+                if i == header_rows - 1:
+                    style_def['borderBottom'] = '1px solid #ccc'
+                else:
+                    style_def['borderBottom'] = 'none' # Merge down
+                
+                header_styles.append(style_def)
             
-            header_styles.append({
-                'if': {'header_index': 0, 'column_id': ['Country', 'Sector']}, 
-                'backgroundColor': '#ffffff', 
-                'borderBottom': '1px solid #d0d0d0', 
-                'borderTop': 'none',
-                'borderRight': 'none'
-            })
-            
-            header_styles.append({
-                'if': {'header_index': 1, 'column_id': ['Country', 'Sector']}, 
-                'backgroundColor': '#ffffff', 
-                'borderTop': 'none', 
-                'borderBottom': '1px solid #ccc'
-            })
-            
-            # Sector Divider in Header
+            # Sector Divider in Header (All rows)
             header_styles.append({'if': {'column_id': 'Sector'}, 'borderRight': '1px solid #ccc'})
 
         
