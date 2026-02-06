@@ -1,6 +1,7 @@
 import pandas as pd
 import plotly.express as px
-from dash import dcc, html, Input, Output, dash_table, State, ALL, ctx, no_update
+import plotly.graph_objects as go
+from dash import dcc, html, Input, Output, dash_table, State, ALL, ctx, no_update, callback_context
 import os
 from datetime import datetime, timedelta
 import time
@@ -9,6 +10,45 @@ import time
 _cached_data = None
 _cache_timestamp = None
 CACHE_DURATION = 300  # 5 minutes cache
+
+# Button Styles for Granularity Toggles
+GRAN_BTN_CONTAINER_STYLE = {
+    'display': 'flex',
+    'align-items': 'center',
+    'margin-right': '20px'
+}
+
+GRAN_BTN_ACTIVE = {
+    'width': '18px',
+    'height': '18px',
+    'padding': '0',
+    'border': '1px solid #007bff',
+    'backgroundColor': 'white',
+    'color': '#add8e6',
+    'borderRadius': '3px',
+    'cursor': 'pointer',
+    'fontSize': '12px',
+    'fontWeight': 'bold',
+    'display': 'flex',
+    'alignItems': 'center',
+    'justifyContent': 'center'
+}
+
+GRAN_BTN_INACTIVE = {
+    'width': '18px',
+    'height': '18px',
+    'padding': '0',
+    'border': '1px solid #007bff',
+    'backgroundColor': 'white',
+    'color': '#007bff',
+    'borderRadius': '3px',
+    'cursor': 'pointer',
+    'fontSize': '12px',
+    'fontWeight': 'bold',
+    'display': 'flex',
+    'alignItems': 'center',
+    'justifyContent': 'center'
+}
 
 def load_data():
     """Load and preprocess data from database query with caching"""
@@ -155,14 +195,20 @@ def create_layout():
     max_date_val = chart_df['Date'].max() if not chart_df.empty and 'Date' in chart_df.columns else pd.Timestamp('2026-01-01')
 
     return html.Div([
-        # Store components for tracking previous filter values
+        # Store components for tracking previous filter values and granularity
         dcc.Store(id='country-filter-previous', data={'all_selected': True}),  # Initialize with all selected
         dcc.Store(id='terminal-filter-previous', data={'all_selected': True}),  # Initialize with all selected
         dcc.Store(id='selected-terminals-store', data=[]),
+        dcc.Store(id='lng-chart-granularity-store', data='month'),  # Chart granularity
+        dcc.Store(id='lng-table-granularity-store', data='month'),  # Table granularity
+        dcc.Store(id='lng-chart-selection', data=None),  # For chart click selection
         
         # Download components
         dcc.Download(id="download-lng-chart-csv"),
         dcc.Download(id="download-lng-table-csv"),
+        
+        # Store for table highlight state
+        dcc.Store(id='lng-table-highlight-state'),
         
         html.Div([
             # Side Filter Panel (on the right)
@@ -266,7 +312,27 @@ def create_layout():
                             },
                         )
                     ], style={'display': 'flex', 'alignItems': 'center'})
-                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'padding': '0 20px', 'marginBottom': '20px'}),
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'padding': '0 20px', 'marginBottom': '10px'}),
+                
+                # Chart Granularity Buttons
+                html.Div([
+                    html.Div([
+                        html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                        html.Button('+', id='lng-chart-toggle-year-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                    ], style=GRAN_BTN_CONTAINER_STYLE),
+                    html.Div([
+                        html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                        html.Button('+', id='lng-chart-toggle-quarter-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                    ], style=GRAN_BTN_CONTAINER_STYLE),
+                    html.Div([
+                        html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                        html.Button('-', id='lng-chart-toggle-month-btn', n_clicks=0, style=GRAN_BTN_ACTIVE)
+                    ], style=GRAN_BTN_CONTAINER_STYLE),
+                    html.Div([
+                        html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                        html.Button('+', id='lng-chart-toggle-day-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                    ], style=GRAN_BTN_CONTAINER_STYLE),
+                ], style={'display': 'flex', 'padding': '10px 20px', 'backgroundColor': '#f8f9fa'}),
                 
                 dcc.Loading(
                     id="loading-chart",
@@ -299,6 +365,27 @@ def create_layout():
                         )
                     ], style={'display': 'flex', 'alignItems': 'center'})
                 ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'padding': '0 20px'}),
+                
+                # Table Granularity Buttons
+                html.Div([
+                    html.Div([
+                        html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                        html.Button('+', id='lng-table-toggle-year-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                    ], style=GRAN_BTN_CONTAINER_STYLE),
+                    html.Div([
+                        html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                        html.Button('+', id='lng-table-toggle-quarter-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                    ], style=GRAN_BTN_CONTAINER_STYLE),
+                    html.Div([
+                        html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                        html.Button('-', id='lng-table-toggle-month-btn', n_clicks=0, style=GRAN_BTN_ACTIVE)
+                    ], style=GRAN_BTN_CONTAINER_STYLE),
+                    html.Div([
+                        html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                        html.Button('+', id='lng-table-toggle-day-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                    ], style=GRAN_BTN_CONTAINER_STYLE),
+                ], style={'display': 'flex', 'padding': '10px 20px', 'backgroundColor': '#fff'}),
+                
                 html.Div([
                     dcc.Loading(
                         id="loading-table",
@@ -311,6 +398,140 @@ def create_layout():
     ], className='tab-content', style={'backgroundColor': '#ffffff', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'})
 
 def register_callbacks(dash_app, server):
+
+    # Chart Granularity Toggle
+    @dash_app.callback(
+        [Output('lng-chart-granularity-store', 'data'),
+         Output('lng-chart-toggle-year-btn', 'children'),
+         Output('lng-chart-toggle-quarter-btn', 'children'),
+         Output('lng-chart-toggle-month-btn', 'children'),
+         Output('lng-chart-toggle-day-btn', 'children'),
+         Output('lng-chart-toggle-year-btn', 'style'),
+         Output('lng-chart-toggle-quarter-btn', 'style'),
+         Output('lng-chart-toggle-month-btn', 'style'),
+         Output('lng-chart-toggle-day-btn', 'style')],
+        [Input('lng-chart-toggle-year-btn', 'n_clicks'),
+         Input('lng-chart-toggle-quarter-btn', 'n_clicks'),
+         Input('lng-chart-toggle-month-btn', 'n_clicks'),
+         Input('lng-chart-toggle-day-btn', 'n_clicks')],
+        [State('lng-chart-granularity-store', 'data')]
+    )
+    def toggle_chart_granularity(y_c, q_c, m_c, d_c, current_gran):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+            
+        btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        new_gran = current_gran
+        
+        if btn_id == 'lng-chart-toggle-year-btn': new_gran = 'year'
+        elif btn_id == 'lng-chart-toggle-quarter-btn': new_gran = 'quarter'
+        elif btn_id == 'lng-chart-toggle-month-btn': new_gran = 'month'
+        elif btn_id == 'lng-chart-toggle-day-btn': new_gran = 'day'
+        
+        return (
+            new_gran,
+            '-' if new_gran == 'year' else '+',
+            '-' if new_gran == 'quarter' else '+',
+            '-' if new_gran == 'month' else '+',
+            '-' if new_gran == 'day' else '+',
+            GRAN_BTN_ACTIVE if new_gran == 'year' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'quarter' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'month' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'day' else GRAN_BTN_INACTIVE
+        )
+
+    # Table Granularity Toggle
+    @dash_app.callback(
+        [Output('lng-table-granularity-store', 'data'),
+         Output('lng-table-toggle-year-btn', 'children'),
+         Output('lng-table-toggle-quarter-btn', 'children'),
+         Output('lng-table-toggle-month-btn', 'children'),
+         Output('lng-table-toggle-day-btn', 'children'),
+         Output('lng-table-toggle-year-btn', 'style'),
+         Output('lng-table-toggle-quarter-btn', 'style'),
+         Output('lng-table-toggle-month-btn', 'style'),
+         Output('lng-table-toggle-day-btn', 'style')],
+        [Input('lng-table-toggle-year-btn', 'n_clicks'),
+         Input('lng-table-toggle-quarter-btn', 'n_clicks'),
+         Input('lng-table-toggle-month-btn', 'n_clicks'),
+         Input('lng-table-toggle-day-btn', 'n_clicks')],
+        [State('lng-table-granularity-store', 'data')]
+    )
+    def toggle_table_granularity(y_c, q_c, m_c, d_c, current_gran):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+            
+        btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        new_gran = current_gran
+        
+        if btn_id == 'lng-table-toggle-year-btn': new_gran = 'year'
+        elif btn_id == 'lng-table-toggle-quarter-btn': new_gran = 'quarter'
+        elif btn_id == 'lng-table-toggle-month-btn': new_gran = 'month'
+        elif btn_id == 'lng-table-toggle-day-btn': new_gran = 'day'
+        
+        return (
+            new_gran,
+            '-' if new_gran == 'year' else '+',
+            '-' if new_gran == 'quarter' else '+',
+            '-' if new_gran == 'month' else '+',
+            '-' if new_gran == 'day' else '+',
+            GRAN_BTN_ACTIVE if new_gran == 'year' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'quarter' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'month' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'day' else GRAN_BTN_INACTIVE
+        )
+
+    # Handle Chart Selection (Click to highlight)
+    @dash_app.callback(
+        [Output('lng-chart-selection', 'data'),
+         Output('lng-imports-chart', 'clickData')],
+        [Input('lng-imports-chart', 'clickData'),
+         Input('lng-chart-granularity-store', 'data'),
+         Input('country-checklist', 'value'),
+         Input('terminal-checklist', 'value')],
+        State('lng-chart-selection', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_chart_selection(click_data, gran, countries, terminals, current_sel):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update
+            
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        
+        # Reset on filter changes
+        if trigger_id != 'lng-imports-chart':
+            return None, None
+            
+        if not click_data:
+            return no_update, no_update
+            
+        point = click_data['points'][0]
+        if 'customdata' not in point:
+            return no_update, no_update
+            
+        cdata = point['customdata']
+        # customdata format: [Terminal, Time_Label, x_pos]
+        terminal = cdata[0] if len(cdata) > 0 else None
+        x_pos = cdata[2] if len(cdata) > 2 else point.get('x')
+        
+        if not terminal or x_pos is None:
+            return no_update, no_update
+        
+        new_sel = {
+            'terminal': terminal,
+            'x_pos': x_pos
+        }
+        
+        # Toggle logic - if clicking the same bar, deselect it
+        if current_sel and current_sel.get('terminal') == terminal and current_sel.get('x_pos') == x_pos:
+            print(f"DEBUG: Deselecting bar - Terminal: {terminal}, x_pos: {x_pos}")
+            return None, None
+        
+        print(f"DEBUG: Selecting bar - Terminal: {terminal}, x_pos: {x_pos}")
+        return new_sel, None
 
     # Update title based on country selection
     @dash_app.callback(
@@ -561,9 +782,12 @@ def register_callbacks(dash_app, server):
          Input('terminal-checklist', 'value'),
          Input('start-date-input', 'date'),
          Input('end-date-input', 'date'),
-         Input('selected-terminals-store', 'data')]
+         Input('selected-terminals-store', 'data'),
+         Input('lng-chart-granularity-store', 'data'),
+         Input('lng-table-granularity-store', 'data'),
+         Input('lng-chart-selection', 'data')]
     )
-    def update_dashboard(selected_countries, selected_terminals, start_date, end_date, selected_points):
+    def update_dashboard(selected_countries, selected_terminals, start_date, end_date, selected_points, chart_granularity, table_granularity, selection):
         try:
             chart_df_orig, table_df_orig = load_data()
             if chart_df_orig.empty:
@@ -678,9 +902,29 @@ def register_callbacks(dash_app, server):
             else:
                 try:
                     chart_df = chart_df.sort_values('Date')
-                    chart_df['Month_Label'] = chart_df['Date'].dt.strftime('%b %y')
                     
-                    unique_labels = chart_df.sort_values('Date')['Month_Label'].unique()
+                    # Apply granularity grouping
+                    if chart_granularity == 'year':
+                        chart_df['Time_Label'] = chart_df['Date'].dt.strftime('%Y')
+                        chart_df['Time_Sort'] = chart_df['Date'].dt.year
+                    elif chart_granularity == 'quarter':
+                        chart_df['Time_Label'] = chart_df['Date'].dt.to_period('Q').astype(str)
+                        chart_df['Time_Sort'] = chart_df['Date'].dt.to_period('Q').apply(lambda x: x.start_time)
+                    elif chart_granularity == 'day':
+                        chart_df['Time_Label'] = chart_df['Date'].dt.strftime('%Y-%m-%d')
+                        chart_df['Time_Sort'] = chart_df['Date']
+                    else:  # month (default)
+                        chart_df['Time_Label'] = chart_df['Date'].dt.strftime('%b %y')
+                        chart_df['Time_Sort'] = chart_df['Date']
+                    
+                    # Group by time and terminal
+                    chart_df = chart_df.groupby(['Time_Label', 'Time_Sort', 'Point'], as_index=False)['flows_bcm'].sum()
+                    chart_df = chart_df.sort_values('Time_Sort')
+                    
+                    # Create x-axis positions
+                    unique_times = chart_df.sort_values('Time_Sort')[['Time_Label', 'Time_Sort']].drop_duplicates()
+                    unique_times['x_pos'] = range(len(unique_times))
+                    chart_df = chart_df.merge(unique_times[['Time_Label', 'x_pos']], on='Time_Label', how='left')
                     
                     # Create chart title with date range info if filtering is applied
                     chart_title = ""
@@ -694,23 +938,83 @@ def register_callbacks(dash_app, server):
                             date_range_text = f" (until {end_dt.strftime('%b %Y')})"
                         chart_title = f"Filtered Data{date_range_text}"
                     
-                    fig = px.bar(
-                        chart_df, 
-                        x='Month_Label', 
-                        y='flows_bcm', 
-                        color='Point',
-                        color_discrete_map=TERMINAL_COLORS,
-                        category_orders={'Month_Label': unique_labels},
-                        title=chart_title
-                    )
+                    # Build stacked bar chart with highlighting
+                    fig = go.Figure()
                     
-                    # Apply opacity based on Point legend selection for visual emphasis
-                    if selected_points_for_chart:
-                        for trace in fig.data:
-                            if hasattr(trace, 'name') and trace.name not in selected_points_for_chart:
-                                trace.opacity = 0.3  # Dim non-selected terminals
+                    for terminal in sorted(chart_df['Point'].unique()):
+                        terminal_df = chart_df[chart_df['Point'] == terminal]
+                        
+                        # Prepare customdata for tooltip: [Terminal, Time_Label, x_pos]
+                        custom_data = []
+                        for _, row in terminal_df.iterrows():
+                            custom_data.append([row['Point'], row['Time_Label'], row['x_pos']])
+                        
+                        # Determine colors and borders based on selection
+                        colors = []
+                        line_colors = []
+                        line_widths = []
+                        
+                        base_color = TERMINAL_COLORS.get(terminal, '#cccccc')
+                        
+                        # Convert hex to RGB for opacity calculations
+                        r = int(base_color[1:3], 16)
+                        g = int(base_color[3:5], 16)
+                        b = int(base_color[5:7], 16)
+                        
+                        for _, row in terminal_df.iterrows():
+                            x_pos = row['x_pos']
+                            
+                            # Determine if this bar is selected
+                            is_selected = False
+                            has_selection = selection is not None
+                            
+                            if has_selection:
+                                # Check if this specific bar is selected
+                                if (selection.get('terminal') == terminal and 
+                                    selection.get('x_pos') == x_pos):
+                                    is_selected = True
+                            
+                            # Apply opacity based on Point legend selection
+                            is_dimmed_by_legend = selected_points_for_chart and terminal not in selected_points_for_chart
+                            
+                            if not has_selection:
+                                # No selection - normal or dimmed by legend
+                                if is_dimmed_by_legend:
+                                    colors.append(f'rgba({r}, {g}, {b}, 0.3)')
+                                else:
+                                    colors.append(base_color)
+                                line_colors.append('rgba(0,0,0,0)')
+                                line_widths.append(0)
+                            elif is_selected:
+                                # Selected bar - highlighted with black border
+                                colors.append(base_color)
+                                line_colors.append('black')
+                                line_widths.append(3)
                             else:
-                                trace.opacity = 1.0  # Keep selected terminals fully visible
+                                # Not selected - dimmed significantly
+                                colors.append(f'rgba({r}, {g}, {b}, 0.15)')
+                                line_colors.append('rgba(0,0,0,0)')
+                                line_widths.append(0)
+                        
+                        fig.add_trace(go.Bar(
+                            name=terminal,
+                            x=terminal_df['x_pos'],
+                            y=terminal_df['flows_bcm'].tolist(),
+                            marker=dict(
+                                color=colors,
+                                line=dict(color=line_colors, width=line_widths)
+                            ),
+                            text=terminal_df['flows_bcm'].apply(lambda v: f"{v:.2f}" if v != 0 else ""),
+                            textposition='inside',
+                            insidetextanchor='middle',
+                            textfont=dict(color='white', size=9),
+                            customdata=custom_data,
+                            hovertemplate=(
+                                "<span style='color: #666'>Terminal:</span> %{customdata[0]}<br>"
+                                "<span style='color: #666'>Period:</span> %{customdata[1]}<br>"
+                                "<span style='color: #666'>Value:</span> %{y:,.3f} BCM<extra></extra>"
+                            )
+                        ))
                     
                     fig.update_layout(
                         barmode='stack',
@@ -718,7 +1022,9 @@ def register_callbacks(dash_app, server):
                         paper_bgcolor='white',
                         title={'text': chart_title, 'x': 0.5, 'font': {'size': 14, 'color': '#666'}},
                         xaxis={
-                            'tickangle': -90, 
+                            'tickvals': unique_times['x_pos'],
+                            'ticktext': unique_times['Time_Label'],
+                            'tickangle': -90 if chart_granularity in ['month', 'day'] else 0,
                             'showgrid': True, 
                             'gridcolor': '#f5f5f5', 
                             'type': 'category',
@@ -730,12 +1036,14 @@ def register_callbacks(dash_app, server):
                             'title': 'Billion Cubic Meters',
                             'rangemode': 'tozero'
                         },
-                        margin={'t': 40 if chart_title else 20, 'b': 80, 'l': 60, 'r': 30},
+                        margin={'t': 40 if chart_title else 20, 'b': 100 if chart_granularity in ['month', 'day'] else 60, 'l': 60, 'r': 30},
                         height=450,
                         showlegend=False
                     )
                 except Exception as chart_error:
                     print(f"Chart creation error: {chart_error}")
+                    import traceback
+                    traceback.print_exc()
                     fig = px.bar(title="Chart creation error")
                     fig.update_layout(
                         title={'text': f"Chart error: {str(chart_error)}", 'x': 0.5},
@@ -751,67 +1059,90 @@ def register_callbacks(dash_app, server):
                 message = "No table data found for selected filters"
                 table_output = html.Div(message, style={'padding': '20px', 'textAlign': 'center', 'color': '#666', 'fontSize': '14px'})
             else:
-                # Pivot and group
-                pivot_table = table_df.pivot_table(
-                    index=['Month of Date', 'Date'], 
-                    columns=['Target Country', 'Point'], 
-                    values='flows_bcm', 
-                    aggfunc='sum'
-                ).reset_index()
-                
-                pivot_table = pivot_table.sort_values('Date', ascending=False)
-                
-                # Construct columns for dash_table
-                columns = [{"name": ["", "Month of Date"], "id": "Month of Date"}]
-                
-                for country in sorted(table_df['Target Country'].unique()):
-                    terminals_in_country = sorted(table_df[table_df['Target Country'] == country]['Point'].unique())
-                    for term in terminals_in_country:
-                        col_id = f"{country}_{term}"
-                        columns.append({"name": [country, term], "id": col_id})
-                
-                data_rows = []
-                for _, row in pivot_table.iterrows():
-                    d = {"Month of Date": row["Month of Date"]}
-                    for col in columns[1:]:
-                        c_name, t_name = col["name"]
-                        try:
-                            val = row.get((c_name, t_name))
-                            # Values are already rounded in the query, just format for display
-                            d[col["id"]] = f"{val:.3f}" if (pd.notnull(val) and val != 0) else "0.000"
-                        except:
-                            d[col["id"]] = "0.000"
-                    data_rows.append(d)
+                try:
+                    # Apply table granularity grouping
+                    if table_granularity == 'year':
+                        table_df['Time_Label'] = table_df['Date'].dt.strftime('%Y')
+                        table_df['Time_Sort'] = table_df['Date'].dt.year
+                    elif table_granularity == 'quarter':
+                        table_df['Time_Label'] = table_df['Date'].dt.to_period('Q').astype(str)
+                        table_df['Time_Sort'] = table_df['Date'].dt.to_period('Q').apply(lambda x: x.start_time)
+                    elif table_granularity == 'day':
+                        table_df['Time_Label'] = table_df['Date'].dt.strftime('%Y-%m-%d')
+                        table_df['Time_Sort'] = table_df['Date']
+                    else:  # month (default)
+                        table_df['Time_Label'] = table_df['Month of Date']
+                        table_df['Time_Sort'] = table_df['Date']
+                    
+                    # Group by time, country, and terminal
+                    table_df = table_df.groupby(['Time_Label', 'Time_Sort', 'Target Country', 'Point'], as_index=False)['flows_bcm'].sum()
+                    
+                    # Pivot and group
+                    pivot_table = table_df.pivot_table(
+                        index=['Time_Label', 'Time_Sort'], 
+                        columns=['Target Country', 'Point'], 
+                        values='flows_bcm', 
+                        aggfunc='sum'
+                    ).reset_index()
+                    
+                    pivot_table = pivot_table.sort_values('Time_Sort', ascending=False)
+                    
+                    # Construct columns for dash_table
+                    columns = [{"name": ["", "Period"], "id": "Time_Label"}]
+                    
+                    for country in sorted(table_df['Target Country'].unique()):
+                        terminals_in_country = sorted(table_df[table_df['Target Country'] == country]['Point'].unique())
+                        for term in terminals_in_country:
+                            col_id = f"{country}_{term}"
+                            columns.append({"name": [country, term], "id": col_id})
+                    
+                    data_rows = []
+                    for _, row in pivot_table.iterrows():
+                        d = {"Time_Label": row["Time_Label"]}
+                        for col in columns[1:]:
+                            c_name, t_name = col["name"]
+                            try:
+                                val = row.get((c_name, t_name))
+                                # Values are already rounded in the query, just format for display
+                                d[col["id"]] = f"{val:.3f}" if (pd.notnull(val) and val != 0) else "0.000"
+                            except:
+                                d[col["id"]] = "0.000"
+                        data_rows.append(d)
 
-                table_output = dash_table.DataTable(
-                    columns=columns,
-                    data=data_rows,
-                    merge_duplicate_headers=True,
-                    style_table={'overflowX': 'auto', 'border': '1px solid #ddd'},
-                    style_header={
-                        'backgroundColor': '#fdfdfd',
-                        'fontWeight': 'bold',
-                        'border': '1px solid #eee',
-                        'textAlign': 'center',
-                        'fontSize': '12px',
-                        'padding': '5px'
-                    },
-                    style_cell={
-                        'border': '1px solid #f0f0f0',
-                        'padding': '5px 10px',
-                        'textAlign': 'right',
-                        'fontFamily': 'Arial, sans-serif',
-                        'fontSize': '11px',
-                        'minWidth': '80px'
-                    },
-                    style_cell_conditional=[
-                        {'if': {'column_id': 'Month of Date'}, 'textAlign': 'left', 'minWidth': '130px'}
-                    ],
-                    style_data_conditional=[
-                        {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'}
-                    ],
-                    fixed_rows={'headers': True}
-                )
+                    table_output = dash_table.DataTable(
+                        columns=columns,
+                        data=data_rows,
+                        merge_duplicate_headers=True,
+                        style_table={'overflowX': 'auto', 'border': '1px solid #ddd'},
+                        style_header={
+                            'backgroundColor': '#fdfdfd',
+                            'fontWeight': 'bold',
+                            'border': '1px solid #eee',
+                            'textAlign': 'center',
+                            'fontSize': '12px',
+                            'padding': '5px'
+                        },
+                        style_cell={
+                            'border': '1px solid #f0f0f0',
+                            'padding': '5px 10px',
+                            'textAlign': 'right',
+                            'fontFamily': 'Arial, sans-serif',
+                            'fontSize': '11px',
+                            'minWidth': '80px'
+                        },
+                        style_cell_conditional=[
+                            {'if': {'column_id': 'Time_Label'}, 'textAlign': 'left', 'minWidth': '130px'}
+                        ],
+                        style_data_conditional=[
+                            {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'}
+                        ],
+                        fixed_rows={'headers': True}
+                    )
+                except Exception as table_error:
+                    print(f"Table creation error: {table_error}")
+                    import traceback
+                    traceback.print_exc()
+                    table_output = html.Div(f"Table error: {str(table_error)}", style={'padding': '20px', 'color': 'red'})
 
             return fig, table_output
             
@@ -982,3 +1313,231 @@ def register_callbacks(dash_app, server):
         except Exception as e:
             print(f"Error exporting table data: {e}")
             return no_update
+
+    # Clientside Callback for Table Column/Row Highlighting
+    dash_app.clientside_callback(
+        """
+        function(table_children) {
+            try {
+                const tableContainerId = 'lng-imports-table-container';
+                
+                let style = document.getElementById('lng-table-styles');
+                if (!style) {
+                    style = document.createElement('style');
+                    style.id = 'lng-table-styles';
+                    document.head.appendChild(style);
+                }
+                
+                style.innerHTML = `
+                    .lng-col-selected { background-color: #cfe8ef !important; }
+                    .lng-row-selected { background-color: #cfe8ef !important; }
+                    .lng-dimmed { opacity: 0.3 !important; }
+                    
+                    .lng-col-selection-active td[data-dash-column="Time_Label"] { 
+                        opacity: 1 !important; 
+                        background-color: transparent !important; 
+                    }
+                    
+                    .lng-row-selection-active tr.lng-row-highlighted td {
+                        opacity: 1 !important;
+                        background-color: #cfe8ef !important;
+                        color: black !important;
+                    }
+
+                    .lng-row-selection-active tr:not(.lng-row-trip-wire) td {
+                        opacity: 0.3 !important;
+                    }
+
+                    th.lng-col-selected { background-color: #cfe8ef !important; }
+                `;
+
+                if (!window.lngTableState) {
+                    window.lngTableState = { 
+                        selectedColumnId: null,
+                        selectedRowIndices: null 
+                    };
+                }
+
+                function clearAll(container) {
+                    const spreadsheet = container.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet) return;
+                    
+                    spreadsheet.classList.remove('lng-col-selection-active');
+                    spreadsheet.classList.remove('lng-row-selection-active');
+                    
+                    const selected = spreadsheet.querySelectorAll('.lng-col-selected, .lng-dimmed, .lng-row-highlighted, .lng-row-trip-wire');
+                    selected.forEach(el => {
+                        el.classList.remove('lng-col-selected');
+                        el.classList.remove('lng-dimmed');
+                        el.classList.remove('lng-row-highlighted');
+                        el.classList.remove('lng-row-trip-wire');
+                    });
+                }
+                
+                function applyState(container) {
+                    const spreadsheet = container.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet) return;
+                    
+                    clearAll(container);
+
+                    if (window.lngTableState.selectedColumnId) {
+                        const targetIds = window.lngTableState.selectedColumnId.split(',');
+                        if (targetIds.length === 0) return;
+
+                        spreadsheet.classList.add('lng-col-selection-active');
+
+                        targetIds.forEach(id => {
+                            const ths = spreadsheet.querySelectorAll(`th[data-dash-column="${id}"]`);
+                            ths.forEach(th => th.classList.add('lng-col-selected'));
+                        });
+
+                        const allCells = spreadsheet.querySelectorAll('td[data-dash-column]');
+                        allCells.forEach(cell => {
+                            const cId = cell.getAttribute('data-dash-column');
+                            if (cId === 'Time_Label') return;
+
+                            if (targetIds.includes(cId)) {
+                                cell.classList.add('lng-col-selected');
+                            } else {
+                                cell.classList.add('lng-dimmed');
+                            }
+                        });
+                        return;
+                    }
+
+                    if (window.lngTableState.selectedRowIndices) {
+                        const [start, end] = window.lngTableState.selectedRowIndices.split('_').map(Number);
+                        
+                        spreadsheet.classList.add('lng-row-selection-active');
+                        
+                        const tbodies = spreadsheet.querySelectorAll('tbody');
+                        
+                        tbodies.forEach(tbody => {
+                            const rows = tbody.querySelectorAll('tr');
+                            rows.forEach((row, idx) => {
+                                if (idx >= start && idx <= end) {
+                                    row.classList.add('lng-row-highlighted');
+                                    row.classList.add('lng-row-trip-wire');
+                                }
+                            });
+                        });
+                    }
+                }
+
+                function setupTable() {
+                    const container = document.getElementById(tableContainerId);
+                    if (!container) {
+                        setTimeout(setupTable, 100);
+                        return;
+                    }
+                    
+                    const spreadsheet = container.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet) {
+                        setTimeout(setupTable, 100);
+                        return;
+                    }
+                    
+                    if (spreadsheet && (window.lngTableState.selectedColumnId || window.lngTableState.selectedRowIndices)) {
+                        applyState(container);
+                    }
+                    
+                    if (spreadsheet.dataset.enhanced === 'true') return;
+
+                    spreadsheet.dataset.enhanced = 'true';
+                    
+                    spreadsheet.addEventListener('click', function(e) {
+                        const header = e.target.closest('th[data-dash-column]');
+                        if (header) {
+                            e.stopPropagation();
+                            const colId = header.getAttribute('data-dash-column');
+                            if (colId === 'Time_Label') return;
+
+                            const headerContent = header.innerText.trim();
+                            
+                            // Check if it's a year header (first level in multi-level headers)
+                            let isYearHeader = /^\\d{4}$/.test(headerContent);
+                            let targetIds = [];
+                            
+                            if (isYearHeader) {
+                                // Find all column headers under this year
+                                // Get all headers in the same column group
+                                const allHeaders = spreadsheet.querySelectorAll('th[data-dash-column]');
+                                const yearHeaders = Array.from(allHeaders).filter(h => {
+                                    const text = h.innerText.trim();
+                                    return /^\\d{4}$/.test(text);
+                                });
+                                
+                                // Find the index of clicked year header
+                                const yearIndex = yearHeaders.indexOf(header);
+                                
+                                // Get all data columns (non-Time_Label)
+                                const dataHeaders = Array.from(allHeaders).filter(h => {
+                                    const id = h.getAttribute('data-dash-column');
+                                    return id && id !== 'Time_Label';
+                                });
+                                
+                                // Estimate columns per year (rough heuristic)
+                                const colsPerYear = Math.floor(dataHeaders.length / yearHeaders.length);
+                                const startIdx = yearIndex * colsPerYear;
+                                const endIdx = startIdx + colsPerYear;
+                                
+                                targetIds = dataHeaders.slice(startIdx, endIdx).map(h => h.getAttribute('data-dash-column'));
+                            } else {
+                                targetIds.push(colId);
+                            }
+
+                            const selectionKey = targetIds.join(',');
+                            
+                            if (window.lngTableState.selectedColumnId === selectionKey) {
+                                window.lngTableState.selectedColumnId = null;
+                            } else {
+                                window.lngTableState.selectedColumnId = selectionKey;
+                                window.lngTableState.selectedRowIndices = null; 
+                            }
+                            applyState(container);
+                            return;
+                        }
+                        
+                        const cell = e.target.closest('td[data-dash-column]');
+                        if (cell) {
+                             const row = cell.closest('tr');
+                             const tbody = row.closest('tbody');
+                             const rows = Array.from(tbody.querySelectorAll('tr'));
+                             const idx = rows.indexOf(row);
+                             
+                             const start = idx; 
+                             const end = idx; 
+                             
+                             const newKey = `${start}_${end}`;
+                             
+                             if (window.lngTableState.selectedRowIndices === newKey) {
+                                  window.lngTableState.selectedRowIndices = null;
+                             } else {
+                                  window.lngTableState.selectedRowIndices = newKey;
+                                  window.lngTableState.selectedColumnId = null;
+                             }
+                             applyState(container);
+                        }
+                    });
+                }
+                
+                // Reset state when table content changes
+                if (table_children) {
+                    // Clear selections on table update
+                    window.lngTableState.selectedColumnId = null;
+                    window.lngTableState.selectedRowIndices = null;
+                }
+                
+                setTimeout(setupTable, 500); 
+                return window.lngTableState.selectedColumnId || ""; 
+
+            } catch(e) { 
+                console.error('LNG table highlighting error:', e); 
+                return ""; 
+            }
+        }
+        """,
+        Output('lng-table-highlight-state', 'data'),
+        Input('lng-imports-table-container', 'children'),
+        prevent_initial_call=False
+    )
