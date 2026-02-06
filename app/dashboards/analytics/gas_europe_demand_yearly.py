@@ -1238,7 +1238,9 @@ def register_callbacks(dash_app, server):
                             // Detect Year group (e.g. 2024)
                             // We ONLY want to group-select if it's a Year header.
                             // Quarter/Month/Day headers should be treated as specific columns.
+                            // Detect Year group (e.g. 2024)
                             let isYear = /^20\d{2}$/.test(headerContent);
+                            let isQuarter = /^Q[1-4]$/.test(headerContent);
                             
                             let targetIds = [];
                             // Use GLOBAL columns to avoid closure staleness
@@ -1246,13 +1248,32 @@ def register_callbacks(dash_app, server):
                             
                             if (isYear && currentColumns) {
                                 currentColumns.forEach(c => {
-                                    // Match "2024" in ID (e.g. col_2024_Q1)
                                     if (c.id && c.id.indexOf(headerContent) !== -1) {
                                         targetIds.push(c.id);
                                     }
                                 });
+                            } else if (isQuarter && currentColumns) {
+                                // Extract Year from the clicked column ID to ensure scope
+                                // Format: col_2024_Q1_...
+                                const parts = colId.split('_');
+                                let year = null;
+                                parts.forEach(p => { if (/^20\d{2}$/.test(p)) year = p; });
+                                
+                                if (year) {
+                                    // Match standard Year + Quarter pattern in ID
+                                    // e.g. col_2024_Q1_... or just col_2024_Q1 if it exists
+                                    const qStr = `_${year}_${headerContent}`;
+                                    currentColumns.forEach(c => {
+                                        if (c.id && c.id.indexOf(qStr) !== -1) {
+                                            targetIds.push(c.id);
+                                        }
+                                    });
+                                } else {
+                                     // Fallback if year not found (unlikely), select just this column
+                                     targetIds.push(colId);
+                                }
                             } else {
-                                // Specific Column (Quarter, Month, Day)
+                                // Specific Column (Month, Day)
                                 targetIds.push(colId);
                             }
 
