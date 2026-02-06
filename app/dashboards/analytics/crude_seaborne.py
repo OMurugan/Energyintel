@@ -234,6 +234,16 @@ def create_layout():
                             style={'height': '320px'},
                             config={'displayModeBar': False}
                         )
+                    ),
+                    html.Div(
+                        "Energy Intelligence; data as of December 2025",
+                        style={
+                            'fontSize': '11px',
+                            'color': EI_DARK_BLUE,
+                            'fontFamily': 'Georgia, serif',
+                            'marginTop': '5px',
+                            'marginLeft': '5px'
+                        }
                     )
                 ], style={'position': 'relative'})
             ], style={'width': '70%', 'paddingRight': '15px', 'borderRight': '1px solid #eee'}),
@@ -267,9 +277,11 @@ def create_layout():
                     style_data_conditional=[
                         {'if': {'filter_query': '{yoy_pct} < 0'}, 'color': '#d9534f'},
                         {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'},
-                        {'if': {'column_id': 'period'}, 'borderRight': '1px solid #eee'}
+                        {'if': {'column_id': 'period'}, 'borderRight': '1px solid #eee', 'backgroundColor': 'white', 'borderBottom': 'none', 'borderTop': 'none'},
+                        {'if': {'filter_query': '{port_name} eq " "'}, 'borderTop': '2px solid #ccc', 'fontWeight': 'bold'},
+                        {'if': {'column_id': 'period', 'filter_query': '{port_name} eq " "'}, 'borderTop': 'none'}
                     ],
-                    css=[{'selector': 'td[data-dash-column="period"]', 'rule': 'writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: auto; text-align: center; vertical-align: middle;'},
+                    css=[{'selector': 'td[data-dash-column="period"]', 'rule': 'writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: auto; text-align: center; vertical-align: middle; padding: 0 !important;'},
                          {'selector': '.dash-spreadsheet td.highlighted', 'rule': f'background-color: {EI_LIGHT_BLUE} !important; opacity: 1 !important;'},
                          {'selector': '.highlight-mode td:not(.highlighted)', 'rule': 'opacity: 0.3; transition: opacity 0.2s;'}]
                 )
@@ -536,6 +548,20 @@ def register_callbacks(dash_app, server):
             WHERE ru.type = 'Seaborne'
             GROUP BY po.port_name, yr, mon
         ),
+        monthly_total AS (
+            SELECT
+                'All' as port_name,
+                yr,
+                mon,
+                SUM(avg_vol) as avg_vol
+            FROM monthly_avg
+            GROUP BY yr, mon
+        ),
+        combined_data AS (
+            SELECT * FROM monthly_avg
+            UNION ALL
+            SELECT * FROM monthly_total
+        ),
         yoy AS (
             SELECT
                 cur.port_name,
@@ -545,8 +571,8 @@ def register_callbacks(dash_app, server):
                     ((cur.avg_vol - prev.avg_vol) / NULLIF(prev.avg_vol, 0))::numeric * 100,
                     1
                 ) AS yoy_pct
-            FROM monthly_avg cur
-            JOIN monthly_avg prev ON cur.port_name = prev.port_name
+            FROM combined_data cur
+            JOIN combined_data prev ON cur.port_name = prev.port_name
                AND cur.mon = prev.mon
                AND cur.yr = prev.yr + 1
         )
@@ -578,8 +604,10 @@ def register_callbacks(dash_app, server):
             cols = ['period', 'port_name'] + active_month_names
             pivot_df = pivot_df[cols]
             
-            # Sort by period ascending
-            pivot_df = pivot_df.sort_values(['period', 'port_name'], ascending=[True, True])
+            # Sort by period ascending, but force 'All' to be last in each period
+            pivot_df['port_sort_key'] = pivot_df['port_name'].apply(lambda x: 'ZZZZZZ' if x == 'All' else x)
+            pivot_df = pivot_df.sort_values(['period', 'port_sort_key'], ascending=[True, True])
+            pivot_df.drop('port_sort_key', axis=1, inplace=True)
 
             columns = [
                 {"name": "", "id": "period"},
@@ -590,26 +618,34 @@ def register_callbacks(dash_app, server):
             
             # Merge logic for period column
             data = []
-            last_period = None
-            for _, row in pivot_df.iterrows():
+            
+            # Calculate middle indices for each period group
+            period_indices = {}
+            current_idx = 0
+            for period, group in pivot_df.groupby('period', sort=False):
+                count = len(group)
+                middle_offset = count // 2
+                period_indices[period] = current_idx + middle_offset
+                current_idx += count
+            
+            for i, row in pivot_df.iterrows():
                 formatted_row = {}
                 current_period = row['period']
                 
-                # Fig looks like it's centered or repeated. 
-                # Let's show it on the first row of each group and keep others empty
-                if current_period != last_period:
+                # Show period label only on the middle row of the group
+                if i == period_indices.get(current_period):
                     formatted_row['period'] = current_period
                 else:
                     formatted_row['period'] = ""
-                
-                last_period = current_period
                 
                 for col in pivot_df.columns:
                     if col == 'period': continue
                     val = row[col]
                     if col == 'port_name':
+                        if val == 'All':
+                             formatted_row[col] = " " # Blank string for visual separation
                         # Truncate long port names like in fig
-                        if val and len(val) > 13:
+                        elif val and len(val) > 13:
                             formatted_row[col] = val[:11] + ".."
                         else:
                             formatted_row[col] = val
@@ -625,6 +661,7 @@ def register_callbacks(dash_app, server):
             return [], []
 
     from dash import clientside_callback
+
     clientside_callback(
         """
         function(clickData, currentStore) {
@@ -721,7 +758,7 @@ def register_callbacks(dash_app, server):
                 if period == 'QUARTERLY':
                     return f"Q{int(row['quarter_of_date'])}"
                 if period == 'MONTHLY':
-                    month_abbr = {1:'Ja..', 2:'Fe..', 3:'M..', 4:'A..', 5:'M..', 6:'Ju..', 7:'Ju..', 8:'A..', 9:'Se..', 10:'O..', 11:'N..', 12:'D..'}
+                    month_abbr = {1:'January', 2:'February', 3:'March', 4:'April', 5:'May', 6:'June', 7:'July', 8:'August', 9:'September', 10:'October', 11:'November', 12:'December'}
                     return month_abbr.get(int(row['month_of_date']), '')
                 if period == 'DATE':
                     if pd.notnull(row['date_of_date']):
@@ -828,7 +865,8 @@ def register_callbacks(dash_app, server):
                     tickfont=dict(size=9 if period != 'DATE' else 7, color='#666'),
                     fixedrange=True,
                     zeroline=True,
-                    zerolinecolor='#ccc'
+                    zerolinecolor='#ccc',
+                    tickangle=-90
                 ),
                 yaxis=dict(
                     title=dict(text="Seaborne Crude Exp...", font=dict(size=10)),
@@ -1131,7 +1169,7 @@ def register_callbacks(dash_app, server):
             if not df_map.empty:
                 # Merge DB data with all fallback ports to ensure they exist
                 all_ports_df = pd.DataFrame({'port_name': ports_fallback_list})
-                df_ports = pd.merge(all_ports_df, df_map, on='port_name', how='left')
+                df_ports = pd.merge(all_ports_df, df_map, on='port_name', how='outer')
                 df_ports['total_vol'] = df_ports['total_vol'].fillna(0)
             else:
                 df_ports = pd.DataFrame({'port_name': ports_fallback_list})

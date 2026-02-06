@@ -63,6 +63,17 @@ GRAN_BTN_INACTIVE = {
     'justifyContent': 'center'
 }
 
+EXPORT_BTN_STYLE = {
+    'backgroundColor': 'white',
+    'color': '#1b365d',
+    'border': '1px solid #ddd',
+    'padding': '4px 8px',
+    'borderRadius': '4px',
+    'fontSize': '11px',
+    'cursor': 'pointer',
+    'zIndex': '1000'
+}
+
 def load_data():
     try:
         # Load chart data - keeping CSV for now if needed or can be removed if chart is fully SQL
@@ -102,6 +113,8 @@ def create_layout():
         dcc.Store(id='gas-europe-granularity-store', data='year'),
         dcc.Store(id='gas-europe-table-granularity-store', data='month'),
         dcc.Store(id='gas-demand-chart-selection', data=None),
+        dcc.Download(id="gas-demand-europe-download-chart-csv"),
+        dcc.Download(id="gas-demand-europe-download-table-csv"),
         
         # Header
         html.Div([
@@ -114,34 +127,39 @@ def create_layout():
         html.Div([
             # Main Content (Left)
             html.Div([
-                # Buttons Area
                 html.Div([
+                    # Buttons Area
                     html.Div([
-                        html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                        html.Button('-', id='gas-europe-toggle-year-btn', n_clicks=0, style=GRAN_BTN_ACTIVE)
-                    ], style=GRAN_BTN_CONTAINER_STYLE),
-                    html.Div([
-                        html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                        html.Button('+', id='gas-europe-toggle-quarter-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
-                    ], style=GRAN_BTN_CONTAINER_STYLE),
-                    html.Div([
-                        html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                        html.Button('+', id='gas-europe-toggle-month-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
-                    ], style=GRAN_BTN_CONTAINER_STYLE),
-                    html.Div([
-                        html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                        html.Button('+', id='gas-europe-toggle-day-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
-                    ], style=GRAN_BTN_CONTAINER_STYLE),
-                ], style={'display': 'flex', 'padding': '10px 20px', 'backgroundColor': '#f8f9fa'}),
+                        html.Div([
+                            html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('-', id='gas-europe-toggle-year-btn', n_clicks=0, style=GRAN_BTN_ACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                        html.Div([
+                            html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('+', id='gas-europe-toggle-quarter-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                        html.Div([
+                            html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('+', id='gas-europe-toggle-month-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                        html.Div([
+                            html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+                            html.Button('+', id='gas-europe-toggle-day-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                        ], style=GRAN_BTN_CONTAINER_STYLE),
+                    ], style={'display': 'flex', 'padding': '10px 20px', 'backgroundColor': '#f8f9fa', 'alignItems': 'center'}),
 
-                # Chart Area
-                html.Div([
-                    dcc.Loading(
-                        id='loading-gas-demand-chart',
-                        type='circle',
-                        children=dcc.Graph(id='gas-demand-chart', config={'displayModeBar': False})
-                    )
-                ], style={'padding': '20px'}),
+                    html.Button("Export to CSV", id="gas-demand-europe-export-chart-csv-btn", 
+                                style={**EXPORT_BTN_STYLE, 'position': 'absolute', 'top': '10px', 'right': '20px'}),
+
+                    # Chart Area
+                    html.Div([
+                        dcc.Loading(
+                            id='loading-gas-demand-chart',
+                            type='circle',
+                            children=dcc.Graph(id='gas-demand-chart', config={'displayModeBar': False})
+                        )
+                    ], style={'padding': '20px'}),
+                ], style={'position': 'relative'}),
                 
                 # Table Area
                 html.Div([
@@ -163,10 +181,13 @@ def create_layout():
                             html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
                             html.Button('+', id='gas-europe-table-toggle-day-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
                         ], style=GRAN_BTN_CONTAINER_STYLE),
-                    ], style={'display': 'flex', 'padding': '10px 0', 'backgroundColor': '#fff'}),
+                    ], style={'display': 'flex', 'padding': '10px 0', 'backgroundColor': '#fff', 'alignItems': 'center'}),
+                    
+                    html.Button("Export to CSV", id="gas-demand-europe-export-table-csv-btn", 
+                                style={**EXPORT_BTN_STYLE, 'position': 'absolute', 'top': '10px', 'right': '20px'}),
                     
                     html.Div(id='gas-demand-table-container')
-                ], style={'padding': '20px', 'overflowX': 'auto', 'maxHeight': '600px', 'overflowY': 'auto'})
+                ], style={'padding': '20px', 'overflowX': 'auto', 'maxHeight': '600px', 'overflowY': 'auto', 'position': 'relative'})
             ], style={'width': '80%', 'display': 'inline-block', 'verticalAlign': 'top'}),
 
             # Filters Sidebar (Right)
@@ -841,13 +862,163 @@ def register_callbacks(dash_app, server):
 
         return fig
 
+    # Export Chart Data
+    @dash_app.callback(
+        Output("gas-demand-europe-download-chart-csv", "data"),
+        Input("gas-demand-europe-export-chart-csv-btn", "n_clicks"),
+        [State('unit-filter', 'value'),
+         State('sector-filter', 'value'),
+         State('country-filter', 'value'),
+         State('gas-europe-granularity-store', 'data')]
+    )
+    def export_chart_csv(n_clicks, unit, selected_sectors, selected_countries, granularity):
+        if not n_clicks or not selected_sectors or not selected_countries:
+            return no_update
+            
+        unit_map = {'Million Cubic Meter': 'Mcm', 'GWh': 'GWh'}
+        db_unit = unit_map.get(unit, 'Mcm')
+
+        query = """
+        SELECT
+            EXTRACT(YEAR FROM gd.date)::int AS "Year of Date",
+            CASE
+                WHEN :granularity IN ('quarter','month','day')
+                THEN 'Q' || EXTRACT(QUARTER FROM gd.date)::int
+                ELSE NULL
+            END AS "Quarter of Date",
+            CASE
+                WHEN :granularity IN ('month','day')
+                THEN TO_CHAR(gd.date, 'FMMonth')
+                ELSE NULL
+            END AS "Month of Date",
+            CASE
+                WHEN :granularity = 'day'
+                THEN EXTRACT(DAY FROM gd.date)::int
+                ELSE NULL
+            END AS "Day of Date",
+            gd.sector AS "Sector",
+            :display_unit AS "Unit",
+            ROUND(SUM(gd.value) / 1000.0, 3) AS "Value"
+        FROM dev.glng_gas_demand gd
+        LEFT JOIN dev.dim_country dc ON gd.country_id = dc.dim_country_id
+        WHERE LOWER(dc.region) = 'europe'
+          AND gd.unit = :unit
+          AND gd.sector = ANY(:selected_sectors)
+          AND dc.country_long_name = ANY(:selected_countries)
+          AND gd.to_be_deleted = false
+          AND EXTRACT(YEAR FROM gd.date) >= 2019
+          AND EXTRACT(YEAR FROM gd.date) < 2025
+        GROUP BY 1, 2, 3, 4, 5, 6
+        ORDER BY 1, 2, 
+                 CASE 
+                    WHEN :granularity IN ('month','day') 
+                    THEN MIN(EXTRACT(MONTH FROM gd.date)) 
+                    ELSE 0 
+                 END,
+                 CASE 
+                    WHEN :granularity = 'day' 
+                    THEN MIN(EXTRACT(DAY FROM gd.date)) 
+                    ELSE 0 
+                 END
+        """
+        
+        params = {
+            'granularity': granularity,
+            'unit': db_unit,
+            'display_unit': unit,
+            'selected_sectors': selected_sectors,
+            'selected_countries': selected_countries
+        }
+        
+        try:
+            results = execute_query(query, params)
+            df = pd.DataFrame(results)
+            if df.empty: 
+                return dcc.send_string("No data found for the selected filters.", "no_data.txt")
+            
+            df = df.dropna(axis=1, how='all')
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"european_gas_demand_chart_{timestamp}.csv"
+            return dcc.send_data_frame(df.to_csv, filename, index=False)
+        except Exception as e:
+            error_msg = f"Error exporting chart csv: {str(e)}"
+            print(error_msg)
+            return dcc.send_string(error_msg, "chart_export_error.txt")
+
+    # Export Table Data
+    @dash_app.callback(
+        Output("gas-demand-europe-download-table-csv", "data"),
+        Input("gas-demand-europe-export-table-csv-btn", "n_clicks"),
+        [State('unit-filter', 'value'),
+         State('sector-filter', 'value'),
+         State('country-filter', 'value'),
+         State('gas-europe-table-granularity-store', 'data')]
+    )
+    def export_table_csv(n_clicks, unit, selected_sectors, selected_countries, granularity):
+        if not n_clicks or not selected_sectors or not selected_countries:
+            return no_update
+            
+        unit_map = {'Million Cubic Meter': 'Mcm', 'GWh': 'GWh'}
+        db_unit = unit_map.get(unit, 'Mcm')
+
+        query = """
+        SELECT
+            gd.country                                AS "Country",
+            gd.sector                                 AS "Sector",
+            EXTRACT(YEAR FROM gd.date)::int           AS "Year",
+            CASE WHEN :granularity IN ('quarter','month','day') THEN 'Q' || EXTRACT(QUARTER FROM gd.date)::int ELSE NULL END AS "Quarter",
+            CASE WHEN :granularity IN ('month','day') THEN TO_CHAR(gd.date, 'FMMonth') ELSE NULL END AS "Month",
+            CASE WHEN :granularity = 'day' THEN TO_CHAR(gd.date, 'FMMonth DD') ELSE NULL END AS "Day",
+            :display_unit                             AS "Unit",
+            ROUND(SUM(gd.value), 2)                   AS "Value"
+        FROM dev.glng_gas_demand gd
+        JOIN dev.dim_country dc ON gd.country_id = dc.dim_country_id
+        WHERE LOWER(dc.region) = 'europe'
+          AND gd.unit = :unit
+          AND gd.sector = ANY(:selected_sectors)
+          AND dc.country_long_name = ANY(:selected_countries)
+          AND gd.to_be_deleted = false
+          AND EXTRACT(YEAR FROM gd.date) >= 2019
+          AND EXTRACT(YEAR FROM gd.date) < 2025
+        GROUP BY 1, 2, 3, 4, 5, 6, 7
+        ORDER BY 3 DESC, 1, 2
+        """
+        
+        params = {
+            'granularity': granularity,
+            'unit': db_unit,
+            'display_unit': unit,
+            'selected_sectors': selected_sectors,
+            'selected_countries': selected_countries
+        }
+        
+        try:
+            results = execute_query(query, params)
+            df = pd.DataFrame(results)
+            if df.empty: 
+                return dcc.send_string("No data found for the selected filters.", "no_data.txt")
+            
+            df = df.dropna(axis=1, how='all')
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"european_gas_demand_table_{timestamp}.csv"
+            return dcc.send_data_frame(df.to_csv, filename, index=False)
+        except Exception as e:
+            error_msg = f"Error exporting table csv: {str(e)}"
+            print(error_msg)
+            return dcc.send_string(error_msg, "table_export_error.txt")
+
     # Update Table
     @dash_app.callback(
         Output('gas-demand-table-container', 'children'),
         [Input('unit-filter', 'value'),
+         Input('sector-filter', 'value'),
+         Input('country-filter', 'value'),
          Input('gas-europe-table-granularity-store', 'data')]
     )
-    def update_table(unit, granularity):
+    def update_table(unit, selected_sectors, selected_countries, granularity):
+        if not selected_sectors or not selected_countries:
+            return html.Div("Please select at least one sector and country")
+
         unit_map = {'Million Cubic Meter': 'Mcm', 'GWh': 'GWh'}
         db_unit = unit_map.get(unit, 'Mcm')
 
@@ -902,7 +1073,8 @@ def register_callbacks(dash_app, server):
         WHERE LOWER(dc.region) = 'europe'
           AND gd.unit = :unit
           AND gd.to_be_deleted = false
-          AND gd.sector in ('Industrial','Household','Power')
+          AND gd.sector = ANY(:selected_sectors)
+          AND dc.country_long_name = ANY(:selected_countries)
           AND EXTRACT(YEAR FROM gd.date) >= 2019
           AND EXTRACT(YEAR FROM gd.date) < 2025
 
@@ -921,7 +1093,13 @@ def register_callbacks(dash_app, server):
         
         """
         
-        params = {'granularity': granularity, 'unit': db_unit, 'display_unit': unit}
+        params = {
+            'granularity': granularity, 
+            'unit': db_unit, 
+            'display_unit': unit,
+            'selected_sectors': selected_sectors,
+            'selected_countries': selected_countries
+        }
         
         try:
             results = execute_query(query, params)
