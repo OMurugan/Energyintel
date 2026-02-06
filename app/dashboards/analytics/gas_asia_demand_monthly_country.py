@@ -1200,21 +1200,36 @@ def register_callbacks(dash_app, server):
         # Note: Sector filtering is now handled at the database level in load_data()
         
         # Apply country filter FIRST - handle empty selection properly
-        # NOTE: For the map, we DO NOT filter the dataframe by country.
-        # This allows us to show the "inactive" layer (dimmed countries) when a single country is selected.
+        if selected_countries is not None:
+            print(f"Map update - selected_countries: {selected_countries}")
+            if len(selected_countries) == 0:
+                # No countries selected - return empty map
+                return create_empty_map("No countries selected", height=700)
+            else:
+                # Filter by selected countries
+                print(f"Filtering map data by countries: {selected_countries}")
+                print(f"Available countries in filtered_df BEFORE country filter: {filtered_df['Country'].unique().tolist()}")
+                print(f"filtered_df shape BEFORE country filter: {filtered_df.shape}")
+                filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
+                print(f"Available countries in filtered_df AFTER country filter: {filtered_df['Country'].unique().tolist()}")
+                print(f"Filtered data shape AFTER country filter: {filtered_df.shape}")
         
-        has_selection = selected_countries is not None and len(selected_countries) > 0
-        
-        if selected_countries is not None and len(selected_countries) == 0:
-             return create_empty_map("No countries selected", height=700)
-        
+        if filtered_df.empty:
+            print(f"ERROR: filtered_df is empty after country filtering!")
+            print(f"Selected countries: {selected_countries}")
+            return create_empty_map("No data available for selected filters", height=700)
         
         # THEN for map, show only the latest year data within the filtered date range
         # This is done AFTER country filtering to ensure selected countries aren't lost
         if not filtered_df.empty and 'Year of Date' in filtered_df.columns:
             # Get the latest year available in the filtered data
             latest_year = filtered_df['Year of Date'].max()
+            print(f"Map: Latest year in filtered data: {latest_year}")
+            print(f"Map: Countries with data BEFORE year filter: {filtered_df['Country'].unique().tolist()}")
+            print(f"Map: Data shape BEFORE year filter: {filtered_df.shape}")
             filtered_df = filtered_df[filtered_df['Year of Date'] == latest_year]
+            print(f"Map: Countries with data AFTER year filter (year={latest_year}): {filtered_df['Country'].unique().tolist()}")
+            print(f"Map: Data shape AFTER year filter: {filtered_df.shape}")
             print(f"Map showing data for latest year within date range: {latest_year}")
         
         if filtered_df.empty:
@@ -1280,13 +1295,14 @@ def register_callbacks(dash_app, server):
         single_selected_country = None
         
         # Check if only one country is selected (not all countries)
-        if selected_countries and len(selected_countries) == 1 and '(All)' not in selected_countries:
+        if selected_countries and len(selected_countries) == 1:
             single_selected_country = selected_countries[0]
             
             # Find the ISO code for the selected country
             if single_selected_country in agg_df['Country'].values:  # Use original Country column
                 selected_iso = agg_df.loc[agg_df['Country'] == single_selected_country, 'ISO_Code'].iloc[0]
                 other_isos = [iso for iso in locations if iso != selected_iso]
+                print(f"Map selection: {single_selected_country} (ISO: {selected_iso}), dimming {len(other_isos)} other countries")
         
         # Create the map using shared utilities
         fig = create_choropleth_map(
@@ -1305,6 +1321,161 @@ def register_callbacks(dash_app, server):
         )
         
         # Add country hover layer for outline highlighting (similar to country profile)
+        use_mapbox, _, mapbox_layout = get_mapbox_config()
+        geojson = load_world_geojson()
+        
+        # Add country hover layer for better interaction (similar to country_profile.py)
+        if use_mapbox and geojson and locations:
+            # Get all unique countries for hover layer
+            unique_countries = list(set(country_names))
+            unique_isos = []
+            valid_countries = []
+            
+            # Map country names to ISO codes for hover layer
+            for country in unique_countries:
+                iso = _iso_for_country(country)
+                if iso:
+                    unique_isos.append(iso)
+                    valid_countries.append(country)
+            
+            if unique_isos:
+                # Add country choropleth layer for hover interactions
+                country_values = [1] * len(unique_isos)  # Uniform values for consistent hover
+                
+                # Create dynamic hover text with actual data for each country
+                country_hover_text = []
+                for country in valid_countries:
+                    # Get actual data for this country from the aggregated data
+                    country_data = agg_df[agg_df['Country'] == country]
+                    if not country_data.empty:
+                        value = country_data.iloc[0]['Value']
+                        year = int(country_data.iloc[0]['Year of Date'])
+                        
+                        hover_text = (
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{value:,.1f}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
+                        )
+                    else:
+                        # Fallback if no data found
+                        year = 2025
+                            
+                        hover_text = (
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>No data</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
+                        )
+                    country_hover_text.append(hover_text)
+                
+                fig.add_trace(
+                    go.Choroplethmapbox(
+                        geojson=geojson,
+                        locations=unique_isos,
+                        z=country_values,
+                        featureidkey="id",
+                        colorscale=[[0, 'rgba(200, 230, 200, 0.6)'], [1, 'rgba(200, 230, 200, 0.6)']],
+                        showscale=False,
+                        hoverinfo="text",
+                        hovertext=country_hover_text,
+                        hoverlabel=dict(
+                            bgcolor="white", 
+                            font_size=13, 
+                            font_color="#333", 
+                            bordercolor="#ccc", 
+                            font_family="Arial"
+                        ),
+                        customdata=valid_countries,
+                        marker_line_color="white",
+                        marker_line_width=1,
+                        marker_opacity=0.6,
+                        name="countries"  # Same name as main choropleth for consistent handling
+                    )
+                )
+        elif not use_mapbox and locations:
+            # Fallback geo hover layer
+            unique_countries = list(set(country_names))
+            unique_isos = []
+            valid_countries = []
+            
+            for country in unique_countries:
+                iso = _iso_for_country(country)
+                if iso:
+                    unique_isos.append(iso)
+                    valid_countries.append(country)
+            
+            if unique_isos:
+                country_values = [1] * len(unique_isos)
+                
+                # Create dynamic hover text with actual data for each country
+                country_hover_text = []
+                for country in valid_countries:
+                    # Get actual data for this country from the aggregated data
+                    country_data = agg_df[agg_df['Country'] == country]
+                    if not country_data.empty:
+                        value = country_data.iloc[0]['Value']
+                        year = int(country_data.iloc[0]['Year of Date'])
+                        
+                        hover_text = (
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{value:,.1f}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
+                        )
+                    else:
+                        # Fallback if no data found
+                        year = 2025
+                            
+                        hover_text = (
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{country}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{year}</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>No data</span><br>"
+                            f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
+                            f"<span style='color: #000000; font-weight: bold;'>{selected_unit}</span>"
+                        )
+                    country_hover_text.append(hover_text)
+                
+                fig.add_trace(
+                    go.Choropleth(
+                        locations=unique_isos,
+                        z=country_values,
+                        locationmode='ISO-3',
+                        colorscale=[[0, 'rgba(200, 230, 200, 0.6)'], [1, 'rgba(200, 230, 200, 0.6)']],
+                        showscale=False,
+                        hoverinfo="text",
+                        hovertext=country_hover_text,
+                        hoverlabel=dict(
+                            bgcolor="white", 
+                            font_size=13, 
+                            font_color="#333", 
+                            bordercolor="#ccc", 
+                            font_family="Arial"
+                        ),
+                        customdata=valid_countries,
+                        marker_line_width=1,
+                        marker_line_color='white',
+                        marker_opacity=0.6,
+                        name="countries"
+                    )
+                )
+        
+        # Add custom margin and UI revision for gas demand
         fig.update_layout(
             margin=dict(l=20, r=20, t=20, b=80),
             uirevision='gas-asia-demand-map',
