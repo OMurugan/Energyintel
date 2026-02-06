@@ -628,7 +628,20 @@ def create_layout():
                             },
                             style_as_list_view=False,
                         )
-                    )
+                    ),
+                    
+                    # Source attribution
+                    html.Div([
+                        html.P("Source: Energy Intelligence, Transmission System Operators, Federal Agencies, Eurostat, Entsoe", 
+                               style={
+                                   'fontSize': '11px',
+                                   'color': '#999',
+                                   'fontStyle': 'italic',
+                                   'marginTop': '10px',
+                                   'marginBottom': '0px',
+                                   'fontFamily': 'Arial, sans-serif'
+                               })
+                    ], style={'marginTop': '10px'})
                 ], id='europe-gas-demand-table-container')
                 
             ], style={
@@ -1400,4 +1413,257 @@ def register_callbacks(dash_app, server):
         ''',
         Output('sector-demand-header-click-input', 'style'), 
         [Input('sector-demand-table', 'id')]
+    )
+
+    # Clientside Callback for Table Highlighting (Row and Column)
+    dash_app.clientside_callback(
+        """
+        function(n_data, columns, current_state) {
+            try {
+                const tableId = 'sector-demand-table';
+                
+                // 1. Inject or Update CSS
+                let style = document.getElementById('europe-gas-styles');
+                if (!style) {
+                    style = document.createElement('style');
+                    style.id = 'europe-gas-styles';
+                    document.head.appendChild(style);
+                }
+                
+                style.innerHTML = `
+                    .europe-col-selected { background-color: #cfe8ef !important; }
+                    .europe-row-selected { background-color: #cfe8ef !important; }
+                    .europe-dimmed { opacity: 0.3 !important; }
+                    
+                    /* Column Selection: Country/Sector remain visible (100% opacity) but NOT blue */
+                    .europe-col-selection-active td[data-dash-column="Country"], 
+                    .europe-col-selection-active td[data-dash-column="Sector"] { 
+                        opacity: 1 !important; 
+                        background-color: transparent !important; 
+                    }
+                    
+                    /* Row Selection: The Highlighted Row(s) - FORCE BLUE ON ALL CELLS */
+                    .europe-row-selection-active tr.europe-row-highlighted td {
+                        opacity: 1 !important;
+                        background-color: #cfe8ef !important;
+                        color: black !important;
+                    }
+
+                    /* Row Selection: Non-selected rows dimmed */
+                    .europe-row-selection-active tr:not(.europe-row-trip-wire) td {
+                        opacity: 0.3 !important;
+                    }
+
+                    /* Headers */
+                    th.europe-col-selected { background-color: #cfe8ef !important; }
+                `;
+
+                if (!window.europeGasState) {
+                    window.europeGasState = { 
+                        selectedColumnId: null,
+                        selectedRowIndices: null // String "start_end" or null
+                    };
+                }
+
+                // 2. Helper Logic
+                function clearAll(spreadsheet) {
+                    spreadsheet.classList.remove('europe-col-selection-active');
+                    spreadsheet.classList.remove('europe-row-selection-active');
+                    
+                    const selected = spreadsheet.querySelectorAll('.europe-col-selected, .europe-dimmed, .europe-row-highlighted, .europe-row-trip-wire');
+                    selected.forEach(el => {
+                        el.classList.remove('europe-col-selected');
+                        el.classList.remove('europe-dimmed');
+                        el.classList.remove('europe-row-highlighted');
+                        el.classList.remove('europe-row-trip-wire');
+                    });
+                }
+                
+                function applyState(spreadsheet, n_data) {
+                    clearAll(spreadsheet);
+
+                    // COLUMN HIGHLIGHTING
+                    if (window.europeGasState.selectedColumnId) {
+                        const targetIds = window.europeGasState.selectedColumnId.split(',');
+                        if (targetIds.length === 0) return;
+
+                        spreadsheet.classList.add('europe-col-selection-active');
+
+                        // Headers
+                        targetIds.forEach(id => {
+                            const ths = spreadsheet.querySelectorAll(`th[data-dash-column="${id}"]`);
+                            ths.forEach(th => th.classList.add('europe-col-selected'));
+                        });
+
+                        // Body Cells
+                        const allCells = spreadsheet.querySelectorAll('td[data-dash-column]');
+                        allCells.forEach(cell => {
+                            const cId = cell.getAttribute('data-dash-column');
+                            if (cId === 'Country' || cId === 'Sector') return;
+
+                            if (targetIds.includes(cId)) {
+                                cell.classList.add('europe-col-selected');
+                            } else {
+                                cell.classList.add('europe-dimmed');
+                            }
+                        });
+                        return;
+                    }
+
+                    // ROW HIGHLIGHTING
+                    if (window.europeGasState.selectedRowIndices) {
+                        const [start, end] = window.europeGasState.selectedRowIndices.split('_').map(Number);
+                        
+                        spreadsheet.classList.add('europe-row-selection-active');
+                        
+                        // Handle Split Tables (Fixed Columns vs Data Columns)
+                        const tbodies = spreadsheet.querySelectorAll('tbody');
+                        
+                        tbodies.forEach(tbody => {
+                            const rows = tbody.querySelectorAll('tr');
+                            rows.forEach((row, idx) => {
+                                if (idx >= start && idx <= end) {
+                                    row.classList.add('europe-row-highlighted');
+                                    row.classList.add('europe-row-trip-wire');
+                                }
+                            });
+                        });
+                    }
+                }
+
+                function setupTable() {
+                    const tableEl = document.getElementById(tableId);
+                    if (!tableEl) return;
+                    const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                    
+                    // Always try to re-apply state
+                    if (spreadsheet && (window.europeGasState.selectedColumnId || window.europeGasState.selectedRowIndices)) {
+                        applyState(spreadsheet, n_data);
+                    }
+                    
+                    if (!spreadsheet || spreadsheet.dataset.enhanced === 'true') return;
+
+                    spreadsheet.dataset.enhanced = 'true';
+                    
+                    // Click Handler
+                    spreadsheet.addEventListener('click', function(e) {
+                         // 1. Column Header Click
+                        const header = e.target.closest('th[data-dash-column]');
+                        if (header) {
+                            e.stopPropagation();
+                            const colId = header.getAttribute('data-dash-column');
+                            if (colId === 'Country' || colId === 'Sector') return;
+
+                            const headerContent = header.innerText.trim();
+                            let isYearHeader = /^\d{4}$/.test(headerContent);
+                            let targetIds = [];
+                            if (isYearHeader && columns) {
+                                columns.forEach(c => {
+                                    if (c.id.startsWith(headerContent + '_')) targetIds.push(c.id);
+                                });
+                            } else {
+                                targetIds.push(colId);
+                            }
+
+                            const selectionKey = targetIds.join(',');
+                            
+                            if (window.europeGasState.selectedColumnId === selectionKey) {
+                                window.europeGasState.selectedColumnId = null;
+                            } else {
+                                window.europeGasState.selectedColumnId = selectionKey;
+                                window.europeGasState.selectedRowIndices = null; // Clear rows
+                            }
+                            applyState(spreadsheet, n_data);
+                            return;
+                        }
+
+                        // 2. Row Data Click (Country/Sector)
+                        const cell = e.target.closest('td[data-dash-column]');
+                        if (cell) {
+                            const colId = cell.getAttribute('data-dash-column');
+                            
+                            if (colId === 'Country' || colId === 'Sector') {
+                                e.stopPropagation();
+                                const row = cell.closest('tr');
+                                const tbody = row.closest('tbody');
+                                const allRows = Array.from(tbody.querySelectorAll('tr'));
+                                const rowIndex = allRows.indexOf(row);
+                         
+                                let startIndex = rowIndex;
+                                let endIndex = rowIndex;
+
+                                if (colId === 'Country') {
+                                    // Use n_data (Data Driven) Grouping
+                                    if (n_data) {
+                                        let curr = rowIndex;
+                                        // Scan up
+                                        while (curr >= 0) {
+                                            if (n_data[curr] && n_data[curr]['Country']) {
+                                                startIndex = curr;
+                                                break;
+                                            }
+                                            curr--;
+                                        }
+                                        if (curr < 0) startIndex = 0;
+
+                                        // Scan down
+                                        curr = startIndex + 1;
+                                        endIndex = n_data.length - 1;
+                                        while (curr < n_data.length) {
+                                            if (n_data[curr] && n_data[curr]['Country']) {
+                                                endIndex = curr - 1;
+                                                break;
+                                            }
+                                            curr++;
+                                        }
+                                    }
+                                } 
+                                
+                                const selectionKey = `${startIndex}_${endIndex}`;
+                                
+                                if (window.europeGasState.selectedRowIndices === selectionKey) {
+                                    window.europeGasState.selectedRowIndices = null;
+                                } else {
+                                    window.europeGasState.selectedRowIndices = selectionKey;
+                                    window.europeGasState.selectedColumnId = null; // Clear cols
+                                }
+                                applyState(spreadsheet, n_data);
+                            } else {
+                                // Clicked a data cell
+                                if (window.europeGasState.selectedColumnId || window.europeGasState.selectedRowIndices) {
+                                     window.europeGasState.selectedColumnId = null;
+                                     window.europeGasState.selectedRowIndices = null;
+                                     applyState(spreadsheet, n_data);
+                                }
+                            }
+                        }
+                    });
+                    
+                    // Outside Click
+                    document.addEventListener('click', function(e) {
+                        if (spreadsheet && !spreadsheet.contains(e.target)) {
+                            window.europeGasState.selectedColumnId = null;
+                            window.europeGasState.selectedRowIndices = null;
+                            applyState(spreadsheet, n_data);
+                        }
+                    });
+                }
+
+                setupTable();
+                
+                if (!window.europeGasObserver) {
+                    window.europeGasObserver = new MutationObserver(() => {
+                        setupTable();
+                    });
+                    window.europeGasObserver.observe(document.body, { childList: true, subtree: true });
+                }
+
+            } catch (e) { console.error(e); }
+            return "";
+        }
+        """,
+        Output('europe-table-dummy-output', 'children'),
+        Input('sector-demand-table', 'data'),
+        [State('sector-demand-table', 'columns'),
+         State('europe-table-highlight-state', 'data')]
     )
