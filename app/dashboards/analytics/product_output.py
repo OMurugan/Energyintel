@@ -102,34 +102,33 @@ def create_layout():
     ], style={'backgroundColor': '#f8f9fa', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'})
 
 # Clientside callbacks for fast interactivity
-# Temporarily disable this clientside callback to test
-# clientside_callback(
-#     """
-#     function(clickData, currentSelection) {
-#         if (!clickData || !clickData.points || clickData.points.length === 0) {
-#             return [currentSelection, window.dash_clientside.no_update];
-#         }
-#         const point = clickData.points[0];
-#         if (!point.customdata || !Array.isArray(point.customdata) || point.customdata.length < 1) {
-#             return [null, null];
-#         }
-#         const clickedCompany = String(point.customdata[0] || '').trim();
-#         if (!clickedCompany) {
-#             return [null, null];
-#         }
-#         let nextSelection = clickedCompany;
-#         if (currentSelection && currentSelection === clickedCompany) {
-#             nextSelection = null;
-#         }
-#         return [nextSelection, null];
-#     }
-#     """,
-#     [Output('company-treemap-selection', 'data'),
-#      Output('company-treemap', 'clickData')],
-#     Input('company-treemap', 'clickData'),
-#     State('company-treemap-selection', 'data'),
-#     prevent_initial_call=True
-# )
+clientside_callback(
+    """
+    function(clickData, currentSelection) {
+        if (!clickData || !clickData.points || clickData.points.length === 0) {
+            return [currentSelection, window.dash_clientside.no_update];
+        }
+        const point = clickData.points[0];
+        if (!point.customdata || !Array.isArray(point.customdata) || point.customdata.length < 1) {
+            return [null, null];
+        }
+        const clickedCompany = String(point.customdata[0] || '').trim();
+        if (!clickedCompany) {
+            return [null, null];
+        }
+        let nextSelection = clickedCompany;
+        if (currentSelection && currentSelection === clickedCompany) {
+            nextSelection = null;
+        }
+        return [nextSelection, null];
+    }
+    """,
+    [Output('company-treemap-selection', 'data'),
+     Output('company-treemap', 'clickData')],
+    Input('company-treemap', 'clickData'),
+    State('company-treemap-selection', 'data'),
+    prevent_initial_call=True
+)
 
 clientside_callback(
     """
@@ -630,14 +629,17 @@ def register_callbacks(dash_app, server):
                     base_color = COMPANY_COLORS.get(company, DEFAULT_COLOR)
                     
                     if treemap_sel and company != treemap_sel:
-                        marker_colors.append(hex_to_rgba(base_color, 0.2))
+                        # Dim non-selected companies
+                        marker_colors.append(hex_to_rgba(base_color, 0.3))
                         line_widths.append(0)
                         line_colors.append('rgba(0,0,0,0)')
                     elif treemap_sel and company == treemap_sel:
+                        # Highlight selected company with black border
                         marker_colors.append(base_color)
-                        line_widths.append(2)
+                        line_widths.append(3)
                         line_colors.append('black')
                     else:
+                        # Default state - no selection
                         marker_colors.append(base_color)
                         line_widths.append(0)
                         line_colors.append('rgba(0,0,0,0)')
@@ -667,6 +669,7 @@ def register_callbacks(dash_app, server):
                     values=treemap_data['vol_kbpd'],
                     textinfo="label",
                     marker=dict(colors=marker_colors, line=dict(width=line_widths, color=line_colors)),
+                    customdata=custom_data,  # CRITICAL: Add customdata for click interactivity
                     tiling=dict(pad=2),
                     maxdepth=1,
                     hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial"))
