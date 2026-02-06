@@ -210,7 +210,7 @@ def create_layout():
                             style_header={
                                 'backgroundColor': '#ffffff',
                                 'fontWeight': 'bold',
-                                'textAlign': 'center',
+                                'textAlign': 'right',
                                 'fontSize': '11px',
                                 'border': 'none', 
                                 'color': '#333',
@@ -225,7 +225,8 @@ def create_layout():
                                 'minWidth': '70px',
                                 'backgroundColor': '#fff',
                                 'color': '#777',
-                                'height': 'auto'
+                                'height': 'auto',
+                                'textAlign': 'right'
                             },
                             style_as_list_view=False,
                         )
@@ -1220,25 +1221,26 @@ def register_callbacks(dash_app, server):
                             // We can use the event.
                             
                             const headerContent = header.innerText.trim();
-                            // Detect Year/Quarter group
+                            
+                            // Detect Year group (e.g. 2024)
+                            // We ONLY want to group-select if it's a Year header.
+                            // Quarter/Month/Day headers should be treated as specific columns.
+                            let isYear = /^20\d{2}$/.test(headerContent);
+                            
                             let targetIds = [];
                             
-                            // Check if matches Year (4 digits) or Qx
-                            let isYear = /^20\\d{2}$/.test(headerContent);
-                            let isQuarter = /^Q[1-4]$/.test(headerContent);
-                            
-                            if ((isYear || isQuarter) && columns) {
+                            if (isYear && columns) {
                                 columns.forEach(c => {
-                                    // ID convention: col_Year_Quarter_...
-                                    // If headerContent is "2024", match "2024" in ID
-                                    // Robust check: 
+                                    // Match "2024" in ID (e.g. col_2024_Q1)
                                     if (c.id && c.id.indexOf(headerContent) !== -1) {
                                         targetIds.push(c.id);
                                     }
                                 });
                             } else {
+                                // Specific Column (Quarter, Month, Day)
                                 targetIds.push(colId);
                             }
+
                             
                             const newKey = targetIds.join(',');
                             
@@ -1348,7 +1350,8 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         [Output('gas-demand-table', 'columns'),
          Output('gas-demand-table', 'data'),
-         Output('gas-demand-table', 'style_data_conditional')],
+         Output('gas-demand-table', 'style_data_conditional'),
+         Output('gas-demand-table', 'style_header_conditional')],
         [Input('unit-filter', 'value'),
          Input('sector-filter', 'value'),
          Input('country-filter', 'value'),
@@ -1356,7 +1359,7 @@ def register_callbacks(dash_app, server):
     )
     def update_table(unit, selected_sectors, selected_countries, granularity):
         if not selected_sectors or not selected_countries:
-            return [], [], []
+            return [], [], [], []
 
         unit_map = {'Million Cubic Meter': 'Mcm', 'GWh': 'GWh'}
         db_unit = unit_map.get(unit, 'Mcm')
@@ -1446,10 +1449,10 @@ def register_callbacks(dash_app, server):
         except Exception as e:
             # Return empty structure on error
             print(f"Error executing query: {e}")
-            return [], [], []
+            return [], [], [], []
         
         if df.empty:
-            return [], [], []
+            return [], [], [], []
 
         # Determine active hierarchy levels based on data
         levels = ['Year of Date']
@@ -1493,10 +1496,16 @@ def register_callbacks(dash_app, server):
         # 3. Construct DataTable Props
         
         # COLUMNS
-        columns = [
-            {"name": ["", "Country"], "id": "Country"},
-            {"name": ["", "Sector"], "id": "Sector"}
-        ]
+        # Determine header levels based on granularity
+        is_single_level_header = (granularity == 'year')
+        
+        columns = []
+        if is_single_level_header:
+            columns.append({"name": "Country", "id": "Country"})
+            columns.append({"name": "Sector", "id": "Sector"})
+        else:
+            columns.append({"name": ["", "Country"], "id": "Country"})
+            columns.append({"name": ["", "Sector"], "id": "Sector"})
         
         data_col_ids = []
         for col_tuple in cols_tuples:
@@ -1508,9 +1517,14 @@ def register_callbacks(dash_app, server):
             data_col_ids.append(col_id)
             
             # Name determines header grouping
-            # Make sure all levels are strings
-            col_name = [str(x) for x in col_tuple]
-            columns.append({"name": col_name, "id": col_id})
+            col_name_parts = [str(x) for x in col_tuple]
+            
+            if is_single_level_header:
+                # Flat string for name
+                columns.append({"name": col_name_parts[0], "id": col_id})
+            else:
+                # List for Multi level
+                columns.append({"name": col_name_parts, "id": col_id})
 
         # DATA & TOTALS
         data = []
@@ -1519,7 +1533,7 @@ def register_callbacks(dash_app, server):
         
         for country, country_grp in pivot_df.groupby(level=0):
             country_grp = country_grp.sort_index(level=1, key=lambda idx: idx.map(lambda x: sector_order.get(x, 99)))
-            first_sector = True
+            # first_sector = True # Not needed if index check works
             sectors = country_grp.index.get_level_values(1).unique()
             
             # Track totals for this country
@@ -1563,25 +1577,100 @@ def register_callbacks(dash_app, server):
 
         # CONDITIONAL STYLES
         styles = []
+        header_styles = []
         
-        # 1. Zebra Striping (Alternative rows in grey)
+        # --- DATA STYLES (Asia Dashboard Replicas) ---
+        
+        # 1. Zebra Striping
         styles.append({
             'if': {'row_index': 'odd'},
-            'backgroundColor': '#f9f9f9'
+            'backgroundColor': '#f2f2f2'
         })
         
-        # 2. Base Fixed Column Styles
-        styles.append({'if': {'column_id': 'Country'}, 'textAlign': 'left', 'fontWeight': 'bold', 'minWidth': '120px', 'backgroundColor': '#fff'})
-        styles.append({'if': {'column_id': 'Sector'}, 'textAlign': 'left', 'minWidth': '100px', 'backgroundColor': '#fff'}) 
-
-        # 3. Total Rows Styling (Always bold)
+        # 2. Total Row Styling
         styles.append({
             'if': {'filter_query': '{Sector} eq "Total"'},
-            'fontWeight': 'bold'
+            'fontWeight': 'bold',
+            'color': '#000',
+            'borderBottom': '2px solid #aaa',
+            'borderTop': '1px solid #eee'
         })
         
-        # 4. Clientside Highlighting CSS Classes (Dynamic applied via JS, but we can set static styles here if needed)
-        # We rely on clientside injection of .euro-col-selected etc. 
-        # But we need to ensure the cells accept them.
+        # 3. Country Column
+        styles.append({
+            'if': {'column_id': 'Country'},
+            'textAlign': 'left',
+            'fontWeight': 'bold',
+            'minWidth': '120px',
+            'color': '#333',
+            'backgroundColor': '#fff'
+        })
         
-        return columns, data, styles
+        # 4. Sector Column (with Divider)
+        styles.append({
+            'if': {'column_id': 'Sector'},
+            'textAlign': 'left',
+            'paddingLeft': '8px',
+            'minWidth': '100px',
+            'borderRight': '1px solid #ccc',
+            'backgroundColor': '#fff'
+        })
+        
+        # 5. Data Columns Right Alignment
+        if is_single_level_header:
+             for cid in data_col_ids:
+                 styles.append({
+                     'if': {'column_id': cid},
+                     'textAlign': 'right'
+                 })
+
+
+        # --- HEADER STYLES ---
+        
+        if is_single_level_header:
+            # Single Header Row Logic
+            header_styles.append({
+                'if': {'header_index': 0, 'column_id': data_col_ids},
+                'borderBottom': '1px solid #ccc',
+                'textAlign': 'right' # Year headers right aligned in Fig 2
+            })
+             # Fixed Columns Header
+            header_styles.append({'if': {'column_id': ['Country', 'Sector']}, 'textAlign': 'left', 'borderBottom': '1px solid #ccc'})
+             # Sector Divider
+            header_styles.append({'if': {'column_id': 'Sector'}, 'borderRight': '1px solid #ccc'})
+
+        else:
+            # Multi Level Logic (Asia Dashboard Quarterly/Monthly style)
+            
+            # Top Level (Year)
+            header_styles.append({'if': {'header_index': 0, 'column_id': data_col_ids}, 'borderBottom': '1px solid #d0d0d0'})
+            header_styles.append({'if': {'header_index': 0, 'column_id': data_col_ids}, 'textAlign': 'center'})
+            
+            # Sub Level (Quarter/Month)
+            header_styles.append({'if': {'header_index': 1, 'column_id': data_col_ids}, 'borderTop': '1px solid #d0d0d0'})
+            header_styles.append({'if': {'header_index': 1, 'column_id': data_col_ids}, 'borderBottom': '1px solid #ccc'})
+            header_styles.append({'if': {'header_index': 1, 'column_id': data_col_ids}, 'textAlign': 'right'})
+            
+            # Fixed Columns Headers
+            header_styles.append({'if': {'column_id': ['Country', 'Sector']}, 'zIndex': 999, 'textAlign': 'left'})
+            
+            header_styles.append({
+                'if': {'header_index': 0, 'column_id': ['Country', 'Sector']}, 
+                'backgroundColor': '#ffffff', 
+                'borderBottom': '1px solid #d0d0d0', 
+                'borderTop': 'none',
+                'borderRight': 'none'
+            })
+            
+            header_styles.append({
+                'if': {'header_index': 1, 'column_id': ['Country', 'Sector']}, 
+                'backgroundColor': '#ffffff', 
+                'borderTop': 'none', 
+                'borderBottom': '1px solid #ccc'
+            })
+            
+            # Sector Divider in Header
+            header_styles.append({'if': {'column_id': 'Sector'}, 'borderRight': '1px solid #ccc'})
+
+        
+        return columns, data, styles, header_styles
