@@ -404,116 +404,6 @@ def create_layout():
                     dcc.Loading(dcc.Graph(id='gas-asia-chart-3', config={'displayModeBar': False}, figure={}))
                 ], style={'marginBottom': '30px', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
 
-                # Row 3: Data Table (Full Width)
-                html.Div([
-                    html.Div([
-                        html.H2("Monthly LNG and Pipeline Imports by Destination (Mcm)",
-                                style={'color': TITLE_COLOR, 'fontSize': '18px', 'marginBottom': '0px', 'fontFamily': 'Lato, sans-serif'}),
-                        html.Button("Export to CSV", id="gas-asia-export-table-btn", n_clicks=0, style={
-                            "backgroundColor": "white", "color": "#2c3e50", "border": "1px solid #dee2e6",
-                            "padding": "6px 12px", "borderRadius": "4px", "cursor": "pointer",
-                            "fontSize": "12px", "fontWeight": "normal",
-                        })
-                    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
-                    
-                    # Table Granularity Controls
-                    html.Div([
-                        html.Div([
-                            html.Span("Year of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                            html.Button('+', id='gas-asia-table-toggle-year-btn', n_clicks=0, style={
-                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                                'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
-                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-                            })
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
-                        
-                        html.Div([
-                            html.Span("Quarter of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                            html.Button('+', id='gas-asia-table-toggle-quarter-btn', n_clicks=0, style={
-                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-                            })
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
-                        
-                        html.Div([
-                            html.Span("Month of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                            html.Button('+', id='gas-asia-table-toggle-month-btn', n_clicks=0, style={
-                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-                            })
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
-                        
-                        html.Div([
-                            html.Span("Day of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-                            html.Button('+', id='gas-asia-table-toggle-day-btn', n_clicks=0, style={
-                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-                            })
-                        ], style={'display': 'flex', 'alignItems': 'center'})
-                    ], style={
-                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
-                        'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px',
-                    }),
-                    
-                    dcc.Loading(
-                        id="loading-gas-table",
-                        type="circle",
-                        color="#f45d2d",
-                        children=dash_table.DataTable(
-                            id='gas-asia-imports-mix-table',
-                            merge_duplicate_headers=True,
-                            fixed_rows={'headers': True},
-                            style_table={
-                                'minWidth': '100%',
-                                'height': '600px',
-                                'overflowY': 'auto',
-                                'overflowX': 'auto',
-                                'border': '1px solid #ddd'
-                            },
-                            style_header={
-                                'backgroundColor': '#ffffff',
-                                'fontWeight': 'bold',
-                                'textAlign': 'center',
-                                'fontSize': '11px',
-                                'border': 'none',
-                                'color': '#333',
-                                'height': '25px',
-                                'padding': '2px'
-                            },
-                            style_cell={
-                                'padding': '0px 5px',
-                                'fontSize': '11px',
-                                'fontFamily': 'Arial, sans-serif',
-                                'border': 'none',
-                                'minWidth': '70px',
-                                'backgroundColor': '#fff',
-                                'color': '#777',
-                                'height': 'auto',
-                                'textAlign': 'right'
-                            },
-                            style_cell_conditional=[
-                                {'if': {'column_id': 'Year of Date'}, 'textAlign': 'center', 'minWidth': '60px'},
-                                {'if': {'column_id': 'Quarter of Date'}, 'textAlign': 'center', 'minWidth': '50px'},
-                                {'if': {'column_id': 'Month of Date'}, 'textAlign': 'left', 'minWidth': '100px'},
-                                {'if': {'column_id': 'Day of Date'}, 'textAlign': 'center', 'minWidth': '50px'}
-                            ],
-                            style_data_conditional=[
-                                {'if': {'row_index': 'odd'}, 'backgroundColor': '#f2f2f2'}
-                            ],
-                            style_as_list_view=False,
-                            sort_action='native',
-                            filter_action='native',
-                            tooltip_duration=None
-                        )
-                    )
-                ], style={'marginBottom': '30px', 'marginTop': '20px', 'backgroundColor': 'white', 'padding': '10px'}),
-                
-                html.P("Source: Energy Intelligence",
-                       style={'fontSize': '10px', 'color': '#666', 'fontStyle': 'italic', 'paddingLeft': '10px'})
-
             ], style={'flex': '1', 'padding': '10px', 'minWidth': '0'}),
 
             # Right Side Panel: Filters
@@ -596,6 +486,7 @@ def create_layout():
                     dcc.Store(id='gas-asia-table-agg-state', data='MONTHLY'),
                     dcc.Store(id='gas-asia-chart1-selection-store', data=None),
                     dcc.Store(id='gas-asia-chart2-selection-store', data=None),
+                    dcc.Store(id='gas-asia-chart3-selection-store', data=None),
                     dcc.Download(id="gas-asia-download-chart1-csv"),
                     dcc.Download(id="gas-asia-download-chart2-csv"),
                     dcc.Download(id="gas-asia-download-chart3-csv"),
@@ -604,7 +495,118 @@ def create_layout():
                 ], style={'padding': '15px', 'backgroundColor': '#fcfcfc', 'borderLeft': '1px solid #eee', 'minHeight': '100vh'})
             ], style={'width': '210px', 'position': 'sticky', 'top': '0'})
 
-        ], style={'display': 'flex', 'flexDirection': 'row', 'width': '100%', 'maxWidth': '100%', 'margin': '0'})
+        ], style={'display': 'flex', 'flexDirection': 'row', 'width': '100%', 'maxWidth': '100%', 'margin': '0'}),
+        
+        # Row 3: Data Table (Full Width) - Outside the flex container
+        html.Div([
+            html.Div([
+                html.H2("Monthly LNG and Pipeline Imports by Destination (Mcm)",
+                        style={'color': TITLE_COLOR, 'fontSize': '18px', 'marginBottom': '0px', 'fontFamily': 'Lato, sans-serif'}),
+                html.Button("Export to CSV", id="gas-asia-export-table-btn", n_clicks=0, style={
+                    "backgroundColor": "white", "color": "#2c3e50", "border": "1px solid #dee2e6",
+                    "padding": "6px 12px", "borderRadius": "4px", "cursor": "pointer",
+                    "fontSize": "12px", "fontWeight": "normal",
+                })
+            ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
+            
+            # Table Granularity Controls
+            html.Div([
+                html.Div([
+                    html.Span("Year of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                    html.Button('+', id='gas-asia-table-toggle-year-btn', n_clicks=0, style={
+                        'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                        'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
+                        'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                    })
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                
+                html.Div([
+                    html.Span("Quarter of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                    html.Button('+', id='gas-asia-table-toggle-quarter-btn', n_clicks=0, style={
+                        'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                        'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                        'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                    })
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                
+                html.Div([
+                    html.Span("Month of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                    html.Button('+', id='gas-asia-table-toggle-month-btn', n_clicks=0, style={
+                        'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                        'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                        'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                    })
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                
+                html.Div([
+                    html.Span("Day of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+                    html.Button('+', id='gas-asia-table-toggle-day-btn', n_clicks=0, style={
+                        'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                        'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                        'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                    })
+                ], style={'display': 'flex', 'alignItems': 'center'})
+            ], style={
+                'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+                'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px',
+            }),
+            
+            dcc.Loading(
+                id="loading-gas-table",
+                type="circle",
+                color="#f45d2d",
+                children=dash_table.DataTable(
+                    id='gas-asia-imports-mix-table',
+                    merge_duplicate_headers=True,
+                    fixed_rows={'headers': True},
+                    style_table={
+                        'minWidth': '100%',
+                        'height': '600px',
+                        'overflowY': 'auto',
+                        'overflowX': 'auto',
+                        'border': '1px solid #ddd'
+                    },
+                    style_header={
+                        'backgroundColor': '#ffffff',
+                        'fontWeight': 'bold',
+                        'textAlign': 'center',
+                        'fontSize': '11px',
+                        'border': 'none',
+                        'color': '#333',
+                        'height': '25px',
+                        'padding': '2px'
+                    },
+                    style_cell={
+                        'padding': '0px 5px',
+                        'fontSize': '11px',
+                        'fontFamily': 'Arial, sans-serif',
+                        'border': 'none',
+                        'minWidth': '70px',
+                        'backgroundColor': '#fff',
+                        'color': '#777',
+                        'height': 'auto',
+                        'textAlign': 'right'
+                    },
+                    style_cell_conditional=[
+                        {'if': {'column_id': 'Year of Date'}, 'textAlign': 'center', 'minWidth': '60px'},
+                        {'if': {'column_id': 'Quarter of Date'}, 'textAlign': 'center', 'minWidth': '50px'},
+                        {'if': {'column_id': 'Month of Date'}, 'textAlign': 'left', 'minWidth': '100px'},
+                        {'if': {'column_id': 'Day of Date'}, 'textAlign': 'center', 'minWidth': '50px'}
+                    ],
+                    style_data_conditional=[
+                        {'if': {'row_index': 'odd'}, 'backgroundColor': '#f2f2f2'}
+                    ],
+                    style_as_list_view=False,
+                    sort_action='native',
+                    filter_action='native',
+                    tooltip_duration=None
+                )
+            ),
+            
+            html.P("Source: Energy Intelligence",
+                   style={'fontSize': '10px', 'color': '#666', 'fontStyle': 'italic', 'paddingLeft': '10px', 'marginTop': '10px'})
+        ], style={'padding': '20px', 'backgroundColor': 'white', 'width': '100%'})
+        
     ], style={'backgroundColor': '#ffffff', 'fontFamily': 'Lato, sans-serif'})
 
 def register_callbacks(dash_app, server):
@@ -723,6 +725,42 @@ def register_callbacks(dash_app, server):
             return None, None
         
         return {'origin': clicked_origin, 'date': str(clicked_date)}, None
+
+    # Chart 3 Click Handler for bar highlighting
+    @dash_app.callback(
+        [Output('gas-asia-chart3-selection-store', 'data'),
+         Output('gas-asia-chart-3', 'clickData')],
+        [Input('gas-asia-chart-3', 'clickData'),
+         Input('gas-asia-destination-dropdown', 'value'),
+         Input('gas-asia-flow-type-filter', 'value'),
+         Input('gas-asia-unit-filter', 'value')],
+        [State('gas-asia-chart3-selection-store', 'data')],
+        prevent_initial_call=True
+    )
+    def handle_chart3_click(click_data, destination, flow_type, unit, current_selection):
+        """Handle chart 3 clicks for bar highlighting"""
+        trigger_id = ctx.triggered_id if ctx.triggered else None
+        
+        # Reset selection on filter changes
+        if trigger_id in ['gas-asia-destination-dropdown', 'gas-asia-flow-type-filter', 'gas-asia-unit-filter']:
+            return None, None
+        
+        if not click_data or 'points' not in click_data:
+            return no_update, no_update
+        
+        point = click_data['points'][0]
+        # customdata should be [flow_type, period]
+        clicked_flow = point.get('customdata', [None, None])[0] if 'customdata' in point else None
+        clicked_period = point.get('customdata', [None, None])[1] if 'customdata' in point and len(point.get('customdata', [])) > 1 else None
+        
+        if not clicked_flow or not clicked_period:
+            return no_update, no_update
+        
+        # Toggle selection - if same bar clicked, deselect
+        if current_selection and current_selection.get('flow') == clicked_flow and current_selection.get('period') == clicked_period:
+            return None, None
+        
+        return {'flow': clicked_flow, 'period': str(clicked_period)}, None
 
     # Combined callback to handle legend and origin updates
     @dash_app.callback(
@@ -1256,18 +1294,19 @@ def register_callbacks(dash_app, server):
                 for _, row in subset.iterrows():
                     # Use Display Date for hover
                     display_date = row['Display Date']
+                    date_val = str(row['Month of Date'])
                     
                     # Store origin and date for click detection
-                    customdata.append([origin, str(row['Month of Date'])])
+                    customdata.append([origin, date_val])
                     
                     # Determine if this bar is selected
-                    is_selected = (selected_origin == origin and selected_date == str(date_val))
+                    is_selected = (selected_origin == origin and selected_date == date_val)
                     
                     # Set highlighting
                     if selection:
                         if is_selected:
                             # Selected bar - thick black stroke
-                            marker_line_widths.append(3)
+                            marker_line_widths.append(1)
                             marker_line_colors.append('black')
                             opacities.append(1.0)
                         else:
@@ -1373,9 +1412,10 @@ def register_callbacks(dash_app, server):
          Input('gas-asia-end-date-picker', 'value'),
          Input('gas-asia-flow-type-filter', 'value'),
          Input('gas-asia-unit-filter', 'value'),
-         Input('gas-asia-chart3-agg-state', 'data')]
+         Input('gas-asia-chart3-agg-state', 'data'),
+         Input('gas-asia-chart3-selection-store', 'data')]
     )
-    def update_chart_3(destination, start_date, end_date, flow_type, unit, agg_mode):
+    def update_chart_3(destination, start_date, end_date, flow_type, unit, agg_mode, selection):
         try:
             where_clause, region_clause, dest_clause, params, _, flow_filtered, scale = get_query_params(
                 destination, start_date, end_date, [], flow_type, unit
@@ -1493,6 +1533,10 @@ def register_callbacks(dash_app, server):
             # Create figure
             fig3 = go.Figure()
             
+            # Determine selected bar for highlighting
+            selected_flow = selection.get('flow') if selection else None
+            selected_period = selection.get('period') if selection else None
+            
             # Add LNG bars
             lng_values = []
             pipeline_values = []
@@ -1500,12 +1544,60 @@ def register_callbacks(dash_app, server):
             pipeline_x = []
             lng_hover = []
             pipeline_hover = []
+            lng_customdata = []
+            pipeline_customdata = []
+            lng_colors = []
+            lng_line_widths = []
+            lng_line_colors = []
+            pipeline_colors = []
+            pipeline_line_widths = []
+            pipeline_line_colors = []
             
             for idx, row in pivot_df.iterrows():
+                period_str = str(row['Period'])
+                
                 lng_x.append(idx * 2)
                 pipeline_x.append(idx * 2 + 1)
                 lng_values.append(row['LNG'])
                 pipeline_values.append(row['Pipeline'])
+                
+                # Store customdata for click detection: [flow_type, period]
+                lng_customdata.append(['LNG', period_str])
+                pipeline_customdata.append(['Pipeline', period_str])
+                
+                # Determine if this bar is selected
+                lng_selected = (selected_flow == 'LNG' and selected_period == period_str)
+                pipeline_selected = (selected_flow == 'Pipeline' and selected_period == period_str)
+                
+                # Set highlighting for LNG
+                if selection:
+                    if lng_selected:
+                        lng_colors.append(LNG_COLOR)
+                        lng_line_widths.append(1)
+                        lng_line_colors.append('black')
+                    else:
+                        lng_colors.append(f'rgba(31, 119, 180, 0.3)')  # Dimmed LNG color
+                        lng_line_widths.append(0)
+                        lng_line_colors.append(LNG_COLOR)
+                else:
+                    lng_colors.append(LNG_COLOR)
+                    lng_line_widths.append(0)
+                    lng_line_colors.append(LNG_COLOR)
+                
+                # Set highlighting for Pipeline
+                if selection:
+                    if pipeline_selected:
+                        pipeline_colors.append(PIPELINE_COLOR)
+                        pipeline_line_widths.append(1)
+                        pipeline_line_colors.append('black')
+                    else:
+                        pipeline_colors.append(f'rgba(255, 127, 14, 0.3)')  # Dimmed Pipeline color
+                        pipeline_line_widths.append(0)
+                        pipeline_line_colors.append(PIPELINE_COLOR)
+                else:
+                    pipeline_colors.append(PIPELINE_COLOR)
+                    pipeline_line_widths.append(0)
+                    pipeline_line_colors.append(PIPELINE_COLOR)
                 
                 # Create hover text with period information
                 period_label = 'Year of Date' if agg_mode == 'YEARLY' else \
@@ -1540,7 +1632,14 @@ def register_callbacks(dash_app, server):
                 x=lng_x,
                 y=lng_values,
                 name='LNG',
-                marker=dict(color=LNG_COLOR),
+                marker=dict(
+                    color=lng_colors,
+                    line=dict(
+                        color=lng_line_colors,
+                        width=lng_line_widths
+                    )
+                ),
+                customdata=lng_customdata,
                 hoverinfo='text',
                 hovertext=lng_hover,
                 hoverlabel=dict(
@@ -1557,7 +1656,14 @@ def register_callbacks(dash_app, server):
                 x=pipeline_x,
                 y=pipeline_values,
                 name='Pipeline',
-                marker=dict(color=PIPELINE_COLOR),
+                marker=dict(
+                    color=pipeline_colors,
+                    line=dict(
+                        color=pipeline_line_colors,
+                        width=pipeline_line_widths
+                    )
+                ),
+                customdata=pipeline_customdata,
                 hoverinfo='text',
                 hovertext=pipeline_hover,
                 hoverlabel=dict(
