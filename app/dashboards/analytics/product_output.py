@@ -445,7 +445,8 @@ def create_by_company_layout():
                             {'label': ' 2022', 'value': 2022},
                             {'label': ' 2023', 'value': 2023},
                             {'label': ' 2024', 'value': 2024},
-                            {'label': ' 2025', 'value': 2025}
+                            {'label': ' 2025', 'value': 2025},
+                            {'label': ' 2026', 'value': 2026}
                         ],
                         value=2025,
                         labelStyle={'display': 'block', 'marginBottom': '2px', 'fontSize': '13px'}
@@ -588,7 +589,8 @@ def create_by_product_layout():
                             {'label': ' 2022', 'value': 2022},
                             {'label': ' 2023', 'value': 2023},
                             {'label': ' 2024', 'value': 2024},
-                            {'label': ' 2025', 'value': 2025}
+                            {'label': ' 2025', 'value': 2025},
+                            {'label': ' 2026', 'value': 2026}
                         ],
                         value=2025,
                         labelStyle={'display': 'block', 'marginBottom': '2px', 'fontSize': '13px'}
@@ -1187,6 +1189,8 @@ def register_callbacks(dash_app, server):
                                 p_line_widths.append(0.5)
                                 p_line_colors.append('white')
 
+                        # Calculate percentage for tooltip - removed as we use %{percent}
+                        
                         bar_fig.add_trace(go.Pie(
                             labels=period_data['company'],
                             values=period_data['vol_kbpd'],
@@ -1194,8 +1198,10 @@ def register_callbacks(dash_app, server):
                             textinfo='none',
                             hole=0,
                             showlegend=False,
-                            customdata=[[str(c), float(v), str(curr_slot_id), slot['label']] for c, v in period_data[['company', 'vol_kbpd']].values],  # Added slot label for date
-                            hovertemplate="<b>Company:</b> %{customdata[0]}<br><b>Date:</b> %{customdata[3]} " + str(selected_year) + "<br><b>Volume:</b> %{customdata[1]:,.0f} ('000 b/d)<extra></extra>",
+                            # RESTORE customdata: [Company, Volume, SlotID, DateLabel] for callbacks (Index 2 is SlotId)
+                            customdata=[[str(c), float(v), str(curr_slot_id), slot['label']] for c, v in period_data[['company', 'vol_kbpd']].values],  
+                            # UPDATED hovertemplate: Company, Volume, % of Total using built-in variables
+                            hovertemplate="<b>Company:</b> %{label}<br><b>Volume:</b> %{value:,.1f} ('000 b/d)<br><b>% of Total:</b> %{percent:.2%}<extra></extra>",
                             hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial")),
                             domain={'x': [i*col_width, (i+1)*col_width], 'y': [0.35, 0.65]}
                         ))
