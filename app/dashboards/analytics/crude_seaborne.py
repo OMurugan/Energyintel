@@ -79,6 +79,7 @@ def create_layout():
                             {'label': '2023', 'value': 2023},
                             {'label': '2024', 'value': 2024},
                             {'label': '2025', 'value': 2025},
+                            {'label': '2026', 'value': 2026},
                         ],
                         value=2025,
                         style={'fontSize': '11px', 'color': EI_DARK_BLUE},
@@ -238,7 +239,8 @@ def create_layout():
                         )
                     ], id='seaborne-bar-chart-container', n_clicks=0, style={'cursor': 'pointer'}),
                     html.Div(
-                        "Energy Intelligence; data as of December 2025",
+                        id='seaborne-footer',
+                        children="Energy Intelligence; data as of December 2025",
                         style={
                             'fontSize': '11px',
                             'color': EI_DARK_BLUE,
@@ -309,6 +311,27 @@ def register_callbacks(dash_app, server):
     )
     def update_title(year):
         return f"{year} SEABORNE CRUDE EXPORTS BY MAIN LOADING PORT"
+
+    @dash_app.callback(
+        Output('seaborne-footer', 'children'),
+        Input('seaborne-year-selector', 'value')
+    )
+    def update_footer(year):
+        query = "SELECT MAX(date) FROM russia_master_data WHERE type = 'Seaborne'"
+        try:
+            results = execute_query(query)
+            if results and results[0][0]:
+                max_date = results[0][0]
+                # Check if it's a string or date object
+                if isinstance(max_date, str):
+                    max_date = pd.to_datetime(max_date)
+                
+                formatted_date = max_date.strftime('%B %Y')
+                return f"Energy Intelligence; data as of {formatted_date}"
+        except Exception as e:
+            print(f"Error updating footer: {e}")
+            pass
+        return "Energy Intelligence; data as of December 2025"
 
     @dash_app.callback(
         [Output('seaborne-time-visibility-store', 'data'),
@@ -420,7 +443,7 @@ def register_callbacks(dash_app, server):
             po.port_name IS NOT NULL
             AND po.port_name NOT IN ('Hungary', 'Czech Republic')
             AND ru.type = 'Seaborne'
-            AND EXTRACT(YEAR FROM ru.date) IN (2025, 2024, 2023, 2022)
+            AND EXTRACT(YEAR FROM ru.date) >=2022
         ORDER BY
             po.port_name,
             year_of_date,
