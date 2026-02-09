@@ -565,7 +565,7 @@ def create_by_product_layout():
                         children=dcc.Graph(
                             id='product-bar-chart',
                             config={'displayModeBar': False},
-                            style={'height': '420px', 'width': '100%'} 
+                            style={'height': '280px', 'width': '100%'} 
                         )
                     )
                 ], style={'position': 'relative', 'flex': '1', 'marginTop': '10px'}),
@@ -889,8 +889,8 @@ def register_callbacks(dash_app, server):
                 if selected_product == 'Diesel And Gasoil' and not treemap_sel:
                     yaxis_config = dict(
                         range=[0, 2500],
-                        tickvals=[0, 1000, 2000],
-                        dtick=1000
+                        tickvals=[0, 500, 1000, 1500, 2000],
+                        dtick=500
                     )
                 else:
                     # Let plotter decide or set a simple range
@@ -1112,7 +1112,7 @@ def register_callbacks(dash_app, server):
                 if expansion_state.get('year', False):
                     bar_fig.add_annotation(
                         text=f"<b>{selected_year}</b>",
-                        x=0.5, y=0.97,
+                        x=0.5, y=0.98,
                         xref="paper", yref="paper",
                         showarrow=False,
                         font=dict(size=14, color="black"),
@@ -1122,7 +1122,7 @@ def register_callbacks(dash_app, server):
                 # Add Gray Bar for Labels
                 bar_fig.add_shape(
                     type="rect",
-                    x0=0, y0=0.87, x1=1, y1=0.93,
+                    x0=0, y0=0.88, x1=1, y1=0.96,
                     xref="paper", yref="paper",
                     fillcolor="#f8f9fa", line=dict(width=0)
                 )
@@ -1197,7 +1197,7 @@ def register_callbacks(dash_app, server):
                             customdata=[[str(c), float(v), str(curr_slot_id), slot['label']] for c, v in period_data[['company', 'vol_kbpd']].values],  # Added slot label for date
                             hovertemplate="<b>Company:</b> %{customdata[0]}<br><b>Date:</b> %{customdata[3]} " + str(selected_year) + "<br><b>Volume:</b> %{customdata[1]:,.0f} ('000 b/d)<extra></extra>",
                             hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial")),
-                            domain={'x': [i*col_width, (i+1)*col_width], 'y': [0.645, 0.765]}
+                            domain={'x': [i*col_width, (i+1)*col_width], 'y': [0.35, 0.65]}
                         ))
                         
                         # Month label style
@@ -1206,7 +1206,7 @@ def register_callbacks(dash_app, server):
                         # Main Label (Month/Quarter name)
                         bar_fig.add_annotation(
                             text=f"<b>{slot['label']}</b>" if (sel_slot and curr_slot_id == sel_slot) else slot['label'],
-                            x=center_x, y=0.91,
+                            x=center_x, y=0.92,
                             xref="paper", yref="paper",
                             showarrow=False,
                             font=dict(size=12, color=month_label_color)
@@ -1215,7 +1215,7 @@ def register_callbacks(dash_app, server):
                         if slot['type'] == 'day':
                             bar_fig.add_annotation(
                                 text=slot.get('sub_label', '1'),
-                                x=center_x, y=0.88,
+                                x=center_x, y=0.85,
                                 xref="paper", yref="paper",
                                 showarrow=False,
                                 font=dict(size=11, color="#8d8d8d")
@@ -1239,10 +1239,10 @@ def register_callbacks(dash_app, server):
                         
                         bar_fig.add_annotation(
                             text=f"<b>{DISPLAY_NAMES.get(top1_name, top1_name)}</b><br>{top1_vol:,.1f} ('000 b/d)<br>{top1_pct:.2f}%",
-                            x=center_x, y=0.86,
+                            x=center_x, y=0.75,
                             xref="paper", yref="paper",
                             showarrow=False,
-                            font=dict(size=label_font_size, color=top1_color),
+                            font=dict(size=label_font_size, color=top1_color, family="Times New Roman, serif"),
                             align="center"
                         )
                         
@@ -1254,10 +1254,10 @@ def register_callbacks(dash_app, server):
                             top2_color = get_label_color(top2_name, curr_slot_id)
                             bar_fig.add_annotation(
                                 text=f"<b>{DISPLAY_NAMES.get(top2_name, top2_name)}</b><br>{top2_vol:,.1f} ('000 b/d)<br>{top2_pct:.2f}%",
-                                x=center_x, y=0.54,
+                                x=center_x, y=0.15,
                                 xref="paper", yref="paper",
                                 showarrow=False,
-                                font=dict(size=label_font_size, color=top2_color),
+                                font=dict(size=label_font_size, color=top2_color, family="Times New Roman, serif"),
                                 align="center"
                             )
 
@@ -1266,7 +1266,7 @@ def register_callbacks(dash_app, server):
                 # Top-level Year label (Title)
                 bar_fig.add_annotation(
                     text=f"<b>{selected_year}</b>",
-                    x=0.5, y=0.965,
+                    x=0.5, y=0.98,
                     xref="paper", yref="paper",
                     showarrow=False,
                     font=dict(size=14, color="#333")
@@ -1274,7 +1274,7 @@ def register_callbacks(dash_app, server):
                 
 
                 bar_fig.update_layout(
-                    height=420,
+                    height=280,
                     margin=dict(t=5, b=5, l=5, r=5),
                     paper_bgcolor='white',
                     plot_bgcolor='white',
