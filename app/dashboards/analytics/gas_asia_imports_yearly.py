@@ -65,48 +65,97 @@ ORIGIN_COLORS = {
     'Uzbekistan': '#16365d'
 }
 
+# Button Styles from European Dashboard
+GRAN_BTN_CONTAINER_STYLE = {
+    'display': 'flex',
+    'align-items': 'center',
+    'margin-right': '20px'
+}
+
+GRAN_BTN_ACTIVE = {
+    'width': '18px',
+    'height': '18px',
+    'padding': '0',
+    'border': '1px solid #007bff',
+    'backgroundColor': 'white',
+    'color': '#add8e6',
+    'borderRadius': '3px',
+    'cursor': 'pointer',
+    'fontSize': '12px',
+    'fontWeight': 'bold',
+    'display': 'flex',
+    'alignItems': 'center',
+    'justifyContent': 'center'
+}
+
+GRAN_BTN_INACTIVE = {
+    'width': '18px',
+    'height': '18px',
+    'padding': '0',
+    'border': '1px solid #007bff',
+    'backgroundColor': 'white',
+    'color': '#007bff',
+    'borderRadius': '3px',
+    'cursor': 'pointer',
+    'fontSize': '12px',
+    'fontWeight': 'bold',
+    'display': 'flex',
+    'alignItems': 'center',
+    'justifyContent': 'center'
+}
+
 def create_asia_period_selector():
     """Helper to create granularity selectors for Asian Imports chart"""
     return html.Div([
         html.Div([
-            html.Span("Year of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-            html.Button('+', id='asia-toggle-year-btn', n_clicks=0, style={
-                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-            })
-        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+            html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+            html.Button('-', id='asia-toggle-year-btn', n_clicks=0, style=GRAN_BTN_ACTIVE)
+        ], style=GRAN_BTN_CONTAINER_STYLE),
         
         html.Div([
-            html.Span("Quarter of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-            html.Button('+', id='asia-toggle-quarter-btn', n_clicks=0, style={
-                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-            })
-        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+            html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+            html.Button('+', id='asia-toggle-quarter-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+        ], style=GRAN_BTN_CONTAINER_STYLE),
         
         html.Div([
-            html.Span("Month of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-            html.Button('+', id='asia-toggle-month-btn', n_clicks=0, style={
-                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-            })
-        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+            html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+            html.Button('+', id='asia-toggle-month-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+        ], style=GRAN_BTN_CONTAINER_STYLE),
 
         html.Div([
-            html.Span("Day of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-            html.Button('-', id='asia-toggle-day-btn', n_clicks=0, style={
-                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
-                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-            })
-        ], style={'display': 'flex', 'alignItems': 'center'})
+            html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+            html.Button('+', id='asia-toggle-day-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+        ], style=GRAN_BTN_CONTAINER_STYLE)
     ], style={
         'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
-        'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px',
-        'width': 'fit-content'
+        'padding': '10px 20px', 'width': 'fit-content'
+    })
+
+def create_asia_table_period_selector():
+    """Helper to create granularity selectors for Asian Imports table"""
+    return html.Div([
+        html.Div([
+            html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+            html.Button('-', id='asia-imports-table-toggle-year-btn', n_clicks=0, style=GRAN_BTN_ACTIVE)
+        ], style=GRAN_BTN_CONTAINER_STYLE),
+        
+        html.Div([
+            html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+            html.Button('+', id='asia-imports-table-toggle-quarter-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+        ], style=GRAN_BTN_CONTAINER_STYLE),
+        
+        html.Div([
+            html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+            html.Button('+', id='asia-imports-table-toggle-month-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+        ], style=GRAN_BTN_CONTAINER_STYLE),
+
+        html.Div([
+            html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
+            html.Button('+', id='asia-imports-table-toggle-day-btn', n_clicks=0, style=GRAN_BTN_INACTIVE)
+        ], style=GRAN_BTN_CONTAINER_STYLE)
+    ], style={
+        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#fff', 
+        'padding': '10px 0', 'width': 'fit-content'
     })
 
 def create_layout():
@@ -115,6 +164,7 @@ def create_layout():
         # Selection stores
         dcc.Store(id='gas-asia-period-store', data='YEARLY'),
         dcc.Store(id='asia-chart-granularity-store', data='year'),
+        dcc.Store(id='asia-table-granularity-store', data='YEARLY'),
         
         # Main container with Flexbox for Content and Sidebar
         html.Div([
@@ -169,6 +219,7 @@ def create_layout():
                         'color': EI_ORANGE, 'fontSize': '18px', 'fontWeight': 'normal', 
                         'margin': '10px 0', 'fontFamily': 'Lato, sans-serif'
                     }),
+                    create_asia_table_period_selector(),
                     dcc.Loading(
                         id='loading-asia-imports-table',
                         type='circle',
@@ -281,7 +332,11 @@ def register_callbacks(dash_app, server):
          Output('asia-toggle-year-btn', 'children'),
          Output('asia-toggle-quarter-btn', 'children'),
          Output('asia-toggle-month-btn', 'children'),
-         Output('asia-toggle-day-btn', 'children')],
+         Output('asia-toggle-day-btn', 'children'),
+         Output('asia-toggle-year-btn', 'style'),
+         Output('asia-toggle-quarter-btn', 'style'),
+         Output('asia-toggle-month-btn', 'style'),
+         Output('asia-toggle-day-btn', 'style')],
         [Input('asia-toggle-year-btn', 'n_clicks'),
          Input('asia-toggle-quarter-btn', 'n_clicks'),
          Input('asia-toggle-month-btn', 'n_clicks'),
@@ -290,7 +345,7 @@ def register_callbacks(dash_app, server):
     )
     def toggle_asia_chart_granularity(y_c, q_c, m_c, d_c, current_gran):
         if not ctx.triggered:
-            return no_update, no_update, no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
             
         btn_id = ctx.triggered_id
         new_gran = current_gran
@@ -305,7 +360,51 @@ def register_callbacks(dash_app, server):
             '-' if new_gran == 'year' else '+',
             '-' if new_gran == 'quarter' else '+',
             '-' if new_gran == 'month' else '+',
-            '-' if new_gran == 'day' else '+'
+            '-' if new_gran == 'day' else '+',
+            GRAN_BTN_ACTIVE if new_gran == 'year' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'quarter' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'month' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'day' else GRAN_BTN_INACTIVE
+        )
+
+    @dash_app.callback(
+        [Output('asia-table-granularity-store', 'data'),
+         Output('asia-imports-table-toggle-year-btn', 'children'),
+         Output('asia-imports-table-toggle-quarter-btn', 'children'),
+         Output('asia-imports-table-toggle-month-btn', 'children'),
+         Output('asia-imports-table-toggle-day-btn', 'children'),
+         Output('asia-imports-table-toggle-year-btn', 'style'),
+         Output('asia-imports-table-toggle-quarter-btn', 'style'),
+         Output('asia-imports-table-toggle-month-btn', 'style'),
+         Output('asia-imports-table-toggle-day-btn', 'style')],
+        [Input('asia-imports-table-toggle-year-btn', 'n_clicks'),
+         Input('asia-imports-table-toggle-quarter-btn', 'n_clicks'),
+         Input('asia-imports-table-toggle-month-btn', 'n_clicks'),
+         Input('asia-imports-table-toggle-day-btn', 'n_clicks')],
+        [State('asia-table-granularity-store', 'data')]
+    )
+    def toggle_asia_table_granularity(y, q, m, d, current_gran):
+        if not ctx.triggered:
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+        
+        btn_id = ctx.triggered_id
+        new_gran = current_gran
+        
+        if btn_id == 'asia-imports-table-toggle-year-btn': new_gran = 'YEARLY'
+        elif btn_id == 'asia-imports-table-toggle-quarter-btn': new_gran = 'QUARTERLY'
+        elif btn_id == 'asia-imports-table-toggle-month-btn': new_gran = 'MONTHLY'
+        elif btn_id == 'asia-imports-table-toggle-day-btn': new_gran = 'DAILY'
+        
+        return (
+            new_gran,
+            '-' if new_gran == 'YEARLY' else '+',
+            '-' if new_gran == 'QUARTERLY' else '+',
+            '-' if new_gran == 'MONTHLY' else '+',
+            '-' if new_gran == 'DAILY' else '+',
+            GRAN_BTN_ACTIVE if new_gran == 'YEARLY' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'QUARTERLY' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'MONTHLY' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'DAILY' else GRAN_BTN_INACTIVE
         )
 
     @dash_app.callback(
@@ -700,11 +799,13 @@ def register_callbacks(dash_app, server):
         [Input('asia-unit-filter', 'value'),
          Input('asia-flow-type-filter', 'value'),
          Input('asia-origin-dropdown', 'value'),
-         Input('asia-destination-dropdown', 'value')]
+         Input('asia-destination-dropdown', 'value'),
+         Input('asia-table-granularity-store', 'data')]
     )
-    def update_asia_table(unit, flow_type, origin, destination):
-        print(f"Asia: update_asia_table started: {unit}, {flow_type}, {origin}, {destination}")
-        # Query for table
+    def update_asia_table(unit, flow_type, origin, destination, granularity):
+        print(f"Asia: update_asia_table started: {unit}, {flow_type}, {origin}, {destination}, {granularity}")
+        
+        # 1. Build Query
         dest_clause = ""
         if destination != '(All)':
             dest_clause = f"AND tr.target_country = '{destination}'"
@@ -721,24 +822,68 @@ def register_callbacks(dash_app, server):
         scale = 1000.0 if unit == 'Bcm' else 1000000.0
 
         query = f"""
+        WITH params AS (
+            SELECT '{granularity}'::text AS period   -- DAILY | MONTHLY | QUARTERLY | YEARLY
+        ),
+        base AS (
+            SELECT
+                tr.target_country                                      AS "Destination",
+
+                EXTRACT(YEAR FROM tr.date)::int                        AS "Year of Date",
+
+                CASE
+                    WHEN p.period IN ('QUARTERLY', 'MONTHLY', 'DAILY')
+                    THEN 'Q' || EXTRACT(QUARTER FROM tr.date)::int
+                END                                                    AS "Quarter of Date",
+
+                CASE
+                    WHEN p.period IN ('MONTHLY', 'DAILY')
+                    THEN TO_CHAR(tr.date, 'FMMonth')
+                END                                                    AS "Month of Date",
+
+                CASE
+                    WHEN p.period = 'DAILY'
+                    THEN EXTRACT(DAY FROM tr.date)::int
+                END                                                    AS "Day of Date",
+
+                '{unit}'                                               AS "Unit",
+
+                tr.value / {scale}                                     AS bcm_value
+
+            FROM glng_gas_trade tr
+            LEFT JOIN dim_country co
+                ON co.dim_country_id = tr.target_country_id
+            CROSS JOIN params p
+
+            WHERE tr.unit = '{data_unit}'
+              AND LOWER(co.region) IN ('asia', 'oceania')
+              AND EXTRACT(YEAR FROM tr.date) >= 2019
+              {dest_clause}
+              {origin_clause}
+              {flow_clause}
+        )
+
         SELECT
-            tr.target_country                               AS "Destination",
-            EXTRACT(YEAR FROM tr.date)::int                 AS "Year of Date",
-            '{unit}'                                        AS "Unit",
-            ROUND(SUM(tr.value / {scale}), 9)                AS "Value"
-        FROM glng_gas_trade tr
-        LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
-        WHERE tr.unit = '{data_unit}'
-          AND LOWER(co.region) IN ('asia', 'oceania')
-          AND EXTRACT(YEAR FROM tr.date) >= 2019
-          {dest_clause}
-          {origin_clause}
-          {flow_clause}
+            "Destination",
+            "Year of Date",
+            "Quarter of Date",
+            "Month of Date",
+            "Day of Date",
+            "Unit",
+            ROUND(SUM(bcm_value), 9) AS "Value"
+
+        FROM base
         GROUP BY
-            EXTRACT(YEAR FROM tr.date),
-            tr.target_country
+            "Destination",
+            "Year of Date",
+            "Quarter of Date",
+            "Month of Date",
+            "Day of Date",
+            "Unit"
+
         ORDER BY
-            "Destination" ASC, "Year of Date" DESC;
+            "Destination" ASC,
+            "Year of Date" DESC;
         """
         
         try:
@@ -750,71 +895,159 @@ def register_callbacks(dash_app, server):
 
             # Ensure Value is numeric
             df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
+            
+            # Month sorting helper
+            month_map = {m: i for i, m in enumerate(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'])}
+            df['Month_Num'] = df['Month of Date'].map(month_map).fillna(0)
 
-            # Pivot for the table rows: Destination, columns: Years
-            # Using pivot_table for safety against duplicates
-            pivot_df = df.pivot_table(index='Destination', columns='Year of Date', values='Value', aggfunc='sum').reset_index()
+            # Determine pivot columns based on granularity
+            pivot_index = 'Destination'
+            if granularity == 'YEARLY':
+                pivot_cols = ['Year of Date']
+                sort_cols = ['Year of Date']
+            elif granularity == 'QUARTERLY':
+                pivot_cols = ['Year of Date', 'Quarter of Date']
+                sort_cols = ['Year of Date', 'Quarter of Date']
+            elif granularity == 'MONTHLY':
+                pivot_cols = ['Year of Date', 'Quarter of Date', 'Month of Date']
+                sort_cols = ['Year of Date', 'Quarter of Date', 'Month_Num']
+            elif granularity == 'DAILY':
+                pivot_cols = ['Year of Date', 'Quarter of Date', 'Month of Date', 'Day of Date']
+                sort_cols = ['Year of Date', 'Quarter of Date', 'Month_Num', 'Day of Date']
             
-            # Sort years in descending order as per Fig 1 (2025 -> 2019)
-            years = sorted([c for c in pivot_df.columns if isinstance(c, int)], reverse=True)
-            cols = ['Destination'] + years
-            pivot_df = pivot_df[cols]
+            # Sort before pivoting to ensure column order
+            df = df.sort_values(sort_cols, ascending=[False] + [True] * (len(sort_cols)-1))
             
-            # Formatting values for the table
-            table_data = pivot_df.to_dict('records')
-            for row in table_data:
-                for yr in years:
-                    val = row.get(yr)
-                    if pd.notnull(val):
-                        # Convert to float before formatting
+            # Pivot
+            pivot_df = df.pivot_table(index=pivot_index, columns=pivot_cols, values='Value', aggfunc='sum')
+            
+            # Flatten columns for DataTable
+            # If multi-level, columns will be a MultiIndex
+            if len(pivot_cols) > 1:
+                # We need to construct columns carefully
+                # Expected structure is something that DataTable can consume or we pre-format headers
+                # Dash DataTable supports multi-header via 'name' as a list
+                
+                # Sort columns descending by Year, then Ascending by Q/M/D? Reference Fig 2/3 shows:
+                # 2025 (Q1, Q2..), 2024..
+                # Actually typically time goes Left to Right or Right to Left.
+                # User request: "2025, 2024, 2023..." (Descending Year)
+                # Within Year: "Q1, Q2, Q3, Q4" (Ascending Quarter?)
+                # Looking at Fig3 provided in prompt:
+                # 2025 (Q1, Q2, Q3, Q4) | 2024 (Q1, Q2...)
+                # It seems years are descending, but sub-periods are ascending.
+                
+                # Let's sort the columns explicitly
+                # We can't easily sort a MultiIndex with mixed directions (Desc Year, Asc Quarter)
+                # So we sort the flattened tuples
+                
+                col_tuples = pivot_df.columns.to_list()
+                
+                def sort_key(tup):
+                    # Year is index 0 (desc), others are asc
+                    yr = tup[0]
+                    rest = tup[1:]
+                    # We want to reverse year for sorting? 
+                    # Easier: negate year for sort if it's int
+                    return (-int(yr),) + rest 
+                
+                # Note: Month is string, so we need month num for sorting if using MONTHLY/DAILY
+                # But here we only have the strings in the column usage
+                # We might need to re-sort carefully
+                 
+                # Re-sorting logic:
+                # Extract unique combinations from df sorted by `sort_cols` earlier
+                unique_cols_df = df[list(set(pivot_cols + sort_cols))].drop_duplicates().sort_values(by=sort_cols, ascending=[False] + [True] * (len(sort_cols)-1))
+                sorted_cols = [tuple(row[col] for col in pivot_cols) for _, row in unique_cols_df.iterrows()]
+                
+                # Filter to only those present in pivot (though they should match)
+                sorted_cols = [c for c in sorted_cols if c in pivot_df.columns]
+                
+                pivot_df = pivot_df[sorted_cols]
+                
+                # Destination Header with padding
+                dest_header = [""] * (len(pivot_cols) - 1) + ["Destination"]
+                dt_columns = [{'name': dest_header, 'id': 'Destination'}]
+                
+                for col_tuple in sorted_cols:
+                    # col_tuple is (Year, Quarter, Month...)
+                    # We build the name list. All elements must be strings.
+                    name_list = [str(x) for x in col_tuple]
+                    # To effectively merge headers, we need them to be adjacent and identical.
+                    dt_columns.append({'name': name_list, 'id': str(col_tuple)})
+            
+            else:
+                # Single level (YEARLY)
+                # Sort columns descending
+                cols = sorted(pivot_df.columns.tolist(), reverse=True)
+                pivot_df = pivot_df[cols]
+                dt_columns = [{'name': 'Destination', 'id': 'Destination'}] + \
+                             [{'name': str(col), 'id': str(col)} for col in cols]
+
+            # Convert MultiIndex columns to strings to avoid serialization issues
+            pivot_df.columns = [str(c) if isinstance(c, tuple) else c for c in pivot_df.columns]
+            pivot_df = pivot_df.reset_index()
+            data = pivot_df.to_dict('records')
+            
+            # Format values
+            for row in data:
+                for k, v in row.items():
+                    if k != 'Destination' and pd.notnull(v):
                         try:
-                            row[yr] = f"{float(val):.1f}"
+                            row[k] = f"{float(v):.2f}" # Fig 3 shows 2 decimals
                         except:
-                            row[yr] = str(val)
-                    else:
-                        row[yr] = ""
-
+                            pass
+                    if pd.isnull(v):
+                         row[k] = ""
+            
+            # Construct DataTable
             table = dash_table.DataTable(
-                data=table_data,
-                columns=[{'name': 'Destination', 'id': 'Destination'}] + 
-                        [{'name': str(yr), 'id': str(yr)} for yr in years],
-                style_table={'overflowX': 'auto'},
-                style_cell={
-                    'textAlign': 'left',
-                    'padding': '8px 12px',
-                    'fontFamily': 'Lato, sans-serif',
-                    'fontSize': '12px',
-                    'color': '#1b365d',
-                    'border': 'none',
-                    'borderBottom': '1px solid #f0f0f0'
+                data=data,
+                columns=dt_columns,
+                merge_duplicate_headers=True, # Crucial for the multi-level effect
+                fixed_rows={'headers': True},
+                fixed_columns={'headers': True, 'data': 1},
+                style_table={
+                    'minWidth': '100%', 
+                    'height': '600px', 
+                    'overflowY': 'auto', 
+                    'overflowX': 'auto', 
+                    'border': '1px solid #ddd'
                 },
                 style_header={
-                    'backgroundColor': 'white',
+                    'backgroundColor': '#ffffff',
                     'fontWeight': 'bold',
-                    'color': '#777',
-                    'border': 'none',
-                    'borderBottom': '1px solid #ddd',
+                    'textAlign': 'right',
                     'fontSize': '11px',
-                    'textTransform': 'uppercase'
+                    'border': 'none', 
+                    'color': '#333',
+                    'height': '25px',
+                    'padding': '2px'
+                },
+                style_cell={
+                    'padding': '0px 5px',
+                    'fontSize': '11px',
+                    'fontFamily': 'Arial, sans-serif',
+                    'border': 'none', 
+                    'minWidth': '70px',
+                    'backgroundColor': '#fff',
+                    'color': '#777',
+                    'height': 'auto',
+                    'textAlign': 'right'
                 },
                 style_data_conditional=[
-                    {'if': {'column_id': str(yr)}, 'textAlign': 'right'} for yr in years
-                ] + [
-                    {
-                        'if': {'row_index': 'odd'},
-                        'backgroundColor': '#fcfcfc'
-                    }
+                    {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'}
                 ]
             )
             
-            print("Asia: update_asia_table completed")
-            title = f"Total Annual Imports by Destination {unit} - {destination if destination != '(All)' and destination is not None else 'All'}"
-            return table, title
+            return table, f"Total Annual Imports by Destination {unit} - {granularity.title()}"
+
         except Exception as e:
-            print(f"Error updating table: {e}")
+            print(f"Error in update_asia_table: {e}")
             import traceback
             traceback.print_exc()
-            return html.Div(f"Error: {e}"), "Error loading table"
+            return html.Div(f"Error loading table: {e}"), "Error"
+
 
     @dash_app.callback(
         Output('asia-origin-legend-items', 'children'),
