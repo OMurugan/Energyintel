@@ -159,7 +159,7 @@ def create_layout():
                             type='circle',
                             children=dcc.Graph(id='gas-demand-chart', config={'displayModeBar': False})
                         )
-                    ], style={'padding': '20px'}),
+                    ], id='gas-demand-chart-container', n_clicks=0, style={'padding': '20px', 'cursor': 'pointer'}),
                 ], style={'position': 'relative'}),
                 
                 # Table Area
@@ -464,46 +464,56 @@ def register_callbacks(dash_app, server):
          Input('gas-europe-granularity-store', 'data'),
          Input('unit-filter', 'value'),
          Input('sector-filter', 'value'),
-         Input('country-filter', 'value')],
+         Input('country-filter', 'value'),
+         Input('gas-demand-chart-container', 'n_clicks')],
         State('gas-demand-chart-selection', 'data'),
         prevent_initial_call=True
     )
-    def toggle_chart_selection(click_data, gran, unit, sectors, countries, current_sel):
+    def toggle_chart_selection(click_data, gran, unit, sectors, countries, n_clicks_bg, current_sel):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update
             
-        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        triggers = [t['prop_id'] for t in ctx.triggered]
+        chart_triggered = any('gas-demand-chart.clickData' in t for t in triggers)
+        container_triggered = any('gas-demand-chart-container.n_clicks' in t for t in triggers)
         
-        # Reset on filter changes
-        if trigger_id != 'gas-demand-chart':
-            return None, None
+        # Filter changes -> Reset
+        if any(x in triggers[0] for x in ['granularity-store', 'unit-filter', 'sector-filter', 'country-filter']):
+             return None, None
+
+        # 1. Chart Click (Bar Interaction)
+        if chart_triggered and click_data:
+            point = click_data['points'][0]
+            if 'customdata' not in point:
+                return no_update, no_update
+                
+            cdata = point['customdata']
+            sector = cdata[0]
+            year = cdata[1]
+            x_pos = point['x']
             
-        if not click_data:
+            new_sel = {
+                'sector': sector,
+                'year': year,
+                'x_pos': x_pos
+            }
+            
+            # Toggle logic
+            if current_sel and current_sel == new_sel:
+                return None, None
+                
+            return new_sel, None
+
+        # 2. Background Click (Container Clicked but not Chart Click)
+        elif container_triggered and not chart_triggered:
+            # If we have a selection, clear it
+            if current_sel:
+                return None, None
+            
             return no_update, no_update
             
-        point = click_data['points'][0]
-        # Our customdata is [Sector, Year of Date, Unit]
-        # We also need x_pos to be sure about the time slot
-        if 'customdata' not in point:
-            return no_update, no_update
-            
-        cdata = point['customdata']
-        sector = cdata[0]
-        year = cdata[1]
-        x_pos = point['x']
-        
-        new_sel = {
-            'sector': sector,
-            'year': year,
-            'x_pos': x_pos
-        }
-        
-        # Toggle logic
-        if current_sel and current_sel == new_sel:
-            return None, None
-            
-        return new_sel, None
+        return no_update, no_update
 
     @dash_app.callback(
         Output('gas-demand-chart', 'figure'),

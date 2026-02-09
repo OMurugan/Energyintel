@@ -23,6 +23,10 @@ def create_layout():
         dcc.Store(id='seaborne-bar-highlight-store', data=None),
         dcc.Store(id='seaborne-bar-granularity-store', data='MONTHLY'),
 
+        # Fetch dynamic years
+        html.Div(id='seaborne-year-data-fetcher', style={'display': 'none'}),
+
+
         # Header Row
         html.Div([
             html.H3(id='seaborne-title', style={
@@ -74,13 +78,8 @@ def create_layout():
                     }),
                     dcc.RadioItems(
                         id='seaborne-year-selector',
-                        options=[
-                            {'label': '2022', 'value': 2022},
-                            {'label': '2023', 'value': 2023},
-                            {'label': '2024', 'value': 2024},
-                            {'label': '2025', 'value': 2025},
-                        ],
-                        value=2025,
+                        options=[], # Options populated by callback
+                        value=None, # Value set by callback
                         style={'fontSize': '11px', 'color': EI_DARK_BLUE},
                         labelStyle={'display': 'block', 'margin': '8px 0', 'cursor': 'pointer', 'textAlign': 'center'}
                     )
@@ -226,17 +225,20 @@ def create_layout():
                         'position': 'absolute', 'top': '25px', 'left': '60px', 'zIndex': '1000'
                     }),
 
-                    dcc.Loading(
-                        id='loading-seaborne-bar-chart',
-                        type='circle',
-                        children=dcc.Graph(
-                            id='seaborne-bar-chart',
-                            style={'height': '320px'},
-                            config={'displayModeBar': False}
+                    html.Div([
+                        dcc.Loading(
+                            id='loading-seaborne-bar-chart',
+                            type='circle',
+                            children=dcc.Graph(
+                                id='seaborne-bar-chart',
+                                style={'height': '320px'},
+                                config={'displayModeBar': False}
+                            )
                         )
-                    ),
+                    ], id='seaborne-bar-chart-container', n_clicks=0, style={'cursor': 'pointer'}),
                     html.Div(
-                        "Energy Intelligence; data as of December 2025",
+                        id='seaborne-footer',
+                        children="Energy Intelligence; data as of December 2025",
                         style={
                             'fontSize': '11px',
                             'color': EI_DARK_BLUE,
@@ -302,11 +304,60 @@ def register_callbacks(dash_app, server):
     """Register all callbacks for Crude Seaborne Analytics"""
 
     @dash_app.callback(
+        [Output('seaborne-year-selector', 'options'),
+         Output('seaborne-year-selector', 'value')],
+        Input('seaborne-title', 'id') # Trigger on load when title is present
+    )
+    def populate_years(_):
+        try:
+            year_query = "SELECT DISTINCT EXTRACT(YEAR FROM date)::int as year FROM russia_master_data WHERE type = 'Seaborne' ORDER BY year DESC LIMIT 4"
+            year_results = execute_query(year_query)
+            # execute_query returns list of dicts, so we access by key 'year', not index
+            available_years = [row['year'] for row in year_results] if year_results else []
+        except Exception as e:
+            print(f"Error loading years: {e}")
+            available_years = []
+        
+        # Fallback only if no data, but do not invent future years
+        if not available_years:
+            # If query fails completely, maybe show just current year or empty
+            # User requested strictly from query
+            available_years = []
+
+        options = [{'label': str(y), 'value': y} for y in available_years]
+        value = available_years[0] if available_years else None
+        return options, value
+
+    @dash_app.callback(
         Output('seaborne-title', 'children'),
         Input('seaborne-year-selector', 'value')
     )
     def update_title(year):
+        if not year:
+            return "SEABORNE CRUDE EXPORTS BY MAIN LOADING PORT"
         return f"{year} SEABORNE CRUDE EXPORTS BY MAIN LOADING PORT"
+
+
+    @dash_app.callback(
+        Output('seaborne-footer', 'children'),
+        Input('seaborne-year-selector', 'value')
+    )
+    def update_footer(year):
+        query = "SELECT MAX(date) FROM russia_master_data WHERE type = 'Seaborne'"
+        try:
+            results = execute_query(query)
+            if results and results[0][0]:
+                max_date = results[0][0]
+                # Check if it's a string or date object
+                if isinstance(max_date, str):
+                    max_date = pd.to_datetime(max_date)
+                
+                formatted_date = max_date.strftime('%B %Y')
+                return f"Energy Intelligence; data as of {formatted_date}"
+        except Exception as e:
+            print(f"Error updating footer: {e}")
+            pass
+        return "Energy Intelligence; data as of December 2025"
 
     @dash_app.callback(
         [Output('seaborne-time-visibility-store', 'data'),
@@ -418,7 +469,7 @@ def register_callbacks(dash_app, server):
             po.port_name IS NOT NULL
             AND po.port_name NOT IN ('Hungary', 'Czech Republic')
             AND ru.type = 'Seaborne'
-            AND EXTRACT(YEAR FROM ru.date) IN (2025, 2024, 2023, 2022)
+            AND EXTRACT(YEAR FROM ru.date) >=2022
         ORDER BY
             po.port_name,
             year_of_date,
@@ -664,44 +715,65 @@ def register_callbacks(dash_app, server):
 
     clientside_callback(
         """
-        function(clickData, currentStore) {
-            if (!clickData || !clickData.points || clickData.points.length === 0) {
-                return [currentStore, window.dash_clientside.no_update];
-            }
-            
-            const point = clickData.points[0];
-            const traceIdx = point.curveNumber;
-            let newVal = null;
-            let type = null;
+        function(clickData, bgClicks, currentStore) {
+            // Check context to see what triggered
+            const ctx = window.dash_clientside.callback_context;
+            let chartTriggered = false;
+            let bgTriggered = false;
 
-            if (traceIdx === 0) {
-                newVal = point.x;
-                type = 'bar';
-            } else if (traceIdx === 1) {
-                const cd = point.customdata;
-                newVal = Array.isArray(cd) ? cd[0] : cd;
-                type = 'year';
-            } else {
-                return [currentStore, null];
+            if (ctx && ctx.triggered) {
+                ctx.triggered.forEach(t => {
+                   if (t.prop_id.indexOf('seaborne-bar-chart.clickData') !== -1) chartTriggered = true;
+                   if (t.prop_id.indexOf('seaborne-bar-chart-container.n_clicks') !== -1) bgTriggered = true;
+                });
             }
 
-            let nextStore = {type: type, value: newVal};
-            if (currentStore && currentStore.type === type) {
-                const currV = String(currentStore.value).replace(/[\[\]\s]/g, '');
-                const newV = String(newVal).replace(/[\[\]\s]/g, '');
-                if (currV === newV) {
-                    nextStore = null;
+            // 1. Chart Click (Bar Interaction)
+            if (chartTriggered && clickData && clickData.points && clickData.points.length > 0) {
+                const point = clickData.points[0];
+                const traceIdx = point.curveNumber;
+                let newVal = null;
+                let type = null;
+    
+                if (traceIdx === 0) {
+                    newVal = point.x;
+                    type = 'bar';
+                } else if (traceIdx === 1) {
+                    const cd = point.customdata;
+                    newVal = Array.isArray(cd) ? cd[0] : cd;
+                    type = 'year';
+                } else {
+                    return [currentStore, null];
                 }
+    
+                let nextStore = {type: type, value: newVal};
+                if (currentStore && currentStore.type === type) {
+                    const currV = String(currentStore.value).replace(/[\[\]\s]/g, '');
+                    const newV = String(newVal).replace(/[\[\]\s]/g, '');
+                    if (currV === newV) {
+                        nextStore = null;
+                    }
+                }
+                
+                // Return new store state AND clear clickData
+                return [nextStore, null];
+            }
+
+            // 2. Background Click (Container Clicked while no Chart Click)
+            // If clickData is null/empty but callback fired, or explicitly bg frame
+            else if (bgTriggered || (!chartTriggered && bgClicks)) {
+                 if (currentStore) {
+                     return [null, window.dash_clientside.no_update];
+                 }
             }
             
-            // We return the new store state AND clear clickData to null 
-            // so the next click (even if on same year) always triggers a change
-            return [nextStore, null];
+            return [window.dash_clientside.no_update, window.dash_clientside.no_update];
         }
         """,
         [Output('seaborne-bar-highlight-store', 'data'),
          Output('seaborne-bar-chart', 'clickData')],
-        Input('seaborne-bar-chart', 'clickData'),
+        [Input('seaborne-bar-chart', 'clickData'),
+         Input('seaborne-bar-chart-container', 'n_clicks')],
         State('seaborne-bar-highlight-store', 'data'),
         prevent_initial_call=True
     )
@@ -1119,7 +1191,10 @@ def register_callbacks(dash_app, server):
             ru.country;
         """
         try:
-            results = execute_query(query, {'year': selected_year})
+            # Safe integer casting for year
+            year_int = int(selected_year)
+            formatted_query = query.replace(':year', str(year_int))
+            results = execute_query(formatted_query)
             df_map = pd.DataFrame(results) if results else pd.DataFrame()
             
             # Coordinate Fallback for Russian Ports
