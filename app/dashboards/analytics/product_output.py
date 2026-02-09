@@ -331,8 +331,16 @@ def update_company_expansion_state(y_c, q_c, m_c, d_c, current_visibility):
         '-' if new_visibility.get('Day') else '+'
     )
 
-def create_by_company_layout():
+def create_by_company_layout(years=None, default_year=None):
     """Layout for the 'By Company' tab"""
+    if years is None:
+        years = [2025, 2024, 2023, 2022]
+    if default_year is None:
+        default_year = years[0] if years else 2025
+    
+    # Create year options with "All" option first
+    year_options = [{'label': ' (All)', 'value': 'All'}] + [{'label': f' {year}', 'value': year} for year in years]
+    
     return html.Div([
         html.Div([
             # Left side: Charts
@@ -440,15 +448,8 @@ def create_by_company_layout():
                     html.Label("SELECT YEAR", style={'fontWeight': 'bold', 'fontSize': '13px', 'color': '#333', 'marginBottom': '10px', 'display': 'block'}),
                     dcc.RadioItems(
                         id='company-year-selector',
-                        options=[
-                            {'label': ' (All)', 'value': 'All'},
-                            {'label': ' 2022', 'value': 2022},
-                            {'label': ' 2023', 'value': 2023},
-                            {'label': ' 2024', 'value': 2024},
-                            {'label': ' 2025', 'value': 2025},
-                            {'label': ' 2026', 'value': 2026}
-                        ],
-                        value=2025,
+                        options=year_options,
+                        value=default_year,
                         labelStyle={'display': 'block', 'marginBottom': '2px', 'fontSize': '13px'}
                     )
                 ], style={'marginBottom': '30px'}),
@@ -476,8 +477,16 @@ def create_by_company_layout():
         ], style={'display': 'flex', 'flexDirection': 'row', 'justifyContent': 'flex-start', 'alignItems': 'flex-start', 'width': '100%'})
     ], style={'width': '100%', 'boxSizing': 'border-box'})
 
-def create_by_product_layout():
+def create_by_product_layout(years=None, default_year=None):
     """Layout for the 'By Product' tab"""
+    if years is None:
+        years = [2025, 2024, 2023, 2022]
+    if default_year is None:
+        default_year = years[0] if years else 2025
+    
+    # Create year options (no "All" option for product tab)
+    year_options = [{'label': f' {year}', 'value': year} for year in years]
+    
     return html.Div([
         html.Div([
             # Left side: Charts
@@ -585,14 +594,8 @@ def create_by_product_layout():
                     html.Label("SELECT YEAR", style={'fontWeight': 'bold', 'fontSize': '13px', 'color': '#333', 'marginBottom': '10px', 'display': 'block'}),
                     dcc.RadioItems(
                         id='product-year-selector',
-                        options=[
-                            {'label': ' 2022', 'value': 2022},
-                            {'label': ' 2023', 'value': 2023},
-                            {'label': ' 2024', 'value': 2024},
-                            {'label': ' 2025', 'value': 2025},
-                            {'label': ' 2026', 'value': 2026}
-                        ],
-                        value=2025,
+                        options=year_options,
+                        value=default_year,
                         labelStyle={'display': 'block', 'marginBottom': '2px', 'fontSize': '13px'}
                     )
                 ], style={'marginBottom': '30px'}),
@@ -616,15 +619,39 @@ def create_by_product_layout():
 def register_callbacks(dash_app, server):
     """Register all callbacks for Product Output Analytics"""
 
+    def get_available_years():
+        """Helper function to fetch available years from database"""
+        try:
+            year_query = """
+            SELECT DISTINCT EXTRACT(YEAR FROM date)::int as year 
+            FROM russia_master_data 
+            WHERE category IN ('Refining And Products Output', 'Refinery Output')
+            ORDER BY year DESC 
+            LIMIT 6
+            """
+            year_results = execute_query(year_query)
+            
+            if not year_results:
+                return [2025, 2024, 2023, 2022]
+            
+            return [row['year'] for row in year_results]
+        except Exception as e:
+            logger.error(f"Error fetching years: {str(e)}")
+            return [2025, 2024, 2023, 2022]
+
     @callback(
         Output('product-output-content', 'children'),
         Input('product-output-tabs', 'value')
     )
     def render_tab_content(tab):
+        # Get available years dynamically
+        years = get_available_years()
+        default_year = years[0] if years else 2025
+        
         if tab == 'by-company':
-            return create_by_company_layout()
+            return create_by_company_layout(years, default_year)
         elif tab == 'by-product':
-            return create_by_product_layout()
+            return create_by_product_layout(years, default_year)
         return html.Div("Select a tab")
 
     @callback(
