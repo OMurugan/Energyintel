@@ -482,6 +482,20 @@ def create_layout():
                     )
                 ], style={'marginTop': '20px', 'backgroundColor': '#fff', 'padding': '10px'}),
                 
+                # Footer
+                html.Div([
+                    html.Span("Source: Energy Intelligence.", style={
+                        'fontSize': '11px',
+                        'color': '#999',
+                        'fontStyle': 'italic'
+                    })
+                ], style={
+                    'backgroundColor': '#fff',
+                    'padding': '10px 20px',
+                    'marginTop': '3px'
+                }),
+
+                
                 # Stores for State
                 dcc.Store(id='asia-table-highlight-state'), # From Clientside
                 dcc.Store(id='chart-highlight-state', data=None), # Server side Highlight State
@@ -628,7 +642,7 @@ def build_chart(df, sector_filter, unit, time_level='MONTHLY', highlight_state=N
     fig = go.Figure()
     
     # Determine format
-    val_fmt = ",.2f" if unit == 'Billion Cubic Meter' else ",.0f"
+    val_fmt = ",.1f" if unit == 'Billion Cubic Meter' else ",.0f"
     
     # Stacked Bar Chart
     sectors_to_plot = SECTOR_ORDER if sector_filter == '(All)' else [sector_filter]
@@ -735,7 +749,7 @@ def build_chart(df, sector_filter, unit, time_level='MONTHLY', highlight_state=N
         clickmode='event',
         bargap=0.2
     )
-    
+
     return fig
 
 
@@ -799,7 +813,7 @@ def build_yearly_table(df, sector_filter, unit):
                 t_row[str(y)] = y_total
             table_data.append(t_row)
 
-    fmt = ',.2f' if unit == 'Billion Cubic Meter' else ',.0f'
+    fmt = ',.1f' if unit == 'Billion Cubic Meter' else ',.0f'
     
     columns = [
         {'name': 'Country', 'id': 'Country'},
@@ -817,11 +831,39 @@ def build_yearly_table(df, sector_filter, unit):
         })
         data_col_ids.append(str(y))
 
+    # Generate tooltip data
+    tooltip_data = []
+    val_fmt_func = (lambda v: f"{v:,.1f}") if unit == 'Billion Cubic Meter' else (lambda v: f"{v:,.0f}")
+    
+    for row in table_data:
+        row_tooltip = {}
+        country_name = row.get('Country_Full', '')
+        sector_name = row.get('Sector', '')
+        
+        for col_id in data_col_ids:
+            if col_id in row:
+                val = row[col_id]
+                y_val = col_id
+                tooltip_text = f"**Country:** {country_name}  \n**Sector:** {sector_name}  \n**Year of Date:** {y_val}  \n**Value:** {val_fmt_func(val)}  \n**Unit:** {unit}"
+                row_tooltip[col_id] = {'value': tooltip_text, 'type': 'markdown'}
+        tooltip_data.append(row_tooltip)
+
+
     return html.Div([
         dash_table.DataTable(
             id='asia-gas-demand-table',
             data=table_data,
             columns=columns,
+            tooltip_data=tooltip_data,
+            tooltip_delay=0,
+            tooltip_duration=None,
+            css=[{
+                'selector': '.dash-table-tooltip',
+                'rule': 'background-color: white !important; color: black !important; border: 1px solid #777 !important; border-radius: 2px !important; font-family: Arial, sans-serif !important; font-size: 12px !important; padding: 8px !important; box-shadow: 2px 2px 5px rgba(0,0,0,0.1) !important; opacity: 1 !important; text-align: left !important; min-width: 150px !important;'
+            }, {
+                'selector': '.dash-table-tooltip strong',
+                'rule': 'color: #777 !important; font-weight: normal !important; display: inline-block; margin-right: 5px;'
+            }],
             fixed_rows={'headers': True},
             fixed_columns={'headers': True, 'data': 2},
             style_table={
@@ -954,7 +996,7 @@ def build_quarterly_table(df, sector_filter, unit):
                 t_row[f"{y}_Total"] = y_total
             table_data.append(t_row)
 
-    fmt = ',.2f' if unit == 'Billion Cubic Meter' else ',.0f'
+    fmt = ',.1f' if unit == 'Billion Cubic Meter' else ',.0f'
     
     columns = [
         {'name': ['\u00A0', 'Country'], 'id': 'Country'},
@@ -983,11 +1025,43 @@ def build_quarterly_table(df, sector_filter, unit):
         })
         data_col_ids.append(f"{y}_Total")
 
+    # Generate tooltip data
+    tooltip_data = []
+    val_fmt_func = (lambda v: f"{v:,.1f}") if unit == 'Billion Cubic Meter' else (lambda v: f"{v:,.0f}")
+    
+    for row in table_data:
+        row_tooltip = {}
+        country_name = row.get('Country_Full', '')
+        sector_name = row.get('Sector', '')
+        
+        for col_id in data_col_ids:
+            if col_id in row:
+                val = row[col_id]
+                if '_Total' in col_id:
+                    y_val = col_id.split('_')[0]
+                    tooltip_text = f"**Country:** {country_name}  \n**Sector:** {sector_name}  \n**Year of Date:** {y_val}  \n**Value:** {val_fmt_func(val)}  \n**Unit:** {unit}"
+                else:
+                    y_val, q_val = col_id.split('_')
+                    tooltip_text = f"**Quarter of Date:** {q_val}  \n**Country:** {country_name}  \n**Sector:** {sector_name}  \n**Year of Date:** {y_val}  \n**Value:** {val_fmt_func(val)}  \n**Unit:** {unit}"
+                
+                row_tooltip[col_id] = {'value': tooltip_text, 'type': 'markdown'}
+        tooltip_data.append(row_tooltip)
+
     return html.Div([
         dash_table.DataTable(
             id='asia-gas-demand-table',
             data=table_data,
             columns=columns,
+            tooltip_data=tooltip_data,
+            tooltip_delay=0,
+            tooltip_duration=None,
+            css=[{
+                'selector': '.dash-table-tooltip',
+                'rule': 'background-color: white !important; color: black !important; border: 1px solid #777 !important; border-radius: 2px !important; font-family: Arial, sans-serif !important; font-size: 12px !important; padding: 8px !important; box-shadow: 2px 2px 5px rgba(0,0,0,0.1) !important; opacity: 1 !important; text-align: left !important; min-width: 150px !important;'
+            }, {
+                'selector': '.dash-table-tooltip strong',
+                'rule': 'color: #777 !important; font-weight: normal !important; display: inline-block; margin-right: 5px;'
+            }],
             merge_duplicate_headers=True,
             fixed_rows={'headers': True},
             fixed_columns={'headers': True, 'data': 2},
@@ -1133,7 +1207,7 @@ def build_monthly_table(df, sector_filter, unit):
                 t_row[f"{y}_Total"] = y_total
             table_data.append(t_row)
 
-    fmt = ',.2f' if unit == 'Billion Cubic Meter' else ',.0f'
+    fmt = ',.1f' if unit == 'Billion Cubic Meter' else ',.0f'
     
     columns = [
         {'name': ['\u00A0', 'Country'], 'id': 'Country'},
@@ -1162,11 +1236,43 @@ def build_monthly_table(df, sector_filter, unit):
         })
         data_col_ids.append(f"{y}_Total")
 
+    # Generate tooltip data
+    tooltip_data = []
+    val_fmt_func = (lambda v: f"{v:,.1f}") if unit == 'Billion Cubic Meter' else (lambda v: f"{v:,.0f}")
+    
+    for row in table_data:
+        row_tooltip = {}
+        country_name = row.get('Country_Full', '')
+        sector_name = row.get('Sector', '')
+        
+        for col_id in data_col_ids:
+            if col_id in row:
+                val = row[col_id]
+                if '_Total' in col_id:
+                    y_val = col_id.split('_')[0]
+                    tooltip_text = f"**Country:** {country_name}  \n**Sector:** {sector_name}  \n**Year of Date:** {y_val}  \n**Value:** {val_fmt_func(val)}  \n**Unit:** {unit}"
+                else:
+                    y_val, m_val = col_id.split('_')
+                    tooltip_text = f"**Month of Date:** {m_val}  \n**Country:** {country_name}  \n**Sector:** {sector_name}  \n**Year of Date:** {y_val}  \n**Value:** {val_fmt_func(val)}  \n**Unit:** {unit}"
+                
+                row_tooltip[col_id] = {'value': tooltip_text, 'type': 'markdown'}
+        tooltip_data.append(row_tooltip)
+
     return html.Div([
         dash_table.DataTable(
             id='asia-gas-demand-table',
             data=table_data,
             columns=columns,
+            tooltip_data=tooltip_data,
+            tooltip_delay=0,
+            tooltip_duration=None,
+            css=[{
+                'selector': '.dash-table-tooltip',
+                'rule': 'background-color: white !important; color: black !important; border: 1px solid #777 !important; border-radius: 2px !important; font-family: Arial, sans-serif !important; font-size: 12px !important; padding: 8px !important; box-shadow: 2px 2px 5px rgba(0,0,0,0.1) !important; opacity: 1 !important; text-align: left !important; min-width: 150px !important;'
+            }, {
+                'selector': '.dash-table-tooltip strong',
+                'rule': 'color: #777 !important; font-weight: normal !important; display: inline-block; margin-right: 5px;'
+            }],
             merge_duplicate_headers=True,
             fixed_rows={'headers': True},
             fixed_columns={'headers': True, 'data': 2},
@@ -1321,7 +1427,7 @@ def build_daily_table(df, sector_filter, unit):
                 t_row[f"{y}_Total"] = y_total
             table_data.append(t_row)
 
-    fmt = ',.2f' if unit == 'Billion Cubic Meter' else ',.0f'
+    fmt = ',.1f' if unit == 'Billion Cubic Meter' else ',.0f'
     
     # 3-level headers: Year -> Month -> "1"
     columns = [
@@ -1354,11 +1460,48 @@ def build_daily_table(df, sector_filter, unit):
         })
         data_col_ids.append(f"{y}_Total")
 
+    # Generate tooltip data
+    tooltip_data = []
+    val_fmt_func = (lambda v: f"{v:,.1f}") if unit == 'Billion Cubic Meter' else (lambda v: f"{v:,.0f}")
+    
+    for row in table_data:
+        row_tooltip = {}
+        country_name = row.get('Country_Full', '')
+        sector_name = row.get('Sector', '')
+        
+        for col_id in data_col_ids:
+            if col_id in row:
+                val = row[col_id]
+                if '_Total' in col_id:
+                    y_val = col_id.split('_')[0]
+                    tooltip_text = f"**Country:** {country_name}  \n**Sector:** {sector_name}  \n**Year of Date:** {y_val}  \n**Value:** {val_fmt_func(val)}  \n**Unit:** {unit}"
+                elif col_id.endswith('_1'):
+                    parts = col_id.split('_')
+                    y_val = parts[0]
+                    m_val = parts[1]
+                    d_val = parts[2]
+                    tooltip_text = f"**Day of Date:** {d_val}  \n**Month of Date:** {m_val}  \n**Country:** {country_name}  \n**Sector:** {sector_name}  \n**Year of Date:** {y_val}  \n**Value:** {val_fmt_func(val)}  \n**Unit:** {unit}"
+                else:
+                    tooltip_text = f"Value: {val_fmt_func(val)}"
+                
+                row_tooltip[col_id] = {'value': tooltip_text, 'type': 'markdown'}
+        tooltip_data.append(row_tooltip)
+
     return html.Div([
         dash_table.DataTable(
             id='asia-gas-demand-table',
             data=table_data,
             columns=columns,
+            tooltip_data=tooltip_data,
+            tooltip_delay=0,
+            tooltip_duration=None,
+            css=[{
+                'selector': '.dash-table-tooltip',
+                'rule': 'background-color: white !important; color: black !important; border: 1px solid #777 !important; border-radius: 2px !important; font-family: Arial, sans-serif !important; font-size: 12px !important; padding: 8px !important; box-shadow: 2px 2px 5px rgba(0,0,0,0.1) !important; opacity: 1 !important; text-align: left !important; min-width: 150px !important;'
+            }, {
+                'selector': '.dash-table-tooltip strong',
+                'rule': 'color: #777 !important; font-weight: normal !important; display: inline-block; margin-right: 5px;'
+            }],
             merge_duplicate_headers=True,
             fixed_rows={'headers': True},
             fixed_columns={'headers': True, 'data': 2},

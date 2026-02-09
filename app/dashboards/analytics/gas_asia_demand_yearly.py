@@ -482,6 +482,20 @@ def create_layout():
                     )
                 ], style={'marginTop': '20px', 'backgroundColor': '#fff', 'padding': '10px'}),
                 
+                # Footer
+                html.Div([
+                    html.Span("Source: Energy Intelligence.", style={
+                        'fontSize': '11px',
+                        'color': '#999',
+                        'fontStyle': 'italic'
+                    })
+                ], style={
+                    'backgroundColor': '#fff',
+                    'padding': '10px 20px',
+                    'marginTop': '3px'
+                }),
+
+                
                 # Stores for State
                 dcc.Store(id='asia-yearly-table-highlight-state'), # From Clientside
                 dcc.Store(id='chart-yearly-highlight-state', data=None), # Server side Highlight State
