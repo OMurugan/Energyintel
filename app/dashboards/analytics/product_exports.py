@@ -48,8 +48,16 @@ def hex_to_rgba(hex_color, alpha=1.0):
     except:
         return f"rgba(200, 200, 200, {alpha})"
 
-def create_layout():
+def create_layout(years=None, default_year=None):
     """Create the Product Exports layout"""
+    if years is None:
+        years = [2025, 2024, 2023, 2022]
+    if default_year is None:
+        default_year = years[0] if years else 2025
+    
+    # Create year options
+    year_options = [{'label': f' {year}', 'value': year} for year in years]
+    
     return html.Div([
         # Selection Stores (Independent for each chart)
         dcc.Store(id='treemap-selection', data=None),
@@ -181,14 +189,8 @@ def create_layout():
                     html.Label("SELECT YEAR", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#333'}),
                     dcc.RadioItems(
                         id='year-selector',
-                        options=[
-                            {'label': ' 2022', 'value': 2022},
-                            {'label': ' 2023', 'value': 2023},
-                            {'label': ' 2024', 'value': 2024},
-                            {'label': ' 2025', 'value': 2025},
-                            {'label': ' 2026', 'value': 2026}
-                        ],
-                        value=2025,
+                        options=year_options,
+                        value=default_year,
                         labelStyle={'display': 'block', 'marginBottom': '5px', 'fontSize': '14px'}
                     )
                 ], style={'marginBottom': '30px', 'padding': '10px 0', 'border': 'none', 'borderRadius': '0'}),
