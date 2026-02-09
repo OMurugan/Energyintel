@@ -1568,10 +1568,6 @@ def register_callbacks(dash_app, server):
             # 0. Determine Trigger
             triggered_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
             
-            print(f"DEBUG: update_chart triggered by {triggered_id}")
-            if triggered_id == 'asia-gas-monthly-chart':
-                print(f"DEBUG: clickData: {clickData}")
-            
             # 1. Resolve Highlight State Change
             highlight_state = current_highlight # Default keep current
             

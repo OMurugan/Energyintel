@@ -1200,8 +1200,9 @@ def register_callbacks(dash_app, server):
         # Note: Sector filtering is now handled at the database level in load_data()
         
         # Apply country filter FIRST - handle empty selection properly
-        # NOTE: For the map, we DO NOT filter the dataframe by country.
-        # This allows us to show the "inactive" layer (dimmed countries) when a single country is selected.
+        # Filter by selected countries if not (All)
+        if selected_countries and '(All)' not in selected_countries:
+            filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
         
         has_selection = selected_countries is not None and len(selected_countries) > 0
         
@@ -1209,13 +1210,10 @@ def register_callbacks(dash_app, server):
              return create_empty_map("No countries selected", height=700)
         
         
-        # THEN for map, show only the latest year data within the filtered date range
-        # This is done AFTER country filtering to ensure selected countries aren't lost
-        if not filtered_df.empty and 'Year of Date' in filtered_df.columns:
-            # Get the latest year available in the filtered data
-            latest_year = filtered_df['Year of Date'].max()
-            filtered_df = filtered_df[filtered_df['Year of Date'] == latest_year]
-            print(f"Map showing data for latest year within date range: {latest_year}")
+        # We also do NOT restrict to the latest year anymore, to ensures that ALL data 
+        # within the selected date range is aggregated and displayed.
+        if filtered_df.empty:
+            return create_empty_map("No data available", height=700)
         
         if filtered_df.empty:
             return create_empty_map("No data available for selected filters", height=700)

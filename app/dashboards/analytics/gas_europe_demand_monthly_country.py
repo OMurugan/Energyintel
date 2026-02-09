@@ -150,6 +150,12 @@ def hex_to_rgba(hex_color, opacity):
 
 def _iso_for_country(country):
     """Return ISO Alpha-3 code for a country, using centralized mapping."""
+    # Manual patches for missing codes
+    if country == 'Luxembourg': return 'LUX'
+    if country == 'Czechia': return 'CZE'
+    if country == 'Moldova': return 'MDA'
+    if country == 'Republic of Moldova': return 'MDA'
+    
     return get_iso_code(country)
 
 def get_all_countries_with_coordinates():
@@ -1117,12 +1123,15 @@ def register_callbacks(dash_app, server):
         # Default to using checklist value if not triggered by legend
         # or if it's the initial load
         if 'legend-item-demand' not in trigger_id:
-            if not selected_countries or (selected_countries and '(All)' not in selected_countries and len(selected_countries) == 0):
+            # When triggered by checklist, use the checklist value directly
+            if not selected_countries:
                 current_selected = []  # Allow empty selection
-            elif selected_countries and '(All)' not in selected_countries:
-                current_selected = [c for c in selected_countries if c in available_countries]
-            else:
+            elif '(All)' in selected_countries:
+                # If (All) is selected, select all countries
                 current_selected = available_countries.copy()
+            else:
+                # Use the checklist selection as-is (filter out any invalid countries)
+                current_selected = [c for c in selected_countries if c in available_countries]
         else:
             # If triggered by legend, use the stored state as the baseline
             # Ensure current_selected is a list
@@ -1142,8 +1151,6 @@ def register_callbacks(dash_app, server):
                 else:
                     # Otherwise, select ONLY this country
                     current_selected = [clicked_country]
-        
-        # Don't force all countries to be selected - allow empty selection
         
         # Create legend items
         legend_items = []
@@ -1252,22 +1259,22 @@ def register_callbacks(dash_app, server):
         
         # Note: Sector filtering is now handled at the database level in load_data()
         
-        # Apply country filter FIRST - handle empty selection properly
-        # NOTE: For the map, we DO NOT filter the dataframe by country.
-        # This allows us to show the "inactive" layer (dimmed countries) when a single country is selected.
-        # We only check if selected_countries is empty or active to handle the "No data" case if needed,
-        # but generally we want to show all countries on the map unless specifically requested otherwise.
-        
+        # Check for empty country selection
         has_selection = selected_countries is not None and len(selected_countries) > 0
         
         if selected_countries is not None and len(selected_countries) == 0:
              return create_empty_map("No countries selected", height=700)
-             
-        # This is done AFTER country filtering to ensure selected countries aren't lost
-        if not filtered_df.empty and 'Year of Date' in filtered_df.columns:
-            # Get the latest year available in the filtered data
-            latest_year = filtered_df['Year of Date'].max()
-            filtered_df = filtered_df[filtered_df['Year of Date'] == latest_year]
+        
+        # Filter by selected countries if not (All)
+        if selected_countries and '(All)' not in selected_countries:
+            filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
+        
+        # We also do NOT restrict to the latest year anymore, to ensures that ALL data 
+        # within the selected date range is aggregated and displayed.
+        # This solves the issue of missing countries that might not have data in the absolute latest month.
+        
+        if filtered_df.empty:
+            return create_empty_map("No data available", height=700)
         
         # Aggregate data by country (sum values across years if multiple)
         agg_df = filtered_df.groupby(['Country', 'Latitude (generated)', 'Longitude (generated)', 'Year of Date']).agg({
@@ -1321,20 +1328,37 @@ def register_callbacks(dash_app, server):
         if not all_countries_df.empty:
             countries_df = all_countries_df[all_countries_df['Country'].isin(countries_in_map)].copy()
         
-        # Determine selection parameters
+        # Determine selection parameters for visual styling
         selected_iso = None
         other_isos = None
         single_selected_country = None
         
-        # Check if only one country is selected (not all countries)
-        # Note: We rely on selected_countries passed from the store, not the filtered dataframe (since we didn't filter it)
-        if selected_countries and len(selected_countries) == 1 and '(All)' not in selected_countries:
-            single_selected_country = selected_countries[0]
+        # Check if we have a subset of countries selected (not all)
+        all_available_countries = agg_df['Country'].unique().tolist()
+        
+        if selected_countries and len(selected_countries) < len(all_available_countries):
+            # Some countries are filtered - we need to show visual distinction
+            selected_country_isos = []
+            other_country_isos = []
             
-            # Find the ISO code for the selected country
-            if single_selected_country in agg_df['Country'].values:  # Use original Country column
-                selected_iso = agg_df.loc[agg_df['Country'] == single_selected_country, 'ISO_Code'].iloc[0]
-                other_isos = [iso for iso in locations if iso != selected_iso]
+            for _, row in agg_df.iterrows():
+                country = row['Country']
+                iso = row['ISO_Code']
+                
+                if country in selected_countries:
+                    selected_country_isos.append(iso)
+                else:
+                    other_country_isos.append(iso)
+            
+            # If only one country is selected, use single selection mode
+            if len(selected_countries) == 1:
+                single_selected_country = selected_countries[0]
+                if single_selected_country in agg_df['Country'].values:
+                    selected_iso = agg_df.loc[agg_df['Country'] == single_selected_country, 'ISO_Code'].iloc[0]
+                    other_isos = other_country_isos
+            else:
+                # Multiple countries selected - dim the non-selected ones
+                other_isos = other_country_isos
         
         # Create the map using shared utilities
         fig = create_choropleth_map(

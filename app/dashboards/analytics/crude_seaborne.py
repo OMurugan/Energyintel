@@ -4,7 +4,7 @@ import plotly.express as px
 import pandas as pd
 from core.data_helpers import execute_query
 import json
-from app.dashboards.wcod.shared_map_utils import load_world_geojson
+from .shared_map_utils import load_world_geojson
 
 # Color Palette
 EI_ORANGE = "#ff6600"
