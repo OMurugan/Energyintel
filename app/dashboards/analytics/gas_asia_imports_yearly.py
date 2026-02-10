@@ -1165,8 +1165,8 @@ def register_callbacks(dash_app, server):
     def export_asia_chart_csv(n_clicks, unit, flow_type, origin, destination, granularity):
         if not n_clicks: return no_update
         
-        chart_data_unit = 'Mcm' if unit == 'Bcm' else 'kWh'
-        chart_scale = 1000.0 if unit == 'Bcm' else 1000000.0
+        chart_data_unit = 'Mcm' if unit == 'Bcm' else 'GWh'
+        chart_scale = 1000.0 if unit == 'Bcm' else 1.0
         
         f_flow_clause = f"AND tr.flow_type = '{flow_type}'" if flow_type != ' ' else ""
         f_origin_clause = f"AND tr.source_country = '{origin}'" if origin != '(All)' else ""
