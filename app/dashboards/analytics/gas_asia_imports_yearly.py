@@ -531,16 +531,16 @@ def register_callbacks(dash_app, server):
             
             results = execute_query(query)
             df = pd.DataFrame(results)
-            if df.empty: return go.Figure(), chart_style, map_style
+            if df.empty: return go.Figure(), chart_title, chart_style, map_style
 
             df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
             df = df.dropna(subset=['Value', 'Destination', 'Origin']).copy()
-            if df.empty: return go.Figure(), chart_style, map_style
+            if df.empty: return go.Figure(), chart_title, chart_style, map_style
 
-            # 1. Filter to Top 8 Destinations
-            top_dest = df.groupby('Destination')['Value'].sum().sort_values(ascending=False).head(8).index.tolist()
+            # 1. Sort Destinations Alphabetically
+            top_dest = sorted(df['Destination'].unique().tolist())
             df = df[df['Destination'].isin(top_dest)].copy()
-            if df.empty: return go.Figure(), chart_style, map_style
+            if df.empty: return go.Figure(), chart_title, chart_style, map_style
 
             # 2. Origin grouping
             origin_vols = df.groupby('Origin')['Value'].sum().sort_values(ascending=False)
@@ -618,7 +618,40 @@ def register_callbacks(dash_app, server):
                 yaxis=dict(autorange=True)
             )
 
-            fig.update_xaxes(type='category', tickangle=-90, tickfont=dict(size=9), title=None, gridcolor='#f0f0f0')
+            # Selective Tick Labels (Sparse Labels)
+            all_dests = []
+            # Plotly internally repeats categories across facets. 
+            # We need to find the unique sequence of X positions.
+            if not chart_df.empty:
+                all_dests = top_dest
+            
+            tick_text = []
+            for i, d in enumerate(all_dests):
+                show_label = False
+                if granularity == 'year':
+                    # Pattern: Unnamed, Named, Unnamed, Unnamed, Named... (Starting index 1)
+                    if (i - 1) % 3 == 0:
+                        show_label = True
+                elif granularity == 'quarter':
+                    # Middle value (assuming ~11-12 dests, index 5/6)
+                    if i == len(all_dests) // 2:
+                        show_label = True
+                elif granularity in ('month', 'day'):
+                    # First and second value
+                    if i in (0, 1):
+                        show_label = True
+                
+                tick_text.append(d if show_label else " ")
+
+            fig.update_xaxes(
+                type='category', 
+                tickangle=-90, 
+                tickfont=dict(size=9), 
+                title=None, 
+                gridcolor='#f0f0f0',
+                tickvals=all_dests,
+                ticktext=tick_text
+            )
             fig.update_yaxes(tickformat="~s", gridcolor='#f0f0f0', nticks=10)
             # Replace lowercase 'k' with 'K' in ticks if possible? 
             # Actually ~s is automatic. Let's try .3s or similar.
