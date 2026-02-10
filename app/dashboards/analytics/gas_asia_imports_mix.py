@@ -284,7 +284,7 @@ def create_layout():
                             'position': 'absolute', 'top': '45px', 'left': '10px', 'zIndex': '10'
                         }),
 
-                        dcc.Loading(dcc.Graph(id='gas-asia-chart-1', config={'displayModeBar': False}, figure={}))
+                        dcc.Loading(dcc.Graph(id='gas-asia-chart-1', config={'displayModeBar': False}, figure={'layout': {}, 'data': []}))
                     ], style={'width': '45%', 'marginRight': '10px', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
 
                     # Chart 2: All Imports by Origin (Bar Chart)
@@ -343,7 +343,7 @@ def create_layout():
                             'position': 'absolute', 'top': '45px', 'left': '10px', 'zIndex': '10'
                         }),
 
-                        dcc.Loading(dcc.Graph(id='gas-asia-chart-2', config={'displayModeBar': False}, figure={}))
+                        dcc.Loading(dcc.Graph(id='gas-asia-chart-2', config={'displayModeBar': False}, figure={'layout': {}, 'data': []}))
                     ], style={'width': '55%', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
                 ], style={'display': 'flex', 'marginBottom': '30px'}),
 
@@ -403,7 +403,7 @@ def create_layout():
                         'position': 'absolute', 'top': '40px', 'left': '60px', 'zIndex': '10'
                     }),
 
-                    dcc.Loading(dcc.Graph(id='gas-asia-chart-3', config={'displayModeBar': False}, figure={}))
+                    dcc.Loading(dcc.Graph(id='gas-asia-chart-3', config={'displayModeBar': False}, figure={'layout': {}, 'data': []}))
                 ], style={'marginBottom': '0px', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
 
             ], style={'flex': '1', 'padding': '10px', 'minWidth': '0'}),
@@ -455,9 +455,9 @@ def create_layout():
                         html.Label("Start Date", style={'fontWeight': 'normal', 'fontSize': '12px', 'color': '#333'}),
                         dcc.Input(
                             id='gas-asia-start-date-picker',
-                            type='date',
+                            type='text',
                             value='2019-01-01',
-                            max=datetime.now().strftime('%Y-%m-%d'),
+                            placeholder='YYYY-MM-DD',
                             style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px'}
                         ),
                     ], style={'marginBottom': '10px'}),
@@ -466,9 +466,9 @@ def create_layout():
                         html.Label("End Date", style={'fontWeight': 'normal', 'fontSize': '12px', 'color': '#333'}),
                         dcc.Input(
                             id='gas-asia-end-date-picker',
-                            type='date',
+                            type='text',
                             value=datetime.now().strftime('%Y-%m-%d'),
-                            max=datetime.now().strftime('%Y-%m-%d'),
+                            placeholder='YYYY-MM-DD',
                             style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px'}
                         ),
                     ], style={'marginBottom': '20px'}),
@@ -618,6 +618,34 @@ def create_layout():
     ], style={'backgroundColor': '#ffffff', 'fontFamily': 'Lato, sans-serif'})
 
 def register_callbacks(dash_app, server):
+    
+    # Clientside callback to convert text inputs to date inputs (bypasses Dash validation)
+    dash_app.clientside_callback(
+        """
+        function() {
+            setTimeout(function() {
+                const startInput = document.getElementById('gas-asia-start-date-picker');
+                const endInput = document.getElementById('gas-asia-end-date-picker');
+                
+                if (startInput && startInput.type === 'text') {
+                    startInput.type = 'date';
+                    const maxDate = new Date().toISOString().split('T')[0];
+                    startInput.max = maxDate;
+                }
+                
+                if (endInput && endInput.type === 'text') {
+                    endInput.type = 'date';
+                    const maxDate = new Date().toISOString().split('T')[0];
+                    endInput.max = maxDate;
+                }
+            }, 100);
+            return null;
+        }
+        """,
+        Output('gas-asia-chart1-selection-store', 'data', allow_duplicate=True),
+        Input('gas-asia-start-date-picker', 'id'),
+        prevent_initial_call='initial_duplicate'
+    )
     
     # Helper function for query parameters
     def get_query_params(destination, start_date, end_date, origins, flow_type, unit):

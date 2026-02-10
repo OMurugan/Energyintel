@@ -159,8 +159,9 @@ def create_layout():
                     html.Label("Start Date", style={'fontSize': '12px', 'fontWeight': 'bold', 'color': EI_DARK_BLUE, 'marginTop': '20px', 'display': 'block', 'marginBottom': '5px'}),
                     dcc.Input(
                         id='gas-country-start-date',
-                        type='date',
+                        type='text',
                         value='2021-01-01',
+                        placeholder='YYYY-MM-DD',
                         className='custom-date-input',
                         style={
                             'width': '100%', 'marginBottom': '10px', 'height': '28px',
@@ -172,8 +173,9 @@ def create_layout():
                     html.Label("End Date", style={'fontSize': '12px', 'fontWeight': 'bold', 'color': EI_DARK_BLUE, 'marginBottom': '5px', 'display': 'block'}),
                     dcc.Input(
                         id='gas-country-end-date',
-                        type='date',
+                        type='text',
                         value='2026-01-09',
+                        placeholder='YYYY-MM-DD',
                         className='custom-date-input',
                         style={
                             'width': '100%', 'marginBottom': '20px', 'height': '28px',
@@ -296,6 +298,32 @@ def create_layout():
 
 def register_callbacks(dash_app, server):
     """Register all callbacks for European Pipeline Flows by Country"""
+
+    # Clientside callback to convert text inputs to date inputs (bypasses Dash validation)
+    dash_app.clientside_callback(
+        """
+        function() {
+            setTimeout(function() {
+                const startInput = document.getElementById('gas-country-start-date');
+                const endInput = document.getElementById('gas-country-end-date');
+                
+                if (startInput && startInput.type === 'text') {
+                    startInput.type = 'date';
+                    startInput.max = new Date().toISOString().split('T')[0];
+                }
+                
+                if (endInput && endInput.type === 'text') {
+                    endInput.type = 'date';
+                    endInput.max = new Date().toISOString().split('T')[0];
+                }
+            }, 100);
+            return null;
+        }
+        """,
+        Output('gas-country-table-enhancer-anchor', 'children', allow_duplicate=True),
+        Input('gas-country-start-date', 'id'),
+        prevent_initial_call='initial_duplicate'
+    )
 
     @dash_app.callback(
         Output('gas-country-dynamic-title', 'children'),

@@ -28,8 +28,8 @@ def hex_to_rgba(hex_color, opacity):
 # Button Styles
 GRAN_BTN_CONTAINER_STYLE = {
     'display': 'flex',
-    'align-items': 'center',
-    'margin-right': '20px'
+    'alignItems': 'center',
+    'marginRight': '20px'
 }
 
 GRAN_BTN_ACTIVE = {

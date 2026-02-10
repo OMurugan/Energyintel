@@ -100,8 +100,8 @@ MAP_COLOR_SCALE = [
 # Granularity Button Styles (from yearly dashboard)
 GRAN_BTN_CONTAINER_STYLE = {
     'display': 'flex',
-    'align-items': 'center',
-    'margin-right': '10px'
+    'alignItems': 'center',
+    'marginRight': '10px'
 }
 
 GRAN_BTN_ACTIVE = {

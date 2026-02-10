@@ -14,8 +14,8 @@ CACHE_DURATION = 300  # 5 minutes cache
 # Button Styles for Granularity Toggles
 GRAN_BTN_CONTAINER_STYLE = {
     'display': 'flex',
-    'align-items': 'center',
-    'margin-right': '20px'
+    'alignItems': 'center',
+    'marginRight': '20px'
 }
 
 GRAN_BTN_ACTIVE = {
@@ -254,19 +254,21 @@ def create_layout():
                     html.Label("Start Date", style={'fontWeight': 'normal', 'fontSize': '12px', 'color': '#333'}),
                     dcc.Input(
                         id='start-date-input',
-                        type='date',
-                        value=min_date_val.strftime('%Y-%m-%d') if pd.notnull(min_date_val) else '2021-01-01',
-                        min=min_date_val.strftime('%Y-%m-%d') if pd.notnull(min_date_val) else '2021-01-01',
-                        max=max_date_val.strftime('%Y-%m-%d') if pd.notnull(max_date_val) else datetime.now().strftime('%Y-%m-%d'),
+                        type='text',
+                        value=min_date_val.strftime('%Y-%m-%d') if pd.notnull(min_date_val) else '2019-01-01',
+                        placeholder='YYYY-MM-DD',
+                        min='2019-01-01',  # Also set standard HTML attribute
+                        max='2030-12-31',
                         style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px', 'marginBottom': '5px'}
                     ),
                     html.Label("End Date", style={'fontWeight': 'normal', 'fontSize': '12px', 'color': '#333'}),
                     dcc.Input(
                         id='end-date-input',
-                        type='date',
+                        type='text',
                         value=max_date_val.strftime('%Y-%m-%d') if pd.notnull(max_date_val) else datetime.now().strftime('%Y-%m-%d'),
-                        min=min_date_val.strftime('%Y-%m-%d') if pd.notnull(min_date_val) else '2021-01-01',
-                        max=max_date_val.strftime('%Y-%m-%d') if pd.notnull(max_date_val) else datetime.now().strftime('%Y-%m-%d'),
+                        placeholder='YYYY-MM-DD',
+                        min='2019-01-01',
+                        max='2030-12-31',
                         style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px', 'marginBottom': '10px'}
                     ),
                     
@@ -396,6 +398,38 @@ def create_layout():
     ], className='tab-content', style={'backgroundColor': '#ffffff', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'})
 
 def register_callbacks(dash_app, server):
+
+    # Clientside callback to convert text inputs to date inputs (bypasses Dash validation)
+    dash_app.clientside_callback(
+        """
+        function() {
+            setTimeout(function() {
+                const startInput = document.getElementById('start-date-input');
+                const endInput = document.getElementById('end-date-input');
+                
+                if (startInput && startInput.type === 'text') {
+                    startInput.type = 'date';
+                    const minDate = startInput.getAttribute('data-min') || '2019-01-01';
+                    const maxDate = new Date().toISOString().split('T')[0];
+                    startInput.min = minDate;
+                    startInput.max = maxDate;
+                }
+                
+                if (endInput && endInput.type === 'text') {
+                    endInput.type = 'date';
+                    const minDate = endInput.getAttribute('data-min') || '2019-01-01';
+                    const maxDate = new Date().toISOString().split('T')[0];
+                    endInput.min = minDate;
+                    endInput.max = maxDate;
+                }
+            }, 100);
+            return null;
+        }
+        """,
+        Output('lng-table-highlight-state', 'data', allow_duplicate=True),
+        Input('start-date-input', 'id'),
+        prevent_initial_call='initial_duplicate'
+    )
 
     # Chart Granularity Toggle
     @dash_app.callback(
@@ -778,8 +812,8 @@ def register_callbacks(dash_app, server):
          Output('lng-imports-table-container', 'children')],
         [Input('country-checklist', 'value'),
          Input('terminal-checklist', 'value'),
-         Input('start-date-input', 'date'),
-         Input('end-date-input', 'date'),
+         Input('start-date-input', 'value'),
+         Input('end-date-input', 'value'),
          Input('selected-terminals-store', 'data'),
          Input('lng-chart-granularity-store', 'data'),
          Input('lng-table-granularity-store', 'data'),
@@ -1086,7 +1120,7 @@ def register_callbacks(dash_app, server):
                     pivot_table = pivot_table.sort_values('Time_Sort', ascending=False)
                     
                     # Construct columns for dash_table
-                    columns = [{"name": ["", "Period"], "id": "Time_Label"}]
+                    columns = [{"name": ["", ""], "id": "Time_Label"}]
                     
                     for country in sorted(table_df['Target Country'].unique()):
                         terminals_in_country = sorted(table_df[table_df['Target Country'] == country]['Point'].unique())
@@ -1096,7 +1130,11 @@ def register_callbacks(dash_app, server):
                     
                     data_rows = []
                     for _, row in pivot_table.iterrows():
-                        d = {"Time_Label": row["Time_Label"]}
+                        time_val = row["Time_Label"]
+                        # specific fix for MultiIndex columns causing Series return
+                        if hasattr(time_val, 'iloc'):
+                            time_val = time_val.iloc[0]
+                        d = {"Time_Label": str(time_val)}
                         for col in columns[1:]:
                             c_name, t_name = col["name"]
                             try:
@@ -1154,8 +1192,8 @@ def register_callbacks(dash_app, server):
         Input("export-lng-chart-btn", "n_clicks"),
         [State('country-checklist', 'value'),
          State('terminal-checklist', 'value'),
-         State('start-date-input', 'date'),
-         State('end-date-input', 'date')],
+         State('start-date-input', 'value'),
+         State('end-date-input', 'value')],
         prevent_initial_call=True,
     )
     def export_chart_data(n_clicks, selected_countries, selected_terminals, start_date, end_date):
@@ -1234,8 +1272,8 @@ def register_callbacks(dash_app, server):
         Input("export-lng-table-btn", "n_clicks"),
         [State('country-checklist', 'value'),
          State('terminal-checklist', 'value'),
-         State('start-date-input', 'date'),
-         State('end-date-input', 'date'),
+         State('start-date-input', 'value'),
+         State('end-date-input', 'value'),
          State('selected-terminals-store', 'data')],
         prevent_initial_call=True,
     )

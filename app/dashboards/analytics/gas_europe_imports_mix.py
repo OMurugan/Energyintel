@@ -314,10 +314,10 @@ def create_layout():
                     ], style={
                         'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
                         'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '0px',
-                        'position': 'absolute', 'top': '40px', 'left': '60px', 'zIndex': '10'
+                        'position': 'relative', 'top': '0px', 'left': '20px', 'zIndex': '10'
                     }),
 
-                    dcc.Loading(dcc.Graph(id='chart-1', config={'displayModeBar': False}, figure={}))
+                    dcc.Loading(dcc.Graph(id='chart-1', config={'displayModeBar': False}, figure={'layout': {'xaxis': {'visible': False}, 'yaxis': {'visible': False}, 'plot_bgcolor': 'white', 'paper_bgcolor': 'white', 'height': 350}}))
                 ], style={'marginBottom': '30px', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
 
                 # Chart 2
@@ -377,10 +377,10 @@ def create_layout():
                     ], style={
                         'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
                         'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '0px',
-                        'position': 'absolute', 'top': '40px', 'left': '60px', 'zIndex': '10'
+                        'position': 'relative', 'top': '0px', 'left': '20px', 'zIndex': '10'
                     }),
 
-                    dcc.Loading(dcc.Graph(id='chart-2', config={'displayModeBar': False}, figure={}))
+                    dcc.Loading(dcc.Graph(id='chart-2', config={'displayModeBar': False}, figure={'layout': {'xaxis': {'visible': False}, 'yaxis': {'visible': False}, 'plot_bgcolor': 'white', 'paper_bgcolor': 'white', 'height': 360}}))
                 ], style={'marginBottom': '30px', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
 
                 # Chart 3
@@ -399,7 +399,7 @@ def create_layout():
                             "fontWeight": "normal",
                         })
                     ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
-                    dcc.Loading(dcc.Graph(id='chart-3', config={'displayModeBar': False}, figure={}))
+                    dcc.Loading(dcc.Graph(id='chart-3', config={'displayModeBar': False}, figure={'layout': {'xaxis': {'visible': False}, 'yaxis': {'visible': False}, 'plot_bgcolor': 'white', 'paper_bgcolor': 'white', 'height': 280}}))
                 ], style={'marginBottom': '30px', 'backgroundColor': 'white', 'padding': '10px'}),
 
                 # Chart 4 (Table)
@@ -545,9 +545,9 @@ def create_layout():
                         html.Label("Start Date", style={'fontWeight': 'normal', 'fontSize': '12px', 'color': '#333'}),
                         dcc.Input(
                             id='start-date-picker',
-                            type='date',
+                            type='text',
                             value='2021-01-01',
-                            max=datetime.now().strftime('%Y-%m-%d'),
+                            placeholder='YYYY-MM-DD',
                             style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px'}
                         ),
                     ], style={'marginBottom': '10px'}),
@@ -556,9 +556,9 @@ def create_layout():
                         html.Label("End Date", style={'fontWeight': 'normal', 'fontSize': '12px', 'color': '#333'}),
                         dcc.Input(
                             id='end-date-picker',
-                            type='date',
+                            type='text',
                             value=datetime.now().strftime('%Y-%m-%d'),
-                            max=datetime.now().strftime('%Y-%m-%d'),
+                            placeholder='YYYY-MM-DD',
                             style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px'}
                         ),
                     ], style={'marginBottom': '20px'}),
@@ -623,6 +623,32 @@ def create_layout():
     ], style={'backgroundColor': '#ffffff', 'fontFamily': 'Lato, sans-serif'})
 
 def register_callbacks(dash_app, server):
+    
+    # Clientside callback to convert text inputs to date inputs (bypasses Dash validation)
+    dash_app.clientside_callback(
+        """
+        function() {
+            setTimeout(function() {
+                const startInput = document.getElementById('start-date-picker');
+                const endInput = document.getElementById('end-date-picker');
+                
+                if (startInput && startInput.type === 'text') {
+                    startInput.type = 'date';
+                    startInput.max = new Date().toISOString().split('T')[0];
+                }
+                
+                if (endInput && endInput.type === 'text') {
+                    endInput.type = 'date';
+                    endInput.max = new Date().toISOString().split('T')[0];
+                }
+            }, 100);
+            return null;
+        }
+        """,
+        Output('table-side-dummy-output', 'children', allow_duplicate=True),
+        Input('start-date-picker', 'id'),
+        prevent_initial_call='initial_duplicate'
+    )
     
     # Callback to handle legend item clicks
     @dash_app.callback(
