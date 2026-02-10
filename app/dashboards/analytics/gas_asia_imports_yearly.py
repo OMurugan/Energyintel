@@ -191,7 +191,7 @@ def create_layout():
                 html.Div([
                     # Chart Section
                     html.Div([
-                        html.H3("All Imports by Origin (Bcm)", style={
+                        html.H3(id='asia-imports-origin-chart-title', children="All Imports by Origin (Bcm)", style={
                             'color': EI_ORANGE, 'fontSize': '18px', 'fontWeight': 'normal', 
                             'margin': '10px 0', 'fontFamily': 'Lato, sans-serif'
                         }),
@@ -434,6 +434,7 @@ def register_callbacks(dash_app, server):
 
     @dash_app.callback(
         [Output('asia-imports-bar-chart', 'figure'),
+         Output('asia-imports-origin-chart-title', 'children'),
          Output('asia-chart-container', 'style'),
          Output('asia-map-container', 'style')],
         [Input('asia-unit-filter', 'value'),
@@ -443,13 +444,14 @@ def register_callbacks(dash_app, server):
          Input('asia-chart-granularity-store', 'data')]
     )
     def update_asia_bar_chart(unit, flow_type, origin, destination, granularity):
+        chart_title = f"All Imports by Origin ({unit})"
         # Default styles (50/50 split)
         chart_style = {'width': '50%', 'padding': '10px', 'backgroundColor': 'white'}
         map_style = {'width': '50%', 'padding': '10px', 'backgroundColor': 'white'}
         
         # Unit and Scale
-        chart_data_unit = 'Mcm' if unit == 'Bcm' else 'kWh'
-        chart_scale = 1000.0 if unit == 'Bcm' else 1000000.0
+        chart_data_unit = 'Mcm' if unit == 'Bcm' else 'GWh'
+        chart_scale = 1000.0 if unit == 'Bcm' else 1.0
         
         # Broaden chart for Month/Day views
         if granularity in ('month', 'day'):
@@ -579,17 +581,17 @@ def register_callbacks(dash_app, server):
 
             # Tooltip Fig 3 / 4 style
             def get_hovertemplate(gran):
-                base = "Origin: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{fullData.name}</b><br>"
+                base = "Origin: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{fullData.name}</b><br>"
                 base += "Destination: &nbsp;&nbsp;&nbsp;&nbsp;<b>%{x}</b><br>"
                 base += "Year of Date: &nbsp;&nbsp;<b>%{customdata[0]}</b><br>"
                 if gran in ('quarter', 'month', 'day'):
-                    base += "Quarter: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[1]}</b><br>"
+                    base += "Quarter: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[1]}</b><br>"
                 if gran in ('month', 'day'):
                     base += "Month: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[2]}</b><br>"
                 if gran == 'day':
-                    base += "Day: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[3]}</b><br>"
-                base += "Unit: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[4]}</b><br>"
-                base += "Value: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{y:.2f}</b><extra></extra>"
+                    base += "Day: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[3]}</b><br>"
+                base += "Unit: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[4]}</b><br>"
+                base += "Value: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{y:,.0f}</b><extra></extra>"
                 return base
 
             fig.update_traces(hovertemplate=get_hovertemplate(granularity))
@@ -608,8 +610,10 @@ def register_callbacks(dash_app, server):
                 yaxis=dict(autorange=True)
             )
 
-            fig.update_xaxes(type='category', tickangle=-90, tickfont=dict(size=9), title=None)
-            fig.update_yaxes(tickformat=".1f", gridcolor='#f0f0f0')
+            fig.update_xaxes(type='category', tickangle=-90, tickfont=dict(size=9), title=None, gridcolor='#f0f0f0')
+            fig.update_yaxes(tickformat="~s", gridcolor='#f0f0f0', nticks=10)
+            # Replace lowercase 'k' with 'K' in ticks if possible? 
+            # Actually ~s is automatic. Let's try .3s or similar.
 
             # Triple Headers Logic (Fig 2 sketch)
             seen_years = {}
@@ -648,12 +652,12 @@ def register_callbacks(dash_app, server):
                     pass
 
             fig.for_each_annotation(format_annotation)
-            return fig, chart_style, map_style
+            return fig, chart_title, chart_style, map_style
             
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return go.Figure(), chart_style, map_style
+            return go.Figure(), chart_title, chart_style, map_style
 
     @dash_app.callback(
         [Output('asia-imports-yearly-map', 'figure'),
@@ -776,12 +780,12 @@ def register_callbacks(dash_app, server):
                 marker_opacity=0.8,
                 marker_line_width=0.5,
                 marker_line_color='white',
-                # Custom Hover Template to match Fig 1
+                # Custom Hover Template
                 hovertemplate=(
                     "Origin: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[0]}</b><br>"
-                    "Year of Date: &nbsp;&nbsp;&nbsp;<b>2025</b><br>"
+                    "Year of Date: &nbsp;&nbsp;<b>2025</b><br>"
                     "Value: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{z:,.2f}</b><br>"
-                    f"Unit: <b>{unit}</b><extra></extra>"
+                    f"Unit: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{unit}</b><extra></extra>"
                 ),
                 customdata=df[['origin']].values.tolist(),
                 name="countries"
@@ -1130,7 +1134,7 @@ def register_callbacks(dash_app, server):
 
     @dash_app.callback(
         Output('asia-origin-legend-items', 'children'),
-        [Input('asia-imports-bar-chart', 'figure')]
+        Input('asia-imports-bar-chart', 'figure')
     )
     def update_asia_legend(fig):
         print("Asia: update_asia_legend started")
