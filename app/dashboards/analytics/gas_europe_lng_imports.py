@@ -246,30 +246,28 @@ def create_layout():
                             'borderRadius': '6px',
                             'background': 'white',
                         }
-                    ),
+                    ),                    
                     
-                    html.Label("Start Date", style={'fontWeight': 'normal', 'color': '#555', 'fontSize': '13px', 'marginBottom': '5px'}),
-                    dcc.DatePickerSingle(
+                ], style={'marginBottom': '10px'}),
+
+                html.Div([
+                    html.Label("Start Date", style={'fontWeight': 'normal', 'fontSize': '12px', 'color': '#333'}),
+                    dcc.Input(
                         id='start-date-input',
-                        date=min_date_val.date() if pd.notnull(min_date_val) else pd.Timestamp('2021-01-01').date(),
-                        min_date_allowed=min_date_val.date() if pd.notnull(min_date_val) else pd.Timestamp('2021-01-01').date(),
-                        max_date_allowed=max_date_val.date() if pd.notnull(max_date_val) else pd.Timestamp('2026-01-01').date(),
-                        display_format='M/D/YYYY',
-                        placeholder='Select start date',
-                        style={'width': '100%', 'marginBottom': '15px', 'fontSize': '12px'},
-                        className='custom-date-picker'
+                        type='date',
+                        value=min_date_val.strftime('%Y-%m-%d') if pd.notnull(min_date_val) else '2021-01-01',
+                        min=min_date_val.strftime('%Y-%m-%d') if pd.notnull(min_date_val) else '2021-01-01',
+                        max=max_date_val.strftime('%Y-%m-%d') if pd.notnull(max_date_val) else datetime.now().strftime('%Y-%m-%d'),
+                        style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px', 'marginBottom': '5px'}
                     ),
-                    
-                    html.Label("End Date", style={'fontWeight': 'normal', 'color': '#555', 'fontSize': '13px', 'marginBottom': '5px'}),
-                    dcc.DatePickerSingle(
+                    html.Label("End Date", style={'fontWeight': 'normal', 'fontSize': '12px', 'color': '#333'}),
+                    dcc.Input(
                         id='end-date-input',
-                        date=max_date_val.date() if pd.notnull(max_date_val) else pd.Timestamp('2026-01-01').date(),
-                        min_date_allowed=min_date_val.date() if pd.notnull(min_date_val) else pd.Timestamp('2021-01-01').date(),
-                        max_date_allowed=max_date_val.date() if pd.notnull(max_date_val) else pd.Timestamp('2026-01-01').date(),
-                        display_format='M/D/YYYY',
-                        placeholder='Select end date',
-                        style={'width': '100%', 'marginBottom': '15px', 'fontSize': '12px'},
-                        className='custom-date-picker'
+                        type='date',
+                        value=max_date_val.strftime('%Y-%m-%d') if pd.notnull(max_date_val) else datetime.now().strftime('%Y-%m-%d'),
+                        min=min_date_val.strftime('%Y-%m-%d') if pd.notnull(min_date_val) else '2021-01-01',
+                        max=max_date_val.strftime('%Y-%m-%d') if pd.notnull(max_date_val) else datetime.now().strftime('%Y-%m-%d'),
+                        style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px', 'marginBottom': '10px'}
                     ),
                     
                     html.Label("Point", style={'fontWeight': 'bold', 'color': '#555', 'fontSize': '13px', 'marginBottom': '10px'}),
