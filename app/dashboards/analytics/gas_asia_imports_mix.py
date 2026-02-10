@@ -285,7 +285,7 @@ def create_layout():
                         }),
 
                         dcc.Loading(dcc.Graph(id='gas-asia-chart-1', config={'displayModeBar': False}, figure={}))
-                    ], style={'width': '40%', 'marginRight': '10px', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
+                    ], style={'width': '45%', 'marginRight': '10px', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
 
                     # Chart 2: All Imports by Origin (Bar Chart)
                     html.Div([
@@ -344,7 +344,7 @@ def create_layout():
                         }),
 
                         dcc.Loading(dcc.Graph(id='gas-asia-chart-2', config={'displayModeBar': False}, figure={}))
-                    ], style={'width': '60%', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
+                    ], style={'width': '55%', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
                 ], style={'display': 'flex', 'marginBottom': '30px'}),
 
                 # Row 2: Flow Type Bar Chart
@@ -1221,19 +1221,20 @@ def register_callbacks(dash_app, server):
          Input('gas-asia-start-date-picker', 'value'),
          Input('gas-asia-end-date-picker', 'value'),
          Input('gas-asia-selected-origins-store', 'data'),
+         Input('gas-asia-flow-type-filter', 'value'),
          Input('gas-asia-unit-filter', 'value'),
          Input('gas-asia-chart2-agg-state', 'data'),
          Input('gas-asia-chart2-selection-store', 'data')]
     )
-    def update_chart_2(destination, start_date, end_date, origins, unit, agg_mode, selection):
+    def update_chart_2(destination, start_date, end_date, origins, flow_type, unit, agg_mode, selection):
         try:
-            where_clause, region_clause, dest_clause, params, origins_filtered, _, scale = get_query_params(
-                destination, start_date, end_date, origins, 'LNG', unit
+            where_clause, region_clause, dest_clause, params, origins_filtered, flow_filtered, scale = get_query_params(
+                destination, start_date, end_date, origins, flow_type, unit
             )
             
             agg_mode = (agg_mode or 'MONTHLY').upper()
             
-            if not origins_filtered:
+            if not origins_filtered or not flow_filtered:
                 return {'layout': {'xaxis': {'visible': False}, 'yaxis': {'visible': False}, 
                                   'plot_bgcolor': 'white', 'paper_bgcolor': 'white', 'height': 300}}
             
@@ -1254,13 +1255,13 @@ def register_callbacks(dash_app, server):
             FROM dev.glng_gas_trade tr
             LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
             {where_clause} {region_clause} {dest_clause}
-            AND tr.flow_type ILIKE 'lng'
+            AND LOWER(tr.flow_type) IN :flow_types
             AND tr.source_country IN :origins
             GROUP BY {time_sql}, tr.source_country
             ORDER BY tr.source_country DESC, {time_sql} DESC;
             """
             
-            c2_df = load_data(c2_query, {**params, 'origins': tuple(origins_filtered), 'scale': scale})
+            c2_df = load_data(c2_query, {**params, 'origins': tuple(origins_filtered), 'flow_types': tuple(flow_filtered), 'scale': scale})
             if c2_df.empty:
                 return {'layout': {'xaxis': {'visible': False}, 'yaxis': {'visible': False}, 
                                   'plot_bgcolor': 'white', 'paper_bgcolor': 'white', 'height': 350}}
@@ -1967,16 +1968,17 @@ def register_callbacks(dash_app, server):
          State('gas-asia-start-date-picker', 'value'),
          State('gas-asia-end-date-picker', 'value'),
          State('gas-asia-selected-origins-store', 'data'),
+         State('gas-asia-flow-type-filter', 'value'),
          State('gas-asia-unit-filter', 'value'),
          State('gas-asia-chart2-agg-state', 'data')],
         prevent_initial_call=True
     )
-    def export_chart2_csv(n_clicks, destination, start_date, end_date, origins, unit, agg_mode):
+    def export_chart2_csv(n_clicks, destination, start_date, end_date, origins, flow_type, unit, agg_mode):
         if n_clicks is None or n_clicks == 0:
             return no_update
 
-        where_clause, region_clause, dest_clause, params, origins_filtered, _, scale = get_query_params(
-            destination, start_date, end_date, origins, 'LNG', unit
+        where_clause, region_clause, dest_clause, params, origins_filtered, flow_filtered, scale = get_query_params(
+            destination, start_date, end_date, origins, flow_type, unit
         )
         
         agg_mode = (agg_mode or 'MONTHLY').upper()
@@ -2002,12 +2004,12 @@ def register_callbacks(dash_app, server):
         FROM dev.glng_gas_trade tr
         LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
         {where_clause} {region_clause} {dest_clause}
-        AND tr.flow_type ILIKE 'lng'
+        AND LOWER(tr.flow_type) IN :flow_types
         AND tr.source_country IN :origins
         GROUP BY {time_sql}, tr.source_country
         ORDER BY {time_sql};
         """
-        df = load_data(c2_query, {**params, 'origins': tuple(origins_filtered), 'scale': scale})
+        df = load_data(c2_query, {**params, 'origins': tuple(origins_filtered), 'flow_types': tuple(flow_filtered), 'scale': scale})
         return dcc.send_data_frame(df.to_csv, "asian_gas_imports_by_origin.csv", index=False)
 
     @dash_app.callback(
