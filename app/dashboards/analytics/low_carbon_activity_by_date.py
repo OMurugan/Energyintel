@@ -115,21 +115,16 @@ COLOR_PALETTE = {
 }
 
 SIDEBAR_STYLE = {
-    "position": "fixed",
-    "top": 0,
-    "right": 0,
-    "bottom": 0,
-    "width": "16rem",
+    "width": "12rem",
     "padding": "2rem 1rem",
-    "backgroundColor": "#f8f9fa",
-    "borderLeft": "1px solid #dee2e6",
-    "overflowY": "auto",
-    "zIndex": 1000
+    "backgroundColor": "transparent",
+    "flexShrink": 0
 }
 
 CONTENT_STYLE = {
-    "marginRight": "17rem",
+    "flex": 1,
     "padding": "2rem 1rem",
+    "minWidth": 0
 }
 
 # -----------------------------------------------------------------------------
@@ -145,95 +140,103 @@ def create_layout():
         dcc.Store(id='lcad-status-prev-store'), # Tracks previous status values
         dcc.Store(id='lcad-inv-type-prev-store'), # Tracks previous inv type values
 
-        # Sidebar (Controls)
+        # Main Layout (Natural Scrolling)
         html.Div([
-            
-            html.Label("Aggregation Interval", className="fw-bold mb-0", style={'fontSize': '11px'}),
-            dcc.Dropdown(
-                id='lcad-interval-dropdown',
-                options=[
-                    {'label': 'Yearly', 'value': 'YEARLY'},
-                    {'label': 'Quarterly', 'value': 'QUARTERLY'}
-                ],
-                value='YEARLY',
-                clearable=False,
-                style={'marginBottom': '10px', 'fontSize': '12px', 'minHeight': '28px', 'height': '28px'},
-            ),
-
-            html.Label("Breakdown", className="fw-bold mb-0", style={'fontSize': '11px'}),
-            dcc.Dropdown(
-                id='lcad-breakdown-dropdown',
-                options=[
-                    {'label': 'Project Category', 'value': 'Project Category'},
-                    {'label': 'Peer Group', 'value': 'Peer Group'}
-                ],
-                value='Project Category',
-                clearable=False,
-                style={'marginBottom': '10px', 'fontSize': '12px', 'minHeight': '28px', 'height': '28px'}
-            ),
-
-            html.Label("Measure", className="fw-bold mb-0", style={'fontSize': '11px'}),
-            dcc.Dropdown(
-                id='lcad-measure-dropdown',
-                options=[
-                    {'label': 'Investment Value', 'value': 'investment_value'},
-                    {'label': 'Investment Count', 'value': 'investment_count'}
-                ],
-                value='investment_value',
-                clearable=False,
-                style={'marginBottom': '10px', 'fontSize': '12px', 'minHeight': '28px', 'height': '28px'}
-            ),
-
-            html.Label("Status", className="fw-bold mb-0", style={'fontSize': '11px'}),
-            dcc.Checklist(
-                id='lcad-status-checklist',
-                options=[],
-                value=[],
-                style={'marginBottom': '10px', 'maxHeight': '150px', 'overflowY': 'auto', 'fontSize': '12px'},
-                inputStyle={"marginRight": "4px", "accentColor": "#555"},
-                labelStyle={"display": "block", "marginBottom": "2px"}
-            ),
-
-            html.Label("Investment Type", className="fw-bold mb-0", style={'fontSize': '11px'}),
-            dcc.Checklist(
-                id='lcad-investment-type-checklist',
-                options=[],
-                value=[],
-                style={'marginBottom': '10px', 'maxHeight': '200px', 'overflowY': 'auto', 'fontSize': '12px'},
-                inputStyle={"marginRight": "4px", "accentColor": "#555"},
-                labelStyle={"display": "block", "marginBottom": "2px"}
-            ),
-
-        ], style=SIDEBAR_STYLE),
-
-        # Main Content
-        html.Div([
-            html.H2(id='lcad-chart-title', style={'color': '#FF5A09', 'fontWeight': 'bold', 'marginBottom': '10px', 'fontFamily': 'Georgia, serif'}),
-            html.Hr(),
-            
-            dcc.Loading(
-                id="loading-chart",
-                type="circle",
-                children=[
-                    dcc.Graph(
-                        id='lcad-chart',
-                        config={'displayModeBar': False},
-                        style={'height': '105vh'}
-                    )
-                ]
-            ),
+            # 1. Main Content (Left)
             html.Div([
-                html.P("Source: Energy Intelligence, Low-Carbon Investment Tracker. Data as of Q4 2025.", style={'fontSize': '11px', 'color': 'gray', 'margin': '0'}),
-                html.P("Covers activity by leading oil and gas firms, tracked by date initially announced or approved. Reported or estimated value is net for companies tracked. For more information see methodology.", style={'fontSize': '11px', 'color': 'gray', 'marginTop': '2px'}),
-                html.A("Go To Low-Carbon Investment Tracker", href="#", style={'fontSize': '12px', 'color': '#006BA4', 'textDecoration': 'underline', 'float': 'right', 'marginTop': '-20px'})
-            ], style={'marginTop': '10px', 'borderTop': '1px solid #eee', 'paddingTop': '10px'}),
-            
-            # Hidden components for X-Axis Click Listening
-            dcc.Input(id='lcad-axis-click-trigger', type='text', style={'display': 'none'}),
-            html.Div(id='lcad-axis-listener-output', style={'display': 'none'})
-            
-        ], style=CONTENT_STYLE)
-    ])
+                html.H2(id='lcad-chart-title', style={'color': '#FF5A09', 'fontWeight': 'bold', 'marginBottom': '10px', 'fontFamily': 'Georgia, serif'}),
+                
+                dcc.Loading(
+                    id="loading-chart",
+                    type="circle",
+                    children=[
+                        dcc.Graph(
+                            id='lcad-chart',
+                            config={'displayModeBar': False},
+                            style={'height': '105vh'}
+                        )
+                    ]
+                ),
+                html.Div([
+                    html.P("Source: Energy Intelligence, Low-Carbon Investment Tracker. Data as of Q4 2025.", 
+                           style={'fontSize': '10px', 'color': '#666', 'margin': '0'}),
+                    html.P([
+                        "Covers activity by leading oil and gas firms, tracked by date initially announced or approved. Reported or estimated value is net for companies tracked. For more information see methodology. ",
+                        html.A("Go To Low-Carbon Investment Tracker", 
+                               href="https://www.energyintel.com/low-carbon-energy-data#low-carbon-investment-data", 
+                               target="_blank",
+                               style={'fontSize': '10px', 'color': '#006BA4', 'textDecoration': 'underline'})
+                    ], style={'fontSize': '10px', 'color': '#666', 'marginTop': '1px', 'lineHeight': '1.2'}),
+                ], style={'marginTop': '10px'}),
+                
+                # Hidden components for X-Axis Click Listening
+                dcc.Input(id='lcad-axis-click-trigger', type='text', style={'display': 'none'}),
+                html.Div(id='lcad-axis-listener-output', style={'display': 'none'})
+                
+            ], style=CONTENT_STYLE),
+
+            # 2. Sidebar (Right)
+            html.Div([
+                
+                html.Label("Aggregation Interval", className="fw-bold mb-0", style={'fontSize': '11px'}),
+                dcc.Dropdown(
+                    id='lcad-interval-dropdown',
+                    options=[
+                        {'label': 'Yearly', 'value': 'YEARLY'},
+                        {'label': 'Quarterly', 'value': 'QUARTERLY'}
+                    ],
+                    value='YEARLY',
+                    clearable=False,
+                    style={'marginBottom': '8px', 'fontSize': '11px', 'minHeight': '24px', 'height': '20px', 'width': '180px'},
+                ),
+
+                html.Label("Breakdown", className="fw-bold mb-0", style={'fontSize': '11px'}),
+                dcc.Dropdown(
+                    id='lcad-breakdown-dropdown',
+                    options=[
+                        {'label': 'Project Category', 'value': 'Project Category'},
+                        {'label': 'Peer Group', 'value': 'Peer Group'}
+                    ],
+                    value='Project Category',
+                    clearable=False,
+                    style={'marginBottom': '8px', 'fontSize': '11px', 'minHeight': '24px', 'height': '24px', 'width': '180px'}
+                ),
+
+                html.Label("Measure", className="fw-bold mb-0", style={'fontSize': '11px'}),
+                dcc.Dropdown(
+                    id='lcad-measure-dropdown',
+                    options=[
+                        {'label': 'Investment Value', 'value': 'investment_value'},
+                        {'label': 'Investment Count', 'value': 'investment_count'}
+                    ],
+                    value='investment_value',
+                    clearable=False,
+                    style={'marginBottom': '8px', 'fontSize': '11px', 'minHeight': '24px', 'height': '24px', 'width': '180px'}
+                ),
+
+                html.Label("Status", className="fw-bold mb-0", style={'fontSize': '11px'}),
+                dcc.Checklist(
+                    id='lcad-status-checklist',
+                    options=[],
+                    value=[],
+                    style={'marginBottom': '10px', 'maxHeight': '150px', 'overflowY': 'auto', 'fontSize': '12px'},
+                    inputStyle={"marginRight": "4px", "accentColor": "#555"},
+                    labelStyle={"display": "block", "marginBottom": "2px"}
+                ),
+
+                html.Label("Investment Type", className="fw-bold mb-0", style={'fontSize': '11px'}),
+                dcc.Checklist(
+                    id='lcad-investment-type-checklist',
+                    options=[],
+                    value=[],
+                    style={'marginBottom': '10px', 'maxHeight': '200px', 'overflowY': 'auto', 'fontSize': '12px'},
+                    inputStyle={"marginRight": "4px", "accentColor": "#555"},
+                    labelStyle={"display": "block", "marginBottom": "2px"}
+                ),
+
+            ], style=SIDEBAR_STYLE),
+        ], style={'display': 'flex', 'flexDirection': 'row', 'width': '100%'})
+    ], style={'backgroundColor': 'white', 'minHeight': '100vh'})
 
 
 # -----------------------------------------------------------------------------
@@ -800,6 +803,7 @@ def register_callbacks(app, server):
                 ),
                 yaxis=dict(
                     title=measure.replace('_', ' ').title(),
+                    showgrid=False,
                     gridcolor='#eeeeee',
                     zeroline=True,
                     zerolinecolor='#eee',
