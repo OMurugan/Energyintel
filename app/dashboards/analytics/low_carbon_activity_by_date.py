@@ -187,6 +187,7 @@ def create_layout():
                     ],
                     value='YEARLY',
                     clearable=False,
+                    searchable=False,
                     style={'marginBottom': '8px', 'fontSize': '11px', 'minHeight': '24px', 'height': '20px', 'width': '180px'},
                 ),
 
@@ -199,6 +200,7 @@ def create_layout():
                     ],
                     value='Project Category',
                     clearable=False,
+                    searchable=False,
                     style={'marginBottom': '8px', 'fontSize': '11px', 'minHeight': '24px', 'height': '24px', 'width': '180px'}
                 ),
 
@@ -211,6 +213,7 @@ def create_layout():
                     ],
                     value='investment_value',
                     clearable=False,
+                    searchable=False,
                     style={'marginBottom': '8px', 'fontSize': '11px', 'minHeight': '24px', 'height': '24px', 'width': '180px'}
                 ),
 
