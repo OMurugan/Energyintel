@@ -174,8 +174,10 @@ def create_layout():
     return html.Div([
         # Selection stores
         dcc.Store(id='gas-asia-period-store', data='YEARLY'),
+        dcc.Store(id='asia-map-selection-store', data=None),  # Independent map selection
         dcc.Store(id='asia-chart-granularity-store', data='year'),
         dcc.Store(id='asia-table-granularity-store', data='YEARLY'),
+        dcc.Store(id='asia-chart-selection-store', data=None),
         
         # Download components
         dcc.Download(id="download-asia-imports-chart-csv"),
@@ -211,7 +213,7 @@ def create_layout():
                                 config={'displayModeBar': False}
                             )
                         )
-                    ], id='asia-chart-container', style={'width': '50%', 'padding': '10px', 'backgroundColor': 'white'}),
+                    ], id='asia-chart-container', style={'width': '50%', 'padding': '10px', 'backgroundColor': 'white', 'cursor': 'pointer'}, n_clicks=0),
                     
                     # Map Section
                     html.Div([
@@ -315,6 +317,40 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register all callbacks for Asian Yearly Imports"""
     
+    @dash_app.callback(
+        Output('asia-chart-selection-store', 'data'),
+        [Input('asia-imports-bar-chart', 'clickData'),
+         Input('asia-chart-container', 'n_clicks')],
+        [State('asia-chart-selection-store', 'data')],
+        prevent_initial_call=True
+    )
+    def toggle_asia_chart_selection(click_data, n_clicks_bg, current_sel):
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            return no_update
+            
+        triggered_id = ctx.triggered[0]['prop_id']
+        
+        # Background click -> Reset
+        if 'asia-chart-container.n_clicks' in triggered_id:
+            return None
+            
+        # Chart click
+        if 'asia-imports-bar-chart.clickData' in triggered_id and click_data:
+            point = click_data['points'][0]
+            # Identify the bar by Destination (x) and Facet (customdata index 5)
+            facet = ""
+            if 'customdata' in point and len(point['customdata']) > 5:
+                facet = point['customdata'][5]
+            
+            new_sel = {'dest': point['x'], 'facet': facet}
+            
+            if current_sel and current_sel.get('dest') == new_sel['dest'] and current_sel.get('facet') == new_sel['facet']:
+                return None
+            return new_sel
+            
+        return no_update
+
     @dash_app.callback(
         [Output('asia-destination-dropdown', 'options'),
          Output('asia-origin-dropdown', 'options')],
@@ -449,9 +485,10 @@ def register_callbacks(dash_app, server):
          Input('asia-flow-type-filter', 'value'),
          Input('asia-origin-dropdown', 'value'),
          Input('asia-destination-dropdown', 'value'),
-         Input('asia-chart-granularity-store', 'data')]
+         Input('asia-chart-granularity-store', 'data'),
+         Input('asia-chart-selection-store', 'data')]
     )
-    def update_asia_bar_chart(unit, flow_type, origin, destination, granularity):
+    def update_asia_bar_chart(unit, flow_type, origin, destination, granularity, selection):
         chart_title = f"All Imports by Origin ({unit})"
         # Default styles (50/50 split)
         chart_style = {'width': '50%', 'padding': '10px', 'backgroundColor': 'white'}
@@ -580,7 +617,7 @@ def register_callbacks(dash_app, server):
                 facet_col_spacing=f_spacing,
                 color_discrete_map=ORIGIN_COLORS,
                 category_orders={'Destination': top_dest, 'Facet_Key': facet_categories},
-                hover_data=['Year of Date', 'Quarter of Date', 'Month of Date', 'Day of Date', 'Unit'],
+                hover_data=['Year of Date', 'Quarter of Date', 'Month of Date', 'Day of Date', 'Unit', 'Facet_Key'],
                 template='plotly_white'
             )
 
@@ -589,20 +626,49 @@ def register_callbacks(dash_app, server):
 
             # Tooltip Fig 3 / 4 style
             def get_hovertemplate(gran):
-                base = "Origin: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{fullData.name}</b><br>"
-                base += "Destination: &nbsp;&nbsp;&nbsp;&nbsp;<b>%{x}</b><br>"
-                base += "Year of Date: &nbsp;&nbsp;<b>%{customdata[0]}</b><br>"
+                lbl_color = "#888"
+                val_color = "#333"
+                
+                base = f"<span style='color: {lbl_color}'>Origin:</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{fullData.name}}</span><br>"
+                base += f"<span style='color: {lbl_color}'>Destination:</span> &nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{x}}</span><br>"
+                base += f"<span style='color: {lbl_color}'>Year of Date:</span> &nbsp;&nbsp;<span style='color: {val_color}'>%{{customdata[0]}}</span><br>"
+                
                 if gran in ('quarter', 'month', 'day'):
-                    base += "Quarter: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[1]}</b><br>"
+                    base += f"<span style='color: {lbl_color}'>Quarter:</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{customdata[1]}}</span><br>"
                 if gran in ('month', 'day'):
-                    base += "Month: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[2]}</b><br>"
+                    base += f"<span style='color: {lbl_color}'>Month:</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{customdata[2]}}</span><br>"
                 if gran == 'day':
-                    base += "Day: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[3]}</b><br>"
-                base += "Unit: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[4]}</b><br>"
-                base += "Value: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{y:,.0f}</b><extra></extra>"
+                    base += f"<span style='color: {lbl_color}'>Day:</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{customdata[3]}}</span><br>"
+                
+                base += f"<span style='color: {lbl_color}'>Unit:</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{customdata[4]}}</span><br>"
+                base += f"<span style='color: {lbl_color}'>Value:</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{y:,.3f}}</span><extra></extra>"
                 return base
 
             fig.update_traces(hovertemplate=get_hovertemplate(granularity))
+
+            # Handle highlighting
+            sel_dest = selection.get('dest') if selection else None
+            sel_facet = selection.get('facet') if selection else None
+
+            for trace in fig.data:
+                # Set hovertemplate for this trace
+                trace.hovertemplate = get_hovertemplate(granularity)
+                
+                # Handle opacity for highlighting
+                if selection and hasattr(trace, 'customdata') and trace.customdata is not None:
+                    opacities = []
+                    for i in range(len(trace.x)):
+                        x_val = trace.x[i]
+                        # customdata[5] is Facet_Key
+                        f_val = trace.customdata[i][5] if len(trace.customdata[i]) > 5 else ""
+                        if x_val == sel_dest and f_val == sel_facet:
+                            opacities.append(1.0)
+                        else:
+                            opacities.append(0.2)
+                    trace.marker.opacity = opacities
+                elif not selection:
+                    # Reset to full opacity
+                    trace.marker.opacity = 1.0
 
             # Spacing for triple headers
             t_margin = 135 if granularity in ('month', 'day') else (120 if granularity == 'quarter' else 110)
@@ -615,7 +681,14 @@ def register_callbacks(dash_app, server):
                 barmode='stack',
                 xaxis_title=None,
                 yaxis_title=None,
-                yaxis=dict(autorange=True)
+                yaxis=dict(autorange=True),
+                hoverlabel=dict(
+                    bgcolor="white",
+                    bordercolor="#ddd",
+                    font_size=11,
+                    font_family="Lato, sans-serif",
+                    align="left"
+                )
             )
 
             # Selective Tick Labels (Sparse Labels)
@@ -703,28 +776,43 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         [Output('asia-imports-yearly-map', 'figure'),
          Output('asia-imports-yearly-map-title', 'children'),
-         Output('asia-origin-dropdown', 'value', allow_duplicate=True)],
+         Output('asia-map-selection-store', 'data')],
         [Input('asia-unit-filter', 'value'),
          Input('asia-flow-type-filter', 'value'),
          Input('asia-destination-dropdown', 'value'),
          Input('asia-origin-dropdown', 'value'),
-         Input('asia-imports-yearly-map', 'clickData')],
-        [State('asia-origin-dropdown', 'options')],
+         Input('asia-imports-yearly-map', 'clickData'),
+         Input('asia-map-selection-store', 'data')],
         prevent_initial_call='initial_duplicate'
     )
-    def update_asia_map(unit, flow_type, dest, origins, click_data, origin_options):
+    def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection):
         title = f"All Imports by Origin ({unit}) - 2025"
-        # 1. Handle Map Reset
-        if ctx.triggered_id == 'asia-imports-yearly-map':
-            all_origin_vals = [opt['value'] for opt in origin_options]
-            new_origins = handle_map_click_reset(click_data, origins, all_origin_vals, "(All)")
-            if new_origins != origins:
-                # If reset, handle_map_click_reset returns the new (All) list
-                # But we need to update the dropdown value
-                # Usually we just return '(All)' if it was a reset to all
-                if '(All)' in new_origins:
-                    return no_update, no_update, '(All)'
-                return no_update, no_update, new_origins
+        # 1. Handle Map Click for Independent Selection (doesn't affect filters)
+        if ctx.triggered_id == 'asia-imports-yearly-map' and click_data:
+            point = click_data.get('points', [{}])[0]
+            clicked_country = None
+            
+            # Extract country from customdata or hovertext
+            if 'customdata' in point and point['customdata']:
+                if isinstance(point['customdata'], list) and len(point['customdata']) > 0:
+                    if point['customdata'][0] == '__BACKGROUND_CLICK__':
+                        # Reset selection
+                        return no_update, no_update, None
+                    clicked_country = point['customdata'][0]
+                elif point['customdata'] != '__BACKGROUND_CLICK__':
+                    clicked_country = point['customdata']
+            
+            # If same country clicked, reset; otherwise select new country
+            if clicked_country:
+                if map_selection == clicked_country:
+                    # Clicking same country resets
+                    return no_update, no_update, None
+                else:
+                    # Select new country
+                    return no_update, no_update, clicked_country
+            else:
+                # Background click - reset
+                return no_update, no_update, None
 
         # 2. Build Query for 2025
         # Convert Unit
@@ -756,6 +844,8 @@ def register_callbacks(dash_app, server):
           AND tr.unit = '{data_unit}'
           AND (LOWER(co.region) IN ('asia', 'oceania') OR co.country_long_name IS NULL)
           {flow_clause}
+          {origin_clause}
+          {dest_clause}
         GROUP BY origin
         """
         
@@ -787,20 +877,17 @@ def register_callbacks(dash_app, server):
             # 1. Colorscale (Blue tones to match Fig 1)
             colorscale = [[0, '#e3f2fd'], [0.1, '#bbdefb'], [0.4, '#64b5f6'], [0.7, '#2196f3'], [1, '#1b365d']]
             
-            # 2. Selection handling
+            # 2. Selection handling - use map_selection for independent highlighting
             selected_name = None
             selected_iso = None
             other_isos = []
             
-            if origins and "(All)" not in origins:
-                if isinstance(origins, list) and len(origins) == 1:
-                    selected_name = origins[0]
-                    selected_iso = iso_map.get(selected_name)
-                elif isinstance(origins, str):
-                    selected_name = origins
-                    selected_iso = iso_map.get(selected_name)
+            if map_selection:
+                selected_name = map_selection
+                selected_iso = iso_map.get(selected_name)
                 
                 if selected_iso:
+                    # Dim all other countries
                     other_isos = [iso for iso in df['iso'].tolist() if iso != selected_iso]
 
             fig = go.Figure()
