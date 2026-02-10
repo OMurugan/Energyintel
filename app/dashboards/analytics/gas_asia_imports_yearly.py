@@ -320,21 +320,29 @@ def register_callbacks(dash_app, server):
          Output('asia-origin-dropdown', 'options')],
         [Input('asia-unit-filter', 'value')]
     )
-    def update_filter_options(_):
-        print("Asia: update_filter_options started")
-        # Query destinations directly from dim_country for performance
-        dest_query = """
-        SELECT DISTINCT country_long_name as target_country
-        FROM dim_country
-        WHERE LOWER(region) IN ('asia', 'oceania')
-        ORDER BY target_country;
+    def update_filter_options(unit):
+        print(f"Asia: update_filter_options started: {unit}")
+        data_unit = 'Mcm' if unit == 'Bcm' else 'GWh'
+        
+        # Query destinations from trade data (Asia/Oceania only)
+        dest_query = f"""
+        SELECT DISTINCT tr.target_country
+        FROM glng_gas_trade tr
+        LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
+        WHERE tr.unit = '{data_unit}'
+          AND (LOWER(co.region) IN ('asia', 'oceania') OR co.country_long_name IS NULL)
+          AND EXTRACT(YEAR FROM tr.date) >= 2019
+        ORDER BY 1;
         """
-        # Query origins from dim_country (global origins)
-        origin_query = """
-        SELECT DISTINCT country_long_name as source_country
-        FROM dim_country
-        WHERE country_long_name IS NOT NULL
-        ORDER BY source_country;
+        # Query origins from trade data (Global origins that import to Asia/Oceania)
+        origin_query = f"""
+        SELECT DISTINCT tr.source_country
+        FROM glng_gas_trade tr
+        LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
+        WHERE tr.unit = '{data_unit}'
+          AND (LOWER(co.region) IN ('asia', 'oceania') OR co.country_long_name IS NULL)
+          AND EXTRACT(YEAR FROM tr.date) >= 2019
+        ORDER BY 1;
         """
         
         try:
@@ -342,11 +350,11 @@ def register_callbacks(dash_app, server):
             origin_results = execute_query(origin_query)
             
             dest_options = [{'label': '(All)', 'value': '(All)'}] + \
-                           [{'label': r['target_country'], 'value': r['target_country']} for r in dest_results]
+                           [{'label': r['target_country'], 'value': r['target_country']} for r in dest_results if r['target_country']]
             origin_options = [{'label': '(All)', 'value': '(All)'}] + \
-                            [{'label': r['source_country'], 'value': r['source_country']} for r in origin_results]
+                            [{'label': r['source_country'], 'value': r['source_country']} for r in origin_results if r['source_country']]
             
-            print(f"Asia: options loaded. Dests: {len(dest_options)}, Origins: {len(origin_options)}")
+            print(f"Asia: options loaded from trade data. Dests: {len(dest_options)}, Origins: {len(origin_options)}")
             return dest_options, origin_options
         except Exception as e:
             print(f"Error loading filter options: {e}")
@@ -715,8 +723,6 @@ def register_callbacks(dash_app, server):
           AND tr.unit = '{data_unit}'
           AND (LOWER(co.region) IN ('asia', 'oceania') OR co.country_long_name IS NULL)
           {flow_clause}
-          {origin_clause}
-          {dest_clause}
         GROUP BY origin
         """
         
@@ -1137,10 +1143,16 @@ def register_callbacks(dash_app, server):
         Input('asia-imports-bar-chart', 'figure')
     )
     def update_asia_legend(fig):
-        print("Asia: update_asia_legend started")
+        if not fig or 'data' not in fig:
+            return []
+            
+        # Extract unique origin names from the visible traces
+        active_origins = set()
+        for trace in fig['data']:
+            if trace.get('name'):
+                active_origins.add(trace['name'])
         
-        # Show all origins from our color map to match Fig 1's comprehensive legend
-        sorted_origins = sorted(ORIGIN_COLORS.keys())
+        sorted_origins = sorted(list(active_origins))
         
         items = []
         for origin in sorted_origins:
@@ -1151,7 +1163,7 @@ def register_callbacks(dash_app, server):
                 }),
                 html.Span(origin, style={'fontSize': '10px', 'color': '#333', 'whiteSpace': 'nowrap', 'overflow': 'hidden', 'textOverflow': 'ellipsis'})
             ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '2px'}))
-        
+            
         return items
 
     # --- Export Callbacks ---
@@ -1239,12 +1251,10 @@ def register_callbacks(dash_app, server):
           AND tr.unit = '{data_unit}'
           AND (LOWER(co.region) IN ('asia', 'oceania') OR co.country_long_name IS NULL)
           {flow_clause}
-          {origin_clause}
-          {dest_clause}
         GROUP BY 1, 2, 3
         """
         try:
-            results = execute_query(query, {'origins': [origins] if isinstance(origins, str) else origins, 'dest': dest})
+            results = execute_query(query)
             df = pd.DataFrame(results)
             if df.empty: return dcc.send_string("No data found", "no_data.txt")
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
