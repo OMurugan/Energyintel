@@ -148,21 +148,23 @@ TITLE_COLOR = '#fe5000'
 COLOR_PALETTE = px.colors.qualitative.T10 + px.colors.qualitative.Alphabet
 
 GAS_ORIGIN_COLORS = {
-    'Algeria': '#7681c6', 'Angola': '#9ecde4', 'Australia': '#bfd391',
-    'Belgium': '#7882c4', 'Bolivia': '#565656', 'Brunei': '#a3952d',
-    'Cameroon': '#efc85e', 'Canada': '#428d8f', 'China': '#88b5aa',
-    'Egypt': '#df5858', 'Equatorial Guinea': '#4c4c4c', 'France': '#726863',
-    'Germany': '#b5a9a1', 'Guinea': '#d07093', 'India': '#f8bcd1',
-    'Indonesia': '#9e6c93', 'Iran': '#9a9a9a', 'Japan': '#98715b',
-    'Kazakhstan': '#e4af95', 'Malaysia': '#4b71aa', 'Mauritania': '#9ecce4',
-    'Mozambique': '#f3841a', 'Myanmar': '#263e6a', 'Nigeria': '#569f4d',
-    'Norway': '#86d079', 'Oman': '#b4972b', 'Pakistan': '#c74d28',
-    'Papua New Guinea': '#469692', 'Peru': '#80bab4', 'Qatar': '#e9595a',
-    'Russia': '#b7afa9', 'Saudi Arabia': '#444444', 'Senegal': '#d17094',
-    'Singapore': '#f8bcd1', 'South Korea': '#7681c6', 'Taiwan': '#9ecde4',
-    'Thailand': '#bfd391', 'Trinidad and Tobago': '#7882c4',
-    'Turkmenistan': '#565656', 'United Arab Emirates': '#a3952d',
-    'United States': '#efc85e', 'Uzbekistan': '#428d8f', 'Yemen': '#88b5aa'
+    'Algeria': '#1f77b4', 'Angola': '#636363', 'Australia': '#d55e00',
+    'Belgium': '#1f77b4', 'Bolivia': '#808080', 'Brunei': '#d55e00',
+    'Cameroon': '#8b4513', 'Canada': '#00008b', 'China': '#9370db',
+    'Egypt': '#ff0000', 'Equatorial Guinea': '#90ee90', 'France': '#1f77b4',
+    'Germany': '#636363', 'Guinea': '#2f4f4f', 'India': '#1f77b4',
+    'Indonesia': '#808080', 'Iran': '#d55e00', 'Japan': '#8b4513',
+    'Kazakhstan': '#00008b', 'Malaysia': '#9370db', 'Mauritania': '#ff0000',
+    'Mozambique': '#ff0000', 'Myanmar': '#90ee90', 'Netherlands': '#1f77b4',
+    'Nigeria': '#636363', 'Norway': '#2f4f4f', 'Oman': '#1f77b4',
+    'Others': '#808080', 'Papua New Guinea': '#d55e00', 'Peru': '#8b4513',
+    'Philippines': '#00008b', 'Qatar': '#5fbfbf', 'Republic of the Congo': '#ff0000',
+    'Russia': '#90ee90', 'Saudi Arabia': '#1f77b4', 'Senegal': '#2f4f4f',
+    'Singapore': '#808080', 'South Africa': '#808080', 'South Korea': '#00008b',
+    'Spain': '#1f77b4', 'Thailand': '#808080', 'Timor-Leste': '#d55e00',
+    'Trinidad and Tobago': '#8b4513', 'Turkey': '#00008b', 'Turkmenistan': '#5fbfbf',
+    'United Arab Emirates': '#ff0000', 'United Kingdom': '#90ee90',
+    'United States': '#1f77b4', 'Uzbekistan': '#636363'
 }
 
 def get_consistent_color_for_origin(origin):
@@ -279,11 +281,11 @@ def create_layout():
                         ], style={
                             'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
                             'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '0px',
-                            'position': 'absolute', 'top': '40px', 'left': '60px', 'zIndex': '10'
+                            'position': 'absolute', 'top': '45px', 'left': '10px', 'zIndex': '10'
                         }),
 
                         dcc.Loading(dcc.Graph(id='gas-asia-chart-1', config={'displayModeBar': False}, figure={}))
-                    ], style={'flex': '1', 'marginRight': '15px', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
+                    ], style={'width': '40%', 'marginRight': '10px', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
 
                     # Chart 2: All Imports by Origin (Bar Chart)
                     html.Div([
@@ -338,11 +340,11 @@ def create_layout():
                         ], style={
                             'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
                             'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '0px',
-                            'position': 'absolute', 'top': '40px', 'left': '60px', 'zIndex': '10'
+                            'position': 'absolute', 'top': '45px', 'left': '10px', 'zIndex': '10'
                         }),
 
                         dcc.Loading(dcc.Graph(id='gas-asia-chart-2', config={'displayModeBar': False}, figure={}))
-                    ], style={'flex': '1', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
+                    ], style={'width': '60%', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
                 ], style={'display': 'flex', 'marginBottom': '30px'}),
 
                 # Row 2: Flow Type Bar Chart
@@ -402,7 +404,7 @@ def create_layout():
                     }),
 
                     dcc.Loading(dcc.Graph(id='gas-asia-chart-3', config={'displayModeBar': False}, figure={}))
-                ], style={'marginBottom': '30px', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
+                ], style={'marginBottom': '0px', 'backgroundColor': 'white', 'padding': '10px', 'position': 'relative'}),
 
             ], style={'flex': '1', 'padding': '10px', 'minWidth': '0'}),
 
@@ -474,7 +476,7 @@ def create_layout():
                     html.Div([
                         html.Label("Origin", style={'fontWeight': 'normal', 'fontSize': '13px', 'color': '#333'}),
                         html.Div(id='gas-asia-origin-legend-container', style={
-                            'maxHeight': '400px', 'overflowY': 'auto', 'border': '1px solid #eee',
+                            'maxHeight': '550px', 'overflowY': 'auto', 'border': '1px solid #eee',
                             'padding': '8px', 'backgroundColor': 'white'
                         })
                     ], style={'marginBottom': '20px'}),
@@ -571,7 +573,10 @@ def create_layout():
                         'fontWeight': 'bold',
                         'textAlign': 'center',
                         'fontSize': '11px',
-                        'border': 'none',
+                        'borderLeft': '1px solid #ddd',
+                        'borderRight': '1px solid #ddd',
+                        'borderTop': '1px solid #ddd',
+                        'borderBottom': '1px solid #ddd',
                         'color': '#333',
                         'height': '25px',
                         'padding': '2px'
@@ -580,7 +585,10 @@ def create_layout():
                         'padding': '0px 5px',
                         'fontSize': '11px',
                         'fontFamily': 'Arial, sans-serif',
-                        'border': 'none',
+                        'borderLeft': '1px solid #ddd',
+                        'borderRight': '1px solid #ddd',
+                        'borderTop': 'none',
+                        'borderBottom': '1px solid #e0e0e0',
                         'minWidth': '70px',
                         'backgroundColor': '#fff',
                         'color': '#777',
@@ -1191,7 +1199,7 @@ def register_callbacks(dash_app, server):
             
             fig1.update_layout(
                 xaxis=xaxis_config,
-                yaxis=dict(title=f'Value ({unit})', showgrid=True, gridcolor='#e0e0e0'),
+                yaxis=dict(title='', showgrid=True, gridcolor='#e0e0e0'),
                 plot_bgcolor='white',
                 paper_bgcolor='white',
                 height=350,
@@ -1684,11 +1692,11 @@ def register_callbacks(dash_app, server):
                     ticktext=x_labels,
                     tickfont=dict(size=9, color='#666'),
                     showgrid=False,
-                    title='Flow Type',
+                    title='',
                     range=[-0.5, len(x_positions) - 0.5]  # Tight fit
                 ),
                 yaxis=dict(
-                    title=f'Value ({unit})',
+                    title=f'{unit}',
                     showgrid=True,
                     gridcolor='#e0e0e0'
                 ),
@@ -1696,7 +1704,7 @@ def register_callbacks(dash_app, server):
                 shapes=all_shapes,
                 plot_bgcolor='white',
                 paper_bgcolor='white',
-                height=350,
+                height=500,
                 margin=dict(l=50, r=20, t=80, b=60),  # Increased top margin for vertical text
                 hovermode='closest',
                 bargap=0.15,
@@ -1815,6 +1823,19 @@ def register_callbacks(dash_app, server):
             # Get unique destinations (countries) sorted
             destinations = sorted(table_df['destination'].unique())
             
+            # Check which flow types each destination has data for
+            dest_flow_availability = {}
+            for dest in destinations:
+                dest_data = table_df[table_df['destination'] == dest]
+                has_pipeline = dest_data[dest_data['flow_type'] == 'Pipeline']['value_mcm'].notna().any() and \
+                              (dest_data[dest_data['flow_type'] == 'Pipeline']['value_mcm'] > 0).any()
+                has_lng = dest_data[dest_data['flow_type'] == 'LNG']['value_mcm'].notna().any() and \
+                         (dest_data[dest_data['flow_type'] == 'LNG']['value_mcm'] > 0).any()
+                dest_flow_availability[dest] = {
+                    'Pipeline': has_pipeline,
+                    'LNG': has_lng
+                }
+            
             # Create a pivot table
             pivot_data = []
             
@@ -1837,27 +1858,33 @@ def register_callbacks(dash_app, server):
                 for dest in destinations:
                     dest_data = group[group['destination'] == dest]
                     
-                    # Pipeline value - keep decimals (2 decimal places)
-                    pipeline_val = dest_data[dest_data['flow_type'] == 'Pipeline']['value_mcm']
-                    row[f"{dest}_Pipeline"] = round(float(pipeline_val.iloc[0]), 2) if len(pipeline_val) > 0 and not pd.isna(pipeline_val.iloc[0]) else ''
+                    # Only add Pipeline column if this destination has pipeline data
+                    if dest_flow_availability[dest]['Pipeline']:
+                        pipeline_val = dest_data[dest_data['flow_type'] == 'Pipeline']['value_mcm']
+                        row[f"{dest}_Pipeline"] = round(float(pipeline_val.iloc[0]), 2) if len(pipeline_val) > 0 and not pd.isna(pipeline_val.iloc[0]) else ''
                     
-                    # LNG value - round to whole number (no decimals)
-                    lng_val = dest_data[dest_data['flow_type'] == 'LNG']['value_mcm']
-                    row[f"{dest}_LNG"] = int(round(float(lng_val.iloc[0]), 0)) if len(lng_val) > 0 and not pd.isna(lng_val.iloc[0]) else ''
+                    # Only add LNG column if this destination has LNG data
+                    if dest_flow_availability[dest]['LNG']:
+                        lng_val = dest_data[dest_data['flow_type'] == 'LNG']['value_mcm']
+                        row[f"{dest}_LNG"] = int(round(float(lng_val.iloc[0]), 0)) if len(lng_val) > 0 and not pd.isna(lng_val.iloc[0]) else ''
                 
                 pivot_data.append(row)
             
-            # Create hierarchical columns based on aggregation mode
+            # Create two-level columns - Merge countries (top level) but prevent merging Flow Types (bottom level)
             columns = []
             
             for col_name, _ in display_cols:
                 columns.append({"name": ["", col_name], "id": col_name})
             
             for dest in destinations:
-                # Add Pipeline column
-                columns.append({"name": [dest, "Pipeline"], "id": f"{dest}_Pipeline"})
-                # Add LNG column
-                columns.append({"name": [dest, "LNG"], "id": f"{dest}_LNG"})
+                # Only add Pipeline column if this destination has pipeline data
+                if dest_flow_availability[dest]['Pipeline']:
+                    # Add zero-width space to "Pipeline" to make it unique and prevent merging with other "Pipeline" columns
+                    columns.append({"name": [dest, "Pipeline" + "\u200B" * len(columns)], "id": f"{dest}_Pipeline"})
+                # Only add LNG column if this destination has LNG data
+                if dest_flow_availability[dest]['LNG']:
+                    # Add zero-width space to "LNG" to make it unique and prevent merging with other "LNG" columns
+                    columns.append({"name": [dest, "LNG" + "\u200B" * len(columns)], "id": f"{dest}_LNG"})
             
             return pivot_data, columns
             
