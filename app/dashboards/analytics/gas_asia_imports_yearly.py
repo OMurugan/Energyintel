@@ -104,6 +104,17 @@ GRAN_BTN_INACTIVE = {
     'justifyContent': 'center'
 }
 
+EXPORT_BTN_STYLE = {
+    'backgroundColor': 'white',
+    'color': '#1b365d',
+    'border': '1px solid #ddd',
+    'padding': '4px 8px',
+    'borderRadius': '4px',
+    'fontSize': '11px',
+    'cursor': 'pointer',
+    'zIndex': '1000'
+}
+
 def create_asia_period_selector():
     """Helper to create granularity selectors for Asian Imports chart"""
     return html.Div([
@@ -166,6 +177,11 @@ def create_layout():
         dcc.Store(id='asia-chart-granularity-store', data='year'),
         dcc.Store(id='asia-table-granularity-store', data='YEARLY'),
         
+        # Download components
+        dcc.Download(id="download-asia-imports-chart-csv"),
+        dcc.Download(id="download-asia-imports-map-csv"),
+        dcc.Download(id="download-asia-imports-table-csv"),
+        
         # Main container with Flexbox for Content and Sidebar
         html.Div([
             
@@ -179,8 +195,11 @@ def create_layout():
                             'color': EI_ORANGE, 'fontSize': '18px', 'fontWeight': 'normal', 
                             'margin': '10px 0', 'fontFamily': 'Lato, sans-serif'
                         }),
-                        # Granularity Selector for Chart
-                        create_asia_period_selector(),
+                        html.Div([
+                            # Granularity Selector for Chart
+                            create_asia_period_selector(),
+                            html.Button("Export to CSV", id="export-asia-imports-chart-csv-btn", style=EXPORT_BTN_STYLE)
+                        ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                         
                         dcc.Loading(
                             id='loading-asia-imports-chart',
@@ -200,6 +219,9 @@ def create_layout():
                             'color': EI_ORANGE, 'fontSize': '18px', 'fontWeight': 'normal', 
                             'margin': '10px 0', 'fontFamily': 'Lato, sans-serif'
                         }),
+                        html.Div([
+                           html.Button("Export to CSV", id="export-asia-imports-map-csv-btn", style=EXPORT_BTN_STYLE)
+                        ], style={'textAlign': 'right', 'marginBottom': '10px'}),
                         dcc.Loading(
                             id='loading-asia-imports-yearly-map',
                             type='circle',
@@ -219,7 +241,10 @@ def create_layout():
                         'color': EI_ORANGE, 'fontSize': '18px', 'fontWeight': 'normal', 
                         'margin': '10px 0', 'fontFamily': 'Lato, sans-serif'
                     }),
-                    create_asia_table_period_selector(),
+                    html.Div([
+                        create_asia_table_period_selector(),
+                        html.Button("Export to CSV", id="export-asia-imports-table-csv-btn", style=EXPORT_BTN_STYLE)
+                    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                     dcc.Loading(
                         id='loading-asia-imports-table',
                         type='circle',
@@ -658,8 +683,8 @@ def register_callbacks(dash_app, server):
 
         # 2. Build Query for 2025
         # Convert Unit
-        data_unit = 'Mcm' if unit == 'Bcm' else 'kWh'
-        scale = 1000.0 if unit == 'Bcm' else 1000000.0
+        data_unit = 'Mcm' if unit == 'Bcm' else 'GWh'
+        scale = 1000.0 if unit == 'Bcm' else 1.0
 
         flow_clause = ""
         if flow_type == 'lng': flow_clause = "AND tr.flow_type = 'lng'"
@@ -818,8 +843,8 @@ def register_callbacks(dash_app, server):
         if flow_type != ' ':
             flow_clause = f"AND tr.flow_type = '{flow_type}'"
 
-        data_unit = 'Mcm' if unit == 'Bcm' else 'kWh'
-        scale = 1000.0 if unit == 'Bcm' else 1000000.0
+        data_unit = 'Mcm' if unit == 'Bcm' else 'GWh'
+        scale = 1000.0 if unit == 'Bcm' else 1.0
 
         query = f"""
         WITH params AS (
@@ -973,8 +998,9 @@ def register_callbacks(dash_app, server):
                     # col_tuple is (Year, Quarter, Month...)
                     # We build the name list. All elements must be strings.
                     name_list = [str(x) for x in col_tuple]
-                    # To effectively merge headers, we need them to be adjacent and identical.
-                    dt_columns.append({'name': name_list, 'id': str(col_tuple)})
+                    # col_id must be a clean string to avoid tooltip issues
+                    col_id = "col_" + "_".join([str(x).replace(" ", "") for x in col_tuple])
+                    dt_columns.append({'name': name_list, 'id': col_id})
             
             else:
                 # Single level (YEARLY)
@@ -982,10 +1008,14 @@ def register_callbacks(dash_app, server):
                 cols = sorted(pivot_df.columns.tolist(), reverse=True)
                 pivot_df = pivot_df[cols]
                 dt_columns = [{'name': 'Destination', 'id': 'Destination'}] + \
-                             [{'name': str(col), 'id': str(col)} for col in cols]
+                             [{'name': str(col), 'id': "col_" + str(col)} for col in cols]
 
-            # Convert MultiIndex columns to strings to avoid serialization issues
-            pivot_df.columns = [str(c) if isinstance(c, tuple) else c for c in pivot_df.columns]
+            # Re-map pivot_df columns to match dt_columns IDs
+            if len(pivot_cols) > 1:
+                pivot_df.columns = ["col_" + "_".join([str(x).replace(" ", "") for x in c]) for c in pivot_df.columns]
+            else:
+                pivot_df.columns = ["col_" + str(c) for c in pivot_df.columns]
+                
             pivot_df = pivot_df.reset_index()
             data = pivot_df.to_dict('records')
             
@@ -994,17 +1024,57 @@ def register_callbacks(dash_app, server):
                 for k, v in row.items():
                     if k != 'Destination' and pd.notnull(v):
                         try:
-                            row[k] = f"{float(v):.2f}" # Fig 3 shows 2 decimals
+                            # Use comma separator for thousands
+                            val_float = float(v)
+                            # If it's a whole number, don't show decimals (GWh usually large)
+                            if val_float == int(val_float):
+                                row[k] = f"{int(val_float):,}"
+                            else:
+                                row[k] = f"{val_float:,.2f}"
                         except:
                             pass
                     if pd.isnull(v):
                          row[k] = ""
+
+            # 4. Generate Tooltips
+            tooltip_data = []
+            for row in data:
+                row_tooltips = {}
+                dest = row.get('Destination', '')
+                for col in dt_columns:
+                    col_id = col['id']
+                    if col_id == 'Destination':
+                        continue
+                        
+                    val = row.get(col_id, '')
+                    if val == "":
+                        continue
+                    
+                    # Tooltip construction
+                    tooltip_text = f"Destination: {dest}  \n"
+                    
+                    if isinstance(col['name'], list):
+                        for i, name_val in enumerate(col['name']):
+                            if name_val == "": continue
+                            label = pivot_cols[i]
+                            tooltip_text += f"{label}: {name_val}  \n"
+                    else:
+                        tooltip_text += f"Year of Date: {col['name']}  \n"
+                    
+                    tooltip_text += f"Unit: {unit}  \n"
+                    tooltip_text += f"Value: {val}"
+                    
+                    row_tooltips[col_id] = {'value': tooltip_text, 'type': 'markdown'}
+                tooltip_data.append(row_tooltips)
             
             # Construct DataTable
             table = dash_table.DataTable(
                 data=data,
                 columns=dt_columns,
-                merge_duplicate_headers=True, # Crucial for the multi-level effect
+                tooltip_data=tooltip_data,
+                tooltip_delay=0,
+                tooltip_duration=None,
+                merge_duplicate_headers=True,
                 fixed_rows={'headers': True},
                 fixed_columns={'headers': True, 'data': 1},
                 style_table={
@@ -1037,8 +1107,17 @@ def register_callbacks(dash_app, server):
                 },
                 style_data_conditional=[
                     {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'}
-                ]
+                ],
+                css=[{
+                    'selector': '.dash-table-tooltip',
+                    'rule': 'background-color: white !important; color: #333 !important; border: 1px solid #ccc !important; font-family: Arial, sans-serif !important; border-radius: 2px !important; padding: 10px !important; box-shadow: 2px 2px 8px rgba(0,0,0,0.1) !important; z-index: 1000 !important; visibility: visible !important; opacity: 1 !important; text-align: left !important; min-width: 150px !important;'
+                }]
             )
+            
+            print(f"Asia Table: data rows={len(data)}, tooltip_data rows={len(tooltip_data)}")
+            if tooltip_data:
+                print(f"Asia Table: Sample tooltip keys: {list(tooltip_data[0].keys())}")
+                print(f"Asia Table: Sample data keys: {list(data[0].keys())}")
             
             return table, f"Total Annual Imports by Destination {unit} - {granularity.title()}"
 
@@ -1068,5 +1147,151 @@ def register_callbacks(dash_app, server):
                 }),
                 html.Span(origin, style={'fontSize': '10px', 'color': '#333', 'whiteSpace': 'nowrap', 'overflow': 'hidden', 'textOverflow': 'ellipsis'})
             ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '2px'}))
-            
+        
         return items
+
+    # --- Export Callbacks ---
+
+    @dash_app.callback(
+        Output("download-asia-imports-chart-csv", "data"),
+        Input("export-asia-imports-chart-csv-btn", "n_clicks"),
+        [State('asia-unit-filter', 'value'),
+         State('asia-flow-type-filter', 'value'),
+         State('asia-origin-dropdown', 'value'),
+         State('asia-destination-dropdown', 'value'),
+         State('asia-chart-granularity-store', 'data')],
+        prevent_initial_call=True
+    )
+    def export_asia_chart_csv(n_clicks, unit, flow_type, origin, destination, granularity):
+        if not n_clicks: return no_update
+        
+        chart_data_unit = 'Mcm' if unit == 'Bcm' else 'kWh'
+        chart_scale = 1000.0 if unit == 'Bcm' else 1000000.0
+        
+        f_flow_clause = f"AND tr.flow_type = '{flow_type}'" if flow_type != ' ' else ""
+        f_origin_clause = f"AND tr.source_country = '{origin}'" if origin != '(All)' else ""
+        f_dest_clause = f"AND tr.target_country = '{destination}'" if destination != '(All)' else ""
+
+        query = f"""
+        SELECT
+            EXTRACT(YEAR FROM tr.date)::int AS "Year of Date",
+            CASE WHEN '{granularity}' IN ('quarter', 'month', 'day') THEN 'Q' || EXTRACT(QUARTER FROM tr.date)::int END AS "Quarter of Date",
+            CASE WHEN '{granularity}' IN ('month', 'day') THEN TO_CHAR(tr.date, 'Mon') END AS "Month of Date",
+            CASE WHEN '{granularity}' = 'day' THEN EXTRACT(DAY FROM tr.date)::int END AS "Day of Date",
+            tr.target_country  AS "Destination",
+            tr.source_country  AS "Origin",
+            '{unit}'           AS "Unit",
+            ROUND(SUM(tr.value / {chart_scale}), 9) AS "Value"
+        FROM glng_gas_trade tr
+        LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
+        WHERE tr.unit = '{chart_data_unit}'
+          AND (LOWER(co.region) IN ('asia', 'oceania') OR co.country_long_name IS NULL)
+          AND EXTRACT(YEAR FROM tr.date) >= 2019
+          {f_flow_clause}
+          {f_origin_clause}
+          {f_dest_clause}
+        GROUP BY 1, 2, 3, 4, 5, 6, 7
+        ORDER BY 1, 2, 3, 4, 8 DESC;
+        """
+        try:
+            results = execute_query(query)
+            df = pd.DataFrame(results)
+            if df.empty: return dcc.send_string("No data found", "no_data.txt")
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            return dcc.send_data_frame(df.to_csv, f"asia_gas_imports_chart_{timestamp}.csv", index=False)
+        except Exception as e:
+            return dcc.send_string(f"Error: {e}", "error.txt")
+
+    @dash_app.callback(
+        Output("download-asia-imports-map-csv", "data"),
+        Input("export-asia-imports-map-csv-btn", "n_clicks"),
+        [State('asia-unit-filter', 'value'),
+         State('asia-flow-type-filter', 'value'),
+         State('asia-destination-dropdown', 'value'),
+         State('asia-origin-dropdown', 'value')],
+        prevent_initial_call=True
+    )
+    def export_asia_map_csv(n_clicks, unit, flow_type, dest, origins):
+        if not n_clicks: return no_update
+        data_unit = 'Mcm' if unit == 'Bcm' else 'GWh'
+        scale = 1000.0 if unit == 'Bcm' else 1.0
+        
+        flow_clause = f"AND tr.flow_type = '{flow_type}'" if flow_type != ' ' else ""
+        origin_clause = ""
+        if origins and "(All)" not in origins:
+            if isinstance(origins, list): origin_clause = "AND tr.source_country = ANY(:origins)"
+            else: origin_clause = f"AND tr.source_country = '{origins}'"
+        dest_clause = f"AND tr.target_country = :dest" if dest and "(All)" not in dest else ""
+
+        query = f"""
+        SELECT 
+            tr.source_country as "Origin",
+            '2025' as "Year",
+            '{unit}' as "Unit",
+            SUM(tr.value / {scale}) as "Total Value"
+        FROM glng_gas_trade tr
+        LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
+        WHERE EXTRACT(YEAR FROM tr.date) = 2025
+          AND tr.unit = '{data_unit}'
+          AND (LOWER(co.region) IN ('asia', 'oceania') OR co.country_long_name IS NULL)
+          {flow_clause}
+          {origin_clause}
+          {dest_clause}
+        GROUP BY 1, 2, 3
+        """
+        try:
+            results = execute_query(query, {'origins': [origins] if isinstance(origins, str) else origins, 'dest': dest})
+            df = pd.DataFrame(results)
+            if df.empty: return dcc.send_string("No data found", "no_data.txt")
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            return dcc.send_data_frame(df.to_csv, f"asia_gas_imports_map_{timestamp}.csv", index=False)
+        except Exception as e:
+            return dcc.send_string(f"Error: {e}", "error.txt")
+
+    @dash_app.callback(
+        Output("download-asia-imports-table-csv", "data"),
+        Input("export-asia-imports-table-csv-btn", "n_clicks"),
+        [State('asia-unit-filter', 'value'),
+         State('asia-flow-type-filter', 'value'),
+         State('asia-origin-dropdown', 'value'),
+         State('asia-destination-dropdown', 'value'),
+         State('asia-table-granularity-store', 'data')],
+        prevent_initial_call=True
+    )
+    def export_asia_table_csv(n_clicks, unit, flow_type, origin, destination, granularity):
+        if not n_clicks: return no_update
+        
+        dest_clause = f"AND tr.target_country = '{destination}'" if destination != '(All)' else ""
+        origin_clause = f"AND tr.source_country = '{origin}'" if origin != '(All)' else ""
+        flow_clause = f"AND tr.flow_type = '{flow_type}'" if flow_type != ' ' else ""
+        data_unit = 'Mcm' if unit == 'Bcm' else 'GWh'
+        scale = 1000.0 if unit == 'Bcm' else 1.0
+
+        query = f"""
+        SELECT
+            tr.target_country                                      AS "Destination",
+            EXTRACT(YEAR FROM tr.date)::int                        AS "Year of Date",
+            CASE WHEN '{granularity}' IN ('QUARTERLY', 'MONTHLY', 'DAILY') THEN 'Q' || EXTRACT(QUARTER FROM tr.date)::int END AS "Quarter of Date",
+            CASE WHEN '{granularity}' IN ('MONTHLY', 'DAILY') THEN TO_CHAR(tr.date, 'FMMonth') END AS "Month of Date",
+            CASE WHEN '{granularity}' = 'DAILY' THEN EXTRACT(DAY FROM tr.date)::int END AS "Day of Date",
+            '{unit}'                                               AS "Unit",
+            ROUND(SUM(tr.value / {scale}), 9)                      AS "Value"
+        FROM glng_gas_trade tr
+        LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
+        WHERE tr.unit = '{data_unit}'
+          AND LOWER(co.region) IN ('asia', 'oceania')
+          AND EXTRACT(YEAR FROM tr.date) >= 2019
+          {dest_clause}
+          {origin_clause}
+          {flow_clause}
+        GROUP BY 1, 2, 3, 4, 5, 6
+        ORDER BY 1 ASC, 2 DESC;
+        """
+        try:
+            results = execute_query(query)
+            df = pd.DataFrame(results)
+            if df.empty: return dcc.send_string("No data found", "no_data.txt")
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            return dcc.send_data_frame(df.to_csv, f"asia_gas_imports_table_{timestamp}.csv", index=False)
+        except Exception as e:
+            return dcc.send_string(f"Error: {e}", "error.txt")
