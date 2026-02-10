@@ -252,6 +252,16 @@ def create_layout():
                         type='circle',
                         color=EI_ORANGE,
                         children=html.Div(id='asia-imports-table-container')
+                    ),
+                    html.Div(
+                        "Source: Energy Intelligence.",
+                        style={
+                            'fontStyle': 'italic',
+                            'fontSize': '12px',
+                            'color': '#6c757d',
+                            'marginTop': '10px',
+                            'fontFamily': 'Lato, sans-serif'
+                        }
                     )
                 ], style={'padding': '10px', 'backgroundColor': 'white'})
                 
@@ -865,19 +875,27 @@ def register_callbacks(dash_app, server):
             iso_results = execute_query(iso_query)
             iso_map = {r['origin']: r['country_code'] for r in iso_results}
             
+            # DEBUG: Check ISO map coverage
+            print(f"Asia Map DEBUG: iso_map has {len(iso_map)} entries. Sample: {list(iso_map.keys())[:5]}")
+            
             df['iso'] = df['origin'].map(iso_map)
+            
+            # DEBUG: Check mapping success
+            missing_iso = df[df['iso'].isna()]['origin'].unique()
+            if len(missing_iso) > 0:
+                print(f"Asia Map DEBUG: Unmapped origins found: {missing_iso}")
+            
             df = df.dropna(subset=['iso'])
+            print(f"Asia Map DEBUG: df has {len(df)} rows after dropping missing ISOs")
             
             if df.empty:
                 from app.dashboards.wcod.shared_map_utils import create_empty_map
                 return create_empty_map("No geographic data for these origins", height=500), title, no_update
 
-            geojson = load_world_geojson()
-            
             # 1. Colorscale (Blue tones to match Fig 1)
             colorscale = [[0, '#e3f2fd'], [0.1, '#bbdefb'], [0.4, '#64b5f6'], [0.7, '#2196f3'], [1, '#1b365d']]
             
-            # 2. Selection handling - use map_selection for independent highlighting
+            # 2. Selection handling
             selected_name = None
             selected_iso = None
             other_isos = []
@@ -885,59 +903,48 @@ def register_callbacks(dash_app, server):
             if map_selection:
                 selected_name = map_selection
                 selected_iso = iso_map.get(selected_name)
+                print(f"Asia Map DEBUG: Selection active. Name='{selected_name}', ISO='{selected_iso}'")
                 
                 if selected_iso:
-                    # Dim all other countries
+                     # Dim all other countries
                     other_isos = [iso for iso in df['iso'].tolist() if iso != selected_iso]
+            else:
+                print("Asia Map DEBUG: No selection active (map_selection is None/Empty)")
 
-            fig = go.Figure()
-
-            # Add background click layer for reset behavior
-            from app.dashboards.wcod.shared_map_utils import add_background_click_layer
-            add_background_click_layer(fig, selected_name, use_mapbox=True)
-
-            # Main Choropleth Layer
-            fig.add_trace(go.Choroplethmapbox(
-                geojson=geojson,
-                locations=df['iso'],
-                z=df['Value'],
-                colorscale=colorscale,
-                showscale=False,
-                marker_opacity=0.8,
-                marker_line_width=0.5,
-                marker_line_color='white',
-                # Custom Hover Template
-                hovertemplate=(
-                    "Origin: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[0]}</b><br>"
-                    "Year of Date: &nbsp;&nbsp;<b>2025</b><br>"
-                    "Value: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{z:,.2f}</b><br>"
-                    f"Unit: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{unit}</b><extra></extra>"
-                ),
-                customdata=df[['origin']].values.tolist(),
-                name="countries"
-            ))
-
-            # Add Selection Highlight (dim others)
-            if selected_iso:
-                from app.dashboards.wcod.shared_map_utils import add_selection_highlight
-                add_selection_highlight(fig, geojson, selected_iso, selected_name, other_isos, use_mapbox=True)
-
-            # Layout adjustments for Mapbox
-            fig.update_layout(
-                mapbox=dict(
-                    style='carto-positron',
-                    center=dict(lat=20, lon=100),
-                    zoom=1.2
-                ),
-                margin=dict(l=0, r=0, t=0, b=0),
-                height=500,
-                hoverlabel=dict(
-                    bgcolor="white",
-                    bordercolor="#ccc",
-                    font=dict(size=12, color="#333", family="Lato, sans-serif"),
-                    align="left"
+            # 3. Create Hover Text
+            hover_text = []
+            for _, row in df.iterrows():
+                text = (
+                    f"Origin: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{row['origin']}</b><br>"
+                    f"Year of Date: &nbsp;&nbsp;<b>2025</b><br>"
+                    f"Value: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{row['Value']:,.2f}</b><br>"
+                    f"Unit: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>{unit}</b>"
                 )
+                hover_text.append(text)
+
+            # 4. Create Map using Shared Utility
+            from app.dashboards.wcod.shared_map_utils import create_choropleth_map
+            
+            fig = create_choropleth_map(
+                locations=df['iso'],
+                z_values=df['Value'],
+                colorscale=colorscale,
+                hover_text=hover_text,
+                selected_country=selected_name,
+                selected_iso=selected_iso,
+                other_isos=other_isos,
+                country_names=df['origin'].tolist(),
+                height=500,
+                zmin=df['Value'].min(),
+                zmax=df['Value'].max()
             )
+
+            # Layout adjustments specific to this dashboard (if any extra needed beyond shared utils)
+            # The shared utility handles basic layout, but we might want to ensure margins are perfect
+            fig.update_layout(
+                 margin=dict(l=0, r=0, t=0, b=0),
+            )
+            
             
             return fig, title, no_update
             
