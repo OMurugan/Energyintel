@@ -1,4 +1,4 @@
-from app.dashboards.analytics import product_exports
+from app.dashboards.russia_analytics import product_exports
 
 
 def register_callbacks(app, server):

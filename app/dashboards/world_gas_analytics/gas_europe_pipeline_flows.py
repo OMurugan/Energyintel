@@ -91,40 +91,46 @@ def create_layout():
             html.Div([
                 html.Div([
                     html.Label("Start Date", style={'fontSize': '11px', 'fontWeight': 'bold', 'color': EI_DARK_BLUE}),
-                    dcc.Input(
-                        id='gas-flows-start-date',
-                        type='date',
-                        value='2021-01-01',
-                        style={
-                            'width': '100%', 
-                            'marginBottom': '15px',
-                            'height': '28px',
-                            'fontSize': '11px',
-                            'fontFamily': 'Inter, sans-serif',
-                            'border': '1px solid #ccc',
-                            'borderRadius': '4px',
-                            'padding': '0 5px',
-                            'color': '#333'
-                        }
-                    ),
+                    html.Div([
+                        dcc.Input(
+                            id='gas-flows-start-date',
+                            type='text',
+                            value='2021-01-01',
+                            placeholder='YYYY-MM-DD',
+                            style={
+                                'width': '100%', 
+                                'marginBottom': '15px',
+                                'height': '28px',
+                                'fontSize': '11px',
+                                'fontFamily': 'Inter, sans-serif',
+                                'border': '1px solid #ccc',
+                                'borderRadius': '4px',
+                                'padding': '0 5px',
+                                'color': '#333'
+                            }
+                        )
+                    ]),
                     
                     html.Label("End Date", style={'fontSize': '11px', 'fontWeight': 'bold', 'color': EI_DARK_BLUE}),
-                    dcc.Input(
-                        id='gas-flows-end-date',
-                        type='date',
-                        value='2026-01-09',
-                        style={
-                            'width': '100%', 
-                            'marginBottom': '20px',
-                            'height': '28px',
-                            'fontSize': '11px',
-                            'fontFamily': 'Inter, sans-serif',
-                            'border': '1px solid #ccc',
-                            'borderRadius': '4px',
-                            'padding': '0 5px',
-                            'color': '#333'
-                        }
-                    ),
+                    html.Div([
+                        dcc.Input(
+                            id='gas-flows-end-date',
+                            type='text',
+                            value='2026-01-09',
+                            placeholder='YYYY-MM-DD',
+                            style={
+                                'width': '100%', 
+                                'marginBottom': '20px',
+                                'height': '28px',
+                                'fontSize': '11px',
+                                'fontFamily': 'Inter, sans-serif',
+                                'border': '1px solid #ccc',
+                                'borderRadius': '4px',
+                                'padding': '0 5px',
+                                'color': '#333'
+                            }
+                        )
+                    ]),
                     
                     html.Div([
                         html.Span("Gas Origin", style={'fontSize': '11px', 'fontWeight': 'bold', 'color': EI_DARK_BLUE}),
@@ -251,6 +257,32 @@ def create_layout():
 
 def register_callbacks(dash_app, server):
     """Register all callbacks for European Pipeline Flows"""
+    
+    # Clientside callback to convert text inputs to date inputs (bypasses Dash validation)
+    dash_app.clientside_callback(
+        """
+        function() {
+            setTimeout(function() {
+                const startInput = document.getElementById('gas-flows-start-date');
+                const endInput = document.getElementById('gas-flows-end-date');
+                
+                if (startInput && startInput.type === 'text') {
+                    startInput.type = 'date';
+                    startInput.max = new Date().toISOString().split('T')[0];
+                }
+                
+                if (endInput && endInput.type === 'text') {
+                    endInput.type = 'date';
+                    endInput.max = new Date().toISOString().split('T')[0];
+                }
+            }, 100);
+            return null;
+        }
+        """,
+        Output('gas-flows-table-enhancer-anchor', 'children', allow_duplicate=True),
+        Input('gas-flows-start-date', 'id'),
+        prevent_initial_call='initial_duplicate'
+    )
     
     # Clientside callback for table highlighting
     dash_app.clientside_callback(

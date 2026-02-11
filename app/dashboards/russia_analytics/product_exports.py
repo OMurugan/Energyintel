@@ -48,8 +48,16 @@ def hex_to_rgba(hex_color, alpha=1.0):
     except:
         return f"rgba(200, 200, 200, {alpha})"
 
-def create_layout():
+def create_layout(years=None, default_year=None):
     """Create the Product Exports layout"""
+    if years is None:
+        years = [2025, 2024, 2023, 2022]
+    if default_year is None:
+        default_year = years[0] if years else 2025
+    
+    # Create year options
+    year_options = [{'label': f' {year}', 'value': year} for year in years]
+    
     return html.Div([
         # Selection Stores (Independent for each chart)
         dcc.Store(id='treemap-selection', data=None),
@@ -181,13 +189,8 @@ def create_layout():
                     html.Label("SELECT YEAR", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#333'}),
                     dcc.RadioItems(
                         id='year-selector',
-                        options=[
-                            {'label': ' 2022', 'value': 2022},
-                            {'label': ' 2023', 'value': 2023},
-                            {'label': ' 2024', 'value': 2024},
-                            {'label': ' 2025', 'value': 2025}
-                        ],
-                        value=2025,
+                        options=year_options,
+                        value=default_year,
                         labelStyle={'display': 'block', 'marginBottom': '5px', 'fontSize': '14px'}
                     )
                 ], style={'marginBottom': '30px', 'padding': '10px 0', 'border': 'none', 'borderRadius': '0'}),
@@ -558,19 +561,20 @@ def register_callbacks(dash_app, server):
             # Group by appropriate time period
             if gran_level == 'YEAR':
                 df_b['time_sort'] = df_b['date'].dt.year
-                df_b['time_display'] = df_b['date'].dt.year.astype(str)
+                # Format year as 2 digits with line break between digits (e.g., '2<br>5' for 2025)
+                df_b['time_display'] = df_b['date'].dt.year.astype(str).str[-2:].apply(lambda x: f"{x[0]}<br>{x[1]}")
                 df_b['hover_date'] = df_b['date'].dt.year.astype(str)
             elif gran_level == 'QUARTER':
                 df_b['time_sort'] = df_b['date'].dt.to_period('Q')
-                df_b['time_display'] = df_b['date'].dt.to_period('Q').astype(str)
+                df_b['time_display'] = df_b['date'].dt.to_period('Q').astype(str).str.replace(r'(\d{4})', lambda m: m.group(1)[-2:], regex=True)  # Convert 2025Q1 to 25Q1
                 df_b['hover_date'] = df_b['date'].dt.to_period('Q').astype(str)
             elif gran_level == 'DAY':
                 df_b['time_sort'] = df_b['date']
-                df_b['time_display'] = df_b['date'].dt.strftime('%d<br>%b<br>20%y')
+                df_b['time_display'] = df_b['date'].dt.strftime('%d<br>%b<br>%y')  # 2-digit year
                 df_b['hover_date'] = df_b['date'].dt.strftime('%d %b %Y')
             else:  # MONTH
                 df_b['time_sort'] = df_b['date'].dt.to_period('M')
-                df_b['time_display'] = df_b['date'].dt.strftime('%b<br>20%y')
+                df_b['time_display'] = df_b['date'].dt.strftime('%b<br>%y')  # 2-digit year
                 df_b['hover_date'] = df_b['date'].dt.strftime('%b %Y')
             
             bar_df = df_b.groupby(['time_sort', 'time_display', 'hover_date', 'commodity'])['vol_kbpd'].sum().reset_index()

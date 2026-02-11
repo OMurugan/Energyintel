@@ -331,8 +331,16 @@ def update_company_expansion_state(y_c, q_c, m_c, d_c, current_visibility):
         '-' if new_visibility.get('Day') else '+'
     )
 
-def create_by_company_layout():
+def create_by_company_layout(years=None, default_year=None):
     """Layout for the 'By Company' tab"""
+    if years is None:
+        years = [2025, 2024, 2023, 2022]
+    if default_year is None:
+        default_year = years[0] if years else 2025
+    
+    # Create year options with "All" option first
+    year_options = [{'label': ' (All)', 'value': 'All'}] + [{'label': f' {year}', 'value': year} for year in years]
+    
     return html.Div([
         html.Div([
             # Left side: Charts
@@ -440,14 +448,8 @@ def create_by_company_layout():
                     html.Label("SELECT YEAR", style={'fontWeight': 'bold', 'fontSize': '13px', 'color': '#333', 'marginBottom': '10px', 'display': 'block'}),
                     dcc.RadioItems(
                         id='company-year-selector',
-                        options=[
-                            {'label': ' (All)', 'value': 'All'},
-                            {'label': ' 2022', 'value': 2022},
-                            {'label': ' 2023', 'value': 2023},
-                            {'label': ' 2024', 'value': 2024},
-                            {'label': ' 2025', 'value': 2025}
-                        ],
-                        value=2025,
+                        options=year_options,
+                        value=default_year,
                         labelStyle={'display': 'block', 'marginBottom': '2px', 'fontSize': '13px'}
                     )
                 ], style={'marginBottom': '30px'}),
@@ -475,8 +477,16 @@ def create_by_company_layout():
         ], style={'display': 'flex', 'flexDirection': 'row', 'justifyContent': 'flex-start', 'alignItems': 'flex-start', 'width': '100%'})
     ], style={'width': '100%', 'boxSizing': 'border-box'})
 
-def create_by_product_layout():
+def create_by_product_layout(years=None, default_year=None):
     """Layout for the 'By Product' tab"""
+    if years is None:
+        years = [2025, 2024, 2023, 2022]
+    if default_year is None:
+        default_year = years[0] if years else 2025
+    
+    # Create year options (no "All" option for product tab)
+    year_options = [{'label': f' {year}', 'value': year} for year in years]
+    
     return html.Div([
         html.Div([
             # Left side: Charts
@@ -565,7 +575,7 @@ def create_by_product_layout():
                         children=dcc.Graph(
                             id='product-bar-chart',
                             config={'displayModeBar': False},
-                            style={'height': '420px', 'width': '100%'} 
+                            style={'height': '280px', 'width': '100%'} 
                         )
                     )
                 ], style={'position': 'relative', 'flex': '1', 'marginTop': '10px'}),
@@ -584,13 +594,8 @@ def create_by_product_layout():
                     html.Label("SELECT YEAR", style={'fontWeight': 'bold', 'fontSize': '13px', 'color': '#333', 'marginBottom': '10px', 'display': 'block'}),
                     dcc.RadioItems(
                         id='product-year-selector',
-                        options=[
-                            {'label': ' 2022', 'value': 2022},
-                            {'label': ' 2023', 'value': 2023},
-                            {'label': ' 2024', 'value': 2024},
-                            {'label': ' 2025', 'value': 2025}
-                        ],
-                        value=2025,
+                        options=year_options,
+                        value=default_year,
                         labelStyle={'display': 'block', 'marginBottom': '2px', 'fontSize': '13px'}
                     )
                 ], style={'marginBottom': '30px'}),
@@ -614,15 +619,39 @@ def create_by_product_layout():
 def register_callbacks(dash_app, server):
     """Register all callbacks for Product Output Analytics"""
 
+    def get_available_years():
+        """Helper function to fetch available years from database"""
+        try:
+            year_query = """
+            SELECT DISTINCT EXTRACT(YEAR FROM date)::int as year 
+            FROM russia_master_data 
+            WHERE category IN ('Refining And Products Output', 'Refinery Output')
+            ORDER BY year DESC 
+            LIMIT 6
+            """
+            year_results = execute_query(year_query)
+            
+            if not year_results:
+                return [2025, 2024, 2023, 2022]
+            
+            return [row['year'] for row in year_results]
+        except Exception as e:
+            logger.error(f"Error fetching years: {str(e)}")
+            return [2025, 2024, 2023, 2022]
+
     @callback(
         Output('product-output-content', 'children'),
         Input('product-output-tabs', 'value')
     )
     def render_tab_content(tab):
+        # Get available years dynamically
+        years = get_available_years()
+        default_year = years[0] if years else 2025
+        
         if tab == 'by-company':
-            return create_by_company_layout()
+            return create_by_company_layout(years, default_year)
         elif tab == 'by-product':
-            return create_by_product_layout()
+            return create_by_product_layout(years, default_year)
         return html.Div("Select a tab")
 
     @callback(
@@ -889,8 +918,8 @@ def register_callbacks(dash_app, server):
                 if selected_product == 'Diesel And Gasoil' and not treemap_sel:
                     yaxis_config = dict(
                         range=[0, 2500],
-                        tickvals=[0, 1000, 2000],
-                        dtick=1000
+                        tickvals=[0, 500, 1000, 1500, 2000],
+                        dtick=500
                     )
                 else:
                     # Let plotter decide or set a simple range
@@ -1112,7 +1141,7 @@ def register_callbacks(dash_app, server):
                 if expansion_state.get('year', False):
                     bar_fig.add_annotation(
                         text=f"<b>{selected_year}</b>",
-                        x=0.5, y=0.97,
+                        x=0.5, y=0.98,
                         xref="paper", yref="paper",
                         showarrow=False,
                         font=dict(size=14, color="black"),
@@ -1122,7 +1151,7 @@ def register_callbacks(dash_app, server):
                 # Add Gray Bar for Labels
                 bar_fig.add_shape(
                     type="rect",
-                    x0=0, y0=0.87, x1=1, y1=0.93,
+                    x0=0, y0=0.88, x1=1, y1=0.96,
                     xref="paper", yref="paper",
                     fillcolor="#f8f9fa", line=dict(width=0)
                 )
@@ -1187,6 +1216,8 @@ def register_callbacks(dash_app, server):
                                 p_line_widths.append(0.5)
                                 p_line_colors.append('white')
 
+                        # Calculate percentage for tooltip - removed as we use %{percent}
+                        
                         bar_fig.add_trace(go.Pie(
                             labels=period_data['company'],
                             values=period_data['vol_kbpd'],
@@ -1194,10 +1225,12 @@ def register_callbacks(dash_app, server):
                             textinfo='none',
                             hole=0,
                             showlegend=False,
-                            customdata=[[str(c), float(v), str(curr_slot_id), slot['label']] for c, v in period_data[['company', 'vol_kbpd']].values],  # Added slot label for date
-                            hovertemplate="<b>Company:</b> %{customdata[0]}<br><b>Date:</b> %{customdata[3]} " + str(selected_year) + "<br><b>Volume:</b> %{customdata[1]:,.0f} ('000 b/d)<extra></extra>",
+                            # RESTORE customdata: [Company, Volume, SlotID, DateLabel] for callbacks (Index 2 is SlotId)
+                            customdata=[[str(c), float(v), str(curr_slot_id), slot['label']] for c, v in period_data[['company', 'vol_kbpd']].values],  
+                            # UPDATED hovertemplate: Company, Volume, % of Total using built-in variables
+                            hovertemplate="<b>Company:</b> %{label}<br><b>Volume:</b> %{value:,.1f} ('000 b/d)<br><b>% of Total:</b> %{percent:.2%}<extra></extra>",
                             hoverlabel=dict(bgcolor="white", font=dict(color="black", size=12, family="Arial")),
-                            domain={'x': [i*col_width, (i+1)*col_width], 'y': [0.645, 0.765]}
+                            domain={'x': [i*col_width, (i+1)*col_width], 'y': [0.35, 0.65]}
                         ))
                         
                         # Month label style
@@ -1206,7 +1239,7 @@ def register_callbacks(dash_app, server):
                         # Main Label (Month/Quarter name)
                         bar_fig.add_annotation(
                             text=f"<b>{slot['label']}</b>" if (sel_slot and curr_slot_id == sel_slot) else slot['label'],
-                            x=center_x, y=0.91,
+                            x=center_x, y=0.92,
                             xref="paper", yref="paper",
                             showarrow=False,
                             font=dict(size=12, color=month_label_color)
@@ -1215,7 +1248,7 @@ def register_callbacks(dash_app, server):
                         if slot['type'] == 'day':
                             bar_fig.add_annotation(
                                 text=slot.get('sub_label', '1'),
-                                x=center_x, y=0.88,
+                                x=center_x, y=0.85,
                                 xref="paper", yref="paper",
                                 showarrow=False,
                                 font=dict(size=11, color="#8d8d8d")
@@ -1239,10 +1272,10 @@ def register_callbacks(dash_app, server):
                         
                         bar_fig.add_annotation(
                             text=f"<b>{DISPLAY_NAMES.get(top1_name, top1_name)}</b><br>{top1_vol:,.1f} ('000 b/d)<br>{top1_pct:.2f}%",
-                            x=center_x, y=0.86,
+                            x=center_x, y=0.75,
                             xref="paper", yref="paper",
                             showarrow=False,
-                            font=dict(size=label_font_size, color=top1_color),
+                            font=dict(size=label_font_size, color=top1_color, family="Times New Roman, serif"),
                             align="center"
                         )
                         
@@ -1254,10 +1287,10 @@ def register_callbacks(dash_app, server):
                             top2_color = get_label_color(top2_name, curr_slot_id)
                             bar_fig.add_annotation(
                                 text=f"<b>{DISPLAY_NAMES.get(top2_name, top2_name)}</b><br>{top2_vol:,.1f} ('000 b/d)<br>{top2_pct:.2f}%",
-                                x=center_x, y=0.54,
+                                x=center_x, y=0.15,
                                 xref="paper", yref="paper",
                                 showarrow=False,
-                                font=dict(size=label_font_size, color=top2_color),
+                                font=dict(size=label_font_size, color=top2_color, family="Times New Roman, serif"),
                                 align="center"
                             )
 
@@ -1266,7 +1299,7 @@ def register_callbacks(dash_app, server):
                 # Top-level Year label (Title)
                 bar_fig.add_annotation(
                     text=f"<b>{selected_year}</b>",
-                    x=0.5, y=0.965,
+                    x=0.5, y=0.98,
                     xref="paper", yref="paper",
                     showarrow=False,
                     font=dict(size=14, color="#333")
@@ -1274,7 +1307,7 @@ def register_callbacks(dash_app, server):
                 
 
                 bar_fig.update_layout(
-                    height=420,
+                    height=280,
                     margin=dict(t=5, b=5, l=5, r=5),
                     paper_bgcolor='white',
                     plot_bgcolor='white',

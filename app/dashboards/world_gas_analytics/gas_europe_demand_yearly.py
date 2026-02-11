@@ -28,8 +28,8 @@ def hex_to_rgba(hex_color, opacity):
 # Button Styles
 GRAN_BTN_CONTAINER_STYLE = {
     'display': 'flex',
-    'align-items': 'center',
-    'margin-right': '20px'
+    'alignItems': 'center',
+    'marginRight': '20px'
 }
 
 GRAN_BTN_ACTIVE = {
@@ -238,73 +238,85 @@ def create_layout():
             html.Div([
                 # Unit Filter
                 html.Div([
-                    html.Label("Unit", style={'fontWeight': 'bold', 'color': '#777', 'fontSize': '12px'}),
+                    html.Label("Unit", style={'fontWeight': 'normal', 'color': '#555', 'fontSize': '13px'}),
                     dcc.RadioItems(
                         id='unit-filter',
-                        options=[{'label': u, 'value': u} for u in units],
+                        options=[{'label': f' {u}', 'value': u} for u in units],
                         value='Million Cubic Meter',
-                        labelStyle={'display': 'block', 'fontSize': '12px', 'color': '#555'}
+                        inputStyle={'marginRight': '8px'},
+                        labelStyle={'display': 'block', 'marginBottom': '4px', 'fontSize': '12px', 'cursor': 'pointer', 'color': '#555'}
                     )
-                ], style={'marginBottom': '20px'}),
+                ], style={'marginBottom': '15px'}),
 
                 # Sector Filter
                 html.Div([
-                    html.Label("Sector", style={'fontWeight': 'bold', 'color': '#777', 'fontSize': '12px'}),
+                    html.Label("Sector", style={'fontWeight': 'normal', 'color': '#555', 'fontSize': '13px'}),
                     dcc.Checklist(
                         id='sector-filter-all',
-                        options=[{'label': '(All)', 'value': 'all'}],
+                        options=[{'label': ' (All)', 'value': 'all'}],
                         value=['all'],
-                        labelStyle={'display': 'block', 'fontSize': '12px', 'color': '#555'}
+                        inputStyle={'marginRight': '8px'},
+                        labelStyle={'display': 'block', 'marginBottom': '4px', 'fontSize': '12px', 'cursor': 'pointer', 'marginLeft': '10px', 'color': '#555'}
                     ),
                     dcc.Checklist(
                         id='sector-filter',
-                        options=[{'label': s, 'value': s} for s in sectors],
+                        options=[{'label': f' {s}', 'value': s} for s in sectors],
                         value=sectors,
-                        labelStyle={'display': 'block', 'fontSize': '12px', 'color': '#555', 'marginLeft': '10px'}
+                        inputStyle={'marginRight': '8px'},
+                        labelStyle={'display': 'block', 'marginBottom': '4px', 'fontSize': '12px', 'cursor': 'pointer', 'marginLeft': '10px', 'color': '#555'}
                     )
-                ], style={'marginBottom': '20px'}),
+                ], style={'marginBottom': '15px'}),
 
                 # Country Filter
                 html.Div([
-                    html.Label("Country", style={'fontWeight': 'bold', 'color': '#777', 'fontSize': '12px'}),
+                    html.Label("Country", style={'fontWeight': 'normal', 'color': '#555', 'fontSize': '13px'}),
                     dcc.Checklist(
                         id='country-filter-all',
-                        options=[{'label': '(All)', 'value': 'all'}],
+                        options=[{'label': ' (All)', 'value': 'all'}],
                         value=['all'],
-                        labelStyle={'display': 'block', 'fontSize': '12px', 'color': '#555'}
+                        inputStyle={'marginRight': '8px'},
+                        labelStyle={'display': 'block', 'marginBottom': '4px', 'fontSize': '12px', 'cursor': 'pointer', 'marginLeft': '10px', 'color': '#555'}
                     ),
                     html.Div([
                         dcc.Checklist(
                             id='country-filter',
-                            options=[{'label': c, 'value': c} for c in countries],
+                            options=[{'label': f' {c}', 'value': c} for c in countries],
                             value=countries,
-                            labelStyle={'display': 'block', 'fontSize': '12px', 'color': '#555', 'marginLeft': '10px'}
+                            inputStyle={'marginRight': '8px'},
+                            labelStyle={'display': 'block', 'marginBottom': '4px', 'fontSize': '12px', 'cursor': 'pointer', 'marginLeft': '10px', 'color': '#555'}
                         )
-                    ], style={'maxHeight': '400px', 'overflowY': 'auto'}),
-                ], style={'marginBottom': '20px'}),
+                    ], style={
+                        'maxHeight': '180px',
+                        'overflowY': 'auto',
+                        'padding': '6px',
+                        'border': '1px solid #e0e0e0',
+                        'borderRadius': '6px',
+                        'background': 'white'
+                    }),
+                ], style={'marginBottom': '15px'}),
                 
                 # Legend
                 html.Div([
-                    html.Label("Sector", style={'fontWeight': 'bold', 'color': '#777', 'fontSize': '12px'}),
+                    html.Label("Sector Legend", style={'fontWeight': 'normal', 'color': '#555', 'fontSize': '13px', 'marginBottom': '8px', 'display': 'block'}),
                     html.Div([
                         html.Div([
-                            html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': SECTOR_COLORS['Power'], 'display': 'inline-block', 'marginRight': '5px'}),
+                            html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': SECTOR_COLORS['Power'], 'display': 'inline-block', 'marginRight': '8px', 'borderRadius': '2px'}),
                             html.Span("Power", style={'fontSize': '12px', 'color': '#555'})
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '5px'}),
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px'}),
                         html.Div([
-                            html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': SECTOR_COLORS['Industrial'], 'display': 'inline-block', 'marginRight': '5px'}),
+                            html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': SECTOR_COLORS['Industrial'], 'display': 'inline-block', 'marginRight': '8px', 'borderRadius': '2px'}),
                             html.Span("Industrial", style={'fontSize': '12px', 'color': '#555'})
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '5px'}),
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px'}),
                         html.Div([
-                            html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': SECTOR_COLORS['Household'], 'display': 'inline-block', 'marginRight': '5px'}),
+                            html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': SECTOR_COLORS['Household'], 'display': 'inline-block', 'marginRight': '8px', 'borderRadius': '2px'}),
                             html.Span("Household", style={'fontSize': '12px', 'color': '#555'})
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '5px'}),
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px'}),
                     ])
-                ], style={'borderTop': '2px solid #eee', 'paddingTop': '10px'})
+                ], style={'borderTop': '1px solid #e0e0e0', 'paddingTop': '12px'})
 
-            ], style={'width': '20%', 'display': 'inline-block', 'verticalAlign': 'top', 
-                      'padding': '20px', 'backgroundColor': '#fff', 'borderLeft': '1px solid #ddd', 'minHeight': '100vh'})
-        ], style={'display': 'flex'})
+            ], style={'width': '230px', 'float': 'right', 'padding': '20px', 'backgroundColor': '#fcfcfc', 
+                      'borderLeft': '1px solid #eee', 'minHeight': '500px'})
+        ], style={'display': 'block', 'overflow': 'hidden'})
     ], style={'backgroundColor': '#fff', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'})
 
 def register_callbacks(dash_app, server):

@@ -1,13 +1,14 @@
 """
-Asian Gas Demand - Monthly Demand by Country
+European Gas Demand - Monthly Demand by Country
 Monthly gas demand analytics by country with interactive map, charts, and tables
 """
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import dcc, html, Input, Output, dash_table, State, ALL, ctx, no_update
+from dash import dcc, html, Input, Output, dash_table, State, ALL, ctx, no_update, callback_context
 from datetime import datetime, timedelta
 import time
+from core.data_helpers import execute_query
 from core.country_mappings import COUNTRY_TO_ISO, get_iso_code
 from .shared_map_utils import (
     create_choropleth_map, 
@@ -38,7 +39,7 @@ def _format_date_for_display(date):
 def _index_to_date(index, date_list):
     """Convert slider index to date"""
     if not date_list or index < 0 or index >= len(date_list):
-        return pd.Timestamp('2019-01-01')
+        return pd.Timestamp('2018-01-01')
     return date_list[int(index)]
 
 def _date_to_index(date, date_list):
@@ -60,30 +61,34 @@ def _date_to_index(date, date_list):
                 return i
         return len(date_list) - 1
 
-# Color palette for Asian countries - matching live reference screenshot
+# Color palette for countries - matching live server reference
 COUNTRY_COLORS = {
-    'Australia': '#B8A000',         # Dark yellow/gold
-    'Bangladesh': '#B8A000',        # Dark yellow/gold
-    'China': '#B8A000',             # Dark yellow/gold
-    'India': '#FF8C00',             # Orange
-    'Indonesia': '#F0E68C',         # Light yellow
-    'Japan': '#20B2AA',             # Teal/cyan
-    'Malaysia': '#5F9EA0',          # Cadet blue/teal
-    'New Zealand': '#90EE90',       # Light green
-    'Pakistan': '#F0E68C',          # Light yellow
-    'Philippines': '#FFB6C1',       # Light pink
-    'Singapore': '#808080',         # Gray
-    'South Korea': '#5F9EA0',       # Cadet blue/teal
-    'Taiwan': '#F0E68C',            # Light yellow
-    'Thailand': '#FF6B6B',          # Red/coral
-    'Vietnam': '#20B2AA',           # Teal/cyan
-    # Additional countries that might appear
-    'Myanmar': '#DA70D6',           # Orchid
-    'Brunei': '#FFB6C1',            # Light pink
-    'Sri Lanka': '#8B008B',         # Dark magenta
-    'Cambodia': '#DDA0DD',          # Plum
-    'Laos': '#8B4513',              # Saddle brown
-    'Mongolia': '#D2B48C',          # Tan
+    'Austria': '#4472C4',           # Dark blue
+    'Belgium': '#70ADD8',           # Light blue
+    'Bulgaria': '#FF8C00',          # Orange
+    'Croatia': '#FFB366',           # Light orange
+    'Czech Republic': '#228B22',    # Green
+    'Denmark': '#90EE90',           # Light green
+    'Estonia': '#B8860B',           # Dark goldenrod
+    'Finland': '#F0E68C',           # Khaki/light yellow
+    'France': '#008B8B',            # Dark cyan/teal
+    'Germany': '#40E0D0',           # Turquoise
+    'Greece': '#DC143C',            # Crimson red
+    'Hungary': '#FF69B4',           # Hot pink
+    'Italy': '#696969',             # Dim gray
+    'Latvia': '#A0A0A0',            # Gray
+    'Lithuania': '#DA70D6',         # Orchid
+    'Luxembourg': '#FFB6C1',        # Light pink
+    'Netherlands': '#8B008B',       # Dark magenta
+    'Poland': '#DDA0DD',            # Plum
+    'Portugal': '#8B4513',          # Saddle brown
+    'Romania': '#D2B48C',           # Tan
+    'Serbia': '#4472C4',            # Dark blue (same as Austria)
+    'Slovakia': '#87CEEB',          # Sky blue
+    'Slovenia': '#FF8C00',          # Orange (same as Bulgaria)
+    'United Kingdom': '#FFB366',    # Light orange
+    'Spain': '#228B22',             # Green (same as Czech Republic)
+    'Sweden': '#90EE90',            # Light green (same as Denmark)
 }
 
 # Professional map color scale matching the live source dashboard
@@ -100,8 +105,8 @@ MAP_COLOR_SCALE = [
 # Granularity Button Styles (from yearly dashboard)
 GRAN_BTN_CONTAINER_STYLE = {
     'display': 'flex',
-    'align-items': 'center',
-    'margin-right': '10px'
+    'alignItems': 'center',
+    'marginRight': '10px'
 }
 
 GRAN_BTN_ACTIVE = {
@@ -136,19 +141,21 @@ GRAN_BTN_INACTIVE = {
     'justifyContent': 'center'
 }
 
+def hex_to_rgba(hex_color, opacity):
+    """Convert hex color to rgba with specified opacity"""
+    hex_color = hex_color.lstrip('#')
+    lv = len(hex_color)
+    rgb = tuple(int(hex_color[i:i + lv // 3], 16) for i in range(0, lv, lv // 3))
+    return f'rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {opacity})'
+
 def _iso_for_country(country):
-    """Return ISO Alpha-3 code for a country, using centralized mapping with Asian country additions."""
-    # Add missing Asian countries to the mapping
-    asian_additions = {
-        'Taiwan': 'TWN',
-        'New Zealand': 'NZL',
-    }
+    """Return ISO Alpha-3 code for a country, using centralized mapping."""
+    # Manual patches for missing codes
+    if country == 'Luxembourg': return 'LUX'
+    if country == 'Czechia': return 'CZE'
+    if country == 'Moldova': return 'MDA'
+    if country == 'Republic of Moldova': return 'MDA'
     
-    # Check Asian additions first
-    if country in asian_additions:
-        return asian_additions[country]
-    
-    # Use centralized mapping
     return get_iso_code(country)
 
 def get_all_countries_with_coordinates():
@@ -184,81 +191,73 @@ def load_data(selected_sector=None):
         if selected_sector and selected_sector != 'All':
             sector_condition = f"AND p.sector = '{selected_sector}'"
         else:
-            sector_condition = "AND p.sector IN ('Household', 'Industrial', 'Other', 'Power')"
+            sector_condition = "AND p.sector IN ('Industrial', 'Household', 'Power')"
         
-        # Map Query: Replacement of csv file Asia Map_Demand by Year_data.csv
+        # Map Query: Replacement of csv file Europe Map_Demand by Year_data.csv
         map_query = f"""
         SELECT
             p.country AS "Country",
             EXTRACT(YEAR FROM p.date) AS "Year of Date",
             CASE 
-                WHEN p.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN p.unit = 'Mcm' THEN 'Million Cubic Meter'
                 WHEN p.unit = 'GWh' THEN 'Gigawatt-hour'
                 ELSE p.unit
             END AS "Unit",
             q.latitude AS "Latitude",
             q.longitude AS "Longitude",
-            CASE 
-                WHEN p.unit = 'Mcm' THEN ROUND(SUM(p.value) / 1000.0, 6)
-                ELSE ROUND(SUM(p.value), 6)
-            END AS "Value"
+            ROUND(SUM(p.value), 6) AS "Value"
         FROM dev.glng_gas_demand p
         LEFT JOIN dim_country q
         ON q.dim_country_id = p.country_id
-        WHERE LOWER(q.region) IN ('asia', 'oceania') 
+        WHERE LOWER(q.region) = 'europe' 
         AND q.latitude IS NOT NULL 
         {sector_condition}
         GROUP BY
             p.country,
             EXTRACT(YEAR FROM p.date),
             CASE 
-                WHEN p.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN p.unit = 'Mcm' THEN 'Million Cubic Meter'
                 WHEN p.unit = 'GWh' THEN 'Gigawatt-hour'
                 ELSE p.unit
             END,
             q.latitude,
-            q.longitude,
-            p.unit
+            q.longitude
         ORDER BY
             p.country DESC,
             EXTRACT(YEAR FROM p.date) DESC;
         """
         
-        # Chart Query Day of Month: Replacement of csv file Asia Line Chart_Total Demand by Country_data.csv
+        # Chart Query Day of Month: Replacement of csv file Europe Line Chart_Total Demand by Country_data.csv
         chart_query = f"""
         SELECT
             DATE_TRUNC('month', p.date)::date AS "Day of Date",
             p.country AS "Country",
             CASE 
-                WHEN p.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN p.unit = 'Mcm' THEN 'Million Cubic Meter'
                 WHEN p.unit = 'GWh' THEN 'Gigawatt-hour'
                 ELSE p.unit
             END AS "Unit",
-            CASE 
-                WHEN p.unit = 'Mcm' THEN ROUND(SUM(p.value) / 1000.0, 3)
-                ELSE ROUND(SUM(p.value), 2)
-            END AS "Value"
+            ROUND(SUM(p.value), 2) AS "Value"
         FROM dev.glng_gas_demand p
         LEFT JOIN dim_country q
         ON q.dim_country_id = p.country_id
-        WHERE LOWER(q.region) IN ('asia', 'oceania')
+        WHERE LOWER(q.region) = 'europe'
         AND q.latitude IS NOT NULL
         {sector_condition}
         GROUP BY
             DATE_TRUNC('month', p.date),
             p.country,
             CASE 
-                WHEN p.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN p.unit = 'Mcm' THEN 'Million Cubic Meter'
                 WHEN p.unit = 'GWh' THEN 'Gigawatt-hour'
                 ELSE p.unit
-            END,
-            p.unit
+            END
         ORDER BY
             "Day of Date",
             "Country";
         """
         
-        # Datatable Query: Replacement of csv file Total Gas Demand by Country_data.csv
+        # Datatable Query: Replacement of csv file Europe Table_Total Demand by Country_data.csv
         table_query = f"""
         SELECT
             p.country AS "Country",
@@ -267,19 +266,16 @@ def load_data(selected_sector=None):
             TO_CHAR(p.date, 'FMMonth') AS "Month of Date",
             1 AS "Day of Date",
             CASE 
-                WHEN p.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN p.unit = 'Mcm' THEN 'Million Cubic Meter'
                 WHEN p.unit = 'GWh' THEN 'Gigawatt-hour'
                 ELSE p.unit
             END AS "Unit",
-            CASE 
-                WHEN p.unit = 'Mcm' THEN ROUND(SUM(p.value) / 1000.0, 6)
-                ELSE ROUND(SUM(p.value), 6)
-            END AS "Value",
+            ROUND(SUM(p.value), 6) AS "Value",
             DATE_TRUNC('month', p.date) AS month_sort
         FROM dev.glng_gas_demand p
         LEFT JOIN dim_country q
         ON q.dim_country_id = p.country_id
-        WHERE LOWER(q.region) IN ('asia', 'oceania')
+        WHERE LOWER(q.region) = 'europe'
         AND q.latitude IS NOT NULL
         {sector_condition}
         GROUP BY
@@ -289,11 +285,10 @@ def load_data(selected_sector=None):
             TO_CHAR(p.date, 'FMMonth'),
             DATE_TRUNC('month', p.date),
             CASE 
-                WHEN p.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN p.unit = 'Mcm' THEN 'Million Cubic Meter'
                 WHEN p.unit = 'GWh' THEN 'Gigawatt-hour'
                 ELSE p.unit
-            END,
-            p.unit
+            END
         ORDER BY
             p.country,
             month_sort DESC;
@@ -371,12 +366,12 @@ def load_data(selected_sector=None):
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 def create_layout():
-    """Create the Asian Monthly Demand by Country layout"""
+    """Create the European Monthly Demand by Country layout"""
     map_df, chart_df, table_df = load_data()
     
     if map_df.empty and chart_df.empty and table_df.empty:
         return html.Div([
-            html.H1("Asian Gas Demand - Data Loading Issue", style={
+            html.H1("European Gas Demand - Data Loading Issue", style={
                 'color': '#fe5000', 'fontSize': '20px', 'fontWeight': 'bold',
                 'fontFamily': 'Arial, sans-serif', 'margin': '25px 0 15px 40px'
             }),
@@ -392,10 +387,10 @@ def create_layout():
     countries = sorted(list(set(all_countries)))
     
     # Get available sectors - add all required options
-    sectors = ['All', 'Household', 'Industrial', 'Other', 'Power']
+    sectors = ['All', 'Household', 'Industrial', 'Power']
     
     # Get available units - add both options
-    units = ['Billion Cubic Meter', 'Gigawatt-hour']
+    units = ['Million Cubic Meter', 'Gigawatt-hour']
     
     # Get date range and create sorted date list
     all_dates = []
@@ -409,9 +404,9 @@ def create_layout():
         max_date_val = unique_dates[-1]
         date_list = unique_dates
         
-        # Set default range to 2019-2025 (7 years) - ensure we get the full range
+        # Set default range to 2019-2026 (8 years) - ensure we get the full range
         default_start_date = pd.Timestamp('2019-01-01')
-        default_end_date = pd.Timestamp('2025-12-31')
+        default_end_date = pd.Timestamp('2026-12-31')
         
         # Find indices for default range - be more flexible with date matching
         default_start_index = 0
@@ -423,13 +418,13 @@ def create_layout():
                 default_start_index = i
                 break
         
-        # Find the closest date to 2025-12-31 or earlier
+        # Find the closest date to 2026-12-31 or earlier
         for i in range(len(date_list) - 1, -1, -1):
-            if date_list[i].year <= 2025:
+            if date_list[i].year <= 2026:
                 default_end_index = i
                 break
                 
-        # If we couldn't find 2019-2025 range, use full range
+        # If we couldn't find 2019-2026 range, use full range
         if default_start_index >= default_end_index:
             default_start_index = 0
             default_end_index = len(date_list) - 1
@@ -437,7 +432,7 @@ def create_layout():
         print(f"Date range: {len(date_list)} dates from {min_date_val} to {max_date_val}")
         print(f"Default range: indices {default_start_index}-{default_end_index} ({date_list[default_start_index]} to {date_list[default_end_index]})")
     else:
-        min_date_val = pd.Timestamp('2019-01-01')
+        min_date_val = pd.Timestamp('2018-01-01')
         max_date_val = pd.Timestamp('2025-12-31')
         date_list = []
         default_start_index = 0
@@ -445,20 +440,20 @@ def create_layout():
 
     return html.Div([
         # Store components for tracking filter states and granularity
-        dcc.Store(id='country-filter-previous-asia-demand', data={'all_selected': True}),
-        dcc.Store(id='selected-countries-store-asia-demand', data=countries),
-        dcc.Store(id='asia-demand-date-list-store', data=[d.isoformat() for d in date_list] if date_list else []),
-        dcc.Store(id='chart-granularity-store-asia-demand', data='month'),  # Default to month for chart
-        dcc.Store(id='table-granularity-store-asia-demand', data='month'),  # Default to month for table
-        dcc.Store(id='chart-selection-store-asia-demand', data=None),  # For chart highlighting
+        dcc.Store(id='country-filter-previous-demand', data={'all_selected': True}),
+        dcc.Store(id='selected-countries-store-demand', data=countries),
+        dcc.Store(id='demand-date-list-store', data=[d.isoformat() for d in date_list] if date_list else []),
+        dcc.Store(id='chart-granularity-store-demand', data='month'),  # Default to month for chart
+        dcc.Store(id='table-granularity-store-demand', data='month'),  # Default to month for table
+        dcc.Store(id='chart-selection-store-demand', data=None),  # For chart highlighting
         
         # Download components
-        dcc.Download(id="download-asia-demand-map-csv"),
-        dcc.Download(id="download-asia-demand-chart-csv"),
-        dcc.Download(id="download-asia-demand-table-csv"),
+        dcc.Download(id="download-demand-map-csv"),
+        dcc.Download(id="download-demand-chart-csv"),
+        dcc.Download(id="download-demand-table-csv"),
         
         # Clientside callback trigger for hover highlighting
-        html.Div(id='gas-asia-demand-hover-trigger', style={'display': 'none'}),
+        html.Div(id='gas-demand-hover-trigger', style={'display': 'none'}),
         
         html.Div([
             # Side Filter Panel (on the right)
@@ -478,23 +473,23 @@ def create_layout():
                     html.Div([
                         html.Div([
                             html.Label(
-                                id="asia-demand-date-range-start-label",
+                                id="demand-date-range-start-label",
                                 children='1/1/2019',  # Default start date
                                 style={'display': 'inline-block', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '12px', 'fontWeight': 'bold'}
                             ),
                             html.Label(
-                                id="asia-demand-date-range-end-label",
-                                children='12/31/2025',  # Default end date
+                                id="demand-date-range-end-label",
+                                children='12/31/2026',  # Default end date
                                 style={'float': 'right', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '28px', 'fontWeight': 'bold'}
                             ),
                         ], style={'width': '100%', 'marginBottom': '2px', 'position': 'relative'}),
                         html.Div([
                             dcc.RangeSlider(
-                                id="asia-demand-date-range-slider",
+                                id="demand-date-range-slider",
                                 min=0,
                                 max=len(date_list) - 1 if date_list else 0,
                                 step=1,
-                                value=[default_start_index, default_end_index],  # Default to 2019-2025 range
+                                value=[default_start_index, default_end_index],  # Default to 2019-2026 range
                                 marks=None,
                                 allowCross=False,
                             ),
@@ -504,9 +499,9 @@ def create_layout():
                     # Unit Filter
                     html.Label("Unit", style={'fontWeight': 'bold', 'color': '#555', 'fontSize': '13px', 'marginBottom': '10px'}),
                     dcc.RadioItems(
-                        id='unit-radio-asia-demand',
+                        id='unit-radio-demand',
                         options=[{'label': f' {unit}', 'value': unit} for unit in units],
-                        value=units[0] if units else 'Billion Cubic Meter',
+                        value=units[0] if units else 'Million Cubic Meter',
                         inputStyle={'marginRight': '8px'},
                         labelStyle={'display': 'block', 'marginBottom': '4px', 'fontSize': '12px', 'cursor': 'pointer'},
                         style={'marginBottom': '20px'}
@@ -515,7 +510,7 @@ def create_layout():
                     # Sector Filter
                     html.Label("Sector", style={'fontWeight': 'bold', 'color': '#555', 'fontSize': '13px', 'marginBottom': '10px'}),
                     dcc.RadioItems(
-                        id='sector-radio-asia-demand',
+                        id='sector-radio-demand',
                         options=[{'label': f' {sector}', 'value': sector} for sector in sectors],
                         value='All',
                         inputStyle={'marginRight': '8px'},
@@ -526,7 +521,7 @@ def create_layout():
                     # Country Filter
                     html.Label("Country", style={'fontWeight': 'bold', 'color': '#555', 'fontSize': '13px', 'marginBottom': '10px'}),
                     dcc.Checklist(
-                        id='country-checklist-asia-demand',
+                        id='country-checklist-demand',
                         options=[{'label': ' (All)', 'value': '(All)'}] + [{'label': f' {c}', 'value': c} for c in countries],
                         value=['(All)'] + countries,  # Start with all selected
                         inputStyle={'marginRight': '8px'},
@@ -544,7 +539,7 @@ def create_layout():
                     # Country Legend
                     html.Label("Country Legend", style={'fontWeight': 'bold', 'color': '#555', 'fontSize': '13px', 'marginBottom': '10px'}),
                     html.Div(
-                        id='country-legend-container-asia-demand',
+                        id='country-legend-container-demand',
                         children=[],  # Will be populated by callback
                         style={'overflowY': 'auto', 'marginBottom': '15px'}
                     ),
@@ -557,7 +552,7 @@ def create_layout():
                 # Header section
                 html.Div([
                     html.Div([
-                        html.H1("Asian Gas Demand - Monthly Demand by Country", style={
+                        html.H1("European Gas Demand - Monthly Demand by Country", style={
                             'color': '#fe5000', 'fontSize': '20px', 'fontWeight': 'bold',
                             'fontFamily': 'Arial, sans-serif', 'margin': '25px 0 15px 0'
                         }),
@@ -569,16 +564,16 @@ def create_layout():
                 
                 # Map and Chart Side by Side Section
                 html.Div([
-                    # Left Side - Asia Map
+                    # Left Side - Europe Map
                     html.Div([
                         html.Div([
-                            html.H3(id="asia-map-demand-country-title", children="Natural Gas Demand", style={
+                            html.H3(id="europe-map-title", children="Natural Gas Demand", style={
                                 'color': '#1b365d', 'fontSize': '16px', 'fontWeight': 'bold',
                                 'marginBottom': '15px', 'textAlign': 'left', 'flex': '1'
                             }),
                             html.Button(
                                 "Export to CSV",
-                                id="export-asia-demand-map-btn",
+                                id="export-demand-map-btn",
                                 n_clicks=0,
                                 style={
                                     "backgroundColor": "white",
@@ -596,10 +591,10 @@ def create_layout():
                         ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '5px'}),
                         html.Div([
                             dcc.Loading(
-                                id="loading-map-asia-demand",
+                                id="loading-map-demand",
                                 type="circle",
                                 children=dcc.Graph(
-                                    id='asia-map-demand', 
+                                    id='europe-map-demand', 
                                     config={
                                         'displayModeBar': True,
                                         'displaylogo': False,
@@ -610,7 +605,7 @@ def create_layout():
                                         'doubleClick': 'reset',
                                         'toImageButtonOptions': {
                                             'format': 'png',
-                                            'filename': 'asia_gas_demand_map',
+                                            'filename': 'europe_gas_demand_map',
                                             'height': 700,
                                             'width': 1200,
                                             'scale': 2
@@ -628,24 +623,24 @@ def create_layout():
                             html.Div([
                                 html.Div([
                                     html.Span("Yr of Dt", title="Year of Date", style={'fontSize': '11px', 'marginRight': '5px', 'cursor': 'help'}),
-                                    html.Button('+', id='chart-toggle-year-btn-asia-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                                    html.Button('+', id='chart-toggle-year-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
                                 ], style=GRAN_BTN_CONTAINER_STYLE),
                                 html.Div([
                                     html.Span("Qtr of Dt", title="Quarter of Date", style={'fontSize': '11px', 'marginRight': '5px', 'cursor': 'help'}),
-                                    html.Button('+', id='chart-toggle-quarter-btn-asia-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                                    html.Button('+', id='chart-toggle-quarter-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
                                 ], style=GRAN_BTN_CONTAINER_STYLE),
                                 html.Div([
                                     html.Span("Mth of Dt", title="Month of Date", style={'fontSize': '11px', 'marginRight': '5px', 'cursor': 'help'}),
-                                    html.Button('-', id='chart-toggle-month-btn-asia-demand', n_clicks=0, style=GRAN_BTN_ACTIVE)
+                                    html.Button('-', id='chart-toggle-month-btn-demand', n_clicks=0, style=GRAN_BTN_ACTIVE)
                                 ], style=GRAN_BTN_CONTAINER_STYLE),
                                 html.Div([
                                     html.Span("Day of Dt", title="Day of Date", style={'fontSize': '11px', 'marginRight': '5px', 'cursor': 'help'}),
-                                    html.Button('+', id='chart-toggle-day-btn-asia-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                                    html.Button('+', id='chart-toggle-day-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
                                 ], style=GRAN_BTN_CONTAINER_STYLE),
                             ], style={'display': 'flex', 'flex': '1'}),
                             html.Button(
                                 "Export to CSV",
-                                id="export-asia-demand-chart-btn",
+                                id="export-demand-chart-btn",
                                 n_clicks=0,
                                 style={
                                     "backgroundColor": "white",
@@ -663,21 +658,19 @@ def create_layout():
                         
                         html.Div([
                             dcc.Loading(
-                                id="loading-chart-asia-demand",
+                                id="loading-chart-demand",
                                 type="circle",
                                 children=dcc.Graph(
-                                    id='asia-chart-demand', 
+                                    id='europe-chart-demand', 
                                     config={
                                         'displayModeBar': True,
                                         'displaylogo': False,
                                         'modeBarButtons': [
                                             ['toImage', 'resetScale2d']
                                         ],
-                                        'scrollZoom': False,
-                                        'doubleClick': 'reset',
                                         'toImageButtonOptions': {
                                             'format': 'png',
-                                            'filename': 'asia_gas_demand_chart',
+                                            'filename': 'europe_gas_demand_chart',
                                             'height': 700,
                                             'width': 1200,
                                             'scale': 2
@@ -696,24 +689,24 @@ def create_layout():
                         html.Div([
                             html.Div([
                                 html.Span("Year of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                                html.Button('+', id='table-toggle-year-btn-asia-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                                html.Button('+', id='table-toggle-year-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
                             ], style=GRAN_BTN_CONTAINER_STYLE),
                             html.Div([
                                 html.Span("Quarter of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                                html.Button('+', id='table-toggle-quarter-btn-asia-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                                html.Button('+', id='table-toggle-quarter-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
                             ], style=GRAN_BTN_CONTAINER_STYLE),
                             html.Div([
                                 html.Span("Month of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                                html.Button('-', id='table-toggle-month-btn-asia-demand', n_clicks=0, style=GRAN_BTN_ACTIVE)
+                                html.Button('-', id='table-toggle-month-btn-demand', n_clicks=0, style=GRAN_BTN_ACTIVE)
                             ], style=GRAN_BTN_CONTAINER_STYLE),
                             html.Div([
                                 html.Span("Day of Date", style={'fontSize': '12px', 'marginRight': '8px'}),
-                                html.Button('+', id='table-toggle-day-btn-asia-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
+                                html.Button('+', id='table-toggle-day-btn-demand', n_clicks=0, style=GRAN_BTN_INACTIVE)
                             ], style=GRAN_BTN_CONTAINER_STYLE),
                         ], style={'display': 'flex', 'flex': '1'}),
                         html.Button(
                             "Export to CSV",
-                            id="export-asia-demand-table-btn",
+                            id="export-demand-table-btn",
                             n_clicks=0,
                             style={
                                 "backgroundColor": "white",
@@ -730,42 +723,41 @@ def create_layout():
                     ], style={'display': 'flex', 'alignItems': 'center', 'padding': '10px', 'backgroundColor': '#f8f9fa', 'marginBottom': '15px', 'borderRadius': '4px'}),
                     
                     dcc.Loading(
-                        id="loading-table-asia-demand",
+                        id="loading-table-demand",
                         type="circle",
                         children=html.Div(
-                            id='asia-table-demand'
+                            id='europe-table-demand'
                         )
                     ),
                     
                 ], style={'width': '100%'}),  # table section close
                 
             ], style={'marginRight': '150px', 'padding': '0 10px'})  # main content close
-        ])  # outer container close
-    ], className='tab-content', style={'backgroundColor': '#ffffff', 'minHeight': '100vh'})  # closes return html.Div([
+        ])  # outer container close - closes html.Div([ from line 452
+    ], className='tab-content', style={'backgroundColor': '#ffffff', 'minHeight': '100vh'})  # closes return html.Div([ from line 435
 
 
 def register_callbacks(dash_app, server):
-    """Register all callbacks for the Asian Gas Demand dashboard"""
+    """Register all callbacks for the European Gas Demand dashboard"""
     
     # Chart Granularity Toggle
     @dash_app.callback(
-        [Output('chart-granularity-store-asia-demand', 'data'),
-         Output('chart-toggle-year-btn-asia-demand', 'children'),
-         Output('chart-toggle-quarter-btn-asia-demand', 'children'),
-         Output('chart-toggle-month-btn-asia-demand', 'children'),
-         Output('chart-toggle-day-btn-asia-demand', 'children'),
-         Output('chart-toggle-year-btn-asia-demand', 'style'),
-         Output('chart-toggle-quarter-btn-asia-demand', 'style'),
-         Output('chart-toggle-month-btn-asia-demand', 'style'),
-         Output('chart-toggle-day-btn-asia-demand', 'style')],
-        [Input('chart-toggle-year-btn-asia-demand', 'n_clicks'),
-         Input('chart-toggle-quarter-btn-asia-demand', 'n_clicks'),
-         Input('chart-toggle-month-btn-asia-demand', 'n_clicks'),
-         Input('chart-toggle-day-btn-asia-demand', 'n_clicks')],
-        [State('chart-granularity-store-asia-demand', 'data')]
+        [Output('chart-granularity-store-demand', 'data'),
+         Output('chart-toggle-year-btn-demand', 'children'),
+         Output('chart-toggle-quarter-btn-demand', 'children'),
+         Output('chart-toggle-month-btn-demand', 'children'),
+         Output('chart-toggle-day-btn-demand', 'children'),
+         Output('chart-toggle-year-btn-demand', 'style'),
+         Output('chart-toggle-quarter-btn-demand', 'style'),
+         Output('chart-toggle-month-btn-demand', 'style'),
+         Output('chart-toggle-day-btn-demand', 'style')],
+        [Input('chart-toggle-year-btn-demand', 'n_clicks'),
+         Input('chart-toggle-quarter-btn-demand', 'n_clicks'),
+         Input('chart-toggle-month-btn-demand', 'n_clicks'),
+         Input('chart-toggle-day-btn-demand', 'n_clicks')],
+        [State('chart-granularity-store-demand', 'data')]
     )
     def toggle_chart_granularity(y_c, q_c, m_c, d_c, current_gran):
-        from dash import callback_context
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
@@ -773,10 +765,10 @@ def register_callbacks(dash_app, server):
         btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
         new_gran = current_gran
         
-        if btn_id == 'chart-toggle-year-btn-asia-demand': new_gran = 'year'
-        elif btn_id == 'chart-toggle-quarter-btn-asia-demand': new_gran = 'quarter'
-        elif btn_id == 'chart-toggle-month-btn-asia-demand': new_gran = 'month'
-        elif btn_id == 'chart-toggle-day-btn-asia-demand': new_gran = 'day'
+        if btn_id == 'chart-toggle-year-btn-demand': new_gran = 'year'
+        elif btn_id == 'chart-toggle-quarter-btn-demand': new_gran = 'quarter'
+        elif btn_id == 'chart-toggle-month-btn-demand': new_gran = 'month'
+        elif btn_id == 'chart-toggle-day-btn-demand': new_gran = 'day'
         
         return (
             new_gran,
@@ -792,23 +784,22 @@ def register_callbacks(dash_app, server):
 
     # Table Granularity Toggle
     @dash_app.callback(
-        [Output('table-granularity-store-asia-demand', 'data'),
-         Output('table-toggle-year-btn-asia-demand', 'children'),
-         Output('table-toggle-quarter-btn-asia-demand', 'children'),
-         Output('table-toggle-month-btn-asia-demand', 'children'),
-         Output('table-toggle-day-btn-asia-demand', 'children'),
-         Output('table-toggle-year-btn-asia-demand', 'style'),
-         Output('table-toggle-quarter-btn-asia-demand', 'style'),
-         Output('table-toggle-month-btn-asia-demand', 'style'),
-         Output('table-toggle-day-btn-asia-demand', 'style')],
-        [Input('table-toggle-year-btn-asia-demand', 'n_clicks'),
-         Input('table-toggle-quarter-btn-asia-demand', 'n_clicks'),
-         Input('table-toggle-month-btn-asia-demand', 'n_clicks'),
-         Input('table-toggle-day-btn-asia-demand', 'n_clicks')],
-        [State('table-granularity-store-asia-demand', 'data')]
+        [Output('table-granularity-store-demand', 'data'),
+         Output('table-toggle-year-btn-demand', 'children'),
+         Output('table-toggle-quarter-btn-demand', 'children'),
+         Output('table-toggle-month-btn-demand', 'children'),
+         Output('table-toggle-day-btn-demand', 'children'),
+         Output('table-toggle-year-btn-demand', 'style'),
+         Output('table-toggle-quarter-btn-demand', 'style'),
+         Output('table-toggle-month-btn-demand', 'style'),
+         Output('table-toggle-day-btn-demand', 'style')],
+        [Input('table-toggle-year-btn-demand', 'n_clicks'),
+         Input('table-toggle-quarter-btn-demand', 'n_clicks'),
+         Input('table-toggle-month-btn-demand', 'n_clicks'),
+         Input('table-toggle-day-btn-demand', 'n_clicks')],
+        [State('table-granularity-store-demand', 'data')]
     )
     def toggle_table_granularity(y_c, q_c, m_c, d_c, current_gran):
-        from dash import callback_context
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
@@ -816,10 +807,10 @@ def register_callbacks(dash_app, server):
         btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
         new_gran = current_gran
         
-        if btn_id == 'table-toggle-year-btn-asia-demand': new_gran = 'year'
-        elif btn_id == 'table-toggle-quarter-btn-asia-demand': new_gran = 'quarter'
-        elif btn_id == 'table-toggle-month-btn-asia-demand': new_gran = 'month'
-        elif btn_id == 'table-toggle-day-btn-asia-demand': new_gran = 'day'
+        if btn_id == 'table-toggle-year-btn-demand': new_gran = 'year'
+        elif btn_id == 'table-toggle-quarter-btn-demand': new_gran = 'quarter'
+        elif btn_id == 'table-toggle-month-btn-demand': new_gran = 'month'
+        elif btn_id == 'table-toggle-day-btn-demand': new_gran = 'day'
         
         return (
             new_gran,
@@ -835,18 +826,17 @@ def register_callbacks(dash_app, server):
 
     # Handle Chart Selection for highlighting
     @dash_app.callback(
-        [Output('chart-selection-store-asia-demand', 'data'),
-         Output('asia-chart-demand', 'clickData')],
-        [Input('asia-chart-demand', 'clickData'),
-         Input('chart-granularity-store-asia-demand', 'data'),
-         Input('unit-radio-asia-demand', 'value'),
-         Input('sector-radio-asia-demand', 'value'),
-         Input('selected-countries-store-asia-demand', 'data')],
-        State('chart-selection-store-asia-demand', 'data'),
+        [Output('chart-selection-store-demand', 'data'),
+         Output('europe-chart-demand', 'clickData')],
+        [Input('europe-chart-demand', 'clickData'),
+         Input('chart-granularity-store-demand', 'data'),
+         Input('unit-radio-demand', 'value'),
+         Input('sector-radio-demand', 'value'),
+         Input('selected-countries-store-demand', 'data')],
+        State('chart-selection-store-demand', 'data'),
         prevent_initial_call=True
     )
     def toggle_chart_selection(click_data, granularity, unit, sector, countries, current_sel):
-        from dash import callback_context
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update
@@ -854,7 +844,7 @@ def register_callbacks(dash_app, server):
         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
         
         # Reset selection on filter changes
-        if trigger_id != 'asia-chart-demand':
+        if trigger_id != 'europe-chart-demand':
             return None, None
             
         if not click_data or 'points' not in click_data or len(click_data['points']) == 0:
@@ -962,23 +952,90 @@ def register_callbacks(dash_app, server):
             return newFig;
         }
         """,
-        Output('asia-map-demand', 'figure', allow_duplicate=True),
-        [Input('asia-map-demand', 'hoverData')],
-        [State('asia-map-demand', 'figure')],
+        Output('europe-map-demand', 'figure', allow_duplicate=True),
+        [Input('europe-map-demand', 'hoverData')],
+        [State('europe-map-demand', 'figure')],
+        prevent_initial_call=True
+    )
+    
+    # Clientside callback for line chart hover behavior (show dots at hover x-position on all lines)
+    dash_app.clientside_callback(
+        """
+        function(hoverData, figure) {
+            if (!figure || !figure.data) {
+                return window.dash_clientside.no_update;
+            }
+            
+            // Create a copy of the figure
+            let newFig = JSON.parse(JSON.stringify(figure));
+            let hoveredX = null;
+            
+            // Extract hovered x-value from hover data
+            if (hoverData && hoverData.points && hoverData.points.length > 0) {
+                hoveredX = hoverData.points[0].x;
+            }
+            
+            // Update marker visibility based on hover x-position
+            for (let i = 0; i < newFig.data.length; i++) {
+                let trace = newFig.data[i];
+                if (trace.type === 'scatter') {
+                    if (hoveredX !== null) {
+                        // Show markers at the hovered x-position for all lines
+                        let markerSizes = [];
+                        for (let j = 0; j < trace.x.length; j++) {
+                            if (trace.x[j] === hoveredX) {
+                                // Show marker at this x-position
+                                markerSizes.push(8);
+                            } else {
+                                // Hide marker at other x-positions
+                                markerSizes.push(0);
+                            }
+                        }
+                        trace.marker.size = markerSizes;
+                        trace.mode = 'lines+markers';
+                    } else {
+                        // No hover - show markers only on selected lines (if any)
+                        if (trace.line && trace.line.width > 2) {
+                            // Selected line - show all markers
+                            let markerSizes = [];
+                            for (let j = 0; j < trace.x.length; j++) {
+                                markerSizes.push(8);
+                            }
+                            trace.marker.size = markerSizes;
+                            trace.mode = 'lines+markers';
+                        } else {
+                            // Non-selected line - hide all markers
+                            let markerSizes = [];
+                            for (let j = 0; j < trace.x.length; j++) {
+                                markerSizes.push(0);
+                            }
+                            trace.marker.size = markerSizes;
+                            trace.mode = 'lines';
+                        }
+                    }
+                }
+            }
+            
+            return newFig;
+        }
+        """,
+        Output('europe-chart-demand', 'figure', allow_duplicate=True),
+        [Input('europe-chart-demand', 'hoverData')],
+        [State('europe-chart-demand', 'figure')],
         prevent_initial_call=True
     )
     
     # Update date labels based on range slider selection
     @dash_app.callback(
-        [Output('asia-demand-date-range-start-label', 'children'),
-         Output('asia-demand-date-range-end-label', 'children')],
-        [Input('asia-demand-date-range-slider', 'value')],
-        [State('asia-demand-date-list-store', 'data')]
+        [Output('demand-date-range-start-label', 'children'),
+         Output('demand-date-range-end-label', 'children')],
+        [Input('demand-date-range-slider', 'value')],
+        [State('demand-date-list-store', 'data')]
     )
     def update_date_labels(slider_range, date_list_iso):
         """Update date labels based on range slider values."""
         if not date_list_iso or not slider_range or len(slider_range) != 2:
-            return '1/1/2019', '12/31/2025'
+            return '1/1/2019', '10/1/2025'
         
         # Convert ISO strings back to datetime objects
         date_list = [pd.to_datetime(d) for d in date_list_iso]
@@ -990,10 +1047,10 @@ def register_callbacks(dash_app, server):
     
     # Callback to handle "All" checkbox logic for countries
     @dash_app.callback(
-        [Output('country-checklist-asia-demand', 'value'),
-         Output('country-filter-previous-asia-demand', 'data', allow_duplicate=True)],
-        Input('country-checklist-asia-demand', 'value'),
-        [State('country-filter-previous-asia-demand', 'data')],
+        [Output('country-checklist-demand', 'value'),
+         Output('country-filter-previous-demand', 'data', allow_duplicate=True)],
+        Input('country-checklist-demand', 'value'),
+        [State('country-filter-previous-demand', 'data')],
         prevent_initial_call=True,
     )
     def handle_country_checklist(selection, country_state):
@@ -1040,11 +1097,11 @@ def register_callbacks(dash_app, server):
 
     # Update country legend
     @dash_app.callback(
-        [Output('country-legend-container-asia-demand', 'children'),
-         Output('selected-countries-store-asia-demand', 'data')],
-        [Input('country-checklist-asia-demand', 'value'),
-         Input({'type': 'legend-item-asia-demand', 'index': ALL}, 'n_clicks')],
-        [State('selected-countries-store-asia-demand', 'data')]
+        [Output('country-legend-container-demand', 'children'),
+         Output('selected-countries-store-demand', 'data')],
+        [Input('country-checklist-demand', 'value'),
+         Input({'type': 'legend-item-demand', 'index': ALL}, 'n_clicks')],
+        [State('selected-countries-store-demand', 'data')]
     )
     def update_country_legend(selected_countries, legend_clicks, current_selected):
         """Update country legend and handle legend clicks"""
@@ -1065,13 +1122,16 @@ def register_callbacks(dash_app, server):
         
         # Default to using checklist value if not triggered by legend
         # or if it's the initial load
-        if 'legend-item-asia-demand' not in trigger_id:
-            if not selected_countries or (selected_countries and '(All)' not in selected_countries and len(selected_countries) == 0):
+        if 'legend-item-demand' not in trigger_id:
+            # When triggered by checklist, use the checklist value directly
+            if not selected_countries:
                 current_selected = []  # Allow empty selection
-            elif selected_countries and '(All)' not in selected_countries:
-                current_selected = [c for c in selected_countries if c in available_countries]
-            else:
+            elif '(All)' in selected_countries:
+                # If (All) is selected, select all countries
                 current_selected = available_countries.copy()
+            else:
+                # Use the checklist selection as-is (filter out any invalid countries)
+                current_selected = [c for c in selected_countries if c in available_countries]
         else:
             # If triggered by legend, use the stored state as the baseline
             # Ensure current_selected is a list
@@ -1079,7 +1139,7 @@ def register_callbacks(dash_app, server):
                 current_selected = available_countries.copy()
         
         # Handle legend item clicks
-        if 'legend-item-asia-demand' in trigger_id:
+        if 'legend-item-demand' in trigger_id:
             import json
             prop_data = json.loads(trigger_id.split('.')[0])
             clicked_country = available_countries[prop_data['index']] if prop_data['index'] < len(available_countries) else None
@@ -1118,7 +1178,7 @@ def register_callbacks(dash_app, server):
                         }
                     )
                 ], 
-                id={'type': 'legend-item-asia-demand', 'index': i},
+                id={'type': 'legend-item-demand', 'index': i},
                 style={
                     'display': 'flex',
                     'alignItems': 'center',
@@ -1136,10 +1196,10 @@ def register_callbacks(dash_app, server):
 
     # Update map title with latest year
     @dash_app.callback(
-        Output('asia-map-demand-country-title', 'children'),
-        [Input('sector-radio-asia-demand', 'value'),
-         Input('asia-demand-date-range-slider', 'value')],
-        [State('asia-demand-date-list-store', 'data')]
+        Output('europe-map-title', 'children'),
+        [Input('sector-radio-demand', 'value'),
+         Input('demand-date-range-slider', 'value')],
+        [State('demand-date-list-store', 'data')]
     )
     def update_map_title(selected_sector, slider_range, date_list_iso):
         """Update map title to show the latest year within the selected date range"""
@@ -1167,17 +1227,17 @@ def register_callbacks(dash_app, server):
             print(f"Error updating map title: {e}")
             return "Natural Gas Demand"
 
-    # Update Asia Map
+    # Update Europe Map
     @dash_app.callback(
-        Output('asia-map-demand', 'figure'),
-        [Input('asia-demand-date-range-slider', 'value'),
-         Input('unit-radio-asia-demand', 'value'),
-         Input('sector-radio-asia-demand', 'value'),
-         Input('selected-countries-store-asia-demand', 'data')],
-        [State('asia-demand-date-list-store', 'data')]
+        Output('europe-map-demand', 'figure'),
+        [Input('demand-date-range-slider', 'value'),
+         Input('unit-radio-demand', 'value'),
+         Input('sector-radio-demand', 'value'),
+         Input('selected-countries-store-demand', 'data')],
+        [State('demand-date-list-store', 'data')]
     )
-    def update_asia_map(slider_range, selected_unit, selected_sector, selected_countries, date_list_iso):
-        """Update the Asia map visualization using shared map utilities"""
+    def update_europe_map(slider_range, selected_unit, selected_sector, selected_countries, date_list_iso):
+        """Update the Europe map visualization using shared map utilities"""
         map_df, chart_df, table_df = load_data(selected_sector)
         
         if map_df.empty:
@@ -1199,24 +1259,22 @@ def register_callbacks(dash_app, server):
         
         # Note: Sector filtering is now handled at the database level in load_data()
         
-        # Apply country filter FIRST - handle empty selection properly
-        # Filter by selected countries if not (All)
-        if selected_countries and '(All)' not in selected_countries:
-            filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
-        
+        # Check for empty country selection
         has_selection = selected_countries is not None and len(selected_countries) > 0
         
         if selected_countries is not None and len(selected_countries) == 0:
              return create_empty_map("No countries selected", height=700)
         
+        # Filter by selected countries if not (All)
+        if selected_countries and '(All)' not in selected_countries:
+            filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
         
         # We also do NOT restrict to the latest year anymore, to ensures that ALL data 
         # within the selected date range is aggregated and displayed.
-        if filtered_df.empty:
-            return create_empty_map("No data available", height=700)
+        # This solves the issue of missing countries that might not have data in the absolute latest month.
         
         if filtered_df.empty:
-            return create_empty_map("No data available for selected filters", height=700)
+            return create_empty_map("No data available", height=700)
         
         # Aggregate data by country (sum values across years if multiple)
         agg_df = filtered_df.groupby(['Country', 'Latitude (generated)', 'Longitude (generated)', 'Year of Date']).agg({
@@ -1247,8 +1305,6 @@ def register_callbacks(dash_app, server):
         z_values = agg_df['Value'].tolist()
         max_volume = max(z_values) if z_values else 1
         
-        print(f"Map country names: {country_names}")
-        print(f"Map locations (ISO): {locations}")
         
         # Create hover text with structured format matching the professional design
         hover_text = agg_df.apply(
@@ -1256,7 +1312,7 @@ def register_callbacks(dash_app, server):
                 f"<span style='color: #666666; font-family: Arial, sans-serif;'>Country: </span>"
                 f"<span style='color: #000000; font-weight: bold;'>{row['Country']}</span><br>"
                 f"<span style='color: #666666; font-family: Arial, sans-serif;'>Year of Date: </span>"
-                f"<span style='color: #000000; font-weight: bold;'>{int(row.get('Year of Date', 2025))}</span><br>"
+                f"<span style='color: #000000; font-weight: bold;'>{int(row.get('Year of Date', 2024))}</span><br>"
                 f"<span style='color: #666666; font-family: Arial, sans-serif;'>Value: </span>"
                 f"<span style='color: #000000; font-weight: bold;'>{row['Value']:,.1f}</span><br>"
                 f"<span style='color: #666666; font-family: Arial, sans-serif;'>Unit: </span>"
@@ -1272,19 +1328,37 @@ def register_callbacks(dash_app, server):
         if not all_countries_df.empty:
             countries_df = all_countries_df[all_countries_df['Country'].isin(countries_in_map)].copy()
         
-        # Determine selection parameters
+        # Determine selection parameters for visual styling
         selected_iso = None
         other_isos = None
         single_selected_country = None
         
-        # Check if only one country is selected (not all countries)
-        if selected_countries and len(selected_countries) == 1 and '(All)' not in selected_countries:
-            single_selected_country = selected_countries[0]
+        # Check if we have a subset of countries selected (not all)
+        all_available_countries = agg_df['Country'].unique().tolist()
+        
+        if selected_countries and len(selected_countries) < len(all_available_countries):
+            # Some countries are filtered - we need to show visual distinction
+            selected_country_isos = []
+            other_country_isos = []
             
-            # Find the ISO code for the selected country
-            if single_selected_country in agg_df['Country'].values:  # Use original Country column
-                selected_iso = agg_df.loc[agg_df['Country'] == single_selected_country, 'ISO_Code'].iloc[0]
-                other_isos = [iso for iso in locations if iso != selected_iso]
+            for _, row in agg_df.iterrows():
+                country = row['Country']
+                iso = row['ISO_Code']
+                
+                if country in selected_countries:
+                    selected_country_isos.append(iso)
+                else:
+                    other_country_isos.append(iso)
+            
+            # If only one country is selected, use single selection mode
+            if len(selected_countries) == 1:
+                single_selected_country = selected_countries[0]
+                if single_selected_country in agg_df['Country'].values:
+                    selected_iso = agg_df.loc[agg_df['Country'] == single_selected_country, 'ISO_Code'].iloc[0]
+                    other_isos = other_country_isos
+            else:
+                # Multiple countries selected - dim the non-selected ones
+                other_isos = other_country_isos
         
         # Create the map using shared utilities
         fig = create_choropleth_map(
@@ -1302,10 +1376,10 @@ def register_callbacks(dash_app, server):
             country_names=country_names
         )
         
-        # Add country hover layer for outline highlighting (similar to country profile)
+        # Add custom margin and UI revision for gas demand
         fig.update_layout(
             margin=dict(l=20, r=20, t=20, b=80),
-            uirevision='gas-asia-demand-map',
+            uirevision='gas-demand-map',
             hovermode='closest',  # Enable hover mode for better country interaction
             hoverlabel=dict(
                 bgcolor="white",
@@ -1320,150 +1394,39 @@ def register_callbacks(dash_app, server):
             )
         )
         
-        # Focus on Asia region by adjusting the map center and zoom
-        # Adjust view based on selected countries to ensure all are visible
+        # Focus on Europe region by adjusting the map center and zoom
         use_mapbox, _, mapbox_layout = get_mapbox_config()
-        
-        # Calculate optimal center and zoom based on selected countries
-        if not agg_df.empty and 'Latitude (generated)' in agg_df.columns and 'Longitude (generated)' in agg_df.columns:
-            lats = agg_df['Latitude (generated)'].dropna()
-            lons = agg_df['Longitude (generated)'].dropna()
-            
-            if len(lats) > 0 and len(lons) > 0:
-                # Calculate center point
-                center_lat = (lats.min() + lats.max()) / 2
-                center_lon = (lons.min() + lons.max()) / 2
-                
-                # Calculate zoom level based on coordinate range
-                lat_range = lats.max() - lats.min()
-                lon_range = lons.max() - lons.min()
-                max_range = max(lat_range, lon_range)
-                
-                # Determine zoom level (very low values to show full country areas without scrolling)
-                # For single countries, we need to account for their size
-                if len(selected_countries) == 1:
-                    # Single country selected - zoom out significantly to show full country
-                    if max_range > 30:  # Large countries like Australia, China, India
-                        zoom = 0.8
-                    elif max_range > 20:
-                        zoom = 1.2
-                    elif max_range > 10:
-                        zoom = 1.8
-                    else:
-                        zoom = 2.5
-                else:
-                    # Multiple countries - adjust based on spread
-                    if max_range > 60:
-                        zoom = 0.5
-                    elif max_range > 40:
-                        zoom = 0.8
-                    elif max_range > 25:
-                        zoom = 1.2
-                    elif max_range > 15:
-                        zoom = 1.5
-                    elif max_range > 8:
-                        zoom = 2.0
-                    else:
-                        zoom = 2.5
-                
-                print(f"Map auto-adjust: center=({center_lat:.2f}, {center_lon:.2f}), zoom={zoom}, range={max_range:.2f}, countries={len(selected_countries)}")
-            else:
-                # Default Asia center
-                center_lat, center_lon, zoom = 25, 110, 2.5
-        else:
-            # Default Asia center
-            center_lat, center_lon, zoom = 25, 110, 2.5
-        
         if use_mapbox:
-            # Create a copy of mapbox_layout and override center and zoom
-            asia_mapbox_layout = mapbox_layout.copy()
-            asia_mapbox_layout.update({
-                'center': dict(lat=center_lat, lon=center_lon),
-                'zoom': zoom
+            # Create a copy of mapbox_layout and override center and zoom for Europe focus
+            europe_mapbox_layout = mapbox_layout.copy()
+            europe_mapbox_layout.update({
+                'center': dict(lat=54, lon=15),  # Center on Europe
+                'zoom': 2.8  # Zoom level for Europe focus
             })
-            fig.update_layout(mapbox=asia_mapbox_layout)
+            fig.update_layout(mapbox=europe_mapbox_layout)
         else:
-            # Geo fallback - adjust bounds based on data
-            if not agg_df.empty and 'Latitude (generated)' in agg_df.columns and 'Longitude (generated)' in agg_df.columns:
-                lats = agg_df['Latitude (generated)'].dropna()
-                lons = agg_df['Longitude (generated)'].dropna()
-                
-                if len(lats) > 0 and len(lons) > 0:
-                    # Add generous padding to bounds to show full country areas (70% for single country, 60% for multiple)
-                    padding_factor = 0.7 if len(selected_countries) == 1 else 0.6
-                    lat_padding = (lats.max() - lats.min()) * padding_factor
-                    lon_padding = (lons.max() - lons.min()) * padding_factor
-                    
-                    # Ensure minimum padding for small countries
-                    lat_padding = max(lat_padding, 10)
-                    lon_padding = max(lon_padding, 10)
-                    
-                    fig.update_layout(
-                        geo=dict(
-                            projection_type='natural earth',
-                            showframe=False,
-                            showcoastlines=True,
-                            coastlinecolor='rgb(204, 204, 204)',
-                            showland=True,
-                            landcolor='rgb(243, 243, 243)',
-                            showocean=True,
-                            oceancolor='white',
-                            showlakes=True,
-                            lakecolor='white',
-                            showrivers=False,
-                            showcountries=True,
-                            countrycolor='rgb(204, 204, 204)',
-                            lonaxis_range=[lons.min() - lon_padding, lons.max() + lon_padding],
-                            lataxis_range=[lats.min() - lat_padding, lats.max() + lat_padding],
-                            center=dict(lat=center_lat, lon=center_lon),
-                        )
-                    )
-                else:
-                    # Default Asia focus
-                    fig.update_layout(
-                        geo=dict(
-                            scope='asia',
-                            projection_type='natural earth',
-                            showframe=False,
-                            showcoastlines=True,
-                            coastlinecolor='rgb(204, 204, 204)',
-                            showland=True,
-                            landcolor='rgb(243, 243, 243)',
-                            showocean=True,
-                            oceancolor='white',
-                            showlakes=True,
-                            lakecolor='white',
-                            showrivers=False,
-                            showcountries=True,
-                            countrycolor='rgb(204, 204, 204)',
-                            lonaxis_range=[60, 150],
-                            lataxis_range=[-10, 55],
-                            center=dict(lat=25, lon=110),
-                        )
-                    )
-            else:
-                # Default Asia focus
-                fig.update_layout(
-                    geo=dict(
-                        scope='asia',
-                        projection_type='natural earth',
-                        showframe=False,
-                        showcoastlines=True,
-                        coastlinecolor='rgb(204, 204, 204)',
-                        showland=True,
-                        landcolor='rgb(243, 243, 243)',
-                        showocean=True,
-                        oceancolor='white',
-                        showlakes=True,
-                        lakecolor='white',
-                        showrivers=False,
-                        showcountries=True,
-                        countrycolor='rgb(204, 204, 204)',
-                        lonaxis_range=[60, 150],
-                        lataxis_range=[-10, 55],
-                        center=dict(lat=25, lon=110),
-                    )
+            # Geo fallback with Europe focus
+            fig.update_layout(
+                geo=dict(
+                    scope='europe',
+                    projection_type='natural earth',
+                    showframe=False,
+                    showcoastlines=True,
+                    coastlinecolor='rgb(204, 204, 204)',
+                    showland=True,
+                    landcolor='rgb(243, 243, 243)',
+                    showocean=True,
+                    oceancolor='white',
+                    showlakes=True,
+                    lakecolor='white',
+                    showrivers=False,
+                    showcountries=True,
+                    countrycolor='rgb(204, 204, 204)',
+                    lonaxis_range=[-12, 35],
+                    lataxis_range=[35, 72],
+                    center=dict(lat=54, lon=15),
                 )
+            )
         
         # Add copyright annotation
         copyright_text = "© 2025 Mapbox © OpenStreetMap" if use_mapbox else "© 2025 Natural Earth"
@@ -1481,33 +1444,33 @@ def register_callbacks(dash_app, server):
 
     # Update Line Chart
     @dash_app.callback(
-        Output('asia-chart-demand', 'figure'),
-        [Input('asia-demand-date-range-slider', 'value'),
-         Input('unit-radio-asia-demand', 'value'),
-         Input('sector-radio-asia-demand', 'value'),
-         Input('selected-countries-store-asia-demand', 'data'),
-         Input('chart-granularity-store-asia-demand', 'data'),
-         Input('chart-selection-store-asia-demand', 'data')],
-        [State('asia-demand-date-list-store', 'data')]
+        Output('europe-chart-demand', 'figure'),
+        [Input('demand-date-range-slider', 'value'),
+         Input('unit-radio-demand', 'value'),
+         Input('sector-radio-demand', 'value'),
+         Input('selected-countries-store-demand', 'data'),
+         Input('chart-granularity-store-demand', 'data'),
+         Input('chart-selection-store-demand', 'data')],
+        [State('demand-date-list-store', 'data')]
     )
-    def update_asia_chart(slider_range, selected_unit, selected_sector, selected_countries, granularity, selection, date_list_iso):
-        """Update the Asia line chart visualization with granularity support and highlighting"""
+    def update_europe_chart(slider_range, selected_unit, selected_sector, selected_countries, granularity, selection, date_list_iso):
+        """Update the Europe line chart visualization with granularity support and highlighting"""
         
         if not selected_countries or len(selected_countries) == 0:
             return go.Figure().add_annotation(text="No countries selected", 
                                             xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
         
-        # Use database query with granularity support (same approach as Europe dashboard)
-        unit_map = {'Billion Cubic Meter': 'Mcm', 'Gigawatt-hour': 'GWh'}
+        # Use database query with granularity support (same approach as yearly dashboard)
+        unit_map = {'Million Cubic Meter': 'Mcm', 'Gigawatt-hour': 'GWh'}
         db_unit = unit_map.get(selected_unit, 'Mcm')
         
         # Build sector filter - convert to list for SQL query
         if selected_sector and selected_sector != 'All':
             selected_sectors = [selected_sector]
         else:
-            selected_sectors = ['Household', 'Industrial', 'Other', 'Power']
+            selected_sectors = ['Industrial', 'Household', 'Power']
         
-        # SQL Query with parameterized granularity (same pattern as Europe dashboard)
+        # SQL Query with parameterized granularity (same pattern as yearly dashboard)
         query = """
         SELECT
             gd.country AS "Country",
@@ -1528,17 +1491,14 @@ def register_callbacks(dash_app, server):
                 ELSE NULL
             END AS "Day of Date",
             CASE 
-                WHEN gd.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN gd.unit = 'Mcm' THEN 'Million Cubic Meter'
                 WHEN gd.unit = 'GWh' THEN 'Gigawatt-hour'
                 ELSE gd.unit
             END AS "Unit",
-            CASE 
-                WHEN gd.unit = 'Mcm' THEN ROUND(SUM(gd.value) / 1000.0, 3)
-                ELSE ROUND(SUM(gd.value), 2)
-            END AS "Value"
+            ROUND(SUM(gd.value), 2) AS "Value"
         FROM dev.glng_gas_demand gd
         LEFT JOIN dim_country dc ON gd.country_id = dc.dim_country_id
-        WHERE LOWER(dc.region) IN ('asia', 'oceania')
+        WHERE LOWER(dc.region) = 'europe'
           AND dc.latitude IS NOT NULL
           AND gd.unit = :unit
           AND gd.sector = ANY(:selected_sectors)
@@ -1571,11 +1531,10 @@ def register_callbacks(dash_app, server):
                 ELSE NULL
             END,
             CASE 
-                WHEN gd.unit = 'Mcm' THEN 'Billion Cubic Meter'
+                WHEN gd.unit = 'Mcm' THEN 'Million Cubic Meter'
                 WHEN gd.unit = 'GWh' THEN 'Gigawatt-hour'
                 ELSE gd.unit
-            END,
-            gd.unit
+            END
         ORDER BY
             "Country",
             EXTRACT(YEAR FROM gd.date),
@@ -1584,7 +1543,7 @@ def register_callbacks(dash_app, server):
             "Day of Date";
         """
         
-        # Parameters for the query (same pattern as Europe dashboard)
+        # Parameters for the query (same pattern as yearly dashboard)
         params = {
             'granularity': granularity,
             'selected_sectors': selected_sectors,
@@ -1593,7 +1552,6 @@ def register_callbacks(dash_app, server):
         }
         
         try:
-            from core.data_helpers import execute_query
             results = execute_query(query, params)
             df = pd.DataFrame(results)
         except Exception as e:
@@ -1605,7 +1563,7 @@ def register_callbacks(dash_app, server):
             return go.Figure().add_annotation(text="No data available for selected filters", 
                                             xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
         
-        # Process data similar to Europe dashboard
+        # Process data similar to yearly dashboard
         df['Value'] = pd.to_numeric(df['Value'], errors='coerce').fillna(0).astype(float)
         df['Year Count'] = df['Year of Date'].fillna('').astype(str)
         df['Quarter Label'] = df['Quarter of Date'].fillna('').astype(str)
@@ -1769,29 +1727,29 @@ def register_callbacks(dash_app, server):
 
     # Update Table
     @dash_app.callback(
-        Output('asia-table-demand', 'children'),
-        [Input('asia-demand-date-range-slider', 'value'),
-         Input('unit-radio-asia-demand', 'value'),
-         Input('sector-radio-asia-demand', 'value'),
-         Input('selected-countries-store-asia-demand', 'data'),
-         Input('table-granularity-store-asia-demand', 'data')],
-        [State('asia-demand-date-list-store', 'data')]
+        Output('europe-table-demand', 'children'),
+        [Input('demand-date-range-slider', 'value'),
+         Input('unit-radio-demand', 'value'),
+         Input('sector-radio-demand', 'value'),
+         Input('selected-countries-store-demand', 'data'),
+         Input('table-granularity-store-demand', 'data')],
+        [State('demand-date-list-store', 'data')]
     )
-    def update_asia_table(slider_range, selected_unit, selected_sector, selected_countries, table_granularity, date_list_iso):
-        """Update the Asia data table with granularity support"""
+    def update_europe_table(slider_range, selected_unit, selected_sector, selected_countries, table_granularity, date_list_iso):
+        """Update the Europe data table with granularity support"""
         
         if not selected_countries or len(selected_countries) == 0:
             return html.Div("No countries selected", style={'padding': '20px', 'textAlign': 'center'})
         
-        # Use database query with granularity support (same approach as Europe dashboard)
-        unit_map = {'Billion Cubic Meter': 'Mcm', 'Gigawatt-hour': 'GWh'}
+        # Use database query with granularity support (same approach as yearly dashboard)
+        unit_map = {'Million Cubic Meter': 'Mcm', 'Gigawatt-hour': 'GWh'}
         db_unit = unit_map.get(selected_unit, 'Mcm')
         
         # Build sector filter - convert to list for SQL query
         if selected_sector and selected_sector != 'All':
             selected_sectors = [selected_sector]
         else:
-            selected_sectors = ['Household', 'Industrial', 'Other', 'Power']
+            selected_sectors = ['Industrial', 'Household', 'Power']
         
         # SQL Query with parameterized granularity - aggregate by Country only (no Sector breakdown)
         query = """
@@ -1823,10 +1781,7 @@ def register_callbacks(dash_app, server):
             END AS "Day of Date",
 
             :display_unit                             AS "Unit",
-            CASE 
-                WHEN gd.unit = 'Mcm' THEN ROUND(SUM(gd.value) / 1000.0, 9)
-                ELSE ROUND(SUM(gd.value), 9)
-            END AS "Value"
+            ROUND(SUM(gd.value), 9)                   AS "Value"
 
         FROM dev.glng_gas_demand gd
         JOIN dev.dim_country dc
@@ -1843,7 +1798,7 @@ def register_callbacks(dash_app, server):
                 END AS period
         ) t
 
-        WHERE LOWER(dc.region) IN ('asia', 'oceania')
+        WHERE LOWER(dc.region) = 'europe'
           AND dc.latitude IS NOT NULL
           AND gd.unit = :unit
           AND gd.sector = ANY(:selected_sectors)
@@ -1854,8 +1809,7 @@ def register_callbacks(dash_app, server):
 
         GROUP BY
             gd.country,
-            period,
-            gd.unit
+            period
 
         ORDER BY
             "Year of Date" DESC,
@@ -1865,7 +1819,7 @@ def register_callbacks(dash_app, server):
             "Country";
         """
         
-        # Parameters for the query (same pattern as Europe dashboard)
+        # Parameters for the query (same pattern as yearly dashboard)
         params = {
             'granularity': table_granularity,
             'selected_sectors': selected_sectors,
@@ -1875,7 +1829,6 @@ def register_callbacks(dash_app, server):
         }
         
         try:
-            from core.data_helpers import execute_query
             results = execute_query(query, params)
             df = pd.DataFrame(results)
         except Exception as e:
@@ -1904,7 +1857,7 @@ def register_callbacks(dash_app, server):
         if df.empty:
             return html.Div("No data available for selected date range", style={'padding': '20px', 'textAlign': 'center'})
 
-        # Determine active hierarchy levels based on data (same logic as Europe dashboard)
+        # Determine active hierarchy levels based on data (same logic as yearly dashboard)
         levels = ['Year of Date']
         if df['Quarter of Date'].notna().any(): 
             levels.append('Quarter of Date')
@@ -2046,13 +1999,13 @@ def register_callbacks(dash_app, server):
 
     # Export Map CSV
     @dash_app.callback(
-        Output("download-asia-demand-map-csv", "data"),
-        Input("export-asia-demand-map-btn", "n_clicks"),
-        [State('asia-demand-date-range-slider', 'value'),
-         State('unit-radio-asia-demand', 'value'),
-         State('sector-radio-asia-demand', 'value'),
-         State('selected-countries-store-asia-demand', 'data'),
-         State('asia-demand-date-list-store', 'data')],
+        Output("download-demand-map-csv", "data"),
+        Input("export-demand-map-btn", "n_clicks"),
+        [State('demand-date-range-slider', 'value'),
+         State('unit-radio-demand', 'value'),
+         State('sector-radio-demand', 'value'),
+         State('selected-countries-store-demand', 'data'),
+         State('demand-date-list-store', 'data')],
         prevent_initial_call=True,
     )
     def export_map_csv(n_clicks, slider_range, selected_unit, selected_sector, selected_countries, date_list_iso):
@@ -2084,19 +2037,19 @@ def register_callbacks(dash_app, server):
             filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"asia_gas_demand_map_{timestamp}.csv"
+        filename = f"europe_gas_demand_map_{timestamp}.csv"
         
         return dcc.send_data_frame(filtered_df.to_csv, filename, index=False)
 
     # Export Chart CSV
     @dash_app.callback(
-        Output("download-asia-demand-chart-csv", "data"),
-        Input("export-asia-demand-chart-btn", "n_clicks"),
-        [State('asia-demand-date-range-slider', 'value'),
-         State('unit-radio-asia-demand', 'value'),
-         State('sector-radio-asia-demand', 'value'),
-         State('selected-countries-store-asia-demand', 'data'),
-         State('asia-demand-date-list-store', 'data')],
+        Output("download-demand-chart-csv", "data"),
+        Input("export-demand-chart-btn", "n_clicks"),
+        [State('demand-date-range-slider', 'value'),
+         State('unit-radio-demand', 'value'),
+         State('sector-radio-demand', 'value'),
+         State('selected-countries-store-demand', 'data'),
+         State('demand-date-list-store', 'data')],
         prevent_initial_call=True,
     )
     def export_chart_csv(n_clicks, slider_range, selected_unit, selected_sector, selected_countries, date_list_iso):
@@ -2128,19 +2081,19 @@ def register_callbacks(dash_app, server):
             filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"asia_gas_demand_chart_{timestamp}.csv"
+        filename = f"europe_gas_demand_chart_{timestamp}.csv"
         
         return dcc.send_data_frame(filtered_df.to_csv, filename, index=False)
 
     # Export Table CSV
     @dash_app.callback(
-        Output("download-asia-demand-table-csv", "data"),
-        Input("export-asia-demand-table-btn", "n_clicks"),
-        [State('asia-demand-date-range-slider', 'value'),
-         State('unit-radio-asia-demand', 'value'),
-         State('sector-radio-asia-demand', 'value'),
-         State('selected-countries-store-asia-demand', 'data'),
-         State('asia-demand-date-list-store', 'data')],
+        Output("download-demand-table-csv", "data"),
+        Input("export-demand-table-btn", "n_clicks"),
+        [State('demand-date-range-slider', 'value'),
+         State('unit-radio-demand', 'value'),
+         State('sector-radio-demand', 'value'),
+         State('selected-countries-store-demand', 'data'),
+         State('demand-date-list-store', 'data')],
         prevent_initial_call=True,
     )
     def export_table_csv(n_clicks, slider_range, selected_unit, selected_sector, selected_countries, date_list_iso):
@@ -2172,17 +2125,17 @@ def register_callbacks(dash_app, server):
             filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"asia_gas_demand_table_{timestamp}.csv"
+        filename = f"europe_gas_demand_table_{timestamp}.csv"
         
         return dcc.send_data_frame(filtered_df.to_csv, filename, index=False)
 
     # Map click interaction to update country selection
     @dash_app.callback(
-        Output('country-checklist-asia-demand', 'value', allow_duplicate=True),
-        Output('country-filter-previous-asia-demand', 'data', allow_duplicate=True),
-        Input('asia-map-demand', 'clickData'),
-        State('country-checklist-asia-demand', 'value'),
-        State('country-checklist-asia-demand', 'options'),
+        Output('country-checklist-demand', 'value', allow_duplicate=True),
+        Output('country-filter-previous-demand', 'data', allow_duplicate=True),
+        Input('europe-map-demand', 'clickData'),
+        State('country-checklist-demand', 'value'),
+        State('country-checklist-demand', 'options'),
         prevent_initial_call=True
     )
     def handle_map_click(clickData, current_selection, options):
@@ -2227,5 +2180,83 @@ def register_callbacks(dash_app, server):
             return new_selection, new_state
             
         except Exception as e:
-            print(f"Map click error: {e}")
             return no_update, no_update
+
+    # Map Home Button - Reset map view
+    @dash_app.callback(
+        Output('europe-map-demand', 'figure', allow_duplicate=True),
+        Input('map-home-btn-demand', 'n_clicks'),
+        State('europe-map-demand', 'figure'),
+        prevent_initial_call=True
+    )
+    def reset_map_view(n_clicks, current_figure):
+        """Reset map to default view"""
+        if not n_clicks or not current_figure:
+            return no_update
+        
+        # Reset the map layout to default zoom and center
+        if 'layout' in current_figure and 'mapbox' in current_figure['layout']:
+            current_figure['layout']['mapbox']['zoom'] = 3
+            current_figure['layout']['mapbox']['center'] = {'lat': 54, 'lon': 15}
+        
+        return current_figure
+    
+    # Chart Home Button - Reset chart selection
+    @dash_app.callback(
+        Output('chart-selection-store-demand', 'data', allow_duplicate=True),
+        Input('chart-home-btn-demand', 'n_clicks'),
+        prevent_initial_call=True
+    )
+    def reset_chart_selection(n_clicks):
+        """Reset chart selection (clear highlighting)"""
+        if not n_clicks:
+            return no_update
+        return None
+    
+    # Map Camera Button - Download map as image
+    dash_app.clientside_callback(
+        """
+        function(n_clicks) {
+            if (n_clicks) {
+                // Trigger Plotly's download image functionality
+                var mapElement = document.getElementById('europe-map-demand');
+                if (mapElement) {
+                    Plotly.downloadImage(mapElement, {
+                        format: 'png',
+                        width: 1200,
+                        height: 700,
+                        filename: 'europe_gas_demand_map'
+                    });
+                }
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('gas-demand-hover-trigger', 'children', allow_duplicate=True),
+        Input('map-camera-btn-demand', 'n_clicks'),
+        prevent_initial_call=True
+    )
+    
+    # Chart Camera Button - Download chart as image
+    dash_app.clientside_callback(
+        """
+        function(n_clicks) {
+            if (n_clicks) {
+                // Trigger Plotly's download image functionality
+                var chartElement = document.getElementById('europe-chart-demand');
+                if (chartElement) {
+                    Plotly.downloadImage(chartElement, {
+                        format: 'png',
+                        width: 1200,
+                        height: 700,
+                        filename: 'europe_gas_demand_chart'
+                    });
+                }
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('gas-demand-hover-trigger', 'children', allow_duplicate=True),
+        Input('chart-camera-btn-demand', 'n_clicks'),
+        prevent_initial_call=True
+    )

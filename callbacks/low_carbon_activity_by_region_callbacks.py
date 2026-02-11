@@ -1,4 +1,4 @@
-from app.dashboards.analytics import low_carbon_activity_by_region
+from app.dashboards.low_carbon_investment_analytics import low_carbon_activity_by_region
 
 
 def register_callbacks(app, server):
