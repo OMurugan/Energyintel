@@ -524,32 +524,22 @@ def register_callbacks(app, server):
                     const graph = document.getElementById('lcad-chart');
                     if (!graph) return;
                     
-                    // Target the groups 'g.xtick' to catch clicks on the general area
+                    // 1. Target the groups 'g.xtick' to catch clicks on the general area
                     const ticks = graph.querySelectorAll('g.xtick');
-                    
-                    if (ticks.length === 0) return;
-                    
                     ticks.forEach(t => {
                         t.style.cursor = 'pointer'; 
                         t.style.pointerEvents = 'all'; 
-                        
-                        // Prevent attaching multiple times if re-running
                         if (t.getAttribute('data-click-attached')) return;
                         t.setAttribute('data-click-attached', 'true');
                         
                         t.addEventListener('click', function(e) {
-                            // Find the text content. It might be in a child 'text' element or 'tspan'
                             const textEl = t.querySelector('text');
                             if (textEl) {
                                 let dateStr = textEl.textContent; 
-                                // Remove any zero-width spaces or artifacts if present
                                 dateStr = dateStr.replace(/[\\u200B\\u00A0]/g, ''); 
-                                
                                 const input = document.getElementById('lcad-axis-click-trigger');
                                 if (input) {
-                                    // Timestamp payload to ensure uniqueness
                                     const payload = dateStr + "|" + Date.now();
-                                    
                                     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
                                     nativeInputValueSetter.call(input, payload);
                                     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -557,12 +547,33 @@ def register_callbacks(app, server):
                             }
                         });
                     });
-                } catch(e) { console.error("Axis listener error:", e); }
+
+                    // 2. Background click listener to clear selection
+                    // Target the main drag area and the background rectangle
+                    const bgElements = graph.querySelectorAll('.nsewdrag, .bg');
+                    bgElements.forEach(bg => {
+                        if (bg.getAttribute('data-clear-attached')) return;
+                        bg.setAttribute('data-clear-attached', 'true');
+                        bg.addEventListener('click', function(e) {
+                            // Only trigger if we clicked the background itself, not a bar bubbling up
+                            if (e.target === bg) {
+                                const input = document.getElementById('lcad-axis-click-trigger');
+                                if (input) {
+                                    const payload = "CLEAR|" + Date.now();
+                                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                                    nativeInputValueSetter.call(input, payload);
+                                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                                }
+                            }
+                        });
+                    });
+
+                } catch(e) { console.error("Chart interaction listener error:", e); }
             }, 1000); 
             return window.dash_clientside.no_update;
         }
         """,
-        Output('lcad-axis-listener-output', 'children'), # Dedicated output
+        Output('lcad-axis-listener-output', 'children'),
         Input('lcad-chart', 'figure')
     )
 
@@ -585,6 +596,11 @@ def register_callbacks(app, server):
         if trigger_id == 'lcad-axis-click-trigger':
             if not axis_trigger:
                 return no_update
+            
+            # Handle background reset
+            if axis_trigger.startswith("CLEAR|"):
+                return None
+                
             # Format: "Year|Timestamp"
             try:
                 clicked_year = axis_trigger.split('|')[0]
