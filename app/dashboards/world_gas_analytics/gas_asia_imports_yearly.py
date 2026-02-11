@@ -5,7 +5,7 @@ import dash
 from dash import dcc, html, Input, Output, dash_table, State, callback, ctx, no_update
 from core.data_helpers import execute_query
 from core.country_mappings import get_iso_code
-from app.dashboards.analytics.shared_map_utils import (
+from app.dashboards.world_gas_analytics.shared_map_utils import (
     create_choropleth_map, handle_map_click_reset, load_world_geojson, get_mapbox_config
 )
 

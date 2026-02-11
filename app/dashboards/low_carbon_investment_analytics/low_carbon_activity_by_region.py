@@ -2,6 +2,7 @@
 Activity by Region
 Low-carbon investment activity analytics by region
 """
+from datetime import datetime, timedelta
 import pandas as pd
 import plotly.graph_objects as go
 from dash import dcc, html, Input, Output, State, callback_context, no_update
@@ -181,31 +182,55 @@ def create_layout():
             
             # Filters sidebar (Right - 20%)
             html.Div([
+                # Announcement Date Filter
+                html.Div([
+                    html.Label(
+                        "Announcement Date",
+                        style={
+                            'fontWeight': 'bold',
+                            'color': EI_DARK_BLUE,
+                            'fontSize': '16px',
+                            'marginBottom': '10px',
+                            'display': 'block',
+                            'fontFamily': 'Arial, sans-serif'
+                        }
+                    ),
+                    html.Div([
+                        html.Div(id='low-carbon-start-date-label', children="1/1/2015", style={'fontSize': '14px', 'color': EI_DARK_BLUE, 'display': 'inline-block'}),
+                        html.Div(id='low-carbon-end-date-label', children="12/23/2025", style={'fontSize': '14px', 'color': EI_DARK_BLUE, 'float': 'right'})
+                    ], style={'marginBottom': '5px', 'fontFamily': 'Arial, sans-serif', 'overflow': 'hidden'}),
+                    dcc.RangeSlider(
+                        id='low-carbon-date-filter',
+                        min=0,
+                        max=(datetime(2025, 12, 23) - datetime(2015, 1, 1)).days,
+                        value=[0, (datetime(2025, 12, 23) - datetime(2015, 1, 1)).days],
+                        step=1,
+                        marks=None,
+                        tooltip={"placement": "bottom", "always_visible": False}
+                    ),
+                ], style={'marginBottom': '30px'}),
+                
                 # Measure Filter
                 html.Div([
                     html.Label(
                         "Measure",
                         style={
                             'fontWeight': 'bold',
-                            'color': '#777',
-                            'fontSize': '12px',
+                            'color': '#333',
+                            'fontSize': '14px',
                             'marginBottom': '10px',
                             'display': 'block'
                         }
                     ),
-                    dcc.RadioItems(
+                    dcc.Dropdown(
                         id='low-carbon-measure-filter',
                         options=[
-                            {'label': ' Investment Value', 'value': 'investment_value'},
-                            {'label': ' Investment Count', 'value': 'investment_count'}
+                            {'label': 'Investment Value', 'value': 'investment_value'},
+                            {'label': 'Investment Count', 'value': 'investment_count'}
                         ],
                         value='investment_value',
-                        labelStyle={
-                            'display': 'block',
-                            'fontSize': '12px',
-                            'color': '#555',
-                            'marginBottom': '5px'
-                        }
+                        clearable=False,
+                        style={'fontSize': '14px'}
                     )
                 ], style={'marginBottom': '30px'}),
                 
@@ -215,27 +240,23 @@ def create_layout():
                         "Breakdown",
                         style={
                             'fontWeight': 'bold',
-                            'color': '#777',
-                            'fontSize': '12px',
+                            'color': '#333',
+                            'fontSize': '14px',
                             'marginBottom': '10px',
                             'display': 'block'
                         }
                     ),
-                    dcc.RadioItems(
+                    dcc.Dropdown(
                         id='low-carbon-breakdown-filter',
                         options=[
-                            {'label': ' Status', 'value': 'status'},
-                            {'label': ' Project Category', 'value': 'project_category'},
-                            {'label': ' Peer Group', 'value': 'peer_group'},
-                            {'label': ' Investment Type', 'value': 'investment_type'}
+                            {'label': 'Status', 'value': 'status'},
+                            {'label': 'Project Category', 'value': 'project_category'},
+                            {'label': 'Peer Group', 'value': 'peer_group'},
+                            {'label': 'Investment Type', 'value': 'investment_type'}
                         ],
                         value='status',
-                        labelStyle={
-                            'display': 'block',
-                            'fontSize': '12px',
-                            'color': '#555',
-                            'marginBottom': '5px'
-                        }
+                        clearable=False,
+                        style={'fontSize': '14px'}
                     )
                 ], style={'marginBottom': '30px'}),
                 
@@ -415,9 +436,12 @@ def register_callbacks(dash_app, server):
         [Input('low-carbon-measure-filter', 'value'),
          Input('low-carbon-breakdown-filter', 'value'),
          Input('low-carbon-chart-selection', 'data'),
-         Input('low-carbon-is-expanded', 'data')]
+         Input('low-carbon-is-expanded', 'data'),
+         Input('low-carbon-date-filter', 'value')]
     )
-    def update_chart(measure, breakdown, selection, is_expanded):
+    def update_chart(measure, breakdown, selection, is_expanded, date_range):
+        start_date = (datetime(2015, 1, 1) + timedelta(days=date_range[0])).strftime('%Y-%m-%d')
+        end_date = (datetime(2015, 1, 1) + timedelta(days=date_range[1])).strftime('%Y-%m-%d')
         # SQL Query with country granularity
         query = f"""
         SELECT
@@ -454,6 +478,8 @@ def register_callbacks(dash_app, server):
             ON a.country_id = c.dim_country_id
 
         WHERE a.new_status <> 'Uncertain'
+          AND a.date_announced >= :start_date
+          AND a.date_announced <= :end_date
 
         GROUP BY
             c.et_region,
@@ -479,7 +505,9 @@ def register_callbacks(dash_app, server):
         
         params = {
             'measure': measure,
-            'breakdown': breakdown
+            'breakdown': breakdown,
+            'start_date': start_date,
+            'end_date': end_date
         }
         
         try:
@@ -692,16 +720,31 @@ def register_callbacks(dash_app, server):
         )
         
         return fig
-    
+        # Sync date labels with slider
+    @dash_app.callback(
+        [Output('low-carbon-start-date-label', 'children'),
+         Output('low-carbon-end-date-label', 'children')],
+        [Input('low-carbon-date-filter', 'value')]
+    )
+    def update_date_labels(date_range):
+        if not date_range or len(date_range) < 2:
+            return no_update, no_update
+        start_dt = datetime(2015, 1, 1) + timedelta(days=date_range[0])
+        end_dt = datetime(2015, 1, 1) + timedelta(days=date_range[1])
+        return start_dt.strftime('%-m/%-d/%Y'), end_dt.strftime('%-m/%-d/%Y')
+
     # Export to CSV
     @dash_app.callback(
         Output('low-carbon-download-csv', 'data'),
         Input('low-carbon-export-csv-btn', 'n_clicks'),
         [State('low-carbon-measure-filter', 'value'),
-         State('low-carbon-breakdown-filter', 'value')],
+         State('low-carbon-breakdown-filter', 'value'),
+         State('low-carbon-date-filter', 'value')],
         prevent_initial_call=True
     )
-    def export_csv(n_clicks, measure, breakdown):
+    def export_csv(n_clicks, measure, breakdown, date_range):
+        start_date = (datetime(2015, 1, 1) + timedelta(days=date_range[0])).strftime('%Y-%m-%d')
+        end_date = (datetime(2015, 1, 1) + timedelta(days=date_range[1])).strftime('%Y-%m-%d')
         if not n_clicks:
             return no_update
         
@@ -739,6 +782,8 @@ def register_callbacks(dash_app, server):
             ON a.country_id = c.dim_country_id
 
         WHERE a.new_status <> 'Uncertain'
+          AND a.date_announced >= :start_date
+          AND a.date_announced <= :end_date
 
         GROUP BY
             c.et_region,
@@ -762,7 +807,12 @@ def register_callbacks(dash_app, server):
             "Breakdown";
         """
         
-        params = {'measure': measure, 'breakdown': breakdown}
+        params = {
+            'measure': measure, 
+            'breakdown': breakdown,
+            'start_date': start_date,
+            'end_date': end_date
+        }
         
         try:
             results = execute_query(query, params)
