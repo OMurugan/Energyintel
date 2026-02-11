@@ -12,6 +12,12 @@ from core.data_helpers import execute_query
 EI_ORANGE = "#fe5000"
 EI_DARK_BLUE = "#1b365d"
 
+def hex_to_rgba(hex_color, opacity):
+    hex_color = hex_color.lstrip('#')
+    lv = len(hex_color)
+    rgb = tuple(int(hex_color[i:i + lv // 3], 16) for i in range(0, lv, lv // 3))
+    return f'rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {opacity})'
+
 # Status colors from the reference image
 STATUS_COLORS = {
     'Divested': '#8b4513',           # Dark brown
@@ -364,28 +370,41 @@ def register_callbacks(dash_app, server):
         [Input('low-carbon-chart', 'clickData'),
          Input('low-carbon-measure-filter', 'value'),
          Input('low-carbon-breakdown-filter', 'value'),
-         Input('low-carbon-chart-container', 'n_clicks')],
+         Input('low-carbon-chart-container', 'n_clicks'),
+         Input('low-carbon-is-expanded', 'data')],
         State('low-carbon-chart-selection', 'data'),
         prevent_initial_call=True
     )
-    def toggle_chart_selection(click_data, measure, breakdown, n_clicks_bg, current_sel):
+    def toggle_chart_selection(click_data, measure, breakdown, n_clicks_bg, is_expanded, current_sel):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update
         
-        trigger_id = ctx.triggered[0]['prop_id']
+        triggers = [t['prop_id'] for t in ctx.triggered]
+        chart_triggered = any('low-carbon-chart.clickData' in t for t in triggers)
+        container_triggered = any('low-carbon-chart-container.n_clicks' in t for t in triggers)
         
-        # Filter changes -> Reset
-        if 'measure-filter' in trigger_id or 'breakdown-filter' in trigger_id:
+        # Reset on filter or expansion changes
+        if any(x in triggers[0] for x in ['measure-filter', 'breakdown-filter', 'is-expanded']):
             return None, None
         
-        # Chart click
-        if 'low-carbon-chart.clickData' in trigger_id and click_data:
+        # 1. Chart Click (Bar Interaction)
+        if chart_triggered and click_data:
             point = click_data['points'][0]
-            region = point.get('x', '')
-            breakdown_val = point.get('legendgroup', '')
             
-            new_sel = {'region': region, 'breakdown': breakdown_val}
+            # Use customdata for robust selection
+            if 'customdata' not in point:
+                return no_update, no_update
+                
+            c_data = point['customdata']
+            # Based on: [x_label, Region, Breakdown, x_pos]
+            try:
+                breakdown_val = c_data[2]
+                x_pos = int(c_data[3])
+            except (IndexError, TypeError, ValueError):
+                return no_update, no_update
+                
+            new_sel = {'x_pos': x_pos, 'breakdown': breakdown_val}
             
             # Toggle logic
             if current_sel and current_sel == new_sel:
@@ -393,10 +412,11 @@ def register_callbacks(dash_app, server):
             
             return new_sel, None
         
-        # Background click
-        elif 'chart-container.n_clicks' in trigger_id:
+        # 2. Background Click (Container Clicked but not Chart Click)
+        elif container_triggered and not chart_triggered:
             if current_sel:
                 return None, None
+            return no_update, no_update
         
         return no_update, no_update
     
@@ -527,8 +547,14 @@ def register_callbacks(dash_app, server):
         if measure == 'investment_value':
             df['Measure Value'] = df['Measure Value'] / 1000  # Assuming original is in millions to get Billion
         
-        # Aggregate by Region, Breakdown, and Country
-        agg_df = df.groupby(['Region', 'Breakdown', 'Country'], as_index=False)['Measure Value'].sum()
+        # Aggregate based on expansion level
+        if is_expanded:
+            agg_df = df.groupby(['Region', 'Country', 'Breakdown'], as_index=False)['Measure Value'].sum()
+            x_label = 'Country'
+        else:
+            agg_df = df.groupby(['Region', 'Breakdown'], as_index=False)['Measure Value'].sum()
+            x_label = 'Region'
+            
         agg_df = agg_df[agg_df['Measure Value'] > 0]
         agg_df = agg_df.dropna(subset=['Region', 'Breakdown'])
         
@@ -539,17 +565,18 @@ def register_callbacks(dash_app, server):
         region_totals = agg_df.groupby('Region')['Measure Value'].sum().sort_values(ascending=False)
         region_order = region_totals.index.tolist()
         
-        # Define x-axis logic
+        # Define x-axis order and map to x_pos
         if is_expanded:
-            # Sort agg_df by region order and then by country value within region
             country_totals = agg_df.groupby(['Region', 'Country'])['Measure Value'].sum().reset_index()
             country_totals['RegionCat'] = pd.Categorical(country_totals['Region'], categories=region_order, ordered=True)
             country_totals = country_totals.sort_values(['RegionCat', 'Measure Value'], ascending=[True, False])
-            x_axis_order = country_totals['Country'].tolist()
-            x_label = 'Country'
+            x_axis_labels = country_totals['Country'].tolist()
         else:
-            x_axis_order = region_order
-            x_label = 'Region'
+            x_axis_labels = region_order
+
+        # Create x_axis mapping
+        x_axis_df = pd.DataFrame({x_label: x_axis_labels, 'x_pos': range(len(x_axis_labels))})
+        agg_df = agg_df.merge(x_axis_df, on=x_label, how='left')
 
         # Define strict Order for Breakdown (bottom to top for stacking)
         if breakdown == 'status':
@@ -568,73 +595,78 @@ def register_callbacks(dash_app, server):
         # Create grouped traces
         fig = go.Figure()
         
-        # Add real traces (hidden from legend)
+        # Add real traces (one per segment)
         for b_val in breakdown_order:
-            if b_val not in agg_df['Breakdown'].values:
+            b_subset = agg_df[agg_df['Breakdown'] == b_val].copy()
+            if b_subset.empty:
                 continue
-                
-            b_subset = agg_df[agg_df['Breakdown'] == b_val]
             
+            # Ensure strict sorting by x_pos for correct color/line list mapping
+            b_subset = b_subset.sort_values('x_pos')
+                
             base_color = color_map.get(b_val, '#999999')
             
-            # For each segment item (Country in both modes, but mode changes x placement)
-            for country in b_subset['Country'].unique():
-                c_subset = b_subset[b_subset['Country'] == country]
-                region_val = c_subset['Region'].iloc[0]
+            marker_colors = []
+            marker_lines = []
+            
+            for _, row in b_subset.iterrows():
+                row_x_pos = row['x_pos']
                 
-                # Selection logic
-                if selection and selection.get('breakdown') == b_val:
-                    opacity = 1.0
-                    marker_line = dict(color='black', width=1.5)
-                elif selection:
-                    opacity = 0.2
-                    marker_line = dict(color='white', width=0.5)
-                else:
-                    opacity = 1.0
-                    marker_line = dict(color='white', width=0.5)
+                is_selected = (
+                    selection and 
+                    selection.get('breakdown') == b_val and 
+                    int(selection.get('x_pos')) == int(row_x_pos)
+                )
 
-                value_label = f"{measure.replace('_', ' ').title()}"
-                unit = " ($ Billion)" if measure == 'investment_value' else ""
-                
-                if breakdown == 'project_category':
-                    breakdown_label = "Project Category"
-                elif breakdown == 'peer_group':
-                    breakdown_label = "Peer Group"
-                elif breakdown == 'investment_type':
-                    breakdown_label = "Investment Type"
+                if not selection:
+                    marker_colors.append(base_color)
+                    marker_lines.append(dict(color='white', width=0.5))
+                elif is_selected:
+                    marker_colors.append(base_color)
+                    marker_lines.append(dict(color='black', width=2.0))
                 else:
-                    breakdown_label = breakdown.replace('_', ' ').title()
+                    # Others - dimmed
+                    marker_colors.append(hex_to_rgba(base_color, 0.2))
+                    marker_lines.append(dict(color='white', width=0.5))
 
-                fig.add_trace(go.Bar(
-                    name=b_val,
-                    x=c_subset[x_label],
-                    y=c_subset['Measure Value'],
-                    legendgroup=b_val,
-                    showlegend=False,
-                    marker=dict(
-                        color=base_color,
-                        line=marker_line,
-                        opacity=opacity
-                    ),
-                    hovertemplate=(
-                        f"<span style='color: #666'>{breakdown_label}:</span> {b_val}<br>"
-                        f"<span style='color: #666'>Region:</span> {region_val}<br>"
-                        f"<span style='color: #666'>{value_label}:</span> %{{y:,.2f}}{unit}<br>"
-                        f"<span style='color: #666'>Asset Country:</span> {country}<extra></extra>"
+            value_label = f"{measure.replace('_', ' ').title()}"
+            unit = " ($ Billion)" if measure == 'investment_value' else ""
+            
+            if breakdown == 'project_category':
+                breakdown_label = "Project Category"
+            elif breakdown == 'peer_group':
+                breakdown_label = "Peer Group"
+            elif breakdown == 'investment_type':
+                breakdown_label = "Investment Type"
+            else:
+                breakdown_label = breakdown.replace('_', ' ').title()
+
+            # Customdata: [x_label_val, Region, Breakdown, x_pos]
+            trace_customdata = b_subset[[x_label, 'Region', 'Breakdown', 'x_pos']].values
+
+            fig.add_trace(go.Bar(
+                name=b_val,
+                x=b_subset['x_pos'],
+                y=b_subset['Measure Value'],
+                legendgroup=b_val,
+                showlegend=False,
+                marker=dict(
+                    color=marker_colors,
+                    line=dict(
+                        color=[l['color'] for l in marker_lines],
+                        width=[l['width'] for l in marker_lines]
                     )
-                ))
+                ),
+                customdata=trace_customdata,
+                hovertemplate=(
+                    f"<span style='color: #666'>{breakdown_label}:</span> {b_val}<br>"
+                    f"<span style='color: #666'>Region:</span> %{{customdata[1]}}<br>"
+                    f"<span style='color: #666'>{value_label}:</span> %{{y:,.2f}}{unit}<br>"
+                    f"<span style='color: #666'>{x_label}:</span> %{{customdata[0]}}<extra></extra>"
+                )
+            ))
 
-        # Add dummy traces for controlled legend order (Divested at top)
-        for b_val in reversed(breakdown_order):
-            if b_val in agg_df['Breakdown'].values:
-                fig.add_trace(go.Bar(
-                    name=b_val,
-                    x=[None],
-                    y=[None],
-                    legendgroup=b_val,
-                    marker=dict(color=color_map.get(b_val, '#999999')),
-                    showlegend=True
-                ))
+
         
         # Expanded View Decorations
         if is_expanded:
@@ -681,8 +713,8 @@ def register_callbacks(dash_app, server):
             barmode='stack',
             xaxis=dict(
                 title=None,
-                categoryorder='array',
-                categoryarray=x_axis_order,
+                tickvals=list(range(len(x_axis_labels))),
+                ticktext=x_axis_labels,
                 tickangle=0 if not is_expanded else -90,
                 tickfont=dict(size=11 if not is_expanded else 9, color='#666')
             ),
@@ -695,16 +727,7 @@ def register_callbacks(dash_app, server):
                 zerolinecolor='#ccc',
                 range=[0, None]
             ),
-            legend=dict(
-                traceorder='normal',
-                font=dict(size=11, color='#555'),
-                itemclick='toggle',
-                itemdoubleclick='toggleothers',
-                yanchor="top",
-                y=0.7,
-                xanchor="left",
-                x=1.02
-            ),
+            showlegend=False,
             margin=dict(l=80, r=150, t=100 if is_expanded else 40, b=120 if is_expanded else 80),
             height=600,
             font=dict(family="Arial, sans-serif"),
