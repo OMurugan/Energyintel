@@ -5,7 +5,7 @@ import dash
 from dash import dcc, html, Input, Output, dash_table, State, callback, ctx, no_update
 from core.data_helpers import execute_query
 from core.country_mappings import get_iso_code
-from app.dashboards.world_gas_analytics.shared_map_utils import (
+from .shared_map_utils import (
     create_choropleth_map, handle_map_click_reset, load_world_geojson, get_mapbox_config
 )
 
@@ -1283,6 +1283,74 @@ def register_callbacks(dash_app, server):
         except Exception as e:
             return dcc.send_string(f"Error: {e}", "error.txt")
 
+    # Map click interaction to update origin filter
+    @dash_app.callback(
+        Output('asia-origin-dropdown', 'value'),
+        Input('asia-imports-yearly-map', 'clickData'),
+        [State('asia-origin-dropdown', 'value'),
+         State('asia-origin-dropdown', 'options')],
+        prevent_initial_call=True
+    )
+    def handle_map_click_filter(clickData, current_origin, options):
+        """Handle map clicks to update origin filter using shared utility"""
+        if not clickData:
+            return no_update
+            
+        try:
+            # Extract all origin options (excluding "(All)")
+            all_origins = []
+            if options:
+                all_origins = [opt['value'] for opt in options if opt['value'] != '(All)']
+            
+            if not all_origins:
+                print("DEBUG: Options empty or missing origins")
+                return no_update
+            
+            # Extract clicked country from map
+            point = clickData.get('points', [{}])[0]
+            clicked_country = None
+            
+            # Try to get country from customdata
+            if 'customdata' in point and point['customdata']:
+                item = point['customdata']
+                clicked_country = item[0] if isinstance(item, list) and len(item) > 0 else item
+            
+            # Background click detection
+            if clicked_country == '__BACKGROUND_CLICK__':
+                # Reset to (All)
+                return '(All)'
+            
+            # Fallback to text
+            if not clicked_country and 'text' in point:
+                # Extract country name from hover text
+                text = point['text']
+                if 'Origin:' in text:
+                    # Parse the HTML to extract country name
+                    import re
+                    match = re.search(r'Origin:.*?<span[^>]*>([^<]+)</span>', text)
+                    if match:
+                        clicked_country = match.group(1).strip()
+            
+            if not clicked_country:
+                return no_update
+            
+            # Check if clicked country is in available origins
+            if clicked_country not in all_origins:
+                print(f"DEBUG: Clicked country '{clicked_country}' not in available origins")
+                return no_update
+            
+            # Toggle logic: clicking same country resets to (All)
+            if current_origin == clicked_country:
+                return '(All)'
+            else:
+                return clicked_country
+                
+        except Exception as e:
+            print(f"Map click error: {e}")
+            import traceback
+            traceback.print_exc()
+            return no_update
+
 def _iso_for_country(country):
     """Return ISO Alpha-3 code for a country, using centralized mapping with Asian country additions."""
     # Add missing Asian countries to the mapping
@@ -1371,7 +1439,7 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
         df = pd.DataFrame(results)
         
         if df.empty:
-            from app.dashboards.analytics.shared_map_utils import create_empty_map
+            from .shared_map_utils import create_empty_map
             return create_empty_map("No data available for 2025", height=500), title, no_update
 
         # Ensure numeric and rename for convenience
@@ -1382,7 +1450,7 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
         df = df.dropna(subset=['iso'])
         
         if df.empty:
-            from app.dashboards.analytics.shared_map_utils import create_empty_map
+            from .shared_map_utils import create_empty_map
             return create_empty_map("No geographic data for these origins", height=500), title, no_update
 
         # 1. Colorscale (matching reference профессиональный стиль)
@@ -1414,8 +1482,9 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
                 # Fallback to data-driven dimming if selection not in regional list
                 other_isos = [iso for iso in df['iso'].tolist() if iso != selected_iso]
 
-        # 3. Create Hover Text (Adopting reference style with span tags for better control)
+        # 3. Create Hover Text and Custom Data (for click handling)
         hover_text = []
+        custom_data = []
         for _, row in df.iterrows():
             text = (
                 f"<span style='color: #666666; font-family: Arial, sans-serif;'>Origin: </span>"
@@ -1428,9 +1497,11 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
                 f"<span style='color: #000000; font-weight: bold;'>{unit}</span>"
             )
             hover_text.append(text)
+            # Store country name for click handling
+            custom_data.append(row['origin'])
 
         # 4. Create Map using Shared Utility
-        from app.dashboards.analytics.shared_map_utils import create_choropleth_map
+        from .shared_map_utils import create_choropleth_map
         
         # Prepare countries_df for labels (only for selected country or all if none selected)
         countries_df = df[['origin', 'latitude', 'longitude', 'Value']].copy().rename(columns={'origin': 'Country', 'latitude': 'Latitude', 'longitude': 'Longitude'})
@@ -1450,7 +1521,7 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
             selected_iso=selected_iso,
             other_isos=other_isos,
             countries_df=countries_df,
-            country_names=df['origin'].tolist(),
+            country_names=custom_data,  # Pass country names for click handling
             height=650, # Set to 650 for better visibility and premium feel
             zmin=0,
             zmax=df['Value'].max()
@@ -1497,5 +1568,74 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
         print(f"Asia ERROR: update_asia_map failed: {e}")
         import traceback
         traceback.print_exc()
-        from app.dashboards.analytics.shared_map_utils import create_error_figure
+        from .shared_map_utils import create_error_figure
         return create_error_figure(str(e), height=500), title, no_update
+        return create_error_figure(str(e), height=500), title, no_update
+
+    # Map click interaction to update origin filter
+    @dash_app.callback(
+        Output('asia-origin-dropdown', 'value'),
+        Input('asia-imports-yearly-map', 'clickData'),
+        [State('asia-origin-dropdown', 'value'),
+         State('asia-origin-dropdown', 'options')],
+        prevent_initial_call=True
+    )
+    def handle_map_click_filter(clickData, current_origin, options):
+        """Handle map clicks to update origin filter"""
+        if not clickData:
+            return no_update
+            
+        try:
+            # Extract all origin options (excluding "(All)")
+            all_origins = []
+            if options:
+                all_origins = [opt['value'] for opt in options if opt['value'] != '(All)']
+            
+            if not all_origins:
+                print("DEBUG: Options empty or missing origins")
+                return no_update
+            
+            # Extract clicked country from map
+            point = clickData.get('points', [{}])[0]
+            clicked_country = None
+            
+            # Try to get country from customdata
+            if 'customdata' in point and point['customdata']:
+                item = point['customdata']
+                clicked_country = item[0] if isinstance(item, list) and len(item) > 0 else item
+            
+            # Background click detection
+            if clicked_country == '__BACKGROUND_CLICK__':
+                # Reset to (All)
+                return '(All)'
+            
+            # Fallback to text
+            if not clicked_country and 'text' in point:
+                # Extract country name from hover text
+                text = point['text']
+                if 'Origin:' in text:
+                    # Parse the HTML to extract country name
+                    import re
+                    match = re.search(r'Origin:.*?<span[^>]*>([^<]+)</span>', text)
+                    if match:
+                        clicked_country = match.group(1).strip()
+            
+            if not clicked_country:
+                return no_update
+            
+            # Check if clicked country is in available origins
+            if clicked_country not in all_origins:
+                print(f"DEBUG: Clicked country '{clicked_country}' not in available origins")
+                return no_update
+            
+            # Toggle logic: clicking same country resets to (All)
+            if current_origin == clicked_country:
+                return '(All)'
+            else:
+                return clicked_country
+                
+        except Exception as e:
+            print(f"Map click error: {e}")
+            import traceback
+            traceback.print_exc()
+            return no_update
