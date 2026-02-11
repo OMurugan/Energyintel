@@ -3,7 +3,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dash import dcc, html, Input, Output, dash_table, State, callback, ctx, no_update
 from core.data_helpers import execute_query
-from app.dashboards.wcod.shared_map_utils import (
+from .shared_map_utils import (
     create_choropleth_map, handle_map_click_reset, load_world_geojson
 )
 
@@ -864,7 +864,7 @@ def register_callbacks(dash_app, server):
             df = pd.DataFrame(results)
             
             if df.empty:
-                from app.dashboards.wcod.shared_map_utils import create_empty_map
+                from .shared_map_utils import create_empty_map
                 return create_empty_map("No data available for 2025", height=500), title, no_update
 
             # Ensure numeric and rename for convenience
@@ -889,7 +889,7 @@ def register_callbacks(dash_app, server):
             print(f"Asia Map DEBUG: df has {len(df)} rows after dropping missing ISOs")
             
             if df.empty:
-                from app.dashboards.wcod.shared_map_utils import create_empty_map
+                from .shared_map_utils import create_empty_map
                 return create_empty_map("No geographic data for these origins", height=500), title, no_update
 
             # 1. Colorscale (Blue tones to match Fig 1)
@@ -923,7 +923,7 @@ def register_callbacks(dash_app, server):
                 hover_text.append(text)
 
             # 4. Create Map using Shared Utility
-            from app.dashboards.wcod.shared_map_utils import create_choropleth_map
+            from .shared_map_utils import create_choropleth_map
             
             fig = create_choropleth_map(
                 locations=df['iso'],
@@ -952,7 +952,7 @@ def register_callbacks(dash_app, server):
             print(f"Asia ERROR: update_asia_map failed: {e}")
             import traceback
             traceback.print_exc()
-            from app.dashboards.wcod.shared_map_utils import create_error_figure
+            from .shared_map_utils import create_error_figure
             return create_error_figure(str(e), height=500), title, no_update
 
     @dash_app.callback(
