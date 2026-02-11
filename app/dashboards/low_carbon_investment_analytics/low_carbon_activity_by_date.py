@@ -15,15 +15,26 @@ from core.data_helpers import get_db_engine
 QUERY_PROJECT_CATEGORY = """
 WITH params AS (
     SELECT
-        '{period}'::text AS period   -- YEARLY | QUARTERLY
+        '{period}'::text AS period   -- YEARLY | QUARTERLY | MONTHLY | DAILY
 )
 SELECT
     EXTRACT(YEAR FROM a.date_announced)::int AS "Year of Date",
     CASE
-        WHEN p.period = 'QUARTERLY'
+        WHEN p.period IN ('QUARTERLY', 'MONTHLY', 'DAILY')
             THEN 'Q' || EXTRACT(QUARTER FROM a.date_announced)::int
         ELSE NULL
     END AS "Quarter of Date",
+    CASE
+        WHEN p.period IN ('QUARTERLY', 'MONTHLY', 'DAILY')
+            THEN EXTRACT(MONTH FROM a.date_announced)::int
+        ELSE NULL
+    END AS "Month of Date",
+    CASE
+        WHEN p.period IN ('QUARTERLY', 'MONTHLY', 'DAILY')
+            THEN EXTRACT(DAY FROM a.date_announced)::int
+        ELSE NULL
+    END AS "Day of Date",
+    a.date_announced AS "Date Announced",
     a.project_category_1 AS "Breakdown",
     a.investment_type AS "Investment Type",
     a.new_status AS "Status",
@@ -40,6 +51,9 @@ WHERE a.new_status <> 'Uncertain'
 GROUP BY
     EXTRACT(YEAR FROM a.date_announced),
     "Quarter of Date",
+    "Month of Date",
+    "Day of Date",
+    a.date_announced,
     a.project_category_1,
     a.investment_type,
     a.new_status,
@@ -47,6 +61,8 @@ GROUP BY
 ORDER BY
     "Year of Date",
     "Quarter of Date" DESC NULLS LAST,
+    "Month of Date" DESC NULLS LAST,
+    "Day of Date" DESC NULLS LAST,
     "Breakdown",
     "Investment Type",
     "Status";
@@ -55,15 +71,26 @@ ORDER BY
 QUERY_PEER_GROUP = """
 WITH params AS (
     SELECT
-        '{period}'::text AS period   -- YEARLY | QUARTERLY
+        '{period}'::text AS period   -- YEARLY | QUARTERLY | MONTHLY | DAILY
 )
 SELECT
     EXTRACT(YEAR FROM a.date_announced)::int AS "Year of Date",
     CASE
-        WHEN p.period = 'QUARTERLY'
+        WHEN p.period IN ('QUARTERLY', 'MONTHLY', 'DAILY')
             THEN 'Q' || EXTRACT(QUARTER FROM a.date_announced)::int
         ELSE NULL
     END AS "Quarter of Date",
+    CASE
+        WHEN p.period IN ('QUARTERLY', 'MONTHLY', 'DAILY')
+            THEN EXTRACT(MONTH FROM a.date_announced)::int
+        ELSE NULL
+    END AS "Month of Date",
+    CASE
+        WHEN p.period IN ('QUARTERLY', 'MONTHLY', 'DAILY')
+            THEN EXTRACT(DAY FROM a.date_announced)::int
+        ELSE NULL
+    END AS "Day of Date",
+    a.date_announced AS "Date Announced",
     b.peer_group_simple AS "Breakdown",
     a.investment_type AS "Investment Type",
     a.new_status AS "Status",
@@ -80,6 +107,9 @@ WHERE a.new_status <> 'Uncertain'
 GROUP BY
     EXTRACT(YEAR FROM a.date_announced),
     "Quarter of Date",
+    "Month of Date",
+    "Day of Date",
+    a.date_announced,
     b.peer_group_simple,
     a.investment_type,
     a.new_status,
@@ -87,6 +117,8 @@ GROUP BY
 ORDER BY
     "Year of Date",
     "Quarter of Date" DESC NULLS LAST,
+    "Month of Date" DESC NULLS LAST,
+    "Day of Date" DESC NULLS LAST,
     "Breakdown",
     "Investment Type",
     "Status";
@@ -134,11 +166,17 @@ CONTENT_STYLE = {
 def create_layout():
     """Create the Activity by Date layout"""
     return html.Div([
+        # Download components
+        dcc.Download(id="download-lcad-chart-csv"),
+        dcc.Download(id="download-lcad-table-csv"),
+        
         # Initialize stores
         dcc.Store(id='lcad-data-store'),
         dcc.Store(id='lcad-selection-store'), # Tracks highlighted series name
         dcc.Store(id='lcad-status-prev-store'), # Tracks previous status values
         dcc.Store(id='lcad-inv-type-prev-store'), # Tracks previous inv type values
+        dcc.Store(id='lcad-chart-time-level', data='YEARLY'), # Chart hierarchy state
+        dcc.Store(id='lcad-table-time-level', data='YEARLY'), # Table hierarchy state
 
         # Main Layout (Natural Scrolling)
         html.Div([
@@ -146,17 +184,86 @@ def create_layout():
             html.Div([
                 html.H2(id='lcad-chart-title', style={'color': '#FF5A09', 'fontWeight': 'bold', 'marginBottom': '10px', 'fontFamily': 'Georgia, serif'}),
                 
-                dcc.Loading(
-                    id="loading-chart",
-                    type="circle",
-                    children=[
-                        dcc.Graph(
-                            id='lcad-chart',
-                            config={'displayModeBar': False},
-                            style={'height': '105vh'}
-                        )
-                    ]
-                ),
+                # New Header row for Hierarchy Icons and Export Button
+                html.Div([
+                    # Chart Hierarchy Controls (left)
+                    html.Div([
+                        html.Div([
+                            html.Span("Year of Date", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px'}),
+                            html.Button('-', id='lcad-chart-toggle-year-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Quarter of Date", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px'}),
+                            html.Button('+', id='lcad-chart-toggle-quarter-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Month of Date", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px'}),
+                            html.Button('+', id='lcad-chart-toggle-month-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
+                        
+                        html.Div([
+                            html.Span("Day of Year", style={'fontSize': '11px', 'color': '#1b365d', 'marginRight': '8px'}),
+                            html.Button('+', id='lcad-chart-toggle-day-btn', n_clicks=0, style={
+                                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
+                                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
+                                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
+                            })
+                        ], style={'display': 'flex', 'alignItems': 'center'})
+                    ], style={
+                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+                        'padding': '5px 10px', 'borderRadius': '4px'
+                    }),
+
+                    # Chart Export Button (right)
+                    html.Div(dcc.Loading(
+                        html.Button("Export to CSV", id="export-lcad-chart-btn", n_clicks=0, style={
+                            "backgroundColor": "white",
+                            "color": "#2c3e50",
+                            "border": "1px solid #dee2e6",
+                            "padding": "6px 12px",
+                            "borderRadius": "4px",
+                            "cursor": "pointer",
+                            "fontSize": "12px",
+                            "fontWeight": "normal",
+                        })
+                    ))
+                ], style={
+                    'display': 'flex', 
+                    'justifyContent': 'space-between', 
+                    'alignItems': 'center', 
+                    'padding': '0 10px',
+                    'marginBottom': '10px'
+                }),
+                
+                # Chart Container
+                html.Div([
+                    dcc.Loading(
+                        id="loading-chart",
+                        type="circle",
+                        children=[
+                            dcc.Graph(
+                                id='lcad-chart',
+                                config={'displayModeBar': False},
+                                style={'height': '105vh'}
+                            )
+                        ]
+                    )
+                ], style={'backgroundColor': '#fff', 'padding': '10px'}),
+                
                 html.Div([
                     html.P("Source: Energy Intelligence, Low-Carbon Investment Tracker. Data as of Q4 2025.", 
                            style={'fontSize': '10px', 'color': '#666', 'margin': '0'}),
@@ -248,6 +355,53 @@ def create_layout():
 
 def register_callbacks(app, server):
     
+    # Chart Hierarchy Callbacks
+    @app.callback(
+        [Output('lcad-chart-time-level', 'data'),
+         Output('lcad-chart-toggle-year-btn', 'children'),
+         Output('lcad-chart-toggle-quarter-btn', 'children'),
+         Output('lcad-chart-toggle-month-btn', 'children'),
+         Output('lcad-chart-toggle-day-btn', 'children')],
+        [Input('lcad-chart-toggle-year-btn', 'n_clicks'),
+         Input('lcad-chart-toggle-quarter-btn', 'n_clicks'),
+         Input('lcad-chart-toggle-month-btn', 'n_clicks'),
+         Input('lcad-chart-toggle-day-btn', 'n_clicks'),
+         Input('lcad-interval-dropdown', 'value')],
+        [State('lcad-chart-time-level', 'data')]
+    )
+    def chart_hierarchy_handler(y_c, q_c, m_c, d_c, dropdown_val, current_level):
+        ctx = callback_context
+        if not ctx.triggered:
+            cl = current_level or 'YEARLY'
+            return (cl, 
+                    '-' if cl == 'YEARLY' else '+',
+                    '-' if cl == 'QUARTERLY' else '+',
+                    '-' if cl == 'MONTHLY' else '+',
+                    '-' if cl == 'DAILY' else '+')
+
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        
+        if trigger_id == 'lcad-interval-dropdown':
+            # Dropdown overrides icons: set chart level to match dropdown
+            new_level = dropdown_val
+        else:
+            # Button clicked: only change icon state, don't touch dropdown
+            new_level = current_level or 'YEARLY'
+            if '-year-btn' in trigger_id:
+                new_level = 'YEARLY'
+            elif '-quarter-btn' in trigger_id:
+                new_level = 'QUARTERLY'
+            elif '-month-btn' in trigger_id:
+                new_level = 'MONTHLY'
+            elif '-day-btn' in trigger_id:
+                new_level = 'DAILY'
+            
+        return (new_level,
+                '-' if new_level == 'YEARLY' else '+',
+                '-' if new_level == 'QUARTERLY' else '+',
+                '-' if new_level == 'MONTHLY' else '+',
+                '-' if new_level == 'DAILY' else '+')
+    
     # 1. Fetch Data
     @app.callback(
         Output('lcad-data-store', 'data'),
@@ -257,13 +411,19 @@ def register_callbacks(app, server):
         Output('lcad-investment-type-checklist', 'options'),
         Output('lcad-investment-type-checklist', 'value'),
         Output('lcad-inv-type-prev-store', 'data'),
-        # Output('lcad-investment-type-checklist', 'value'), # Optional: select all initially?
         Input('lcad-interval-dropdown', 'value'),
+        Input('lcad-chart-time-level', 'data'),
         Input('lcad-breakdown-dropdown', 'value')
     )
-    def fetch_data(interval, breakdown):
+    def fetch_data(dropdown_interval, chart_time_level, breakdown):
+        # Determine the SQL period based on both inputs
+        if dropdown_interval == 'QUARTERLY' or chart_time_level in ['QUARTERLY', 'MONTHLY', 'DAILY']:
+            interval = 'QUARTERLY'
+        else:
+            interval = 'YEARLY'
+
         if not interval or not breakdown:
-            return no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
         engine = get_db_engine()
         
@@ -287,7 +447,7 @@ def register_callbacks(app, server):
                     
         except Exception as e:
             print(f"Error executing query: {e}")
-            return [], [], []
+            return [], [], [], [], [], [], []
 
         # Prepare filter options (unique values)
         status_vals = sorted(df['Status'].dropna().unique())
@@ -364,32 +524,22 @@ def register_callbacks(app, server):
                     const graph = document.getElementById('lcad-chart');
                     if (!graph) return;
                     
-                    // Target the groups 'g.xtick' to catch clicks on the general area
+                    // 1. Target the groups 'g.xtick' to catch clicks on the general area
                     const ticks = graph.querySelectorAll('g.xtick');
-                    
-                    if (ticks.length === 0) return;
-                    
                     ticks.forEach(t => {
                         t.style.cursor = 'pointer'; 
                         t.style.pointerEvents = 'all'; 
-                        
-                        // Prevent attaching multiple times if re-running
                         if (t.getAttribute('data-click-attached')) return;
                         t.setAttribute('data-click-attached', 'true');
                         
                         t.addEventListener('click', function(e) {
-                            // Find the text content. It might be in a child 'text' element or 'tspan'
                             const textEl = t.querySelector('text');
                             if (textEl) {
                                 let dateStr = textEl.textContent; 
-                                // Remove any zero-width spaces or artifacts if present
                                 dateStr = dateStr.replace(/[\\u200B\\u00A0]/g, ''); 
-                                
                                 const input = document.getElementById('lcad-axis-click-trigger');
                                 if (input) {
-                                    // Timestamp payload to ensure uniqueness
                                     const payload = dateStr + "|" + Date.now();
-                                    
                                     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
                                     nativeInputValueSetter.call(input, payload);
                                     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -397,12 +547,33 @@ def register_callbacks(app, server):
                             }
                         });
                     });
-                } catch(e) { console.error("Axis listener error:", e); }
+
+                    // 2. Background click listener to clear selection
+                    // Target the main drag area and the background rectangle
+                    const bgElements = graph.querySelectorAll('.nsewdrag, .bg');
+                    bgElements.forEach(bg => {
+                        if (bg.getAttribute('data-clear-attached')) return;
+                        bg.setAttribute('data-clear-attached', 'true');
+                        bg.addEventListener('click', function(e) {
+                            // Only trigger if we clicked the background itself, not a bar bubbling up
+                            if (e.target === bg) {
+                                const input = document.getElementById('lcad-axis-click-trigger');
+                                if (input) {
+                                    const payload = "CLEAR|" + Date.now();
+                                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                                    nativeInputValueSetter.call(input, payload);
+                                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                                }
+                            }
+                        });
+                    });
+
+                } catch(e) { console.error("Chart interaction listener error:", e); }
             }, 1000); 
             return window.dash_clientside.no_update;
         }
         """,
-        Output('lcad-axis-listener-output', 'children'), # Dedicated output
+        Output('lcad-axis-listener-output', 'children'),
         Input('lcad-chart', 'figure')
     )
 
@@ -425,6 +596,11 @@ def register_callbacks(app, server):
         if trigger_id == 'lcad-axis-click-trigger':
             if not axis_trigger:
                 return no_update
+            
+            # Handle background reset
+            if axis_trigger.startswith("CLEAR|"):
+                return None
+                
             # Format: "Year|Timestamp"
             try:
                 clicked_year = axis_trigger.split('|')[0]
@@ -474,10 +650,11 @@ def register_callbacks(app, server):
         Input('lcad-status-checklist', 'value'),
         Input('lcad-investment-type-checklist', 'value'),
         Input('lcad-selection-store', 'data'),
+        Input('lcad-chart-time-level', 'data'),
         State('lcad-interval-dropdown', 'value'),
         State('lcad-breakdown-dropdown', 'value')
     )
-    def update_chart(data, measure, status_filter, inv_type_filter, selection, interval, breakdown_type):
+    def update_chart(data, measure, status_filter, inv_type_filter, selection, chart_time_level, interval, breakdown_type):
         try:
             if not data:
                 return go.Figure(), "Low-Carbon Investments"
@@ -503,14 +680,34 @@ def register_callbacks(app, server):
             if df.empty:
                  return go.Figure(), f"Low-Carbon Investments (No matches for selected filters)"
 
-            # Construct X-axis column
-            if interval == 'QUARTERLY':
-                # Create a sortable Period key
-                # "Quarter of Date" is like "Q1". "Year of Date" is 2018.
-                # We want "2018 Q1".
-                df['Period'] = df['Year of Date'].astype(str) + ' ' + df['Quarter of Date'].fillna('')
-            else:
+            # Construct X-axis column based on chart_time_level and interval
+            # dropdown_interval is what's explicitly selected in the sidebar
+            # data_interval is what we actually have in the dataframe
+            dropdown_interval = interval
+            data_interval = 'YEARLY'
+            # Enhanced check: columns must exist AND have non-null values
+            if 'Quarter of Date' in df.columns and df['Quarter of Date'].notna().any():
+                data_interval = 'QUARTERLY'
+            
+            time_level = chart_time_level or dropdown_interval or 'YEARLY'
+            month_names = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            
+            # Use data_interval to decide how much detail we can show
+            if data_interval == 'YEARLY':
+                # Override time_level to YEARLY since we don't have quarterly/monthly data
+                time_level = 'YEARLY'
                 df['Period'] = df['Year of Date'].astype(str)
+            elif data_interval == 'QUARTERLY':
+                # We have quarterly data, can display as QUARTERLY, MONTHLY, or DAILY
+                if time_level == 'DAILY':
+                    # Format: "Jan 1, 2018" (monthly aggregation with day 1)
+                    df['Period'] = df.apply(lambda row: f"{month_names[int(row['Month of Date'])]} 1, {int(row['Year of Date'])}" if pd.notna(row.get('Month of Date')) else str(int(row['Year of Date'])), axis=1)
+                elif time_level == 'MONTHLY':
+                    # Format: "2018 Jan"
+                    df['Period'] = df.apply(lambda row: f"{int(row['Year of Date'])} {month_names[int(row['Month of Date'])]}" if pd.notna(row.get('Month of Date')) else str(int(row['Year of Date'])), axis=1)
+                else:  # QUARTERLY or YEARLY
+                    # Format: "2018 Q1"
+                    df['Period'] = df['Year of Date'].astype(str) + ' ' + df['Quarter of Date'].fillna('')
                 
             # Group by Period and Breakdown
             # We need to aggregate sum of value and count
@@ -523,21 +720,32 @@ def register_callbacks(app, server):
             # Pre-group for tooltips
             # Group by [Period, Breakdown], sum metric, join others
             
-            grouped = df.groupby(['Period', 'Breakdown']).agg({
+            agg_dict = {
                  'investment_count': 'sum',
                  'investment_value': 'sum',
                  'Investment Type': unique_join,
                  'Status': unique_join, 
-                 'Year of Date': 'first', # For sorting
-                 'Quarter of Date': 'first' # For sorting
-            }).reset_index()
+                 'Year of Date': 'first'
+            }
+            if 'Quarter of Date' in df.columns:
+                agg_dict['Quarter of Date'] = 'first'
+            if 'Month of Date' in df.columns:
+                agg_dict['Month of Date'] = 'first'
+            if 'Day of Date' in df.columns:
+                agg_dict['Day of Date'] = 'first'
+                
+            grouped = df.groupby(['Period', 'Breakdown']).agg(agg_dict).reset_index()
             
             # Sorting Periods
-            if interval == 'QUARTERLY':
-                # secondary sort logic if needed
-                grouped.sort_values(by=['Year of Date', 'Quarter of Date'], inplace=True)
-            else:
-                grouped.sort_values(by=['Year of Date'], inplace=True)
+            sort_cols = ['Year of Date']
+            if time_level == 'DAILY' and 'Month of Date' in grouped.columns and 'Day of Date' in grouped.columns:
+                sort_cols.extend(['Month of Date', 'Day of Date'])
+            elif time_level == 'MONTHLY' and 'Month of Date' in grouped.columns:
+                sort_cols.append('Month of Date')
+            elif time_level == 'QUARTERLY' and 'Quarter of Date' in grouped.columns:
+                sort_cols.append('Quarter of Date')
+            
+            grouped.sort_values(by=sort_cols, inplace=True)
                 
             periods = grouped['Period'].unique() # Ordered
             
@@ -553,8 +761,8 @@ def register_callbacks(app, server):
                     'Other', 
                     'L-C Power Generation', 
                     'Hydrogen & L-C Fuels/Gases', 
-                    'Electricity Solutions', 
                     'EVs & Mobility', 
+                    'Electricity Solutions', 
                     'CCS & Carbon Removal'
                 ]
                 unique_cats = grouped['Breakdown'].unique()
@@ -605,9 +813,14 @@ def register_callbacks(app, server):
                 else:
                      tick_texts.append(p)
             
+            # Prepare tooltip labels
+            suffix_tooltip = " ($ Billion)" if measure == 'investment_value' else ""
+            measure_label = measure.replace('_', ' ').title()
+            period_label = "Year" if data_interval == "YEARLY" else "Date Announced"
+            
             suffix = "($ Billion)" if measure == 'investment_value' else "(#)"
             title = f"Low-Carbon Investments by {breakdown_type} {suffix}"
-            
+
             # Add bar traces
             for cat in categories:
                 # Extract data for this category, aligned to period index
@@ -639,13 +852,6 @@ def register_callbacks(app, server):
                     # Investment Value: Value ($ Billion)
                     # Year: Value
                     
-                    suffix_tooltip = " ($ Billion)" if measure == 'investment_value' else ""
-                    
-                    # Determine period label
-                    period_label = "Year" if interval == "YEARLY" else "Period"
-                    
-                    measure_label = measure.replace('_', ' ').title()
-
                     # Use spans for coloring: Label (grey), Value (black)
                     tt = (
                         f"<span style='color:gray'>{breakdown_type}: </span><span style='color:black'>{cat}</span><br>" +
@@ -722,10 +928,28 @@ def register_callbacks(app, server):
             # Calculate totals per period
             period_totals = pivot_val.sum(axis=1)
             
+            # 1. Add Trend Line (FIRST, behind labels)
+            if data_interval in ['QUARTERLY', 'MONTHLY', 'DAILY']:
+                fig.add_trace(go.Scatter(
+                    name='Total Trend',
+                    x=period_totals.index,
+                    y=period_totals.values,
+                    mode='lines',
+                    line=dict(color='#FF5A09', width=2),
+                    hovertemplate=(
+                        f"<span style='color:gray'>Date Announced: </span><span style='color:black'>%{{x}}</span>" +
+                        "<extra></extra>"
+                    ),
+                    showlegend=False, 
+                    yaxis='y', 
+                    hoverlabel=dict(bgcolor='white', font=dict(color='black'))
+                ))
+
+            # 2. Add Total Labels (Scatter trace, on TOP)
             fig.add_trace(go.Scatter(
                 x=period_totals.index,
                 y=period_totals.values,
-                text=[f"<b>{v:,.1f}</b>" for v in period_totals.values],
+                text=[f"<b>{v:,.1f}</b>" if measure == 'investment_value' else f"<b>{int(v)}</b>" for v in period_totals.values],
                 mode='text',
                 textposition='top center',
                 textfont=dict(size=11, color='black'),
@@ -735,46 +959,26 @@ def register_callbacks(app, server):
                 customdata=[['TOTALS_TRACE']] * len(period_totals)
             ))
 
-            # Add Trend Line (Only for Quarterly as requested)
-            if interval == 'QUARTERLY':
-                # Determine metric for line (Assuming Count if Value selected, or always Count?)
-                # Based on analysis: Bar=Value, Line=Count seems most likely for dual-metric context.
-                # However, if Bar=Count, Line=Value?
-                # Let's start with: Line is ALWAYS Investment Count (Activity Level).
-                line_measure = 'investment_count'
-                
-                # Calculate totals per period
-                # We need to re-group original DF to ensure we get proper sums regardless of breakdown
-                line_grouped = df.groupby('Period')[line_measure].sum()
-                line_grouped = line_grouped.reindex(periods).fillna(0)
-                
-                fig.add_trace(go.Scatter(
-                    name='Count Trend',
-                    x=line_grouped.index,
-                    y=line_grouped.values,
-                    mode='lines',
-                    line=dict(color='#FF5A09', width=2),
-                    hovertemplate="Date Announced: %{x}<extra></extra>",
-                    showlegend=False,
-                    yaxis='y2', # Use secondary axis
-                    hoverlabel=dict(bgcolor='white', font=dict(color='black'))
-                ))
-
             # Y-Axis Settings based on Measure and Interval
+            # Increase range slightly to account for trend line and total labels
             if measure == 'investment_value':
-                if interval == 'QUARTERLY':
+                if data_interval == 'QUARTERLY':
                     y_dtick = 5
-                    y_range = [0, 40]
+                    max_total = period_totals.max() if not period_totals.empty else 40
+                    y_range = [0, max(40, max_total * 1.2)]
                 else:
-                    y_dtick = 10
-                    y_range = [0, 150]
-            else: # investment_count
-                if interval == 'QUARTERLY':
                     y_dtick = 20
-                    y_range = [0, 160]
+                    max_total = period_totals.max() if not period_totals.empty else 150
+                    y_range = [0, max(150, max_total * 1.2)]
+            else: # investment_count
+                if data_interval == 'QUARTERLY':
+                    y_dtick = 20
+                    max_total = period_totals.max() if not period_totals.empty else 160
+                    y_range = [0, max(160, max_total * 1.2)]
                 else:
                     y_dtick = 50
-                    y_range = [0, 600]
+                    max_total = period_totals.max() if not period_totals.empty else 600
+                    y_range = [0, max(600, max_total * 1.2)]
 
             # Layout styling
             fig.update_layout(
@@ -835,3 +1039,49 @@ def register_callbacks(app, server):
             import traceback
             traceback.print_exc()
             return go.Figure(), f"Error updating chart: {str(e)}"
+    # CSV Export Callbacks
+    @app.callback(
+        Output("download-lcad-chart-csv", "data"),
+        Input("export-lcad-chart-btn", 'n_clicks'),
+        [State('lcad-data-store', 'data'),
+         State('lcad-measure-dropdown', 'value'),
+         State('lcad-status-checklist', 'value'),
+         State('lcad-investment-type-checklist', 'value'),
+         State('lcad-interval-dropdown', 'value'),
+         State('lcad-breakdown-dropdown', 'value')],
+        prevent_initial_call=True
+    )
+    def export_chart_data(n_clicks, data, measure, status_filter, inv_type_filter, interval, breakdown):
+        if not n_clicks or not data:
+            return no_update
+
+        try:
+            df = pd.DataFrame(data)
+            
+            if df.empty:
+                return no_update
+
+            # Apply filters
+            if status_filter:
+                status_to_filter = [s for s in status_filter if s != '(All)']
+                df = df[df['Status'].isin(status_to_filter)]
+            
+            if inv_type_filter:
+                inv_type_to_filter = [s for s in inv_type_filter if s != '(All)']
+                df = df[df['Investment Type'].isin(inv_type_to_filter)]
+
+            if df.empty:
+                return no_update
+            
+            # Remove internal tracking columns for cleaner CSV
+            cols_to_drop = ['Year of Date', 'Quarter of Date', 'Month of Date', 'Day of Date']
+            df = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
+            
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"low_carbon_investments_chart_{timestamp}.csv"
+            
+            return dcc.send_data_frame(df.to_csv, filename, index=False)
+
+        except Exception as e:
+            print(f"Error exporting chart data: {e}")
+            return no_update
