@@ -222,6 +222,16 @@ def create_layout():
     origins_df = load_data(origin_query)
     origins = origins_df['source_country'].tolist() if not origins_df.empty else []
 
+    date_range_query = """
+    SELECT MIN(tr.date) as min_date, MAX(tr.date) as max_date
+    FROM dev.glng_gas_trade tr
+    LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
+    WHERE LOWER(co.region) IN ('asia', 'oceania');
+    """
+    date_range_df = load_data(date_range_query)
+    min_date_val = date_range_df['min_date'].iloc[0] if not date_range_df.empty else pd.Timestamp('2019-01-01')
+    max_date_val = date_range_df['max_date'].iloc[0] if not date_range_df.empty else pd.Timestamp.now()
+
     return html.Div([
         html.Div([
             # Left/Center: Charts Area
@@ -400,7 +410,7 @@ def create_layout():
                     ], style={
                         'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
                         'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '0px',
-                        'position': 'absolute', 'top': '40px', 'left': '60px', 'zIndex': '10'
+                        'position': 'relative', 'top': '0px', 'left': '0px', 'zIndex': '10'
                     }),
 
                     dcc.Loading(dcc.Graph(id='gas-asia-chart-3', config={'displayModeBar': False}, figure={'layout': {}, 'data': []}))
@@ -456,8 +466,10 @@ def create_layout():
                         dcc.Input(
                             id='gas-asia-start-date-picker',
                             type='text',
-                            value='2019-01-01',
+                            value=min_date_val.strftime('%Y-%m-%d') if pd.notnull(min_date_val) else '2019-01-01',
                             placeholder='YYYY-MM-DD',
+                            min='2019-01-01',
+                            max='2030-12-31',
                             style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px'}
                         ),
                     ], style={'marginBottom': '10px'}),
@@ -467,8 +479,10 @@ def create_layout():
                         dcc.Input(
                             id='gas-asia-end-date-picker',
                             type='text',
-                            value=datetime.now().strftime('%Y-%m-%d'),
+                            value=max_date_val.strftime('%Y-%m-%d') if pd.notnull(max_date_val) else datetime.now().strftime('%Y-%m-%d'),
                             placeholder='YYYY-MM-DD',
+                            min='2019-01-01',
+                            max='2030-12-31',
                             style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px'}
                         ),
                     ], style={'marginBottom': '20px'}),
