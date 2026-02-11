@@ -718,7 +718,9 @@ def create_layout():
                 # External Link at bottom of sidebar
                 html.Div([
                     html.A("Go To Low-Carbon Investment Tracker Data", 
-                           href="#",
+                           href="https://www.energyintel.com/low-carbon-energy-data#low-carbon-investment-data",
+                           target="_blank",
+                           rel="noopener noreferrer",
                            style={
                                'color': '#4A90E2',
                                'fontSize': '11px',
