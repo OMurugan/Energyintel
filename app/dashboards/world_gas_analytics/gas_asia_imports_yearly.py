@@ -787,19 +787,16 @@ def register_callbacks(dash_app, server):
 
     @dash_app.callback(
         [Output('asia-imports-yearly-map', 'figure'),
-         Output('asia-imports-yearly-map-title', 'children'),
-         Output('asia-map-selection-store', 'data')],
+         Output('asia-imports-yearly-map-title', 'children')],
         [Input('asia-unit-filter', 'value'),
          Input('asia-flow-type-filter', 'value'),
          Input('asia-destination-dropdown', 'value'),
-         Input('asia-origin-dropdown', 'value'),
-         Input('asia-imports-yearly-map', 'clickData'),
-         Input('asia-map-selection-store', 'data')],
+         Input('asia-origin-dropdown', 'value')],
         prevent_initial_call=False
     )
-    def update_asia_map_callback(unit, flow_type, dest, origins, click_data, map_selection):
-        triggered_id = ctx.triggered_id
-        return update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, triggered_id)
+    def update_asia_map_callback(unit, flow_type, dest, origins):
+        """Update map based on filter changes - origin filter drives the zoom"""
+        return update_asia_map(unit, flow_type, dest, origins)
 
     @dash_app.callback(
         [Output('asia-imports-table-container', 'children'),
@@ -1366,39 +1363,11 @@ def _iso_for_country(country):
     # Use centralized mapping
     return get_iso_code(country)
 
-def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, triggered_id=None):
+def update_asia_map(unit, flow_type, dest, origins):
+    """Update the Asia imports map with zoom to selected origin country"""
     title = f"All Imports by Origin ({unit}) - 2025"
     
-    # 1. Handle Map Click for Independent Selection (doesn't affect filters)
-    if triggered_id == 'asia-imports-yearly-map' and click_data:
-        try:
-            point = click_data.get('points', [{}])[0]
-            
-            # Extract clicked country from customdata
-            clicked_country = None
-            if 'customdata' in point and point['customdata']:
-                item = point['customdata']
-                clicked_country = item[0] if isinstance(item, list) and len(item) > 0 else item
-            
-            # Background click detection
-            if clicked_country == '__BACKGROUND_CLICK__':
-                return no_update, no_update, None
-            
-            # Fallback to text
-            if not clicked_country and 'text' in point:
-                clicked_country = point['text']
-            
-            # Toggle logic: clicking same country resets
-            if clicked_country == map_selection or not clicked_country:
-                return no_update, no_update, None
-            else:
-                return no_update, no_update, clicked_country
-                
-        except Exception as e:
-            print(f"Asia Map Click Error: {e}")
-            return no_update, no_update, None
-
-    # 2. Build Query for 2025
+    # Build Query for 2025
     data_unit = 'Mcm' if unit == 'Bcm' else 'GWh'
     scale = 1000.0 if unit == 'Bcm' else 1.0
 
@@ -1440,7 +1409,7 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
         
         if df.empty:
             from .shared_map_utils import create_empty_map
-            return create_empty_map("No data available for 2025", height=500), title, no_update
+            return create_empty_map("No data available for 2025", height=500), title
 
         # Ensure numeric and rename for convenience
         df['Value'] = df['total_value'].astype(float)
@@ -1451,9 +1420,9 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
         
         if df.empty:
             from .shared_map_utils import create_empty_map
-            return create_empty_map("No geographic data for these origins", height=500), title, no_update
+            return create_empty_map("No geographic data for these origins", height=500), title
 
-        # 1. Colorscale (matching reference профессиональный стиль)
+        # Colorscale
         colorscale = [
             (0.0, '#f0f9ff'),  # Very light blue
             (0.2, '#bae6fd'),  # Light blue
@@ -1463,7 +1432,7 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
             (1.0, '#0284c7')   # Darkest blue
         ]
         
-        # 2. Selection handling
+        # Selection handling - check if a specific origin is selected
         selected_name = None
         selected_iso = None
         other_isos = []
@@ -1472,8 +1441,9 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
         regional_iso_query = "SELECT country_code FROM dim_country WHERE LOWER(region) IN ('asia', 'oceania') AND country_code IS NOT NULL"
         regional_isos = [r['country_code'] for r in execute_query(regional_iso_query)]
         
-        if map_selection:
-            selected_name = map_selection
+        # Check if a specific origin is selected (not "All")
+        if origins and origins != '(All)':
+            selected_name = origins
             selected_iso = _iso_for_country(selected_name)
             if selected_iso:
                 # Dim all other regional countries
@@ -1482,7 +1452,7 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
                 # Fallback to data-driven dimming if selection not in regional list
                 other_isos = [iso for iso in df['iso'].tolist() if iso != selected_iso]
 
-        # 3. Create Hover Text and Custom Data (for click handling)
+        # Create Hover Text and Custom Data (for click handling)
         hover_text = []
         custom_data = []
         for _, row in df.iterrows():
@@ -1500,13 +1470,13 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
             # Store country name for click handling
             custom_data.append(row['origin'])
 
-        # 4. Create Map using Shared Utility
+        # Create Map using Shared Utility
         from .shared_map_utils import create_choropleth_map
         
         # Prepare countries_df for labels (only for selected country or all if none selected)
         countries_df = df[['origin', 'latitude', 'longitude', 'Value']].copy().rename(columns={'origin': 'Country', 'latitude': 'Latitude', 'longitude': 'Longitude'})
         if selected_name:
-            # When selected, show only the selected country label to match Fig 1
+            # When selected, show only the selected country label
             countries_df = countries_df[countries_df['Country'] == selected_name]
         else:
             # When not selected, limit labels or show main ones to avoid clutter
@@ -1522,35 +1492,48 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
             other_isos=other_isos,
             countries_df=countries_df,
             country_names=custom_data,  # Pass country names for click handling
-            height=650, # Set to 650 for better visibility and premium feel
+            height=500,
             zmin=0,
             zmax=df['Value'].max()
         )
 
-        # 5. Layout with uirevision and auto-zoom (Adopting reference pattern)
+        # Layout with uirevision and auto-zoom
         use_mapbox, _, mapbox_layout = get_mapbox_config()
         
-        # Calculate optimal center and zoom if selection active
+        # Calculate optimal center and zoom based on selection
         if selected_name and not df[df['origin'] == selected_name].empty:
             sel_row = df[df['origin'] == selected_name].iloc[0]
             if pd.notna(sel_row['latitude']) and pd.notna(sel_row['longitude']):
                 center_lat = sel_row['latitude']
                 center_lon = sel_row['longitude']
-                zoom = 3.0 # Slightly deeper zoom as seen in Fig 1
+                
+                # Determine zoom level based on country size (similar to demand page)
+                # For large countries like Australia, Russia, use lower zoom
+                large_countries = ['Australia', 'Russia', 'China', 'United States', 'Canada', 'India']
+                medium_countries = ['Indonesia', 'Malaysia', 'Norway', 'Saudi Arabia', 'Algeria']
+                
+                if selected_name in large_countries:
+                    zoom = 2.5  # Lower zoom for large countries
+                elif selected_name in medium_countries:
+                    zoom = 3.5  # Medium zoom
+                else:
+                    zoom = 4.5  # Higher zoom for smaller countries
             else:
-                center_lat, center_lon, zoom = 25, 105, 1.8 # Default Asia
+                center_lat, center_lon, zoom = 25, 105, 1.8  # Default Asia
         else:
-             center_lat, center_lon, zoom = 25, 105, 1.8
+            # Default Asia-Pacific view when no specific origin selected
+            # Lower zoom to show full region including Australia
+            center_lat, center_lon, zoom = 15, 110, 1.3
 
         fig.update_layout(
-             margin=dict(l=0, r=0, t=0, b=0),
-             uirevision='asia-imports-yearly-map', # Maintain zoom state unless selection changes
-             hoverlabel=dict(
+            margin=dict(l=0, r=0, t=0, b=0),
+            uirevision='asia-imports-yearly-map',  # Maintain zoom state
+            hoverlabel=dict(
                 bgcolor="white",
                 bordercolor="#cccccc",
                 font=dict(family="Arial, sans-serif", size=12, color="black"),
                 align="left"
-             )
+            )
         )
         
         if use_mapbox:
@@ -1562,80 +1545,12 @@ def update_asia_map(unit, flow_type, dest, origins, click_data, map_selection, t
             })
             fig.update_layout(mapbox=asia_mapbox_layout)
         
-        return fig, title, no_update
+        return fig, title
         
     except Exception as e:
         print(f"Asia ERROR: update_asia_map failed: {e}")
         import traceback
         traceback.print_exc()
         from .shared_map_utils import create_error_figure
-        return create_error_figure(str(e), height=500), title, no_update
-        return create_error_figure(str(e), height=500), title, no_update
+        return create_error_figure(str(e), height=500), title
 
-    # Map click interaction to update origin filter
-    @dash_app.callback(
-        Output('asia-origin-dropdown', 'value'),
-        Input('asia-imports-yearly-map', 'clickData'),
-        [State('asia-origin-dropdown', 'value'),
-         State('asia-origin-dropdown', 'options')],
-        prevent_initial_call=True
-    )
-    def handle_map_click_filter(clickData, current_origin, options):
-        """Handle map clicks to update origin filter"""
-        if not clickData:
-            return no_update
-            
-        try:
-            # Extract all origin options (excluding "(All)")
-            all_origins = []
-            if options:
-                all_origins = [opt['value'] for opt in options if opt['value'] != '(All)']
-            
-            if not all_origins:
-                print("DEBUG: Options empty or missing origins")
-                return no_update
-            
-            # Extract clicked country from map
-            point = clickData.get('points', [{}])[0]
-            clicked_country = None
-            
-            # Try to get country from customdata
-            if 'customdata' in point and point['customdata']:
-                item = point['customdata']
-                clicked_country = item[0] if isinstance(item, list) and len(item) > 0 else item
-            
-            # Background click detection
-            if clicked_country == '__BACKGROUND_CLICK__':
-                # Reset to (All)
-                return '(All)'
-            
-            # Fallback to text
-            if not clicked_country and 'text' in point:
-                # Extract country name from hover text
-                text = point['text']
-                if 'Origin:' in text:
-                    # Parse the HTML to extract country name
-                    import re
-                    match = re.search(r'Origin:.*?<span[^>]*>([^<]+)</span>', text)
-                    if match:
-                        clicked_country = match.group(1).strip()
-            
-            if not clicked_country:
-                return no_update
-            
-            # Check if clicked country is in available origins
-            if clicked_country not in all_origins:
-                print(f"DEBUG: Clicked country '{clicked_country}' not in available origins")
-                return no_update
-            
-            # Toggle logic: clicking same country resets to (All)
-            if current_origin == clicked_country:
-                return '(All)'
-            else:
-                return clicked_country
-                
-        except Exception as e:
-            print(f"Map click error: {e}")
-            import traceback
-            traceback.print_exc()
-            return no_update
