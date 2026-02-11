@@ -692,7 +692,7 @@ def register_callbacks(dash_app, server):
                 )
                 
                 # Separation line (to the right of the region block)
-                if current_idx + num_countries < len(x_axis_order):
+                if current_idx + num_countries < len(x_axis_labels):
                     fig.add_shape(
                         type="line",
                         x0=current_idx + num_countries - 0.5,
