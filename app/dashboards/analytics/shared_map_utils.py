@@ -22,9 +22,9 @@ MAP_BACKGROUND_COLOR = "white"  # Consistent white background
 MAP_LAND_COLOR = "#f4f4f4"  # Light gray for land areas
 MAP_COASTLINE_COLOR = "#cccccc"  # Light gray for coastlines
 MAP_COUNTRY_BORDER_COLOR = "white"  # White country borders
-MAP_SELECTION_COLOR = "#4A4A4A"  # Dark gray for selection highlights
-MAP_SELECTION_WIDTH = 1  # Selection border width
-MAP_SELECTED_WIDTH = 1 #Selected border width
+MAP_SELECTION_COLOR = "black"  # Black for selection highlights
+MAP_SELECTION_WIDTH = 3  # Selection border width
+MAP_SELECTED_WIDTH = 3 #Selected border width
 
 # Shared tooltip styling
 HOVER_LABEL_STYLE = dict(
@@ -55,7 +55,7 @@ def load_world_geojson() -> dict | None:
     url = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json"
     try:
         logger.info("Loading world GeoJSON data from GitHub...")
-        with urlopen(url, timeout=10) as resp:  # Increased timeout for server environments
+        with urlopen(url, timeout=30) as resp:  # Increased timeout for server environments
             _world_geojson = json.load(resp)
         logger.info(f"Successfully loaded GeoJSON with {len(_world_geojson.get('features', []))} countries")
     except Exception as e:
@@ -116,84 +116,11 @@ def get_mapbox_config() -> tuple[bool, str | None, dict]:
 def add_background_click_layer(fig: go.Figure, selected_country: str | None = None, use_mapbox: bool = True):
     """
     Add comprehensive invisible layers across ocean areas for reliable click-to-reset functionality.
-    
-    Uses a combination of strategic ocean points and grid coverage to ensure
-    reliable click detection across all ocean and empty space areas.
-    
-    Args:
-        fig: Plotly figure to add the layer to
-        selected_country: Currently selected country (affects whether layers are added)
-        use_mapbox: Whether to use Mapbox or geo coordinates
     """
     # Only add background click layers if a country is selected (to allow reset)
     if selected_country:
-        # Create a comprehensive grid of ocean points for better coverage
-        # Increased density for more reliable clicking
-        ocean_lons = []
-        ocean_lats = []
-        
-        # Dense grid coverage across major ocean areas
-        # Atlantic Ocean
-        for lon in range(-80, -10, 15):  # Every 15 degrees
-            for lat in range(-60, 70, 15):
-                ocean_lons.append(lon)
-                ocean_lats.append(lat)
-        
-        # Pacific Ocean
-        for lon in range(-180, -80, 15):  # Western Pacific
-            for lat in range(-60, 70, 15):
-                ocean_lons.append(lon)
-                ocean_lats.append(lat)
-        
-        for lon in range(120, 180, 15):  # Eastern Pacific
-            for lat in range(-60, 70, 15):
-                ocean_lons.append(lon)
-                ocean_lats.append(lat)
-        
-        # Indian Ocean
-        for lon in range(40, 120, 15):
-            for lat in range(-60, 30, 15):
-                ocean_lons.append(lon)
-                ocean_lats.append(lat)
-        # Europe/Africa Gap Coverage - VERY DENSE Grid (Critical)
-        for lon in range(-20, 50, 5):
-            for lat in range(30, 75, 5):
-                ocean_lons.append(lon)
-                ocean_lats.append(lat)
-        
-        # Arctic Ocean
-        for lon in range(-180, 180, 30):
-            for lat in range(70, 85, 10):
-                ocean_lons.append(lon)
-                ocean_lats.append(lat)
-        
-        # Southern Ocean
-        for lon in range(-180, 180, 30):
-            for lat in range(-85, -60, 10):
-                ocean_lons.append(lon)
-                ocean_lats.append(lat)
-        
         if use_mapbox:
-            # Add large invisible scatter points for comprehensive coverage
-            fig.add_trace(
-                go.Scattermapbox(
-                    lon=ocean_lons,
-                    lat=ocean_lats,
-                    mode="markers",
-                    marker=dict(
-                        size=200,  # Much larger markers for better click detection
-                        color="rgba(255,255,255,0.05)",  # Slightly more visible for debugging
-                        opacity=0.05
-                    ),
-                    hoverinfo="none",  # Hide hover text but keep click functionality
-                    customdata=[["__BACKGROUND_CLICK__"]] * len(ocean_lons),
-                    showlegend=False,
-                    name="ocean_grid"
-                )
-            )
-            
-            # Add multiple overlapping fill layers for comprehensive coverage
-            # Main world fill layer
+            # Add a single large invisible fill layer for background click detection
             fig.add_trace(
                 go.Scattermapbox(
                     lon=[-180, 180, 180, -180, -180],
@@ -201,103 +128,16 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
                     mode="lines",
                     line=dict(color="rgba(0,0,0,0)", width=0),
                     fill="toself",
-                    fillcolor="rgba(255,255,255,0.01)",  # Slightly more visible
-                    hoverinfo="none",  # Hide hover text but keep click functionality
-                    customdata=[["__BACKGROUND_CLICK__"]],
+                    fillcolor="rgba(255,255,255,0.01)",
+                    hoverinfo="none",
+                    customdata=[["__BACKGROUND_CLICK__"]] * 5,
                     showlegend=False,
                     name="world_background",
                     opacity=0.01
                 )
             )
-            
-            # Additional ocean-specific fill areas for better coverage
-            # Atlantic Ocean fill
-            fig.add_trace(
-                go.Scattermapbox(
-                    lon=[-80, -10, -10, -80, -80],
-                    lat=[-60, -60, 70, 70, -60],
-                    mode="lines",
-                    line=dict(color="rgba(0,0,0,0)", width=0),
-                    fill="toself",
-                    fillcolor="rgba(255,255,255,0.01)",
-                    hoverinfo="none",
-                    customdata=[["__BACKGROUND_CLICK__"]],
-                    showlegend=False,
-                    name="atlantic_fill",
-                    opacity=0.01
-                )
-            )
-            
-            # Pacific Ocean fill
-            fig.add_trace(
-                go.Scattermapbox(
-                    lon=[-180, -80, -80, -180, -180],
-                    lat=[-60, -60, 70, 70, -60],
-                    mode="lines",
-                    line=dict(color="rgba(0,0,0,0)", width=0),
-                    fill="toself",
-                    fillcolor="rgba(255,255,255,0.01)",
-                    hoverinfo="none",
-                    customdata=[["__BACKGROUND_CLICK__"]],
-                    showlegend=False,
-                    name="pacific_west_fill",
-                    opacity=0.01
-                )
-            )
-            
-            fig.add_trace(
-                go.Scattermapbox(
-                    lon=[120, 180, 180, 120, 120],
-                    lat=[-60, -60, 70, 70, -60],
-                    mode="lines",
-                    line=dict(color="rgba(0,0,0,0)", width=0),
-                    fill="toself",
-                    fillcolor="rgba(255,255,255,0.01)",
-                    hoverinfo="none",
-                    customdata=[["__BACKGROUND_CLICK__"]],
-                    showlegend=False,
-                    name="pacific_east_fill",
-                    opacity=0.01
-                )
-            )
-
-            # Europe background fill (Critical for reliable clicks)
-            fig.add_trace(
-                go.Scattermapbox(
-                    lon=[-20, 45, 45, -20, -20],
-                    lat=[30, 30, 75, 75, 30],
-                    mode="lines",
-                    line=dict(color="rgba(0,0,0,0)", width=0),
-                    fill="toself",
-                    fillcolor="rgba(255,255,255,0.01)",
-                    hoverinfo="none",
-                    customdata=[["__BACKGROUND_CLICK__"]],
-                    showlegend=False,
-                    name="europe_background_fill",
-                    opacity=0.01
-                )
-            )
-            
         else:
-            # Geo fallback - use comprehensive scatter points
-            fig.add_trace(
-                go.Scattergeo(
-                    lon=ocean_lons,
-                    lat=ocean_lats,
-                    mode="markers",
-                    marker=dict(
-                        size=200,  # Large markers for better click detection
-                        color="rgba(255,255,255,0.05)",
-                        opacity=0.05
-                    ),
-                    hoverinfo="none",  # Hide hover text but keep click functionality
-                    customdata=[["__BACKGROUND_CLICK__"]] * len(ocean_lons),
-                    showlegend=False,
-                    name="ocean_grid"
-                )
-            )
-            
-            # Main world fill layer
+            # Geo fallback - use simple world background fill
             fig.add_trace(
                 go.Scattergeo(
                     lon=[-180, 180, 180, -180, -180],
@@ -306,8 +146,8 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
                     line=dict(color="rgba(0,0,0,0)", width=0),
                     fill="toself",
                     fillcolor="rgba(255,255,255,0.01)",
-                    hoverinfo="none",  # Hide hover text but keep click functionality
-                    customdata=[["__BACKGROUND_CLICK__"]],
+                    hoverinfo="none",
+                    customdata=[["__BACKGROUND_CLICK__"]] * 5,
                     showlegend=False,
                     name="world_background",
                     opacity=0.01
