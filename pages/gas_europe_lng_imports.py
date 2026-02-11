@@ -1,6 +1,6 @@
 import dash
 from pages._utils import wrap_layout
-from app.dashboards.analytics import gas_europe_lng_imports
+from app.dashboards.world_gas_analytics import gas_europe_lng_imports
 
 
 dash.register_page(
