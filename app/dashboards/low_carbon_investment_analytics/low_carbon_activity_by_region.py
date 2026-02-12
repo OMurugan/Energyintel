@@ -69,6 +69,7 @@ def create_layout():
         dcc.Store(id='low-carbon-breakdown-store', data='status'),
         dcc.Store(id='low-carbon-chart-selection', data=None),
         dcc.Store(id='low-carbon-is-expanded', data=False),
+        dcc.Store(id='low-carbon-latest-date', data=None),
         dcc.Download(id='low-carbon-download-csv'),
         
         # Header
@@ -290,7 +291,42 @@ def create_layout():
                 'borderLeft': '1px solid #ddd',
                 'minHeight': '100vh'
             })
-        ], style={'display': 'flex'})
+        ], style={'display': 'flex'}),
+        
+        # Footer
+        html.Div([
+            html.Div([
+                html.Span(
+                    "Source: Energy Intelligence, Low-Carbon Investment Tracker. Data as of ",
+                    style={'fontSize': '11px', 'color': '#666', 'fontFamily': 'Arial, sans-serif'}
+                ),
+                html.Span(
+                    id='low-carbon-footer-date',
+                    children="",
+                    style={'fontSize': '11px', 'color': '#666', 'fontFamily': 'Arial, sans-serif'}
+                ),
+                html.Span(
+                    ". Covers activity by leading oil and gas firms, tracked by date initially announced or approved. Reported or estimated value is net for companies tracked. For more information see methodology. ",
+                    style={'fontSize': '11px', 'color': '#666', 'fontFamily': 'Arial, sans-serif'}
+                ),
+                html.A(
+                    "Go To Low-Carbon Investment Tracker",
+                    href="https://www.energyintel.com/low-carbon-energy-data#low-carbon-investment-data",
+                    target="_blank",
+                    style={
+                        'fontSize': '11px',
+                        'color': '#fe5000',
+                        'fontFamily': 'Arial, sans-serif',
+                        'textDecoration': 'underline',
+                        'cursor': 'pointer'
+                    }
+                )
+            ], style={
+                'padding': '15px 20px',
+                'backgroundColor': '#fff',
+                'borderTop': '1px solid #ddd'
+            })
+        ])
     ], className='tab-content', style={
         'backgroundColor': '#ffffff',
         'minHeight': '100vh',
@@ -452,7 +488,8 @@ def register_callbacks(dash_app, server):
 
     # Update chart
     @dash_app.callback(
-        Output('low-carbon-chart', 'figure'),
+        [Output('low-carbon-chart', 'figure'),
+         Output('low-carbon-latest-date', 'data')],
         [Input('low-carbon-measure-filter', 'value'),
          Input('low-carbon-breakdown-filter', 'value'),
          Input('low-carbon-chart-selection', 'data'),
@@ -462,6 +499,25 @@ def register_callbacks(dash_app, server):
     def update_chart(measure, breakdown, selection, is_expanded, date_range):
         start_date = (datetime(2015, 1, 1) + timedelta(days=date_range[0])).strftime('%Y-%m-%d')
         end_date = (datetime(2015, 1, 1) + timedelta(days=date_range[1])).strftime('%Y-%m-%d')
+        
+        # Get latest date from database
+        latest_date_query = """
+        SELECT MAX(a.date_announced) AS latest_date
+        FROM dev.fact_et_assets a
+        WHERE a.new_status <> 'Uncertain'
+        """
+        
+        try:
+            latest_date_result = execute_query(latest_date_query, {})
+            latest_date = latest_date_result[0]['latest_date'] if latest_date_result else None
+            if latest_date:
+                latest_date_str = latest_date.strftime('%-m/%-d/%Y')
+            else:
+                latest_date_str = "N/A"
+        except Exception as e:
+            print(f"Error fetching latest date: {e}")
+            latest_date_str = "N/A"
+        
         # SQL Query with country granularity
         query = f"""
         SELECT
@@ -535,10 +591,10 @@ def register_callbacks(dash_app, server):
             df = pd.DataFrame(results)
         except Exception as e:
             print(f"Error executing query: {e}")
-            return go.Figure()
+            return go.Figure(), latest_date_str
         
         if df.empty:
-            return go.Figure()
+            return go.Figure(), latest_date_str
         
         # Process data
         df['Measure Value'] = pd.to_numeric(df['Measure Value'], errors='coerce').fillna(0)
@@ -559,7 +615,7 @@ def register_callbacks(dash_app, server):
         agg_df = agg_df.dropna(subset=['Region', 'Breakdown'])
         
         if agg_df.empty:
-            return go.Figure()
+            return go.Figure(), latest_date_str
         
         # Sort regions by total value
         region_totals = agg_df.groupby('Region')['Measure Value'].sum().sort_values(ascending=False)
@@ -697,11 +753,15 @@ def register_callbacks(dash_app, server):
                     ),
                     customdata=trace_customdata,
                     hovertemplate=(
-                        f"<span style='color: #666'>{breakdown_label}:</span> {b_val}<br>"
-                        f"<span style='color: #666'>Country:</span> %{{customdata[4]}}<br>"
-                        f"<span style='color: #666'>Region:</span> %{{customdata[1]}}<br>"
-                        f"<span style='color: #666'>{value_label}:</span> %{{y:,.2f}}{unit}<br>"
-                        f"<span style='color: #666'>{x_label}:</span> %{{customdata[0]}}<extra></extra>"
+                        f"<span style='color: #666; font-weight: normal;'>{breakdown_label}:</span> "
+                        f"<span style='color: #000; font-weight: normal;'>{b_val}</span><br>"
+                        f"<span style='color: #666; font-weight: normal;'>Region:</span> "
+                        f"<span style='color: #000; font-weight: normal;'>%{{customdata[1]}}</span><br>"
+                        f"<span style='color: #666; font-weight: normal;'>{value_label}:</span> "
+                        f"<span style='color: #000; font-weight: normal;'>%{{y:,.2f}}{unit}</span><br>"
+                        f"<span style='color: #666; font-weight: normal;'>Host Country:</span> "
+                        f"<span style='color: #000; font-weight: normal;'>%{{customdata[4]}}</span>"
+                        "<extra></extra>"
                     )
                 ))
 
@@ -774,14 +834,15 @@ def register_callbacks(dash_app, server):
             paper_bgcolor='white',
             hoverlabel=dict(
                 bgcolor="white",
-                bordercolor="#ddd",
-                font_size=12,
+                bordercolor="#ccc",
+                font_size=11,
                 font_family="Arial, sans-serif",
+                font_color="#000",
                 align="left"
             )
         )
         
-        return fig
+        return fig, latest_date_str
         # Sync date labels with slider
     @dash_app.callback(
         [Output('low-carbon-start-date-label', 'children'),
@@ -794,6 +855,14 @@ def register_callbacks(dash_app, server):
         start_dt = datetime(2015, 1, 1) + timedelta(days=date_range[0])
         end_dt = datetime(2015, 1, 1) + timedelta(days=date_range[1])
         return start_dt.strftime('%-m/%-d/%Y'), end_dt.strftime('%-m/%-d/%Y')
+    
+    # Update footer date
+    @dash_app.callback(
+        Output('low-carbon-footer-date', 'children'),
+        Input('low-carbon-latest-date', 'data')
+    )
+    def update_footer_date(latest_date):
+        return latest_date if latest_date else ""
 
     # Export to CSV
     @dash_app.callback(
@@ -810,22 +879,11 @@ def register_callbacks(dash_app, server):
         if not n_clicks:
             return no_update
         
-        # Same query as chart
+        # Query to get aggregated data matching the chart
         query = """
         SELECT
             c.et_region                                   AS "Region",
             c.country_long_name                           AS "Country",
-            a.new_status                                  AS "Status",
-            EXTRACT(YEAR FROM a.date_announced)::int      AS "Year Announced",
-            a.investment_type                             AS "Investment Type",
-
-            CASE
-                WHEN :measure = 'investment_value'
-                    THEN ROUND(SUM(a.investment_usd), 2)
-                WHEN :measure = 'investment_count'
-                    THEN COUNT(a.investment_usd)
-            END                                           AS "Measure Value",
-
             CASE
                 WHEN :breakdown = 'status'
                     THEN a.new_status
@@ -835,7 +893,13 @@ def register_callbacks(dash_app, server):
                     THEN b.peer_group_simple
                 WHEN :breakdown = 'investment_type'
                     THEN a.investment_type
-            END                                           AS "Breakdown"
+            END                                           AS "Breakdown",
+            CASE
+                WHEN :measure = 'investment_value'
+                    THEN ROUND(SUM(a.investment_usd) / 1000, 2)
+                WHEN :measure = 'investment_count'
+                    THEN COUNT(a.investment_usd)
+            END                                           AS "Measure Value"
 
         FROM dev.fact_et_assets a
         LEFT JOIN dev.dim_company b
@@ -850,9 +914,6 @@ def register_callbacks(dash_app, server):
         GROUP BY
             c.et_region,
             c.country_long_name,
-            a.new_status,
-            EXTRACT(YEAR FROM a.date_announced),
-            a.investment_type,
             CASE
                 WHEN :breakdown = 'status'
                     THEN a.new_status
@@ -865,7 +926,8 @@ def register_callbacks(dash_app, server):
             END
 
         ORDER BY
-            "Year Announced" DESC,
+            c.et_region,
+            c.country_long_name,
             "Breakdown";
         """
         
@@ -879,6 +941,28 @@ def register_callbacks(dash_app, server):
         try:
             results = execute_query(query, params)
             df = pd.DataFrame(results)
+            
+            # Rename columns based on selected filters
+            measure_label = "Investment Value ($ Billion)" if measure == 'investment_value' else "Investment Count"
+            
+            if breakdown == 'status':
+                breakdown_label = "Status"
+            elif breakdown == 'project_category':
+                breakdown_label = "Project Category"
+            elif breakdown == 'peer_group':
+                breakdown_label = "Peer Group"
+            else:  # investment_type
+                breakdown_label = "Investment Type"
+            
+            # Rename columns for clarity
+            df = df.rename(columns={
+                'Breakdown': breakdown_label,
+                'Measure Value': measure_label
+            })
+            
+            # Reorder columns
+            df = df[['Region', 'Country', breakdown_label, measure_label]]
+            
             return dcc.send_data_frame(df.to_csv, f"low_carbon_activity_{measure}_{breakdown}.csv", index=False)
         except Exception as e:
             print(f"Error exporting CSV: {e}")
