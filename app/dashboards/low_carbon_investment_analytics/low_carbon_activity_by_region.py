@@ -810,22 +810,11 @@ def register_callbacks(dash_app, server):
         if not n_clicks:
             return no_update
         
-        # Same query as chart
+        # Query to get aggregated data matching the chart
         query = """
         SELECT
             c.et_region                                   AS "Region",
             c.country_long_name                           AS "Country",
-            a.new_status                                  AS "Status",
-            EXTRACT(YEAR FROM a.date_announced)::int      AS "Year Announced",
-            a.investment_type                             AS "Investment Type",
-
-            CASE
-                WHEN :measure = 'investment_value'
-                    THEN ROUND(SUM(a.investment_usd), 2)
-                WHEN :measure = 'investment_count'
-                    THEN COUNT(a.investment_usd)
-            END                                           AS "Measure Value",
-
             CASE
                 WHEN :breakdown = 'status'
                     THEN a.new_status
@@ -835,7 +824,13 @@ def register_callbacks(dash_app, server):
                     THEN b.peer_group_simple
                 WHEN :breakdown = 'investment_type'
                     THEN a.investment_type
-            END                                           AS "Breakdown"
+            END                                           AS "Breakdown",
+            CASE
+                WHEN :measure = 'investment_value'
+                    THEN ROUND(SUM(a.investment_usd) / 1000, 2)
+                WHEN :measure = 'investment_count'
+                    THEN COUNT(a.investment_usd)
+            END                                           AS "Measure Value"
 
         FROM dev.fact_et_assets a
         LEFT JOIN dev.dim_company b
@@ -850,9 +845,6 @@ def register_callbacks(dash_app, server):
         GROUP BY
             c.et_region,
             c.country_long_name,
-            a.new_status,
-            EXTRACT(YEAR FROM a.date_announced),
-            a.investment_type,
             CASE
                 WHEN :breakdown = 'status'
                     THEN a.new_status
@@ -865,7 +857,8 @@ def register_callbacks(dash_app, server):
             END
 
         ORDER BY
-            "Year Announced" DESC,
+            c.et_region,
+            c.country_long_name,
             "Breakdown";
         """
         
@@ -879,6 +872,28 @@ def register_callbacks(dash_app, server):
         try:
             results = execute_query(query, params)
             df = pd.DataFrame(results)
+            
+            # Rename columns based on selected filters
+            measure_label = "Investment Value ($ Billion)" if measure == 'investment_value' else "Investment Count"
+            
+            if breakdown == 'status':
+                breakdown_label = "Status"
+            elif breakdown == 'project_category':
+                breakdown_label = "Project Category"
+            elif breakdown == 'peer_group':
+                breakdown_label = "Peer Group"
+            else:  # investment_type
+                breakdown_label = "Investment Type"
+            
+            # Rename columns for clarity
+            df = df.rename(columns={
+                'Breakdown': breakdown_label,
+                'Measure Value': measure_label
+            })
+            
+            # Reorder columns
+            df = df[['Region', 'Country', breakdown_label, measure_label]]
+            
             return dcc.send_data_frame(df.to_csv, f"low_carbon_activity_{measure}_{breakdown}.csv", index=False)
         except Exception as e:
             print(f"Error exporting CSV: {e}")
