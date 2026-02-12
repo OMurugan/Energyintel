@@ -1306,14 +1306,30 @@ def register_callbacks(dash_app, server):
             # Extract clicked country from map
             point = clickData.get('points', [{}])[0]
             clicked_country = None
+            is_background_click = False
             
-            # Try to get country from customdata
-            if 'customdata' in point and point['customdata']:
-                item = point['customdata']
-                clicked_country = item[0] if isinstance(item, list) and len(item) > 0 else item
+            # Check for background click markers in customdata
+            if "customdata" in point and point["customdata"]:
+                if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
+                    if point["customdata"][0] == "__BACKGROUND_CLICK__":
+                        is_background_click = True
+                    else:
+                        clicked_country = point["customdata"][0]
+                elif point["customdata"] == "__BACKGROUND_CLICK__":
+                    is_background_click = True
+                else:
+                    clicked_country = point["customdata"]
             
+            # Check trace name for background layers
+            if "curveNumber" in point and not is_background_click and not clicked_country:
+                trace_name = point.get("data", {}).get("name", "")
+                if trace_name in ["ocean_grid", "world_background", "atlantic_fill", 
+                                 "pacific_west_fill", "pacific_east_fill", "ocean_background", 
+                                 "background_fill", "europe_background_fill", "asia_background_fill"]:
+                    is_background_click = True
+
             # Background click detection
-            if clicked_country == '__BACKGROUND_CLICK__':
+            if is_background_click:
                 # Reset to (All)
                 return '(All)'
             
@@ -1508,9 +1524,10 @@ def update_asia_map(unit, flow_type, dest, origins):
                 center_lon = sel_row['longitude']
                 
                 # Determine zoom level based on country size (similar to demand page)
+                # Determine zoom level based on country size (similar to demand page)
                 # For large countries like Australia, Russia, use lower zoom
-                large_countries = ['Australia', 'Russia', 'China', 'United States', 'Canada', 'India']
-                medium_countries = ['Indonesia', 'Malaysia', 'Norway', 'Saudi Arabia', 'Algeria']
+                large_countries = ['Australia', 'Russia', 'China', 'United States', 'Canada', 'India', 'Indonesia', 'Brazil']
+                medium_countries = ['Malaysia', 'Norway', 'Saudi Arabia', 'Algeria', 'Japan', 'Papua New Guinea']
                 
                 if selected_name in large_countries:
                     zoom = 2.5  # Lower zoom for large countries

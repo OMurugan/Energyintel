@@ -167,6 +167,20 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
             for lat in range(-60, 70, 5):
                 ocean_lons.append(lon)
                 ocean_lats.append(lat)
+                
+        # Japan/East Asia - ULTRA DENSE Grid (Critical for Japan zoom)
+        # Japan is roughly 120E to 150E, 20N to 50N
+        for lon in range(120, 153, 1):  # Every 1 degree
+            for lat in range(20, 50, 1):
+                ocean_lons.append(lon)
+                ocean_lats.append(lat)
+
+        # Indonesia/SE Asia - DENSE Grid
+        # Indonesia is roughly 95E to 141E, 11S to 6N
+        for lon in range(95, 145, 2):  # Every 2 degrees
+            for lat in range(-15, 15, 2):
+                ocean_lons.append(lon)
+                ocean_lats.append(lat)
         
         # Arctic Ocean - increased density
         for lon in range(-180, 180, 15):
