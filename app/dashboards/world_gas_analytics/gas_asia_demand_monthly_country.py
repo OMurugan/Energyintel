@@ -604,7 +604,7 @@ def create_layout():
                                         'displayModeBar': True,
                                         'displaylogo': False,
                                         'modeBarButtons': [
-                                            ['toImage', 'resetScale2d']
+                                            ['toImage', 'resetViewMapbox', 'resetGeo']
                                         ],
                                         'scrollZoom': True,
                                         'doubleClick': 'reset',
@@ -1018,7 +1018,7 @@ def register_callbacks(dash_app, server):
         countries_set = set(countries)
         
         # User unchecked "(All)" => clear all countries
-        if all_selected and not has_all:
+        if all_selected and not has_all and len(selection) == len(countries):
             return [], {'all_selected': False}
         
         # User checked "(All)" => select all countries
@@ -1277,6 +1277,20 @@ def register_callbacks(dash_app, server):
         other_isos = None
         single_selected_country = None
         
+        # Get ALL available countries from the original map_df (before filtering)
+        all_available_countries = map_df['Country'].unique().tolist()
+        
+        # Create a mapping of all countries to their ISO codes from the ORIGINAL data
+        all_country_iso_map = {}
+        temp_df = map_df.copy()
+        temp_df['Country_DB_Original'] = temp_df['Country'].copy()
+        temp_df['ISO_Code'] = temp_df['Country_DB_Original'].apply(_iso_for_country)
+        temp_df = temp_df.dropna(subset=['ISO_Code'])
+        temp_df['ISO_Code'] = temp_df['ISO_Code'].astype(str)
+        temp_df = temp_df[temp_df['ISO_Code'].str.len() == 3]
+        for _, row in temp_df[['Country', 'ISO_Code']].drop_duplicates().iterrows():
+            all_country_iso_map[row['Country']] = row['ISO_Code']
+        
         # Check if only one country is selected (not all countries)
         if selected_countries and len(selected_countries) == 1 and '(All)' not in selected_countries:
             single_selected_country = selected_countries[0]
@@ -1284,7 +1298,19 @@ def register_callbacks(dash_app, server):
             # Find the ISO code for the selected country
             if single_selected_country in agg_df['Country'].values:  # Use original Country column
                 selected_iso = agg_df.loc[agg_df['Country'] == single_selected_country, 'ISO_Code'].iloc[0]
-                other_isos = [iso for iso in locations if iso != selected_iso]
+                
+                # Get all other ISOs from ALL available countries (not just filtered ones)
+                other_isos = [all_country_iso_map[country] for country in all_available_countries 
+                             if country != single_selected_country and country in all_country_iso_map]
+                
+                print(f"DEBUG MAP: Single country selected: {single_selected_country}, ISO: {selected_iso}")
+                print(f"DEBUG MAP: Other ISOs to dim: {other_isos}")
+        elif selected_countries and len(selected_countries) > 1 and len(selected_countries) < len(all_available_countries):
+            # Multiple countries selected (but not all) - dim the non-selected ones
+            other_isos = [all_country_iso_map[country] for country in all_available_countries 
+                         if country not in selected_countries and country in all_country_iso_map]
+        
+        print(f"DEBUG MAP: Calling create_choropleth_map with selected_country={single_selected_country}, selected_iso={selected_iso}")
         
         # Create the map using shared utilities
         fig = create_choropleth_map(
@@ -1740,7 +1766,7 @@ def register_callbacks(dash_app, server):
         # Update layout
         fig.update_layout(
             height=700,
-            margin=dict(l=20, r=20, t=20, b=40),
+            margin=dict(l=60, r=20, t=20, b=40),  # Increased left margin from 20 to 60 for Y-axis labels
             paper_bgcolor='white',
             plot_bgcolor='white',
             xaxis_title="",
@@ -2191,6 +2217,8 @@ def register_callbacks(dash_app, server):
             return no_update, no_update
             
         try:
+            print(f"DEBUG: Map clicked! clickData: {clickData}")
+            
             # Extract all country options (excluding "(All)")
             # This ensures we pass the exact available countries to the reset handler
             all_countries = []
@@ -2211,21 +2239,104 @@ def register_callbacks(dash_app, server):
                 print("DEBUG: Could not determine available countries")
                 return no_update, no_update
             
-            # Use shared helper to determine new selection
-            new_selection = handle_map_click_reset(
-                clickData, 
-                current_selection, 
-                all_countries,
-                all_value='(All)'
-            )
+            # Enhanced background click detection
+            point = clickData.get("points", [{}])[0]
+            print(f"DEBUG: Point data: {point}")
             
-            # Determine new state to prevent conflict with checklist callback
-            # If (All) is in selection, we are in all_selected mode
-            is_all_selected = '(All)' in new_selection
-            new_state = {'all_selected': is_all_selected}
+            is_background_click = False
+            clicked_country = None
             
-            return new_selection, new_state
+            # Check for background click markers
+            if "customdata" in point and point["customdata"]:
+                print(f"DEBUG: customdata found: {point['customdata']}")
+                if isinstance(point["customdata"], list) and len(point["customdata"]) > 0:
+                    if point["customdata"][0] == "__BACKGROUND_CLICK__":
+                        is_background_click = True
+                        print("DEBUG: Background click detected via customdata list")
+                    else:
+                        clicked_country = point["customdata"][0]
+                        print(f"DEBUG: Country clicked via customdata: {clicked_country}")
+                elif point["customdata"] == "__BACKGROUND_CLICK__":
+                    is_background_click = True
+                    print("DEBUG: Background click detected via customdata string")
+                else:
+                    clicked_country = point["customdata"]
+                    print(f"DEBUG: Country clicked via customdata string: {clicked_country}")
+            
+            # Check trace name for background layers
+            if "curveNumber" in point and not is_background_click and not clicked_country:
+                try:
+                    # Get the trace from the figure if available
+                    trace_name = ""
+                    if "data" in point:
+                        trace_name = point.get("data", {}).get("name", "")
+                    
+                    print(f"DEBUG: Trace name: {trace_name}")
+                    
+                    # Check if it's a background layer
+                    if trace_name in ["ocean_grid", "world_background", "atlantic_fill", 
+                                     "pacific_west_fill", "pacific_east_fill", "ocean_background", 
+                                     "background_fill", "europe_background_fill", "asia_background_fill"]:
+                        is_background_click = True
+                        print(f"DEBUG: Background click detected via trace name: {trace_name}")
+                except (KeyError, IndexError, AttributeError) as e:
+                    print(f"DEBUG: Error checking trace name: {e}")
+            
+            # If background click detected, reset to all countries
+            if is_background_click:
+                print("DEBUG: Background/ocean click detected - resetting to all countries")
+                new_selection = ['(All)'] + all_countries
+                new_state = {'all_selected': True}
+                return new_selection, new_state
+            
+            # Determine current state
+            current_selection = current_selection or []
+            resolved_countries = [c for c in current_selection if c != '(All)' and c in all_countries]
+            
+            print(f"DEBUG: Current selection: {current_selection}")
+            print(f"DEBUG: Resolved countries: {resolved_countries}")
+            print(f"DEBUG: Clicked country: {clicked_country}")
+            print(f"DEBUG: Is background click: {is_background_click}")
+            
+            # If exactly one country is selected, ANY click should reset to all
+            if len(resolved_countries) == 1:
+                selected_country_name = resolved_countries[0]
+                
+                # If clicked the same country, reset to all
+                if clicked_country == selected_country_name:
+                    print(f"DEBUG: Same country clicked ({clicked_country}) - resetting to all")
+                    new_selection = ['(All)'] + all_countries
+                    new_state = {'all_selected': True}
+                    return new_selection, new_state
+                
+                # If clicked a different valid country (including dimmed countries), reset to all
+                if clicked_country and clicked_country in all_countries and clicked_country != selected_country_name:
+                    print(f"DEBUG: Different country clicked ({clicked_country}) - resetting to all (was dimmed)")
+                    new_selection = ['(All)'] + all_countries
+                    new_state = {'all_selected': True}
+                    return new_selection, new_state
+                
+                # If clicked something else (ocean, unrecognized area, or no country detected), reset to all
+                # This is the catch-all for any click when a single country is selected
+                print(f"DEBUG: Other click while single country selected - resetting to all")
+                new_selection = ['(All)'] + all_countries
+                new_state = {'all_selected': True}
+                return new_selection, new_state
+            
+            # If all countries are shown (or multiple countries selected)
+            # Clicking a valid country selects only that country
+            if clicked_country and clicked_country in all_countries:
+                print(f"DEBUG: Country clicked while all shown - selecting only {clicked_country}")
+                new_selection = [clicked_country]
+                new_state = {'all_selected': False}
+                return new_selection, new_state
+            
+            # If clicked something unrecognized when all countries shown, keep current selection
+            print("DEBUG: Unrecognized click - keeping current selection")
+            return no_update, no_update
             
         except Exception as e:
             print(f"Map click error: {e}")
+            import traceback
+            traceback.print_exc()
             return no_update, no_update
