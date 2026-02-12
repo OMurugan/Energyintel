@@ -588,14 +588,23 @@ def register_callbacks(dash_app, server):
         # Chart click
         if 'asia-imports-bar-chart.clickData' in triggered_id and click_data:
             point = click_data['points'][0]
-            # Identify the bar by Destination (x) and Facet (customdata index 5)
-            facet = ""
-            if 'customdata' in point and len(point['customdata']) > 5:
-                facet = point['customdata'][5]
             
-            new_sel = {'dest': point['x'], 'facet': facet}
+            # Use customdata for robust selection: [Destination, Facet_Key, Origin, dest_pos]
+            if 'customdata' not in point:
+                return no_update
+                
+            c_data = point['customdata']
+            try:
+                origin = c_data[2]  # Origin from customdata
+                dest_pos = int(c_data[3])  # Destination position
+                facet = c_data[1]  # Facet_Key
+            except (IndexError, TypeError, ValueError):
+                return no_update
             
-            if current_sel and current_sel.get('dest') == new_sel['dest'] and current_sel.get('facet') == new_sel['facet']:
+            new_sel = {'dest_pos': dest_pos, 'facet': facet, 'origin': origin}
+            
+            # Toggle: if same segment clicked, reset
+            if current_sel and current_sel == new_sel:
                 return None
             return new_sel
             
@@ -854,10 +863,14 @@ def register_callbacks(dash_app, server):
 
             chart_df = df.groupby(['Facet_Key'] + time_cols + ['Destination', 'Origin_Plot', 'Unit'], dropna=False)['Value'].sum().reset_index()
 
+            # Create destination position mapping
+            dest_pos_df = pd.DataFrame({'Destination': top_dest, 'dest_pos': range(len(top_dest))})
+            chart_df = chart_df.merge(dest_pos_df, on='Destination', how='left')
+
             # Spacing
             f_spacing = 0.003 if granularity in ('month', 'day') else 0.012
 
-            # Create Chart
+            # Create Chart with customdata: [Destination, Facet_Key, Origin_Plot, dest_pos]
             fig = px.bar(
                 chart_df,
                 x='Destination',
@@ -867,7 +880,8 @@ def register_callbacks(dash_app, server):
                 facet_col_spacing=f_spacing,
                 color_discrete_map=ORIGIN_COLORS,
                 category_orders={'Destination': top_dest, 'Facet_Key': facet_categories},
-                hover_data=['Year of Date', 'Quarter of Date', 'Month of Date', 'Day of Date', 'Unit', 'Facet_Key'],
+                hover_data=['Year of Date', 'Quarter of Date', 'Month of Date', 'Day of Date', 'Unit', 'Facet_Key', 'dest_pos'],
+                custom_data=['Destination', 'Facet_Key', 'Origin_Plot', 'dest_pos'],
                 template='plotly_white'
             )
 
@@ -897,25 +911,40 @@ def register_callbacks(dash_app, server):
             fig.update_traces(hovertemplate=get_hovertemplate(granularity))
 
             # Handle highlighting
-            sel_dest = selection.get('dest') if selection else None
+            sel_dest_pos = selection.get('dest_pos') if selection else None
             sel_facet = selection.get('facet') if selection else None
+            sel_origin = selection.get('origin') if selection else None
 
             for trace in fig.data:
                 # Set hovertemplate for this trace
                 trace.hovertemplate = get_hovertemplate(granularity)
                 
-                # Handle opacity for highlighting
-                if selection and hasattr(trace, 'customdata') and trace.customdata is not None:
-                    opacities = []
-                    for i in range(len(trace.x)):
-                        x_val = trace.x[i]
-                        # customdata[5] is Facet_Key
-                        f_val = trace.customdata[i][5] if len(trace.customdata[i]) > 5 else ""
-                        if x_val == sel_dest and f_val == sel_facet:
-                            opacities.append(1.0)
-                        else:
-                            opacities.append(0.2)
-                    trace.marker.opacity = opacities
+                # Handle opacity for segment-level highlighting
+                if selection and sel_origin is not None and hasattr(trace, 'customdata') and trace.customdata is not None:
+                    # Check if this trace is the selected origin
+                    trace_origin = trace.name if hasattr(trace, 'name') else ''
+                    
+                    if trace_origin == sel_origin:
+                        # This is the selected origin trace - apply selective opacity
+                        opacities = []
+                        for i in range(len(trace.customdata)):
+                            # customdata structure: [Destination, Facet_Key, Origin_Plot, dest_pos]
+                            try:
+                                c_facet = trace.customdata[i][1]
+                                c_dest_pos = int(trace.customdata[i][3])
+                            except (IndexError, TypeError, ValueError):
+                                opacities.append(0.2)
+                                continue
+                            
+                            # Highlight only the specific segment (dest_pos + facet + origin)
+                            if c_dest_pos == sel_dest_pos and c_facet == sel_facet:
+                                opacities.append(1.0)
+                            else:
+                                opacities.append(0.2)
+                        trace.marker.opacity = opacities
+                    else:
+                        # Different origin - dim all segments in this trace
+                        trace.marker.opacity = 0.2
                 elif not selection:
                     # Reset to full opacity
                     trace.marker.opacity = 1.0
@@ -1678,14 +1707,14 @@ def update_asia_map(unit, flow_type, dest, origins):
             from .shared_map_utils import create_empty_map
             return create_empty_map("No geographic data for these origins", height=500), title
 
-        # Colorscale
+        # Colorscale - subdued blues matching Figure 1
         colorscale = [
-            (0.0, '#f0f9ff'),  # Very light blue
-            (0.2, '#bae6fd'),  # Light blue
-            (0.4, '#7dd3fc'),  # Medium light blue
-            (0.6, '#38bdf8'),  # Medium blue
-            (0.8, '#0ea5e9'),  # Darker blue
-            (1.0, '#0284c7')   # Darkest blue
+            (0.0, '#e6f2f8'),  # Very light grayish-blue (for low values)
+            (0.3, '#b3d9e8'),  # Light blue-gray
+            (0.5, '#80c1d8'),  # Medium blue
+            (0.7, '#5a9fba'),  # Medium-dark blue
+            (0.9, '#4682b4'),  # Steel blue (for high values like Russia)
+            (1.0, '#36648B')   # Dark steel blue (for highest values)
         ]
         
         # Selection handling - check if a specific origin is selected
