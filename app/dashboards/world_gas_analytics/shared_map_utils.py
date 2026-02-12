@@ -22,9 +22,9 @@ MAP_BACKGROUND_COLOR = "white"  # Consistent white background
 MAP_LAND_COLOR = "#f4f4f4"  # Light gray for land areas
 MAP_COASTLINE_COLOR = "#cccccc"  # Light gray for coastlines
 MAP_COUNTRY_BORDER_COLOR = "white"  # White country borders
-MAP_SELECTION_COLOR = "#4A4A4A"  # Dark gray for selection highlights
-MAP_SELECTION_WIDTH = 1  # Selection border width
-MAP_SELECTED_WIDTH = 1 #Selected border width
+MAP_SELECTION_COLOR = "#000000"  # Black for selection highlights (more visible)
+MAP_SELECTION_WIDTH = 2  # Selection border width (increased for visibility)
+MAP_SELECTED_WIDTH = 2  # Selected border width (increased for visibility)
 
 # Shared tooltip styling
 HOVER_LABEL_STYLE = dict(
@@ -132,44 +132,65 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
         ocean_lons = []
         ocean_lats = []
         
-        # Dense grid coverage across major ocean areas
-        # Atlantic Ocean
-        for lon in range(-80, -10, 15):  # Every 15 degrees
-            for lat in range(-60, 70, 15):
+        # VERY DENSE grid coverage across ALL ocean areas for maximum reliability
+        # Atlantic Ocean - increased density
+        for lon in range(-80, -10, 8):  # Every 8 degrees (was 15)
+            for lat in range(-60, 70, 8):
                 ocean_lons.append(lon)
                 ocean_lats.append(lat)
         
-        # Pacific Ocean
-        for lon in range(-180, -80, 15):  # Western Pacific
-            for lat in range(-60, 70, 15):
+        # Pacific Ocean - increased density
+        for lon in range(-180, -80, 8):  # Western Pacific
+            for lat in range(-60, 70, 8):
                 ocean_lons.append(lon)
                 ocean_lats.append(lat)
         
-        for lon in range(120, 180, 15):  # Eastern Pacific
-            for lat in range(-60, 70, 15):
+        for lon in range(120, 180, 8):  # Eastern Pacific
+            for lat in range(-60, 70, 8):
                 ocean_lons.append(lon)
                 ocean_lats.append(lat)
         
-        # Indian Ocean
-        for lon in range(40, 120, 15):
-            for lat in range(-60, 30, 15):
-                ocean_lons.append(lon)
-                ocean_lats.append(lat)
-        # Europe/Africa Gap Coverage - VERY DENSE Grid (Critical)
-        for lon in range(-20, 50, 5):
-            for lat in range(30, 75, 5):
+        # Indian Ocean - increased density
+        for lon in range(40, 120, 8):
+            for lat in range(-60, 30, 8):
                 ocean_lons.append(lon)
                 ocean_lats.append(lat)
         
-        # Arctic Ocean
-        for lon in range(-180, 180, 30):
-            for lat in range(70, 85, 10):
+        # Europe/Africa Gap Coverage - VERY DENSE Grid (Critical for Europe map)
+        for lon in range(-20, 50, 3):  # Every 3 degrees for maximum coverage
+            for lat in range(30, 75, 3):
                 ocean_lons.append(lon)
                 ocean_lats.append(lat)
         
-        # Southern Ocean
-        for lon in range(-180, 180, 30):
-            for lat in range(-85, -60, 10):
+        # Asia/Pacific Coverage - VERY DENSE Grid (Critical for Asia map)
+        for lon in range(60, 180, 5):  # Every 5 degrees
+            for lat in range(-60, 70, 5):
+                ocean_lons.append(lon)
+                ocean_lats.append(lat)
+                
+        # Japan/East Asia - ULTRA DENSE Grid (Critical for Japan zoom)
+        # Japan is roughly 120E to 150E, 20N to 50N
+        for lon in range(120, 153, 1):  # Every 1 degree
+            for lat in range(20, 50, 1):
+                ocean_lons.append(lon)
+                ocean_lats.append(lat)
+
+        # Indonesia/SE Asia - DENSE Grid
+        # Indonesia is roughly 95E to 141E, 11S to 6N
+        for lon in range(95, 145, 2):  # Every 2 degrees
+            for lat in range(-15, 15, 2):
+                ocean_lons.append(lon)
+                ocean_lats.append(lat)
+        
+        # Arctic Ocean - increased density
+        for lon in range(-180, 180, 15):
+            for lat in range(70, 85, 5):
+                ocean_lons.append(lon)
+                ocean_lats.append(lat)
+        
+        # Southern Ocean - increased density
+        for lon in range(-180, 180, 15):
+            for lat in range(-85, -60, 5):
                 ocean_lons.append(lon)
                 ocean_lats.append(lat)
         
@@ -181,11 +202,11 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
                     lat=ocean_lats,
                     mode="markers",
                     marker=dict(
-                        size=200,  # Much larger markers for better click detection
-                        color="rgba(255,255,255,0.05)",  # Slightly more visible for debugging
-                        opacity=0.05
+                        size=250,  # Even larger markers for better click detection
+                        color="rgba(255,255,255,0.01)",  # Nearly invisible
+                        opacity=0.01
                     ),
-                    hoverinfo="none",  # Hide hover text but keep click functionality
+                    hoverinfo="none",  # Hide hover completely
                     customdata=[["__BACKGROUND_CLICK__"]] * len(ocean_lons),
                     showlegend=False,
                     name="ocean_grid"
@@ -193,7 +214,7 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
             )
             
             # Add multiple overlapping fill layers for comprehensive coverage
-            # Main world fill layer
+            # Main world fill layer - covers everything
             fig.add_trace(
                 go.Scattermapbox(
                     lon=[-180, 180, 180, -180, -180],
@@ -201,80 +222,97 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
                     mode="lines",
                     line=dict(color="rgba(0,0,0,0)", width=0),
                     fill="toself",
-                    fillcolor="rgba(255,255,255,0.01)",  # Slightly more visible
-                    hoverinfo="none",  # Hide hover text but keep click functionality
+                    fillcolor="rgba(255,255,255,0.001)",  # Nearly invisible
+                    hoverinfo="none",
                     customdata=[["__BACKGROUND_CLICK__"]],
                     showlegend=False,
                     name="world_background",
-                    opacity=0.01
+                    opacity=0.001
                 )
             )
             
-            # Additional ocean-specific fill areas for better coverage
-            # Atlantic Ocean fill
+            # Atlantic Ocean fill - larger area
             fig.add_trace(
                 go.Scattermapbox(
-                    lon=[-80, -10, -10, -80, -80],
-                    lat=[-60, -60, 70, 70, -60],
+                    lon=[-90, 0, 0, -90, -90],
+                    lat=[-70, -70, 80, 80, -70],
                     mode="lines",
                     line=dict(color="rgba(0,0,0,0)", width=0),
                     fill="toself",
-                    fillcolor="rgba(255,255,255,0.01)",
+                    fillcolor="rgba(255,255,255,0.001)",
                     hoverinfo="none",
                     customdata=[["__BACKGROUND_CLICK__"]],
                     showlegend=False,
                     name="atlantic_fill",
-                    opacity=0.01
+                    opacity=0.001
                 )
             )
             
-            # Pacific Ocean fill
+            # Pacific Ocean fill - Western
             fig.add_trace(
                 go.Scattermapbox(
                     lon=[-180, -80, -80, -180, -180],
-                    lat=[-60, -60, 70, 70, -60],
+                    lat=[-70, -70, 80, 80, -70],
                     mode="lines",
                     line=dict(color="rgba(0,0,0,0)", width=0),
                     fill="toself",
-                    fillcolor="rgba(255,255,255,0.01)",
+                    fillcolor="rgba(255,255,255,0.001)",
                     hoverinfo="none",
                     customdata=[["__BACKGROUND_CLICK__"]],
                     showlegend=False,
                     name="pacific_west_fill",
-                    opacity=0.01
+                    opacity=0.001
                 )
             )
             
+            # Pacific Ocean fill - Eastern
             fig.add_trace(
                 go.Scattermapbox(
-                    lon=[120, 180, 180, 120, 120],
-                    lat=[-60, -60, 70, 70, -60],
+                    lon=[100, 180, 180, 100, 100],
+                    lat=[-70, -70, 80, 80, -70],
                     mode="lines",
                     line=dict(color="rgba(0,0,0,0)", width=0),
                     fill="toself",
-                    fillcolor="rgba(255,255,255,0.01)",
+                    fillcolor="rgba(255,255,255,0.001)",
                     hoverinfo="none",
                     customdata=[["__BACKGROUND_CLICK__"]],
                     showlegend=False,
                     name="pacific_east_fill",
-                    opacity=0.01
+                    opacity=0.001
                 )
             )
 
-            # Europe background fill (Critical for reliable clicks)
+            # Europe background fill (Critical for reliable clicks in Europe)
             fig.add_trace(
                 go.Scattermapbox(
-                    lon=[-20, 45, 45, -20, -20],
-                    lat=[30, 30, 75, 75, 30],
+                    lon=[-25, 50, 50, -25, -25],
+                    lat=[25, 25, 80, 80, 25],
                     mode="lines",
                     line=dict(color="rgba(0,0,0,0)", width=0),
                     fill="toself",
-                    fillcolor="rgba(255,255,255,0.01)",
+                    fillcolor="rgba(255,255,255,0.001)",
                     hoverinfo="none",
                     customdata=[["__BACKGROUND_CLICK__"]],
                     showlegend=False,
                     name="europe_background_fill",
-                    opacity=0.01
+                    opacity=0.001
+                )
+            )
+            
+            # Asia background fill (Critical for reliable clicks in Asia)
+            fig.add_trace(
+                go.Scattermapbox(
+                    lon=[60, 180, 180, 60, 60],
+                    lat=[-60, -60, 80, 80, -60],
+                    mode="lines",
+                    line=dict(color="rgba(0,0,0,0)", width=0),
+                    fill="toself",
+                    fillcolor="rgba(255,255,255,0.001)",
+                    hoverinfo="none",
+                    customdata=[["__BACKGROUND_CLICK__"]],
+                    showlegend=False,
+                    name="asia_background_fill",
+                    opacity=0.001
                 )
             )
             
@@ -286,11 +324,11 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
                     lat=ocean_lats,
                     mode="markers",
                     marker=dict(
-                        size=200,  # Large markers for better click detection
-                        color="rgba(255,255,255,0.05)",
-                        opacity=0.05
+                        size=250,  # Large markers for better click detection
+                        color="rgba(255,255,255,0.01)",
+                        opacity=0.01
                     ),
-                    hoverinfo="none",  # Hide hover text but keep click functionality
+                    hoverinfo="none",
                     customdata=[["__BACKGROUND_CLICK__"]] * len(ocean_lons),
                     showlegend=False,
                     name="ocean_grid"
@@ -305,12 +343,12 @@ def add_background_click_layer(fig: go.Figure, selected_country: str | None = No
                     mode="lines",
                     line=dict(color="rgba(0,0,0,0)", width=0),
                     fill="toself",
-                    fillcolor="rgba(255,255,255,0.01)",
-                    hoverinfo="none",  # Hide hover text but keep click functionality
+                    fillcolor="rgba(255,255,255,0.001)",
+                    hoverinfo="none",
                     customdata=[["__BACKGROUND_CLICK__"]],
                     showlegend=False,
                     name="world_background",
-                    opacity=0.01
+                    opacity=0.001
                 )
             )
 
@@ -390,16 +428,8 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | l
     selected_names = [selected_country] if isinstance(selected_country, str) else (selected_country or [])
     
     if use_mapbox and geojson:
-        # Add dimming overlay for other countries
+        # Add dimming overlay for other countries WITH CLICK DETECTION
         if other_isos:
-            # Prepare customdata for dimmed countries if names are provided
-            inactive_customdata = None
-            if isinstance(selected_country, list) and len(selected_country) == len(other_isos):
-                inactive_customdata = [[name] for name in selected_country] # This arg naming is a bit confusing in the original, I'll fix it below
-            
-            # Using customdata from the caller is better
-            # We'll expect customdata to be passed or we use ISOs
-            
             fig.add_trace(
                 go.Choroplethmapbox(
                     geojson=geojson,
@@ -408,8 +438,9 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | l
                     featureidkey="id",
                     colorscale=[[0, "rgba(255,255,255,0.8)"], [1, "rgba(255,255,255,0.8)"]],
                     showscale=False,
-                    hoverinfo="none",
-                    customdata=[[iso] for iso in other_isos], # Pass ISO as fallback identifier
+                    hoverinfo="skip",  # Hide hover but keep click
+                    # IMPORTANT: Mark these as background clicks so clicking them resets
+                    customdata=[["__BACKGROUND_CLICK__"]] * len(other_isos),
                     marker_line_color="rgba(200,200,200,0.3)",
                     marker_line_width=0.5,
                     name="inactive_countries"
@@ -428,7 +459,7 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | l
                     showscale=False,
                     marker_line_color=MAP_SELECTION_COLOR,
                     marker_line_width=MAP_SELECTED_WIDTH,
-                    hoverinfo="none",  # Hide hover text but keep click functionality
+                    hoverinfo="skip",  # Hide hover text but keep click functionality
                     customdata=selected_names if len(selected_names) == len(selected_isos) else ["__SELECTED__"] * len(selected_isos),
                     name="selected_countries_border"
                 )
@@ -443,8 +474,9 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | l
                     locationmode="ISO-3",
                     colorscale=[[0, "rgba(255,255,255,0.8)"], [1, "rgba(255,255,255,0.8)"]],
                     showscale=False,
-                    hoverinfo="none",
-                    customdata=[[iso] for iso in other_isos],
+                    hoverinfo="skip",
+                    # IMPORTANT: Mark these as background clicks so clicking them resets
+                    customdata=[["__BACKGROUND_CLICK__"]] * len(other_isos),
                     marker_line_color="rgba(200,200,200,0.3)",
                     marker_line_width=0.5,
                     name="inactive_countries"
@@ -461,7 +493,7 @@ def add_selection_highlight(fig: go.Figure, geojson: dict, selected_iso: str | l
                     showscale=False,
                     marker_line_color=MAP_SELECTION_COLOR,
                     marker_line_width=MAP_SELECTION_WIDTH,
-                    hoverinfo="none",  # Hide hover text but keep click functionality
+                    hoverinfo="skip",  # Hide hover text but keep click functionality
                     customdata=selected_names if len(selected_names) == len(selected_isos) else ["__SELECTED__"] * len(selected_isos),
                     name="selected_countries_border"
                 )
@@ -568,6 +600,7 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
     
     # Add background click layer FIRST (on the bottom)
     # This ensures it captures clicks only in ocean areas not covered by countries
+    # Use hoverinfo="none" (not "skip") to allow click events while hiding labels
     add_background_click_layer(fig, selected_country, use_mapbox)
     
     # Create main choropleth layer
@@ -608,7 +641,7 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
                 hovertext=hover_text,
                 customdata=customdata,  # Use proper country names for click handling
                 marker_line_color=MAP_COUNTRY_BORDER_COLOR,
-                marker_line_width=0.7,
+                marker_line_width=0.5,
                 marker_opacity=0.8,
                 hoverlabel=HOVER_LABEL_STYLE,
                 name="countries"
