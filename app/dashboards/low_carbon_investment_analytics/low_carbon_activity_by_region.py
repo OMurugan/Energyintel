@@ -69,6 +69,7 @@ def create_layout():
         dcc.Store(id='low-carbon-breakdown-store', data='status'),
         dcc.Store(id='low-carbon-chart-selection', data=None),
         dcc.Store(id='low-carbon-is-expanded', data=False),
+        dcc.Store(id='low-carbon-latest-date', data=None),
         dcc.Download(id='low-carbon-download-csv'),
         
         # Header
@@ -290,7 +291,42 @@ def create_layout():
                 'borderLeft': '1px solid #ddd',
                 'minHeight': '100vh'
             })
-        ], style={'display': 'flex'})
+        ], style={'display': 'flex'}),
+        
+        # Footer
+        html.Div([
+            html.Div([
+                html.Span(
+                    "Source: Energy Intelligence, Low-Carbon Investment Tracker. Data as of ",
+                    style={'fontSize': '11px', 'color': '#666', 'fontFamily': 'Arial, sans-serif'}
+                ),
+                html.Span(
+                    id='low-carbon-footer-date',
+                    children="",
+                    style={'fontSize': '11px', 'color': '#666', 'fontFamily': 'Arial, sans-serif'}
+                ),
+                html.Span(
+                    ". Covers activity by leading oil and gas firms, tracked by date initially announced or approved. Reported or estimated value is net for companies tracked. For more information see methodology. ",
+                    style={'fontSize': '11px', 'color': '#666', 'fontFamily': 'Arial, sans-serif'}
+                ),
+                html.A(
+                    "Go To Low-Carbon Investment Tracker",
+                    href="https://www.energyintel.com/low-carbon-energy-data#low-carbon-investment-data",
+                    target="_blank",
+                    style={
+                        'fontSize': '11px',
+                        'color': '#fe5000',
+                        'fontFamily': 'Arial, sans-serif',
+                        'textDecoration': 'underline',
+                        'cursor': 'pointer'
+                    }
+                )
+            ], style={
+                'padding': '15px 20px',
+                'backgroundColor': '#fff',
+                'borderTop': '1px solid #ddd'
+            })
+        ])
     ], className='tab-content', style={
         'backgroundColor': '#ffffff',
         'minHeight': '100vh',
@@ -452,7 +488,8 @@ def register_callbacks(dash_app, server):
 
     # Update chart
     @dash_app.callback(
-        Output('low-carbon-chart', 'figure'),
+        [Output('low-carbon-chart', 'figure'),
+         Output('low-carbon-latest-date', 'data')],
         [Input('low-carbon-measure-filter', 'value'),
          Input('low-carbon-breakdown-filter', 'value'),
          Input('low-carbon-chart-selection', 'data'),
@@ -462,6 +499,25 @@ def register_callbacks(dash_app, server):
     def update_chart(measure, breakdown, selection, is_expanded, date_range):
         start_date = (datetime(2015, 1, 1) + timedelta(days=date_range[0])).strftime('%Y-%m-%d')
         end_date = (datetime(2015, 1, 1) + timedelta(days=date_range[1])).strftime('%Y-%m-%d')
+        
+        # Get latest date from database
+        latest_date_query = """
+        SELECT MAX(a.date_announced) AS latest_date
+        FROM dev.fact_et_assets a
+        WHERE a.new_status <> 'Uncertain'
+        """
+        
+        try:
+            latest_date_result = execute_query(latest_date_query, {})
+            latest_date = latest_date_result[0]['latest_date'] if latest_date_result else None
+            if latest_date:
+                latest_date_str = latest_date.strftime('%-m/%-d/%Y')
+            else:
+                latest_date_str = "N/A"
+        except Exception as e:
+            print(f"Error fetching latest date: {e}")
+            latest_date_str = "N/A"
+        
         # SQL Query with country granularity
         query = f"""
         SELECT
@@ -535,10 +591,10 @@ def register_callbacks(dash_app, server):
             df = pd.DataFrame(results)
         except Exception as e:
             print(f"Error executing query: {e}")
-            return go.Figure()
+            return go.Figure(), latest_date_str
         
         if df.empty:
-            return go.Figure()
+            return go.Figure(), latest_date_str
         
         # Process data
         df['Measure Value'] = pd.to_numeric(df['Measure Value'], errors='coerce').fillna(0)
@@ -559,7 +615,7 @@ def register_callbacks(dash_app, server):
         agg_df = agg_df.dropna(subset=['Region', 'Breakdown'])
         
         if agg_df.empty:
-            return go.Figure()
+            return go.Figure(), latest_date_str
         
         # Sort regions by total value
         region_totals = agg_df.groupby('Region')['Measure Value'].sum().sort_values(ascending=False)
@@ -786,7 +842,7 @@ def register_callbacks(dash_app, server):
             )
         )
         
-        return fig
+        return fig, latest_date_str
         # Sync date labels with slider
     @dash_app.callback(
         [Output('low-carbon-start-date-label', 'children'),
@@ -799,6 +855,14 @@ def register_callbacks(dash_app, server):
         start_dt = datetime(2015, 1, 1) + timedelta(days=date_range[0])
         end_dt = datetime(2015, 1, 1) + timedelta(days=date_range[1])
         return start_dt.strftime('%-m/%-d/%Y'), end_dt.strftime('%-m/%-d/%Y')
+    
+    # Update footer date
+    @dash_app.callback(
+        Output('low-carbon-footer-date', 'children'),
+        Input('low-carbon-latest-date', 'data')
+    )
+    def update_footer_date(latest_date):
+        return latest_date if latest_date else ""
 
     # Export to CSV
     @dash_app.callback(
