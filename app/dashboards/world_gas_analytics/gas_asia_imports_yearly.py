@@ -180,6 +180,8 @@ def create_layout():
         dcc.Store(id='asia-chart-granularity-store', data='year'),
         dcc.Store(id='asia-table-granularity-store', data='YEARLY'),
         dcc.Store(id='asia-chart-selection-store', data=None),
+        dcc.Store(id='asia-imports-table-selection-store', data={}),
+        dcc.Store(id='asia-imports-table-highlight-state', data={}),
         
         # Download components
         dcc.Download(id="download-asia-imports-chart-csv"),
@@ -329,6 +331,242 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register all callbacks for Asian Yearly Imports"""
     
+    # Clientside Callback for Table Highlighting
+    dash_app.clientside_callback(
+        """
+        function(n_data, columns, current_state) {
+            try {
+                const tableId = 'asia-imports-table';
+                
+                // 1. Define Styles if not present
+                let style = document.getElementById('asia-gas-table-styles');
+                if (!style) {
+                    style = document.createElement('style');
+                    style.id = 'asia-gas-table-styles';
+                    document.head.appendChild(style);
+                }
+                
+                // Color: #bbe4f2 (Light Blue)
+                style.innerHTML = `
+                    .asia-col-selected { background-color: #bbe4f2 !important; }
+                    .asia-row-selected { background-color: #bbe4f2 !important; }
+                    
+                    .asia-dimmed { color: #ccc !important; }
+                    
+                    .asia-col-selection-active td[data-dash-column="Destination"] { 
+                        opacity: 1 !important; 
+                        background-color: #fff !important; 
+                        color: #ccc !important; 
+                    }
+                    
+                    .asia-row-selection-active tr.asia-row-highlighted td {
+                        background-color: #bbe4f2 !important;
+                        color: black !important;
+                        font-weight: bold;
+                    }
+
+                    .asia-row-selection-active tr:not(.asia-row-highlighted) td {
+                        color: #ccc !important;
+                    }
+                    
+                    /* Headers */
+                    th.asia-col-selected { background-color: #bbe4f2 !important; }
+                `;
+
+                if (!window.asiaGasTableState) {
+                    window.asiaGasTableState = { 
+                        selectedColumnId: null,
+                        selectedRowIndices: null
+                    };
+                }
+                // ALWAYS update columns
+                window.asiaGasTableState.columns = columns;
+
+                // Helper to clear classes
+                function clearAll(spreadsheet) {
+                    spreadsheet.classList.remove('asia-col-selection-active');
+                    spreadsheet.classList.remove('asia-row-selection-active');
+                    
+                    const selected = spreadsheet.querySelectorAll('.asia-col-selected, .asia-dimmed, .asia-row-highlighted');
+                    selected.forEach(el => {
+                        el.classList.remove('asia-col-selected');
+                        el.classList.remove('asia-dimmed');
+                        el.classList.remove('asia-row-highlighted');
+                    });
+                }
+                
+                // Helper to Apply State
+                function applyState(spreadsheet) {
+                    clearAll(spreadsheet);
+                    
+                    const state = window.asiaGasTableState;
+
+                    // 1. COLUMN SELECTION
+                    if (state.selectedColumnId) {
+                        const targetIds = state.selectedColumnId.split(',');
+                        if (targetIds.length > 0) {
+                            spreadsheet.classList.add('asia-col-selection-active');
+
+                            // Headers
+                            targetIds.forEach(id => {
+                                const ths = spreadsheet.querySelectorAll(`th[data-dash-column="${id}"]`);
+                                ths.forEach(th => th.classList.add('asia-col-selected'));
+                            });
+
+                            // Cells
+                            const tbodies = spreadsheet.querySelectorAll('tbody');
+                            tbodies.forEach(tbody => {
+                                const rows = Array.from(tbody.querySelectorAll('tr'));
+                                rows.forEach(r => {
+                                    const cells = Array.from(r.children);
+                                    cells.forEach(cell => {
+                                        const cId = cell.getAttribute('data-dash-column');
+                                        if (!cId || cId === 'Destination') return;
+                                        
+                                        if (targetIds.includes(cId)) {
+                                            cell.classList.add('asia-col-selected');
+                                            cell.classList.remove('asia-dimmed'); 
+                                        } else {
+                                            cell.classList.add('asia-dimmed');
+                                        }
+                                    });
+                                });
+                            });
+                        }
+                    }
+
+                    // 2. ROW SELECTION
+                    if (state.selectedRowIndices) {
+                        spreadsheet.classList.add('asia-row-selection-active');
+                        
+                        let targetIndices = state.selectedRowIndices.split(',').map(Number);
+
+                        const tbodies = spreadsheet.querySelectorAll('tbody');
+                        tbodies.forEach(tbody => {
+                            const rows = Array.from(tbody.querySelectorAll('tr'));
+                            rows.forEach((row, idx) => {
+                                if (targetIndices.includes(idx)) {
+                                    row.classList.add('asia-row-highlighted');
+                                }
+                            });
+                        });
+                    }
+                }
+
+                function setupTable() {
+                    const tableEl = document.getElementById(tableId);
+                    if (!tableEl) { setTimeout(setupTable, 200); return; }
+                    
+                    const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                    if (!spreadsheet) { setTimeout(setupTable, 200); return; }
+                    
+                    applyState(spreadsheet);
+                    
+                    if (spreadsheet.dataset.enhanced === 'true') return;
+                    spreadsheet.dataset.enhanced = 'true';
+                    
+                    spreadsheet.addEventListener('click', function(e) {
+                        // A. HEADER CLICK
+                        const header = e.target.closest('th[data-dash-column]');
+                        if (header) {
+                            e.stopPropagation();
+                            const colId = header.getAttribute('data-dash-column');
+                            if (colId === 'Destination') return;
+                            
+                            const headerContent = header.innerText.trim();
+                            
+                            // Detect Year/Quarter/Month group
+                            let isYear = /^20\d{2}$/.test(headerContent);
+                            let isQuarter = /^Q[1-4]$/.test(headerContent);
+                            let isMonth = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|January|February|March|April|May|June|July|August|September|October|November|December)$/.test(headerContent);
+                            
+                            let targetIds = [];
+                            const currentColumns = window.asiaGasTableState.columns;
+                            
+                            if (isYear && currentColumns) {
+                                currentColumns.forEach(c => {
+                                    // Robust match: ID starts with col_YEAR or contains _YEAR_
+                                    if (c.id && (c.id === `col_${headerContent}` || c.id.indexOf(`_${headerContent}_`) !== -1 || c.id.endsWith(`_${headerContent}`))) {
+                                        targetIds.push(c.id);
+                                    }
+                                });
+                            } else if (isQuarter && currentColumns) {
+                                // Extract Year from the clicked column ID
+                                const parts = colId.split('_');
+                                let year = null;
+                                parts.forEach(p => { if (/^20\d{2}$/.test(p)) year = p; });
+                                
+                                if (year) {
+                                    const qStr = `_${year}_${headerContent}`;
+                                    currentColumns.forEach(c => {
+                                        // Match col_2024_Q1 or col_2024_Q1_January
+                                        if (c.id && (c.id === `col_${year}_${headerContent}` || c.id.indexOf(qStr) !== -1)) {
+                                            targetIds.push(c.id);
+                                        }
+                                    });
+                                } else {
+                                    targetIds.push(colId);
+                                }
+                            } else {
+                                targetIds.push(colId);
+                            }
+
+                            const newKey = targetIds.join(',');
+                            
+                            if (window.asiaGasTableState.selectedColumnId === newKey) {
+                                window.asiaGasTableState.selectedColumnId = null;
+                            } else {
+                                window.asiaGasTableState.selectedColumnId = newKey;
+                                window.asiaGasTableState.selectedRowIndices = null;
+                            }
+                            applyState(spreadsheet);
+                            return;
+                        }
+                        
+                        // B. CELL CLICK
+                        const cell = e.target.closest('td[data-dash-column]');
+                        if (cell) {
+                             const colId = cell.getAttribute('data-dash-column');
+                             const row = cell.closest('tr');
+                             const tbody = row.closest('tbody');
+                             const rows = Array.from(tbody.querySelectorAll('tr'));
+                             const clickIdx = rows.indexOf(row);
+                             
+                             if (colId === 'Destination') {
+                                 const newKey = String(clickIdx);
+                                 
+                                 if (window.asiaGasTableState.selectedRowIndices === newKey) {
+                                      window.asiaGasTableState.selectedRowIndices = null;
+                                 } else {
+                                      window.asiaGasTableState.selectedRowIndices = newKey;
+                                      window.asiaGasTableState.selectedColumnId = null;
+                                 }
+                                 applyState(spreadsheet);
+                             } else {
+                                 // Data Cell -> Reset
+                                 window.asiaGasTableState.selectedColumnId = null;
+                                 window.asiaGasTableState.selectedRowIndices = null;
+                                 applyState(spreadsheet);
+                             }
+                        }
+                    });
+                }
+                
+                setTimeout(setupTable, 500);
+                return window.asiaGasTableState;
+
+            } catch(e) { 
+                console.error("Asia Table Highlight JS Error:", e);
+                return {}; 
+            }
+        }
+        """,
+        Output('asia-imports-table-highlight-state', 'data'),
+        Input('asia-imports-table-container', 'children'), # Re-run when table children update
+        State('asia-imports-table', 'columns'), # Correctly pass the table columns
+        State('asia-imports-table-highlight-state', 'data')
+    )
+
     @dash_app.callback(
         Output('asia-chart-selection-store', 'data'),
         [Input('asia-imports-bar-chart', 'clickData'),
@@ -1049,6 +1287,7 @@ def register_callbacks(dash_app, server):
             
             # Construct DataTable
             table = dash_table.DataTable(
+                id='asia-imports-table',
                 data=data,
                 columns=dt_columns,
                 tooltip_data=tooltip_data,
@@ -1083,7 +1322,8 @@ def register_callbacks(dash_app, server):
                     'backgroundColor': '#fff',
                     'color': '#777',
                     'height': 'auto',
-                    'textAlign': 'right'
+                    'textAlign': 'right',
+                    'cursor': 'pointer'
                 },
                 style_data_conditional=[
                     {'if': {'row_index': 'odd'}, 'backgroundColor': '#f9f9f9'}
