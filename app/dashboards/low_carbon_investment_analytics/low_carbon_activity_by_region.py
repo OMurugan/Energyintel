@@ -697,11 +697,15 @@ def register_callbacks(dash_app, server):
                     ),
                     customdata=trace_customdata,
                     hovertemplate=(
-                        f"<span style='color: #666'>{breakdown_label}:</span> {b_val}<br>"
-                        f"<span style='color: #666'>Country:</span> %{{customdata[4]}}<br>"
-                        f"<span style='color: #666'>Region:</span> %{{customdata[1]}}<br>"
-                        f"<span style='color: #666'>{value_label}:</span> %{{y:,.2f}}{unit}<br>"
-                        f"<span style='color: #666'>{x_label}:</span> %{{customdata[0]}}<extra></extra>"
+                        f"<span style='color: #666; font-weight: normal;'>{breakdown_label}:</span> "
+                        f"<span style='color: #000; font-weight: normal;'>{b_val}</span><br>"
+                        f"<span style='color: #666; font-weight: normal;'>Region:</span> "
+                        f"<span style='color: #000; font-weight: normal;'>%{{customdata[1]}}</span><br>"
+                        f"<span style='color: #666; font-weight: normal;'>{value_label}:</span> "
+                        f"<span style='color: #000; font-weight: normal;'>%{{y:,.2f}}{unit}</span><br>"
+                        f"<span style='color: #666; font-weight: normal;'>Host Country:</span> "
+                        f"<span style='color: #000; font-weight: normal;'>%{{customdata[4]}}</span>"
+                        "<extra></extra>"
                     )
                 ))
 
@@ -774,9 +778,10 @@ def register_callbacks(dash_app, server):
             paper_bgcolor='white',
             hoverlabel=dict(
                 bgcolor="white",
-                bordercolor="#ddd",
-                font_size=12,
+                bordercolor="#ccc",
+                font_size=11,
                 font_family="Arial, sans-serif",
+                font_color="#000",
                 align="left"
             )
         )
