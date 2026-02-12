@@ -504,7 +504,7 @@ def generate_timeline_data(years, mode='MONTHLY'):
                 if s_idx < len(sub_labels) - 1:
                     month_separators.append(dict(
                         type="line", x0=line_x, x1=line_x, y0=0, y1=0.88, 
-                        xref="x", yref="paper", line=dict(color="#999999", width=1),
+                        xref="x", yref="paper", line=dict(color="#ddd", width=1),
                         layer='below'
                     ))
                 
@@ -515,7 +515,7 @@ def generate_timeline_data(years, mode='MONTHLY'):
                 sep_x = current_global_x
                 y_sep = dict(
                     type="line", x0=sep_x, x1=sep_x, y0=0, y1=1,
-                    xref="x", yref="paper", line=dict(color="#000000", width=1),
+                    xref="x", yref="paper", line=dict(color="#999999", width=1),
                     layer='below'
                 )
                 year_separators.append(y_sep)
@@ -557,10 +557,15 @@ def update_chart_selections(sea_click, pipe_click, sea_restyle, pipe_restyle, ye
     triggers = [t['prop_id'] for t in ctx.triggered]
     trigger_id = triggers[0] # Primary trigger for basic checks
     
-    # Reset selections if year filter or direction filter changes
     # Reset selections if filter or granularity changes
-    if any(x in trigger_id for x in ['year-check-filter', 'direction-dropdown', 'agg-state']):
+    if any(x in trigger_id for x in ['year-check-filter', 'direction-dropdown']):
         return None, None, None, None
+    
+    if 'seaborne-agg-state' in trigger_id:
+        return None, no_update, no_update, no_update
+    
+    if 'pipeline-agg-state' in trigger_id:
+        return no_update, None, no_update, no_update
     
     # --- Seaborne Logic ---
     sea_chart_triggered = any('seaborne-chart.clickData' in t or 'seaborne-chart.restyleData' in t for t in triggers)
@@ -967,7 +972,7 @@ def update_seaborne_chart(selected_years, sel_sea, agg_mode):
                             colors.append(faded_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
                     elif is_pin or is_cat:
                         # Specific bar click or Legend click
-                        colors.append(base_color); line_colors.append('black'); line_widths.append(2)
+                        colors.append(base_color); line_colors.append('#eee'); line_widths.append(1)
                     else:
                         # Other bars fade out
                         colors.append(faded_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
@@ -1056,7 +1061,7 @@ def update_seaborne_chart(selected_years, sel_sea, agg_mode):
             shapes = []
             for s in month_separators:
                 new_s = s.copy()
-                if new_s.get('line', {}).get('color') == '#999999': # Month separator
+                if new_s.get('line', {}).get('color') == '#ddd': # Month separator
                      new_s['y1'] = 0.94 # Bottom of Year Header
                      new_s['y0'] = 0 
                 else:
@@ -1067,10 +1072,10 @@ def update_seaborne_chart(selected_years, sel_sea, agg_mode):
 
             fig_sea.update_layout(
                 template="simple_white", barmode='group', height=380, margin=dict(l=40, r=40, t=60, b=10), showlegend=False,
-                xaxis=dict(title=None, range=[margin_min if 'margin_min' in locals() else -1.2, max_x], side='top', anchor='y', tickmode='array', tickvals=timeline_df['x_pos'], ticktext=timeline_df['tick_label'].tolist(), tickangle=0, showgrid=False, showline=True, linecolor='#000', ticks="", showticklabels=(agg_mode == 'DATE')),
-                yaxis=dict(title=None, showgrid=True, gridcolor='#eee', dtick=(1000 if agg_mode=='MONTHLY' else None), tickfont=dict(color="grey"), domain=[0, 0.82]),
-                yaxis2=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='black', showticklabels=False, visible=True, fixedrange=True, domain=[0.94, 1], ticks=""),
-                yaxis3=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='black', showticklabels=False, visible=yaxis3_visible, fixedrange=True, domain=[0.86, 0.94], ticks=""),
+                xaxis=dict(title=None, range=[margin_min if 'margin_min' in locals() else -1.2, max_x], side='top', anchor='y', tickmode='array', tickvals=timeline_df['x_pos'], ticktext=timeline_df['tick_label'].tolist(), tickangle=0, showgrid=False, showline=False, linecolor='rgba(0,0,0,0)', mirror=False, zeroline=False, ticks="", showticklabels=(agg_mode == 'DATE')),
+                yaxis=dict(title=None, showgrid=True, gridcolor='#eee', showline=True, linecolor='#eee', zeroline=False, dtick=(1000 if agg_mode=='MONTHLY' else None), tickfont=dict(color="grey"), domain=[0, 0.82]),
+                yaxis2=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='#eee', zeroline=False, showticklabels=False, visible=True, fixedrange=True, domain=[0.94, 1], ticks=""),
+                yaxis3=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='#eee', zeroline=False, showticklabels=False, visible=yaxis3_visible, fixedrange=True, domain=[0.86, 0.94], ticks=""),
                 dragmode=False, hovermode="closest", bargap=0.1, bargroupgap=0.05, shapes=shapes, annotations=year_annotations,
                 hoverlabel=dict(bgcolor="white", font_size=13, font_color="black", bordercolor="#cccccc")
             )
@@ -1234,7 +1239,7 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe, agg_mode):
                             else:
                                 colors.append(faded_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
                         elif is_pin or is_cat:
-                            colors.append(base_color); line_colors.append('black'); line_widths.append(2)
+                            colors.append(base_color); line_colors.append('#eee'); line_widths.append(1)
                         else:
                             colors.append(faded_color); line_colors.append('rgba(0,0,0,0)'); line_widths.append(0)
 
@@ -1287,7 +1292,7 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe, agg_mode):
             for s in month_separators:
                 new_s = s.copy()
                 new_s['layer'] = 'below'
-                if new_s.get('line', {}).get('color') == '#999999': # Month separator
+                if new_s.get('line', {}).get('color') == '#ddd': # Month separator
                      new_s['y1'] = 0.94 
                      new_s['y0'] = 0 
                 else:
@@ -1316,12 +1321,12 @@ def update_pipeline_chart(selected_years, direction_val, sel_pipe, agg_mode):
 
             fig_pipe.update_layout(
                 template="simple_white", barmode='stack' if direction_val == 'Druzhba' else 'group', height=380, margin=dict(l=40, r=40, t=60, b=10), showlegend=False,
-                xaxis=dict(title=None, range=[margin_min if 'margin_min' in locals() else -1.2, max_x], side='top', anchor='y', tickmode='array', tickvals=timeline_df['x_pos'], ticktext=timeline_df['tick_label'].tolist(), tickangle=0, showgrid=False, showline=True, linecolor='#000', ticks="", showticklabels=(agg_mode == 'DATE')),
-                yaxis=dict(title=None, showgrid=True, gridcolor='#eee', dtick=(500 if agg_mode == 'QUARTERLY' else None), tickfont=dict(color="grey"), domain=[0, 0.82]),
+                xaxis=dict(title=None, range=[margin_min if 'margin_min' in locals() else -1.2, max_x], side='top', anchor='y', tickmode='array', tickvals=timeline_df['x_pos'], ticktext=timeline_df['tick_label'].tolist(), tickangle=0, showgrid=False, showline=False, linecolor='rgba(0,0,0,0)', mirror=False, zeroline=False, ticks="", showticklabels=(agg_mode == 'DATE')),
+                yaxis=dict(title=None, showgrid=True, gridcolor='#eee', showline=True, linecolor='#eee', zeroline=False, dtick=(500 if agg_mode == 'QUARTERLY' else None), tickfont=dict(color="grey"), domain=[0, 0.82]),
                 # yaxis2 for headers - enable line for left border
-                yaxis2=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='black', showticklabels=False, visible=True, fixedrange=True, domain=[0.94, 1], ticks=""),
+                yaxis2=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='#eee', zeroline=False, showticklabels=False, visible=True, fixedrange=True, domain=[0.94, 1], ticks=""),
                 # yaxis3 for Month headers - enable line for left border
-                yaxis3=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='black', showticklabels=False, visible=yaxis3_visible, fixedrange=True, domain=[0.86, 0.94], ticks=""),
+                yaxis3=dict(title=None, range=[0, 1], showgrid=False, showline=True, linecolor='#eee', zeroline=False, showticklabels=False, visible=yaxis3_visible, fixedrange=True, domain=[0.86, 0.94], ticks=""),
                 dragmode=False, hovermode="closest", bargap=0.25, shapes=shapes, annotations=year_annotations,
                 hoverlabel=dict(bgcolor="white", font_size=13, font_color="black", bordercolor="#cccccc")
             )
