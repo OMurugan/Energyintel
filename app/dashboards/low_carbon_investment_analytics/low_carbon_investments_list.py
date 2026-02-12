@@ -34,6 +34,7 @@ def load_investments_data(filters=None):
     LEFT JOIN dev.dim_country c
         ON a.country_id = c.dim_country_id
     WHERE a.new_status <> 'Uncertain'
+      AND (a.project_category_3 IS NULL OR a.project_category_3 <> 'Carbon Transport & Storage')
     """
     
     # Add filters if provided
@@ -116,6 +117,7 @@ def load_investment_summary():
         FROM dev.fact_et_assets a
         WHERE a.new_status <> 'Uncertain'
             AND a.project_category_1 IS NOT NULL
+            AND (a.project_category_3 IS NULL OR a.project_category_3 <> 'Carbon Transport & Storage')
         GROUP BY a.project_category_1
         ORDER BY COUNT(*) DESC
         """
@@ -129,6 +131,7 @@ def load_investment_summary():
             COALESCE(SUM(investment_usd), 0) AS total_investment
         FROM dev.fact_et_assets
         WHERE new_status <> 'Uncertain'
+            AND (project_category_3 IS NULL OR project_category_3 <> 'Carbon Transport & Storage')
         """
         total_results = execute_query(total_query)
         
