@@ -1155,6 +1155,9 @@ def register_callbacks(dash_app, server):
                 pivot_cols = ['Year of Date', 'Quarter of Date', 'Month of Date']
                 sort_cols = ['Year of Date', 'Quarter of Date', 'Month_Num']
             elif granularity == 'DAILY':
+                # Consolidate to monthly totals with '1' as day label to match reference Fig 1, but keep Quarter
+                df['Day of Date'] = 1
+                df = df.groupby(['Destination', 'Year of Date', 'Quarter of Date', 'Month of Date', 'Month_Num', 'Day of Date', 'Unit'], as_index=False)['Value'].sum()
                 pivot_cols = ['Year of Date', 'Quarter of Date', 'Month of Date', 'Day of Date']
                 sort_cols = ['Year of Date', 'Quarter of Date', 'Month_Num', 'Day of Date']
             
@@ -1212,10 +1215,16 @@ def register_callbacks(dash_app, server):
                 dest_header = [""] * (len(pivot_cols) - 1) + ["Destination"]
                 dt_columns = [{'name': dest_header, 'id': 'Destination'}]
                 
-                for col_tuple in sorted_cols:
+                for i, col_tuple in enumerate(sorted_cols):
                     # col_tuple is (Year, Quarter, Month...)
                     # We build the name list. All elements must be strings.
                     name_list = [str(x) for x in col_tuple]
+                    
+                    # If granularity is DAILY, the last level is Day (often 1)
+                    # We use zero-width spaces to prevent merging of common values like '1'
+                    if granularity == 'DAILY' and len(name_list) >= 3:
+                        name_list[-1] = str(name_list[-1]) + ('\u200b' * (i + 1))
+                        
                     # col_id must be a clean string to avoid tooltip issues
                     col_id = "col_" + "_".join([str(x).replace(" ", "") for x in col_tuple])
                     dt_columns.append({'name': name_list, 'id': col_id})
@@ -1275,7 +1284,14 @@ def register_callbacks(dash_app, server):
                         for i, name_val in enumerate(col['name']):
                             if name_val == "": continue
                             label = pivot_cols[i]
-                            tooltip_text += f"{label}: {name_val}  \n"
+                            
+                            # Only include Year of Date in the tooltip to match Fig 1 / Yearly view
+                            if label != 'Year of Date':
+                                continue
+                                
+                            # Strip zero-width spaces used for header separation
+                            clean_name = str(name_val).replace('\u200b', '')
+                            tooltip_text += f"{label}: {clean_name}  \n"
                     else:
                         tooltip_text += f"Year of Date: {col['name']}  \n"
                     
