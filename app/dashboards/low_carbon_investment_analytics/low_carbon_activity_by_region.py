@@ -595,76 +595,115 @@ def register_callbacks(dash_app, server):
         # Create grouped traces
         fig = go.Figure()
         
-        # Add real traces (one per segment)
+        # Get unique countries for trace creation
+        if is_expanded:
+            unique_countries = agg_df['Country'].unique()
+            # Ensure 'Country' column exists in agg_df for expanded view
+            if 'Country' not in agg_df.columns:
+                agg_df = df.groupby(['Region', 'Country', 'Breakdown'], as_index=False)['Measure Value'].sum()
+                agg_df = agg_df[agg_df['Measure Value'] > 0]
+                agg_df = agg_df.dropna(subset=['Region', 'Breakdown'])
+                agg_df = agg_df.merge(x_axis_df, on=x_label, how='left')
+        else:
+            # For region view, we need country-level data to split bars
+            # Re-aggregate with country granularity
+            country_df = df.groupby(['Region', 'Country', 'Breakdown'], as_index=False)['Measure Value'].sum()
+            country_df = country_df[country_df['Measure Value'] > 0]
+            country_df = country_df.dropna(subset=['Region', 'Breakdown'])
+            
+            # Map regions to x_pos
+            region_x_map = {region: idx for idx, region in enumerate(x_axis_labels)}
+            country_df['x_pos'] = country_df['Region'].map(region_x_map)
+            
+            unique_countries = country_df['Country'].unique()
+        
+        # Create one trace per (breakdown, country) combination
         for b_val in breakdown_order:
-            b_subset = agg_df[agg_df['Breakdown'] == b_val].copy()
-            if b_subset.empty:
-                continue
-            
-            # Ensure strict sorting by x_pos for correct color/line list mapping
-            b_subset = b_subset.sort_values('x_pos')
-                
-            base_color = color_map.get(b_val, '#999999')
-            
-            marker_colors = []
-            marker_lines = []
-            
-            for _, row in b_subset.iterrows():
-                row_x_pos = row['x_pos']
-                
-                is_selected = (
-                    selection and 
-                    selection.get('breakdown') == b_val and 
-                    int(selection.get('x_pos')) == int(row_x_pos)
-                )
-
-                if not selection:
-                    marker_colors.append(base_color)
-                    marker_lines.append(dict(color='white', width=0.5))
-                elif is_selected:
-                    marker_colors.append(base_color)
-                    marker_lines.append(dict(color='black', width=2.0))
+            for country in unique_countries:
+                if is_expanded:
+                    trace_data = agg_df[
+                        (agg_df['Breakdown'] == b_val) & 
+                        (agg_df['Country'] == country)
+                    ].copy()
                 else:
-                    # Others - dimmed
-                    marker_colors.append(hex_to_rgba(base_color, 0.2))
-                    marker_lines.append(dict(color='white', width=0.5))
-
-            value_label = f"{measure.replace('_', ' ').title()}"
-            unit = " ($ Billion)" if measure == 'investment_value' else ""
-            
-            if breakdown == 'project_category':
-                breakdown_label = "Project Category"
-            elif breakdown == 'peer_group':
-                breakdown_label = "Peer Group"
-            elif breakdown == 'investment_type':
-                breakdown_label = "Investment Type"
-            else:
-                breakdown_label = breakdown.replace('_', ' ').title()
-
-            # Customdata: [x_label_val, Region, Breakdown, x_pos]
-            trace_customdata = b_subset[[x_label, 'Region', 'Breakdown', 'x_pos']].values
-
-            fig.add_trace(go.Bar(
-                name=b_val,
-                x=b_subset['x_pos'],
-                y=b_subset['Measure Value'],
-                legendgroup=b_val,
-                showlegend=False,
-                marker=dict(
-                    color=marker_colors,
-                    line=dict(
-                        color=[l['color'] for l in marker_lines],
-                        width=[l['width'] for l in marker_lines]
+                    trace_data = country_df[
+                        (country_df['Breakdown'] == b_val) & 
+                        (country_df['Country'] == country)
+                    ].copy()
+                
+                if trace_data.empty:
+                    continue
+                
+                # Ensure strict sorting by x_pos
+                trace_data = trace_data.sort_values('x_pos')
+                    
+                base_color = color_map.get(b_val, '#999999')
+                
+                marker_colors = []
+                marker_lines = []
+                
+                for _, row in trace_data.iterrows():
+                    row_x_pos = row['x_pos']
+                    
+                    is_selected = (
+                        selection and 
+                        selection.get('breakdown') == b_val and 
+                        int(selection.get('x_pos')) == int(row_x_pos)
                     )
-                ),
-                customdata=trace_customdata,
-                hovertemplate=(
-                    f"<span style='color: #666'>{breakdown_label}:</span> {b_val}<br>"
-                    f"<span style='color: #666'>Region:</span> %{{customdata[1]}}<br>"
-                    f"<span style='color: #666'>{value_label}:</span> %{{y:,.2f}}{unit}<br>"
-                    f"<span style='color: #666'>{x_label}:</span> %{{customdata[0]}}<extra></extra>"
-                )
-            ))
+
+                    if not selection:
+                        marker_colors.append(base_color)
+                        marker_lines.append(dict(color='white', width=0.5))
+                    elif is_selected:
+                        marker_colors.append(base_color)
+                        marker_lines.append(dict(color='black', width=2.0))
+                    else:
+                        # Others - dimmed
+                        marker_colors.append(hex_to_rgba(base_color, 0.2))
+                        marker_lines.append(dict(color='white', width=0.5))
+
+                value_label = f"{measure.replace('_', ' ').title()}"
+                unit = " ($ Billion)" if measure == 'investment_value' else ""
+                
+                if breakdown == 'project_category':
+                    breakdown_label = "Project Category"
+                elif breakdown == 'peer_group':
+                    breakdown_label = "Peer Group"
+                elif breakdown == 'investment_type':
+                    breakdown_label = "Investment Type"
+                else:
+                    breakdown_label = breakdown.replace('_', ' ').title()
+
+                # Customdata: [x_label_val, Region, Breakdown, x_pos, Country]
+                # x_label_val is Country if expanded, Region if not expanded
+                trace_customdata = []
+                for _, row in trace_data.iterrows():
+                    x_label_val_for_row = row[x_label]
+                    region_for_row = row['Region'] if 'Region' in row else None # Should always be present
+                    trace_customdata.append([x_label_val_for_row, region_for_row, b_val, row['x_pos'], country])
+                
+                fig.add_trace(go.Bar(
+                    name=f"{b_val}_{country}",
+                    x=trace_data['x_pos'],
+                    y=trace_data['Measure Value'],
+                    legendgroup=b_val,
+                    showlegend=False,
+                    marker=dict(
+                        color=marker_colors,
+                        line=dict(
+                            color=[l['color'] for l in marker_lines],
+                            width=[l['width'] for l in marker_lines]
+                        )
+                    ),
+                    customdata=trace_customdata,
+                    hovertemplate=(
+                        f"<span style='color: #666'>{breakdown_label}:</span> {b_val}<br>"
+                        f"<span style='color: #666'>Country:</span> %{{customdata[4]}}<br>"
+                        f"<span style='color: #666'>Region:</span> %{{customdata[1]}}<br>"
+                        f"<span style='color: #666'>{value_label}:</span> %{{y:,.2f}}{unit}<br>"
+                        f"<span style='color: #666'>{x_label}:</span> %{{customdata[0]}}<extra></extra>"
+                    )
+                ))
 
 
         
