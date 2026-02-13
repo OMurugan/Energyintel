@@ -74,7 +74,7 @@ SECTIONS = [
 
     {
         "title": "Russian Analytics",
-        "path": "/crude-seaborne",
+        "path": "",
         "links": [
             ("Crude Seaborne", "/crude-seaborne"),
             ("Crude Pipeline", "/crude-pipeline"),
@@ -84,7 +84,7 @@ SECTIONS = [
     },
     {
         "title": "World Gas Analytics Tool",
-        "path": "/gas/europe-dashboard",
+        "path": "",
         "links": [
             # ("Europe World Gas Data Dashboard", "/gas/europe-dashboard"),
             ("European Gas Trade - Pipeline Flows to Europe", "/gas/europe-pipeline-flows"),
@@ -104,7 +104,7 @@ SECTIONS = [
     },
     {
         "title": "Low-Carbon Investment Analytics Tool",
-        "path": "/low-carbon/dashboard",
+        "path": "",
         "links": [
             # ("Low-Carbon Investment Dashboard", "/low-carbon/dashboard"),
             ("List of Tracked Investments", "/low-carbon/investments-list"),
@@ -186,11 +186,12 @@ def layout():
         html.Div([
             html.Div([
                 html.H4(
-                    utils.create_embedded_nav_link(section["path"], section["title"])
+                    utils.create_embedded_nav_link(section["path"], section["title"]) 
+                    if section.get("path") else section["title"]
                 ),
                 html.Ul([
                     html.Li(
-                        utils.create_embedded_nav_link(href, name)
+                        utils.create_embedded_nav_link(href, name) if href else name
                     )
                     for name, href in section["links"]
                 ])
