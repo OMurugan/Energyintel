@@ -28,10 +28,10 @@ def load_investments_data(filters=None):
         a.investment_usd AS "Investment ($ Million)",
         a.confidence_level_simple AS "Investment Value Source",
         a.reference AS "Reference"
-    FROM dev.fact_et_assets a
-    LEFT JOIN dev.dim_company b
+    FROM fact_et_assets a
+    LEFT JOIN dim_company b
         ON a.company_id = b.company_id
-    LEFT JOIN dev.dim_country c
+    LEFT JOIN dim_country c
         ON a.country_id = c.dim_country_id
     WHERE a.new_status <> 'Uncertain'
       AND (a.project_category_3 IS NULL OR a.project_category_3 <> 'Carbon Transport & Storage')
@@ -114,7 +114,7 @@ def load_investment_summary():
             a.project_category_1 AS category,
             COUNT(*) AS investment_count,
             COALESCE(SUM(a.investment_usd), 0) AS total_investment
-        FROM dev.fact_et_assets a
+        FROM fact_et_assets a
         WHERE a.new_status <> 'Uncertain'
             AND a.project_category_1 IS NOT NULL
             AND (a.project_category_3 IS NULL OR a.project_category_3 <> 'Carbon Transport & Storage')
@@ -129,7 +129,7 @@ def load_investment_summary():
         SELECT
             COUNT(*) AS total_count,
             COALESCE(SUM(investment_usd), 0) AS total_investment
-        FROM dev.fact_et_assets
+        FROM fact_et_assets
         WHERE new_status <> 'Uncertain'
             AND (project_category_3 IS NULL OR project_category_3 <> 'Carbon Transport & Storage')
         """
@@ -210,8 +210,8 @@ def load_filter_options(filters=None):
         where, params = get_where_clause('peer_group')
         peer_groups = execute_query(f"""
             SELECT DISTINCT b.peer_group_simple 
-            FROM dev.fact_et_assets a
-            JOIN dev.dim_company b ON a.company_id = b.company_id
+            FROM fact_et_assets a
+            JOIN dim_company b ON a.company_id = b.company_id
             WHERE {where} AND b.peer_group_simple IS NOT NULL 
             ORDER BY b.peer_group_simple
         """, params)
@@ -220,7 +220,7 @@ def load_filter_options(filters=None):
         where, params = get_where_clause('year_announced')
         years = execute_query(f"""
             SELECT DISTINCT EXTRACT(YEAR FROM a.date_announced) as year
-            FROM dev.fact_et_assets a
+            FROM fact_et_assets a
             WHERE {where} AND a.date_announced IS NOT NULL
             ORDER BY year DESC
         """, params)
@@ -229,8 +229,8 @@ def load_filter_options(filters=None):
         where, params = get_where_clause('company')
         companies = execute_query(f"""
             SELECT DISTINCT b.company_name
-            FROM dev.fact_et_assets a
-            JOIN dev.dim_company b ON a.company_id = b.company_id
+            FROM fact_et_assets a
+            JOIN dim_company b ON a.company_id = b.company_id
             WHERE {where} AND b.company_name IS NOT NULL
             ORDER BY b.company_name
         """, params)
@@ -239,7 +239,7 @@ def load_filter_options(filters=None):
         where, params = get_where_clause('investment_type')
         investment_types = execute_query(f"""
             SELECT DISTINCT a.investment_type
-            FROM dev.fact_et_assets a
+            FROM fact_et_assets a
             WHERE {where} AND a.investment_type IS NOT NULL
             ORDER BY a.investment_type
         """, params)
@@ -248,7 +248,7 @@ def load_filter_options(filters=None):
         where, params = get_where_clause('status')
         statuses = execute_query(f"""
             SELECT DISTINCT a.new_status
-            FROM dev.fact_et_assets a
+            FROM fact_et_assets a
             WHERE {where} AND a.new_status IS NOT NULL
             ORDER BY a.new_status
         """, params)
@@ -257,8 +257,8 @@ def load_filter_options(filters=None):
         where, params = get_where_clause('country')
         countries = execute_query(f"""
             SELECT DISTINCT c.country_long_name
-            FROM dev.fact_et_assets a
-            JOIN dev.dim_country c ON a.country_id = c.dim_country_id
+            FROM fact_et_assets a
+            JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND c.country_long_name IS NOT NULL
             ORDER BY c.country_long_name
         """, params)
@@ -267,7 +267,7 @@ def load_filter_options(filters=None):
         where, params = get_where_clause('project_category')
         categories = execute_query(f"""
             SELECT DISTINCT a.project_category_1
-            FROM dev.fact_et_assets a
+            FROM fact_et_assets a
             WHERE {where} AND a.project_category_1 IS NOT NULL
             ORDER BY a.project_category_1
         """, params)
@@ -276,8 +276,8 @@ def load_filter_options(filters=None):
         where, params = get_where_clause('region')
         regions = execute_query(f"""
             SELECT DISTINCT c.et_region
-            FROM dev.fact_et_assets a
-            JOIN dev.dim_country c ON a.country_id = c.dim_country_id
+            FROM fact_et_assets a
+            JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND c.et_region IS NOT NULL
             ORDER BY c.et_region
         """, params)
@@ -286,7 +286,7 @@ def load_filter_options(filters=None):
         where, params = get_where_clause('project_category_2')
         categories_2 = execute_query(f"""
             SELECT DISTINCT a.project_category_2
-            FROM dev.fact_et_assets a
+            FROM fact_et_assets a
             WHERE {where} AND a.project_category_2 IS NOT NULL
             ORDER BY a.project_category_2
         """, params)

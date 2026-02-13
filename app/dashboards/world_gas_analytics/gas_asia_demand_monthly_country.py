@@ -202,7 +202,7 @@ def load_data(selected_sector=None):
                 WHEN p.unit = 'Mcm' THEN ROUND(SUM(p.value) / 1000.0, 6)
                 ELSE ROUND(SUM(p.value), 6)
             END AS "Value"
-        FROM dev.glng_gas_demand p
+        FROM glng_gas_demand p
         LEFT JOIN dim_country q
         ON q.dim_country_id = p.country_id
         WHERE LOWER(q.region) IN ('asia', 'oceania') 
@@ -238,7 +238,7 @@ def load_data(selected_sector=None):
                 WHEN p.unit = 'Mcm' THEN ROUND(SUM(p.value) / 1000.0, 3)
                 ELSE ROUND(SUM(p.value), 2)
             END AS "Value"
-        FROM dev.glng_gas_demand p
+        FROM glng_gas_demand p
         LEFT JOIN dim_country q
         ON q.dim_country_id = p.country_id
         WHERE LOWER(q.region) IN ('asia', 'oceania')
@@ -276,7 +276,7 @@ def load_data(selected_sector=None):
                 ELSE ROUND(SUM(p.value), 6)
             END AS "Value",
             DATE_TRUNC('month', p.date) AS month_sort
-        FROM dev.glng_gas_demand p
+        FROM glng_gas_demand p
         LEFT JOIN dim_country q
         ON q.dim_country_id = p.country_id
         WHERE LOWER(q.region) IN ('asia', 'oceania')
@@ -1562,7 +1562,7 @@ def register_callbacks(dash_app, server):
                 WHEN gd.unit = 'Mcm' THEN ROUND(SUM(gd.value) / 1000.0, 3)
                 ELSE ROUND(SUM(gd.value), 2)
             END AS "Value"
-        FROM dev.glng_gas_demand gd
+        FROM glng_gas_demand gd
         LEFT JOIN dim_country dc ON gd.country_id = dc.dim_country_id
         WHERE LOWER(dc.region) IN ('asia', 'oceania')
           AND dc.latitude IS NOT NULL
@@ -1854,8 +1854,8 @@ def register_callbacks(dash_app, server):
                 ELSE ROUND(SUM(gd.value), 9)
             END AS "Value"
 
-        FROM dev.glng_gas_demand gd
-        JOIN dev.dim_country dc
+        FROM glng_gas_demand gd
+        JOIN dim_country dc
             ON gd.country_id = dc.dim_country_id
 
         /* Dynamic time bucket */

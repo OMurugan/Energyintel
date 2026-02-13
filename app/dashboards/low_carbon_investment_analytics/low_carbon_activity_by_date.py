@@ -40,10 +40,10 @@ SELECT
     a.new_status AS "Status",
     COUNT(*) AS investment_count,
     ROUND(SUM(a.investment_usd) / 1000.0, 2) AS investment_value
-FROM dev.fact_et_assets a
-LEFT JOIN dev.dim_company b
+FROM fact_et_assets a
+LEFT JOIN dim_company b
     ON a.company_id = b.company_id
-LEFT JOIN dev.dim_country c
+LEFT JOIN dim_country c
     ON a.country_id = c.dim_country_id
 CROSS JOIN params p
 WHERE a.new_status <> 'Uncertain'
@@ -96,10 +96,10 @@ SELECT
     a.new_status AS "Status",
     COUNT(*) AS investment_count,
     ROUND(SUM(a.investment_usd) / 1000.0, 2) AS investment_value
-FROM dev.fact_et_assets a
-LEFT JOIN dev.dim_company b
+FROM fact_et_assets a
+LEFT JOIN dim_company b
     ON a.company_id = b.company_id
-LEFT JOIN dev.dim_country c
+LEFT JOIN dim_country c
     ON a.country_id = c.dim_country_id
 CROSS JOIN params p
 WHERE a.new_status <> 'Uncertain'

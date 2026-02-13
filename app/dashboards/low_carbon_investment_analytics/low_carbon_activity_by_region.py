@@ -503,7 +503,7 @@ def register_callbacks(dash_app, server):
         # Get latest date from database
         latest_date_query = """
         SELECT MAX(a.date_announced) AS latest_date
-        FROM dev.fact_et_assets a
+        FROM fact_et_assets a
         WHERE a.new_status <> 'Uncertain'
         """
         
@@ -547,10 +547,10 @@ def register_callbacks(dash_app, server):
                     THEN a.investment_type
             END                                           AS "Breakdown"
 
-        FROM dev.fact_et_assets a
-        LEFT JOIN dev.dim_company b
+        FROM fact_et_assets a
+        LEFT JOIN dim_company b
             ON a.company_id = b.company_id
-        LEFT JOIN dev.dim_country c
+        LEFT JOIN dim_country c
             ON a.country_id = c.dim_country_id
 
         WHERE a.new_status <> 'Uncertain'
@@ -901,10 +901,10 @@ def register_callbacks(dash_app, server):
                     THEN COUNT(a.investment_usd)
             END                                           AS "Measure Value"
 
-        FROM dev.fact_et_assets a
-        LEFT JOIN dev.dim_company b
+        FROM fact_et_assets a
+        LEFT JOIN dim_company b
             ON a.company_id = b.company_id
-        LEFT JOIN dev.dim_country c
+        LEFT JOIN dim_country c
             ON a.country_id = c.dim_country_id
 
         WHERE a.new_status <> 'Uncertain'

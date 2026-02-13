@@ -55,7 +55,7 @@ def load_data(unit='Million Cubic Meter', granularity='month'):
     """Load the sector demand data using SQL query"""
     try:
         # 1. Fetch all countries in Europe for the query filter
-        country_query = "SELECT DISTINCT country_long_name FROM dev.dim_country WHERE LOWER(region) = 'europe'"
+        country_query = "SELECT DISTINCT country_long_name FROM dim_country WHERE LOWER(region) = 'europe'"
         try:
             country_results = execute_query(country_query)
             countries = [r['country_long_name'] for r in country_results]
@@ -107,8 +107,8 @@ def load_data(unit='Million Cubic Meter', granularity='month'):
             :display_unit                             AS "Unit",
             ROUND(SUM(gd.value), 9)                   AS "Value"
 
-        FROM dev.glng_gas_demand gd
-        JOIN dev.dim_country dc
+        FROM glng_gas_demand gd
+        JOIN dim_country dc
             ON gd.country_id = dc.dim_country_id
 
         /* 🔹 dynamic time bucket */

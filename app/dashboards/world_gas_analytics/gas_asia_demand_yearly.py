@@ -30,8 +30,8 @@ SECTOR_ORDER = ['Industrial', 'Power', 'Household', 'Other']
 QUERY_COUNTRIES = """
 SELECT DISTINCT
     tr.country
-FROM dev.glng_gas_demand tr
-LEFT JOIN dev.dim_country dc
+FROM glng_gas_demand tr
+LEFT JOIN dim_country dc
     ON tr.country_id = dc.dim_country_id
 WHERE LOWER(dc.region) IN ('asia', 'oceania')
   AND tr.country IS NOT NULL
@@ -42,8 +42,8 @@ ORDER BY tr.country;
 QUERY_SECTORS = """
 SELECT DISTINCT
     tr.sector
-FROM dev.glng_gas_demand tr
-LEFT JOIN dev.dim_country dc
+FROM glng_gas_demand tr
+LEFT JOIN dim_country dc
     ON tr.country_id = dc.dim_country_id
 WHERE LOWER(dc.region) IN ('asia', 'oceania')
   AND tr.sector IS NOT NULL
@@ -69,8 +69,8 @@ SELECT
         ),
         9
     ) AS "Value"
-FROM dev.glng_gas_demand gd
-LEFT JOIN dev.dim_country dc
+FROM glng_gas_demand gd
+LEFT JOIN dim_country dc
     ON gd.country_id = dc.dim_country_id
 WHERE LOWER(dc.region) IN ('asia', 'oceania')
   AND gd.unit IN ('Mcm', 'GWh')
@@ -107,8 +107,8 @@ SELECT
         ),
         9
     ) AS "Value"
-FROM dev.glng_gas_demand gd
-LEFT JOIN dev.dim_country dc
+FROM glng_gas_demand gd
+LEFT JOIN dim_country dc
     ON gd.country_id = dc.dim_country_id
 WHERE LOWER(dc.region) IN ('asia', 'oceania')
   AND gd.unit IN ('Mcm', 'GWh')

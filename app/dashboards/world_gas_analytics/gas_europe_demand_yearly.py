@@ -104,7 +104,7 @@ def create_layout():
     # The user only asked to "remove the csv file of bar chart", so I'll keep table CSV for now if needed,
     # but I'll check if I can get countries from SQL easily.
     try:
-        country_query = "SELECT DISTINCT country_long_name FROM dev.dim_country WHERE LOWER(region) = 'europe' ORDER BY 1"
+        country_query = "SELECT DISTINCT country_long_name FROM dim_country WHERE LOWER(region) = 'europe' ORDER BY 1"
         country_results = execute_query(country_query)
         countries = [r['country_long_name'] for r in country_results]
     except:
@@ -565,8 +565,8 @@ def register_callbacks(dash_app, server):
             gd.sector AS "Sector",
             :display_unit AS "Unit",
             ROUND(SUM(gd.value) / 1000.0, 9) AS "Value"
-        FROM dev.glng_gas_demand gd
-        LEFT JOIN dev.dim_country dc ON gd.country_id = dc.dim_country_id
+        FROM glng_gas_demand gd
+        LEFT JOIN dim_country dc ON gd.country_id = dc.dim_country_id
         WHERE LOWER(dc.region) = 'europe'
           AND gd.unit = :unit
           AND gd.sector = ANY(:selected_sectors)
@@ -965,8 +965,8 @@ def register_callbacks(dash_app, server):
             gd.sector AS "Sector",
             :display_unit AS "Unit",
             ROUND(SUM(gd.value) / 1000.0, 3) AS "Value"
-        FROM dev.glng_gas_demand gd
-        LEFT JOIN dev.dim_country dc ON gd.country_id = dc.dim_country_id
+        FROM glng_gas_demand gd
+        LEFT JOIN dim_country dc ON gd.country_id = dc.dim_country_id
         WHERE LOWER(dc.region) = 'europe'
           AND gd.unit = :unit
           AND gd.sector = ANY(:selected_sectors)
@@ -1037,8 +1037,8 @@ def register_callbacks(dash_app, server):
             CASE WHEN :granularity = 'day' THEN TO_CHAR(gd.date, 'FMMonth DD') ELSE NULL END AS "Day",
             :display_unit                             AS "Unit",
             ROUND(SUM(gd.value), 2)                   AS "Value"
-        FROM dev.glng_gas_demand gd
-        JOIN dev.dim_country dc ON gd.country_id = dc.dim_country_id
+        FROM glng_gas_demand gd
+        JOIN dim_country dc ON gd.country_id = dc.dim_country_id
         WHERE LOWER(dc.region) = 'europe'
           AND gd.unit = :unit
           AND gd.sector = ANY(:selected_sectors)
@@ -1455,8 +1455,8 @@ def register_callbacks(dash_app, server):
             :display_unit                             AS "Unit",
             ROUND(SUM(gd.value), 9)                   AS "Value"
 
-        FROM dev.glng_gas_demand gd
-        JOIN dev.dim_country dc
+        FROM glng_gas_demand gd
+        JOIN dim_country dc
             ON gd.country_id = dc.dim_country_id
 
         /* 🔹 dynamic time bucket */

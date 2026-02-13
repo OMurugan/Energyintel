@@ -206,7 +206,7 @@ def load_data(selected_sector=None):
             q.latitude AS "Latitude",
             q.longitude AS "Longitude",
             ROUND(SUM(p.value), 6) AS "Value"
-        FROM dev.glng_gas_demand p
+        FROM glng_gas_demand p
         LEFT JOIN dim_country q
         ON q.dim_country_id = p.country_id
         WHERE LOWER(q.region) = 'europe' 
@@ -238,7 +238,7 @@ def load_data(selected_sector=None):
                 ELSE p.unit
             END AS "Unit",
             ROUND(SUM(p.value), 2) AS "Value"
-        FROM dev.glng_gas_demand p
+        FROM glng_gas_demand p
         LEFT JOIN dim_country q
         ON q.dim_country_id = p.country_id
         WHERE LOWER(q.region) = 'europe'
@@ -272,7 +272,7 @@ def load_data(selected_sector=None):
             END AS "Unit",
             ROUND(SUM(p.value), 6) AS "Value",
             DATE_TRUNC('month', p.date) AS month_sort
-        FROM dev.glng_gas_demand p
+        FROM glng_gas_demand p
         LEFT JOIN dim_country q
         ON q.dim_country_id = p.country_id
         WHERE LOWER(q.region) = 'europe'
@@ -1507,7 +1507,7 @@ def register_callbacks(dash_app, server):
                 ELSE gd.unit
             END AS "Unit",
             ROUND(SUM(gd.value), 2) AS "Value"
-        FROM dev.glng_gas_demand gd
+        FROM glng_gas_demand gd
         LEFT JOIN dim_country dc ON gd.country_id = dc.dim_country_id
         WHERE LOWER(dc.region) = 'europe'
           AND dc.latitude IS NOT NULL
@@ -1794,8 +1794,8 @@ def register_callbacks(dash_app, server):
             :display_unit                             AS "Unit",
             ROUND(SUM(gd.value), 9)                   AS "Value"
 
-        FROM dev.glng_gas_demand gd
-        JOIN dev.dim_country dc
+        FROM glng_gas_demand gd
+        JOIN dim_country dc
             ON gd.country_id = dc.dim_country_id
 
         /* Dynamic time bucket */

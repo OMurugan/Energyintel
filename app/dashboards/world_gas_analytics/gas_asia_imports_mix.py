@@ -202,8 +202,8 @@ def create_layout():
     # Initial data for filters
     destination_query = """
     SELECT DISTINCT tr.target_country
-    FROM dev.glng_gas_trade tr
-    LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
+    FROM glng_gas_trade tr
+    LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
     WHERE LOWER(co.region) IN ('asia', 'oceania')
     AND tr.target_country IS NOT NULL AND TRIM(tr.target_country) <> ''
     ORDER BY tr.target_country;
@@ -213,8 +213,8 @@ def create_layout():
 
     origin_query = """
     SELECT DISTINCT tr.source_country
-    FROM dev.glng_gas_trade tr
-    LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
+    FROM glng_gas_trade tr
+    LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
     WHERE LOWER(co.region) IN ('asia', 'oceania')
     AND tr.source_country IS NOT NULL AND TRIM(tr.source_country) <> ''
     ORDER BY tr.source_country;
@@ -224,8 +224,8 @@ def create_layout():
 
     date_range_query = """
     SELECT MIN(tr.date) as min_date, MAX(tr.date) as max_date
-    FROM dev.glng_gas_trade tr
-    LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
+    FROM glng_gas_trade tr
+    LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
     WHERE LOWER(co.region) IN ('asia', 'oceania');
     """
     date_range_df = load_data(date_range_query)
@@ -824,8 +824,8 @@ def register_callbacks(dash_app, server):
         # Get available origins based on destination
         query = """
         SELECT DISTINCT source_country 
-        FROM dev.glng_gas_trade tr
-        LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
+        FROM glng_gas_trade tr
+        LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
         WHERE source_country IS NOT NULL AND TRIM(source_country) <> ''
         AND LOWER(co.region) IN ('asia', 'oceania')
         """
@@ -1098,8 +1098,8 @@ def register_callbacks(dash_app, server):
                         WHEN LOWER(tr.flow_type) = 'natural gas' THEN 'Pipeline'
                     END AS "Flow Type",
                     ROUND(SUM(tr.value) / :scale, 4) AS "Value"
-                FROM dev.glng_gas_trade tr
-                LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
+                FROM glng_gas_trade tr
+                LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
                 {where_clause} {region_clause} {dest_clause}
                 AND LOWER(tr.flow_type) IN :flow_types
                 GROUP BY {time_sql},
@@ -1294,8 +1294,8 @@ def register_callbacks(dash_app, server):
                 tr.source_country AS "Origin",
                 '{unit}' AS adjusted_unit,
                 ROUND(SUM(tr.value) / :scale, 4) AS "Value"
-            FROM dev.glng_gas_trade tr
-            LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
+            FROM glng_gas_trade tr
+            LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
             {where_clause} {region_clause} {dest_clause}
             AND LOWER(tr.flow_type) IN :flow_types
             AND tr.source_country IN :origins
@@ -1500,8 +1500,8 @@ def register_callbacks(dash_app, server):
                     END AS "Flow Type",
                     '{unit}' AS adjusted_unit,
                     ROUND(SUM(tr.value) / :scale, 3) AS "Value"
-                FROM dev.glng_gas_trade tr
-                LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
+                FROM glng_gas_trade tr
+                LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
                 {where_clause} {region_clause} {dest_clause}
                 AND LOWER(tr.flow_type) IN :flow_types
                 GROUP BY {time_sql},
@@ -1805,8 +1805,8 @@ def register_callbacks(dash_app, server):
                     WHEN LOWER(tr.flow_type) = 'natural gas' THEN 'Pipeline'
                 END AS flow_type,
                 SUM(tr.value) AS value_mcm
-            FROM dev.glng_gas_trade tr
-            LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
+            FROM glng_gas_trade tr
+            LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
             {where_clause} {region_clause} {dest_clause}
             AND LOWER(tr.flow_type) IN :flow_types
             AND tr.source_country IN :origins
@@ -1986,8 +1986,8 @@ def register_callbacks(dash_app, server):
                     WHEN LOWER(tr.flow_type) = 'natural gas' THEN 'Pipeline'
                 END AS "Flow Type",
                 ROUND(SUM(tr.value) / :scale, 4) AS "Value"
-            FROM dev.glng_gas_trade tr
-            LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
+            FROM glng_gas_trade tr
+            LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
             {where_clause} {region_clause} {dest_clause}
             AND LOWER(tr.flow_type) IN :flow_types
             GROUP BY {time_sql},
@@ -2043,8 +2043,8 @@ def register_callbacks(dash_app, server):
             tr.source_country AS "Origin",
             '{unit}' AS Unit,
             ROUND(SUM(tr.value) / :scale, 4) AS "Value"
-        FROM dev.glng_gas_trade tr
-        LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
+        FROM glng_gas_trade tr
+        LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
         {where_clause} {region_clause} {dest_clause}
         AND LOWER(tr.flow_type) IN :flow_types
         AND tr.source_country IN :origins
@@ -2099,8 +2099,8 @@ def register_callbacks(dash_app, server):
             END AS "Flow Type",
             '{unit}' AS Unit,
             ROUND(SUM(tr.value) / :scale, 3) AS "Value"
-        FROM dev.glng_gas_trade tr
-        LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
+        FROM glng_gas_trade tr
+        LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
         {where_clause} {region_clause} {dest_clause}
         AND LOWER(tr.flow_type) IN :flow_types
         GROUP BY {time_sql},
@@ -2158,8 +2158,8 @@ def register_callbacks(dash_app, server):
                     WHEN LOWER(tr.flow_type) = 'natural gas' THEN 'Pipeline'
                 END AS "Flow Type",
                 ROUND(SUM(tr.value), 2) AS "Value (Mcm)"
-            FROM dev.glng_gas_trade tr
-            LEFT JOIN dev.dim_country co ON co.dim_country_id = tr.target_country_id
+            FROM glng_gas_trade tr
+            LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
             {where_clause} {region_clause} {dest_clause}
             AND LOWER(tr.flow_type) IN :flow_types
             AND tr.source_country IN :origins
