@@ -8,6 +8,7 @@ import plotly.express as px
 from dash import dcc, html, dash_table, Input, Output, State, callback, callback_context, no_update
 from datetime import datetime, date
 from core.data_helpers import execute_query
+from functools import lru_cache
 import os
 
 
@@ -51,8 +52,40 @@ GRAN_BTN_INACTIVE = {
 }
 
 
+# Cache for data loading - stores results for 5 minutes
+_data_cache = {}
+_cache_timestamp = {}
+
+def _get_cached_data(unit, granularity):
+    """Helper to get cached data if available and fresh"""
+    import time
+    cache_key = f"{unit}_{granularity}"
+    current_time = time.time()
+    
+    # Check if cache exists and is less than 5 minutes old
+    if cache_key in _data_cache and cache_key in _cache_timestamp:
+        if current_time - _cache_timestamp[cache_key] < 300:  # 5 minutes
+            print(f"Using cached data for {cache_key}")
+            return _data_cache[cache_key]
+    
+    return None
+
+def _set_cached_data(unit, granularity, data):
+    """Helper to set cached data"""
+    import time
+    cache_key = f"{unit}_{granularity}"
+    _data_cache[cache_key] = data
+    _cache_timestamp[cache_key] = time.time()
+    print(f"Cached data for {cache_key}")
+
+
 def load_data(unit='Million Cubic Meter', granularity='month'):
     """Load the sector demand data using SQL query"""
+    # Check cache first
+    cached_result = _get_cached_data(unit, granularity)
+    if cached_result is not None:
+        return cached_result
+    
     try:
         # 1. Fetch all countries in Europe for the query filter
         country_query = "SELECT DISTINCT country_long_name FROM dev.dim_country WHERE LOWER(region) = 'europe'"
@@ -167,7 +200,11 @@ def load_data(unit='Million Cubic Meter', granularity='month'):
         
         print(f"Loaded SQL data: {len(df)} rows")
         
-        return df, pd.DataFrame() 
+        # Cache the result before returning
+        result = (df, pd.DataFrame())
+        _set_cached_data(unit, granularity, result)
+        
+        return result
 
     except Exception as e:
         print(f"Error loading data: {e}")
@@ -394,6 +431,9 @@ def create_layout():
         # Data Caching Stores (Initialized with df_table)
         dcc.Store(id='sector-chart-data-store', data=df_table.to_dict('records') if not df_table.empty else []),
         dcc.Store(id='sector-table-data-store', data=df_table.to_dict('records') if not df_table.empty else []),
+        
+        # Country filter state tracking
+        dcc.Store(id='country-filter-previous', data={'all_selected': True}),
 
         html.Div(id='europe-table-dummy-output', style={'display': 'none'}),
         dcc.Input(id='sector-demand-header-click-input', style={'display': 'none'}),
@@ -457,15 +497,22 @@ def create_layout():
                 # Country Selection
                 html.Div([
                     html.Label("Country", style={'fontWeight': 'bold', 'marginBottom': '10px', 'display': 'block', 'color': '#333', 'fontSize': '14px'}),
-                    html.Div([
-                        dcc.Checklist(
-                            id='country-checklist',
-                            options=[{'label': ' (All)', 'value': 'All'}] + [{'label': f' {country}', 'value': country} for country in countries],
-                            value=['All'] + countries,
-                            style={'maxHeight': '280px', 'overflowY': 'auto', 'fontSize': '13px'},
-                            inputStyle={"marginRight": "6px", "marginLeft": "0px"}
-                        )
-                    ])
+                    dcc.Loading(
+                        id="loading-country-filter",
+                        type="circle",
+                        color="#f45d2d",
+                        children=[
+                            html.Div([
+                                dcc.RadioItems(
+                                    id='sector-country-checklist',
+                                    options=[{'label': ' (All)', 'value': 'All'}] + [{'label': f' {country}', 'value': country} for country in countries],
+                                    value='All',
+                                    style={'maxHeight': '280px', 'overflowY': 'auto', 'fontSize': '13px'},
+                                    inputStyle={"marginRight": "6px", "marginLeft": "0px"}
+                                )
+                            ])
+                        ]
+                    )
                 ], style={'marginBottom': '25px'}),
                 
                 # Highlight Country
@@ -536,7 +583,7 @@ def create_layout():
 
                     dcc.Loading(
                         id="loading-chart",
-                        type="graph",
+                        type="circle",
                         color="#f45d2d",
                         children=dcc.Graph(
                             id='sector-demand-chart',
@@ -743,6 +790,7 @@ def register_callbacks(dash_app, server):
             GRAN_BTN_ACTIVE if new_gran == 'day' else GRAN_BTN_INACTIVE
         )
 
+
     # FETCH CHART DATA (DB ACCESS)
     @dash_app.callback(
         Output('sector-chart-data-store', 'data'),
@@ -770,7 +818,7 @@ def register_callbacks(dash_app, server):
         Output('sector-demand-chart', 'figure'),
         [Input('date-range-slider', 'value'),
          Input('unit-selector', 'value'),
-         Input('country-checklist', 'value'),
+         Input('sector-country-checklist', 'value'),
          Input('highlight-country', 'value'),
          Input('min-date', 'data'),
          Input('max-date', 'data'),
@@ -803,11 +851,13 @@ def register_callbacks(dash_app, server):
             (df_to_use['Date'] <= date_range_end)
         ].copy()
         
-        # Handle country filtering
-        if not selected_countries or 'All' in selected_countries:
+        # Handle country filtering (radio button returns single value, not list)
+        if not selected_countries or selected_countries == 'All':
+            # Show all countries
             pass
         else:
-            df_filtered = df_filtered[df_filtered['Country'].isin(selected_countries)]
+            # Filter to selected country
+            df_filtered = df_filtered[df_filtered['Country'] == selected_countries]
         
         # Create a display label based on granularity
         if granularity == 'year':
@@ -912,9 +962,8 @@ def register_callbacks(dash_app, server):
                         marker_line_colors.append('rgba(0,0,0,0)')
 
                 country_label = highlight_country if highlight_country else "*"
-                if not highlight_country and selected_countries and 'All' not in selected_countries:
-                        if len(selected_countries) == 1:
-                            country_label = selected_countries[0]
+                if not highlight_country and selected_countries and selected_countries != 'All':
+                    country_label = selected_countries
 
                 fig.add_trace(go.Bar(
                     name=sector,
@@ -994,7 +1043,7 @@ def register_callbacks(dash_app, server):
          Output('sector-demand-table', 'style_header_conditional')],
         [Input('date-range-slider', 'value'),
          Input('unit-selector', 'value'),
-         Input('country-checklist', 'value'),
+         Input('sector-country-checklist', 'value'),
          Input('highlight-country', 'value'),
          Input('min-date', 'data'),
          Input('max-date', 'data'),
@@ -1025,10 +1074,13 @@ def register_callbacks(dash_app, server):
             (df_table['Date'] <= date_range_end)
         ].copy()
         
-        if not selected_countries or 'All' in selected_countries:
+        # Handle country filtering (radio button returns single value, not list)
+        if not selected_countries or selected_countries == 'All':
+            # Show all countries
             pass
         else:
-            df_filtered = df_filtered[df_filtered['Country'].isin(selected_countries)]
+            # Filter to selected country
+            df_filtered = df_filtered[df_filtered['Country'] == selected_countries]
             
         if df_filtered.empty:
             return [], [], [], []
@@ -1174,7 +1226,7 @@ def register_callbacks(dash_app, server):
         Input('btn-export-chart', 'n_clicks'),
         [State('date-range-slider', 'value'),
          State('unit-selector', 'value'),
-         State('country-checklist', 'value'),
+         State('sector-country-checklist', 'value'),
          State('min-date', 'data'),
          State('max-date', 'data'),
          State('sector-granularity-store', 'data'),
@@ -1203,8 +1255,8 @@ def register_callbacks(dash_app, server):
             (df_to_use['Date'] <= date_range_end)
         ].copy()
         
-        if selected_countries and 'All' not in selected_countries:
-            df_filtered = df_filtered[df_filtered['Country'].isin(selected_countries)]
+        if selected_countries and selected_countries != 'All':
+            df_filtered = df_filtered[df_filtered['Country'] == selected_countries]
             
         # Format for export
         df_export = df_filtered.copy()
@@ -1219,7 +1271,7 @@ def register_callbacks(dash_app, server):
         Input('btn-export-table', 'n_clicks'),
         [State('date-range-slider', 'value'),
          State('unit-selector', 'value'),
-         State('country-checklist', 'value'),
+         State('sector-country-checklist', 'value'),
          State('min-date', 'data'),
          State('max-date', 'data'),
          State('sector-table-granularity-store', 'data'),
@@ -1248,8 +1300,8 @@ def register_callbacks(dash_app, server):
             (df_table['Date'] <= date_range_end)
         ].copy()
         
-        if selected_countries and 'All' not in selected_countries:
-            df_filtered = df_filtered[df_filtered['Country'].isin(selected_countries)]
+        if selected_countries and selected_countries != 'All':
+            df_filtered = df_filtered[df_filtered['Country'] == selected_countries]
 
         # Determine granularity for column structure logic or just dump raw filtered data
         # For simplicity and utility, exporting the raw filtered data (long format) is usually better for analysis
