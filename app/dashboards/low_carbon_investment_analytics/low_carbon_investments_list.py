@@ -60,41 +60,52 @@ def load_investments_data(filters=None):
             query += " AND a.investment_type = :investment_type"
             params['investment_type'] = filters['investment_type']
         
-        if filters.get('status') and filters['status']:
-            if isinstance(filters['status'], list) and len(filters['status']) > 0:
-                placeholders = ','.join([f":status_{i}" for i in range(len(filters['status']))])
-                query += f" AND a.new_status IN ({placeholders})"
-                for i, status in enumerate(filters['status']):
-                    params[f'status_{i}'] = status
+        if 'status' in filters:
+            if isinstance(filters['status'], list):
+                if not filters['status']:
+                    query += " AND 1=0"
+                elif 'All' not in filters['status']:
+                    placeholders = ','.join([f":status_{i}" for i in range(len(filters['status']))])
+                    query += f" AND a.new_status IN ({placeholders})"
+                    for i, status in enumerate(filters['status']):
+                        params[f'status_{i}'] = status
         
         if filters.get('country') and filters['country'] != 'All':
             query += " AND c.country_long_name = :country"
             params['country'] = filters['country']
         
-        if filters.get('project_category') and filters['project_category']:
+        if 'project_category' in filters:
             if isinstance(filters['project_category'], list):
-                if len(filters['project_category']) > 0:
+                if not filters['project_category']:
+                    query += " AND 1=0"
+                elif 'All' not in filters['project_category']:
                     placeholders = ','.join([f":category_{i}" for i in range(len(filters['project_category']))])
                     query += f" AND a.project_category_1 IN ({placeholders})"
                     for i, cat in enumerate(filters['project_category']):
                         params[f'category_{i}'] = cat
-            else:
+            elif filters['project_category']:
                 query += " AND a.project_category_1 = :project_category"
                 params['project_category'] = filters['project_category']
         
-        if filters.get('region') and filters['region']:
-            if isinstance(filters['region'], list) and len(filters['region']) > 0:
-                placeholders = ','.join([f":region_{i}" for i in range(len(filters['region']))])
-                query += f" AND c.et_region IN ({placeholders})"
-                for i, region in enumerate(filters['region']):
-                    params[f'region_{i}'] = region
+        if 'region' in filters:
+            if isinstance(filters['region'], list):
+                if not filters['region']:
+                    query += " AND 1=0"
+                elif 'All' not in filters['region']:
+                    placeholders = ','.join([f":region_{i}" for i in range(len(filters['region']))])
+                    query += f" AND c.et_region IN ({placeholders})"
+                    for i, region in enumerate(filters['region']):
+                        params[f'region_{i}'] = region
         
-        if filters.get('project_category_2') and filters['project_category_2']:
-            if isinstance(filters['project_category_2'], list) and len(filters['project_category_2']) > 0:
-                placeholders = ','.join([f":category2_{i}" for i in range(len(filters['project_category_2']))])
-                query += f" AND a.project_category_2 IN ({placeholders})"
-                for i, cat2 in enumerate(filters['project_category_2']):
-                    params[f'category2_{i}'] = cat2
+        if 'project_category_2' in filters:
+            if isinstance(filters['project_category_2'], list):
+                if not filters['project_category_2']:
+                    query += " AND 1=0"
+                elif 'All' not in filters['project_category_2']:
+                    placeholders = ','.join([f":category2_{i}" for i in range(len(filters['project_category_2']))])
+                    query += f" AND a.project_category_2 IN ({placeholders})"
+                    for i, cat2 in enumerate(filters['project_category_2']):
+                        params[f'category2_{i}'] = cat2
     
     query += " ORDER BY a.asset_name"
     
@@ -217,7 +228,8 @@ def load_filter_options(filters=None):
         peer_groups = execute_query(f"""
             SELECT DISTINCT b.peer_group_simple 
             FROM fact_et_assets a
-            JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND b.peer_group_simple IS NOT NULL 
             ORDER BY b.peer_group_simple
         """, params)
@@ -227,6 +239,8 @@ def load_filter_options(filters=None):
         years = execute_query(f"""
             SELECT DISTINCT EXTRACT(YEAR FROM a.date_announced) as year
             FROM fact_et_assets a
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND a.date_announced IS NOT NULL
             ORDER BY year DESC
         """, params)
@@ -236,7 +250,8 @@ def load_filter_options(filters=None):
         companies = execute_query(f"""
             SELECT DISTINCT b.company_name
             FROM fact_et_assets a
-            JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND b.company_name IS NOT NULL
             ORDER BY b.company_name
         """, params)
@@ -246,6 +261,8 @@ def load_filter_options(filters=None):
         investment_types = execute_query(f"""
             SELECT DISTINCT a.investment_type
             FROM fact_et_assets a
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND a.investment_type IS NOT NULL
             ORDER BY a.investment_type
         """, params)
@@ -255,6 +272,8 @@ def load_filter_options(filters=None):
         statuses = execute_query(f"""
             SELECT DISTINCT a.new_status
             FROM fact_et_assets a
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND a.new_status IS NOT NULL
             ORDER BY a.new_status
         """, params)
@@ -264,7 +283,8 @@ def load_filter_options(filters=None):
         countries = execute_query(f"""
             SELECT DISTINCT c.country_long_name
             FROM fact_et_assets a
-            JOIN dim_country c ON a.country_id = c.dim_country_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
             WHERE {where} AND c.country_long_name IS NOT NULL
             ORDER BY c.country_long_name
         """, params)
@@ -274,6 +294,8 @@ def load_filter_options(filters=None):
         categories = execute_query(f"""
             SELECT DISTINCT a.project_category_1
             FROM fact_et_assets a
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND a.project_category_1 IS NOT NULL
             ORDER BY a.project_category_1
         """, params)
@@ -283,7 +305,8 @@ def load_filter_options(filters=None):
         regions = execute_query(f"""
             SELECT DISTINCT c.et_region
             FROM fact_et_assets a
-            JOIN dim_country c ON a.country_id = c.dim_country_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
             WHERE {where} AND c.et_region IS NOT NULL
             ORDER BY c.et_region
         """, params)
@@ -293,6 +316,8 @@ def load_filter_options(filters=None):
         categories_2 = execute_query(f"""
             SELECT DISTINCT a.project_category_2
             FROM fact_et_assets a
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND a.project_category_2 IS NOT NULL
             ORDER BY a.project_category_2
         """, params)
@@ -327,19 +352,23 @@ def create_layout():
     """Create the Tracked Investments List layout"""
     
     # Load filter options
+    # Load filter options
     # Load filter options - CHANGED to load default options first to allow immediate rendering
     # The actual options will be loaded by the callback update_filter_options
-    filter_opts = {
-        'peer_groups': [{'label': 'All', 'value': 'All'}],
-        'years': [{'label': 'All', 'value': 'All'}],
-        'companies': [{'label': 'All', 'value': 'All'}],
-        'investment_types': [{'label': 'All', 'value': 'All'}],
-        'statuses': [],
-        'countries': [{'label': 'All', 'value': 'All'}],
-        'categories': [{'label': 'All', 'value': 'All'}],
-        'regions': [{'label': 'All', 'value': 'All'}],
-        'categories_2': [{'label': 'All', 'value': 'All'}]
-    }
+    try:
+        filter_opts = load_filter_options()
+    except:
+         filter_opts = {
+            'peer_groups': [{'label': 'All', 'value': 'All'}],
+            'years': [{'label': 'All', 'value': 'All'}],
+            'companies': [{'label': 'All', 'value': 'All'}],
+            'investment_types': [{'label': 'All', 'value': 'All'}],
+            'statuses': [],
+            'countries': [{'label': 'All', 'value': 'All'}],
+            'categories': [{'label': 'All', 'value': 'All'}],
+            'regions': [{'label': 'All', 'value': 'All'}],
+            'categories_2': [{'label': 'All', 'value': 'All'}]
+        }
     
     # Load initial data - REMOVED to optmize initial load time (white screen)
     # df = load_investments_data()
@@ -348,6 +377,12 @@ def create_layout():
         # Download component for Export to CSV
         dcc.Download(id='download-investments-csv'),
         dcc.Download(id='download-summary-csv'),
+        
+        # Store components for filter state tracking
+        dcc.Store(id='store-lc-inv-region', data=[]),
+        dcc.Store(id='store-lc-inv-cat2', data=[]),
+        dcc.Store(id='store-lc-inv-category', data=[]),
+        dcc.Store(id='store-lc-inv-status', data=[]),
         
         # Main Container (Flex) - Splits into Main Content (Left) and Sidebar (Right)
         html.Div(n_clicks=0, children=[
@@ -670,7 +705,7 @@ def create_layout():
                             dcc.Checklist(
                                 id='lc-inv-status',
                                 options=[{'label': '(All)', 'value': 'All'}] + [opt for opt in filter_opts['statuses'] if opt.get('value') != 'All'],
-                                value=['Completed', 'Proposed', 'Under Development'],
+                                value=['Completed', 'Proposed', 'Under Development'],  # Default selection
                                 labelStyle={
                                     'display': 'block',
                                     'fontSize': '11px',
@@ -748,7 +783,7 @@ def create_layout():
                             dcc.Checklist(
                                 id='lc-inv-category',
                                 options=[{'label': '(All)', 'value': 'All'}] + [opt for opt in filter_opts['categories'] if opt['value'] != 'All'],
-                                value=[opt['value'] for opt in filter_opts['categories']],  # All checked by default
+                                value=['All'] + [opt['value'] for opt in filter_opts['categories']],  # All checked by default
                                 labelStyle={
                                     'display': 'block',
                                     'fontSize': '11px',
@@ -807,7 +842,7 @@ def create_layout():
                             dcc.Checklist(
                                 id='lc-inv-region',
                                 options=[{'label': '(All)', 'value': 'All'}] + [opt for opt in filter_opts['regions'] if opt['value'] != 'All'],
-                                value=[opt['value'] for opt in filter_opts['regions']],  # All checked by default
+                                value=['All'] + [opt['value'] for opt in filter_opts['regions']],  # All checked by default
                                 labelStyle={
                                     'display': 'block',
                                     'fontSize': '11px',
@@ -862,7 +897,7 @@ def create_layout():
                             dcc.Checklist(
                                 id='lc-inv-category-2',
                                 options=[{'label': '(All)', 'value': 'All'}] + [opt for opt in filter_opts['categories_2'] if opt['value'] != 'All'],
-                                value=[opt['value'] for opt in filter_opts['categories_2']],  # All checked by default
+                                value=['All'] + [opt['value'] for opt in filter_opts['categories_2']],  # All checked by default
                                 labelStyle={
                                     'display': 'block',
                                     'fontSize': '11px',
@@ -918,112 +953,159 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register callbacks for the investments list"""
     
-    # Remove handle_category_all as Project Category is now a dropdown
-    
     @callback(
         Output('lc-inv-region', 'value'),
-        [Input('lc-inv-region', 'value'),
-         Input('lc-inv-region', 'options')]
+        Output('store-lc-inv-region', 'data'),
+        Input('lc-inv-region', 'value'),
+        State('lc-inv-region', 'options'),
+        State('store-lc-inv-region', 'data')
     )
-    def handle_region_all(selected_values, all_options):
-        """Handle (All) checkbox for Region"""
-        if not selected_values:
-            return []
-        
+    def handle_region_all(selected_values, all_options, previous_values):
+        """Handle (All) checkbox for Region with robust state tracking"""
+        if selected_values is None:
+            return [], []
+            
         all_values = [opt['value'] for opt in all_options if opt['value'] != 'All']
+        previous_values = previous_values or []
         
-        # If "All" was just checked
-        if 'All' in selected_values and len(selected_values) == 1:
-            return ['All'] + all_values
+        # Determine current state
+        has_all = 'All' in selected_values
+        prev_has_all = 'All' in previous_values
         
-        # If "All" is checked and user unchecked something
-        if 'All' in selected_values and len(selected_values) < len(all_values) + 1:
-            return [v for v in selected_values if v != 'All']
+        # 1. "All" was just clicked (added)
+        if has_all and not prev_has_all:
+            result = ['All'] + all_values
+            return result, result
+            
+        # 2. "All" was just unclicked (removed)
+        if not has_all and prev_has_all:
+             # If it was the ONLY thing removed, then deselect all
+             # But if we also removed other things, it's ambiguous, but standard "All" logic is to deselect all if All is clicked.
+             # Check if only "All" is missing from previous
+             if set(previous_values) - set(selected_values) == {'All'}:
+                 return [], []
         
-        # If all individual items are checked, add "All"
-        if 'All' not in selected_values and len(selected_values) == len(all_values):
-            return ['All'] + selected_values
-        
-        return selected_values
+        # 3. Individual item interaction
+        # If "All" is present, and we removed an item -> Remove "All"
+        if has_all and len(selected_values) < len(all_values) + 1:
+            result = [v for v in selected_values if v != 'All']
+            return result, result
+            
+        # If "All" is NOT present, and we added the last item -> Add "All"
+        if not has_all and len(selected_values) == len(all_values):
+            result = ['All'] + all_values
+            return result, result
+            
+        return selected_values, selected_values
     
     @callback(
         Output('lc-inv-category-2', 'value'),
-        [Input('lc-inv-category-2', 'value'),
-         Input('lc-inv-category-2', 'options')]
+        Output('store-lc-inv-cat2', 'data'),
+        Input('lc-inv-category-2', 'value'),
+        State('lc-inv-category-2', 'options'),
+        State('store-lc-inv-cat2', 'data')
     )
-    def handle_category2_all(selected_values, all_options):
-        """Handle (All) checkbox for Project Category 2"""
-        if not selected_values:
-            return []
-        
+    def handle_category2_all(selected_values, all_options, previous_values):
+        """Handle (All) checkbox for Project Category 2 with robust state tracking"""
+        if selected_values is None:
+            return [], []
+            
         all_values = [opt['value'] for opt in all_options if opt['value'] != 'All']
+        previous_values = previous_values or []
         
-        # If "All" was just checked
-        if 'All' in selected_values and len(selected_values) == 1:
-            return ['All'] + all_values
+        has_all = 'All' in selected_values
+        prev_has_all = 'All' in previous_values
         
-        # If "All" is checked and user unchecked something
-        if 'All' in selected_values and len(selected_values) < len(all_values) + 1:
-            return [v for v in selected_values if v != 'All']
+        if has_all and not prev_has_all:
+            result = ['All'] + all_values
+            return result, result
+            
+        if not has_all and prev_has_all:
+             if set(previous_values) - set(selected_values) == {'All'}:
+                 return [], []
         
-        # If all individual items are checked, add "All"
-        if 'All' not in selected_values and len(selected_values) == len(all_values):
-            return ['All'] + selected_values
-        
-        return selected_values
+        if has_all and len(selected_values) < len(all_values) + 1:
+            result = [v for v in selected_values if v != 'All']
+            return result, result
+            
+        if not has_all and len(selected_values) == len(all_values):
+            result = ['All'] + all_values
+            return result, result
+            
+        return selected_values, selected_values
 
     @callback(
         Output('lc-inv-category', 'value', allow_duplicate=True),
-        [Input('lc-inv-category', 'value'),
-         Input('lc-inv-category', 'options')],
+        Output('store-lc-inv-category', 'data'),
+        Input('lc-inv-category', 'value'),
+        State('lc-inv-category', 'options'),
+        State('store-lc-inv-category', 'data'),
         prevent_initial_call=True
     )
-    def handle_category_all(selected_values, all_options):
-        """Handle (All) checkbox for Project Category"""
-        if not selected_values:
-            return []
-        
+    def handle_category_all(selected_values, all_options, previous_values):
+        """Handle (All) checkbox for Project Category with robust state tracking"""
+        if selected_values is None:
+            return [], []
+            
         all_values = [opt['value'] for opt in all_options if opt['value'] != 'All']
+        previous_values = previous_values or []
         
-        # If "All" was just checked
-        if 'All' in selected_values and len(selected_values) == 1:
-            return ['All'] + all_values
+        has_all = 'All' in selected_values
+        prev_has_all = 'All' in previous_values
         
-        # If "All" is checked and user unchecked something
-        if 'All' in selected_values and len(selected_values) < len(all_values) + 1:
-            return [v for v in selected_values if v != 'All']
+        if has_all and not prev_has_all:
+            result = ['All'] + all_values
+            return result, result
+            
+        if not has_all and prev_has_all:
+             if set(previous_values) - set(selected_values) == {'All'}:
+                 return [], []
         
-        # If all individual items are checked, add "All"
-        if 'All' not in selected_values and len(selected_values) == len(all_values):
-            return ['All'] + selected_values
-        
-        return selected_values
+        if has_all and len(selected_values) < len(all_values) + 1:
+            result = [v for v in selected_values if v != 'All']
+            return result, result
+            
+        if not has_all and len(selected_values) == len(all_values):
+            result = ['All'] + all_values
+            return result, result
+            
+        return selected_values, selected_values
     
     @callback(
         Output('lc-inv-status', 'value'),
-        [Input('lc-inv-status', 'value'),
-         Input('lc-inv-status', 'options')]
+        Output('store-lc-inv-status', 'data'),
+        Input('lc-inv-status', 'value'),
+        State('lc-inv-status', 'options'),
+        State('store-lc-inv-status', 'data')
     )
-    def handle_status_all(selected_values, all_options):
-        """Handle (All) checkbox for Status"""
-        if not selected_values:
-            return []
-        
+    def handle_status_all(selected_values, all_options, previous_values):
+        """Handle (All) checkbox for Status with robust state tracking"""
+        if selected_values is None:
+            return [], []
+            
         all_values = [opt['value'] for opt in all_options if opt['value'] != 'All']
+        previous_values = previous_values or []
         
-        # If "All" was just checked
-        if 'All' in selected_values and len(selected_values) == 1:
-            return ['All'] + all_values
+        has_all = 'All' in selected_values
+        prev_has_all = 'All' in previous_values
         
-        # If "All" is checked and user unchecked something
-        if 'All' in selected_values and len(selected_values) < len(all_values) + 1:
-            return [v for v in selected_values if v != 'All']
+        if has_all and not prev_has_all:
+            result = ['All'] + all_values
+            return result, result
+            
+        if not has_all and prev_has_all:
+             if set(previous_values) - set(selected_values) == {'All'}:
+                 return [], []
         
-        # If all individual items are checked, add "All"
-        if 'All' not in selected_values and len(selected_values) == len(all_values):
-            return ['All'] + selected_values
-        
-        return selected_values
+        if has_all and len(selected_values) < len(all_values) + 1:
+            result = [v for v in selected_values if v != 'All']
+            return result, result
+            
+        if not has_all and len(selected_values) == len(all_values):
+            result = ['All'] + all_values
+            return result, result
+            
+        return selected_values, selected_values
     
     @callback(
         Output('lc-inv-summary-boxes', 'children'),
@@ -1045,12 +1127,12 @@ def register_callbacks(dash_app, server):
         """Update investment count summary boxes dynamically based on filters (EXCLUDING category)"""
         title = f"Investment Count by Company - {company}"
         
-        # Handle empty or "All" in region - don't filter
-        if not region or (region and 'All' in region):
+        # Handle "All" in region - don't filter
+        if region and 'All' in region:
             region = None
         
-        # Handle empty or "All" in category_2 - don't filter
-        if not category_2 or (category_2 and 'All' in category_2):
+        # Handle "All" in category_2 - don't filter
+        if category_2 and 'All' in category_2:
             category_2 = None
             
         # Build filters dict - IMPORTANT: Always set project_category, category_2, and asset_name to None or similar to get global company stats
@@ -1218,16 +1300,16 @@ def register_callbacks(dash_app, server):
     def update_table(asset_name, peer_group, year, company, inv_type, status, country, category, region, category_2):
         """Update table based on filter selections"""
         
-        # Handle empty or "All" in region - don't filter
-        if not region or (region and 'All' in region):
+        # Handle "All" in region - don't filter
+        if region and 'All' in region:
             region = None
         
         # Handle "All" in category - don't filter
-        if not category or (category and (category == 'All' or 'All' in category)):
+        if category and ((isinstance(category, str) and category == 'All') or (isinstance(category, list) and 'All' in category)):
             category = None
         
-        # Handle empty or "All" in category_2 - don't filter
-        if not category_2 or (category_2 and 'All' in category_2):
+        # Handle "All" in category_2 - don't filter
+        if category_2 and 'All' in category_2:
             category_2 = None
         
         # Build filters dict
@@ -1419,6 +1501,7 @@ def register_callbacks(dash_app, server):
             Output('lc-inv-status-label', 'children'),
             Output('lc-inv-category-label', 'children')
         ],
+
         [
             Input('lc-inv-asset-search', 'value'),
             Input('lc-inv-peer-group', 'value'),
@@ -1430,9 +1513,26 @@ def register_callbacks(dash_app, server):
             Input('lc-inv-category', 'value'),
             Input('lc-inv-region', 'value'),
             Input('lc-inv-category-2', 'value')
+        ],
+        [
+            State('lc-inv-peer-group', 'options'),
+            State('lc-inv-year', 'options'),
+            State('lc-inv-company', 'options'),
+            State('lc-inv-type', 'options'),
+            State('lc-inv-status', 'options'),
+            State('lc-inv-country', 'options'),
+            State('lc-inv-category', 'options'),
+            State('lc-inv-region', 'options'),
+            State('lc-inv-category-2', 'options'),
+            State('lc-inv-region-label', 'children'),
+            State('lc-inv-cat2-label', 'children'),
+            State('lc-inv-status-label', 'children'),
+            State('lc-inv-category-label', 'children')
         ]
     )
-    def update_filter_options(asset_name, peer_group, year, company, inv_type, status, country, category, region, category_2):
+    def update_filter_options(asset_name, peer_group, year, company, inv_type, status, country, category, region, category_2,
+                              cur_peer_opts, cur_year_opts, cur_comp_opts, cur_type_opts, cur_status_opts, cur_country_opts,
+                              cur_cat_opts, cur_region_opts, cur_cat2_opts, cur_region_lbl, cur_cat2_lbl, cur_status_lbl, cur_cat_lbl):
         """Update all filter options dynamically based on other selections"""
         
         # Determine labels for triggers
@@ -1517,20 +1617,26 @@ def register_callbacks(dash_app, server):
         category_opts = [{'label': '(All)', 'value': 'All'}] + [opt for opt in opts['categories'] if opt['value'] != 'All']
         status_opts = [{'label': '(All)', 'value': 'All'}] + [opt for opt in opts['statuses'] if opt.get('value') != 'All']
         
+        # Helper to check for no update
+        def get_val(new, current):
+            if new == current:
+                return dash.no_update
+            return new
+
         return (
-            opts['peer_groups'],
-            opts['years'],
-            opts['companies'],
-            opts['investment_types'],
-            status_opts,
-            opts['countries'],
-            category_opts,
-            region_opts,
-            cat2_opts,
-            region_label,
-            cat2_label,
-            status_label,
-            category_label
+            get_val(opts['peer_groups'], cur_peer_opts),
+            get_val(opts['years'], cur_year_opts),
+            get_val(opts['companies'], cur_comp_opts),
+            get_val(opts['investment_types'], cur_type_opts),
+            get_val(status_opts, cur_status_opts),
+            get_val(opts['countries'], cur_country_opts),
+            get_val(category_opts, cur_cat_opts),
+            get_val(region_opts, cur_region_opts),
+            get_val(cat2_opts, cur_cat2_opts),
+            get_val(region_label, cur_region_lbl),
+            get_val(cat2_label, cur_cat2_lbl),
+            get_val(status_label, cur_status_lbl),
+            get_val(category_label, cur_cat_lbl)
         )
     
     # Callback for Export to CSV
