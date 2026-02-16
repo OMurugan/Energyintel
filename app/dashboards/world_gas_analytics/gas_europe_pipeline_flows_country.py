@@ -125,16 +125,17 @@ def load_data():
 
 def create_layout():
     """Create the European Pipeline Flows by Country layout"""
-    df = load_data()
-    if df.empty:
-        return html.Div("No data available from database.", style={'padding': '50px', 'textAlign': 'center'})
-
-    origins = sorted(df['gas_origin'].unique().tolist())
-    destinations = sorted(df['target_country'].unique().tolist())
-    max_date = df['date'].max()
+    # Initialize with default values for immediate render
+    # Data loading is deferred to callbacks to prevent white screen on load
     
-    # Set default origin to Russia if available, otherwise use first origin or (All)
-    default_origin = 'Russia' if 'Russia' in origins else (origins[0] if origins else '(All)')
+    # Defaults matching the query filters
+    origins = ['Algeria', 'Azerbaijan', 'Libya', 'Norway', 'Russia']
+    
+    # Default destinations (same as fallback in callback)
+    destinations = ['Belgium', 'Bulgaria', 'Denmark', 'Finland', 'France', 'Germany', 'Greece', 'Hungary', 'Italy', 'Lithuania', 'Moldova', 'Netherlands', 'Poland', 'Romania', 'Slovakia', 'Spain']
+    
+    # Default selection
+    default_origin = 'Russia'
 
     return html.Div([
         # Selection stores
@@ -194,7 +195,7 @@ def create_layout():
                     dcc.Checklist(
                         id='gas-country-dest-checklist',
                         options=[{'label': o, 'value': o} for o in destinations],
-                        value=destinations[:12],
+                        value=destinations[:12], # Default select first 12
                         style={'display': 'none'}
                     ),
                 ], style={'padding': '0px', 'backgroundColor': 'transparent', 'height': '100%'})
