@@ -60,41 +60,52 @@ def load_investments_data(filters=None):
             query += " AND a.investment_type = :investment_type"
             params['investment_type'] = filters['investment_type']
         
-        if filters.get('status') and filters['status']:
-            if isinstance(filters['status'], list) and len(filters['status']) > 0:
-                placeholders = ','.join([f":status_{i}" for i in range(len(filters['status']))])
-                query += f" AND a.new_status IN ({placeholders})"
-                for i, status in enumerate(filters['status']):
-                    params[f'status_{i}'] = status
+        if 'status' in filters:
+            if isinstance(filters['status'], list):
+                if not filters['status']:
+                    query += " AND 1=0"
+                elif 'All' not in filters['status']:
+                    placeholders = ','.join([f":status_{i}" for i in range(len(filters['status']))])
+                    query += f" AND a.new_status IN ({placeholders})"
+                    for i, status in enumerate(filters['status']):
+                        params[f'status_{i}'] = status
         
         if filters.get('country') and filters['country'] != 'All':
             query += " AND c.country_long_name = :country"
             params['country'] = filters['country']
         
-        if filters.get('project_category') and filters['project_category']:
+        if 'project_category' in filters:
             if isinstance(filters['project_category'], list):
-                if len(filters['project_category']) > 0:
+                if not filters['project_category']:
+                    query += " AND 1=0"
+                elif 'All' not in filters['project_category']:
                     placeholders = ','.join([f":category_{i}" for i in range(len(filters['project_category']))])
                     query += f" AND a.project_category_1 IN ({placeholders})"
                     for i, cat in enumerate(filters['project_category']):
                         params[f'category_{i}'] = cat
-            else:
+            elif filters['project_category']:
                 query += " AND a.project_category_1 = :project_category"
                 params['project_category'] = filters['project_category']
         
-        if filters.get('region') and filters['region']:
-            if isinstance(filters['region'], list) and len(filters['region']) > 0:
-                placeholders = ','.join([f":region_{i}" for i in range(len(filters['region']))])
-                query += f" AND c.et_region IN ({placeholders})"
-                for i, region in enumerate(filters['region']):
-                    params[f'region_{i}'] = region
+        if 'region' in filters:
+            if isinstance(filters['region'], list):
+                if not filters['region']:
+                    query += " AND 1=0"
+                elif 'All' not in filters['region']:
+                    placeholders = ','.join([f":region_{i}" for i in range(len(filters['region']))])
+                    query += f" AND c.et_region IN ({placeholders})"
+                    for i, region in enumerate(filters['region']):
+                        params[f'region_{i}'] = region
         
-        if filters.get('project_category_2') and filters['project_category_2']:
-            if isinstance(filters['project_category_2'], list) and len(filters['project_category_2']) > 0:
-                placeholders = ','.join([f":category2_{i}" for i in range(len(filters['project_category_2']))])
-                query += f" AND a.project_category_2 IN ({placeholders})"
-                for i, cat2 in enumerate(filters['project_category_2']):
-                    params[f'category2_{i}'] = cat2
+        if 'project_category_2' in filters:
+            if isinstance(filters['project_category_2'], list):
+                if not filters['project_category_2']:
+                    query += " AND 1=0"
+                elif 'All' not in filters['project_category_2']:
+                    placeholders = ','.join([f":category2_{i}" for i in range(len(filters['project_category_2']))])
+                    query += f" AND a.project_category_2 IN ({placeholders})"
+                    for i, cat2 in enumerate(filters['project_category_2']):
+                        params[f'category2_{i}'] = cat2
     
     query += " ORDER BY a.asset_name"
     
@@ -188,9 +199,15 @@ def load_filter_options(filters=None):
                 if filters.get('country') and filters['country'] != 'All' and exclude_field != 'country':
                     where_parts.append("c.country_long_name = :country")
                     params['country'] = filters['country']
-                if filters.get('project_category') and filters['project_category'] != 'All' and exclude_field != 'project_category':
-                    where_parts.append("a.project_category_1 = :project_category")
-                    params['project_category'] = filters['project_category']
+                if filters.get('project_category') and exclude_field != 'project_category':
+                    if isinstance(filters['project_category'], list) and len(filters['project_category']) > 0:
+                        placeholders = ','.join([f":category_{i}" for i in range(len(filters['project_category']))])
+                        where_parts.append(f"a.project_category_1 IN ({placeholders})")
+                        for i, cat in enumerate(filters['project_category']):
+                            params[f'category_{i}'] = cat
+                    elif not isinstance(filters['project_category'], list) and filters['project_category'] != 'All':
+                        where_parts.append("a.project_category_1 = :project_category")
+                        params['project_category'] = filters['project_category']
                 if filters.get('region') and exclude_field != 'region':
                     if isinstance(filters['region'], list) and len(filters['region']) > 0:
                         placeholders = ','.join([f":region_{i}" for i in range(len(filters['region']))])
@@ -211,7 +228,8 @@ def load_filter_options(filters=None):
         peer_groups = execute_query(f"""
             SELECT DISTINCT b.peer_group_simple 
             FROM fact_et_assets a
-            JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND b.peer_group_simple IS NOT NULL 
             ORDER BY b.peer_group_simple
         """, params)
@@ -221,6 +239,8 @@ def load_filter_options(filters=None):
         years = execute_query(f"""
             SELECT DISTINCT EXTRACT(YEAR FROM a.date_announced) as year
             FROM fact_et_assets a
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND a.date_announced IS NOT NULL
             ORDER BY year DESC
         """, params)
@@ -230,7 +250,8 @@ def load_filter_options(filters=None):
         companies = execute_query(f"""
             SELECT DISTINCT b.company_name
             FROM fact_et_assets a
-            JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND b.company_name IS NOT NULL
             ORDER BY b.company_name
         """, params)
@@ -240,6 +261,8 @@ def load_filter_options(filters=None):
         investment_types = execute_query(f"""
             SELECT DISTINCT a.investment_type
             FROM fact_et_assets a
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND a.investment_type IS NOT NULL
             ORDER BY a.investment_type
         """, params)
@@ -249,6 +272,8 @@ def load_filter_options(filters=None):
         statuses = execute_query(f"""
             SELECT DISTINCT a.new_status
             FROM fact_et_assets a
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND a.new_status IS NOT NULL
             ORDER BY a.new_status
         """, params)
@@ -258,7 +283,8 @@ def load_filter_options(filters=None):
         countries = execute_query(f"""
             SELECT DISTINCT c.country_long_name
             FROM fact_et_assets a
-            JOIN dim_country c ON a.country_id = c.dim_country_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
             WHERE {where} AND c.country_long_name IS NOT NULL
             ORDER BY c.country_long_name
         """, params)
@@ -268,6 +294,8 @@ def load_filter_options(filters=None):
         categories = execute_query(f"""
             SELECT DISTINCT a.project_category_1
             FROM fact_et_assets a
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND a.project_category_1 IS NOT NULL
             ORDER BY a.project_category_1
         """, params)
@@ -277,7 +305,8 @@ def load_filter_options(filters=None):
         regions = execute_query(f"""
             SELECT DISTINCT c.et_region
             FROM fact_et_assets a
-            JOIN dim_country c ON a.country_id = c.dim_country_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
             WHERE {where} AND c.et_region IS NOT NULL
             ORDER BY c.et_region
         """, params)
@@ -287,6 +316,8 @@ def load_filter_options(filters=None):
         categories_2 = execute_query(f"""
             SELECT DISTINCT a.project_category_2
             FROM fact_et_assets a
+            LEFT JOIN dim_company b ON a.company_id = b.company_id
+            LEFT JOIN dim_country c ON a.country_id = c.dim_country_id
             WHERE {where} AND a.project_category_2 IS NOT NULL
             ORDER BY a.project_category_2
         """, params)
@@ -321,30 +352,81 @@ def create_layout():
     """Create the Tracked Investments List layout"""
     
     # Load filter options
-    filter_opts = load_filter_options()
+    # Load filter options
+    # Load filter options - CHANGED to load default options first to allow immediate rendering
+    # The actual options will be loaded by the callback update_filter_options
+    try:
+        filter_opts = load_filter_options()
+    except:
+         filter_opts = {
+            'peer_groups': [{'label': 'All', 'value': 'All'}],
+            'years': [{'label': 'All', 'value': 'All'}],
+            'companies': [{'label': 'All', 'value': 'All'}],
+            'investment_types': [{'label': 'All', 'value': 'All'}],
+            'statuses': [],
+            'countries': [{'label': 'All', 'value': 'All'}],
+            'categories': [{'label': 'All', 'value': 'All'}],
+            'regions': [{'label': 'All', 'value': 'All'}],
+            'categories_2': [{'label': 'All', 'value': 'All'}]
+        }
     
-    # Load initial data
-    df = load_investments_data()
+    # Load initial data - REMOVED to optmize initial load time (white screen)
+    # df = load_investments_data()
     
-    return html.Div([
+    return html.Div(id='lc-dashboard-container', children=[
         # Download component for Export to CSV
         dcc.Download(id='download-investments-csv'),
+        dcc.Download(id='download-summary-csv'),
+        
+        # Store components for filter state tracking
+        dcc.Store(id='store-lc-inv-region', data=[]),
+        dcc.Store(id='store-lc-inv-cat2', data=[]),
+        dcc.Store(id='store-lc-inv-category', data=[]),
+        dcc.Store(id='store-lc-inv-status', data=[]),
         
         # Main Container (Flex) - Splits into Main Content (Left) and Sidebar (Right)
-        html.Div([
+        html.Div(n_clicks=0, children=[
             
-            # Left Column: Main Content (Summary Boxes & Table)
-            html.Div([
+            # Left Column: Main Content (Summary Boxes & Table) with initial loader
+            dcc.Loading(
+                id="loading-initial",
+                type="default",
+                color="#f45d2d",
+                style={'flex': '1', 'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center'},
+                children=[
+                    html.Div([
                 # Investment Count Summary Section (Dynamic)
                 html.Div([
-                    html.H4("Investment Count by Company - All", id='lc-inv-summary-title', style={
-                        'color': '#f45d2d',
-                        'fontSize': '24px',
-                        'fontWeight': 'normal',
-                        'marginBottom': '20px',
-                        'fontFamily': 'Georgia, serif'
-                    }),
-                    html.Div(id='lc-inv-summary-boxes', children=[])
+                    html.Div([
+                        html.H4("Investment Count by Company - All", id='lc-inv-summary-title', style={
+                            'color': '#f45d2d',
+                            'fontSize': '24px',
+                            'fontWeight': 'normal',
+                            'marginBottom': '0px',
+                            'fontFamily': 'Georgia, serif',
+                            'flex': '1'
+                        }),
+                        html.Button(
+                            'Export to CSV',
+                            id='btn-export-summary',
+                            n_clicks=0,
+                            style={
+                                'backgroundColor': 'white', 'color': '#2c3e50', 'border': '1px solid #dee2e6',
+                                'padding': '5px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '13px',
+                                'marginLeft': '10px'
+                            }
+                        )
+                    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '20px'}),
+                    
+                    dcc.Loading(
+                        id="loading-summary",
+                        type="circle",
+                        color="#f45d2d",
+                        style={'minHeight': '100px', 'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center'},
+                        children=[
+                            html.Div(id='lc-inv-summary-boxes', children=[])
+                        ]
+                    )
                 ], style={'padding': '10px 0 10px 0'}),
                 
                 # Data Table Area
@@ -367,6 +449,7 @@ def create_layout():
                         id="loading-table",
                         type="circle",
                         color="#f45d2d",
+                        style={'minHeight': '600px', 'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center'},
                         children=[
                             html.Div(id='lc-inv-link-dummy', style={'display': 'none'}),
                             dash_table.DataTable(
@@ -478,245 +561,366 @@ def create_layout():
                                })
                     ], style={'marginTop': '10px'})
                 ], style={'padding': '20px 0 20px 0', 'backgroundColor': '#ffffff', 'fontFamily': 'Arial, sans-serif'})
-            ], style={'flex': '1', 'minWidth': '0', 'padding': '0 20px'}),
+            ], style={'flex': '1', 'minWidth': '0', 'padding': '0 20px'})
+                ]
+            ),
 
             # Right Column: Sidebar (Filters)
             html.Div([
                 # Filters Title (Hidden or subtle as per image)
                 
-                # Search Asset Name
+                # Row 1: Asset Name + Peer Group
                 html.Div([
-                    html.Label("Search Asset Name", style={
-                        'fontSize': '11px',
-                        'color': '#666',
-                        'marginBottom': '4px',
-                        'display': 'block',
-                        'fontFamily': 'Arial, sans-serif'
-                    }),
-                    dcc.Input(
-                        id='lc-inv-asset-search',
-                        type='text',
-                        placeholder='',
-                        style={
-                            'width': '100%',
-                            'padding': '5px 8px',
+                    # Search Asset Name
+                    html.Div([
+                        html.Label("Search Asset Name", style={
+                            'fontSize': '11px',
+                            'color': '#666',
+                            'marginBottom': '4px',
+                            'display': 'block',
+                            'fontFamily': 'Arial, sans-serif'
+                        }),
+                        dcc.Input(
+                            id='lc-inv-asset-search',
+                            type='text',
+                            placeholder='',
+                            style={
+                                'width': '100%',
+                                'padding': '5px 8px',
+                                'border': '1px solid #ccc',
+                                'borderRadius': '3px',
+                                'fontSize': '12px',
+                                'fontFamily': 'Arial, sans-serif'
+                            }
+                        )
+                    ], style={'flex': '1'}),
+                    
+                    # Peer Group
+                    html.Div([
+                        html.Label("Peer Group", style={
+                            'fontSize': '11px',
+                            'color': '#666',
+                            'marginBottom': '4px',
+                            'display': 'block',
+                            'fontFamily': 'Arial, sans-serif'
+                        }),
+                        dcc.Dropdown(
+                            id='lc-inv-peer-group',
+                            options=filter_opts['peer_groups'],
+                            value='All',
+                            clearable=False,
+                            style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif'}
+                        )
+                    ], style={'flex': '1'}),
+                ], style={'display': 'flex', 'gap': '10px', 'marginBottom': '15px'}),
+                
+                # Row 2: Year Announced + Company
+                html.Div([
+                    # Year Announced
+                    html.Div([
+                        html.Label("Year Announced", style={
+                            'fontSize': '11px',
+                            'color': '#666',
+                            'marginBottom': '4px',
+                            'display': 'block',
+                            'fontFamily': 'Arial, sans-serif'
+                        }),
+                        dcc.Dropdown(
+                            id='lc-inv-year',
+                            options=filter_opts['years'],
+                            value='All',
+                            clearable=False,
+                            style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif'}
+                        )
+                    ], style={'flex': '1'}),
+                    
+                    # Company
+                    html.Div([
+                        html.Label("Company", style={
+                            'fontSize': '11px',
+                            'color': '#666',
+                            'marginBottom': '4px',
+                            'display': 'block',
+                            'fontFamily': 'Arial, sans-serif'
+                        }),
+                        dcc.Dropdown(
+                            id='lc-inv-company',
+                            options=filter_opts['companies'],
+                            value='All',
+                            clearable=False,
+                            style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif'}
+                        )
+                    ], style={'flex': '1'}),
+                ], style={'display': 'flex', 'gap': '10px', 'marginBottom': '15px'}),
+                
+                # Row 3: Investment Type + Status
+                html.Div([
+                    # Investment Type
+                    html.Div([
+                        html.Label("Investment Type", style={
+                            'fontSize': '11px',
+                            'color': '#666',
+                            'marginBottom': '4px',
+                            'display': 'block',
+                            'fontFamily': 'Arial, sans-serif'
+                        }),
+                        dcc.Dropdown(
+                            id='lc-inv-type',
+                            options=filter_opts['investment_types'],
+                            value='All',
+                            clearable=False,
+                            style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif'}
+                        )
+                    ], style={'flex': '1'}),
+                    
+                    # Status
+                    html.Div([
+                        html.Label("Status", style={
+                            'fontSize': '11px',
+                            'color': '#666',
+                            'marginBottom': '4px',
+                            'display': 'block',
+                            'fontFamily': 'Arial, sans-serif'
+                        }),
+                        html.Div([
+                            html.Div([
+                                html.Span("(Multiple values)", id='lc-inv-status-label'),
+                                html.Span("▼", style={'fontSize': '8px', 'color': '#666'})
+                            ], id='lc-inv-status-dropdown', style={
+                                'boxSizing': 'border-box',
+                                'border': '1px solid #ccc',
+                                'borderRadius': '3px',
+                                'padding': '5px 10px',
+                                'fontSize': '12px',
+                                'fontFamily': 'Arial, sans-serif',
+                                'backgroundColor': 'white',
+                                'marginBottom': '5px',
+                                'display': 'flex',
+                                'justifyContent': 'space-between',
+                                'alignItems': 'center',
+                                'cursor': 'pointer'
+                            }),
+                        ], id='lc-inv-status-trigger', n_clicks=0, style={'cursor': 'pointer'}),
+                        html.Div([
+                            dcc.Checklist(
+                                id='lc-inv-status',
+                                options=[{'label': '(All)', 'value': 'All'}] + [opt for opt in filter_opts['statuses'] if opt.get('value') != 'All'],
+                                value=['Completed', 'Proposed', 'Under Development'],  # Default selection
+                                labelStyle={
+                                    'display': 'block',
+                                    'fontSize': '11px',
+                                    'color': '#333',
+                                    'fontFamily': 'Arial, sans-serif',
+                                    'marginBottom': '3px'
+                                }
+                            )
+                        ], id='lc-inv-status-container', style={
+                            'boxSizing': 'border-box',
+                            'display': 'none', 
+                            'padding': '5px 10px', 
+                            'marginTop': '5px',
                             'border': '1px solid #ccc',
                             'borderRadius': '3px',
-                            'fontSize': '12px',
+                            'maxHeight': '200px',
+                            'overflowY': 'auto',
+                            'backgroundColor': '#fff',
+                            'position': 'absolute',
+                            'zIndex': '1000',
+                            'width': '150px'
+                        })
+                    ], style={'flex': '1', 'position': 'relative'}),
+                ], style={'display': 'flex', 'gap': '10px', 'marginBottom': '15px'}),
+                
+                # Row 4: Asset Country + Project Category
+                html.Div([
+                    # Asset Country
+                    html.Div([
+                        html.Label("Asset Country", style={
+                            'fontSize': '11px',
+                            'color': '#666',
+                            'marginBottom': '4px',
+                            'display': 'block',
                             'fontFamily': 'Arial, sans-serif'
-                        }
-                    )
-                ], style={'marginBottom': '15px'}),
-                
-                # Peer Group
-                html.Div([
-                    html.Label("Peer Group", style={
-                        'fontSize': '11px',
-                        'color': '#666',
-                        'marginBottom': '4px',
-                        'display': 'block',
-                        'fontFamily': 'Arial, sans-serif'
-                    }),
-                    dcc.Dropdown(
-                        id='lc-inv-peer-group',
-                        options=filter_opts['peer_groups'],
-                        value='All',
-                        clearable=False,
-                        style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif'}
-                    )
-                ], style={'marginBottom': '15px'}),
-                
-                # Year Announced
-                html.Div([
-                    html.Label("Year Announced", style={
-                        'fontSize': '11px',
-                        'color': '#666',
-                        'marginBottom': '4px',
-                        'display': 'block',
-                        'fontFamily': 'Arial, sans-serif'
-                    }),
-                    dcc.Dropdown(
-                        id='lc-inv-year',
-                        options=filter_opts['years'],
-                        value='All',
-                        clearable=False,
-                        style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif'}
-                    )
-                ], style={'marginBottom': '15px'}),
-                
-                # Company
-                html.Div([
-                    html.Label("Company", style={
-                        'fontSize': '11px',
-                        'color': '#666',
-                        'marginBottom': '4px',
-                        'display': 'block',
-                        'fontFamily': 'Arial, sans-serif'
-                    }),
-                    dcc.Dropdown(
-                        id='lc-inv-company',
-                        options=filter_opts['companies'],
-                        value='All',
-                        clearable=False,
-                        style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif'}
-                    )
-                ], style={'marginBottom': '15px'}),
-                
-                # Investment Type
-                html.Div([
-                    html.Label("Investment Type", style={
-                        'fontSize': '11px',
-                        'color': '#666',
-                        'marginBottom': '4px',
-                        'display': 'block',
-                        'fontFamily': 'Arial, sans-serif'
-                    }),
-                    dcc.Dropdown(
-                        id='lc-inv-type',
-                        options=filter_opts['investment_types'],
-                        value='All',
-                        clearable=False,
-                        style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif'}
-                    )
-                ], style={'marginBottom': '15px'}),
-                
-                # Status
-                html.Div([
-                    html.Label("Status", style={
-                        'fontSize': '11px',
-                        'color': '#666',
-                        'marginBottom': '4px',
-                        'display': 'block',
-                        'fontFamily': 'Arial, sans-serif'
-                    }),
-                    html.Div([
+                        }),
                         dcc.Dropdown(
-                            id='lc-inv-status-dropdown',
-                            options=[{'label': '(Multiple values)', 'value': 'multiple'}],
-                            value='multiple',
-                            clearable=False,
-                            style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif', 'marginBottom': '5px'}
-                        ),
-                    ], id='lc-inv-status-trigger', n_clicks=0, style={'cursor': 'pointer'}),
-                    html.Div([
-                        dcc.Checklist(
-                            id='lc-inv-status',
-                            options=filter_opts['statuses'],
-                            value=['Completed', 'Proposed', 'Under Development'],
-                            labelStyle={
-                                'display': 'block',
-                                'fontSize': '11px',
-                                'color': '#333',
-                                'fontFamily': 'Arial, sans-serif',
-                                'marginBottom': '3px'
-                            }
-                        )
-                    ], id='lc-inv-status-container', style={'display': 'none', 'paddingLeft': '10px', 'marginTop': '5px'})
-                ], style={'marginBottom': '15px'}),
-                
-                # Asset Country
-                html.Div([
-                    html.Label("Asset Country", style={
-                        'fontSize': '11px',
-                        'color': '#666',
-                        'marginBottom': '4px',
-                        'display': 'block',
-                        'fontFamily': 'Arial, sans-serif'
-                    }),
-                    dcc.Dropdown(
-                        id='lc-inv-country',
-                        options=filter_opts['countries'],
-                        value='All',
-                        clearable=False,
-                        style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif'}
-                    )
-                ], style={'marginBottom': '15px'}),
-                
-                # Project Category
-                html.Div([
-                    html.Label("Project Category", style={
-                        'fontSize': '11px',
-                        'color': '#666',
-                        'marginBottom': '4px',
-                        'display': 'block',
-                        'fontFamily': 'Arial, sans-serif'
-                    }),
-                    dcc.Dropdown(
-                        id='lc-inv-category',
-                        options=filter_opts['categories'],
-                        value='All',
-                        clearable=False,
-                        style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif'}
-                    )
-                ], style={'marginBottom': '15px'}),
-                
-                # Region
-                html.Div([
-                    html.Label("Region", style={
-                        'fontSize': '11px',
-                        'color': '#666',
-                        'marginBottom': '4px',
-                        'display': 'block',
-                        'fontFamily': 'Arial, sans-serif'
-                    }),
-                    html.Div([
-                        dcc.Dropdown(
-                            id='lc-inv-region-dropdown',
-                            options=[{'label': '(All)', 'value': 'All'}],
+                            id='lc-inv-country',
+                            options=filter_opts['countries'],
                             value='All',
                             clearable=False,
-                            style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif', 'marginBottom': '5px'}
-                        ),
-                    ], id='lc-inv-region-trigger', n_clicks=0, style={'cursor': 'pointer'}),
-                    html.Div([
-                        dcc.Checklist(
-                            id='lc-inv-region',
-                            options=[{'label': '(All)', 'value': 'All'}] + [opt for opt in filter_opts['regions'] if opt['value'] != 'All'],
-                            value=[opt['value'] for opt in filter_opts['regions']],  # All checked by default
-                            labelStyle={
-                                'display': 'block',
-                                'fontSize': '11px',
-                                'color': '#333',
-                                'fontFamily': 'Arial, sans-serif',
-                                'marginBottom': '3px'
-                            }
+                            style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif'}
                         )
-                    ], id='lc-inv-region-container', style={'display': 'none', 'paddingLeft': '10px', 'marginTop': '5px'})
-                ], style={'marginBottom': '15px'}),
+                    ], style={'flex': '1'}),
+                    
+                    # Project Category
+                    html.Div([
+                        html.Label("Project Category", style={
+                            'fontSize': '11px',
+                            'color': '#666',
+                            'marginBottom': '4px',
+                            'display': 'block',
+                            'fontFamily': 'Arial, sans-serif'
+                        }),
+                        html.Div([
+                            html.Div([
+                                html.Span("(All)", id='lc-inv-category-label'),
+                                html.Span("▼", style={'fontSize': '8px', 'color': '#666'})
+                            ], id='lc-inv-category-dropdown', style={
+                                'boxSizing': 'border-box',
+                                'border': '1px solid #ccc',
+                                'borderRadius': '3px',
+                                'padding': '5px 10px',
+                                'fontSize': '12px',
+                                'fontFamily': 'Arial, sans-serif',
+                                'backgroundColor': 'white',
+                                'marginBottom': '5px',
+                                'display': 'flex',
+                                'justifyContent': 'space-between',
+                                'alignItems': 'center',
+                                'cursor': 'pointer'
+                            }),
+                        ], id='lc-inv-category-trigger', n_clicks=0, style={'cursor': 'pointer'}),
+                        html.Div([
+                            dcc.Checklist(
+                                id='lc-inv-category',
+                                options=[{'label': '(All)', 'value': 'All'}] + [opt for opt in filter_opts['categories'] if opt['value'] != 'All'],
+                                value=['All'] + [opt['value'] for opt in filter_opts['categories']],  # All checked by default
+                                labelStyle={
+                                    'display': 'block',
+                                    'fontSize': '11px',
+                                    'color': '#333',
+                                    'fontFamily': 'Arial, sans-serif',
+                                    'marginBottom': '3px'
+                                }
+                            )
+                        ], id='lc-inv-category-container', style={
+                            'boxSizing': 'border-box',
+                            'display': 'none', 
+                            'padding': '5px 10px', 
+                            'marginTop': '-5px',
+                            'border': '1px solid #ccc',
+                            'borderRadius': '3px',
+                            'maxHeight': '200px',
+                            'overflowY': 'auto',
+                            'backgroundColor': '#fff',
+                            'position': 'absolute',
+                            'zIndex': '1000',
+                             'width': '150px'
+                        })
+                    ], style={'flex': '1', 'position': 'relative'}),
+                ], style={'display': 'flex', 'gap': '10px', 'marginBottom': '15px'}),
                 
-                # Project Category 2
+                # Row 5: Region + Project Category 2
                 html.Div([
-                    html.Label("Project Category 2", style={
-                        'fontSize': '11px',
-                        'color': '#666',
-                        'marginBottom': '4px',
-                        'display': 'block',
-                        'fontFamily': 'Arial, sans-serif'
-                    }),
+                    # Region
                     html.Div([
-                        dcc.Dropdown(
-                            id='lc-inv-category-2-dropdown',
-                            options=[{'label': '(All)', 'value': 'All'}],
-                            value='All',
-                            clearable=False,
-                            style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif', 'marginBottom': '5px'}
-                        ),
-                    ], id='lc-inv-cat2-trigger', n_clicks=0, style={'cursor': 'pointer'}),
-                    html.Div([
-                        dcc.Checklist(
-                            id='lc-inv-category-2',
-                            options=[{'label': '(All)', 'value': 'All'}] + [opt for opt in filter_opts['categories_2'] if opt['value'] != 'All'],
-                            value=[opt['value'] for opt in filter_opts['categories_2']],  # All checked by default
-                            labelStyle={
-                                'display': 'block',
-                                'fontSize': '11px',
-                                'color': '#333',
+                        html.Label("Region", style={
+                            'fontSize': '11px',
+                            'color': '#666',
+                            'marginBottom': '4px',
+                            'display': 'block',
+                            'fontFamily': 'Arial, sans-serif'
+                        }),
+                        html.Div([
+                            html.Div([
+                                html.Span("(All)", id='lc-inv-region-label'),
+                                html.Span("▼", style={'fontSize': '8px', 'color': '#666'})
+                            ], id='lc-inv-region-dropdown', style={
+                                'border': '1px solid #ccc',
+                                'borderRadius': '3px',
+                                'padding': '5px 10px',
+                                'fontSize': '12px',
                                 'fontFamily': 'Arial, sans-serif',
-                                'marginBottom': '3px'
-                            }
-                        )
-                    ], id='lc-inv-cat2-container', style={'display': 'none', 'paddingLeft': '10px', 'marginTop': '5px'})
-                ], style={'marginBottom': '15px'}),
+                                'backgroundColor': 'white',
+                                'marginBottom': '5px',
+                                'display': 'flex',
+                                'justifyContent': 'space-between',
+                                'alignItems': 'center',
+                                'cursor': 'pointer'
+                            }),
+                        ], id='lc-inv-region-trigger', n_clicks=0, style={'cursor': 'pointer'}),
+                        html.Div([
+                            dcc.Checklist(
+                                id='lc-inv-region',
+                                options=[{'label': '(All)', 'value': 'All'}] + [opt for opt in filter_opts['regions'] if opt['value'] != 'All'],
+                                value=['All'] + [opt['value'] for opt in filter_opts['regions']],  # All checked by default
+                                labelStyle={
+                                    'display': 'block',
+                                    'fontSize': '11px',
+                                    'color': '#333',
+                                    'fontFamily': 'Arial, sans-serif',
+                                    'marginBottom': '3px'
+                                }
+                            )
+                        ], id='lc-inv-region-container', style={
+                            'display': 'none', 
+                            'padding': '5px 10px', 
+                            'marginTop': '5px',
+                            'border': '1px solid #ccc',
+                            'borderRadius': '3px',
+                            'maxHeight': '200px',
+                            'overflowY': 'auto',
+                            'backgroundColor': '#fff',
+                            'position': 'absolute',
+                            'zIndex': '1000',
+                             'width': '150px'
+                        })
+                    ], style={'flex': '1', 'position': 'relative'}),
+                    
+                    # Project Category 2
+                    html.Div([
+                        html.Label("Project Category 2", style={
+                            'fontSize': '11px',
+                            'color': '#666',
+                            'marginBottom': '4px',
+                            'display': 'block',
+                            'fontFamily': 'Arial, sans-serif'
+                        }),
+                        html.Div([
+                            html.Div([
+                                html.Span("(All)", id='lc-inv-cat2-label'),
+                                html.Span("▼", style={'fontSize': '8px', 'color': '#666'})
+                            ], id='lc-inv-category-2-dropdown', style={
+                                'border': '1px solid #ccc',
+                                'borderRadius': '3px',
+                                'padding': '5px 10px',
+                                'fontSize': '12px',
+                                'fontFamily': 'Arial, sans-serif',
+                                'backgroundColor': 'white',
+                                'marginBottom': '5px',
+                                'display': 'flex',
+                                'justifyContent': 'space-between',
+                                'alignItems': 'center',
+                                'cursor': 'pointer'
+                            }),
+                        ], id='lc-inv-cat2-trigger', n_clicks=0, style={'cursor': 'pointer'}),
+                        html.Div([
+                            dcc.Checklist(
+                                id='lc-inv-category-2',
+                                options=[{'label': '(All)', 'value': 'All'}] + [opt for opt in filter_opts['categories_2'] if opt['value'] != 'All'],
+                                value=['All'] + [opt['value'] for opt in filter_opts['categories_2']],  # All checked by default
+                                labelStyle={
+                                    'display': 'block',
+                                    'fontSize': '11px',
+                                    'color': '#333',
+                                    'fontFamily': 'Arial, sans-serif',
+                                    'marginBottom': '3px'
+                                }
+                            )
+                        ], id='lc-inv-cat2-container', style={
+                            'display': 'none', 
+                            'padding': '5px 10px', 
+                            'marginTop': '5px',
+                            'border': '1px solid #ccc',
+                            'borderRadius': '3px',
+                            'maxHeight': '200px',
+                            'overflowY': 'auto',
+                            'backgroundColor': '#fff',
+                            'position': 'absolute',
+                            'zIndex': '1000',
+                             'width': '150px'
+                        })
+                    ], style={'flex': '1', 'position': 'relative'}),
+                ], style={'display': 'flex', 'gap': '10px', 'marginBottom': '15px'}),
                 
                 # External Link at bottom of sidebar
                 html.Div([
@@ -733,8 +937,8 @@ def create_layout():
                 ], style={'marginTop': '20px'})
 
             ], style={
-                'width': '220px', 
-                'minWidth': '220px',
+                'width': '340px', 
+                'minWidth': '340px',
                 'borderLeft': '1px solid #dee2e6',
                 'padding': '15px',
                 'backgroundColor': '#ffffff',
@@ -749,76 +953,206 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register callbacks for the investments list"""
     
-    # Remove handle_category_all as Project Category is now a dropdown
-    
     @callback(
         Output('lc-inv-region', 'value'),
-        [Input('lc-inv-region', 'value')],
-        [State('lc-inv-region', 'options')]
+        Output('store-lc-inv-region', 'data'),
+        Input('lc-inv-region', 'value'),
+        State('lc-inv-region', 'options'),
+        State('store-lc-inv-region', 'data')
     )
-    def handle_region_all(selected_values, all_options):
-        """Handle (All) checkbox for Region"""
-        if not selected_values:
-            return []
-        
+    def handle_region_all(selected_values, all_options, previous_values):
+        """Handle (All) checkbox for Region with robust state tracking"""
+        if selected_values is None:
+            return [], []
+            
         all_values = [opt['value'] for opt in all_options if opt['value'] != 'All']
+        previous_values = previous_values or []
         
-        # If "All" was just checked
-        if 'All' in selected_values and len(selected_values) == 1:
-            return ['All'] + all_values
+        # Determine current state
+        has_all = 'All' in selected_values
+        prev_has_all = 'All' in previous_values
         
-        # If "All" is checked and user unchecked something
-        if 'All' in selected_values and len(selected_values) < len(all_values) + 1:
-            return [v for v in selected_values if v != 'All']
+        # 1. "All" was just clicked (added)
+        if has_all and not prev_has_all:
+            result = ['All'] + all_values
+            return result, result
+            
+        # 2. "All" was just unclicked (removed)
+        if not has_all and prev_has_all:
+             # If it was the ONLY thing removed, then deselect all
+             # But if we also removed other things, it's ambiguous, but standard "All" logic is to deselect all if All is clicked.
+             # Check if only "All" is missing from previous
+             if set(previous_values) - set(selected_values) == {'All'}:
+                 return [], []
         
-        # If all individual items are checked, add "All"
-        if 'All' not in selected_values and len(selected_values) == len(all_values):
-            return ['All'] + selected_values
-        
-        return selected_values
+        # 3. Individual item interaction
+        # If "All" is present, and we removed an item -> Remove "All"
+        if has_all and len(selected_values) < len(all_values) + 1:
+            result = [v for v in selected_values if v != 'All']
+            return result, result
+            
+        # If "All" is NOT present, and we added the last item -> Add "All"
+        if not has_all and len(selected_values) == len(all_values):
+            result = ['All'] + all_values
+            return result, result
+            
+        return selected_values, selected_values
     
     @callback(
         Output('lc-inv-category-2', 'value'),
-        [Input('lc-inv-category-2', 'value')],
-        [State('lc-inv-category-2', 'options')]
+        Output('store-lc-inv-cat2', 'data'),
+        Input('lc-inv-category-2', 'value'),
+        State('lc-inv-category-2', 'options'),
+        State('store-lc-inv-cat2', 'data')
     )
-    def handle_category2_all(selected_values, all_options):
-        """Handle (All) checkbox for Project Category 2"""
-        if not selected_values:
-            return []
-        
+    def handle_category2_all(selected_values, all_options, previous_values):
+        """Handle (All) checkbox for Project Category 2 with robust state tracking"""
+        if selected_values is None:
+            return [], []
+            
         all_values = [opt['value'] for opt in all_options if opt['value'] != 'All']
+        previous_values = previous_values or []
         
-        # If "All" was just checked
-        if 'All' in selected_values and len(selected_values) == 1:
-            return ['All'] + all_values
+        has_all = 'All' in selected_values
+        prev_has_all = 'All' in previous_values
         
-        # If "All" is checked and user unchecked something
-        if 'All' in selected_values and len(selected_values) < len(all_values) + 1:
-            return [v for v in selected_values if v != 'All']
+        if has_all and not prev_has_all:
+            result = ['All'] + all_values
+            return result, result
+            
+        if not has_all and prev_has_all:
+             if set(previous_values) - set(selected_values) == {'All'}:
+                 return [], []
         
-        # If all individual items are checked, add "All"
-        if 'All' not in selected_values and len(selected_values) == len(all_values):
-            return ['All'] + selected_values
+        if has_all and len(selected_values) < len(all_values) + 1:
+            result = [v for v in selected_values if v != 'All']
+            return result, result
+            
+        if not has_all and len(selected_values) == len(all_values):
+            result = ['All'] + all_values
+            return result, result
+            
+        return selected_values, selected_values
+
+    @callback(
+        Output('lc-inv-category', 'value', allow_duplicate=True),
+        Output('store-lc-inv-category', 'data'),
+        Input('lc-inv-category', 'value'),
+        State('lc-inv-category', 'options'),
+        State('store-lc-inv-category', 'data'),
+        prevent_initial_call=True
+    )
+    def handle_category_all(selected_values, all_options, previous_values):
+        """Handle (All) checkbox for Project Category with robust state tracking"""
+        if selected_values is None:
+            return [], []
+            
+        all_values = [opt['value'] for opt in all_options if opt['value'] != 'All']
+        previous_values = previous_values or []
         
-        return selected_values
+        has_all = 'All' in selected_values
+        prev_has_all = 'All' in previous_values
+        
+        if has_all and not prev_has_all:
+            result = ['All'] + all_values
+            return result, result
+            
+        if not has_all and prev_has_all:
+             if set(previous_values) - set(selected_values) == {'All'}:
+                 return [], []
+        
+        if has_all and len(selected_values) < len(all_values) + 1:
+            result = [v for v in selected_values if v != 'All']
+            return result, result
+            
+        if not has_all and len(selected_values) == len(all_values):
+            result = ['All'] + all_values
+            return result, result
+            
+        return selected_values, selected_values
+    
+    @callback(
+        Output('lc-inv-status', 'value'),
+        Output('store-lc-inv-status', 'data'),
+        Input('lc-inv-status', 'value'),
+        State('lc-inv-status', 'options'),
+        State('store-lc-inv-status', 'data')
+    )
+    def handle_status_all(selected_values, all_options, previous_values):
+        """Handle (All) checkbox for Status with robust state tracking"""
+        if selected_values is None:
+            return [], []
+            
+        all_values = [opt['value'] for opt in all_options if opt['value'] != 'All']
+        previous_values = previous_values or []
+        
+        has_all = 'All' in selected_values
+        prev_has_all = 'All' in previous_values
+        
+        if has_all and not prev_has_all:
+            result = ['All'] + all_values
+            return result, result
+            
+        if not has_all and prev_has_all:
+             if set(previous_values) - set(selected_values) == {'All'}:
+                 return [], []
+        
+        if has_all and len(selected_values) < len(all_values) + 1:
+            result = [v for v in selected_values if v != 'All']
+            return result, result
+            
+        if not has_all and len(selected_values) == len(all_values):
+            result = ['All'] + all_values
+            return result, result
+            
+        return selected_values, selected_values
     
     @callback(
         Output('lc-inv-summary-boxes', 'children'),
         Output('lc-inv-summary-title', 'children'),
         [
-            Input('lc-inv-table', 'data'),
+            Input('lc-inv-asset-search', 'value'),
+            Input('lc-inv-peer-group', 'value'),
+            Input('lc-inv-year', 'value'),
             Input('lc-inv-company', 'value'),
-            Input('lc-inv-category', 'value')
+            Input('lc-inv-type', 'value'),
+            Input('lc-inv-status', 'value'),
+            Input('lc-inv-country', 'value'),
+            Input('lc-inv-category', 'value'),
+            Input('lc-inv-region', 'value'),
+            Input('lc-inv-category-2', 'value')
         ]
     )
-    def update_summary(table_data, company, selected_category):
-        """Update investment count summary boxes dynamically based on filtered table data"""
+    def update_summary(asset_name, peer_group, year, company, inv_type, status, country, selected_category, region, category_2):
+        """Update investment count summary boxes dynamically based on filters (EXCLUDING category)"""
         title = f"Investment Count by Company - {company}"
-        if not table_data:
-            return html.Div("No data matches selected filters", style={'padding': '10px'}), title
         
-        df = pd.DataFrame(table_data)
+        # Handle "All" in region - don't filter
+        if region and 'All' in region:
+            region = None
+        
+        # Handle "All" in category_2 - don't filter
+        if category_2 and 'All' in category_2:
+            category_2 = None
+            
+        # Build filters dict - IMPORTANT: Always set project_category, category_2, and asset_name to None or similar to get global company stats
+        filters = {
+            'asset_name': None,        # Ignore asset search for summary to show full company profile
+            'peer_group': peer_group,
+            'year_announced': year,
+            'company': company,
+            'investment_type': inv_type,
+            'status': status,
+            'country': country,
+            'project_category': None,  # Ignore selected category for summary boxes
+            'region': region,
+            'project_category_2': None # Ignore sub-category for summary
+        }
+        
+        df = load_investments_data(filters)
+        
+        if df.empty:
+            return html.Div("No data matches selected filters", style={'padding': '10px'}), title
         
         # Aggregate by Project Category
         summary_df = df.groupby('Project Category').agg({
@@ -863,22 +1197,32 @@ def register_callbacks(dash_app, server):
                 html.Div(f"{percentage:.2f}%", style={'color': config['text_color'], 'fontSize': '11px', 'marginBottom': '2px'})
             ]
             
-            if flex_size == '1':
-                box_content.extend([
-                    html.Div(f"{count} Investments out of {total_count} Total", style={'color': config['text_color'], 'fontSize': '9px'}),
-                    html.Div(f"${investment_billions:.0f} Billion out of ${total_billions:.0f} Billion Total", style={'color': config['text_color'], 'fontSize': '9px'})
-                ])
+            box_content.extend([
+                html.Div(f"{count} Investments out of {total_count} Total", style={'color': config['text_color'], 'fontSize': '9px'}),
+                html.Div(f"${investment_billions:.0f} Billion out of ${total_billions:.0f} Billion Total", style={'color': config['text_color'], 'fontSize': '9px'})
+            ])
             
             # Determine highlighting
-            is_selected = category == selected_category
+            # Handle list input for selected_category
+            is_selected = False
+            if selected_category:
+                if isinstance(selected_category, list):
+                    if 'All' in selected_category:
+                        is_selected = False # Treat All as no specific selection for highlighting
+                    elif category in selected_category:
+                        is_selected = True
+                else:
+                    is_selected = category == selected_category
             
-            if selected_category != 'All' and not is_selected:
-                opacity = 0.35
-                border_style = '1px solid transparent'
-            elif is_selected:
-                opacity = 1
-                border_style = '3px solid #1b365d'
+            if (isinstance(selected_category, list) and 'All' not in selected_category) or (not isinstance(selected_category, list) and selected_category != 'All'):
+                if not is_selected:
+                    opacity = 0.35
+                    border_style = '1px solid transparent'
+                else:
+                    opacity = 1
+                    border_style = '3px solid #1b365d'
             else:
+                # All selected or strictly 'All'
                 opacity = 1
                 border_style = '1px solid transparent'
             
@@ -901,7 +1245,7 @@ def register_callbacks(dash_app, server):
         return html.Div(boxes, style={'display': 'flex', 'marginBottom': '15px'}), title
 
     @callback(
-        Output('lc-inv-category', 'value'),
+        Output('lc-inv-category', 'value', allow_duplicate=True),
         Input({'type': 'lc-summary-box', 'index': ALL}, 'n_clicks'),
         State('lc-inv-category', 'value'),
         prevent_initial_call=True
@@ -922,9 +1266,18 @@ def register_callbacks(dash_app, server):
             triggered_id_dict = json.loads(triggered_id)
             new_selection = triggered_id_dict['index']
             # Toggle logic: if clicking the already selected box, reset to All
-            if new_selection == current_category:
-                return 'All'
-            return new_selection
+            # Handle list for current_category
+            is_current = False
+            if current_category:
+                if isinstance(current_category, list):
+                    if len(current_category) == 1 and current_category[0] == new_selection:
+                        is_current = True
+                elif current_category == new_selection:
+                    is_current = True
+            
+            if is_current:
+                return ['All'] # Reset list to All
+            return [new_selection] # Set list to single selection
         except:
             return dash.no_update
     
@@ -947,16 +1300,16 @@ def register_callbacks(dash_app, server):
     def update_table(asset_name, peer_group, year, company, inv_type, status, country, category, region, category_2):
         """Update table based on filter selections"""
         
-        # Handle empty or "All" in region - don't filter
-        if not region or (region and 'All' in region):
+        # Handle "All" in region - don't filter
+        if region and 'All' in region:
             region = None
         
         # Handle "All" in category - don't filter
-        if category == 'All':
+        if category and ((isinstance(category, str) and category == 'All') or (isinstance(category, list) and 'All' in category)):
             category = None
         
-        # Handle empty or "All" in category_2 - don't filter
-        if not category_2 or (category_2 and 'All' in category_2):
+        # Handle "All" in category_2 - don't filter
+        if category_2 and 'All' in category_2:
             category_2 = None
         
         # Build filters dict
@@ -987,35 +1340,150 @@ def register_callbacks(dash_app, server):
         
         return data, columns
     
-    @callback(
-        Output('lc-inv-status-container', 'style'),
-        Input('lc-inv-status-trigger', 'n_clicks'),
-        prevent_initial_call=True
-    )
-    def toggle_status_checklist(n_clicks):
-        if n_clicks and n_clicks % 2 == 1:
-            return {'display': 'block', 'paddingLeft': '10px', 'marginTop': '5px'}
-        return {'display': 'none', 'paddingLeft': '10px', 'marginTop': '5px'}
+    # Clientside callback to handle dropdown toggling and click-outside logic
+    dash_app.clientside_callback(
+        """
+        function(n_status, n_region, n_cat2, n_cat, n_container, style_status, style_region, style_cat2, style_cat, style_status_trigger, style_cat_trigger) {
+            var ctx = dash_clientside.callback_context;
+            if (!ctx.triggered || ctx.triggered.length === 0) {
+                return [style_status, style_region, style_cat2, style_cat, style_status_trigger, style_cat_trigger];
+            }
+            
+            var triggered_id = ctx.triggered[0].prop_id.split('.')[0];
+            
+            // Base style for open state (Container)
+            var base_style = {
+                'boxSizing': 'border-box',
+                'padding': '5px 10px',
+                'marginTop': '0px',
+                'border': '1px solid #ccc',
+                'borderTop': '0px',
+                'borderRadius': '3px',
+                'maxHeight': '200px',
+                'overflowY': 'auto',
+                'backgroundColor': '#fff',
+                'position': 'absolute',
+                'zIndex': '1000',
+                'width': '100%',
+                'top': '100%',
+                'left': '0',
+                'display': 'block'
+            };
+            
+            var closed_style = Object.assign({}, base_style, {'display': 'none'});
+            
+            // Trigger Base Style (Shared)
+            var trigger_base_style = {
+                'boxSizing': 'border-box',
+                'border': '1px solid #ccc',
+                'borderBottom': '1px solid #ccc',
+                'borderRadius': '3px',
+                'borderBottomLeftRadius': '3px',
+                'borderBottomRightRadius': '3px',
+                'padding': '5px 10px',
+                'fontSize': '12px',
+                'fontFamily': 'Arial, sans-serif',
+                'backgroundColor': 'white',
+                'marginBottom': '5px',
+                'display': 'flex',
+                'justifyContent': 'space-between',
+                'alignItems': 'center',
+                'cursor': 'pointer'
+            };
 
-    @callback(
-        Output('lc-inv-region-container', 'style'),
-        Input('lc-inv-region-trigger', 'n_clicks'),
+            var trigger_open_style = Object.assign({}, trigger_base_style, {
+                'borderBottom': 'none',
+                'borderBottomLeftRadius': '0',
+                'borderBottomRightRadius': '0',
+                'marginBottom': '0'
+            });
+            
+            // If container was clicked (checking for outside clicks)
+            if (triggered_id === 'lc-dashboard-container') {
+                var is_trigger_click = false;
+                ctx.triggered.forEach(function(t) {
+                    if (t.prop_id.indexOf('trigger') !== -1) {
+                        is_trigger_click = true;
+                    }
+                });
+                
+                if (is_trigger_click) {
+                    // Let trigger logic handle it
+                } else {
+                    // Check if click was inside one of our structures
+                    var e = window.event;
+                    if (e) {
+                         var target = e.target;
+                         var closest = target.closest('#lc-inv-status-trigger, #lc-inv-status-container, #lc-inv-region-trigger, #lc-inv-region-container, #lc-inv-cat2-trigger, #lc-inv-cat2-container, #lc-inv-category-trigger, #lc-inv-category-container');
+                         if (closest) {
+                             return [style_status, style_region, style_cat2, style_cat, style_status_trigger, style_cat_trigger];
+                         } else {
+                            // Clicked outside. Close all.
+                            return [closed_style, closed_style, closed_style, closed_style, trigger_base_style, trigger_base_style];
+                         }
+                    }
+                }
+            }
+            
+            // Toggle Logic
+            var new_status = closed_style;
+            var new_region = closed_style;
+            var new_cat2 = closed_style;
+            var new_cat = closed_style;
+            var new_status_trigger = trigger_base_style;
+            var new_cat_trigger = trigger_base_style;
+            
+            var clicked_status = ctx.triggered.some(t => t.prop_id.startsWith('lc-inv-status-trigger'));
+            var clicked_region = ctx.triggered.some(t => t.prop_id.startsWith('lc-inv-region-trigger'));
+            var clicked_cat2 = ctx.triggered.some(t => t.prop_id.startsWith('lc-inv-cat2-trigger'));
+            var clicked_cat = ctx.triggered.some(t => t.prop_id.startsWith('lc-inv-category-trigger'));
+            
+            if (clicked_status) {
+                if (style_status && style_status.display === 'block') {
+                    new_status = closed_style;
+                    new_status_trigger = trigger_base_style;
+                } else {
+                    new_status = base_style;
+                    new_status_trigger = trigger_open_style;
+                }
+            } else if (clicked_region) {
+                new_region = (style_region && style_region.display === 'block') ? closed_style : base_style;
+            } else if (clicked_cat2) {
+                new_cat2 = (style_cat2 && style_cat2.display === 'block') ? closed_style : base_style;
+            } else if (clicked_cat) {
+                 if (style_cat && style_cat.display === 'block') {
+                    new_cat = closed_style;
+                    new_cat_trigger = trigger_base_style;
+                } else {
+                    new_cat = base_style;
+                    new_cat_trigger = trigger_open_style;
+                }
+            } else if (triggered_id === 'lc-dashboard-container') {
+                 return [closed_style, closed_style, closed_style, closed_style, trigger_base_style, trigger_base_style];
+            }
+            
+            return [new_status, new_region, new_cat2, new_cat, new_status_trigger, new_cat_trigger];
+        }
+        """,
+        [Output('lc-inv-status-container', 'style'),
+         Output('lc-inv-region-container', 'style'),
+         Output('lc-inv-cat2-container', 'style'),
+         Output('lc-inv-category-container', 'style'),
+         Output('lc-inv-status-dropdown', 'style'),
+         Output('lc-inv-category-dropdown', 'style')],
+        [Input('lc-inv-status-trigger', 'n_clicks'),
+         Input('lc-inv-region-trigger', 'n_clicks'),
+         Input('lc-inv-cat2-trigger', 'n_clicks'),
+         Input('lc-inv-category-trigger', 'n_clicks'),
+         Input('lc-dashboard-container', 'n_clicks')],
+        [State('lc-inv-status-container', 'style'),
+         State('lc-inv-region-container', 'style'),
+         State('lc-inv-cat2-container', 'style'),
+         State('lc-inv-category-container', 'style'),
+         State('lc-inv-status-dropdown', 'style'),
+         State('lc-inv-category-dropdown', 'style')],
         prevent_initial_call=True
     )
-    def toggle_region_checklist(n_clicks):
-        if n_clicks and n_clicks % 2 == 1:
-            return {'display': 'block', 'paddingLeft': '10px', 'marginTop': '5px'}
-        return {'display': 'none', 'paddingLeft': '10px', 'marginTop': '5px'}
-
-    @callback(
-        Output('lc-inv-cat2-container', 'style'),
-        Input('lc-inv-cat2-trigger', 'n_clicks'),
-        prevent_initial_call=True
-    )
-    def toggle_cat2_checklist(n_clicks):
-        if n_clicks and n_clicks % 2 == 1:
-            return {'display': 'block', 'paddingLeft': '10px', 'marginTop': '5px'}
-        return {'display': 'none', 'paddingLeft': '10px', 'marginTop': '5px'}
     
     @callback(
         [
@@ -1027,8 +1495,13 @@ def register_callbacks(dash_app, server):
             Output('lc-inv-country', 'options'),
             Output('lc-inv-category', 'options'),
             Output('lc-inv-region', 'options'),
-            Output('lc-inv-category-2', 'options')
+            Output('lc-inv-category-2', 'options'),
+            Output('lc-inv-region-label', 'children'),
+            Output('lc-inv-cat2-label', 'children'),
+            Output('lc-inv-status-label', 'children'),
+            Output('lc-inv-category-label', 'children')
         ],
+
         [
             Input('lc-inv-asset-search', 'value'),
             Input('lc-inv-peer-group', 'value'),
@@ -1040,11 +1513,65 @@ def register_callbacks(dash_app, server):
             Input('lc-inv-category', 'value'),
             Input('lc-inv-region', 'value'),
             Input('lc-inv-category-2', 'value')
+        ],
+        [
+            State('lc-inv-peer-group', 'options'),
+            State('lc-inv-year', 'options'),
+            State('lc-inv-company', 'options'),
+            State('lc-inv-type', 'options'),
+            State('lc-inv-status', 'options'),
+            State('lc-inv-country', 'options'),
+            State('lc-inv-category', 'options'),
+            State('lc-inv-region', 'options'),
+            State('lc-inv-category-2', 'options'),
+            State('lc-inv-region-label', 'children'),
+            State('lc-inv-cat2-label', 'children'),
+            State('lc-inv-status-label', 'children'),
+            State('lc-inv-category-label', 'children')
         ]
     )
-    def update_filter_options(asset_name, peer_group, year, company, inv_type, status, country, category, region, category_2):
+    def update_filter_options(asset_name, peer_group, year, company, inv_type, status, country, category, region, category_2,
+                              cur_peer_opts, cur_year_opts, cur_comp_opts, cur_type_opts, cur_status_opts, cur_country_opts,
+                              cur_cat_opts, cur_region_opts, cur_cat2_opts, cur_region_lbl, cur_cat2_lbl, cur_status_lbl, cur_cat_lbl):
         """Update all filter options dynamically based on other selections"""
         
+        # Determine labels for triggers
+        region_label = "(All)"
+        if region:
+            if 'All' in region:
+                region_label = "(All)"
+            elif len(region) == 1:
+                region_label = region[0]
+            else:
+                region_label = "(Multiple values)"
+                
+        cat2_label = "(All)"
+        if category_2:
+            if 'All' in category_2:
+                cat2_label = "(All)"
+            elif len(category_2) == 1:
+                cat2_label = category_2[0]
+            else:
+                cat2_label = "(Multiple values)"
+
+        category_label = "(All)"
+        if category:
+            if 'All' in category:
+                category_label = "(All)"
+            elif len(category) == 1:
+                category_label = category[0]
+            else:
+                category_label = "(Multiple values)"
+
+        status_label = "(All)"
+        if status:
+            if 'All' in status:
+                status_label = "(All)"
+            elif len(status) == 1:
+                status_label = status[0]
+            elif len(status) > 1:
+                status_label = "(Multiple values)"
+
         # Handle "All" in region - don't filter
         if not region or (region and 'All' in region):
             region_val = None
@@ -1057,15 +1584,27 @@ def register_callbacks(dash_app, server):
         else:
             cat2_val = category_2
             
+        # Handle "All" in category - don't filter
+        if not category or (category and 'All' in category):
+            cat_val = None
+        else:
+            cat_val = category
+        
+        # Handle "All" in status - don't filter
+        if not status or (status and 'All' in status):
+            status_val = None
+        else:
+            status_val = status
+            
         filters = {
             'asset_name': asset_name,
             'peer_group': peer_group,
             'year_announced': year,
             'company': company,
             'investment_type': inv_type,
-            'status': status,
+            'status': status_val,
             'country': country,
-            'project_category': category,
+            'project_category': cat_val,
             'region': region_val,
             'project_category_2': cat2_val
         }
@@ -1075,17 +1614,29 @@ def register_callbacks(dash_app, server):
         # Special handling for checklist options (keep 'All' if it exists)
         region_opts = [{'label': '(All)', 'value': 'All'}] + [opt for opt in opts['regions'] if opt['value'] != 'All']
         cat2_opts = [{'label': '(All)', 'value': 'All'}] + [opt for opt in opts['categories_2'] if opt['value'] != 'All']
+        category_opts = [{'label': '(All)', 'value': 'All'}] + [opt for opt in opts['categories'] if opt['value'] != 'All']
+        status_opts = [{'label': '(All)', 'value': 'All'}] + [opt for opt in opts['statuses'] if opt.get('value') != 'All']
         
+        # Helper to check for no update
+        def get_val(new, current):
+            if new == current:
+                return dash.no_update
+            return new
+
         return (
-            opts['peer_groups'],
-            opts['years'],
-            opts['companies'],
-            opts['investment_types'],
-            opts['statuses'],
-            opts['countries'],
-            opts['categories'],
-            region_opts,
-            cat2_opts
+            get_val(opts['peer_groups'], cur_peer_opts),
+            get_val(opts['years'], cur_year_opts),
+            get_val(opts['companies'], cur_comp_opts),
+            get_val(opts['investment_types'], cur_type_opts),
+            get_val(status_opts, cur_status_opts),
+            get_val(opts['countries'], cur_country_opts),
+            get_val(category_opts, cur_cat_opts),
+            get_val(region_opts, cur_region_opts),
+            get_val(cat2_opts, cur_cat2_opts),
+            get_val(region_label, cur_region_lbl),
+            get_val(cat2_label, cur_cat2_lbl),
+            get_val(status_label, cur_status_lbl),
+            get_val(category_label, cur_cat_lbl)
         )
     
     # Callback for Export to CSV
@@ -1099,6 +1650,66 @@ def register_callbacks(dash_app, server):
             df = pd.DataFrame(table_data)
             return dcc.send_data_frame(df.to_csv, "low_carbon_investments.csv", index=False)
         return None
+
+    # Callback for Export Summary CSV
+    @callback(
+        Output('download-summary-csv', 'data'),
+        [Input('btn-export-summary', 'n_clicks')],
+        [
+            State('lc-inv-asset-search', 'value'),
+            State('lc-inv-peer-group', 'value'),
+            State('lc-inv-year', 'value'),
+            State('lc-inv-company', 'value'),
+            State('lc-inv-type', 'value'),
+            State('lc-inv-status', 'value'),
+            State('lc-inv-country', 'value'),
+            State('lc-inv-category', 'value'),
+            State('lc-inv-region', 'value'),
+            State('lc-inv-category-2', 'value')
+        ]
+    )
+    def export_summary_csv(n_clicks, asset_name, peer_group, year, company, inv_type, status, country, category, region, category_2):
+        if not n_clicks:
+            return None
+            
+        # Handle empty or "All" in region - don't filter
+        if not region or (region and 'All' in region):
+            region = None
+        
+        # Handle empty or "All" in category_2 - don't filter
+        if not category_2 or (category_2 and 'All' in category_2):
+            category_2 = None
+            
+        # Build filters dict - same as update_summary to match the boxes
+        filters = {
+            'asset_name': None,        # Ignore asset search
+            'peer_group': peer_group,
+            'year_announced': year,
+            'company': company,
+            'investment_type': inv_type,
+            'status': status,
+            'country': country,
+            'project_category': None,  # Ignore category
+            'region': region,
+            'project_category_2': None # Ignore sub-category
+        }
+        
+        df = load_investments_data(filters)
+        
+        if df.empty:
+            return None
+            
+        # Aggregate by Project Category
+        summary_df = df.groupby('Project Category').agg({
+            'Asset Name': 'count',
+            'Investment ($ Million)': 'sum'
+        }).reset_index()
+        summary_df.columns = ['Project Category', 'Investment Count', 'Total Investment ($ Million)']
+        
+        # Sort by Count desc
+        summary_df = summary_df.sort_values('Investment Count', ascending=False)
+        
+        return dcc.send_data_frame(summary_df.to_csv, "low_carbon_investment_summary.csv", index=False)
     # Clientside callback to open reference link in new tab when cell is clicked
     dash_app.clientside_callback(
         """
