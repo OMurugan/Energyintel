@@ -327,7 +327,19 @@ def create_layout():
     """Create the Tracked Investments List layout"""
     
     # Load filter options
-    filter_opts = load_filter_options()
+    # Load filter options - CHANGED to load default options first to allow immediate rendering
+    # The actual options will be loaded by the callback update_filter_options
+    filter_opts = {
+        'peer_groups': [{'label': 'All', 'value': 'All'}],
+        'years': [{'label': 'All', 'value': 'All'}],
+        'companies': [{'label': 'All', 'value': 'All'}],
+        'investment_types': [{'label': 'All', 'value': 'All'}],
+        'statuses': [],
+        'countries': [{'label': 'All', 'value': 'All'}],
+        'categories': [{'label': 'All', 'value': 'All'}],
+        'regions': [{'label': 'All', 'value': 'All'}],
+        'categories_2': [{'label': 'All', 'value': 'All'}]
+    }
     
     # Load initial data - REMOVED to optmize initial load time (white screen)
     # df = load_investments_data()
@@ -345,6 +357,7 @@ def create_layout():
                 id="loading-initial",
                 type="default",
                 color="#f45d2d",
+                style={'flex': '1', 'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center'},
                 children=[
                     html.Div([
                 # Investment Count Summary Section (Dynamic)
@@ -374,6 +387,7 @@ def create_layout():
                         id="loading-summary",
                         type="circle",
                         color="#f45d2d",
+                        style={'minHeight': '100px', 'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center'},
                         children=[
                             html.Div(id='lc-inv-summary-boxes', children=[])
                         ]
@@ -400,6 +414,7 @@ def create_layout():
                         id="loading-table",
                         type="circle",
                         color="#f45d2d",
+                        style={'minHeight': '600px', 'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center'},
                         children=[
                             html.Div(id='lc-inv-link-dummy', style={'display': 'none'}),
                             dash_table.DataTable(
@@ -511,7 +526,7 @@ def create_layout():
                                })
                     ], style={'marginTop': '10px'})
                 ], style={'padding': '20px 0 20px 0', 'backgroundColor': '#ffffff', 'fontFamily': 'Arial, sans-serif'})
-                    ], style={'flex': '1', 'minWidth': '0', 'padding': '0 20px'})
+            ], style={'flex': '1', 'minWidth': '0', 'padding': '0 20px'})
                 ]
             ),
 
@@ -637,6 +652,7 @@ def create_layout():
                                 html.Span("(Multiple values)", id='lc-inv-status-label'),
                                 html.Span("▼", style={'fontSize': '8px', 'color': '#666'})
                             ], id='lc-inv-status-dropdown', style={
+                                'boxSizing': 'border-box',
                                 'border': '1px solid #ccc',
                                 'borderRadius': '3px',
                                 'padding': '5px 10px',
@@ -664,6 +680,7 @@ def create_layout():
                                 }
                             )
                         ], id='lc-inv-status-container', style={
+                            'boxSizing': 'border-box',
                             'display': 'none', 
                             'padding': '5px 10px', 
                             'marginTop': '5px',
@@ -713,6 +730,7 @@ def create_layout():
                                 html.Span("(All)", id='lc-inv-category-label'),
                                 html.Span("▼", style={'fontSize': '8px', 'color': '#666'})
                             ], id='lc-inv-category-dropdown', style={
+                                'boxSizing': 'border-box',
                                 'border': '1px solid #ccc',
                                 'borderRadius': '3px',
                                 'padding': '5px 10px',
@@ -740,9 +758,10 @@ def create_layout():
                                 }
                             )
                         ], id='lc-inv-category-container', style={
+                            'boxSizing': 'border-box',
                             'display': 'none', 
                             'padding': '5px 10px', 
-                            'marginTop': '5px',
+                            'marginTop': '-5px',
                             'border': '1px solid #ccc',
                             'borderRadius': '3px',
                             'maxHeight': '200px',
@@ -903,8 +922,8 @@ def register_callbacks(dash_app, server):
     
     @callback(
         Output('lc-inv-region', 'value'),
-        [Input('lc-inv-region', 'value')],
-        [State('lc-inv-region', 'options')]
+        [Input('lc-inv-region', 'value'),
+         Input('lc-inv-region', 'options')]
     )
     def handle_region_all(selected_values, all_options):
         """Handle (All) checkbox for Region"""
@@ -929,8 +948,8 @@ def register_callbacks(dash_app, server):
     
     @callback(
         Output('lc-inv-category-2', 'value'),
-        [Input('lc-inv-category-2', 'value')],
-        [State('lc-inv-category-2', 'options')]
+        [Input('lc-inv-category-2', 'value'),
+         Input('lc-inv-category-2', 'options')]
     )
     def handle_category2_all(selected_values, all_options):
         """Handle (All) checkbox for Project Category 2"""
@@ -955,8 +974,8 @@ def register_callbacks(dash_app, server):
 
     @callback(
         Output('lc-inv-category', 'value', allow_duplicate=True),
-        [Input('lc-inv-category', 'value')],
-        [State('lc-inv-category', 'options')],
+        [Input('lc-inv-category', 'value'),
+         Input('lc-inv-category', 'options')],
         prevent_initial_call=True
     )
     def handle_category_all(selected_values, all_options):
@@ -982,8 +1001,8 @@ def register_callbacks(dash_app, server):
     
     @callback(
         Output('lc-inv-status', 'value'),
-        [Input('lc-inv-status', 'value')],
-        [State('lc-inv-status', 'options')]
+        [Input('lc-inv-status', 'value'),
+         Input('lc-inv-status', 'options')]
     )
     def handle_status_all(selected_values, all_options):
         """Handle (All) checkbox for Status"""
@@ -1242,30 +1261,60 @@ def register_callbacks(dash_app, server):
     # Clientside callback to handle dropdown toggling and click-outside logic
     dash_app.clientside_callback(
         """
-        function(n_status, n_region, n_cat2, n_cat, n_container, style_status, style_region, style_cat2, style_cat) {
+        function(n_status, n_region, n_cat2, n_cat, n_container, style_status, style_region, style_cat2, style_cat, style_status_trigger, style_cat_trigger) {
             var ctx = dash_clientside.callback_context;
             if (!ctx.triggered || ctx.triggered.length === 0) {
-                return [style_status, style_region, style_cat2, style_cat];
+                return [style_status, style_region, style_cat2, style_cat, style_status_trigger, style_cat_trigger];
             }
             
             var triggered_id = ctx.triggered[0].prop_id.split('.')[0];
             
-            // Base style for open state
+            // Base style for open state (Container)
             var base_style = {
+                'boxSizing': 'border-box',
                 'padding': '5px 10px',
-                'marginTop': '5px',
+                'marginTop': '0px',
                 'border': '1px solid #ccc',
+                'borderTop': '0px',
                 'borderRadius': '3px',
                 'maxHeight': '200px',
                 'overflowY': 'auto',
                 'backgroundColor': '#fff',
                 'position': 'absolute',
                 'zIndex': '1000',
-                'width': '150px',
+                'width': '100%',
+                'top': '100%',
+                'left': '0',
                 'display': 'block'
             };
             
             var closed_style = Object.assign({}, base_style, {'display': 'none'});
+            
+            // Trigger Base Style (Shared)
+            var trigger_base_style = {
+                'boxSizing': 'border-box',
+                'border': '1px solid #ccc',
+                'borderBottom': '1px solid #ccc',
+                'borderRadius': '3px',
+                'borderBottomLeftRadius': '3px',
+                'borderBottomRightRadius': '3px',
+                'padding': '5px 10px',
+                'fontSize': '12px',
+                'fontFamily': 'Arial, sans-serif',
+                'backgroundColor': 'white',
+                'marginBottom': '5px',
+                'display': 'flex',
+                'justifyContent': 'space-between',
+                'alignItems': 'center',
+                'cursor': 'pointer'
+            };
+
+            var trigger_open_style = Object.assign({}, trigger_base_style, {
+                'borderBottom': 'none',
+                'borderBottomLeftRadius': '0',
+                'borderBottomRightRadius': '0',
+                'marginBottom': '0'
+            });
             
             // If container was clicked (checking for outside clicks)
             if (triggered_id === 'lc-dashboard-container') {
@@ -1285,10 +1334,10 @@ def register_callbacks(dash_app, server):
                          var target = e.target;
                          var closest = target.closest('#lc-inv-status-trigger, #lc-inv-status-container, #lc-inv-region-trigger, #lc-inv-region-container, #lc-inv-cat2-trigger, #lc-inv-cat2-container, #lc-inv-category-trigger, #lc-inv-category-container');
                          if (closest) {
-                             return [style_status, style_region, style_cat2, style_cat];
+                             return [style_status, style_region, style_cat2, style_cat, style_status_trigger, style_cat_trigger];
                          } else {
                             // Clicked outside. Close all.
-                            return [closed_style, closed_style, closed_style, closed_style];
+                            return [closed_style, closed_style, closed_style, closed_style, trigger_base_style, trigger_base_style];
                          }
                     }
                 }
@@ -1299,6 +1348,8 @@ def register_callbacks(dash_app, server):
             var new_region = closed_style;
             var new_cat2 = closed_style;
             var new_cat = closed_style;
+            var new_status_trigger = trigger_base_style;
+            var new_cat_trigger = trigger_base_style;
             
             var clicked_status = ctx.triggered.some(t => t.prop_id.startsWith('lc-inv-status-trigger'));
             var clicked_region = ctx.triggered.some(t => t.prop_id.startsWith('lc-inv-region-trigger'));
@@ -1306,24 +1357,38 @@ def register_callbacks(dash_app, server):
             var clicked_cat = ctx.triggered.some(t => t.prop_id.startsWith('lc-inv-category-trigger'));
             
             if (clicked_status) {
-                new_status = (style_status && style_status.display === 'block') ? closed_style : base_style;
+                if (style_status && style_status.display === 'block') {
+                    new_status = closed_style;
+                    new_status_trigger = trigger_base_style;
+                } else {
+                    new_status = base_style;
+                    new_status_trigger = trigger_open_style;
+                }
             } else if (clicked_region) {
                 new_region = (style_region && style_region.display === 'block') ? closed_style : base_style;
             } else if (clicked_cat2) {
                 new_cat2 = (style_cat2 && style_cat2.display === 'block') ? closed_style : base_style;
             } else if (clicked_cat) {
-                new_cat = (style_cat && style_cat.display === 'block') ? closed_style : base_style;
+                 if (style_cat && style_cat.display === 'block') {
+                    new_cat = closed_style;
+                    new_cat_trigger = trigger_base_style;
+                } else {
+                    new_cat = base_style;
+                    new_cat_trigger = trigger_open_style;
+                }
             } else if (triggered_id === 'lc-dashboard-container') {
-                 return [closed_style, closed_style, closed_style, closed_style];
+                 return [closed_style, closed_style, closed_style, closed_style, trigger_base_style, trigger_base_style];
             }
             
-            return [new_status, new_region, new_cat2, new_cat];
+            return [new_status, new_region, new_cat2, new_cat, new_status_trigger, new_cat_trigger];
         }
         """,
         [Output('lc-inv-status-container', 'style'),
          Output('lc-inv-region-container', 'style'),
          Output('lc-inv-cat2-container', 'style'),
-         Output('lc-inv-category-container', 'style')],
+         Output('lc-inv-category-container', 'style'),
+         Output('lc-inv-status-dropdown', 'style'),
+         Output('lc-inv-category-dropdown', 'style')],
         [Input('lc-inv-status-trigger', 'n_clicks'),
          Input('lc-inv-region-trigger', 'n_clicks'),
          Input('lc-inv-cat2-trigger', 'n_clicks'),
@@ -1332,7 +1397,9 @@ def register_callbacks(dash_app, server):
         [State('lc-inv-status-container', 'style'),
          State('lc-inv-region-container', 'style'),
          State('lc-inv-cat2-container', 'style'),
-         State('lc-inv-category-container', 'style')],
+         State('lc-inv-category-container', 'style'),
+         State('lc-inv-status-dropdown', 'style'),
+         State('lc-inv-category-dropdown', 'style')],
         prevent_initial_call=True
     )
     
