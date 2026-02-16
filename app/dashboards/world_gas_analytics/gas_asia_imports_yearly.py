@@ -1915,10 +1915,40 @@ def register_callbacks(dash_app, server):
 
 def _iso_for_country(country):
     """Return ISO Alpha-3 code for a country, using centralized mapping with Asian country additions."""
-    # Add missing Asian countries to the mapping
+    # Add missing Asian and origin countries to the mapping
     asian_additions = {
         'Taiwan': 'TWN',
         'New Zealand': 'NZL',
+        'Angola': 'AGO',
+        'Algeria': 'DZA',
+        'Brunei': 'BRN',
+        'Canada': 'CAN',
+        'Egypt': 'EGY',
+        'Equatorial Guinea': 'GNQ',
+        'Japan': 'JPN',
+        'Kazakhstan': 'KAZ',
+        'Mauritania': 'MRT',
+        'Mozambique': 'MOZ',
+        'Myanmar': 'MMR',
+        'Nigeria': 'NGA',
+        'Oman': 'OMN',
+        'Papua New Guinea': 'PNG',
+        'Peru': 'PER',
+        'Qatar': 'QAT',
+        'Russia': 'RUS',
+        'Senegal': 'SEN',
+        'Singapore': 'SGP',
+        'South Africa': 'ZAF',
+        'South Korea': 'KOR',
+        'Trinidad and Tobago': 'TTO',
+        'Turkmenistan': 'TKM',
+        'United Arab Emirates': 'ARE',
+        'United States': 'USA',
+        'Uzbekistan': 'UZB',
+        'Australia': 'AUS',
+        'China': 'CHN',
+        'Indonesia': 'IDN',
+        'Malaysia': 'MYS',
     }
     
     # Check Asian additions first
@@ -1959,9 +1989,10 @@ def update_asia_map(unit, flow_type, dest, origins):
         SUM(tr.value / {scale}) as total_value
     FROM glng_gas_trade tr
     LEFT JOIN dim_country co ON co.dim_country_id = tr.source_country_id
+    LEFT JOIN dim_country dest_co ON dest_co.dim_country_id = tr.target_country_id
     WHERE EXTRACT(YEAR FROM tr.date) = 2025
       AND tr.unit = '{data_unit}'
-      AND (LOWER(co.region) IN ('asia', 'oceania') OR co.country_long_name IS NULL)
+      AND (LOWER(dest_co.region) IN ('asia', 'oceania') OR dest_co.country_long_name IS NULL)
       {flow_clause}
       {origin_clause}
       {dest_clause}
@@ -1981,20 +2012,26 @@ def update_asia_map(unit, flow_type, dest, origins):
         
         # Get ISO codes using helper
         df['iso'] = df['origin'].apply(_iso_for_country)
+        
+        # Debug: Print countries without ISO codes
+        missing_iso = df[df['iso'].isna()]['origin'].tolist()
+        if missing_iso:
+            print(f"WARNING: Missing ISO codes for: {missing_iso}")
+        
         df = df.dropna(subset=['iso'])
         
         if df.empty:
             from .shared_map_utils import create_empty_map
             return create_empty_map("No geographic data for these origins", height=500), title
 
-        # Colorscale - subdued blues matching Figure 1
+        # Updated colorscale - lighter blue to darker blue
         colorscale = [
-            (0.0, '#e6f2f8'),  # Very light grayish-blue (for low values)
-            (0.3, '#b3d9e8'),  # Light blue-gray
-            (0.5, '#80c1d8'),  # Medium blue
-            (0.7, '#5a9fba'),  # Medium-dark blue
-            (0.9, '#4682b4'),  # Steel blue (for high values like Russia)
-            (1.0, '#36648B')   # Dark steel blue (for highest values)
+            (0.0, '#b8ddf1'),  # Lightest blue (for lowest values)
+            (0.2, '#9ac9e6'),  # Light blue
+            (0.4, '#7cb5db'),  # Medium-light blue
+            (0.6, '#5ea1d0'),  # Medium blue
+            (0.8, '#5d8db5'),  # Medium-dark blue
+            (1.0, '#507497')   # Darkest blue (for highest values)
         ]
         
         # Selection handling - check if a specific origin is selected
