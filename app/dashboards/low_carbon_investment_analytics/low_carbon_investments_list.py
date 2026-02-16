@@ -381,7 +381,7 @@ def create_layout():
         # Store components for filter state tracking
         dcc.Store(id='store-lc-inv-region', data=[]),
         dcc.Store(id='store-lc-inv-cat2', data=[]),
-        dcc.Store(id='store-lc-inv-category', data=[]),
+
         dcc.Store(id='store-lc-inv-status', data=[]),
         
         # Main Container (Flex) - Splits into Main Content (Left) and Sidebar (Right)
@@ -760,53 +760,14 @@ def create_layout():
                             'display': 'block',
                             'fontFamily': 'Arial, sans-serif'
                         }),
-                        html.Div([
-                            html.Div([
-                                html.Span("(All)", id='lc-inv-category-label'),
-                                html.Span("▼", style={'fontSize': '8px', 'color': '#666'})
-                            ], id='lc-inv-category-dropdown', style={
-                                'boxSizing': 'border-box',
-                                'border': '1px solid #ccc',
-                                'borderRadius': '3px',
-                                'padding': '5px 10px',
-                                'fontSize': '12px',
-                                'fontFamily': 'Arial, sans-serif',
-                                'backgroundColor': 'white',
-                                'marginBottom': '5px',
-                                'display': 'flex',
-                                'justifyContent': 'space-between',
-                                'alignItems': 'center',
-                                'cursor': 'pointer'
-                            }),
-                        ], id='lc-inv-category-trigger', n_clicks=0, style={'cursor': 'pointer'}),
-                        html.Div([
-                            dcc.Checklist(
-                                id='lc-inv-category',
-                                options=[{'label': '(All)', 'value': 'All'}] + [opt for opt in filter_opts['categories'] if opt['value'] != 'All'],
-                                value=['All'] + [opt['value'] for opt in filter_opts['categories']],  # All checked by default
-                                labelStyle={
-                                    'display': 'block',
-                                    'fontSize': '11px',
-                                    'color': '#333',
-                                    'fontFamily': 'Arial, sans-serif',
-                                    'marginBottom': '3px'
-                                }
-                            )
-                        ], id='lc-inv-category-container', style={
-                            'boxSizing': 'border-box',
-                            'display': 'none', 
-                            'padding': '5px 10px', 
-                            'marginTop': '-5px',
-                            'border': '1px solid #ccc',
-                            'borderRadius': '3px',
-                            'maxHeight': '200px',
-                            'overflowY': 'auto',
-                            'backgroundColor': '#fff',
-                            'position': 'absolute',
-                            'zIndex': '1000',
-                             'width': '150px'
-                        })
-                    ], style={'flex': '1', 'position': 'relative'}),
+                        dcc.Dropdown(
+                            id='lc-inv-category',
+                            options=[{'label': '(All)', 'value': 'All'}] + [opt for opt in filter_opts['categories'] if opt['value'] != 'All'],
+                            value='All',
+                            clearable=False,
+                            style={'fontSize': '12px', 'fontFamily': 'Arial, sans-serif'}
+                        )
+                    ], style={'flex': '1'}),
                 ], style={'display': 'flex', 'gap': '10px', 'marginBottom': '15px'}),
                 
                 # Row 5: Region + Project Category 2
@@ -1034,42 +995,7 @@ def register_callbacks(dash_app, server):
             
         return selected_values, selected_values
 
-    @callback(
-        Output('lc-inv-category', 'value', allow_duplicate=True),
-        Output('store-lc-inv-category', 'data'),
-        Input('lc-inv-category', 'value'),
-        State('lc-inv-category', 'options'),
-        State('store-lc-inv-category', 'data'),
-        prevent_initial_call=True
-    )
-    def handle_category_all(selected_values, all_options, previous_values):
-        """Handle (All) checkbox for Project Category with robust state tracking"""
-        if selected_values is None:
-            return [], []
-            
-        all_values = [opt['value'] for opt in all_options if opt['value'] != 'All']
-        previous_values = previous_values or []
-        
-        has_all = 'All' in selected_values
-        prev_has_all = 'All' in previous_values
-        
-        if has_all and not prev_has_all:
-            result = ['All'] + all_values
-            return result, result
-            
-        if not has_all and prev_has_all:
-             if set(previous_values) - set(selected_values) == {'All'}:
-                 return [], []
-        
-        if has_all and len(selected_values) < len(all_values) + 1:
-            result = [v for v in selected_values if v != 'All']
-            return result, result
-            
-        if not has_all and len(selected_values) == len(all_values):
-            result = ['All'] + all_values
-            return result, result
-            
-        return selected_values, selected_values
+
     
     @callback(
         Output('lc-inv-status', 'value'),
@@ -1276,8 +1202,8 @@ def register_callbacks(dash_app, server):
                     is_current = True
             
             if is_current:
-                return ['All'] # Reset list to All
-            return [new_selection] # Set list to single selection
+                return 'All' # Reset to All
+            return new_selection # Set to single selection
         except:
             return dash.no_update
     
@@ -1343,10 +1269,10 @@ def register_callbacks(dash_app, server):
     # Clientside callback to handle dropdown toggling and click-outside logic
     dash_app.clientside_callback(
         """
-        function(n_status, n_region, n_cat2, n_cat, n_container, style_status, style_region, style_cat2, style_cat, style_status_trigger, style_cat_trigger) {
+        function(n_status, n_region, n_cat2, n_container, style_status, style_region, style_cat2, style_status_trigger) {
             var ctx = dash_clientside.callback_context;
             if (!ctx.triggered || ctx.triggered.length === 0) {
-                return [style_status, style_region, style_cat2, style_cat, style_status_trigger, style_cat_trigger];
+                return [style_status, style_region, style_cat2, style_status_trigger];
             }
             
             var triggered_id = ctx.triggered[0].prop_id.split('.')[0];
@@ -1414,12 +1340,12 @@ def register_callbacks(dash_app, server):
                     var e = window.event;
                     if (e) {
                          var target = e.target;
-                         var closest = target.closest('#lc-inv-status-trigger, #lc-inv-status-container, #lc-inv-region-trigger, #lc-inv-region-container, #lc-inv-cat2-trigger, #lc-inv-cat2-container, #lc-inv-category-trigger, #lc-inv-category-container');
+                         var closest = target.closest('#lc-inv-status-trigger, #lc-inv-status-container, #lc-inv-region-trigger, #lc-inv-region-container, #lc-inv-cat2-trigger, #lc-inv-cat2-container');
                          if (closest) {
-                             return [style_status, style_region, style_cat2, style_cat, style_status_trigger, style_cat_trigger];
+                             return [style_status, style_region, style_cat2, style_status_trigger];
                          } else {
                             // Clicked outside. Close all.
-                            return [closed_style, closed_style, closed_style, closed_style, trigger_base_style, trigger_base_style];
+                            return [closed_style, closed_style, closed_style, trigger_base_style];
                          }
                     }
                 }
@@ -1429,14 +1355,11 @@ def register_callbacks(dash_app, server):
             var new_status = closed_style;
             var new_region = closed_style;
             var new_cat2 = closed_style;
-            var new_cat = closed_style;
             var new_status_trigger = trigger_base_style;
-            var new_cat_trigger = trigger_base_style;
             
             var clicked_status = ctx.triggered.some(t => t.prop_id.startsWith('lc-inv-status-trigger'));
             var clicked_region = ctx.triggered.some(t => t.prop_id.startsWith('lc-inv-region-trigger'));
             var clicked_cat2 = ctx.triggered.some(t => t.prop_id.startsWith('lc-inv-cat2-trigger'));
-            var clicked_cat = ctx.triggered.some(t => t.prop_id.startsWith('lc-inv-category-trigger'));
             
             if (clicked_status) {
                 if (style_status && style_status.display === 'block') {
@@ -1450,38 +1373,25 @@ def register_callbacks(dash_app, server):
                 new_region = (style_region && style_region.display === 'block') ? closed_style : base_style;
             } else if (clicked_cat2) {
                 new_cat2 = (style_cat2 && style_cat2.display === 'block') ? closed_style : base_style;
-            } else if (clicked_cat) {
-                 if (style_cat && style_cat.display === 'block') {
-                    new_cat = closed_style;
-                    new_cat_trigger = trigger_base_style;
-                } else {
-                    new_cat = base_style;
-                    new_cat_trigger = trigger_open_style;
-                }
             } else if (triggered_id === 'lc-dashboard-container') {
-                 return [closed_style, closed_style, closed_style, closed_style, trigger_base_style, trigger_base_style];
+                 return [closed_style, closed_style, closed_style, trigger_base_style];
             }
             
-            return [new_status, new_region, new_cat2, new_cat, new_status_trigger, new_cat_trigger];
+            return [new_status, new_region, new_cat2, new_status_trigger];
         }
         """,
         [Output('lc-inv-status-container', 'style'),
          Output('lc-inv-region-container', 'style'),
          Output('lc-inv-cat2-container', 'style'),
-         Output('lc-inv-category-container', 'style'),
-         Output('lc-inv-status-dropdown', 'style'),
-         Output('lc-inv-category-dropdown', 'style')],
+         Output('lc-inv-status-dropdown', 'style')],
         [Input('lc-inv-status-trigger', 'n_clicks'),
          Input('lc-inv-region-trigger', 'n_clicks'),
          Input('lc-inv-cat2-trigger', 'n_clicks'),
-         Input('lc-inv-category-trigger', 'n_clicks'),
          Input('lc-dashboard-container', 'n_clicks')],
         [State('lc-inv-status-container', 'style'),
          State('lc-inv-region-container', 'style'),
          State('lc-inv-cat2-container', 'style'),
-         State('lc-inv-category-container', 'style'),
-         State('lc-inv-status-dropdown', 'style'),
-         State('lc-inv-category-dropdown', 'style')],
+         State('lc-inv-status-dropdown', 'style')],
         prevent_initial_call=True
     )
     
@@ -1498,8 +1408,7 @@ def register_callbacks(dash_app, server):
             Output('lc-inv-category-2', 'options'),
             Output('lc-inv-region-label', 'children'),
             Output('lc-inv-cat2-label', 'children'),
-            Output('lc-inv-status-label', 'children'),
-            Output('lc-inv-category-label', 'children')
+            Output('lc-inv-status-label', 'children')
         ],
 
         [
@@ -1526,13 +1435,12 @@ def register_callbacks(dash_app, server):
             State('lc-inv-category-2', 'options'),
             State('lc-inv-region-label', 'children'),
             State('lc-inv-cat2-label', 'children'),
-            State('lc-inv-status-label', 'children'),
-            State('lc-inv-category-label', 'children')
+            State('lc-inv-status-label', 'children')
         ]
     )
     def update_filter_options(asset_name, peer_group, year, company, inv_type, status, country, category, region, category_2,
                               cur_peer_opts, cur_year_opts, cur_comp_opts, cur_type_opts, cur_status_opts, cur_country_opts,
-                              cur_cat_opts, cur_region_opts, cur_cat2_opts, cur_region_lbl, cur_cat2_lbl, cur_status_lbl, cur_cat_lbl):
+                              cur_cat_opts, cur_region_opts, cur_cat2_opts, cur_region_lbl, cur_cat2_lbl, cur_status_lbl):
         """Update all filter options dynamically based on other selections"""
         
         # Determine labels for triggers
@@ -1554,14 +1462,7 @@ def register_callbacks(dash_app, server):
             else:
                 cat2_label = "(Multiple values)"
 
-        category_label = "(All)"
-        if category:
-            if 'All' in category:
-                category_label = "(All)"
-            elif len(category) == 1:
-                category_label = category[0]
-            else:
-                category_label = "(Multiple values)"
+
 
         status_label = "(All)"
         if status:
@@ -1635,8 +1536,7 @@ def register_callbacks(dash_app, server):
             get_val(cat2_opts, cur_cat2_opts),
             get_val(region_label, cur_region_lbl),
             get_val(cat2_label, cur_cat2_lbl),
-            get_val(status_label, cur_status_lbl),
-            get_val(category_label, cur_cat_lbl)
+            get_val(status_label, cur_status_lbl)
         )
     
     # Callback for Export to CSV
