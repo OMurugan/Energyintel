@@ -207,22 +207,25 @@ def create_layout():
                             html.Button("Export to CSV", id="export-asia-imports-chart-csv-btn", style=EXPORT_BTN_STYLE)
                         ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px'}),
                         
-                        dcc.Loading(
-                            id='loading-asia-imports-chart',
-                            type='circle',
-                            color=EI_ORANGE,
-                            children=dcc.Graph(
-                                id='asia-imports-bar-chart',
-                                style={'height': '500px'},
-                                config={
-                                    'displayModeBar': True,
-                                    'modeBarButtonsToAdd': ['zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d'],
-                                    'modeBarButtonsToRemove': ['lasso2d', 'select2d', 'zoom2d', 'pan2d'],
-                                    'displaylogo': False,
-                                    'scrollZoom': False  # Disable scroll zoom to avoid confusion
-                                }
+                        # Scrollable container for chart
+                        html.Div([
+                            dcc.Loading(
+                                id='loading-asia-imports-chart',
+                                type='circle',
+                                color=EI_ORANGE,
+                                children=dcc.Graph(
+                                    id='asia-imports-bar-chart',
+                                    style={'height': '500px'},
+                                    config={
+                                        'displayModeBar': True,
+                                        'modeBarButtonsToAdd': ['zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d'],
+                                        'modeBarButtonsToRemove': ['lasso2d', 'select2d', 'zoom2d', 'pan2d'],
+                                        'displaylogo': False,
+                                        'scrollZoom': False  # Disable scroll zoom to avoid confusion
+                                    }
+                                )
                             )
-                        )
+                        ], id='asia-chart-scroll-container', style={'overflowX': 'auto', 'overflowY': 'hidden'})
                     ], id='asia-chart-container', style={'width': '50%', 'padding': '10px', 'backgroundColor': 'white'}),
                     
                     # Map Section
@@ -846,8 +849,8 @@ def register_callbacks(dash_app, server):
         FROM glng_gas_trade tr
         LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
         WHERE tr.unit = '{data_unit}'
-          AND (LOWER(co.region) IN ('asia', 'oceania') OR co.country_long_name IS NULL)
-          AND EXTRACT(YEAR FROM tr.date) >= 2019
+          AND (LOWER(co.region) IN ('asia', 'oceania') OR co.country_long_name IS  NULL)
+          AND EXTRACT(YEAR FROM tr.date) >= 2019 
         ORDER BY 1;
         """
         # Query origins from trade data (Global origins that import to Asia/Oceania)
@@ -855,9 +858,9 @@ def register_callbacks(dash_app, server):
         SELECT DISTINCT tr.source_country
         FROM glng_gas_trade tr
         LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
-        WHERE tr.unit = '{data_unit}'
-          AND (LOWER(co.region) IN ('asia', 'oceania') OR co.country_long_name IS NULL)
-          AND EXTRACT(YEAR FROM tr.date) >= 2019
+        WHERE tr.unit = '{data_unit}' AND tr.value is not NULL 
+          AND (LOWER(co.region) IN ('asia', 'oceania'))
+          AND EXTRACT(YEAR FROM tr.date) >= 2019 
         ORDER BY 1;
         """
         
@@ -963,7 +966,8 @@ def register_callbacks(dash_app, server):
         [Output('asia-imports-bar-chart', 'figure'),
          Output('asia-imports-origin-chart-title', 'children'),
          Output('asia-chart-container', 'style'),
-         Output('asia-map-container', 'style')],
+         Output('asia-map-container', 'style'),
+         Output('asia-imports-bar-chart', 'style')],
         [Input('asia-unit-filter', 'value'),
          Input('asia-flow-type-filter', 'value'),
          Input('asia-origin-dropdown', 'value'),
@@ -975,6 +979,16 @@ def register_callbacks(dash_app, server):
         # Default styles (50/50 split)
         chart_style = {'width': '50%', 'padding': '10px', 'backgroundColor': 'white'}
         map_style = {'width': '50%', 'padding': '10px', 'backgroundColor': 'white'}
+        
+        # Dynamic chart width based on granularity
+        if granularity == 'month':
+            chart_width = '3000px'  # Wide enough for monthly bars
+        elif granularity == 'day':
+            chart_width = '5000px'  # Very wide for daily bars
+        else:
+            chart_width = '100%'  # Normal width for year/quarter
+        
+        graph_style = {'height': '500px', 'width': chart_width}
         
         # Unit and Scale
         chart_data_unit = 'Mcm' if unit == 'Bcm' else 'GWh'
@@ -1050,16 +1064,16 @@ def register_callbacks(dash_app, server):
             
             results = execute_query(query)
             df = pd.DataFrame(results)
-            if df.empty: return go.Figure(), chart_title, chart_style, map_style
+            if df.empty: return go.Figure(), chart_title, chart_style, map_style, graph_style
 
             df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
             df = df.dropna(subset=['Value', 'Destination', 'Origin']).copy()
-            if df.empty: return go.Figure(), chart_title, chart_style, map_style
+            if df.empty: return go.Figure(), chart_title, chart_style, map_style, graph_style
 
             # 1. Sort Destinations Alphabetically
             top_dest = sorted(df['Destination'].unique().tolist())
             df = df[df['Destination'].isin(top_dest)].copy()
-            if df.empty: return go.Figure(), chart_title, chart_style, map_style
+            if df.empty: return go.Figure(), chart_title, chart_style, map_style, graph_style
 
             # 2. Origin grouping
             origin_vols = df.groupby('Origin')['Value'].sum().sort_values(ascending=False)
@@ -1181,8 +1195,9 @@ def register_callbacks(dash_app, server):
                     if i == len(all_dests) // 2:
                         show_label = True
                 elif granularity in ('month', 'day'):
-                    # First and second value
-                    if i in (0, 1):
+                    # First bar named, then skip 2, then 4th bar named, skip 2, repeat
+                    # Pattern: Named (0), Unnamed (1,2), Named (3), Unnamed (4,5), Named (6)...
+                    if i % 3 == 0:
                         show_label = True
                 
                 tick_text.append(d if show_label else " ")
@@ -1203,6 +1218,7 @@ def register_callbacks(dash_app, server):
             # Triple Headers Logic (Fig 2 sketch)
             seen_years = {}
             seen_quarters = {}
+            
             def format_annotation(a):
                 if not a.text: return
                 try:
@@ -1212,37 +1228,93 @@ def register_callbacks(dash_app, server):
                     yr, q, m = parts[0], parts[1], parts[2]
                     
                     label = ""
-                    # Row 1: Year
-                    if yr not in seen_years:
-                        label += f"<b>{yr}</b><br>"
-                        seen_years[yr] = True
-                    else:
-                        label += "<br>" 
-
-                    # Row 2: Quarter
-                    q_key = f"{yr}-{q}"
-                    if q and q_key not in seen_quarters:
-                        label += f"<b>{q}</b><br>"
-                        seen_quarters[q_key] = True
-                    elif q:
-                        label += "<br>"
                     
-                    # Row 3: Month
-                    if granularity == 'month': label += f"{m}"
-                    elif granularity == 'quarter': label += ""
-                    elif granularity == 'year': label = f"<b>{yr}</b>"
+                    if granularity == 'month':
+                        # For monthly view: Year centered, Quarter labels, Month at bottom
+                        # Row 1: Year (only show once, centered between Q2 and Q3)
+                        if yr not in seen_years:
+                            # Only show year label for Q2 or Q3 to center it
+                            if q in ('Q2', 'Q3'):
+                                label += f"<b>{yr}</b><br>"
+                                seen_years[yr] = True
+                            else:
+                                label += "<br>"
+                        else:
+                            label += "<br>"
+                        
+                        # Row 2: Quarter (show for each quarter)
+                        q_key = f"{yr}-{q}"
+                        if q and q_key not in seen_quarters:
+                            label += f"<b>{q}</b><br>"
+                            seen_quarters[q_key] = True
+                        elif q:
+                            label += "<br>"
+                        else:
+                            label += "<br>"
+                        
+                        # Row 3: Month (always show)
+                        if m:
+                            label += f"{m}"
+                        
+                    elif granularity == 'day':
+                        # For daily view: Year centered, Quarter labels, Month + Day at bottom
+                        if len(parts) < 4: return
+                        day = parts[3]
+                        
+                        # Row 1: Year (only show once, centered between Q2 and Q3)
+                        if yr not in seen_years:
+                            if q in ('Q2', 'Q3'):
+                                label += f"<b>{yr}</b><br>"
+                                seen_years[yr] = True
+                            else:
+                                label += "<br>"
+                        else:
+                            label += "<br>"
+                        
+                        # Row 2: Quarter (show for each quarter)
+                        q_key = f"{yr}-{q}"
+                        if q and q_key not in seen_quarters:
+                            label += f"<b>{q}</b><br>"
+                            seen_quarters[q_key] = True
+                        elif q:
+                            label += "<br>"
+                        else:
+                            label += "<br>"
+                        
+                        # Row 3: Month + Day (e.g., "Jan 1", "Feb 1")
+                        if m and day:
+                            label += f"{m} {day}"
+                        
+                    elif granularity == 'quarter':
+                        # Row 1: Year
+                        if yr not in seen_years:
+                            label += f"<b>{yr}</b><br>"
+                            seen_years[yr] = True
+                        else:
+                            label += "<br>" 
+
+                        # Row 2: Quarter
+                        q_key = f"{yr}-{q}"
+                        if q and q_key not in seen_quarters:
+                            label += f"<b>{q}</b><br>"
+                            seen_quarters[q_key] = True
+                        elif q:
+                            label += "<br>"
+                    
+                    elif granularity == 'year':
+                        label = f"<b>{yr}</b>"
 
                     a.update(text=label, font=dict(size=9, color=EI_DARK_BLUE), y=1.02, yanchor='bottom')
                 except:
                     pass
 
             fig.for_each_annotation(format_annotation)
-            return fig, chart_title, chart_style, map_style
+            return fig, chart_title, chart_style, map_style, graph_style
             
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return go.Figure(), chart_title, chart_style, map_style
+            return go.Figure(), chart_title, chart_style, map_style, {'height': '500px', 'width': '100%'}
 
     @dash_app.callback(
         [Output('asia-imports-yearly-map', 'figure'),
