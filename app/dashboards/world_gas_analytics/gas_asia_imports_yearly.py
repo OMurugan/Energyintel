@@ -327,8 +327,19 @@ def create_layout():
                     
                     # Legend Area
                     html.Div([
-                        html.Label("Origin", style={'fontSize': '12px', 'fontWeight': 'bold', 'color': '#777', 'marginTop': '20px', 'display': 'block'}),
-                        html.Div(id='asia-origin-legend-items', style={'maxHeight': '400px', 'overflowY': 'auto', 'padding': '5px'})
+                        html.Label("Origin", style={'fontSize': '12px', 'fontWeight': 'bold', 'color': '#777', 'marginTop': '20px', 'display': 'block', 'marginBottom': '10px'}),
+                        html.Div(
+                            id='asia-origin-legend-items', 
+                            style={
+                                'maxHeight': '500px', 
+                                'overflowY': 'auto', 
+                                'overflowX': 'hidden',
+                                'padding': '5px',
+                                'border': '1px solid #eee',
+                                'borderRadius': '4px',
+                                'backgroundColor': '#fafafa'
+                            }
+                        )
                     ])
                     
                 ], style={'padding': '15px', 'backgroundColor': '#fcfcfc', 'borderLeft': '1px solid #eee', 'height': '100%'})
@@ -1659,29 +1670,45 @@ def register_callbacks(dash_app, server):
 
     @dash_app.callback(
         Output('asia-origin-legend-items', 'children'),
-        Input('asia-imports-bar-chart', 'figure')
+        [Input('asia-origin-dropdown', 'options')]
     )
-    def update_asia_legend(fig):
-        if not fig or 'data' not in fig:
+    def update_asia_legend(origin_options):
+        """Update legend to show all available origins from dropdown"""
+        if not origin_options:
             return []
-            
-        # Extract unique origin names from the visible traces
-        active_origins = set()
-        for trace in fig['data']:
-            if trace.get('name'):
-                active_origins.add(trace['name'])
         
-        sorted_origins = sorted(list(active_origins))
+        # Get all origins except "(All)"
+        all_origins = [opt['value'] for opt in origin_options if opt['value'] != '(All)']
+        
+        # Sort alphabetically
+        sorted_origins = sorted(all_origins)
         
         items = []
         for origin in sorted_origins:
             color = ORIGIN_COLORS.get(origin, '#ccc')
             items.append(html.Div([
                 html.Div(style={
-                    'width': '10px', 'height': '10px', 'backgroundColor': color, 'marginRight': '6px', 'flexShrink': '0'
+                    'width': '12px', 
+                    'height': '12px', 
+                    'backgroundColor': color, 
+                    'marginRight': '8px', 
+                    'flexShrink': '0',
+                    'border': '1px solid #ddd'
                 }),
-                html.Span(origin, style={'fontSize': '10px', 'color': '#333', 'whiteSpace': 'nowrap', 'overflow': 'hidden', 'textOverflow': 'ellipsis'})
-            ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '2px'}))
+                html.Span(origin, style={
+                    'fontSize': '11px', 
+                    'color': '#333', 
+                    'whiteSpace': 'nowrap', 
+                    'overflow': 'hidden', 
+                    'textOverflow': 'ellipsis',
+                    'fontFamily': 'Lato, sans-serif'
+                })
+            ], style={
+                'display': 'flex', 
+                'alignItems': 'center', 
+                'marginBottom': '6px',
+                'paddingRight': '5px'
+            }))
             
         return items
 
