@@ -277,145 +277,38 @@ def prepare_hierarchical_data(df, selection=None):
 
 def create_layout():
     """Create the European Monthly Demand by Sector layout"""
-    df_table, df_chart = load_data()
+    # Initialize empty data structures to allow immediate page load
+    # Data will be loaded asynchronously via callbacks
+    df_table = pd.DataFrame()
+    df_chart = pd.DataFrame()
     
-    # Get unique countries for checkboxes
-    countries = sorted(df_table['Country'].unique()) if not df_table.empty else []
+    # Default values for initial render
+    countries = []
+    min_date = pd.Timestamp('2019-01-01')
+    max_date = pd.Timestamp('2025-10-01')
     
-    # Get date range
-    if not df_table.empty:
-        min_date = df_table['Date'].min()
-        max_date = df_table['Date'].max()
-    else:
-        min_date = pd.Timestamp('2019-01-01')
-        max_date = pd.Timestamp('2025-10-01')
-    
-    # Create initial chart and table data
+    # Create empty chart and table data
     initial_fig = go.Figure()
     initial_columns = []
     initial_data = []
     
-    # Use table data for chart as load_data returns unified df
-    if not df_table.empty:
-        if df_chart.empty:
-            df_chart = df_table.copy()
-            
-    if not df_table.empty:
-        # Create initial chart using chart data
-        chart_data = df_chart.groupby(['Date', 'Sector'])['Value'].sum().reset_index()
-        chart_data['Year-Month'] = chart_data['Date'].dt.strftime('%b %Y')
-        chart_data['Full-Month'] = chart_data['Date'].dt.strftime('%B %Y')
-        chart_data = chart_data.sort_values('Date')
-        
-        # Define colors for sectors (matching the image exactly)
-        sector_colors = {
-            'Household': '#006eb0',  # Blue
-            'Industrial': '#c5d9a5', # Light Green
-            'Power': '#b04e26'       # Brown/Red
-        }
-        
-        # Add bars for each sector in the correct order (bottom to top: Power, Industrial, Household)
-        for sector in ['Power', 'Industrial', 'Household']:
-            sector_data = chart_data[chart_data['Sector'] == sector]
-            if not sector_data.empty:
-                initial_fig.add_trace(go.Bar(
-                    name=sector,
-                    x=sector_data['Year-Month'],
-                    y=sector_data['Value'],
-                    marker_color=sector_colors.get(sector, '#1f77b4'),
-                    customdata=sector_data[['Full-Month', 'Year-Month']],
-                    hovertemplate=(
-                        f"Sector: <b>{sector}</b><br>"
-                        "Month of Date: %{customdata[0]}<br>"
-                        "Country: *<br>"
-                        "Value: %{y:,.0f}<br>"
-                        "Unit: Million Cubic Meter"
-                        "<extra></extra>"
-                    ),
-                    hoverlabel=dict(
-                        bgcolor="white",
-                        font_size=12,
-                        font_family="Arial",
-                        font_color="#333"
-                    )
-                ))
-        
-        initial_fig.update_layout(
-            barmode='stack',
-            title='',
-            xaxis_title='',
-            yaxis_title='Million Cubic Meter',
-            height=500,
-            margin=dict(l=60, r=20, t=30, b=100),
-            showlegend=False,
-            legend=dict(
-                orientation="v",
-                yanchor="top",
-                y=1,
-                xanchor="left",
-                x=1.02,
-                bgcolor="rgba(255,255,255,0)",
-                bordercolor="rgba(255,255,255,0)",
-                borderwidth=0
-            ),
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            clickmode='event'
-        )
-        
-        initial_fig.update_xaxes(
-            tickangle=-90,
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='#f0f0f0',
-            tickfont=dict(size=10, color='#666'),
-            showline=True,
-            linecolor='#ddd'
-        )
-        
-        initial_fig.update_yaxes(
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='#f0f0f0',
-            tickformat='.0',
-            ticksuffix='K',
-            tickprefix='',
-            showline=False,
-            zeroline=True,
-            zerolinecolor='#ddd'
-        )
-        
-        # Adjust Y-axis values
-        initial_fig.update_yaxes(tickvals=[0, 10000, 20000, 30000, 40000, 50000, 60000], 
-                                ticktext=['0K', '10K', '20K', '30K', '40K', '50K', '60K'])
-        
-        # Create initial table data
-        table_df = df_table.copy()
-        if not table_df.empty:
-            table_df['Month'] = table_df['Date'].dt.strftime('%B')
-            table_df['Year'] = table_df['Date'].dt.year
-            
-            years = sorted(table_df['Year'].unique(), reverse=True)
-            initial_columns = [
-                {"name": ["", "Country"], "id": "Country"},
-                {"name": ["", "Sector"], "id": "Sector"},
-            ]
-            
-            processed_data, years = prepare_hierarchical_data(table_df)
-            
-            for year in years:
-                year_months = sorted(table_df[table_df['Year'] == year]['Month'].unique(), 
-                                   key=lambda m: datetime.strptime(m, '%B').month, reverse=True)
-                for month in year_months:
-                    initial_columns.append({"name": [str(year), month], "id": f"{year}_{month}"})
-                initial_columns.append({"name": [str(year), "Total"], "id": f"{year}_Total"})
-            
-            initial_data = processed_data
+    # Chart styling for empty state
+    initial_fig.update_layout(
+        title='',
+        xaxis_title='',
+        yaxis_title='Million Cubic Meter',
+        height=500,
+        margin=dict(l=60, r=20, t=30, b=100),
+        plot_bgcolor='white',
+        paper_bgcolor='white'
+    )
+    initial_fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f0f0f0', showline=True, linecolor='#ddd')
+    initial_fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f0f0f0', showline=False, zeroline=True, zerolinecolor='#ddd')
     
     return html.Div([
         # Store components for data
-        dcc.Store(id='min-date', data=min_date.isoformat() if not df_table.empty else '2019-01-01'),
-        dcc.Store(id='max-date', data=max_date.isoformat() if not df_table.empty else '2025-10-01'),
+        dcc.Store(id='min-date', data='2019-01-01'),
+        dcc.Store(id='max-date', data='2025-10-01'),
         
         # Download Components
         dcc.Download(id='download-sector-chart-csv'),
@@ -428,9 +321,9 @@ def create_layout():
         dcc.Store(id='sector-granularity-store', data='month'),
         dcc.Store(id='sector-table-granularity-store', data='month'),
         
-        # Data Caching Stores (Initialized with df_table)
-        dcc.Store(id='sector-chart-data-store', data=df_table.to_dict('records') if not df_table.empty else []),
-        dcc.Store(id='sector-table-data-store', data=df_table.to_dict('records') if not df_table.empty else []),
+        # Data Caching Stores (Initialized empty)
+        dcc.Store(id='sector-chart-data-store', data=[]),
+        dcc.Store(id='sector-table-data-store', data=[]),
         
         # Country filter state tracking
         dcc.Store(id='country-filter-previous', data={'all_selected': True}),
@@ -502,10 +395,11 @@ def create_layout():
                         type="circle",
                         color="#f45d2d",
                         children=[
+                            html.Div(id='loader-trigger-country', style={'display': 'none'}),
                             html.Div([
                                 dcc.RadioItems(
                                     id='sector-country-checklist',
-                                    options=[{'label': ' (All)', 'value': 'All'}] + [{'label': f' {country}', 'value': country} for country in countries],
+                                    options=[{'label': ' (All)', 'value': 'All'}],
                                     value='All',
                                     style={'maxHeight': '280px', 'overflowY': 'auto', 'fontSize': '13px'},
                                     inputStyle={"marginRight": "6px", "marginLeft": "0px"}
@@ -520,7 +414,7 @@ def create_layout():
                     html.Label("Highlight Country", style={'fontWeight': 'bold', 'marginBottom': '10px', 'display': 'block', 'color': '#333', 'fontSize': '14px'}),
                     dcc.Dropdown(
                         id='highlight-country',
-                        options=[{'label': country, 'value': country} for country in countries],
+                        options=[],
                         placeholder="Highlight Country",
                         style={'fontSize': '13px'}
                     )
@@ -585,12 +479,15 @@ def create_layout():
                         id="loading-chart",
                         type="circle",
                         color="#f45d2d",
-                        children=dcc.Graph(
-                            id='sector-demand-chart',
-                            figure=initial_fig,
-                            style={'height': '500px'},
-                            config={'displayModeBar': True, 'displaylogo': False}
-                        )
+                        children=[
+                            html.Div(id='loader-trigger-chart', style={'display': 'none'}),
+                            dcc.Graph(
+                                id='sector-demand-chart',
+                                figure=initial_fig,
+                                style={'height': '500px'},
+                                config={'displayModeBar': True, 'displaylogo': False}
+                            )
+                        ]
                     )
                 ], style={'marginBottom': '30px'}),
                 
@@ -639,42 +536,45 @@ def create_layout():
                         id="loading-table",
                         type="circle",
                         color="#f45d2d",
-                        children=dash_table.DataTable(
-                            id='sector-demand-table',
-                            columns=initial_columns,
-                            data=initial_data,
-                            merge_duplicate_headers=True,
-                            fixed_rows={'headers': True},
-                            fixed_columns={'headers': True, 'data': 2},
-                            style_table={
-                                'minWidth': '100%', 
-                                'height': '600px', 
-                                'overflowY': 'auto', 
-                                'overflowX': 'auto', 
-                                'border': '1px solid #ddd'
-                            },
-                            style_header={
-                                'backgroundColor': '#ffffff',
-                                'fontWeight': 'bold',
-                                'textAlign': 'center',
-                                'fontSize': '11px',
-                                'border': 'none', 
-                                'color': '#333',
-                                'height': '25px',
-                                'padding': '2px'
-                            },
-                            style_cell={
-                                'padding': '0px 5px',
-                                'fontSize': '11px',
-                                'fontFamily': 'Arial, sans-serif',
-                                'border': 'none', 
-                                'minWidth': '70px',
-                                'backgroundColor': '#fff',
-                                'color': '#777',
-                                'height': 'auto'
-                            },
-                            style_as_list_view=False,
-                        )
+                        children=[
+                            html.Div(id='loader-trigger-table', style={'display': 'none'}),
+                            dash_table.DataTable(
+                                id='sector-demand-table',
+                                columns=initial_columns,
+                                data=initial_data,
+                                merge_duplicate_headers=True,
+                                fixed_rows={'headers': True},
+                                fixed_columns={'headers': True, 'data': 2},
+                                style_table={
+                                    'minWidth': '100%', 
+                                    'height': '600px', 
+                                    'overflowY': 'auto', 
+                                    'overflowX': 'auto', 
+                                    'border': '1px solid #ddd'
+                                },
+                                style_header={
+                                    'backgroundColor': '#ffffff',
+                                    'fontWeight': 'bold',
+                                    'textAlign': 'center',
+                                    'fontSize': '11px',
+                                    'border': 'none', 
+                                    'color': '#333',
+                                    'height': '25px',
+                                    'padding': '2px'
+                                },
+                                style_cell={
+                                    'padding': '0px 5px',
+                                    'fontSize': '11px',
+                                    'fontFamily': 'Arial, sans-serif',
+                                    'border': 'none', 
+                                    'minWidth': '70px',
+                                    'backgroundColor': '#fff',
+                                    'color': '#777',
+                                    'height': 'auto'
+                                },
+                                style_as_list_view=False,
+                            )
+                        ]
                     ),
                     
                     # Source attribution
@@ -791,27 +691,59 @@ def register_callbacks(dash_app, server):
         )
 
 
+    # INITIALIZE FILTERS (ASYNC)
+    @dash_app.callback(
+        [Output('sector-country-checklist', 'options'),
+         Output('highlight-country', 'options'),
+         Output('min-date', 'data'),
+         Output('max-date', 'data'),
+         Output('loader-trigger-country', 'children')],
+        [Input('unit-selector', 'value'),
+         Input('sector-granularity-store', 'data')]
+    )
+    def initialize_filters(unit, granularity):
+        if not granularity: granularity = 'month'
+        # We need to load data to get countries and date range
+        # This duplicates the load in fetch_chart_data but it is necessary for filters
+        # Assuming load_data is cached so overhead is minimal
+        df, _ = load_data(unit=unit, granularity=granularity)
+        
+        if df.empty:
+            return [{'label': ' (All)', 'value': 'All'}], [], '2019-01-01', '2025-10-01', ""
+            
+        countries = sorted(df['Country'].unique())
+        country_options = [{'label': ' (All)', 'value': 'All'}] + [{'label': f' {country}', 'value': country} for country in countries]
+        highlight_options = [{'label': country, 'value': country} for country in countries]
+        
+        min_date = df['Date'].min().isoformat()
+        max_date = df['Date'].max().isoformat()
+        
+        return country_options, highlight_options, min_date, max_date, ""
+
     # FETCH CHART DATA (DB ACCESS)
     @dash_app.callback(
-        Output('sector-chart-data-store', 'data'),
+        [Output('sector-chart-data-store', 'data'),
+         Output('loader-trigger-chart', 'children')],
         [Input('unit-selector', 'value'),
          Input('sector-granularity-store', 'data')]
     )
     def fetch_chart_data(unit, granularity):
         if not granularity: granularity = 'month'
         df, _ = load_data(unit=unit, granularity=granularity)
-        return df.to_dict('records')
+        # Return data and empty string to stop loader (via children update)
+        return df.to_dict('records'), ""
 
     # FETCH TABLE DATA (DB ACCESS)
     @dash_app.callback(
-        Output('sector-table-data-store', 'data'),
+        [Output('sector-table-data-store', 'data'),
+         Output('loader-trigger-table', 'children')],
         [Input('unit-selector', 'value'),
          Input('sector-table-granularity-store', 'data')]
     )
     def fetch_table_data(unit, granularity):
         if not granularity: granularity = 'month'
         df, _ = load_data(unit=unit, granularity=granularity)
-        return df.to_dict('records')
+        return df.to_dict('records'), ""
 
     # UPDATE CHART (CLIENT SIDE)
     @dash_app.callback(
