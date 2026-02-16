@@ -216,19 +216,31 @@ def hex_to_rgba(h, a):
     rgb = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
     return f'rgba({rgb[0]},{rgb[1]},{rgb[2]},{a})'
 
+# Simple in-memory cache for data queries to prevent redundant DB hits during highlighting
+_DATA_CACHE = {}
+
 def load_data(query, params=None):
-    """Execute query and return DataFrame"""
+    """Execute query and return DataFrame with basic caching"""
+    # Create a hashable key from query and params
+    param_key = tuple(sorted(params.items())) if params else ()
+    cache_key = hashlib.md5(f"{query}{param_key}".encode()).hexdigest()
+    
+    if cache_key in _DATA_CACHE:
+        # Check if cache is still fresh (e.g., within last 5 minutes)
+        cached_val, timestamp = _DATA_CACHE[cache_key]
+        if (time.time() - timestamp) < 300: # 5 minutes
+            return cached_val.copy()
+
     try:
         from core.data_helpers import execute_query
         rows = execute_query(query, params)
-        if not rows:
-            return pd.DataFrame()
-        return pd.DataFrame(rows)
+        df = pd.DataFrame(rows) if rows else pd.DataFrame()
+        
+        # Store in cache
+        _DATA_CACHE[cache_key] = (df, time.time())
+        return df.copy()
     except Exception as e:
         print(f"Database query error: {e}")
-        return pd.DataFrame()
-    except Exception as e:
-        print(f"Query error: {e}")
         return pd.DataFrame()
 
 def create_layout():
@@ -472,7 +484,6 @@ def create_layout():
                         html.Div(id='gas-origin-legend-container', style={'maxHeight': '400px', 'overflowY': 'auto', 'border': '1px solid #eee', 'padding': '8px', 'backgroundColor': 'white'})
                     ], style={'marginBottom': '20px'}),
 
-                    dcc.Store(id='selected-origins-store'),
                     dcc.Store(id='chart1-selection', data=None),
                     dcc.Store(id='chart2-selection', data=None),
                     dcc.Store(id='chart3-selection', data=None),
@@ -553,79 +564,7 @@ def register_callbacks(dash_app, server):
         prevent_initial_call='initial_duplicate'
     )
     
-    # Callback to handle legend item clicks
-    @dash_app.callback(
-        Output('selected-origins-store', 'data', allow_duplicate=True),
-        Input({'type': 'origin-legend-item', 'index': ALL}, 'n_clicks'),
-        [State('selected-origins-store', 'data')],
-        prevent_initial_call=True
-    )
-    def handle_legend_click(n_clicks, current_selected):
-        if not ctx.triggered or not current_selected:
-            return no_update
-            
-        triggered_id = ctx.triggered_id
-        if not triggered_id or triggered_id == '':
-            return no_update
-            
-        clicked_origin = triggered_id['index']
-        selected = list(current_selected)
-        
-        if clicked_origin == '(All)':
-            # If All is clicked, we toggle between selecting everything or just the first item
-            # But usually Tableau behavior is: Click "All" -> Select all
-            if '(All)' in selected:
-                # If All was selected, maybe we keep it as is or deselect all but first
-                # For simplicity: Always select all if "All" is clicked and not fully selected
-                return selected # We'll handle this in the UI callback to reset if needed
-            else:
-                return ['(All)'] # UI callback will expand this
-        
-        if '(All)' in selected:
-            # If clicking a specific origin while "All" is active, 
-            # we switch to only that origin
-            return [clicked_origin]
-            
-        if clicked_origin in selected:
-            if len(selected) > 1:
-                selected.remove(clicked_origin)
-            else:
-                # If it's the only one, maybe don't allow deselect or switch to All
-                return ['(All)']
-        else:
-            selected.append(clicked_origin)
-            
-        return selected
-
     # Callback to handle "(All)" logic for data flows
-    @dash_app.callback(
-        Output('selected-origins-store', 'data', allow_duplicate=True),
-        Input('selected-origins-store', 'data'),
-        State('gas-origin-legend-container', 'children'),
-        prevent_initial_call=True
-    )
-    def sync_all_origins(selected, legend_children):
-        if not selected or not legend_children: return selected
-        
-        # Get all possible origins from legend items (excluding All)
-        all_possible = []
-        for child in legend_children:
-            idx = child['props']['id']['index']
-            if idx != '(All)':
-                all_possible.append(idx)
-        
-        if '(All)' in selected and len(selected) == 1:
-            return ['(All)'] + all_possible
-            
-        if set(selected).issuperset(set(all_possible)) and '(All)' not in selected:
-            return ['(All)'] + all_possible
-            
-        if '(All)' in selected and len(selected) > 1 and len(selected) < len(all_possible) + 1:
-            return [s for s in selected if s != '(All)']
-            
-        return selected
-
-    # Similar logic for Flow Type 1 and 2
     @dash_app.callback(
         Output('flow-type-1', 'value'),
         Input('flow-type-1', 'value'),
@@ -693,16 +632,15 @@ def register_callbacks(dash_app, server):
         [State('country-dropdown', 'value'),
          State('start-date-picker', 'value'),
          State('end-date-picker', 'value'),
-         State('selected-origins-store', 'data'),
          State('flow-type-2', 'value'),
          State('chart2-agg-state', 'data')],
         prevent_initial_call=True
     )
-    def export_chart2_csv(n_clicks, country, start_date, end_date, origins, flow2, agg_mode):
+    def export_chart2_csv(n_clicks, country, start_date, end_date, flow2, agg_mode):
         if n_clicks is None or n_clicks == 0:
             return no_update
 
-        where_clause, country_clause, params, origins_filtered, _, f2_filtered = get_query_params(country, start_date, end_date, origins, [], flow2)
+        where_clause, country_clause, params, _, _, f2_filtered = get_query_params(country, start_date, end_date, [], [], flow2)
         agg_mode = (agg_mode or 'MONTHLY').upper()
 
         if agg_mode == 'YEARLY':
@@ -716,11 +654,12 @@ def register_callbacks(dash_app, server):
 
         c2_query = f"""
         SELECT {time_sql}, tr.source_country AS "Gas Origin", SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
-        FROM european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins AND LOWER(tr.flow_type) IN :flow_types
+        FROM european_gas_trade tr {where_clause} {country_clause} AND LOWER(tr.flow_type) IN :flow_types
+        AND tr.source_country IS NOT NULL AND TRIM(tr.source_country) <> ''
         GROUP BY 1, 2
         ORDER BY 1;
         """
-        df = load_data(c2_query, {**params, 'origins': tuple(origins_filtered), 'flow_types': tuple(f2_filtered)})
+        df = load_data(c2_query, {**params, 'flow_types': tuple(f2_filtered)})
         return dcc.send_data_frame(df.to_csv, "monthly_gas_imports_by_source.csv", index=False)
 
     # Export callback for Chart 3
@@ -729,23 +668,22 @@ def register_callbacks(dash_app, server):
         Input("export-chart3-btn", "n_clicks"),
         [State('country-dropdown', 'value'),
          State('start-date-picker', 'value'),
-         State('end-date-picker', 'value'),
-         State('selected-origins-store', 'data')],
+         State('end-date-picker', 'value')],
         prevent_initial_call=True
     )
-    def export_chart3_csv(n_clicks, country, start_date, end_date, origins):
+    def export_chart3_csv(n_clicks, country, start_date, end_date):
         if n_clicks is None or n_clicks == 0:
             return no_update
 
-        where_clause, country_clause, params, origins_filtered, _, _ = get_query_params(country, start_date, end_date, origins, [], [])
+        where_clause, country_clause, params, _, _, _ = get_query_params(country, start_date, end_date, [], [], [])
 
         c3_query = f"""
         SELECT tr.date AS "Date", tr.flow_type AS "Type", SUM(tr."flow_mcm/d") / 1000.0 AS "Billion Cubic Meters"
-        FROM european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins
+        FROM european_gas_trade tr {where_clause} {country_clause}
         GROUP BY 1, 2
         ORDER BY 1;
         """
-        df = load_data(c3_query, {**params, 'origins': tuple(origins_filtered)})
+        df = load_data(c3_query, params)
         return dcc.send_data_frame(df.to_csv, "all_gas_imports_daily.csv", index=False)
 
     # Export callback for Table
@@ -754,15 +692,14 @@ def register_callbacks(dash_app, server):
         Input("export-table-btn", "n_clicks"),
         [State('country-dropdown', 'value'),
          State('start-date-picker', 'value'),
-         State('end-date-picker', 'value'),
-         State('selected-origins-store', 'data')],
+         State('end-date-picker', 'value')],
         prevent_initial_call=True
     )
-    def export_table_csv(n_clicks, country, start_date, end_date, origins):
+    def export_table_csv(n_clicks, country, start_date, end_date):
         if n_clicks is None or n_clicks == 0:
             return no_update
 
-        where_clause, country_clause, params, origins_filtered, _, _ = get_query_params(country, start_date, end_date, origins, [], [])
+        where_clause, country_clause, params, _, _, _ = get_query_params(country, start_date, end_date, [], [], [])
         
         # We need the pivoted table data
         table_query = f"""
@@ -775,11 +712,11 @@ def register_callbacks(dash_app, server):
         FROM european_gas_trade tr 
         {where_clause} 
         {country_clause}
-        AND tr.source_country IN :origins
+        AND tr.source_country IS NOT NULL AND TRIM(tr.source_country) <> ''
         GROUP BY 1, 2, 3, 4
         ORDER BY 1 DESC;
         """
-        df = load_data(table_query, {**params, 'origins': tuple(origins_filtered)})
+        df = load_data(table_query, params)
         
         pivot = df.pivot_table(
             index=['Month'], 
@@ -795,27 +732,11 @@ def register_callbacks(dash_app, server):
         return dcc.send_data_frame(pivot.to_csv, "gas_flows_to_europe_matrix.csv", index=False)
 
     @dash_app.callback(
-        [Output('gas-origin-legend-container', 'children'),
-         Output('selected-origins-store', 'data', allow_duplicate=True)],
-        [Input('country-dropdown', 'value'),
-         Input('selected-origins-store', 'data')],
-        prevent_initial_call='initial_duplicate'
+        Output('gas-origin-legend-container', 'children'),
+        Input('country-dropdown', 'value')
     )
-    def update_origin_legend(country, selected):
-        # 1. If Country changed (or first load), we reset selection to 'All' for that country
-        if not ctx.triggered_id or ctx.triggered_id == 'country-dropdown':
-            query = "SELECT DISTINCT source_country FROM european_gas_trade tr WHERE source_country IS NOT NULL AND TRIM(source_country) <> ''"
-            params = {}
-            if country and country != '(All)':
-                query += " AND tr.target_country = :country"
-                params['country'] = country
-            query += " ORDER BY source_country;"
-            df = load_data(query, params)
-            origins = df['source_country'].tolist() if not df.empty else []
-            selected = ['(All)'] + origins
-            # We return selected here to update the store, and we'll build UI below
-        
-        # 2. Build UI based on 'selected' and 'country'
+    def update_origin_legend(country):
+        # Build UI based on 'country'
         query = "SELECT DISTINCT source_country FROM european_gas_trade tr WHERE source_country IS NOT NULL AND TRIM(source_country) <> ''"
         params = {}
         if country and country != '(All)':
@@ -825,153 +746,39 @@ def register_callbacks(dash_app, server):
         df = load_data(query, params)
         origins = df['source_country'].tolist() if not df.empty else []
         
-        if not selected:
-            selected = ['(All)'] + origins
-
         items = []
-        is_all_selected = '(All)' in (selected or [])
-        
-
-        for i, origin in enumerate(origins):
-            is_sel = origin in (selected or [])
+        for origin in origins:
             # Use consistent color mapping function
             m_color = get_consistent_color_for_origin(origin)
             
             items.append(html.Div([
                 html.Div(style={
                     'width': '12px', 'height': '12px', 'backgroundColor': m_color, 
-                    'marginRight': '8px', 'opacity': 1.0 if is_sel else 0.2,
+                    'marginRight': '8px', 'opacity': 1.0,
                     'border': '1px solid #eee'
                 }),
                 html.Span(origin, style={
                     'fontSize': '11px', 
                     'fontWeight': 'normal',
-                    'color': '#333' if is_sel else '#999'
+                    'color': '#333'
                 })
-            ], id={'type': 'origin-legend-item', 'index': origin}, 
-               style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px', 'cursor': 'pointer'}))
+            ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px', 'cursor': 'default'}))
                
-        return items, selected
+        return items
 
     # Selection callback for Chart 3 (Lines)
     @dash_app.callback(
-        [Output('chart1-selection', 'data'),
-         Output('chart2-selection', 'data'),
-         Output('chart3-selection', 'data'),
-         Output('chart-1', 'clickData'),
-         Output('chart-2', 'clickData'),
+        [Output('chart3-selection', 'data'),
          Output('chart-3', 'clickData')],
-        [Input('chart-1', 'clickData'),
-         Input('chart-2', 'clickData'),
-         Input('chart-3', 'clickData'),
-         Input('chart1-agg-state', 'data'),
-         Input('chart2-agg-state', 'data')],
-        [State('chart1-selection', 'data'),
-         State('chart2-selection', 'data'),
-         State('chart3-selection', 'data')]
+        [Input('chart-3', 'clickData')],
+        [State('chart3-selection', 'data')]
     )
-    def update_chart_selections(c1_click, c2_click, c3_click, agg1, agg2, s1, s2, s3):
-        triggered_id = str(ctx.triggered_id)
-        if not triggered_id or triggered_id == 'None': return no_update
-
-        # 2. Reset only Chart 1 selection if its granularity changes
-        if 'chart1-agg-state' in triggered_id:
-            if s1 is None:
-                return no_update, no_update, no_update, no_update, no_update, no_update
-            return None, no_update, no_update, None, no_update, no_update
-
-        # 3. Reset only Chart 2 selection if its granularity changes
-        if 'chart2-agg-state' in triggered_id:
-            if s2 is None:
-                return no_update, no_update, no_update, no_update, no_update, no_update
-            return no_update, None, no_update, no_update, None, no_update
-
-        # 2. Handle Chart 1 Click
-        if triggered_id == 'chart-1':
-            if not c1_click: return no_update
-            cdata = c1_click['points'][0].get('customdata', [])
-            if not cdata or len(cdata) < 3: return no_update
-            
-            val = str(cdata[0]) # Year
-            flow = str(cdata[1])
-            ctype = str(cdata[2])
-            
-            # Toggle logic
-            if ctype == "YEAR_CLICK":
-                if s1 and s1.get('mode') == 'year' and str(s1.get('year')) == val:
-                    return None, no_update, no_update, None, no_update, no_update
-                return {'mode': 'year', 'year': val}, no_update, no_update, None, no_update, no_update
-            else:
-                if s1 and s1.get('mode') == 'bar' and str(s1.get('year')) == val and str(s1.get('flow')) == flow:
-                    return None, no_update, no_update, None, no_update, no_update
-                return {'mode': 'bar', 'year': val, 'flow': flow}, no_update, no_update, None, no_update, no_update
-
-        # 3. Handle Chart 2 Click
-        if triggered_id == 'chart-2':
-            if not c2_click or 'points' not in c2_click: return no_update
-            
-            # Get click data
-            point = c2_click['points'][0]
-            customdata = point.get('customdata', [])
-            
-            if customdata and len(customdata) >= 3:
-                x_label = str(customdata[0]).strip()
-                origin = str(customdata[1]).strip()
-                click_type = str(customdata[2])
-                
-                if click_type == 'BAR_CLICK':
-                    new_sel = {'mode': 'bar', 'origin': origin, 'label': x_label}
-                    
-                    # Toggle logic
-                    if isinstance(s2, dict) and s2.get('mode') == 'bar' and \
-                       str(s2.get('origin')).strip() == origin and str(s2.get('label')).strip() == x_label:
-                        return no_update, None, no_update, no_update, None, no_update
-                    
-                    return no_update, new_sel, no_update, no_update, None, no_update
-                    
-                elif click_type == 'LABEL_CLICK':
-                    date_str = str(customdata[1])
-                    new_sel = {'mode': 'month', 'month': date_str, 'label': x_label}
-                    
-                    # Toggle logic
-                    if isinstance(s2, dict) and s2.get('mode') == 'month' and s2.get('month') == date_str:
-                        return no_update, None, no_update, no_update, None, no_update
-                        
-                    return no_update, new_sel, no_update, no_update, None, no_update
-                    
-            elif customdata and len(customdata) >= 2:
-                # Fallback for simpler customdata
-                x_label = str(customdata[0]).strip()
-                second_param = str(customdata[1]).strip()
-                
-                if not second_param: # Likely month
-                    try:
-                        raw_x = str(point.get('x'))
-                        if raw_x:
-                            clicked_date = pd.to_datetime(raw_x).strftime('%Y-%m-%d')
-                            new_sel = {'mode': 'month', 'month': clicked_date, 'label': x_label}
-                            if isinstance(s2, dict) and s2.get('mode') == 'month' and s2.get('month') == clicked_date:
-                                return no_update, None, no_update, no_update, None, no_update
-                            return no_update, new_sel, no_update, no_update, None, no_update
-                    except: pass
-                else: # Likely origin
-                    new_sel = {'mode': 'bar', 'origin': second_param, 'label': x_label}
-                    if isinstance(s2, dict) and s2.get('mode') == 'bar' and \
-                       str(s2.get('origin')).strip() == second_param and str(s2.get('label')).strip() == x_label:
-                        return no_update, None, no_update, no_update, None, no_update
-                    return no_update, new_sel, no_update, no_update, None, no_update
-            
-            return no_update, None, no_update, no_update, None, no_update
-
-        # 4. Handle Chart 3 Click
-        if triggered_id == 'chart-3':
-            if not c3_click: return no_update
-            clicked_f = c3_click['points'][0].get('fullData', {}).get('name')
-            if s3 == clicked_f:
-                return no_update, no_update, None, no_update, no_update, None
-            return no_update, no_update, clicked_f, no_update, no_update, None
-            
-        return no_update
+    def update_chart3_selection(c3_click, s3):
+        if not c3_click: return no_update
+        clicked_f = c3_click['points'][0].get('fullData', {}).get('name')
+        if s3 == clicked_f:
+            return None, None
+        return clicked_f, None
 
     # Shared logic helper to reduce code duplication in separate callbacks
     def get_query_params(country, start_date, end_date, origins, flow1, flow2):
@@ -1160,13 +967,12 @@ def register_callbacks(dash_app, server):
         [Input('country-dropdown', 'value'),
          Input('start-date-picker', 'value'),
          Input('end-date-picker', 'value'),
-         Input('selected-origins-store', 'data'),
          Input('chart2-selection', 'data'),
          Input('chart2-agg-state', 'data')]
     )
-    def update_chart_2(country, start_date, end_date, origins, sel2, agg_mode):
+    def update_chart_2(country, start_date, end_date, sel2, agg_mode):
         try:
-            where_clause, country_clause, params, origins_filtered, _, _ = get_query_params(country, start_date, end_date, origins, [], [])
+            where_clause, country_clause, params, _, _, _ = get_query_params(country, start_date, end_date, [], [], [])
             agg_mode = (agg_mode or 'MONTHLY').upper()
 
             # Mode-specific SQL aggregation
@@ -1185,11 +991,12 @@ def register_callbacks(dash_app, server):
 
             c2_query = f"""
             SELECT {time_sql}, tr.source_country AS "Gas Origin", SUM(tr."flow_mcm/d") / 1000.0 AS flow_bcm
-            FROM european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins 
+            FROM european_gas_trade tr {where_clause} {country_clause}
+            AND tr.source_country IS NOT NULL AND TRIM(tr.source_country) <> ''
             GROUP BY 1, 2
             ORDER BY 1;
             """
-            c2_df = load_data(c2_query, {**params, 'origins': tuple(origins_filtered)})
+            c2_df = load_data(c2_query, params)
             if c2_df.empty: 
                 return {'layout': {'xaxis': {'visible': False}, 'yaxis': {'visible': False}, 'plot_bgcolor': 'white', 'paper_bgcolor': 'white', 'height': 360}}
             
@@ -1355,7 +1162,10 @@ def register_callbacks(dash_app, server):
                 yaxis=dict(
                     showgrid=True, gridcolor='#f2f2f2', 
                     tickfont=dict(size=11, color='#666'), 
-                    domain=[0.15, 1]
+                    domain=[0.15, 1],
+                    tick0=0,
+                    dtick=20,
+                    range=[0, 60]
                 ),
                 yaxis2=dict(domain=[0, 0.15], visible=(agg_mode != 'DATE'), showticklabels=False, fixedrange=True, range=[0, 1]),
                 bargap=0 if agg_mode == 'DATE' else 0.02, 
@@ -1366,77 +1176,130 @@ def register_callbacks(dash_app, server):
             print(f"Chart 2 error: {e}")
             return go.Figure()
 
-    # Chart 1 Granularity Handler
+    # Chart 1 State Manager (Granularity + Selections)
+    # Merging both avoids chain reactions and solves "Duplicate callback outputs"
     @dash_app.callback(
         [Output('chart1-agg-state', 'data'),
+         Output('chart1-selection', 'data'),
          Output('chart1-toggle-year-btn', 'children'),
          Output('chart1-toggle-quarter-btn', 'children'),
          Output('chart1-toggle-month-btn', 'children'),
-         Output('chart1-toggle-day-btn', 'children')],
+         Output('chart1-toggle-day-btn', 'children'),
+         Output('chart-1', 'clickData')],
         [Input('chart1-toggle-year-btn', 'n_clicks'),
          Input('chart1-toggle-quarter-btn', 'n_clicks'),
          Input('chart1-toggle-month-btn', 'n_clicks'),
-         Input('chart1-toggle-day-btn', 'n_clicks')],
-        [State('chart1-agg-state', 'data')]
+         Input('chart1-toggle-day-btn', 'n_clicks'),
+         Input('chart-1', 'clickData')],
+        [State('chart1-agg-state', 'data'),
+         State('chart1-selection', 'data')]
     )
-    def chart1_granularity_handler(y_c, q_c, m_c, d_c, current_gran):
-        if not ctx.triggered:
+    def chart1_state_manager(y_c, q_c, m_c, d_c, c1_click, current_gran, s1):
+        tr = ctx.triggered_id
+        if not tr or tr == 'None':
             cg = current_gran or 'YEARLY'
-            return (cg, 
-                    '-' if cg == 'YEARLY' else '+',
-                    '-' if cg == 'QUARTERLY' else '+',
-                    '-' if cg == 'MONTHLY' else '+',
-                    '-' if cg == 'DATE' else '+')
+            return cg, no_update, ('-' if cg == 'YEARLY' else '+'), ('-' if cg == 'QUARTERLY' else '+'), ('-' if cg == 'MONTHLY' else '+'), ('-' if cg == 'DATE' else '+'), no_update
 
-        btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
-        
-        new_gran = 'YEARLY'
-        if 'year' in btn_id: new_gran = 'YEARLY'
-        elif 'quarter' in btn_id: new_gran = 'QUARTERLY'
-        elif 'month' in btn_id: new_gran = 'MONTHLY'
-        elif 'day' in btn_id: new_gran = 'DATE'
+        # Handle Chart 1 Click
+        if tr == 'chart-1':
+            if not c1_click: return [no_update]*7
+            cdata = c1_click['points'][0].get('customdata', [])
+            if not cdata or len(cdata) < 3: return [no_update]*7
             
-        return (new_gran,
-                '-' if new_gran == 'YEARLY' else '+',
-                '-' if new_gran == 'QUARTERLY' else '+',
-                '-' if new_gran == 'MONTHLY' else '+',
-                '-' if new_gran == 'DATE' else '+')
+            val = str(cdata[0]) # Year/Label
+            flow = str(cdata[1])
+            ctype = str(cdata[2])
+            
+            new_s1 = s1
+            if ctype == "YEAR_CLICK":
+                if s1 and s1.get('mode') == 'year' and str(s1.get('year')) == val:
+                    new_s1 = None
+                else:
+                    new_s1 = {'mode': 'year', 'year': val}
+            else: # BAR_CLICK
+                if s1 and s1.get('mode') == 'bar' and str(s1.get('year')) == val and str(s1.get('flow')) == flow:
+                    new_s1 = None
+                else:
+                    new_s1 = {'mode': 'bar', 'year': val, 'flow': flow}
+            
+            # Use no_update for granularity to prevent double load on click
+            return no_update, new_s1, no_update, no_update, no_update, no_update, None
 
-    # Chart 2 Granularity Handler
+        # Handle Granularity Buttons
+        new_gran = 'YEARLY'
+        if 'year' in tr: new_gran = 'YEARLY'
+        elif 'quarter' in tr: new_gran = 'QUARTERLY'
+        elif 'month' in tr: new_gran = 'MONTHLY'
+        elif 'day' in tr: new_gran = 'DATE'
+        
+        if new_gran == current_gran:
+            return [no_update]*7
+            
+        return new_gran, None, ('-' if new_gran == 'YEARLY' else '+'), ('-' if new_gran == 'QUARTERLY' else '+'), ('-' if new_gran == 'MONTHLY' else '+'), ('-' if new_gran == 'DATE' else '+'), None
+
+    # Chart 2 State Manager (Granularity + Selections)
+    # Merging both avoids chain reactions and solves "Duplicate callback outputs"
     @dash_app.callback(
         [Output('chart2-agg-state', 'data'),
+         Output('chart2-selection', 'data'),
          Output('chart2-toggle-year-btn', 'children'),
          Output('chart2-toggle-quarter-btn', 'children'),
          Output('chart2-toggle-month-btn', 'children'),
-         Output('chart2-toggle-day-btn', 'children')],
+         Output('chart2-toggle-day-btn', 'children'),
+         Output('chart-2', 'clickData')],
         [Input('chart2-toggle-year-btn', 'n_clicks'),
          Input('chart2-toggle-quarter-btn', 'n_clicks'),
          Input('chart2-toggle-month-btn', 'n_clicks'),
-         Input('chart2-toggle-day-btn', 'n_clicks')],
-        [State('chart2-agg-state', 'data')]
+         Input('chart2-toggle-day-btn', 'n_clicks'),
+         Input('chart-2', 'clickData')],
+        [State('chart2-agg-state', 'data'),
+         State('chart2-selection', 'data')]
     )
-    def chart2_granularity_handler(y_c, q_c, m_c, d_c, current_gran):
-        if not ctx.triggered:
+    def chart2_state_manager(y_c, q_c, m_c, d_c, c2_click, current_gran, s2):
+        tr = ctx.triggered_id
+        if not tr or tr == 'None':
             cg = current_gran or 'MONTHLY'
-            return (cg, 
-                    '-' if cg == 'YEARLY' else '+',
-                    '-' if cg == 'QUARTERLY' else '+',
-                    '-' if cg == 'MONTHLY' else '+',
-                    '-' if cg == 'DATE' else '+')
+            return cg, no_update, ('-' if cg == 'YEARLY' else '+'), ('-' if cg == 'QUARTERLY' else '+'), ('-' if cg == 'MONTHLY' else '+'), ('-' if cg == 'DATE' else '+'), no_update
 
-        btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
-        
-        new_gran = 'MONTHLY'
-        if 'year' in btn_id: new_gran = 'YEARLY'
-        elif 'quarter' in btn_id: new_gran = 'QUARTERLY'
-        elif 'month' in btn_id: new_gran = 'MONTHLY'
-        elif 'day' in btn_id: new_gran = 'DATE'
+        # Handle Chart 2 Click
+        if tr == 'chart-2':
+            if not c2_click or 'points' not in c2_click: return [no_update]*7
+            point = c2_click['points'][0]
+            customdata = point.get('customdata', [])
             
-        return (new_gran,
-                '-' if new_gran == 'YEARLY' else '+',
-                '-' if new_gran == 'QUARTERLY' else '+',
-                '-' if new_gran == 'MONTHLY' else '+',
-                '-' if new_gran == 'DATE' else '+')
+            new_s2 = s2
+            if customdata and len(customdata) >= 3:
+                x_label = str(customdata[0]).strip()
+                origin = str(customdata[1]).strip()
+                click_type = str(customdata[2])
+                
+                if click_type == 'BAR_CLICK':
+                    if isinstance(s2, dict) and s2.get('mode') == 'bar' and \
+                       str(s2.get('origin')).strip() == origin and str(s2.get('label')).strip() == x_label:
+                        new_s2 = None
+                    else:
+                        new_s2 = {'mode': 'bar', 'origin': origin, 'label': x_label}
+                elif click_type == 'LABEL_CLICK':
+                    date_str = str(customdata[1])
+                    if isinstance(s2, dict) and s2.get('mode') == 'month' and s2.get('month') == date_str:
+                        new_s2 = None
+                    else:
+                        new_s2 = {'mode': 'month', 'month': date_str, 'label': x_label}
+            
+            # Use no_update for granularity to prevent double load on click
+            return no_update, new_s2, no_update, no_update, no_update, no_update, None
+
+        # Handle Granularity Buttons
+        new_gran = 'MONTHLY'
+        if 'year' in tr: new_gran = 'YEARLY'
+        elif 'quarter' in tr: new_gran = 'QUARTERLY'
+        elif 'month' in tr: new_gran = 'MONTHLY'
+        elif 'day' in tr: new_gran = 'DATE'
+        
+        if new_gran == current_gran:
+            return [no_update]*7
+            
+        return new_gran, None, ('-' if new_gran == 'YEARLY' else '+'), ('-' if new_gran == 'QUARTERLY' else '+'), ('-' if new_gran == 'MONTHLY' else '+'), ('-' if new_gran == 'DATE' else '+'), None
 
     # CALLBACK 3: Chart 3 Only
     @dash_app.callback(
@@ -1507,20 +1370,19 @@ def register_callbacks(dash_app, server):
         Output('gas-imports-mix-table-container', 'children'),
         [Input('country-dropdown', 'value'),
          Input('start-date-picker', 'value'),
-         Input('end-date-picker', 'value'),
-         Input('selected-origins-store', 'data')],
+         Input('end-date-picker', 'value')],
     )
-    def update_table(country, start_date, end_date, origins):
-        where_clause, country_clause, params, origins_filtered, _, _ = get_query_params(country, start_date, end_date, origins, [], [])
-        if not origins_filtered: 
-            return html.Div("No data found")
+    def update_table(country, start_date, end_date):
+        where_clause, country_clause, params, _, _, _ = get_query_params(country, start_date, end_date, [], [], [])
 
         t_query = f"""
         SELECT TO_CHAR(DATE_TRUNC('month', tr.date), 'FMMonth YYYY') AS "Month of Date", DATE_TRUNC('month', tr.date) as "month_raw",
         tr.source_country AS "Gas Origin", tr.target_country AS "Target Country", SUM(tr."flow_mcm/d") / 1000.0 AS flows_bcm
-        FROM european_gas_trade tr {where_clause} {country_clause} AND tr.source_country IN :origins GROUP BY 1, 2, 3, 4 ORDER BY 2 DESC;
+        FROM european_gas_trade tr {where_clause} {country_clause} 
+        AND tr.source_country IS NOT NULL AND TRIM(tr.source_country) <> ''
+        GROUP BY 1, 2, 3, 4 ORDER BY 2 DESC;
         """
-        table_df = load_data(t_query, {**params, 'origins': tuple(origins_filtered)})
+        table_df = load_data(t_query, params)
         if table_df.empty: 
             return html.Div("No data found")
 
