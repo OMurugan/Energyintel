@@ -2,7 +2,7 @@
 European Gas Trade - Pipeline Flows to Europe
 Pipeline flow analytics for European gas trade
 """
-from dash import dcc, html, Input, Output, callback, State, dash_table, clientside_callback, ClientsideFunction, no_update
+from dash import dcc, html, Input, Output, callback, State, dash_table, clientside_callback, ClientsideFunction, no_update, ALL, callback_context
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
@@ -466,9 +466,10 @@ def register_callbacks(dash_app, server):
 
     @dash_app.callback(
         Output('gas-origin-legend-items', 'children'),
-        [Input('gas-origin-checklist', 'value')]
+        [Input('gas-origin-checklist', 'value'),
+         Input('gas-flows-wave-selection', 'data')]
     )
-    def update_gas_origin_legend(selected_origins):
+    def update_gas_origin_legend(selected_origins, selection):
         if not selected_origins:
             return []
             
@@ -477,6 +478,14 @@ def register_callbacks(dash_app, server):
         items = []
         for origin in origin_order:
             if origin in selected_origins:
+                # Dimming Logic
+                is_selected = (selection == origin)
+                is_dimmed = (selection is not None) and (not is_selected)
+                
+                opacity = 0.3 if is_dimmed else 1.0
+                font_weight = 'bold' if is_selected else 'normal'
+                bg_color = '#f0f0f0' if is_selected else 'transparent'
+                
                 items.append(html.Div([
                     html.Div(style={
                         'width': '12px', 
@@ -484,8 +493,21 @@ def register_callbacks(dash_app, server):
                         'backgroundColor': GAS_ORIGIN_COLORS.get(origin, '#ccc'), 
                         'marginRight': '8px'
                     }),
-                    html.Span(origin, style={'fontSize': '11px', 'color': '#666'})
-                ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'}))
+                    html.Span(origin, style={'fontSize': '11px', 'color': '#666', 'fontWeight': font_weight})
+                ], 
+                id={'type': 'gas-origin-legend-item', 'index': origin},
+                n_clicks=0,
+                style={
+                    'display': 'flex', 
+                    'alignItems': 'center', 
+                    'marginBottom': '4px',
+                    'opacity': opacity,
+                    'cursor': 'pointer',
+                    'padding': '2px 4px',
+                    'borderRadius': '4px',
+                    'backgroundColor': bg_color,
+                    'transition': 'all 0.2s ease'
+                }))
         return items
 
     # Combined helper for both toggle callbacks to minimize duplication
@@ -561,24 +583,48 @@ def register_callbacks(dash_app, server):
     
     @dash_app.callback(
         Output('gas-flows-wave-selection', 'data'),
-        [Input('gas-flows-wave-chart', 'clickData')],
-        [State('gas-flows-wave-selection', 'data')]
+        [Input('gas-flows-wave-chart', 'clickData'),
+         Input({'type': 'gas-origin-legend-item', 'index': ALL}, 'n_clicks')],
+        [State('gas-flows-wave-selection', 'data')],
+        prevent_initial_call=True
     )
-    def toggle_gas_flows_wave_selection(clickData, current_selection):
-        if not clickData:
+    def toggle_gas_flows_wave_selection(clickData, legend_clicks, current_selection):
+        ctx = callback_context
+        if not ctx.triggered:
             return no_update
             
-        # Use customdata for robust selection: [period_of_date, gas_origin]
-        point = clickData['points'][0]
-        if 'customdata' not in point:
-            return no_update
-            
-        # customdata is [period_of_date, gas_origin]
-        clicked_origin = point['customdata'][1]
+        triggered_input = ctx.triggered[0]
+        trigger_id = triggered_input['prop_id']
+        trigger_value = triggered_input['value']
+        
+        clicked_origin = None
+        
+        # 1. Chart Click
+        if 'gas-flows-wave-chart.clickData' in trigger_id:
+            if not clickData:
+                return no_update
+            # Use customdata for robust selection: [period_of_date, gas_origin]
+            point = clickData['points'][0]
+            if 'customdata' not in point:
+                return no_update
+            clicked_origin = point['customdata'][1]
+
+        # 2. Legend Click
+        elif 'gas-origin-legend-item' in trigger_id:
+            # Ignore initial load where n_clicks might be 0
+            if not trigger_value:
+                return no_update
+                
+            # ctx.triggered_id is a dictionary for pattern matching callbacks
+            if not ctx.triggered_id:
+                 return no_update
+            clicked_origin = ctx.triggered_id['index']
         
         # Ensure it's a clean string
         if clicked_origin:
             clicked_origin = str(clicked_origin).strip()
+        else:
+            return no_update
         
         # Toggle: if already selected, clear it; otherwise set it
         if current_selection == clicked_origin:
