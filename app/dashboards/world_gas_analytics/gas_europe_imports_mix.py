@@ -888,6 +888,10 @@ def register_callbacks(dash_app, server):
                         if sel1.get('mode') == 'year':
                             if ry_str != str(sel1.get('year')).strip(): is_dim = True
                             else: is_sel = True
+                        elif sel1.get('mode') == 'label':
+                            # For QUARTERLY/MONTHLY mode label clicks
+                            if ry_str != str(sel1.get('label')).strip(): is_dim = True
+                            else: is_sel = True
                         elif sel1.get('mode') == 'bar':
                             if ry_str == str(sel1.get('year')).strip() and flow_name == sel1.get('flow'):
                                 is_sel = True
@@ -895,8 +899,8 @@ def register_callbacks(dash_app, server):
                                 is_dim = True
                     
                     colors.append(base_color if not is_dim else '#f2f2f2')
-                    line_widths.append(1.5 if is_sel and sel1 and sel1['mode'] == 'bar' else 0)
-                    line_colors.append('#333' if is_sel and sel1 and sel1['mode'] == 'bar' else 'rgba(0,0,0,0)')
+                    line_widths.append(1.5 if is_sel and sel1 and sel1['mode'] in ['bar', 'label'] else 0)
+                    line_colors.append('#333' if is_sel and sel1 and sel1['mode'] in ['bar', 'label'] else 'rgba(0,0,0,0)')
 
                 fig1.add_trace(go.Bar(
                     name=flow_name, x=subset['grp_key_dt'] if agg_mode == 'DATE' else subset['x_label'], 
@@ -940,14 +944,48 @@ def register_callbacks(dash_app, server):
                 for i in range(len(x_order) + 1):
                     x_pos = i - 0.5
                     fig1.add_shape(type="line", x0=x_pos, x1=x_pos, y0=0, y1=HEADER_Y_TOP, line=dict(color="#dee2e6", width=1), layer='below')
+            else:
+                # For QUARTERLY, MONTHLY, and DATE modes, add clickable footer labels
+                footer_text = x_order if agg_mode != 'DATE' else ["" for _ in x_order]
+                
+                # Determine footer label colors based on selection
+                footer_colors = []
+                for x_label in x_order:
+                    if sel1 and sel1.get('mode') == 'label' and str(x_label).strip() == str(sel1.get('label')).strip():
+                        footer_colors.append('rgba(0,0,0,0.1)')  # Slightly more visible for selected
+                    else:
+                        footer_colors.append('rgba(0,0,0,0.03)')  # Normal transparency
+                
+                # Create customdata for footer labels
+                footer_customdata = []
+                for i, x_label in enumerate(x_order):
+                    # Get the corresponding datetime for this x_label
+                    corresponding_dt = c1_grouped[c1_grouped['x_label'] == x_label]['grp_key_dt'].iloc[0] if len(c1_grouped[c1_grouped['x_label'] == x_label]) > 0 else None
+                    date_str = corresponding_dt.strftime('%Y-%m-%d') if corresponding_dt else ''
+                    footer_customdata.append([x_label, date_str, 'LABEL_CLICK'])
+                
+                # Add footer label trace using a secondary y-axis
+                fig1.add_trace(go.Bar(
+                    x=x_order, y=[1] * len(x_order),
+                    yaxis='y2', marker=dict(color=footer_colors, line=dict(width=0)),
+                    text=footer_text, 
+                    textposition='inside', insidetextanchor='middle', textangle=-90 if agg_mode in ['QUARTERLY', 'MONTHLY'] else 0, 
+                    textfont=dict(size=10, color='#777', family='Lato, sans-serif'),
+                    hoverinfo='none', showlegend=False,
+                    customdata=footer_customdata
+                ))
 
             x_axis_config = dict(title="", tickfont=dict(size=11, color='#666'), showgrid=False)
             if agg_mode == 'DATE':
                 x_axis_config.update(type='date', tickformat='%d %b %y', nticks=10)
             else:
                 x_axis_config.update(type='category')
+                if agg_mode != 'YEARLY':
+                    # Hide x-axis tick labels when we have footer labels
+                    x_axis_config.update(showticklabels=False)
 
-            fig1.update_layout(
+            # Update layout with conditional y2 axis for footer labels
+            layout_config = dict(
                 barmode='group', plot_bgcolor='white', paper_bgcolor='white', showlegend=False,
                 margin=dict(t=50 if agg_mode == 'YEARLY' else 32, b=40 if agg_mode == 'DATE' else 20, l=50, r=20), height=350,
                 xaxis=x_axis_config,
@@ -956,6 +994,13 @@ def register_callbacks(dash_app, server):
                 bargroupgap=0 if agg_mode == 'DATE' else 0.05,
                 hoverlabel=dict(bgcolor="white", font_size=11, font_color="#777", font_family="Lato, sans-serif", bordercolor="#ddd")
             )
+            
+            # Add y2 axis for footer labels in non-YEARLY modes
+            if agg_mode != 'YEARLY':
+                layout_config['yaxis']['domain'] = [0.12, 1]
+                layout_config['yaxis2'] = dict(domain=[0, 0.12], visible=(agg_mode != 'DATE'), showticklabels=False, fixedrange=True, range=[0, 1])
+            
+            fig1.update_layout(**layout_config)
             return fig1
         except Exception as e:
             print(f"Chart 1 error: {e}")
@@ -1216,6 +1261,12 @@ def register_callbacks(dash_app, server):
                     new_s1 = None
                 else:
                     new_s1 = {'mode': 'year', 'year': val}
+            elif ctype == "LABEL_CLICK":
+                # Handle footer label clicks in QUARTERLY/MONTHLY modes
+                if s1 and s1.get('mode') == 'label' and str(s1.get('label')) == val:
+                    new_s1 = None
+                else:
+                    new_s1 = {'mode': 'label', 'label': val}
             else: # BAR_CLICK
                 if s1 and s1.get('mode') == 'bar' and str(s1.get('year')) == val and str(s1.get('flow')) == flow:
                     new_s1 = None
