@@ -13,6 +13,39 @@ EI_ORANGE = "#ff6600"
 EI_DARK_BLUE = "#1b365d"
 EI_LIGHT_BLUE = "#e8f4f8"
 
+# Granularity Button Styles
+GRAN_BTN_ACTIVE = {
+    'width': '18px',
+    'height': '18px',
+    'padding': '0',
+    'border': '1px solid #007bff',
+    'backgroundColor': 'white',
+    'color': '#add8e6',
+    'borderRadius': '3px',
+    'cursor': 'pointer',
+    'fontSize': '12px',
+    'fontWeight': 'bold',
+    'display': 'flex',
+    'alignItems': 'center',
+    'justifyContent': 'center'
+}
+
+GRAN_BTN_INACTIVE = {
+    'width': '18px',
+    'height': '18px',
+    'padding': '0',
+    'border': '1px solid #007bff',
+    'backgroundColor': 'white',
+    'color': '#007bff',
+    'borderRadius': '3px',
+    'cursor': 'pointer',
+    'fontSize': '12px',
+    'fontWeight': 'bold',
+    'display': 'flex',
+    'alignItems': 'center',
+    'justifyContent': 'center'
+}
+
 # Qualitative colors for countries - matching the reference image
 COUNTRY_COLORS = {
     'Belgium': '#4c78a8',           # Dark blue
@@ -39,48 +72,23 @@ def create_period_selector(prefix):
     """Helper to create independent period selectors for chart or table"""
     return html.Div([
         html.Div([
-            html.Span("Year of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-            html.Button('+', id=f'gas-country-toggle-year-btn-{prefix}', n_clicks=0, style={
-                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-            })
+            html.Span("Yr of Dt", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('+', id=f'gas-country-toggle-year-btn-{prefix}', n_clicks=0, style=GRAN_BTN_INACTIVE)
         ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
         
         html.Div([
-            html.Span("Quarter of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-            html.Button('+', id=f'gas-country-toggle-quarter-btn-{prefix}', n_clicks=0, style={
-                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-            })
+            html.Span("Qtr of Dt", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('+', id=f'gas-country-toggle-quarter-btn-{prefix}', n_clicks=0, style=GRAN_BTN_INACTIVE)
         ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
         
         html.Div([
-            html.Span("Month of Date", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-            html.Button('+', id=f'gas-country-toggle-month-btn-{prefix}', n_clicks=0, style={
-                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-            })
+            html.Span("Mth of Dt", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('-', id=f'gas-country-toggle-month-btn-{prefix}', n_clicks=0, style=GRAN_BTN_ACTIVE)
         ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
 
         html.Div([
-            html.Span("Week of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-            html.Button('+', id=f'gas-country-toggle-week-btn-{prefix}', n_clicks=0, style={
-                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                'backgroundColor': 'white', 'color': '#007bff', 'borderRadius': '3px', 'cursor': 'pointer',
-                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-            })
-        ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '15px'}),
-        
-        html.Div([
-            html.Span("Day of Year", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
-            html.Button('-', id=f'gas-country-toggle-day-btn-{prefix}', n_clicks=0, style={
-                'width': '18px', 'height': '18px', 'padding': '0', 'border': '1px solid #007bff', 
-                'backgroundColor': 'white', 'color': '#add8e6', 'borderRadius': '3px', 'cursor': 'pointer',
-                'fontSize': '12px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'
-            })
+            html.Span("Day of Dt", style={'fontSize': '11px', 'color': EI_DARK_BLUE, 'marginRight': '8px'}),
+            html.Button('+', id=f'gas-country-toggle-day-btn-{prefix}', n_clicks=0, style=GRAN_BTN_INACTIVE)
         ], style={'display': 'flex', 'alignItems': 'center'})
     ], style={
         'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
@@ -139,8 +147,8 @@ def create_layout():
 
     return html.Div([
         # Selection stores
-        dcc.Store(id='gas-country-chart-period-store', data='DAILY'),
-        dcc.Store(id='gas-country-table-period-store', data='DAILY'),
+        dcc.Store(id='gas-country-chart-period-store', data='MONTH'),
+        dcc.Store(id='gas-country-table-period-store', data='MONTH'),
         
         # Main container with Flexbox for Sidebar and Content
         html.Div([
@@ -229,6 +237,8 @@ def create_layout():
                     )
                 ], style={'position': 'relative', 'marginBottom': '10px'}),
                 
+                create_period_selector('chart'),
+                
                 dcc.Loading(
                     id='loading-gas-country-chart',
                     type='circle',
@@ -264,6 +274,8 @@ def create_layout():
                             }
                         )
                     ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '10px', 'paddingTop': '10px'}),
+                    
+                    create_period_selector('table'),
                     
                     dcc.Loading(
                         id='loading-gas-country-table',
@@ -334,6 +346,92 @@ def register_callbacks(dash_app, server):
         if selected_origin == '(All)':
             return "All's Pipeline gas Flows to Europe -Billion Cubic Meters"
         return f"{selected_origin}'s Pipeline gas Flows to Europe -Billion Cubic Meters"
+
+    # Chart Granularity Toggle
+    @dash_app.callback(
+        [Output('gas-country-chart-period-store', 'data'),
+         Output('gas-country-toggle-year-btn-chart', 'children'),
+         Output('gas-country-toggle-quarter-btn-chart', 'children'),
+         Output('gas-country-toggle-month-btn-chart', 'children'),
+         Output('gas-country-toggle-day-btn-chart', 'children'),
+         Output('gas-country-toggle-year-btn-chart', 'style'),
+         Output('gas-country-toggle-quarter-btn-chart', 'style'),
+         Output('gas-country-toggle-month-btn-chart', 'style'),
+         Output('gas-country-toggle-day-btn-chart', 'style')],
+        [Input('gas-country-toggle-year-btn-chart', 'n_clicks'),
+         Input('gas-country-toggle-quarter-btn-chart', 'n_clicks'),
+         Input('gas-country-toggle-month-btn-chart', 'n_clicks'),
+         Input('gas-country-toggle-day-btn-chart', 'n_clicks')],
+        [State('gas-country-chart-period-store', 'data')]
+    )
+    def toggle_chart_granularity(y_c, q_c, m_c, d_c, current_gran):
+        from dash import callback_context
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+            
+        btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        new_gran = current_gran
+        
+        if 'year' in btn_id: new_gran = 'YEAR'
+        elif 'quarter' in btn_id: new_gran = 'QUARTER'
+        elif 'month' in btn_id: new_gran = 'MONTH'
+        elif 'day' in btn_id: new_gran = 'DAILY'
+        
+        return (
+            new_gran,
+            '-' if new_gran == 'YEAR' else '+',
+            '-' if new_gran == 'QUARTER' else '+',
+            '-' if new_gran == 'MONTH' else '+',
+            '-' if new_gran == 'DAILY' else '+',
+            GRAN_BTN_ACTIVE if new_gran == 'YEAR' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'QUARTER' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'MONTH' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'DAILY' else GRAN_BTN_INACTIVE
+        )
+
+    # Table Granularity Toggle
+    @dash_app.callback(
+        [Output('gas-country-table-period-store', 'data'),
+         Output('gas-country-toggle-year-btn-table', 'children'),
+         Output('gas-country-toggle-quarter-btn-table', 'children'),
+         Output('gas-country-toggle-month-btn-table', 'children'),
+         Output('gas-country-toggle-day-btn-table', 'children'),
+         Output('gas-country-toggle-year-btn-table', 'style'),
+         Output('gas-country-toggle-quarter-btn-table', 'style'),
+         Output('gas-country-toggle-month-btn-table', 'style'),
+         Output('gas-country-toggle-day-btn-table', 'style')],
+        [Input('gas-country-toggle-year-btn-table', 'n_clicks'),
+         Input('gas-country-toggle-quarter-btn-table', 'n_clicks'),
+         Input('gas-country-toggle-month-btn-table', 'n_clicks'),
+         Input('gas-country-toggle-day-btn-table', 'n_clicks')],
+        [State('gas-country-table-period-store', 'data')]
+    )
+    def toggle_table_granularity(y_c, q_c, m_c, d_c, current_gran):
+        from dash import callback_context
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+            
+        btn_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        new_gran = current_gran
+        
+        if 'year' in btn_id: new_gran = 'YEAR'
+        elif 'quarter' in btn_id: new_gran = 'QUARTER'
+        elif 'month' in btn_id: new_gran = 'MONTH'
+        elif 'day' in btn_id: new_gran = 'DAILY'
+        
+        return (
+            new_gran,
+            '-' if new_gran == 'YEAR' else '+',
+            '-' if new_gran == 'QUARTER' else '+',
+            '-' if new_gran == 'MONTH' else '+',
+            '-' if new_gran == 'DAILY' else '+',
+            GRAN_BTN_ACTIVE if new_gran == 'YEAR' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'QUARTER' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'MONTH' else GRAN_BTN_INACTIVE,
+            GRAN_BTN_ACTIVE if new_gran == 'DAILY' else GRAN_BTN_INACTIVE
+        )
 
     # NEW CALLBACK: Update destination options based on selected gas origin
     @dash_app.callback(
@@ -467,28 +565,11 @@ def register_callbacks(dash_app, server):
                         
                         if (hiddenDiv) {
                             const currentSelection = hiddenDiv.textContent;
-                            
                             // Toggle selection
                             if (currentSelection === country) {
                                 hiddenDiv.textContent = '';  // Deselect
-                                // Reset all items to normal style
-                                destItems.forEach(function(di) {
-                                    di.style.backgroundColor = 'transparent';
-                                    di.style.fontWeight = 'normal';
-                                    di.style.color = '#666';
-                                });
                             } else {
                                 hiddenDiv.textContent = country;  // Select
-                                // Reset all items first
-                                destItems.forEach(function(di) {
-                                    di.style.backgroundColor = 'transparent';
-                                    di.style.fontWeight = 'normal';
-                                    di.style.color = '#666';
-                                });
-                                // Highlight selected item
-                                this.style.backgroundColor = '#e3f2fd';
-                                this.style.fontWeight = 'bold';
-                                this.style.color = '#1976d2';
                             }
                         }
                     };
@@ -502,6 +583,71 @@ def register_callbacks(dash_app, server):
         """,
         Output('gas-country-selected-destination', 'title'),
         Input('gas-country-dest-list', 'children')
+    )
+
+    # NEW: Clientside callback for chart clicks
+    dash_app.clientside_callback(
+        """
+        function(clickData) {
+            if (!clickData || !clickData.points || clickData.points.length === 0) {
+                return window.dash_clientside.no_update;
+            }
+            
+            const point = clickData.points[0];
+            let country = null;
+            
+            if (point.fullData && point.fullData.name) {
+                country = point.fullData.name;
+            } else if (point.data && point.data.name) {
+                country = point.data.name;
+            }
+            
+            if (!country) return window.dash_clientside.no_update;
+            
+            const hiddenDiv = document.getElementById('gas-country-selected-destination');
+            if (hiddenDiv) {
+                const currentSelection = hiddenDiv.textContent.trim();
+                // Toggle selection
+                if (currentSelection === country) {
+                    hiddenDiv.textContent = '';  // Deselect
+                } else {
+                    hiddenDiv.textContent = country;  // Select
+                }
+            }
+            
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('gas-country-selected-destination', 'accessKey'), # Dummy output
+        Input('gas-country-line-chart', 'clickData')
+    )
+
+    # NEW: Clientside callback to sync sidebar highlighting with selection state
+    dash_app.clientside_callback(
+        """
+        function(selectedCountry) {
+            if (selectedCountry === undefined) return window.dash_clientside.no_update;
+            
+            const destItems = document.querySelectorAll('.destination-item');
+            destItems.forEach(function(item) {
+                const country = item.getAttribute('data-country');
+                if (selectedCountry === country) {
+                    item.style.backgroundColor = '#e3f2fd';
+                    item.style.fontWeight = 'bold';
+                    item.style.color = '#1976d2';
+                    item.style.borderLeft = '3px solid #1976d2';
+                } else {
+                    item.style.backgroundColor = 'transparent';
+                    item.style.fontWeight = 'normal';
+                    item.style.color = '#666';
+                    item.style.borderLeft = 'none';
+                }
+            });
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('gas-country-selected-destination', 'lang'), # Dummy output
+        Input('gas-country-selected-destination', 'children')
     )
 
     # Monitor destination selection changes
@@ -538,9 +684,10 @@ def register_callbacks(dash_app, server):
          Input('gas-country-end-date', 'value'),
          Input('gas-country-origin-radio', 'value'),
          Input('gas-country-dest-checklist', 'value'),
-         Input('gas-country-selected-destination', 'children')]
+         Input('gas-country-selected-destination', 'children'),
+         Input('gas-country-chart-period-store', 'data')]
     )
-    def update_chart(start_date, end_date, selected_origin, selected_dests, selected_destination):
+    def update_chart(start_date, end_date, selected_origin, selected_dests, selected_destination, chart_period):
         if not selected_origin or not selected_dests:
             return go.Figure()
 
@@ -580,44 +727,73 @@ def register_callbacks(dash_app, server):
             if df.empty:
                 return go.Figure()
 
-            # AGGREGATION: Sum up flows by date, origin, and target country
-            df = df.groupby(['date', 'gas_origin', 'target_country'])['flows_bcm'].sum().reset_index()
+            # Aggregation logic
+            if chart_period == 'YEAR':
+                df['display_date'] = df['date'].dt.to_period('Y').dt.to_timestamp()
+                hover_label = "Year of Date"
+                tick_format = "%Y"
+                dtick = "M12"
+            elif chart_period == 'QUARTER':
+                df['display_date'] = df['date'].dt.to_period('Q').dt.to_timestamp()
+                hover_label = "Quarter of Date"
+                tick_format = "%Y-Q%q"
+                dtick = "M3"
+            elif chart_period == 'MONTH':
+                df['display_date'] = df['date'].dt.to_period('M').dt.to_timestamp()
+                hover_label = "Month of Date"
+                tick_format = "%b %y"
+                dtick = "M6"
+            else: # DAILY
+                df['display_date'] = df['date']
+                hover_label = "Day of Date"
+                tick_format = "%b %d, %y"
+                dtick = None # Auto
 
-            # Monthly aggregation for chart display
-            df['month_date'] = df['date'].dt.to_period('M').dt.to_timestamp()
-            monthly_df = df.groupby(['month_date', 'gas_origin', 'target_country'])['flows_bcm'].sum().reset_index()
+            agg_df = df.groupby(['display_date', 'gas_origin', 'target_country'])['flows_bcm'].sum().reset_index()
 
             fig = go.Figure()
             
             for dest in selected_dests:
-                dest_df = monthly_df[monthly_df['target_country'] == dest].sort_values('month_date')
+                dest_df = agg_df[agg_df['target_country'] == dest].sort_values('display_date')
                 if not dest_df.empty:
                     # Create custom hover text
                     hover_text = []
                     for _, row in dest_df.iterrows():
-                        month_str = row['month_date'].strftime('%B %Y')
+                        if chart_period == 'YEAR':
+                            date_str = row['display_date'].strftime('%Y')
+                        elif chart_period == 'QUARTER':
+                            q = (row['display_date'].month - 1) // 3 + 1
+                            date_str = f"Q{q} {row['display_date'].year}"
+                        elif chart_period == 'MONTH':
+                            date_str = row['display_date'].strftime('%B %Y')
+                        else:
+                            date_str = row['display_date'].strftime('%b %d, %Y')
+                            
                         hover_text.append(
                             f"Target Country: {dest}<br>" +
-                            f"Month of Date: {month_str}<br>" +
+                            f"{hover_label}: {date_str}<br>" +
                             f"flows_bcm: {row['flows_bcm']:.3f}"
                         )
                     
                     # Determine line styling based on selection
                     is_selected = selected_destination == dest if selected_destination else True
-                    line_opacity = 1.0 if is_selected else 0.3
-                    line_width = 3 if is_selected else 1
+                    
+                    # If a country is selected, make it more prominent and fade others
+                    if selected_destination:
+                        if is_selected:
+                            line_width = 1.5
+                            line_opacity = 1.0
+                        else:
+                            line_width = 1.5
+                            line_opacity = 0.15
+                    else:
+                        line_width = 2.5
+                        line_opacity = 0.8
+                        
                     line_color = COUNTRY_COLORS.get(dest, '#999')
                     
-                    # If a country is selected, make it more prominent
-                    if selected_destination and is_selected:
-                        line_width = 4
-                        line_opacity = 1.0
-                    elif selected_destination and not is_selected:
-                        line_opacity = 0.2
-                        line_width = 1
-                    
                     fig.add_trace(go.Scatter(
-                        x=dest_df['month_date'],
+                        x=dest_df['display_date'],
                         y=dest_df['flows_bcm'],
                         name=dest,
                         mode='lines',
@@ -641,7 +817,7 @@ def register_callbacks(dash_app, server):
                 xaxis=dict(
                     showgrid=True, gridcolor='#f5f5f5',
                     tickfont=dict(size=10, color='#999'),
-                    tickformat="%b %y", dtick="M6",
+                    tickformat=tick_format, dtick=dtick,
                     fixedrange=True,
                     range=[start_date, end_date]
                 ),
@@ -650,7 +826,7 @@ def register_callbacks(dash_app, server):
                     tickfont=dict(size=10, color='#999'),
                     zeroline=True, zerolinecolor='#f5f5f5',
                     fixedrange=True,
-                    range=[0, max(monthly_df['flows_bcm'].max() * 1.2 if not monthly_df.empty else 1.0, 1.0)]
+                    range=[0, max(agg_df['flows_bcm'].max() * 1.2 if not agg_df.empty else 1.0, 1.0)]
                 ),
                 font=dict(family="Lato, sans-serif")
             )
@@ -668,9 +844,10 @@ def register_callbacks(dash_app, server):
          Input('gas-country-end-date', 'value'),
          Input('gas-country-origin-radio', 'value'),
          Input('gas-country-dest-checklist', 'value'),
-         Input('gas-country-selected-destination', 'children')]
+         Input('gas-country-selected-destination', 'children'),
+         Input('gas-country-table-period-store', 'data')]
     )
-    def update_table(start_date, end_date, selected_origin, selected_dests, selected_destination):
+    def update_table(start_date, end_date, selected_origin, selected_dests, selected_destination, table_period):
         if not selected_origin or not selected_dests:
             return html.Div("Please select filters.", style={'color': '#666', 'fontSize': '12px', 'padding': '20px'})
 
@@ -712,12 +889,30 @@ def register_callbacks(dash_app, server):
             if df.empty:
                 return html.Div("No data matches filters.", style={'padding': '20px'})
 
-            # Aggregate by date, origin, target country, and point
-            df = df.groupby(['date', 'gas_origin', 'target_country', 'point_label'])['flows_bcm'].sum().reset_index()
+            # Aggregation logic
+            if table_period == 'YEAR':
+                df['agg_date'] = df['date'].dt.to_period('Y').dt.to_timestamp()
+                date_col_label = "Year of Date"
+                date_format = '%Y'
+            elif table_period == 'QUARTER':
+                df['agg_date'] = df['date'].dt.to_period('Q').dt.to_timestamp()
+                date_col_label = "Quarter of Date"
+                date_format = None
+            elif table_period == 'MONTH':
+                df['agg_date'] = df['date'].dt.to_period('M').dt.to_timestamp()
+                date_col_label = "Month of Date"
+                date_format = '%B %Y'
+            else: # DAILY
+                df['agg_date'] = df['date']
+                date_col_label = "Day of Date"
+                date_format = '%B %d, %Y'
+
+            # Aggregate by agg_date, origin, target country, and point
+            df = df.groupby(['agg_date', 'gas_origin', 'target_country', 'point_label'])['flows_bcm'].sum().reset_index()
 
             # Pivot for multi-level headers (same structure as main file)
             pivot_df = df.pivot_table(
-                index='date',
+                index='agg_date',
                 columns=['gas_origin', 'target_country', 'point_label'],
                 values='flows_bcm'
             ).reset_index()
@@ -729,7 +924,7 @@ def register_callbacks(dash_app, server):
             origin_order = ['Algeria', 'Azerbaijan', 'Libya', 'Norway', 'Russia']
             
             def sort_columns_key(col):
-                if col[0] == 'date':
+                if col[0] == 'agg_date':
                     return (-1, "")
                 origin = col[0]
                 order = origin_order.index(origin) if origin in origin_order else 99
@@ -742,7 +937,7 @@ def register_callbacks(dash_app, server):
             hier_cols = [c for c in pivot_df.columns if c != date_col_name]
             hier_cols.sort(key=sort_columns_key)
             
-            table_columns = [{"name": ["", "", "Day of Date"], "id": "Day of Date"}]
+            table_columns = [{"name": ["", "", date_col_label], "id": date_col_label}]
             for col in hier_cols:
                 table_columns.append({
                     "name": list(col),
@@ -751,11 +946,17 @@ def register_callbacks(dash_app, server):
 
             # Prepare data
             # Convert date to string after sorting but before iteration
-            pivot_df[date_col_name] = pd.to_datetime(pivot_df[date_col_name], errors='coerce').dt.strftime('%B %d, %Y')
+            def format_date(d):
+                if table_period == 'QUARTER':
+                    q = (d.month - 1) // 3 + 1
+                    return f"Q{q} {d.year}"
+                return d.strftime(date_format)
+
+            pivot_df[date_col_label] = pivot_df[date_col_name].apply(format_date)
             
             table_data = []
             for _, row in pivot_df.iterrows():
-                d_row = {"Day of Date": row[date_col_name]}
+                d_row = {date_col_label: row[date_col_label]}
                 for col in hier_cols:
                     val = row[col]
                     # Format as float only if it's numeric
@@ -771,7 +972,7 @@ def register_callbacks(dash_app, server):
             # Create conditional styling for selected destination
             style_data_conditional = [
                 {
-                    'if': {'column_id': 'Day of Date'},
+                    'if': {'column_id': date_col_label},
                     'textAlign': 'left',
                     'fontWeight': 'normal',
                     'color': '#666',
@@ -943,7 +1144,7 @@ def register_callbacks(dash_app, server):
                     const rowIndex = cell ? cell.getAttribute('data-dash-row') : null;
                     
                     const isHeader = !!header;
-                    const isDateColumn = columnId === 'Day of Date';
+                    const isDateColumn = columnId.includes('of Date');
                     
                     // Determine what type of highlighting to apply
                     let highlightType = '';
@@ -1015,7 +1216,7 @@ def register_callbacks(dash_app, server):
                             const clickedEndIdx = clickedStartIdx + colspan;
                             
                             targetColumnIds = bottomHeaderMap
-                                .filter(m => m.start >= clickedStartIdx && m.end <= clickedEndIdx && m.colId !== 'Day of Date')
+                                .filter(m => m.start >= clickedStartIdx && m.end <= clickedEndIdx && !m.colId.includes('of Date'))
                                 .map(m => m.colId);
                         }
                         
@@ -1040,7 +1241,7 @@ def register_callbacks(dash_app, server):
                                 color: #1b365d !important;
                                 font-weight: 500 !important;
                             }
-                            #${tableId} .dash-spreadsheet-container td[data-dash-column="Day of Date"][data-dash-row="${rowIndex}"] {
+                            #${tableId} .dash-spreadsheet-container td[data-dash-column$="of Date"][data-dash-row="${rowIndex}"] {
                                 background-color: #b3d9ff !important;
                                 color: #1b365d !important;
                                 font-weight: bold !important;
