@@ -970,7 +970,8 @@ def register_callbacks(dash_app, server):
                     yaxis='y2', marker=dict(color=footer_colors, line=dict(width=0)),
                     text=footer_text, 
                     textposition='inside', insidetextanchor='middle', textangle=-90 if agg_mode in ['QUARTERLY', 'MONTHLY'] else 0, 
-                    textfont=dict(size=10, color='#777', family='Lato, sans-serif'),
+                    textfont=dict(size=11 if agg_mode == 'MONTHLY' else 10, color='#000000' if agg_mode == 'MONTHLY' else '#777', family='Lato, sans-serif'),
+                    constraintext='none', cliponaxis=False,
                     hoverinfo='none', showlegend=False,
                     customdata=footer_customdata
                 ))
@@ -997,8 +998,9 @@ def register_callbacks(dash_app, server):
             
             # Add y2 axis for footer labels in non-YEARLY modes
             if agg_mode != 'YEARLY':
-                layout_config['yaxis']['domain'] = [0.12, 1]
-                layout_config['yaxis2'] = dict(domain=[0, 0.12], visible=(agg_mode != 'DATE'), showticklabels=False, fixedrange=True, range=[0, 1])
+                footer_h = 0.3 if agg_mode == 'MONTHLY' else 0.12
+                layout_config['yaxis']['domain'] = [footer_h, 1]
+                layout_config['yaxis2'] = dict(domain=[0, footer_h], visible=(agg_mode != 'DATE'), showticklabels=False, fixedrange=True, range=[0, 1])
             
             fig1.update_layout(**layout_config)
             return fig1
@@ -1189,7 +1191,8 @@ def register_callbacks(dash_app, server):
                 yaxis='y2', marker=dict(color=footer_colors, line=dict(width=0)),
                 text=footer_text, 
                 textposition='inside', insidetextanchor='middle', textangle=-90 if agg_mode not in ['YEARLY', 'DATE'] else 0, 
-                textfont=dict(size=10, color='#777', family='Lato, sans-serif'),
+                textfont=dict(size=11 if agg_mode == 'MONTHLY' else 10, color='#000000' if agg_mode == 'MONTHLY' else '#777', family='Lato, sans-serif'),
+                constraintext='none', cliponaxis=False,
                 hoverinfo='none', showlegend=False,
                 customdata=footer_customdata
             ))
@@ -1207,12 +1210,12 @@ def register_callbacks(dash_app, server):
                 yaxis=dict(
                     showgrid=True, gridcolor='#f2f2f2', 
                     tickfont=dict(size=11, color='#666'), 
-                    domain=[0.15, 1],
+                    domain=[0.3 if agg_mode == 'MONTHLY' else 0.15, 1],
                     tick0=0,
                     dtick=20,
                     range=[0, 60]
                 ),
-                yaxis2=dict(domain=[0, 0.15], visible=(agg_mode != 'DATE'), showticklabels=False, fixedrange=True, range=[0, 1]),
+                yaxis2=dict(domain=[0, 0.3 if agg_mode == 'MONTHLY' else 0.15], visible=(agg_mode != 'DATE'), showticklabels=False, fixedrange=True, range=[0, 1]),
                 bargap=0 if agg_mode == 'DATE' else 0.02, 
                 hoverlabel=dict(bgcolor="white", font_size=11, font_color="#777", font_family="Lato, sans-serif", bordercolor="#ddd")
             )
