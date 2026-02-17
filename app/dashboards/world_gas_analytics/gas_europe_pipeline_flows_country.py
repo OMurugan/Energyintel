@@ -565,28 +565,11 @@ def register_callbacks(dash_app, server):
                         
                         if (hiddenDiv) {
                             const currentSelection = hiddenDiv.textContent;
-                            
                             // Toggle selection
                             if (currentSelection === country) {
                                 hiddenDiv.textContent = '';  // Deselect
-                                // Reset all items to normal style
-                                destItems.forEach(function(di) {
-                                    di.style.backgroundColor = 'transparent';
-                                    di.style.fontWeight = 'normal';
-                                    di.style.color = '#666';
-                                });
                             } else {
                                 hiddenDiv.textContent = country;  // Select
-                                // Reset all items first
-                                destItems.forEach(function(di) {
-                                    di.style.backgroundColor = 'transparent';
-                                    di.style.fontWeight = 'normal';
-                                    di.style.color = '#666';
-                                });
-                                // Highlight selected item
-                                this.style.backgroundColor = '#e3f2fd';
-                                this.style.fontWeight = 'bold';
-                                this.style.color = '#1976d2';
                             }
                         }
                     };
@@ -600,6 +583,71 @@ def register_callbacks(dash_app, server):
         """,
         Output('gas-country-selected-destination', 'title'),
         Input('gas-country-dest-list', 'children')
+    )
+
+    # NEW: Clientside callback for chart clicks
+    dash_app.clientside_callback(
+        """
+        function(clickData) {
+            if (!clickData || !clickData.points || clickData.points.length === 0) {
+                return window.dash_clientside.no_update;
+            }
+            
+            const point = clickData.points[0];
+            let country = null;
+            
+            if (point.fullData && point.fullData.name) {
+                country = point.fullData.name;
+            } else if (point.data && point.data.name) {
+                country = point.data.name;
+            }
+            
+            if (!country) return window.dash_clientside.no_update;
+            
+            const hiddenDiv = document.getElementById('gas-country-selected-destination');
+            if (hiddenDiv) {
+                const currentSelection = hiddenDiv.textContent.trim();
+                // Toggle selection
+                if (currentSelection === country) {
+                    hiddenDiv.textContent = '';  // Deselect
+                } else {
+                    hiddenDiv.textContent = country;  // Select
+                }
+            }
+            
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('gas-country-selected-destination', 'accessKey'), # Dummy output
+        Input('gas-country-line-chart', 'clickData')
+    )
+
+    # NEW: Clientside callback to sync sidebar highlighting with selection state
+    dash_app.clientside_callback(
+        """
+        function(selectedCountry) {
+            if (selectedCountry === undefined) return window.dash_clientside.no_update;
+            
+            const destItems = document.querySelectorAll('.destination-item');
+            destItems.forEach(function(item) {
+                const country = item.getAttribute('data-country');
+                if (selectedCountry === country) {
+                    item.style.backgroundColor = '#e3f2fd';
+                    item.style.fontWeight = 'bold';
+                    item.style.color = '#1976d2';
+                    item.style.borderLeft = '3px solid #1976d2';
+                } else {
+                    item.style.backgroundColor = 'transparent';
+                    item.style.fontWeight = 'normal';
+                    item.style.color = '#666';
+                    item.style.borderLeft = 'none';
+                }
+            });
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('gas-country-selected-destination', 'lang'), # Dummy output
+        Input('gas-country-selected-destination', 'children')
     )
 
     # Monitor destination selection changes
@@ -729,17 +777,20 @@ def register_callbacks(dash_app, server):
                     
                     # Determine line styling based on selection
                     is_selected = selected_destination == dest if selected_destination else True
-                    line_opacity = 1.0 if is_selected else 0.3
-                    line_width = 3 if is_selected else 1
-                    line_color = COUNTRY_COLORS.get(dest, '#999')
                     
-                    # If a country is selected, make it more prominent
-                    if selected_destination and is_selected:
-                        line_width = 4
-                        line_opacity = 1.0
-                    elif selected_destination and not is_selected:
-                        line_opacity = 0.2
-                        line_width = 1
+                    # If a country is selected, make it more prominent and fade others
+                    if selected_destination:
+                        if is_selected:
+                            line_width = 1.5
+                            line_opacity = 1.0
+                        else:
+                            line_width = 1.5
+                            line_opacity = 0.15
+                    else:
+                        line_width = 2.5
+                        line_opacity = 0.8
+                        
+                    line_color = COUNTRY_COLORS.get(dest, '#999')
                     
                     fig.add_trace(go.Scatter(
                         x=dest_df['display_date'],
