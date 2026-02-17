@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import dash
-from dash import dcc, html, Input, Output, dash_table, State, callback, ctx, no_update
+from dash import dcc, html, Input, Output, dash_table, State, callback, ctx, no_update, ALL, MATCH
 from core.data_helpers import execute_query
 from core.country_mappings import get_iso_code
 from .shared_map_utils import (
@@ -439,6 +439,10 @@ def register_callbacks(dash_app, server):
                     return null;
                 }
                 
+                // NEW: Check if clicking same Origin but previously it was a LEGEND selection
+                // If so, we are now selecting a specific segment of that origin, so we should proceed to highlight just that segment.
+                // But if it was already that specific segment, the block above handles the toggle off.
+                
                 // Apply highlighting
                 console.log("Applying highlighting...");
                 const opacityUpdates = [];
@@ -474,16 +478,11 @@ def register_callbacks(dash_app, server):
                                     segOrigin === clickedOrigin && 
                                     segDestPos === clickedDestPos);
                                 
-                                if (j < 3) {
-                                    console.log(`  Segment ${j}:`, {segDest, segFacet, segOrigin, segDestPos, isMatch});
-                                }
-                                
                                 opacities.push(isMatch ? 1.0 : 0.2);
                             } else {
                                 opacities.push(0.2);
                             }
                         }
-                        console.log(`  Total opacities for trace ${i}:`, opacities.length, "highlighted:", opacities.filter(o => o === 1.0).length);
                     } else {
                         // Different origin - dim all
                         opacities.push(...Array(trace.customdata.length).fill(0.2));
@@ -517,12 +516,18 @@ def register_callbacks(dash_app, server):
     dash_app.clientside_callback(
         """
         function(figure, currentSelection) {
-            if (!currentSelection) {
-                return window.dash_clientside.no_update;
+            // Logic to handle re-highlighting based on store state (from Chart Click or Legend Click)
+            
+            if (!currentSelection && !window.asiaChartSelection) {
+                // Also check if we need to reset (if store is null but chart has dimming)
+                // We'll rely on the update logic below to handle null selection = reset
             }
             
+            // Allow null selection to proceed (for resetting)
+            
             try {
-                console.log("=== Re-applying highlighting after chart update ===");
+                console.log("=== Re-applying highlighting logic ===");
+                console.log("Current Selection:", currentSelection);
                 
                 // Small delay to ensure DOM is ready
                 setTimeout(function() {
@@ -546,12 +551,25 @@ def register_callbacks(dash_app, server):
                         return;
                     }
                     
+                    // IF NO SELECTION: RESET ALL
+                    if (!currentSelection) {
+                         console.log("No selection - resetting opacity");
+                         const resetUpdate = {
+                            'marker.opacity': graphDiv.data.map(trace => 
+                                Array(trace.x ? trace.x.length : 0).fill(1.0)
+                            )
+                        };
+                        Plotly.restyle(graphDiv, resetUpdate);
+                        return;
+                    }
+
+                    const isLegendSelection = (currentSelection.type === 'legend_selection');
                     const clickedDest = currentSelection.destination;
                     const clickedFacet = currentSelection.facet;
                     const clickedOrigin = currentSelection.origin;
                     const clickedDestPos = currentSelection.dest_pos;
                     
-                    console.log("Re-applying for:", {clickedDest, clickedFacet, clickedOrigin, clickedDestPos});
+                    console.log("Re-applying for:", {clickedOrigin, isLegendSelection});
                     
                     const opacityUpdates = [];
                     
@@ -567,25 +585,33 @@ def register_callbacks(dash_app, server):
                         const opacities = [];
                         
                         if (traceName === clickedOrigin) {
-                            for (let j = 0; j < trace.customdata.length; j++) {
-                                const cd = trace.customdata[j];
-                                if (cd && cd.length >= 4) {
-                                    const segDest = cd[0];
-                                    const segFacet = cd[1];
-                                    const segOrigin = cd[2];
-                                    const segDestPos = cd[3];
-                                    
-                                    const isMatch = (segDest === clickedDest && 
-                                        segFacet === clickedFacet && 
-                                        segOrigin === clickedOrigin && 
-                                        segDestPos === clickedDestPos);
-                                    
-                                    opacities.push(isMatch ? 1.0 : 0.2);
-                                } else {
-                                    opacities.push(0.2);
+                            // Match Origin
+                            if (isLegendSelection) {
+                                // Legend Selection: Highlight ALL segments of this origin
+                                opacities.push(...Array(trace.customdata.length).fill(1.0));
+                            } else {
+                                // Specific Segment Selection
+                                for (let j = 0; j < trace.customdata.length; j++) {
+                                    const cd = trace.customdata[j];
+                                    if (cd && cd.length >= 4) {
+                                        const segDest = cd[0];
+                                        const segFacet = cd[1];
+                                        const segOrigin = cd[2];
+                                        const segDestPos = cd[3];
+                                        
+                                        const isMatch = (segDest === clickedDest && 
+                                            segFacet === clickedFacet && 
+                                            segOrigin === clickedOrigin && 
+                                            segDestPos === clickedDestPos);
+                                        
+                                        opacities.push(isMatch ? 1.0 : 0.2);
+                                    } else {
+                                        opacities.push(0.2);
+                                    }
                                 }
                             }
                         } else {
+                            // Different origin - dim all
                             opacities.push(...Array(trace.customdata.length).fill(0.2));
                         }
                         
@@ -604,7 +630,8 @@ def register_callbacks(dash_app, server):
         }
         """,
         Output('asia-chart-selection-store', 'data', allow_duplicate=True),
-        Input('asia-imports-bar-chart', 'figure'),
+        [Input('asia-imports-bar-chart', 'figure'),
+         Input('asia-chart-selection-store', 'data')],
         State('asia-chart-selection-store', 'data'),
         prevent_initial_call=True
     )
@@ -1670,9 +1697,10 @@ def register_callbacks(dash_app, server):
 
     @dash_app.callback(
         Output('asia-origin-legend-items', 'children'),
-        [Input('asia-origin-dropdown', 'options')]
+        [Input('asia-origin-dropdown', 'options'),
+         Input('asia-chart-selection-store', 'data')]
     )
-    def update_asia_legend(origin_options):
+    def update_asia_legend(origin_options, selection):
         """Update legend to show all available origins from dropdown"""
         if not origin_options:
             return []
@@ -1683,34 +1711,85 @@ def register_callbacks(dash_app, server):
         # Sort alphabetically
         sorted_origins = sorted(all_origins)
         
+        # Determine currently selected origin (if any)
+        selected_origin_name = None
+        if selection and 'origin' in selection:
+            selected_origin_name = selection['origin']
+
         items = []
         for origin in sorted_origins:
             color = ORIGIN_COLORS.get(origin, '#ccc')
+            
+            # Styles
+            is_selected = (origin == selected_origin_name)
+            is_dimmed = (selected_origin_name is not None and not is_selected)
+            
+            box_style = {
+                'width': '12px', 'height': '12px', 
+                'backgroundColor': color, 
+                'marginRight': '8px', 'flexShrink': '0',
+                'border': '1px solid #333' if is_selected else '1px solid #ddd'
+            }
+            
+            text_style = {
+                'fontSize': '11px', 
+                'color': '#333' if not is_dimmed else '#999', 
+                'fontWeight': 'bold' if is_selected else 'normal',
+                'whiteSpace': 'nowrap', 
+                'overflow': 'hidden', 
+                'textOverflow': 'ellipsis',
+                'fontFamily': 'Lato, sans-serif'
+            }
+            
+            container_style = {
+                'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px',
+                'padding': '2px 5px', 'cursor': 'pointer',
+                'borderRadius': '3px',
+                'backgroundColor': '#eef6fc' if is_selected else 'transparent',
+                'opacity': '0.5' if is_dimmed else '1.0'
+            }
+            
             items.append(html.Div([
-                html.Div(style={
-                    'width': '12px', 
-                    'height': '12px', 
-                    'backgroundColor': color, 
-                    'marginRight': '8px', 
-                    'flexShrink': '0',
-                    'border': '1px solid #ddd'
-                }),
-                html.Span(origin, style={
-                    'fontSize': '11px', 
-                    'color': '#333', 
-                    'whiteSpace': 'nowrap', 
-                    'overflow': 'hidden', 
-                    'textOverflow': 'ellipsis',
-                    'fontFamily': 'Lato, sans-serif'
-                })
-            ], style={
-                'display': 'flex', 
-                'alignItems': 'center', 
-                'marginBottom': '6px',
-                'paddingRight': '5px'
-            }))
+                html.Div(style=box_style),
+                html.Span(origin, style=text_style)
+            ], 
+            style=container_style,
+            id={'type': 'asia-legend-item', 'index': origin},
+            n_clicks=0
+            ))
             
         return items
+
+    @dash_app.callback(
+        Output('asia-chart-selection-store', 'data', allow_duplicate=True),
+        Input({'type': 'asia-legend-item', 'index': ALL}, 'n_clicks'),
+        State('asia-chart-selection-store', 'data'),
+        prevent_initial_call=True
+    )
+    def handle_legend_click(n_clicks, current_selection):
+        """Handle clicks on legend items to filter chart"""
+        if not any(n_clicks):
+            return no_update
+        
+        # Get which item was clicked
+        if not ctx.triggered: return no_update
+        trigger_id = ctx.triggered_id
+        
+        # trigger_id is a dict: {'index': 'Australia', 'type': 'asia-legend-item'}
+        clicked_origin = trigger_id['index']
+        
+        print(f"Legend clicked: {clicked_origin}")
+        
+        # Toggle logic
+        if current_selection and current_selection.get('origin') == clicked_origin:
+            # If clicking the already selected origin, DESELECT (Reset)
+            return None
+        else:
+            # Select new origin - Legend Match Only
+            return {
+                'origin': clicked_origin,
+                'type': 'legend_selection'
+            }
 
     # --- Export Callbacks ---
 
