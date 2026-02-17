@@ -1359,13 +1359,14 @@ def register_callbacks(dash_app, server):
          Output('asia-imports-yearly-map-title', 'children')],
         [Input('asia-unit-filter', 'value'),
          Input('asia-flow-type-filter', 'value'),
-         Input('asia-destination-dropdown', 'value'),
+         # Input('asia-destination-dropdown', 'value'),  # Destination removed from map filtering
          Input('asia-origin-dropdown', 'value')],
         prevent_initial_call=False
     )
-    def update_asia_map_callback(unit, flow_type, dest, origins):
+    def update_asia_map_callback(unit, flow_type, origins):
         """Update map based on filter changes - origin filter drives the zoom"""
-        return update_asia_map(unit, flow_type, dest, origins)
+        # Pass '(All)' as destination to ensure map shows all destinations (i.e. global view of imports to Asia)
+        return update_asia_map(unit, flow_type, '(All)', origins)
 
     @dash_app.callback(
         [Output('asia-imports-table-container', 'children'),
@@ -1697,19 +1698,59 @@ def register_callbacks(dash_app, server):
 
     @dash_app.callback(
         Output('asia-origin-legend-items', 'children'),
-        [Input('asia-origin-dropdown', 'options'),
+        [Input('asia-origin-dropdown', 'value'),
+         Input('asia-destination-dropdown', 'value'),
+         Input('asia-unit-filter', 'value'),
+         Input('asia-flow-type-filter', 'value'),
          Input('asia-chart-selection-store', 'data')]
     )
-    def update_asia_legend(origin_options, selection):
-        """Update legend to show all available origins from dropdown"""
-        if not origin_options:
-            return []
+    def update_asia_legend(selected_origin, selected_dest, unit, flow_type, selection):
+        """Update legend to show relevant origins based on filters"""
         
-        # Get all origins except "(All)"
-        all_origins = [opt['value'] for opt in origin_options if opt['value'] != '(All)']
+        relevant_origins = []
         
+        # 1. If specific origin is selected, only show that
+        if selected_origin and selected_origin != '(All)':
+            relevant_origins = [selected_origin]
+        else:
+            # 2. Query DB for available origins based on other filters
+            try:
+                data_unit = 'Mcm' if unit == 'Bcm' else 'GWh'
+                
+                dest_clause = ""
+                if selected_dest and selected_dest != '(All)':
+                    dest_clause = f"AND tr.target_country = '{selected_dest}'"
+                    
+                flow_clause = ""
+                if flow_type and flow_type != ' ':
+                    flow_clause = f"AND tr.flow_type = '{flow_type}'"
+                    
+                query = f"""
+                SELECT DISTINCT tr.source_country
+                FROM glng_gas_trade tr
+                LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
+                WHERE tr.unit = '{data_unit}'
+                  AND (LOWER(co.region) IN ('asia', 'oceania') OR co.country_long_name IS NULL)
+                  AND EXTRACT(YEAR FROM tr.date) >= 2019
+                  AND tr.value IS NOT NULL
+                  {dest_clause}
+                  {flow_clause}
+                ORDER BY 1;
+                """
+                
+                results = execute_query(query)
+                relevant_origins = [r['source_country'] for r in results if r['source_country']]
+                
+            except Exception as e:
+                print(f"Error filtering legend: {e}")
+                import traceback
+                traceback.print_exc()
+                # Fallback: maintain empty list (will result in empty legend) or maybe return all keys from colors?
+                # Better to return empty so it doesn't show misleading info
+                return []
+
         # Sort alphabetically
-        sorted_origins = sorted(all_origins)
+        sorted_origins = sorted(relevant_origins)
         
         # Determine currently selected origin (if any)
         selected_origin_name = None
