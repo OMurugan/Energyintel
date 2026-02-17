@@ -83,6 +83,7 @@ def create_layout():
         dcc.Store(id='gas-flows-chart-period-store', data='DAILY'),
         dcc.Store(id='gas-flows-table-period-store', data='DAILY'),
         dcc.Store(id='gas-flows-table-selection-store', data={'selected_column_id': None}),
+        dcc.Store(id='gas-flows-wave-selection', data=None),
 
         # Main container with Flexbox for Sidebar and Content
         html.Div([
@@ -559,15 +560,51 @@ def register_callbacks(dash_app, server):
         return get_period_toggle_updates(button_id, current_period, 'table')
     
     @dash_app.callback(
+        Output('gas-flows-wave-selection', 'data'),
+        [Input('gas-flows-wave-chart', 'clickData')],
+        [State('gas-flows-wave-selection', 'data')]
+    )
+    def toggle_gas_flows_wave_selection(clickData, current_selection):
+        if not clickData:
+            return no_update
+            
+        # Use customdata for robust selection: [period_of_date, gas_origin]
+        point = clickData['points'][0]
+        if 'customdata' not in point:
+            return no_update
+            
+        # customdata is [period_of_date, gas_origin]
+        clicked_origin = point['customdata'][1]
+        
+        # Ensure it's a clean string
+        if clicked_origin:
+            clicked_origin = str(clicked_origin).strip()
+        
+        # Toggle: if already selected, clear it; otherwise set it
+        if current_selection == clicked_origin:
+            return None
+        
+        return clicked_origin
+
+    @dash_app.callback(
         Output('gas-flows-wave-chart', 'figure'),
         [Input('gas-flows-start-date', 'value'),
-         Input('gas-flows-end-date', 'value'),
-         Input('gas-origin-checklist', 'value'),
-         Input('gas-flows-chart-period-store', 'data')]
+        Input('gas-flows-end-date', 'value'),
+        Input('gas-origin-checklist', 'value'),
+        Input('gas-flows-chart-period-store', 'data'),
+        Input('gas-flows-wave-selection', 'data')]
     )
-    def update_gas_flows_chart(start_date, end_date, selected_origins, period):
+    def update_gas_flows_chart(start_date, end_date, selected_origins, period, selection):
         if not selected_origins:
             return go.Figure()
+
+        # Helper for rgba
+        def hex_to_rgba(hex_color, opacity):
+            hex_color = hex_color.lstrip('#')
+            if len(hex_color) == 3:
+                hex_color = ''.join([c*2 for c in hex_color])
+            rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+            return f'rgba({rgb[0]},{rgb[1]},{rgb[2]},{opacity})'
             
         # We need to include 'Turkey' if 'Azerbaijan' is selected
         query_origins = selected_origins.copy()
@@ -685,6 +722,8 @@ def register_callbacks(dash_app, server):
             # Convert types
             df['flows_bcm'] = pd.to_numeric(df['flows_bcm'], errors='coerce').fillna(0).astype(float)
             df['date'] = pd.to_datetime(df['date'])
+            # Clean string data to prevent matching issues
+            df['gas_origin'] = df['gas_origin'].astype(str).str.strip()
             
             # Mapping for Azerbaijan
             aze_points = ['Kipi', 'Nea Mesimvria', 'Strandzha 2', 'Malkoclar']
@@ -732,19 +771,39 @@ def register_callbacks(dash_app, server):
             for origin in all_origins_present:
                 origin_df = df[df['gas_origin'] == origin].sort_values('date')
                 if not origin_df.empty:
+                    base_color = GAS_ORIGIN_COLORS.get(origin, '#ddd')
+                    
+                    # Highlighting Logic
+                    if selection:
+                        if origin == selection:
+                            # Highlighted: bold color (opacity 1.0)
+                             fill_color = base_color
+                             line_color = 'rgba(255,255,255,0.4)' # Slightly more visible line
+                             line_width = 1.0
+                        else:
+                            # Dimmed: transparent/faded
+                            fill_color = hex_to_rgba(base_color, 0.2)
+                            line_color = 'rgba(255,255,255,0.1)'
+                            line_width = 0.5
+                    else:
+                        # Normal state (no selection)
+                        fill_color = base_color
+                        line_color = 'rgba(255,255,255,0.2)'
+                        line_width = 0.8
+                    
                     fig.add_trace(go.Scatter(
                         x=origin_df['date'],
                         y=origin_df['flows_bcm'],
                         name=origin,
                         stackgroup='one', 
                         mode='lines',
-                        line=dict(width=0.8, color='rgba(255,255,255,0.2)'),
-                        fillcolor=GAS_ORIGIN_COLORS.get(origin, '#ddd'),
+                        line=dict(width=line_width, color=line_color),
+                        fillcolor=fill_color,
                         hoveron='points+fills',
-                        customdata=origin_df['period_of_date'],
+                        customdata=origin_df[['period_of_date', 'gas_origin']].values,
                         hovertemplate=(
                             "Gas Origin: <b>%{fullData.name}</b><br>" +
-                            "Period: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata}</b><br>" +
+                            "Period: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[0]}</b><br>" +
                             "flows_bcm: <b>%{y:.4f}</b><extra></extra>"
                         )
                     ))
