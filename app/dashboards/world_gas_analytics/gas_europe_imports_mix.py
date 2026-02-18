@@ -462,7 +462,7 @@ def create_layout():
                         dcc.Input(
                             id='start-date-picker',
                             type='text',
-                            value='2021-01-01',
+                            value=(datetime.now().replace(year=datetime.now().year - 4, month=1, day=1)).strftime('%Y-%m-%d'),
                             placeholder='YYYY-MM-DD',
                             style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px'}
                         ),
@@ -1116,7 +1116,13 @@ def register_callbacks(dash_app, server):
                 line_widths = []
                 line_colors = []
                 
-                for j, x_label in enumerate(x_order):
+                # Use appropriate iteration based on mode
+                iter_list = list(pivot.index) if agg_mode == 'DATE' else x_order
+                
+                for j, x_item in enumerate(iter_list):
+                    # For DATE mode, x_item is a datetime; for others, it's a label string
+                    x_label = x_order[j] if agg_mode != 'DATE' else x_item.strftime('%d %b %y')
+                    
                     is_dim = False
                     is_sel = False
                     
@@ -1155,7 +1161,8 @@ def register_callbacks(dash_app, server):
                 
                 # Create customdata for both bar clicks and origin identification
                 customdata = []
-                for j, x_label in enumerate(x_order):
+                for j, x_item in enumerate(iter_list):
+                    x_label = x_order[j] if agg_mode != 'DATE' else x_item.strftime('%d %b %y')
                     customdata.append([x_label, origin, 'BAR_CLICK'])
                 
                 fig2.add_trace(go.Bar(
@@ -1165,39 +1172,40 @@ def register_callbacks(dash_app, server):
                     customdata=customdata
                 ))
 
-            # footer labels trace (yaxis2) - for month label clicks
-            footer_text = x_order if agg_mode != 'DATE' else ["" for _ in x_order]
-            
-            # Determine footer label colors based on selection
-            footer_colors = []
-            for x_label in x_order:
-                if selected_month and x_label == selected_month:
-                    footer_colors.append('rgba(0,0,0,0.1)')  # Slightly more visible for selected
-                elif selected_bar and x_label == selected_bar['label']:
-                    footer_colors.append('rgba(0,0,0,0.08)')
-                else:
-                    footer_colors.append('rgba(0,0,0,0.03)')  # Normal transparency
-            
-            # Create customdata for footer labels with proper date mapping
-            footer_customdata = []
-            for i, x_label in enumerate(x_order):
-                # Get the corresponding datetime for this x_label
-                corresponding_dt = list(pivot.index)[i]
-                date_str = corresponding_dt.strftime('%Y-%m-%d')
-                footer_customdata.append([x_label, date_str, 'LABEL_CLICK'])
-            
-            fig2.add_trace(go.Bar(
-                x=x_vals, y=[1] * len(x_vals),
-                yaxis='y2', marker=dict(color=footer_colors, line=dict(width=0)),
-                text=footer_text, 
-                textposition='inside', insidetextanchor='middle', textangle=-90 if agg_mode not in ['YEARLY', 'DATE'] else 0, 
-                textfont=dict(size=11 if agg_mode == 'MONTHLY' else 10, color='#000000' if agg_mode == 'MONTHLY' else '#777', family='Lato, sans-serif'),
-                constraintext='none', cliponaxis=False,
-                hoverinfo='none', showlegend=False,
-                customdata=footer_customdata
-            ))
+            # footer labels trace (yaxis2) - for month label clicks - only add if not in DATE mode
+            if agg_mode != 'DATE':
+                footer_text = x_order
+                
+                # Determine footer label colors based on selection
+                footer_colors = []
+                for x_label in x_order:
+                    if selected_month and x_label == selected_month:
+                        footer_colors.append('rgba(0,0,0,0.1)')  # Slightly more visible for selected
+                    elif selected_bar and x_label == selected_bar['label']:
+                        footer_colors.append('rgba(0,0,0,0.08)')
+                    else:
+                        footer_colors.append('rgba(0,0,0,0.03)')  # Normal transparency
+                
+                # Create customdata for footer labels with proper date mapping
+                footer_customdata = []
+                for i, x_label in enumerate(x_order):
+                    # Get the corresponding datetime for this x_label
+                    corresponding_dt = list(pivot.index)[i]
+                    date_str = corresponding_dt.strftime('%Y-%m-%d')
+                    footer_customdata.append([x_label, date_str, 'LABEL_CLICK'])
+                
+                fig2.add_trace(go.Bar(
+                    x=x_vals, y=[1] * len(x_vals),
+                    yaxis='y2', marker=dict(color=footer_colors, line=dict(width=0)),
+                    text=footer_text, 
+                    textposition='inside', insidetextanchor='middle', textangle=-90 if agg_mode not in ['YEARLY'] else 0, 
+                    textfont=dict(size=11 if agg_mode == 'MONTHLY' else 10, color='#000000' if agg_mode == 'MONTHLY' else '#777', family='Lato, sans-serif'),
+                    constraintext='none', cliponaxis=False,
+                    hoverinfo='none', showlegend=False,
+                    customdata=footer_customdata
+                ))
 
-            x_axis_config = dict(showgrid=False, showticklabels=(agg_mode == 'DATE'), anchor='y2')
+            x_axis_config = dict(showgrid=False, showticklabels=(agg_mode == 'DATE'), anchor='y2' if agg_mode != 'DATE' else 'y')
             if agg_mode == 'DATE':
                 # Set range to match data to remove grey space after values
                 min_date = pivot.index.min()
@@ -1220,13 +1228,19 @@ def register_callbacks(dash_app, server):
                 y_range = [0, 3]
                 y_dtick = 1
             
-            fig2.update_layout(
-                barmode='stack', plot_bgcolor='white', paper_bgcolor='white', showlegend=False,
-                margin=dict(t=10, b=30 if agg_mode == 'DATE' else 0, l=40, r=2), height=360,
-                xaxis=x_axis_config,
-                yaxis=dict(
-                    showgrid=True, gridcolor='#f2f2f2', 
-                    tickfont=dict(size=11, color='#666'), 
+            # Configure layout based on mode
+            layout_config = {
+                'barmode': 'stack',
+                'plot_bgcolor': 'white',
+                'paper_bgcolor': 'white',
+                'showlegend': False,
+                'margin': dict(t=10, b=30 if agg_mode == 'DATE' else 0, l=40, r=2),
+                'height': 360,
+                'xaxis': x_axis_config,
+                'yaxis': dict(
+                    showgrid=True,
+                    gridcolor='#f2f2f2',
+                    tickfont=dict(size=11, color='#666'),
                     domain=[0, 1] if agg_mode == 'DATE' else [0.3 if agg_mode == 'MONTHLY' else 0.15, 1],
                     tick0=0,
                     dtick=y_dtick,
@@ -1234,10 +1248,21 @@ def register_callbacks(dash_app, server):
                     rangemode='tozero',
                     fixedrange=True
                 ),
-                yaxis2=dict(domain=[0, 0.3 if agg_mode == 'MONTHLY' else 0.15], visible=(agg_mode != 'DATE'), showticklabels=False, fixedrange=True, range=[0, 1]),
-                bargap=0 if agg_mode == 'DATE' else 0.02, 
-                hoverlabel=dict(bgcolor="white", font_size=11, font_color="#777", font_family="Lato, sans-serif", bordercolor="#ddd")
-            )
+                'bargap': 0 if agg_mode == 'DATE' else 0.02,
+                'hoverlabel': dict(bgcolor="white", font_size=11, font_color="#777", font_family="Lato, sans-serif", bordercolor="#ddd")
+            }
+            
+            # Only add yaxis2 if not in DATE mode
+            if agg_mode != 'DATE':
+                layout_config['yaxis2'] = dict(
+                    domain=[0, 0.3 if agg_mode == 'MONTHLY' else 0.15],
+                    visible=True,
+                    showticklabels=False,
+                    fixedrange=True,
+                    range=[0, 1]
+                )
+            
+            fig2.update_layout(**layout_config)
             return fig2
         except Exception as e:
             print(f"Chart 2 error: {e}")
