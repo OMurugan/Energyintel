@@ -76,7 +76,7 @@ WHERE LOWER(dc.region) IN ('asia', 'oceania')
   AND gd.unit IN ('Mcm', 'GWh')
   AND gd.to_be_deleted = false
   AND gd.date >= DATE '2019-01-01'
-  AND gd.date < DATE '2025-01-01'
+  AND gd.date <= CURRENT_DATE
   {country_filter}
 GROUP BY
     DATE_TRUNC('month', gd.date),
@@ -114,7 +114,7 @@ WHERE LOWER(dc.region) IN ('asia', 'oceania')
   AND gd.unit IN ('Mcm', 'GWh')
   AND gd.to_be_deleted = false
   AND gd.date >= DATE '2019-01-01'
-  AND gd.date < DATE '2025-01-01'
+  AND gd.date <= CURRENT_DATE
   {country_filter}
 GROUP BY
     DATE_TRUNC('month', gd.date),
@@ -901,7 +901,7 @@ def build_yearly_table(df, sector_filter, unit):
             style_data_conditional=[
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f2f2f2'
+                    'backgroundColor': '#fafbfc'
                 },
                 {
                     'if': {'filter_query': '{Sector} eq "Total"'},
@@ -1105,7 +1105,7 @@ def build_quarterly_table(df, sector_filter, unit):
             style_data_conditional=[
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f2f2f2'
+                    'backgroundColor': '#fafbfc'
                 },
                 {
                     'if': {'filter_query': '{Sector} eq "Total"'},
@@ -1325,7 +1325,7 @@ def build_monthly_table(df, sector_filter, unit):
             style_data_conditional=[
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f2f2f2'
+                    'backgroundColor': '#fafbfc'
                 },
                 {
                     'if': {'filter_query': '{Sector} eq "Total"'},
@@ -1559,7 +1559,7 @@ def build_daily_table(df, sector_filter, unit):
             style_data_conditional=[
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f2f2f2'
+                    'backgroundColor': '#fafbfc'
                 },
                 {
                     'if': {'filter_query': '{Sector} eq "Total"'},
@@ -2065,13 +2065,43 @@ def register_callbacks(dash_app, server):
                         
                         const cell = e.target.closest('td[data-dash-column]');
                         if (cell) {
+                             const colId = cell.getAttribute('data-dash-column');
+                             
+                             // Only allow row highlighting for Country or Sector columns
+                             if (colId !== 'Country' && colId !== 'Sector') {
+                                 return; // Ignore clicks on data cells
+                             }
+                             
                              const row = cell.closest('tr');
                              const tbody = row.closest('tbody');
                              const rows = Array.from(tbody.querySelectorAll('tr'));
                              const idx = rows.indexOf(row);
                              
-                             const start = idx; 
-                             const end = idx; 
+                             let start = idx;
+                             let end = idx;
+                             
+                             if (colId === 'Country') {
+                                 // Get the country name from the clicked cell
+                                 const countryName = cell.innerText.trim();
+                                 
+                                 if (countryName) {
+                                     // Find all rows for this country (including sectors and Total)
+                                     start = idx;
+                                     end = idx;
+                                     
+                                     // Look ahead to find all rows until we hit another country or end
+                                     for (let i = idx + 1; i < rows.length; i++) {
+                                         const nextRow = rows[i];
+                                         const nextCountryCell = nextRow.querySelector('td[data-dash-column="Country"]');
+                                         if (nextCountryCell && nextCountryCell.innerText.trim()) {
+                                             // Found next country, stop here
+                                             break;
+                                         }
+                                         end = i;
+                                     }
+                                 }
+                             }
+                             // If Sector column clicked, just highlight that single row (start = end = idx)
                              
                              const newKey = `${start}_${end}`;
                              
