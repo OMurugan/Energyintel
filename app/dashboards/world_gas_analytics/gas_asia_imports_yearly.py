@@ -218,10 +218,16 @@ def create_layout():
                                     style={'height': '500px'},
                                     config={
                                         'displayModeBar': True,
-                                        'modeBarButtonsToAdd': ['zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d'],
-                                        'modeBarButtonsToRemove': ['lasso2d', 'select2d', 'zoom2d', 'pan2d'],
+                                        'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d'],
+                                        'modeBarButtonsToAdd': [],
                                         'displaylogo': False,
-                                        'scrollZoom': False  # Disable scroll zoom to avoid confusion
+                                        'toImageButtonOptions': {
+                                            'format': 'png',
+                                            'filename': 'asia_imports_chart',
+                                            'height': 500,
+                                            'width': 1200,
+                                            'scale': 2
+                                        }
                                     }
                                 )
                             )
