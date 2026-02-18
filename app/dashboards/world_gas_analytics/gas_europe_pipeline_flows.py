@@ -241,7 +241,20 @@ def create_layout():
                         type='circle',
                         color=EI_ORANGE,
                         children=html.Div(id='gas-flows-table-container')
-                    )
+                    ),
+                    
+                    # Footer text
+                    html.Div([
+                        html.P("Source: Energy Intelligence, Transmission System Operators, Federal Agencies", 
+                               style={
+                                   'fontSize': '10px',
+                                   'color': '#666',
+                                   'fontStyle': 'italic',
+                                   'marginTop': '10px',
+                                   'marginBottom': '0',
+                                   'fontFamily': 'Inter, sans-serif'
+                               })
+                    ])
                 ], style={'marginTop': '20px'}),
                 
                 # Hidden div for clientside callback anchor
@@ -342,7 +355,7 @@ def register_callbacks(dash_app, server):
                     const columnId = (header || cell).getAttribute('data-dash-column');
                     const rowIndex = cell ? cell.getAttribute('data-dash-row') : null;
                     
-                    if (columnId === 'Day of Date' && !rowIndex) return;
+                    if (columnId === 'Period of Date' && !rowIndex) return;
                     
                     const isHeader = !!header;
                     const headerRow = isHeader ? header.closest('tr') : null;
@@ -374,9 +387,15 @@ def register_callbacks(dash_app, server):
                     // Discovery logic for child columns if a parent header is clicked
                     if (isHeader) {
                         const colspan = parseInt(header.getAttribute('colspan') || header.colSpan || '1');
+                        
+                        console.log('Header clicked:', header.innerText, 'Colspan:', colspan, 'HeaderIndex:', headerIndex);
+                        
                         if (colspan > 1) {
+                            // Build a complete column position map from the bottom row
                             const bottomRow = headerRows[headerRows.length - 1];
                             const allBottomHeaders = Array.from(bottomRow.querySelectorAll('th[data-dash-column]'));
+                            
+                            console.log('Bottom row headers count:', allBottomHeaders.length);
                             
                             let currentIdx = 0;
                             const bottomHeaderMap = allBottomHeaders.map(h => {
@@ -386,6 +405,7 @@ def register_callbacks(dash_app, server):
                                 return { header: h, start: start, end: currentIdx, colId: h.getAttribute('data-dash-column') };
                             });
 
+                            // Calculate the clicked header's position range
                             let clickedStartIdx = 0;
                             const rowHeaders = Array.from(headerRow.querySelectorAll('th'));
                             for (let h of rowHeaders) {
@@ -395,26 +415,63 @@ def register_callbacks(dash_app, server):
                             
                             const clickedEndIdx = clickedStartIdx + colspan;
                             
+                            console.log('Clicked range:', clickedStartIdx, 'to', clickedEndIdx);
+                            
+                            // Find all bottom-level columns within this range
                             targetColumnIds = bottomHeaderMap
-                                .filter(m => m.start >= clickedStartIdx && m.end <= clickedEndIdx && m.colId !== 'Day of Date')
+                                .filter(m => {
+                                    const inRange = m.start >= clickedStartIdx && m.start < clickedEndIdx;
+                                    const notPeriod = m.colId !== 'Period of Date';
+                                    if (inRange) {
+                                        console.log('  Column in range:', m.colId, 'at position', m.start);
+                                    }
+                                    return inRange && notPeriod;
+                                })
                                 .map(m => m.colId);
+                            
+                            console.log('Target columns found:', targetColumnIds);
+                            
+                            // Also highlight all intermediate headers in the clicked column's hierarchy
+                            for (let i = headerIndex; i < headerRows.length; i++) {
+                                const rowHeadersAtLevel = Array.from(headerRows[i].querySelectorAll('th[data-dash-column]'));
+                                let posIdx = 0;
+                                for (let h of rowHeadersAtLevel) {
+                                    const hColspan = parseInt(h.getAttribute('colspan') || h.colSpan || '1');
+                                    const hStart = posIdx;
+                                    
+                                    // If this header starts within our clicked range, highlight it
+                                    if (hStart >= clickedStartIdx && hStart < clickedEndIdx) {
+                                        h.classList.add('column-header-selected');
+                                        console.log('  Highlighting header:', h.innerText, 'at position', hStart);
+                                    }
+                                    
+                                    posIdx += hColspan;
+                                }
+                            }
+                        } else {
+                            // Single column header clicked
+                            header.classList.add('column-header-selected');
+                            console.log('Single column header, using columnId:', columnId);
                         }
-                        header.classList.add('column-header-selected');
                     }
                     
                     // Generate Dynamic CSS for high contrast highlights
                     let dynamicStyles = '';
                     
+                    console.log('Generating styles for columns:', targetColumnIds);
+                    
                     // 1. Column(s) Highlighting
-                    targetColumnIds.forEach(id => {
-                        dynamicStyles += `
-                            #${tableId} .dash-spreadsheet-container td[data-dash-column="${id}"] {
-                                background-color: #e1f0ff !important;
-                                color: #1b365d !important;
-                                font-weight: 600 !important;
-                            }
-                        `;
-                    });
+                    if (targetColumnIds.length > 0) {
+                        targetColumnIds.forEach(id => {
+                            dynamicStyles += `
+                                #${tableId} .dash-spreadsheet-container td[data-dash-column="${id}"] {
+                                    background-color: #e1f0ff !important;
+                                    color: #1b365d !important;
+                                    font-weight: 600 !important;
+                                }
+                            `;
+                        });
+                    }
                     
                     // 2. Row Highlighting
                     if (highlightRow !== null) {
