@@ -61,8 +61,88 @@ INVESTMENT_TYPE_COLORS = {
 }
 
 
+def _format_date_for_display(date):
+    """Format date as 'YYYY-MM-DD' (e.g., '2019-01-01')"""
+    if pd.isna(date) or date is None:
+        return ""
+    if isinstance(date, str):
+        date = pd.to_datetime(date, errors='coerce')
+    if pd.isna(date):
+        return ""
+    return date.strftime('%Y-%m-%d')  # Standard format for date inputs
+
+def _index_to_date(index, date_list):
+    """Convert slider index to date"""
+    if not date_list or index < 0 or index >= len(date_list):
+        return pd.Timestamp.now()
+    return date_list[index]
+
+def _date_to_index(date_str, date_list):
+    """Convert date string to slider index"""
+    if not date_list or not date_str:
+        return 0
+    
+    try:
+        date = pd.to_datetime(date_str)
+        # Find closest date
+        # This assumes date_list is sorted
+        for i, d in enumerate(date_list):
+            if d >= date:
+                return i
+        return len(date_list) - 1
+    except:
+        return 0
+
 def create_layout():
     """Create the Activity by Region layout"""
+    # Fetch min and max dates from database for dynamic range
+    min_max_query = """
+    SELECT MIN(date_announced) as min_date, MAX(date_announced) as max_date
+    FROM fact_et_assets
+    WHERE new_status <> 'Uncertain'
+    """
+    
+    try:
+        date_result = execute_query(min_max_query, {})
+        if date_result and date_result[0]['min_date'] and date_result[0]['max_date']:
+            min_date_val = pd.to_datetime(date_result[0]['min_date'])
+            max_date_val = pd.to_datetime(date_result[0]['max_date'])
+        else:
+            # Fallback if query fails or returns no data
+            min_date_val = pd.Timestamp('2015-01-01')
+            max_date_val = pd.Timestamp('2025-12-31')
+    except Exception as e:
+        print(f"Error fetching date range: {e}")
+        min_date_val = pd.Timestamp('2015-01-01')
+        max_date_val = pd.Timestamp('2025-12-31')
+
+    # Create a daily date list from min to max
+    date_list = pd.date_range(start=min_date_val, end=max_date_val, freq='D')
+    
+    # Set default range to most recent 10 years
+    default_end_date = max_date_val
+    default_start_date = max_date_val - pd.DateOffset(years=10)
+    
+    # Ensure start date is not before available data
+    if default_start_date < min_date_val:
+        default_start_date = min_date_val
+        
+    # Find indices for default range
+    default_start_index = 0
+    default_end_index = len(date_list) - 1
+    
+    # Find closest indices
+    for i, date in enumerate(date_list):
+        if date >= default_start_date:
+            default_start_index = i
+            break
+            
+    # Format dates for display
+    min_date_str = _format_date_for_display(min_date_val)
+    max_date_str = _format_date_for_display(max_date_val)
+    default_start_date_str = _format_date_for_display(default_start_date)
+    default_end_date_str = _format_date_for_display(default_end_date)
+    
     return html.Div([
         # Data stores
         dcc.Store(id='low-carbon-measure-store', data='investment_value'),
@@ -70,7 +150,11 @@ def create_layout():
         dcc.Store(id='low-carbon-chart-selection', data=None),
         dcc.Store(id='low-carbon-is-expanded', data=False),
         dcc.Store(id='low-carbon-latest-date', data=None),
+        dcc.Store(id='low-carbon-date-list-store', data=[d.isoformat() for d in date_list]),
         dcc.Download(id='low-carbon-download-csv'),
+        
+        # Clientside callback anchor
+        html.Div(id='low-carbon-date-picker-enhancer-anchor', style={'display': 'none'}),
         
         # Header
         html.Div([
@@ -203,14 +287,56 @@ def create_layout():
                         }
                     ),
                     html.Div([
-                        html.Div(id='low-carbon-start-date-label', children="1/1/2015", style={'fontSize': '14px', 'color': EI_DARK_BLUE, 'display': 'inline-block'}),
-                        html.Div(id='low-carbon-end-date-label', children="12/23/2025", style={'fontSize': '14px', 'color': EI_DARK_BLUE, 'float': 'right'})
+                        html.Div([
+                            html.Div([
+                                dcc.Input(
+                                    id='low-carbon-start-date',
+                                    type='date',
+                                    value=default_start_date_str,
+                                    min=min_date_str,
+                                    max=max_date_str,
+                                    placeholder='YYYY-MM-DD',
+                                    style={
+                                        'width': '65px',
+                                        'height': '28px',
+                                        'fontSize': '11px',
+                                        'fontFamily': 'Arial, sans-serif',
+                                        'border': '1px solid #ccc',
+                                        'borderRadius': '4px',
+                                        'padding': '0 2px',
+                                        'color': '#333',
+                                        'cursor': 'pointer'
+                                    }
+                                ),
+                            ], style={'marginRight': '65px'}),
+                            html.Div([
+                                dcc.Input(
+                                    id='low-carbon-end-date',
+                                    type='date',
+                                    value=default_end_date_str,
+                                    min=min_date_str,
+                                    max=max_date_str,
+                                    placeholder='YYYY-MM-DD',
+                                    style={
+                                        'width': '65px',
+                                        'height': '28px',
+                                        'fontSize': '11px',
+                                        'fontFamily': 'Arial, sans-serif',
+                                        'border': '1px solid #ccc',
+                                        'borderRadius': '4px',
+                                        'padding': '0 2px',
+                                        'color': '#333',
+                                        'cursor': 'pointer'
+                                    }
+                                ),
+                            ]),
+                        ], style={'width': 'auto', 'display': 'flex', 'gap': '0px', 'marginBottom': '10px', 'alignItems': 'center'}),
                     ], style={'marginBottom': '5px', 'fontFamily': 'Arial, sans-serif', 'overflow': 'hidden'}),
                     dcc.RangeSlider(
                         id='low-carbon-date-filter',
                         min=0,
-                        max=(datetime(2025, 12, 23) - datetime(2015, 1, 1)).days,
-                        value=[0, (datetime(2025, 12, 23) - datetime(2015, 1, 1)).days],
+                        max=len(date_list) - 1,
+                        value=[default_start_index, default_end_index],
                         step=1,
                         marks=None,
                         tooltip={"placement": "bottom", "always_visible": False}
@@ -337,6 +463,149 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register all callbacks for the dashboard"""
     
+    # Clientside callback to enhance date pickers (hide icon, show on click)
+    dash_app.clientside_callback(
+        """
+        function(n_clicks, start_id, end_id) {
+            // Create a style element to hide the calendar icon but keep it clickable
+            var styleId = 'date-input-style-overrides';
+            if (!document.getElementById(styleId)) {
+                var style = document.createElement('style');
+                style.id = styleId;
+                style.innerHTML = `
+                    input[type="date"]::-webkit-calendar-picker-indicator {
+                        opacity: 0 !important;
+                        pointer-events: none !important;
+                        width: 0px;
+                        display: none;
+                    }
+                    input[type="date"]::-webkit-inner-spin-button,
+                    input[type="date"]::-webkit-outer-spin-button {
+                        -webkit-appearance: none;
+                        margin: 0;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+            
+            // Helper to setup date input
+            function setupDateInput(id) {
+                var input = document.getElementById(id);
+                if (input) {
+                    input.addEventListener('click', function(e) {
+                        try {
+                            if (typeof this.showPicker === 'function') {
+                                this.showPicker();
+                            } else {
+                                console.log('showPicker API not supported');
+                            }
+                        } catch (error) {
+                            console.log('Error opening picker:', error);
+                        }
+                    });
+                }
+            }
+            
+            // Setup both inputs with a slight delay to ensure they exist
+            setTimeout(function() {
+                setupDateInput(start_id);
+                setupDateInput(end_id);
+            }, 500);
+            
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('low-carbon-date-picker-enhancer-anchor', 'children'),
+        Input('low-carbon-date-picker-enhancer-anchor', 'id'), # Dummy trigger
+        [State('low-carbon-start-date', 'id'),
+         State('low-carbon-end-date', 'id')]
+    )
+
+    @dash_app.callback(
+        [Output('low-carbon-start-date', 'value'),
+         Output('low-carbon-end-date', 'value'),
+         Output('low-carbon-date-filter', 'value')],
+        [Input('low-carbon-start-date', 'value'),
+         Input('low-carbon-end-date', 'value'),
+         Input('low-carbon-date-filter', 'value')],
+        [State('low-carbon-date-list-store', 'data')],
+        prevent_initial_call=True
+    )
+    def sync_date_controls(start_str, end_str, slider_val, date_list):
+        ctx = callback_context
+        if not ctx.triggered or not date_list:
+            return no_update, no_update, no_update
+            
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        
+        # Parse date list back to Timestamp
+        try:
+            dates = [pd.Timestamp(d) for d in date_list]
+        except:
+            return no_update, no_update, no_update
+            
+        if trigger_id == 'low-carbon-date-filter':
+            # Slider moved -> Update inputs
+            if not slider_val or len(slider_val) < 2:
+                return no_update, no_update, no_update
+                
+            start_idx, end_idx = slider_val
+            
+            # Ensure valid indices
+            start_idx = max(0, min(start_idx, len(dates)-1))
+            end_idx = max(0, min(end_idx, len(dates)-1))
+            
+            new_start = _format_date_for_display(dates[int(start_idx)])
+            new_end = _format_date_for_display(dates[int(end_idx)])
+            
+            # Check equality - start_str and end_str are current values from Input
+            if new_start == start_str and new_end == end_str:
+                return no_update, no_update, no_update
+                
+            return new_start, new_end, no_update
+            
+        elif trigger_id == 'low-carbon-start-date' or trigger_id == 'low-carbon-end-date':
+            # Inputs changed -> Update slider
+            
+            # Use current value of the OTHER input which comes from `end_str` or `start_str` arguments
+            # Note: start_str and end_str are the values of the inputs at trigger time.
+            
+            target_start = start_str
+            target_end = end_str
+            
+            if not target_start or not target_end:
+                 return no_update, no_update, no_update
+                
+            try:
+                start_idx = _date_to_index(target_start, dates)
+                end_idx = _date_to_index(target_end, dates)
+                
+                # Ensure start <= end
+                # Because changing one input might invalidate the range, we adjust.
+                if start_idx > end_idx:
+                    if trigger_id == 'low-carbon-start-date':
+                        # If start moved past end, push end
+                        end_idx = start_idx
+                        target_end = target_start
+                    else:
+                        # If end moved before start, push start
+                        start_idx = end_idx
+                        target_start = target_end
+                
+                slider_val = [start_idx, end_idx]
+                
+                # If we implicitly updated an input (like start pushing end), we must return it
+                if target_start != start_str or target_end != end_str:
+                     return target_start, target_end, slider_val
+                
+                return no_update, no_update, slider_val
+                
+            except Exception as e:
+                print(f"Error syncing dates: {e}")
+                return no_update, no_update, no_update
+                
+        return no_update, no_update, no_update
+
     # Update title based on measure
     @dash_app.callback(
         Output('low-carbon-title', 'children'),
@@ -494,11 +763,29 @@ def register_callbacks(dash_app, server):
          Input('low-carbon-breakdown-filter', 'value'),
          Input('low-carbon-chart-selection', 'data'),
          Input('low-carbon-is-expanded', 'data'),
-         Input('low-carbon-date-filter', 'value')]
+         Input('low-carbon-date-filter', 'value')],
+        [State('low-carbon-date-list-store', 'data')]
     )
-    def update_chart(measure, breakdown, selection, is_expanded, date_range):
-        start_date = (datetime(2015, 1, 1) + timedelta(days=date_range[0])).strftime('%Y-%m-%d')
-        end_date = (datetime(2015, 1, 1) + timedelta(days=date_range[1])).strftime('%Y-%m-%d')
+    def update_chart(measure, breakdown, selection, is_expanded, date_range, date_list):
+        if not date_list or not date_range:
+            start_date = '2015-01-01'
+            end_date = '2025-12-31'
+        else:
+            try:
+                # Resolve indices to dates from the store
+                start_idx = int(date_range[0])
+                end_idx = int(date_range[1])
+                
+                # Ensure indices are within bounds
+                start_idx = max(0, min(start_idx, len(date_list)-1))
+                end_idx = max(0, min(end_idx, len(date_list)-1))
+                
+                start_date = date_list[start_idx][:10] # Take YYYY-MM-DD
+                end_date = date_list[end_idx][:10]
+            except Exception as e:
+                print(f"Error resolving dates: {e}")
+                start_date = '2015-01-01'
+                end_date = '2025-12-31'
         
         # Get latest date from database
         latest_date_query = """
