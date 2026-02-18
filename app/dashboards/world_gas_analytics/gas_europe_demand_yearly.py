@@ -230,6 +230,16 @@ def create_layout():
                             },
                             style_as_list_view=False,
                         )
+                    ),
+                    html.Div(
+                        "Source: Energy Intelligence, Transmission System Operators, Federal Agencies, Eurostat, Entso-e",
+                        style={
+                            'fontStyle': 'italic',
+                            'fontSize': '12px',
+                            'color': '#1b365d',
+                            'marginTop': '10px',
+                            'fontFamily': 'Arial, sans-serif'
+                        }
                     )
                 ], style={'padding': '20px', 'overflowX': 'hidden', 'position': 'relative'})
             ], style={'width': '80%', 'display': 'inline-block', 'verticalAlign': 'top'}),
