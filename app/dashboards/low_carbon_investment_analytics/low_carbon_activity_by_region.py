@@ -279,9 +279,9 @@ def create_layout():
                     html.Label(
                         "Announcement Date",
                         style={
-                            'fontWeight': 'bold',
+                            # 'fontWeight': 'bold',
                             'color': EI_DARK_BLUE,
-                            'fontSize': '16px',
+                            'fontSize': '14px',
                             'marginBottom': '10px',
                             'display': 'block',
                             'fontFamily': 'Arial, sans-serif'
@@ -349,7 +349,7 @@ def create_layout():
                     html.Label(
                         "Measure",
                         style={
-                            'fontWeight': 'bold',
+                            # 'fontWeight': 'bold',
                             'color': '#333',
                             'fontSize': '14px',
                             'marginBottom': '10px',
@@ -373,7 +373,7 @@ def create_layout():
                     html.Label(
                         "Breakdown",
                         style={
-                            'fontWeight': 'bold',
+                            # 'fontWeight': 'bold',
                             'color': '#333',
                             'fontSize': '14px',
                             'marginBottom': '10px',
@@ -399,9 +399,9 @@ def create_layout():
                     html.Label(
                         "Legend",
                         style={
-                            'fontWeight': 'bold',
-                            'color': '#777',
-                            'fontSize': '12px',
+                            # 'fontWeight': 'bold',
+                            'color': '#333',
+                            'fontSize': '14px',
                             'marginBottom': '10px',
                             'display': 'block'
                         }
@@ -442,7 +442,7 @@ def create_layout():
                     target="_blank",
                     style={
                         'fontSize': '11px',
-                        'color': '#fe5000',
+                        'color': '#4996B2',
                         'fontFamily': 'Arial, sans-serif',
                         'textDecoration': 'underline',
                         'cursor': 'pointer'
