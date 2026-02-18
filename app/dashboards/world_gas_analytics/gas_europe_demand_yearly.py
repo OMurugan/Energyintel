@@ -114,8 +114,6 @@ def create_layout():
         dcc.Store(id='gas-europe-granularity-store', data='year'),
         dcc.Store(id='gas-europe-table-granularity-store', data='month'),
         dcc.Store(id='gas-demand-chart-selection', data=None),
-        dcc.Download(id="gas-demand-europe-download-chart-csv"),
-        dcc.Download(id="gas-demand-europe-download-table-csv"),
         
         # Header
         html.Div([
@@ -149,8 +147,16 @@ def create_layout():
                         ], style=GRAN_BTN_CONTAINER_STYLE),
                     ], style={'display': 'flex', 'padding': '10px 20px', 'backgroundColor': '#f8f9fa', 'alignItems': 'center'}),
 
-                    html.Button("Export to CSV", id="gas-demand-europe-export-chart-csv-btn", 
-                                style={**EXPORT_BTN_STYLE, 'position': 'absolute', 'top': '10px', 'right': '20px'}),
+                    html.Div([
+                        html.Button("Export to CSV", id="gas-demand-europe-export-chart-csv-btn", 
+                                    style=EXPORT_BTN_STYLE),
+                        dcc.Loading(
+                            id="loading-export-chart",
+                            type="circle",
+                            children=dcc.Download(id="gas-demand-europe-download-chart-csv"),
+                            style={'display': 'inline-block', 'marginLeft': '10px'}
+                        )
+                    ], style={'position': 'absolute', 'top': '10px', 'right': '20px', 'display': 'flex', 'alignItems': 'center'}),
 
                     # Chart Area
                     html.Div([
@@ -184,8 +190,16 @@ def create_layout():
                         ], style=GRAN_BTN_CONTAINER_STYLE),
                     ], style={'display': 'flex', 'padding': '10px 0', 'backgroundColor': '#fff', 'alignItems': 'center'}),
                     
-                    html.Button("Export to CSV", id="gas-demand-europe-export-table-csv-btn", 
-                                style={**EXPORT_BTN_STYLE, 'position': 'absolute', 'top': '10px', 'right': '20px'}),
+                    html.Div([
+                        html.Button("Export to CSV", id="gas-demand-europe-export-table-csv-btn", 
+                                    style=EXPORT_BTN_STYLE),
+                        dcc.Loading(
+                            id="loading-export-table",
+                            type="circle",
+                            children=dcc.Download(id="gas-demand-europe-download-table-csv"),
+                            style={'display': 'inline-block', 'marginLeft': '10px'}
+                        )
+                    ], style={'position': 'absolute', 'top': '10px', 'right': '20px', 'display': 'flex', 'alignItems': 'center'}),
                     
                     dcc.Store(id='gas-demand-table-selection-store', data={}),
                     dcc.Store(id='gas-demand-table-highlight-state', data={}),
@@ -659,6 +673,7 @@ def register_callbacks(dash_app, server):
           AND dc.country_long_name = ANY(:selected_countries)
           AND gd.to_be_deleted = false
           AND EXTRACT(YEAR FROM gd.date) >= 2019
+          AND EXTRACT(YEAR FROM gd.date) < :current_year
         GROUP BY
             CASE
                 WHEN :granularity = 'year'    THEN DATE_TRUNC('year', gd.date)
@@ -696,7 +711,8 @@ def register_callbacks(dash_app, server):
             'selected_sectors': list(selected_sectors),
             'selected_countries': list(selected_countries),
             'unit': db_unit,
-            'display_unit': unit
+            'display_unit': unit,
+            'current_year': datetime.now().year
         }
         
         try:
@@ -1086,6 +1102,7 @@ def register_callbacks(dash_app, server):
           AND dc.country_long_name = ANY(:selected_countries)
           AND gd.to_be_deleted = false
           AND EXTRACT(YEAR FROM gd.date) >= 2019
+          AND EXTRACT(YEAR FROM gd.date) < :current_year
                   GROUP BY 1, 2, 3, 4, 5, 6
         ORDER BY 1, 2, 
                  CASE 
@@ -1105,7 +1122,8 @@ def register_callbacks(dash_app, server):
             'unit': db_unit,
             'display_unit': unit,
             'selected_sectors': selected_sectors,
-            'selected_countries': selected_countries
+            'selected_countries': selected_countries,
+            'current_year': datetime.now().year
         }
         
         try:
@@ -1153,14 +1171,15 @@ def register_callbacks(dash_app, server):
           AND gd.unit = :unit
           AND gd.to_be_deleted = false
           AND EXTRACT(YEAR FROM gd.date) >= 2019
-          AND EXTRACT(YEAR FROM gd.date) < 2026
+          AND EXTRACT(YEAR FROM gd.date) < :current_year
         GROUP BY 1, 2, 3, 4, 5, 6, 7
         ORDER BY 3 DESC, 1, 2
         """
         params = {
             'granularity': granularity,
             'unit': db_unit,
-            'display_unit': unit
+            'display_unit': unit,
+            'current_year': datetime.now().year
         }
         
         try:
@@ -1575,7 +1594,7 @@ def register_callbacks(dash_app, server):
           AND gd.unit = :unit
           AND gd.to_be_deleted = false
           AND EXTRACT(YEAR FROM gd.date) >= 2019
-          AND EXTRACT(YEAR FROM gd.date) < 2026
+          AND EXTRACT(YEAR FROM gd.date) < :current_year
         GROUP BY
             gd.country,
             gd.sector,
@@ -1594,7 +1613,8 @@ def register_callbacks(dash_app, server):
         params = {
             'granularity': granularity, 
             'unit': db_unit, 
-            'display_unit': unit
+            'display_unit': unit,
+            'current_year': datetime.now().year
         }
         
         try:
