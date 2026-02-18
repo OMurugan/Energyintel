@@ -1990,8 +1990,8 @@ def register_callbacks(dash_app, server):
         """,
         [Output('asia-yearly-date-label-start', 'children'),
          Output('asia-yearly-date-label-end', 'children')],
-        Input('asia-yearly-date-slider', 'value'),
-        State('asia-yearly-date-map', 'data')
+        [Input('asia-yearly-date-slider', 'value')],
+        [State('asia-yearly-date-map', 'data')]
     )
 
     # 3. Clientside Callback for Table Highlighting (Reused exactly)
@@ -2067,6 +2067,7 @@ def register_callbacks(dash_app, server):
                         });
 
                         const allCells = spreadsheet.querySelectorAll('td[data-dash-column]');
+                        
                         allCells.forEach(cell => {
                             const cId = cell.getAttribute('data-dash-column');
                             if (cId === 'Country' || cId === 'Sector') return;
@@ -2130,15 +2131,32 @@ def register_callbacks(dash_app, server):
                             if (colId === 'Country' || colId === 'Sector') return;
 
                             const headerContent = header.innerText.trim();
-                            let isYearHeader = /^\d{4}$/.test(headerContent);
+                            
                             let targetIds = [];
-                            if (isYearHeader && columns) {
-                                columns.forEach(c => {
-                                    if (c.id && c.id.startsWith(headerContent + '_')) targetIds.push(c.id);
-                                });
+                            
+                            // Check if header text is a 4-digit year
+                            const isYearHeader = /^\d{4}$/.test(headerContent);
+                            
+                            if (isYearHeader) {
+                                // Check if colId itself is a year (yearly view) or has underscore (monthly/quarterly view)
+                                if (/^\d{4}$/.test(colId)) {
+                                    // Yearly view - colId is just the year like "2026"
+                                    targetIds.push(colId);
+                                } else if (columns) {
+                                    // Monthly/Quarterly view - find all columns starting with year_
+                                    columns.forEach(c => {
+                                        if (c.id && c.id.startsWith(headerContent + '_')) {
+                                            targetIds.push(c.id);
+                                        }
+                                    });
+                                }
                             } else {
+                                // Regular column (not a year header)
                                 targetIds.push(colId);
                             }
+                            
+                            // If no targetIds found, don't proceed
+                            if (targetIds.length === 0) return;
 
                             const selectionKey = targetIds.join(',');
                             
@@ -2159,8 +2177,37 @@ def register_callbacks(dash_app, server):
                              const rows = Array.from(tbody.querySelectorAll('tr'));
                              const idx = rows.indexOf(row);
                              
-                             const start = idx; 
-                             const end = idx; 
+                             // Check if clicked on Country column
+                             const colId = cell.getAttribute('data-dash-column');
+                             let start = idx;
+                             let end = idx;
+                             
+                             if (colId === 'Country') {
+                                 // Get the country name from the clicked cell
+                                 const countryName = cell.innerText.trim();
+                                 
+                                 if (countryName) {
+                                     // Find all rows for this country (including sectors and Total)
+                                     // Start from current row and continue until we find another country or end
+                                     start = idx;
+                                     end = idx;
+                                     
+                                     // Look forward to find all rows belonging to this country
+                                     for (let i = idx + 1; i < rows.length; i++) {
+                                         const nextRow = rows[i];
+                                         const nextCountryCell = nextRow.querySelector('td[data-dash-column="Country"]');
+                                         const nextCountryText = nextCountryCell ? nextCountryCell.innerText.trim() : '';
+                                         
+                                         // If next row has no country text (empty), it belongs to current country
+                                         // If it has text, it's a new country, so stop
+                                         if (nextCountryText === '') {
+                                             end = i;
+                                         } else {
+                                             break;
+                                         }
+                                     }
+                                 }
+                             }
                              
                              const newKey = `${start}_${end}`;
                              
@@ -2195,9 +2242,9 @@ def register_callbacks(dash_app, server):
         }
         """,
         Output('asia-yearly-table-highlight-state', 'data'),
-        Input('asia-gas-yearly-demand-table', 'data'),
-        State('asia-gas-yearly-demand-table', 'columns'),
-        State('asia-yearly-table-highlight-state', 'data')
+        [Input('asia-gas-yearly-demand-table', 'data')],
+        [State('asia-gas-yearly-demand-table', 'columns'),
+         State('asia-yearly-table-highlight-state', 'data')]
     )
 
     # 4. Clientside Callback to attach X-Axis Click Listeners
@@ -2249,7 +2296,7 @@ def register_callbacks(dash_app, server):
         }
         """,
         Output('axis-yearly-listener-output', 'children'), # Dedicated output
-        Input('asia-gas-yearly-chart', 'figure')
+        [Input('asia-gas-yearly-chart', 'figure')]
     )
 
     # 5. Export Callbacks
