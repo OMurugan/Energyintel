@@ -397,7 +397,7 @@ def create_layout():
                             })
                         ], style={'display': 'flex', 'alignItems': 'center'})
                     ], style={
-                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#fafbfc', 
                         'padding': '8px 10px', 'borderRadius': '4px', 'marginBottom': '10px',
                         'position': 'absolute', 'top': '15px', 'left': '60px', 'zIndex': '10'
                     }),
@@ -468,7 +468,7 @@ def create_layout():
                         })
                     ), style={'marginLeft': 'auto'}) # Push to right
                     ], style={
-                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#fafbfc', 
                         'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px'
                     }),
 
@@ -963,7 +963,7 @@ def build_yearly_table(df, sector_filter, unit):
             style_data_conditional=[
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f2f2f2'
+                    'backgroundColor': '#fafbfc'
                 },
                 {
                     'if': {'filter_query': '{Sector} eq "Total"'},
@@ -1174,7 +1174,7 @@ def build_quarterly_table(df, sector_filter, unit):
             style_data_conditional=[
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f2f2f2'
+                    'backgroundColor': '#fafbfc'
                 },
                 {
                     'if': {'filter_query': '{Sector} eq "Total"'},
@@ -1404,7 +1404,7 @@ def build_monthly_table(df, sector_filter, unit):
             style_data_conditional=[
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f2f2f2'
+                    'backgroundColor': '#fafbfc'
                 },
                 {
                     'if': {'filter_query': '{Sector} eq "Total"'},
@@ -1645,7 +1645,7 @@ def build_daily_table(df, sector_filter, unit):
             style_data_conditional=[
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f2f2f2'
+                    'backgroundColor': '#fafbfc'
                 },
                 {
                     'if': {'filter_query': '{Sector} eq "Total"'},
@@ -2039,7 +2039,8 @@ def register_callbacks(dash_app, server):
                 if (!window.asiaGasYearlyState) {
                     window.asiaGasYearlyState = { 
                         selectedColumnId: null,
-                        selectedRowIndices: null 
+                        selectedRowIndices: null,
+                        selectedCellId: null
                     };
                 }
 
@@ -2100,6 +2101,23 @@ def register_callbacks(dash_app, server):
                                     row.classList.add('asia-yearly-row-trip-wire');
                                 }
                             });
+                        });
+                        return;
+                    }
+                    
+                    if (window.asiaGasYearlyState.selectedCellId) {
+                        const [rowIdx, colId] = window.asiaGasYearlyState.selectedCellId.split('_');
+                        const rowIndex = parseInt(rowIdx);
+                        
+                        const tbodies = spreadsheet.querySelectorAll('tbody');
+                        tbodies.forEach(tbody => {
+                            const rows = tbody.querySelectorAll('tr');
+                            if (rows[rowIndex]) {
+                                const targetCell = rows[rowIndex].querySelector(`td[data-dash-column="${colId}"]`);
+                                if (targetCell) {
+                                    targetCell.classList.add('asia-yearly-col-selected');
+                                }
+                            }
                         });
                     }
                 }
@@ -2181,47 +2199,63 @@ def register_callbacks(dash_app, server):
                              const rows = Array.from(tbody.querySelectorAll('tr'));
                              const idx = rows.indexOf(row);
                              
-                             // Check if clicked on Country column
+                             // Check if clicked on Country or Sector column
                              const colId = cell.getAttribute('data-dash-column');
-                             let start = idx;
-                             let end = idx;
                              
-                             if (colId === 'Country') {
-                                 // Get the country name from the clicked cell
-                                 const countryName = cell.innerText.trim();
+                             if (colId === 'Country' || colId === 'Sector') {
+                                 // Row selection for Country/Sector columns
+                                 let start = idx;
+                                 let end = idx;
                                  
-                                 if (countryName) {
-                                     // Find all rows for this country (including sectors and Total)
-                                     // Start from current row and continue until we find another country or end
-                                     start = idx;
-                                     end = idx;
+                                 if (colId === 'Country') {
+                                     // Get the country name from the clicked cell
+                                     const countryName = cell.innerText.trim();
                                      
-                                     // Look forward to find all rows belonging to this country
-                                     for (let i = idx + 1; i < rows.length; i++) {
-                                         const nextRow = rows[i];
-                                         const nextCountryCell = nextRow.querySelector('td[data-dash-column="Country"]');
-                                         const nextCountryText = nextCountryCell ? nextCountryCell.innerText.trim() : '';
+                                     if (countryName) {
+                                         // Find all rows for this country (including sectors and Total)
+                                         start = idx;
+                                         end = idx;
                                          
-                                         // If next row has no country text (empty), it belongs to current country
-                                         // If it has text, it's a new country, so stop
-                                         if (nextCountryText === '') {
-                                             end = i;
-                                         } else {
-                                             break;
+                                         // Look forward to find all rows belonging to this country
+                                         for (let i = idx + 1; i < rows.length; i++) {
+                                             const nextRow = rows[i];
+                                             const nextCountryCell = nextRow.querySelector('td[data-dash-column="Country"]');
+                                             const nextCountryText = nextCountryCell ? nextCountryCell.innerText.trim() : '';
+                                             
+                                             // If next row has no country text (empty), it belongs to current country
+                                             // If it has text, it's a new country, so stop
+                                             if (nextCountryText === '') {
+                                                 end = i;
+                                             } else {
+                                                 break;
+                                             }
                                          }
                                      }
                                  }
-                             }
-                             
-                             const newKey = `${start}_${end}`;
-                             
-                             if (window.asiaGasYearlyState.selectedRowIndices === newKey) {
-                                  window.asiaGasYearlyState.selectedRowIndices = null;
+                                 
+                                 const newKey = `${start}_${end}`;
+                                 
+                                 if (window.asiaGasYearlyState.selectedRowIndices === newKey) {
+                                      window.asiaGasYearlyState.selectedRowIndices = null;
+                                 } else {
+                                      window.asiaGasYearlyState.selectedRowIndices = newKey;
+                                      window.asiaGasYearlyState.selectedColumnId = null;
+                                      window.asiaGasYearlyState.selectedCellId = null;
+                                 }
+                                 applyState(spreadsheet, n_data);
                              } else {
-                                  window.asiaGasYearlyState.selectedRowIndices = newKey;
-                                  window.asiaGasYearlyState.selectedColumnId = null;
+                                 // Single cell selection for data columns
+                                 const cellKey = `${idx}_${colId}`;
+                                 
+                                 if (window.asiaGasYearlyState.selectedCellId === cellKey) {
+                                     window.asiaGasYearlyState.selectedCellId = null;
+                                 } else {
+                                     window.asiaGasYearlyState.selectedCellId = cellKey;
+                                     window.asiaGasYearlyState.selectedColumnId = null;
+                                     window.asiaGasYearlyState.selectedRowIndices = null;
+                                 }
+                                 applyState(spreadsheet, n_data);
                              }
-                             applyState(spreadsheet, n_data);
                         }
                     });
                 }
@@ -2232,6 +2266,7 @@ def register_callbacks(dash_app, server):
                     if (window.asiaGasYearlyState.lastColumnStructure !== currentCols) {
                         window.asiaGasYearlyState.selectedColumnId = null;
                         window.asiaGasYearlyState.selectedRowIndices = null;
+                        window.asiaGasYearlyState.selectedCellId = null;
                         window.asiaGasYearlyState.lastColumnStructure = currentCols;
                     }
                 }
