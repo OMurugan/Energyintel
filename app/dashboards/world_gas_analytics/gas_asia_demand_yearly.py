@@ -76,7 +76,7 @@ WHERE LOWER(dc.region) IN ('asia', 'oceania')
   AND gd.unit IN ('Mcm', 'GWh')
   AND gd.to_be_deleted = false
   AND gd.date >= DATE '2019-01-01'
-  AND gd.date < DATE '2025-01-01'
+  AND gd.date <= CURRENT_DATE
   {country_filter}
 GROUP BY
     DATE_TRUNC('month', gd.date),
@@ -114,7 +114,7 @@ WHERE LOWER(dc.region) IN ('asia', 'oceania')
   AND gd.unit IN ('Mcm', 'GWh')
   AND gd.to_be_deleted = false
   AND gd.date >= DATE '2019-01-01'
-  AND gd.date < DATE '2025-01-01'
+  AND gd.date <= CURRENT_DATE
   {country_filter}
 GROUP BY
     DATE_TRUNC('month', gd.date),
@@ -398,14 +398,14 @@ def create_layout():
                         ], style={'display': 'flex', 'alignItems': 'center'})
                     ], style={
                         'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
-                        'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px',
+                        'padding': '8px 10px', 'borderRadius': '4px', 'marginBottom': '10px',
                         'position': 'absolute', 'top': '15px', 'left': '60px', 'zIndex': '10'
                     }),
 
                     dcc.Loading(
                         [
                             html.Div(id='loading-trigger-yearly-chart', style={'display': 'none'}),
-                            dcc.Graph(id='asia-gas-yearly-chart', config={'displayModeBar': False})
+                            dcc.Graph(id='asia-gas-yearly-chart', config={'displayModeBar': False}, style={'marginTop': '45px'})
                         ],
                         id="loading-asia-yearly-chart",
                         type="circle"
@@ -904,6 +904,12 @@ def build_yearly_table(df, sector_filter, unit):
                 row_tooltip[col_id] = {'value': tooltip_text, 'type': 'markdown'}
         tooltip_data.append(row_tooltip)
 
+    # Calculate dynamic height based on number of rows
+    row_height = 25
+    header_height = 30
+    num_rows = len(table_data)
+    calculated_height = min(600, max(150, (num_rows * row_height) + header_height + 20))
+    
     return html.Div([
         dash_table.DataTable(
             id='asia-gas-yearly-demand-table',
@@ -923,7 +929,7 @@ def build_yearly_table(df, sector_filter, unit):
             fixed_columns={'headers': True, 'data': 2},
             style_table={
                 'minWidth': '100%', 
-                'height': '600px', 
+                'height': f'{calculated_height}px', 
                 'overflowY': 'auto', 
                 'overflowX': 'auto', 
                 'border': '1px solid #ddd'
@@ -1102,6 +1108,12 @@ def build_quarterly_table(df, sector_filter, unit):
                 row_tooltip[col_id] = {'value': tooltip_text, 'type': 'markdown'}
         tooltip_data.append(row_tooltip)
 
+    # Calculate dynamic height based on number of rows
+    row_height = 25
+    header_height = 50
+    num_rows = len(table_data)
+    calculated_height = min(600, max(150, (num_rows * row_height) + header_height + 20))
+
     return html.Div([
         dash_table.DataTable(
             id='asia-gas-yearly-demand-table',
@@ -1122,7 +1134,7 @@ def build_quarterly_table(df, sector_filter, unit):
             fixed_columns={'headers': True, 'data': 2},
             style_table={
                 'minWidth': '100%', 
-                'height': '600px', 
+                'height': f'{calculated_height}px', 
                 'overflowY': 'auto', 
                 'overflowX': 'auto', 
                 'border': '1px solid #ddd'
@@ -1316,6 +1328,12 @@ def build_monthly_table(df, sector_filter, unit):
                 row_tooltip[col_id] = {'value': tooltip_text, 'type': 'markdown'}
         tooltip_data.append(row_tooltip)
 
+    # Calculate dynamic height based on number of rows
+    row_height = 25
+    header_height = 50
+    num_rows = len(table_data)
+    calculated_height = min(600, max(150, (num_rows * row_height) + header_height + 20))
+
     return html.Div([
         dash_table.DataTable(
             id='asia-gas-yearly-demand-table',
@@ -1336,7 +1354,7 @@ def build_monthly_table(df, sector_filter, unit):
             fixed_columns={'headers': True, 'data': 2},
             style_table={
                 'minWidth': '100%', 
-                'height': '600px', 
+                'height': f'{calculated_height}px', 
                 'overflowY': 'auto', 
                 'overflowX': 'auto', 
                 'border': '1px solid #ddd'
@@ -1545,6 +1563,12 @@ def build_daily_table(df, sector_filter, unit):
                 row_tooltip[col_id] = {'value': tooltip_text, 'type': 'markdown'}
         tooltip_data.append(row_tooltip)
 
+    # Calculate dynamic height based on number of rows
+    row_height = 25
+    header_height = 50
+    num_rows = len(table_data)
+    calculated_height = min(600, max(150, (num_rows * row_height) + header_height + 20))
+
     return html.Div([
         dash_table.DataTable(
             id='asia-gas-yearly-demand-table',
@@ -1565,7 +1589,7 @@ def build_daily_table(df, sector_filter, unit):
             fixed_columns={'headers': True, 'data': 2},
             style_table={
                 'minWidth': '100%', 
-                'height': '600px', 
+                'height': f'{calculated_height}px', 
                 'overflowY': 'auto', 
                 'overflowX': 'auto', 
                 'border': '1px solid #ddd'
