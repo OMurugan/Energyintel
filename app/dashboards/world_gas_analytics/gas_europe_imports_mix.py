@@ -1199,10 +1199,27 @@ def register_callbacks(dash_app, server):
 
             x_axis_config = dict(showgrid=False, showticklabels=(agg_mode == 'DATE'), anchor='y2')
             if agg_mode == 'DATE':
-                x_axis_config.update(type='date', tickformat='%d %b %y', nticks=10, tickfont=dict(size=9, color='#777'))
+                # Set range to match data to remove grey space after values
+                min_date = pivot.index.min()
+                max_date = pivot.index.max()
+                x_axis_config.update(type='date', tickformat='%d %b %y', nticks=10, tickfont=dict(size=9, color='#777'), range=[min_date, max_date])
             else:
                 x_axis_config.update(type='category', showticklabels=False)
 
+            # Determine Y-axis config based on granularity
+            y_range = [0, 60]
+            y_dtick = 20
+            
+            if agg_mode == 'YEARLY':
+                y_range = [0, 800]
+                y_dtick = 200
+            elif agg_mode == 'QUARTERLY':
+                y_range = [0, 200]
+                y_dtick = 50
+            elif agg_mode == 'DATE':
+                y_range = [0, 3]
+                y_dtick = 1
+            
             fig2.update_layout(
                 barmode='stack', plot_bgcolor='white', paper_bgcolor='white', showlegend=False,
                 margin=dict(t=10, b=30 if agg_mode == 'DATE' else 0, l=40, r=2), height=360,
@@ -1210,10 +1227,12 @@ def register_callbacks(dash_app, server):
                 yaxis=dict(
                     showgrid=True, gridcolor='#f2f2f2', 
                     tickfont=dict(size=11, color='#666'), 
-                    domain=[0.3 if agg_mode == 'MONTHLY' else 0.15, 1],
+                    domain=[0, 1] if agg_mode == 'DATE' else [0.3 if agg_mode == 'MONTHLY' else 0.15, 1],
                     tick0=0,
-                    dtick=20,
-                    range=[0, 60]
+                    dtick=y_dtick,
+                    range=y_range,
+                    rangemode='tozero',
+                    fixedrange=True
                 ),
                 yaxis2=dict(domain=[0, 0.3 if agg_mode == 'MONTHLY' else 0.15], visible=(agg_mode != 'DATE'), showticklabels=False, fixedrange=True, range=[0, 1]),
                 bargap=0 if agg_mode == 'DATE' else 0.02, 
@@ -1232,8 +1251,7 @@ def register_callbacks(dash_app, server):
          Output('chart1-toggle-year-btn', 'children'),
          Output('chart1-toggle-quarter-btn', 'children'),
          Output('chart1-toggle-month-btn', 'children'),
-         Output('chart1-toggle-day-btn', 'children'),
-         Output('chart-1', 'clickData')],
+         Output('chart1-toggle-day-btn', 'children')],
         [Input('chart1-toggle-year-btn', 'n_clicks'),
          Input('chart1-toggle-quarter-btn', 'n_clicks'),
          Input('chart1-toggle-month-btn', 'n_clicks'),
@@ -1246,13 +1264,13 @@ def register_callbacks(dash_app, server):
         tr = ctx.triggered_id
         if not tr or tr == 'None':
             cg = current_gran or 'YEARLY'
-            return cg, no_update, ('-' if cg == 'YEARLY' else '+'), ('-' if cg == 'QUARTERLY' else '+'), ('-' if cg == 'MONTHLY' else '+'), ('-' if cg == 'DATE' else '+'), no_update
+            return cg, no_update, ('-' if cg == 'YEARLY' else '+'), ('-' if cg == 'QUARTERLY' else '+'), ('-' if cg == 'MONTHLY' else '+'), ('-' if cg == 'DATE' else '+')
 
         # Handle Chart 1 Click
         if tr == 'chart-1':
-            if not c1_click: return [no_update]*7
+            if not c1_click or 'points' not in c1_click: return [no_update]*6
             cdata = c1_click['points'][0].get('customdata', [])
-            if not cdata or len(cdata) < 3: return [no_update]*7
+            if not cdata or len(cdata) < 3: return [no_update]*6
             
             val = str(cdata[0]) # Year/Label
             flow = str(cdata[1])
@@ -1277,7 +1295,8 @@ def register_callbacks(dash_app, server):
                     new_s1 = {'mode': 'bar', 'year': val, 'flow': flow}
             
             # Use no_update for granularity to prevent double load on click
-            return no_update, new_s1, no_update, no_update, no_update, no_update, None
+            # Use no_update for granularity to prevent double load on click
+            return no_update, new_s1, no_update, no_update, no_update, no_update
 
         # Handle Granularity Buttons
         new_gran = 'YEARLY'
@@ -1287,9 +1306,19 @@ def register_callbacks(dash_app, server):
         elif 'day' in tr: new_gran = 'DATE'
         
         if new_gran == current_gran:
-            return [no_update]*7
+            return [no_update]*6
             
-        return new_gran, None, ('-' if new_gran == 'YEARLY' else '+'), ('-' if new_gran == 'QUARTERLY' else '+'), ('-' if new_gran == 'MONTHLY' else '+'), ('-' if new_gran == 'DATE' else '+'), None
+        return new_gran, None, ('-' if new_gran == 'YEARLY' else '+'), ('-' if new_gran == 'QUARTERLY' else '+'), ('-' if new_gran == 'MONTHLY' else '+'), ('-' if new_gran == 'DATE' else '+')
+
+    # Independent reset callback for Chart 1
+    @dash_app.callback(
+        Output('chart-1', 'clickData'),
+        Input('chart-1', 'clickData')
+    )
+    def reset_chart1_click(clickData):
+        if clickData:
+            return None
+        return no_update
 
     # Chart 2 State Manager (Granularity + Selections)
     # Merging both avoids chain reactions and solves "Duplicate callback outputs"
@@ -1299,8 +1328,7 @@ def register_callbacks(dash_app, server):
          Output('chart2-toggle-year-btn', 'children'),
          Output('chart2-toggle-quarter-btn', 'children'),
          Output('chart2-toggle-month-btn', 'children'),
-         Output('chart2-toggle-day-btn', 'children'),
-         Output('chart-2', 'clickData')],
+         Output('chart2-toggle-day-btn', 'children')],
         [Input('chart2-toggle-year-btn', 'n_clicks'),
          Input('chart2-toggle-quarter-btn', 'n_clicks'),
          Input('chart2-toggle-month-btn', 'n_clicks'),
@@ -1313,11 +1341,11 @@ def register_callbacks(dash_app, server):
         tr = ctx.triggered_id
         if not tr or tr == 'None':
             cg = current_gran or 'MONTHLY'
-            return cg, no_update, ('-' if cg == 'YEARLY' else '+'), ('-' if cg == 'QUARTERLY' else '+'), ('-' if cg == 'MONTHLY' else '+'), ('-' if cg == 'DATE' else '+'), no_update
+            return cg, no_update, ('-' if cg == 'YEARLY' else '+'), ('-' if cg == 'QUARTERLY' else '+'), ('-' if cg == 'MONTHLY' else '+'), ('-' if cg == 'DATE' else '+')
 
         # Handle Chart 2 Click
         if tr == 'chart-2':
-            if not c2_click or 'points' not in c2_click: return [no_update]*7
+            if not c2_click or 'points' not in c2_click: return [no_update]*6
             point = c2_click['points'][0]
             customdata = point.get('customdata', [])
             
@@ -1341,7 +1369,8 @@ def register_callbacks(dash_app, server):
                         new_s2 = {'mode': 'month', 'month': date_str, 'label': x_label}
             
             # Use no_update for granularity to prevent double load on click
-            return no_update, new_s2, no_update, no_update, no_update, no_update, None
+            # Use no_update for granularity to prevent double load on click
+            return no_update, new_s2, no_update, no_update, no_update, no_update
 
         # Handle Granularity Buttons
         new_gran = 'MONTHLY'
@@ -1351,9 +1380,19 @@ def register_callbacks(dash_app, server):
         elif 'day' in tr: new_gran = 'DATE'
         
         if new_gran == current_gran:
-            return [no_update]*7
+            return [no_update]*6
             
-        return new_gran, None, ('-' if new_gran == 'YEARLY' else '+'), ('-' if new_gran == 'QUARTERLY' else '+'), ('-' if new_gran == 'MONTHLY' else '+'), ('-' if new_gran == 'DATE' else '+'), None
+        return new_gran, None, ('-' if new_gran == 'YEARLY' else '+'), ('-' if new_gran == 'QUARTERLY' else '+'), ('-' if new_gran == 'MONTHLY' else '+'), ('-' if new_gran == 'DATE' else '+')
+
+    # Independent reset callback for Chart 2
+    @dash_app.callback(
+        Output('chart-2', 'clickData'),
+        Input('chart-2', 'clickData')
+    )
+    def reset_chart2_click(clickData):
+        if clickData:
+            return None
+        return no_update
 
     # CALLBACK 3: Chart 3 Only
     @dash_app.callback(
