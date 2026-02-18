@@ -616,7 +616,17 @@ def create_layout():
                         {'if': {'column_id': 'Day of Date'}, 'textAlign': 'center', 'minWidth': '50px'}
                     ],
                     style_data_conditional=[
-                        {'if': {'row_index': 'odd'}, 'backgroundColor': '#f2f2f2'}
+                        {'if': {'row_index': 'odd'}, 'backgroundColor': '#f2f2f2'},
+                        {
+                            'if': {'state': 'active'},
+                            'backgroundColor': '#fdeedc',
+                            'border': '1px solid #fe5000'
+                        },
+                        {
+                            'if': {'state': 'selected'},
+                            'backgroundColor': '#e1f0ff',
+                            'border': '1px solid #3390ff'
+                        }
                     ],
                     style_as_list_view=False,
                     sort_action='native',
@@ -626,7 +636,10 @@ def create_layout():
             ),
             
             html.P("Source: Energy Intelligence",
-                   style={'fontSize': '10px', 'color': '#666', 'fontStyle': 'italic', 'paddingLeft': '10px', 'marginTop': '10px'})
+                   style={'fontSize': '10px', 'color': '#666', 'fontStyle': 'italic', 'paddingLeft': '10px', 'marginTop': '10px'}),
+            
+            # Hidden div for clientside callback anchor
+            html.Div(id='gas-asia-table-enhancer-anchor', style={'display': 'none'})
         ], style={'padding': '20px', 'backgroundColor': 'white', 'width': '100%'})
         
     ], style={'backgroundColor': '#ffffff', 'fontFamily': 'Lato, sans-serif'})
@@ -660,6 +673,216 @@ def register_callbacks(dash_app, server):
         Input('gas-asia-start-date-picker', 'id'),
         prevent_initial_call='initial_duplicate'
     )
+
+    # Clientside callback for table highlighting
+    dash_app.clientside_callback(
+        """
+        function(id) {
+            const tableId = 'gas-asia-imports-mix-table';
+            const baseStyleId = 'gas-asia-table-base-css';
+            const dynamicStyleId = 'gas-asia-table-dynamic-highlight-css';
+            
+            // 1. Inject Base CSS if not present
+            if (!document.getElementById(baseStyleId)) {
+                const style = document.createElement('style');
+                style.id = baseStyleId;
+                style.innerHTML = `
+                    #${tableId} .dash-spreadsheet-container {
+                        cursor: pointer;
+                    }
+                    #${tableId} .dash-spreadsheet-container td {
+                        transition: all 0.2s ease;
+                    }
+                    /* Base selection state: dim normal data cells */
+                    #${tableId} .dash-spreadsheet-container.selection-active td {
+                        color: #ccc !important;
+                        background-color: transparent !important;
+                    }
+                    /* Keep Day of Date and Month of Date column clear and undimmed if needed */
+                    #${tableId} .dash-spreadsheet-container.selection-active td[data-dash-column="Day of Date"] {
+                        color: #666 !important;
+                        opacity: 1 !important;
+                    }
+                     #${tableId} .dash-spreadsheet-container.selection-active td[data-dash-column="Month of Date"] {
+                        color: #666 !important;
+                        opacity: 1 !important;
+                    }
+                    /* Highlight for selected column header */
+                    #${tableId} .dash-spreadsheet-container th.column-header-selected {
+                        background-color: #0075A8 !important;
+                        color: white !important;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+            
+            // 2. Set up click listener on the table
+            const setupListener = () => {
+                const tableEl = document.getElementById(tableId);
+                if (!tableEl) return;
+                
+                const container = tableEl.querySelector('.dash-spreadsheet-container');
+                if (!container || container.dataset.highlightEnhanced === 'true') return;
+                
+                container.dataset.highlightEnhanced = 'true';
+                
+                container.addEventListener('click', function(e) {
+                    const header = e.target.closest('th[data-dash-column]');
+                    const cell = e.target.closest('td[data-dash-column]');
+                    
+                    if (!header && !cell) return;
+                    
+                    const columnId = (header || cell).getAttribute('data-dash-column');
+                    const rowIndex = cell ? cell.getAttribute('data-dash-row') : null;
+                    
+                    if ((columnId === 'Year of Date' || columnId === 'Month of Date' || columnId === 'Quarter of Date' || columnId === 'Day of Date') && !rowIndex) return;
+                    
+                    const isHeader = !!header;
+                    const headerRow = isHeader ? header.closest('tr') : null;
+                    const thead = isHeader ? header.closest('thead') : null;
+                    const headerRows = thead ? Array.from(thead.querySelectorAll('tr')) : [];
+                    const headerIndex = headerRow ? headerRows.indexOf(headerRow) : -1;
+                    
+                    // Toggle logic
+                    const selectionKey = isHeader ? (columnId + '_' + headerIndex) : (columnId + '_' + rowIndex);
+                    if (container.dataset.lastSelection === selectionKey) {
+                        container.dataset.lastSelection = '';
+                        container.classList.remove('selection-active');
+                        container.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
+                        const dynStyle = document.getElementById(dynamicStyleId);
+                        if (dynStyle) dynStyle.remove();
+                        return;
+                    }
+                    container.dataset.lastSelection = selectionKey;
+                    
+                    // Clear existing header highlights
+                    container.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
+                    
+                    // Apply highlighting
+                    container.classList.add('selection-active');
+                    
+                    let targetColumnIds = [columnId];
+                    let highlightRow = rowIndex;
+                    
+                    // Discovery logic for child columns if a parent header is clicked
+                    if (isHeader) {
+                        const colspan = parseInt(header.getAttribute('colspan') || header.colSpan || '1');
+                        
+
+                        
+                        if (colspan > 1) {
+                            // Robust Discovery: Find the data row that actually contains this column
+                            // This handles fixed_rows (split header/body) and fixed_columns (split left/right)
+                            const parentId = header.getAttribute('data-dash-column');
+                            const allTbodies = Array.from(container.querySelectorAll('tbody'));
+                            
+                            let targetRow = null;
+                            let startIdx = -1;
+                            let leafIds = [];
+
+                            // Search for the row containing our start column
+                            for (let tbody of allTbodies) {
+                                const row = tbody.querySelector('tr');
+                                if (!row) continue;
+                                
+                                const cells = Array.from(row.querySelectorAll('td'));
+                                const ids = cells.map(td => td.getAttribute('data-dash-column'));
+                                const idx = ids.indexOf(parentId);
+                                
+                                if (idx !== -1) {
+                                    targetRow = row;
+                                    startIdx = idx;
+                                    leafIds = ids;
+                                    break;
+                                }
+                            }
+                            
+                            if (targetRow && startIdx !== -1) {
+                                const endIdx = Math.min(startIdx + colspan, leafIds.length);
+                                targetColumnIds = leafIds.slice(startIdx, endIdx);
+                            } else {
+                                targetColumnIds = [columnId];
+                            }
+                        } else {
+                            // Single column header clicked
+                            header.classList.add('column-header-selected');
+
+                        }
+                    }
+                    
+                    // Generate Dynamic CSS for high contrast highlights
+                    let dynamicStyles = '';
+                    
+
+                    
+                    // 1. Column(s) Highlighting
+                    if (targetColumnIds.length > 0) {
+                        targetColumnIds.forEach(id => {
+                            dynamicStyles += `
+                                #${tableId} .dash-spreadsheet-container td[data-dash-column="${id}"] {
+                                    background-color: #e1f0ff !important;
+                                    color: #1b365d !important;
+                                    font-weight: 600 !important;
+                                }
+                            `;
+                        });
+                    }
+                    
+                    // 2. Row Highlighting
+                    if (highlightRow !== null) {
+                        dynamicStyles += `
+                            #${tableId} .dash-spreadsheet-container tr:has(td[data-dash-row="${highlightRow}"]) td {
+                                background-color: #e1f0ff !important;
+                                color: #1b365d !important;
+                                font-weight: 600 !important;
+                            }
+                        `;
+                        // 3. Active Cell with intense border and background
+                        dynamicStyles += `
+                            #${tableId} .dash-spreadsheet-container td[data-dash-column="${columnId}"][data-dash-row="${highlightRow}"] {
+                                border: 2px solid #fe5000 !important;
+                                border-radius: 2px;
+                                z-index: 10 !important;
+                                position: relative;
+                            }
+                            /* Special highlight for the Day of Date cell in the selected row */
+                            #${tableId} .dash-spreadsheet-container td[data-dash-column="Day of Date"][data-dash-row="${highlightRow}"] {
+                                background-color: #b3d9ff !important;
+                                color: #1b365d !important;
+                                font-weight: bold !important;
+                            }
+                             /* Special highlight for the Month of Date cell in the selected row */
+                            #${tableId} .dash-spreadsheet-container td[data-dash-column="Month of Date"][data-dash-row="${highlightRow}"] {
+                                background-color: #b3d9ff !important;
+                                color: #1b365d !important;
+                                font-weight: bold !important;
+                            }
+                        `;
+                    }
+                    
+                    let dynStyle = document.getElementById(dynamicStyleId);
+                    if (!dynStyle) {
+                        dynStyle = document.createElement('style');
+                        dynStyle.id = dynamicStyleId;
+                        document.head.appendChild(dynStyle);
+                    }
+                    dynStyle.innerHTML = dynamicStyles;
+                });
+            };
+            
+            setupListener();
+            if (!window._gasAsiaTableInterval) {
+                window._gasAsiaTableInterval = setInterval(setupListener, 1000);
+            }
+            
+            return null;
+        }
+        """,
+        Output('gas-asia-table-enhancer-anchor', 'children'),
+        Input('gas-asia-table-enhancer-anchor', 'id')
+    )
+
+
     
     # Helper function for query parameters
     def get_query_params(destination, start_date, end_date, origins, flow_type, unit):
