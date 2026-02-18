@@ -391,62 +391,37 @@ def register_callbacks(dash_app, server):
                         console.log('Header clicked:', header.innerText, 'Colspan:', colspan, 'HeaderIndex:', headerIndex);
                         
                         if (colspan > 1) {
-                            // Build a complete column position map from the bottom row
-                            const bottomRow = headerRows[headerRows.length - 1];
-                            const allBottomHeaders = Array.from(bottomRow.querySelectorAll('th[data-dash-column]'));
+                            // Robust Discovery: Find the data row that actually contains this column
+                            // This handles fixed_rows (split header/body) and fixed_columns (split left/right)
+                            const parentId = header.getAttribute('data-dash-column');
+                            const allTbodies = Array.from(container.querySelectorAll('tbody'));
                             
-                            console.log('Bottom row headers count:', allBottomHeaders.length);
-                            
-                            let currentIdx = 0;
-                            const bottomHeaderMap = allBottomHeaders.map(h => {
-                                const cs = parseInt(h.getAttribute('colspan') || h.colSpan || '1');
-                                const start = currentIdx;
-                                currentIdx += cs;
-                                return { header: h, start: start, end: currentIdx, colId: h.getAttribute('data-dash-column') };
-                            });
+                            let targetRow = null;
+                            let startIdx = -1;
+                            let leafIds = [];
 
-                            // Calculate the clicked header's position range
-                            let clickedStartIdx = 0;
-                            const rowHeaders = Array.from(headerRow.querySelectorAll('th'));
-                            for (let h of rowHeaders) {
-                                if (h === header) break;
-                                clickedStartIdx += parseInt(h.getAttribute('colspan') || h.colSpan || '1');
+                            // Search for the row containing our start column
+                            for (let tbody of allTbodies) {
+                                const row = tbody.querySelector('tr');
+                                if (!row) continue;
+                                
+                                const cells = Array.from(row.querySelectorAll('td'));
+                                const ids = cells.map(td => td.getAttribute('data-dash-column'));
+                                const idx = ids.indexOf(parentId);
+                                
+                                if (idx !== -1) {
+                                    targetRow = row;
+                                    startIdx = idx;
+                                    leafIds = ids;
+                                    break;
+                                }
                             }
                             
-                            const clickedEndIdx = clickedStartIdx + colspan;
-                            
-                            console.log('Clicked range:', clickedStartIdx, 'to', clickedEndIdx);
-                            
-                            // Find all bottom-level columns within this range
-                            targetColumnIds = bottomHeaderMap
-                                .filter(m => {
-                                    const inRange = m.start >= clickedStartIdx && m.start < clickedEndIdx;
-                                    const notPeriod = m.colId !== 'Period of Date';
-                                    if (inRange) {
-                                        console.log('  Column in range:', m.colId, 'at position', m.start);
-                                    }
-                                    return inRange && notPeriod;
-                                })
-                                .map(m => m.colId);
-                            
-                            console.log('Target columns found:', targetColumnIds);
-                            
-                            // Also highlight all intermediate headers in the clicked column's hierarchy
-                            for (let i = headerIndex; i < headerRows.length; i++) {
-                                const rowHeadersAtLevel = Array.from(headerRows[i].querySelectorAll('th[data-dash-column]'));
-                                let posIdx = 0;
-                                for (let h of rowHeadersAtLevel) {
-                                    const hColspan = parseInt(h.getAttribute('colspan') || h.colSpan || '1');
-                                    const hStart = posIdx;
-                                    
-                                    // If this header starts within our clicked range, highlight it
-                                    if (hStart >= clickedStartIdx && hStart < clickedEndIdx) {
-                                        h.classList.add('column-header-selected');
-                                        console.log('  Highlighting header:', h.innerText, 'at position', hStart);
-                                    }
-                                    
-                                    posIdx += hColspan;
-                                }
+                            if (targetRow && startIdx !== -1) {
+                                const endIdx = Math.min(startIdx + colspan, leafIds.length);
+                                targetColumnIds = leafIds.slice(startIdx, endIdx);
+                            } else {
+                                targetColumnIds = [columnId];
                             }
                         } else {
                             // Single column header clicked
