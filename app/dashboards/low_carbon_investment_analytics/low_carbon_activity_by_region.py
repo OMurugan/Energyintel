@@ -4,8 +4,9 @@ Low-carbon investment activity analytics by region
 """
 from datetime import datetime, timedelta
 import pandas as pd
+import json
 import plotly.graph_objects as go
-from dash import dcc, html, Input, Output, State, callback_context, no_update
+from dash import dcc, html, Input, Output, State, ALL, callback_context, no_update
 from core.data_helpers import execute_query
 
 # Color scheme matching the reference image
@@ -390,20 +391,24 @@ def register_callbacks(dash_app, server):
                         }
                     ),
                     html.Span(label, style={'fontSize': '11px', 'color': '#555'})
-                ], style={
+                ], 
+                id={'type': 'low-carbon-legend-item', 'index': label},
+                n_clicks=0,
+                style={
                     'display': 'flex',
                     'alignItems': 'center',
-                    'marginBottom': '8px'
+                    'marginBottom': '8px',
+                    'cursor': 'pointer'
                 })
             )
         
         return legend_items
     
-    # Handle chart selection
     @dash_app.callback(
         [Output('low-carbon-chart-selection', 'data'),
          Output('low-carbon-chart', 'clickData')],
         [Input('low-carbon-chart', 'clickData'),
+         Input({'type': 'low-carbon-legend-item', 'index': ALL}, 'n_clicks'),
          Input('low-carbon-measure-filter', 'value'),
          Input('low-carbon-breakdown-filter', 'value'),
          Input('low-carbon-chart-container', 'n_clicks'),
@@ -411,21 +416,34 @@ def register_callbacks(dash_app, server):
         State('low-carbon-chart-selection', 'data'),
         prevent_initial_call=True
     )
-    def toggle_chart_selection(click_data, measure, breakdown, n_clicks_bg, is_expanded, current_sel):
+    def toggle_chart_selection(click_data, legend_clicks, measure, breakdown, n_clicks_bg, is_expanded, current_sel):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update
         
-        triggers = [t['prop_id'] for t in ctx.triggered]
-        chart_triggered = any('low-carbon-chart.clickData' in t for t in triggers)
-        container_triggered = any('low-carbon-chart-container.n_clicks' in t for t in triggers)
+        trigger_id = ctx.triggered[0]['prop_id']
         
         # Reset on filter or expansion changes
-        if any(x in triggers[0] for x in ['measure-filter', 'breakdown-filter', 'is-expanded']):
+        if any(x in trigger_id for x in ['measure-filter', 'breakdown-filter', 'is-expanded']):
             return None, None
         
-        # 1. Chart Click (Bar Interaction)
-        if chart_triggered and click_data:
+        # 1. Legend Click
+        if 'low-carbon-legend-item' in trigger_id and 'n_clicks' in trigger_id:
+            try:
+                # trigger_id format: '{"index":"Divested","type":"low-carbon-legend-item"}.n_clicks'
+                prop_json = trigger_id.split('.n_clicks')[0]
+                clicked_index = json.loads(prop_json)['index']
+                new_sel = {'type': 'legend', 'breakdown': clicked_index}
+            except:
+                return no_update, no_update
+            
+            # Toggle logic
+            if current_sel and current_sel == new_sel:
+                return None, None
+            return new_sel, None
+
+        # 2. Chart Click (Bar Interaction)
+        if 'low-carbon-chart.clickData' in trigger_id and click_data:
             point = click_data['points'][0]
             
             # Use customdata for robust selection
@@ -437,10 +455,9 @@ def register_callbacks(dash_app, server):
             try:
                 breakdown_val = c_data[2]
                 x_pos = int(c_data[3])
+                new_sel = {'type': 'point', 'x_pos': x_pos, 'breakdown': breakdown_val}
             except (IndexError, TypeError, ValueError):
                 return no_update, no_update
-                
-            new_sel = {'x_pos': x_pos, 'breakdown': breakdown_val}
             
             # Toggle logic
             if current_sel and current_sel == new_sel:
@@ -448,13 +465,44 @@ def register_callbacks(dash_app, server):
             
             return new_sel, None
         
-        # 2. Background Click (Container Clicked but not Chart Click)
-        elif container_triggered and not chart_triggered:
+        # 3. Background Click (Container Clicked but not Chart Click)
+        elif 'low-carbon-chart-container.n_clicks' in trigger_id:
             if current_sel:
                 return None, None
             return no_update, no_update
         
         return no_update, no_update
+
+    # Update legend highlighting feedback
+    @dash_app.callback(
+        Output({'type': 'low-carbon-legend-item', 'index': ALL}, 'style'),
+        [Input('low-carbon-chart-selection', 'data')],
+        [State({'type': 'low-carbon-legend-item', 'index': ALL}, 'id')],
+        prevent_initial_call=False
+    )
+    def update_legend_highlighting(selection, ids):
+        base_style = {
+            'display': 'flex',
+            'alignItems': 'center',
+            'marginBottom': '8px',
+            'cursor': 'pointer'
+        }
+        
+        if not selection or selection.get('type') != 'legend':
+            return [base_style for _ in ids]
+        
+        selected_breakdown = selection.get('breakdown')
+        styles = []
+        for item_id in ids:
+            item_label = item_id['index']
+            style = base_style.copy()
+            if item_label != selected_breakdown:
+                style['opacity'] = 0.2
+            else:
+                style['opacity'] = 1.0
+            styles.append(style)
+            
+        return styles
     
     @dash_app.callback(
         [Output('low-carbon-is-expanded', 'data'),
@@ -701,18 +749,28 @@ def register_callbacks(dash_app, server):
                 for _, row in trace_data.iterrows():
                     row_x_pos = row['x_pos']
                     
-                    is_selected = (
-                        selection and 
-                        selection.get('breakdown') == b_val and 
-                        int(selection.get('x_pos')) == int(row_x_pos)
-                    )
+                    if not selection:
+                        is_selected = False
+                        is_dimmed = False
+                    elif selection.get('type') == 'legend':
+                        is_selected = selection.get('breakdown') == b_val
+                        is_dimmed = not is_selected
+                    else: # 'point'
+                        is_selected = (
+                            selection.get('breakdown') == b_val and 
+                            int(selection.get('x_pos')) == int(row_x_pos)
+                        )
+                        is_dimmed = not is_selected
 
                     if not selection:
                         marker_colors.append(base_color)
                         marker_lines.append(dict(color='white', width=0.5))
                     elif is_selected:
                         marker_colors.append(base_color)
-                        marker_lines.append(dict(color='black', width=2.0))
+                        if selection.get('type') == 'point':
+                            marker_lines.append(dict(color='black', width=2.0))
+                        else:
+                            marker_lines.append(dict(color='white', width=0.5))
                     else:
                         # Others - dimmed
                         marker_colors.append(hex_to_rgba(base_color, 0.2))
