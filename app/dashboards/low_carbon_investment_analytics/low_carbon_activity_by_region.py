@@ -702,6 +702,17 @@ def register_callbacks(dash_app, server):
                 # trigger_id format: '{"index":"Divested","type":"low-carbon-legend-item"}.n_clicks'
                 prop_json = trigger_id.split('.n_clicks')[0]
                 clicked_index = json.loads(prop_json)['index']
+                
+                # Check if this was a real click (n_clicks > 0)
+                # legend_clicks is a list of click counts for all legend items
+                # We need to find the click count for the items that triggered this
+                trigger_data = json.loads(prop_json)
+                
+                # Verify that it's a real click by checking the specific triggered input value
+                triggered_val = ctx.triggered[0]['value']
+                if not triggered_val or triggered_val == 0:
+                    return no_update, no_update
+
                 new_sel = {'type': 'legend', 'breakdown': clicked_index}
             except:
                 return no_update, no_update
