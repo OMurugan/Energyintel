@@ -876,20 +876,31 @@ def register_callbacks(dash_app, server):
                         line_color = 'rgba(255,255,255,0.2)'
                         line_width = 0.8
                     
+                    # Main trace for the area
                     fig.add_trace(go.Scatter(
                         x=origin_df['date'].values,
                         y=origin_df['flows_bcm'].values,
                         name=origin,
-                        stackgroup='one', 
+                        stackgroup='one',
                         mode='lines',
                         line=dict(width=line_width, color=line_color),
                         fillcolor=fill_color,
-                        hoveron='points+fills',
-                        text=origin_df['period_of_date'].values,
-                        meta=[origin] * len(origin_df),
+                        showlegend=False,
+                        hoverinfo='skip'
+                    ))
+                    
+                    # Invisible hover trace to capture hovers throughout the area
+                    fig.add_trace(go.Scatter(
+                        x=origin_df['date'].values,
+                        y=origin_df['flows_bcm'].values,
+                        name=origin,
+                        mode='markers',
+                        marker=dict(size=10, opacity=0),
+                        showlegend=False,
+                        customdata=list(zip(origin_df['period_of_date'].values, [origin] * len(origin_df))),
                         hovertemplate=(
-                            "Gas Origin: %{meta[0]}<br>" +
-                            "Date: %{text}<br>" +
+                            "Gas Origin: %{customdata[1]}<br>" +
+                            "Date: %{customdata[0]}<br>" +
                             "flows_bcm: %{y:.4f}<extra></extra>"
                         )
                     ))
