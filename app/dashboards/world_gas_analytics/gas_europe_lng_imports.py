@@ -193,6 +193,14 @@ def create_layout():
     
     min_date_val = chart_df['Date'].min() if not chart_df.empty and 'Date' in chart_df.columns else pd.Timestamp('2021-01-01')
     max_date_val = chart_df['Date'].max() if not chart_df.empty and 'Date' in chart_df.columns else pd.Timestamp('2026-02-05')
+    
+    # Calculate default date range: most recent 5 years
+    default_end_date = max_date_val
+    default_start_date = max_date_val - pd.DateOffset(years=5)
+    
+    # Format dates for display (YYYY-MM-DD)
+    default_start_date_str = default_start_date.strftime('%Y-%m-%d')
+    default_end_date_str = default_end_date.strftime('%Y-%m-%d')
 
     return html.Div([
         # Store components for tracking previous filter values and granularity
@@ -322,7 +330,7 @@ def create_layout():
                     dcc.Input(
                         id='start-date-input',
                         type='text',
-                        value='2021-01-01',
+                        value=default_start_date_str,
                         placeholder='YYYY-MM-DD',
                         min='2019-01-01',  # Also set standard HTML attribute
                         max='2030-12-31',
@@ -332,7 +340,7 @@ def create_layout():
                     dcc.Input(
                         id='end-date-input',
                         type='text',
-                        value='2026-02-05',
+                        value=default_end_date_str,
                         placeholder='YYYY-MM-DD',
                         min='2019-01-01',
                         max='2030-12-31',
