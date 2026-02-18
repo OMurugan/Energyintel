@@ -241,7 +241,20 @@ def create_layout():
                         type='circle',
                         color=EI_ORANGE,
                         children=html.Div(id='gas-flows-table-container')
-                    )
+                    ),
+                    
+                    # Footer text
+                    html.Div([
+                        html.P("Source: Energy Intelligence, Transmission System Operators, Federal Agencies", 
+                               style={
+                                   'fontSize': '10px',
+                                   'color': '#666',
+                                   'fontStyle': 'italic',
+                                   'marginTop': '10px',
+                                   'marginBottom': '0',
+                                   'fontFamily': 'Inter, sans-serif'
+                               })
+                    ])
                 ], style={'marginTop': '20px'}),
                 
                 # Hidden div for clientside callback anchor
@@ -342,7 +355,7 @@ def register_callbacks(dash_app, server):
                     const columnId = (header || cell).getAttribute('data-dash-column');
                     const rowIndex = cell ? cell.getAttribute('data-dash-row') : null;
                     
-                    if (columnId === 'Day of Date' && !rowIndex) return;
+                    if (columnId === 'Period of Date' && !rowIndex) return;
                     
                     const isHeader = !!header;
                     const headerRow = isHeader ? header.closest('tr') : null;
@@ -374,9 +387,15 @@ def register_callbacks(dash_app, server):
                     // Discovery logic for child columns if a parent header is clicked
                     if (isHeader) {
                         const colspan = parseInt(header.getAttribute('colspan') || header.colSpan || '1');
+                        
+                        console.log('Header clicked:', header.innerText, 'Colspan:', colspan, 'HeaderIndex:', headerIndex);
+                        
                         if (colspan > 1) {
+                            // Build a complete column position map from the bottom row
                             const bottomRow = headerRows[headerRows.length - 1];
                             const allBottomHeaders = Array.from(bottomRow.querySelectorAll('th[data-dash-column]'));
+                            
+                            console.log('Bottom row headers count:', allBottomHeaders.length);
                             
                             let currentIdx = 0;
                             const bottomHeaderMap = allBottomHeaders.map(h => {
@@ -386,6 +405,7 @@ def register_callbacks(dash_app, server):
                                 return { header: h, start: start, end: currentIdx, colId: h.getAttribute('data-dash-column') };
                             });
 
+                            // Calculate the clicked header's position range
                             let clickedStartIdx = 0;
                             const rowHeaders = Array.from(headerRow.querySelectorAll('th'));
                             for (let h of rowHeaders) {
@@ -395,26 +415,63 @@ def register_callbacks(dash_app, server):
                             
                             const clickedEndIdx = clickedStartIdx + colspan;
                             
+                            console.log('Clicked range:', clickedStartIdx, 'to', clickedEndIdx);
+                            
+                            // Find all bottom-level columns within this range
                             targetColumnIds = bottomHeaderMap
-                                .filter(m => m.start >= clickedStartIdx && m.end <= clickedEndIdx && m.colId !== 'Day of Date')
+                                .filter(m => {
+                                    const inRange = m.start >= clickedStartIdx && m.start < clickedEndIdx;
+                                    const notPeriod = m.colId !== 'Period of Date';
+                                    if (inRange) {
+                                        console.log('  Column in range:', m.colId, 'at position', m.start);
+                                    }
+                                    return inRange && notPeriod;
+                                })
                                 .map(m => m.colId);
+                            
+                            console.log('Target columns found:', targetColumnIds);
+                            
+                            // Also highlight all intermediate headers in the clicked column's hierarchy
+                            for (let i = headerIndex; i < headerRows.length; i++) {
+                                const rowHeadersAtLevel = Array.from(headerRows[i].querySelectorAll('th[data-dash-column]'));
+                                let posIdx = 0;
+                                for (let h of rowHeadersAtLevel) {
+                                    const hColspan = parseInt(h.getAttribute('colspan') || h.colSpan || '1');
+                                    const hStart = posIdx;
+                                    
+                                    // If this header starts within our clicked range, highlight it
+                                    if (hStart >= clickedStartIdx && hStart < clickedEndIdx) {
+                                        h.classList.add('column-header-selected');
+                                        console.log('  Highlighting header:', h.innerText, 'at position', hStart);
+                                    }
+                                    
+                                    posIdx += hColspan;
+                                }
+                            }
+                        } else {
+                            // Single column header clicked
+                            header.classList.add('column-header-selected');
+                            console.log('Single column header, using columnId:', columnId);
                         }
-                        header.classList.add('column-header-selected');
                     }
                     
                     // Generate Dynamic CSS for high contrast highlights
                     let dynamicStyles = '';
                     
+                    console.log('Generating styles for columns:', targetColumnIds);
+                    
                     // 1. Column(s) Highlighting
-                    targetColumnIds.forEach(id => {
-                        dynamicStyles += `
-                            #${tableId} .dash-spreadsheet-container td[data-dash-column="${id}"] {
-                                background-color: #e1f0ff !important;
-                                color: #1b365d !important;
-                                font-weight: 600 !important;
-                            }
-                        `;
-                    });
+                    if (targetColumnIds.length > 0) {
+                        targetColumnIds.forEach(id => {
+                            dynamicStyles += `
+                                #${tableId} .dash-spreadsheet-container td[data-dash-column="${id}"] {
+                                    background-color: #e1f0ff !important;
+                                    color: #1b365d !important;
+                                    font-weight: 600 !important;
+                                }
+                            `;
+                        });
+                    }
                     
                     // 2. Row Highlighting
                     if (highlightRow !== null) {
@@ -686,7 +743,7 @@ def register_callbacks(dash_app, server):
         -- DAILY
         SELECT
             'DAILY' AS period,
-            TO_CHAR(date, 'Month DD, YYYY') AS period_of_date,
+            TO_CHAR(date, 'MM/DD/YYYY') AS period_of_date,
             gas_origin,
             point_label,
             date AS date,
@@ -699,7 +756,7 @@ def register_callbacks(dash_app, server):
         -- WEEKLY
         SELECT
             'WEEKLY' AS period,
-            TO_CHAR((date_trunc('week', date + interval '1 day') - interval '1 day')::date, 'Month DD, YYYY') AS period_of_date,
+            '*' AS period_of_date,
             gas_origin,
             point_label,
             (date_trunc('week', date + interval '1 day') - interval '1 day')::date AS date,
@@ -713,7 +770,7 @@ def register_callbacks(dash_app, server):
         -- MONTHLY
         SELECT
             'MONTHLY' AS period,
-            TO_CHAR(date_trunc('month', date), 'Month YYYY') AS period_of_date,
+            '*' AS period_of_date,
             gas_origin,
             point_label,
             date_trunc('month', date)::date AS date,
@@ -727,7 +784,7 @@ def register_callbacks(dash_app, server):
         -- QUARTERLY
         SELECT
             'QUARTERLY' AS period,
-            EXTRACT(YEAR FROM date)::text || ' Q' || EXTRACT(QUARTER FROM date)::text AS period_of_date,
+            '*' AS period_of_date,
             gas_origin,
             point_label,
             date_trunc('quarter', date)::date AS date,
@@ -741,7 +798,7 @@ def register_callbacks(dash_app, server):
         -- YEARLY
         SELECT
             'YEARLY' AS period,
-            EXTRACT(YEAR FROM date)::text AS period_of_date,
+            '*' AS period_of_date,
             gas_origin,
             point_label,
             date_trunc('year', date)::date AS date,
@@ -800,7 +857,7 @@ def register_callbacks(dash_app, server):
                                         'date': new_date, 
                                         'gas_origin': origin, 
                                         'flows_bcm': daily_vol,
-                                        'period_of_date': new_date.strftime('%B %d, %Y')
+                                        'period_of_date': new_date.strftime('%m/%d/%Y')
                                     })
                         pre_2025 = origin_df[origin_df['date'] < '2025-01-01']
                         origin_df = pd.concat([pre_2025, pd.DataFrame(new_rows)])
@@ -812,10 +869,17 @@ def register_callbacks(dash_app, server):
             origin_order = ['Libya', 'Azerbaijan', 'Algeria', 'Norway', 'Russia']
             all_origins_present = [o for o in origin_order if o in selected_origins]
             
+            # Ensure period_of_date exists for all rows
+            if 'period_of_date' not in df.columns or df['period_of_date'].isna().any():
+                if period == 'DAILY':
+                    df['period_of_date'] = df['date'].dt.strftime('%m/%d/%Y')
+                else:
+                    df['period_of_date'] = '*'
+            
             fig = go.Figure()
             
             for origin in all_origins_present:
-                origin_df = df[df['gas_origin'] == origin].sort_values('date')
+                origin_df = df[df['gas_origin'] == origin].sort_values('date').copy()
                 if not origin_df.empty:
                     base_color = GAS_ORIGIN_COLORS.get(origin, '#ddd')
                     
@@ -838,19 +902,20 @@ def register_callbacks(dash_app, server):
                         line_width = 0.8
                     
                     fig.add_trace(go.Scatter(
-                        x=origin_df['date'],
-                        y=origin_df['flows_bcm'],
+                        x=origin_df['date'].values,
+                        y=origin_df['flows_bcm'].values,
                         name=origin,
                         stackgroup='one', 
                         mode='lines',
                         line=dict(width=line_width, color=line_color),
                         fillcolor=fill_color,
                         hoveron='points+fills',
-                        customdata=origin_df[['period_of_date', 'gas_origin']].values,
+                        text=origin_df['period_of_date'].values,
+                        meta=[origin] * len(origin_df),
                         hovertemplate=(
-                            "Gas Origin: <b>%{fullData.name}</b><br>" +
-                            "Period: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[0]}</b><br>" +
-                            "flows_bcm: <b>%{y:.4f}</b><extra></extra>"
+                            "Gas Origin: %{meta[0]}<br>" +
+                            "Date: %{text}<br>" +
+                            "flows_bcm: %{y:.4f}<extra></extra>"
                         )
                     ))
 
@@ -887,8 +952,16 @@ def register_callbacks(dash_app, server):
                 margin=dict(l=40, r=20, t=10, b=40),
                 paper_bgcolor='white',
                 plot_bgcolor='white',
-                hovermode='closest', 
-                showlegend=False,    
+                hovermode='closest',
+                showlegend=False,
+                hoverlabel=dict(
+                    bgcolor='white',
+                    font_size=12,
+                    font_family='Inter, sans-serif',
+                    font_color='#333',
+                    bordercolor='#ddd',
+                    align='left'
+                ),
                 xaxis=xaxis_config,
                 yaxis=dict(
                     showgrid=True,
