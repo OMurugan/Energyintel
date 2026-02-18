@@ -192,7 +192,15 @@ def create_layout():
     terminals = sorted(chart_df['Point'].unique()) if 'Point' in chart_df.columns else []
     
     min_date_val = chart_df['Date'].min() if not chart_df.empty and 'Date' in chart_df.columns else pd.Timestamp('2021-01-01')
-    max_date_val = chart_df['Date'].max() if not chart_df.empty and 'Date' in chart_df.columns else pd.Timestamp('2026-01-01')
+    max_date_val = chart_df['Date'].max() if not chart_df.empty and 'Date' in chart_df.columns else pd.Timestamp('2026-02-05')
+    
+    # Calculate default date range: most recent 5 years
+    default_end_date = max_date_val
+    default_start_date = max_date_val - pd.DateOffset(years=5)
+    
+    # Format dates for display (YYYY-MM-DD)
+    default_start_date_str = default_start_date.strftime('%Y-%m-%d')
+    default_end_date_str = default_end_date.strftime('%Y-%m-%d')
 
     return html.Div([
         # Store components for tracking previous filter values and granularity
@@ -210,52 +218,119 @@ def create_layout():
         # Store for table highlight state
         dcc.Store(id='lng-table-highlight-state'),
         
+        # Store for dropdown visibility states
+        dcc.Store(id='lng-country-dropdown-open', data=False),
+        dcc.Store(id='lng-terminal-dropdown-open', data=False),
+        
         html.Div([
             # Side Filter Panel (on the right)
             html.Div([
+                
                 html.Div([
-                    html.Label("Country", style={'fontWeight': 'normal', 'color': '#555', 'fontSize': '13px'}),
-                    dcc.Checklist(
-                        id='country-checklist',
-                        options=[{'label': ' (All)', 'value': '(All)'}] + [{'label': f' {c}', 'value': c} for c in countries],
-                        value=['(All)'] + countries,  # Start with all selected
-                        inputStyle={'marginRight': '8px'},
-                        labelStyle={'display': 'block', 'marginBottom': '4px', 'fontSize': '12px', 'cursor': 'pointer'},
-                        style={
-                            'maxHeight': '180px',
+                    html.Div([
+                        html.Label("Country", style={'fontSize': '11px', 'color': '#666', 'marginBottom': '4px', 'display': 'block', 'fontFamily': 'Arial, sans-serif'}),
+                        html.Div([
+                            html.Div([
+                                html.Span("(All)", id='lng-country-label'),
+                                html.Span("▼", style={'fontSize': '8px', 'color': '#666'})
+                            ], id='lng-country-dropdown', style={
+                                'border': '1px solid #ccc',
+                                'borderRadius': '3px',
+                                'padding': '5px 10px',
+                                'fontSize': '12px',
+                                'fontFamily': 'Arial, sans-serif',
+                                'backgroundColor': 'white',
+                                'marginBottom': '5px',
+                                'display': 'flex',
+                                'justifyContent': 'space-between',
+                                'alignItems': 'center',
+                                'cursor': 'pointer'
+                            }),
+                        ], id='lng-country-trigger', n_clicks=0, style={'cursor': 'pointer'}),
+                        html.Div([
+                            dcc.Checklist(
+                                id='country-checklist',
+                                options=[{'label': '(All)', 'value': '(All)'}] + [{'label': c, 'value': c} for c in countries],
+                                value=['(All)'] + countries,
+                                labelStyle={
+                                    'display': 'block',
+                                    'fontSize': '11px',
+                                    'color': '#333',
+                                    'fontFamily': 'Arial, sans-serif',
+                                    'marginBottom': '3px'
+                                }
+                            )
+                        ], id='lng-country-container', style={
+                            'display': 'none', 
+                            'padding': '5px 10px', 
+                            'marginTop': '-5px',
+                            'border': '1px solid #ccc',
+                            'borderRadius': '3px',
+                            'maxHeight': '200px',
                             'overflowY': 'auto',
-                            'padding': '6px',
-                            'border': '1px solid #e0e0e0',
-                            'borderRadius': '6px',
-                            'background': 'white',
-                        }
-                    ),
+                            'backgroundColor': '#fff',
+                            'position': 'absolute',
+                            'zIndex': '1000',
+                            'width': '100%',
+                            'borderTop': '0px'
+                        })
+                    ], style={'flex': '1', 'position': 'relative', 'marginBottom': '15px'}),
                     
-                    html.Label("Regasification Terminal", style={'fontWeight': 'normal', 'color': '#555', 'fontSize': '13px', 'marginTop': '15px'}),
-                    dcc.Checklist(
-                        id='terminal-checklist',
-                        options=[{'label': ' (All)', 'value': '(All)'}] + [{'label': f' {t}', 'value': t} for t in terminals],
-                        value=['(All)'] + terminals,  # Start with all selected
-                        inputStyle={'marginRight': '8px'},
-                        labelStyle={'display': 'block', 'marginBottom': '4px', 'fontSize': '12px', 'cursor': 'pointer'},
-                        style={
-                            'maxHeight': '180px',
+                    html.Div([
+                        html.Label("Regasification Terminal", style={'fontSize': '11px', 'color': '#666', 'marginBottom': '4px', 'display': 'block', 'fontFamily': 'Arial, sans-serif'}),
+                        html.Div([
+                            html.Div([
+                                html.Span("(All)", id='lng-terminal-label'),
+                                html.Span("▼", style={'fontSize': '8px', 'color': '#666'})
+                            ], id='lng-terminal-dropdown', style={
+                                'border': '1px solid #ccc',
+                                'borderRadius': '3px',
+                                'padding': '5px 10px',
+                                'fontSize': '12px',
+                                'fontFamily': 'Arial, sans-serif',
+                                'backgroundColor': 'white',
+                                'marginBottom': '5px',
+                                'display': 'flex',
+                                'justifyContent': 'space-between',
+                                'alignItems': 'center',
+                                'cursor': 'pointer'
+                            }),
+                        ], id='lng-terminal-trigger', n_clicks=0, style={'cursor': 'pointer'}),
+                        html.Div([
+                            dcc.Checklist(
+                                id='terminal-checklist',
+                                options=[{'label': '(All)', 'value': '(All)'}] + [{'label': t, 'value': t} for t in terminals],
+                                value=['(All)'] + terminals,
+                                labelStyle={
+                                    'display': 'block',
+                                    'fontSize': '11px',
+                                    'color': '#333',
+                                    'fontFamily': 'Arial, sans-serif',
+                                    'marginBottom': '3px'
+                                }
+                            )
+                        ], id='lng-terminal-container', style={
+                            'display': 'none', 
+                            'padding': '5px 10px', 
+                            'marginTop': '-5px',
+                            'border': '1px solid #ccc',
+                            'borderRadius': '3px',
+                            'maxHeight': '200px',
                             'overflowY': 'auto',
-                            'padding': '6px',
-                            'border': '1px solid #e0e0e0',
-                            'borderRadius': '6px',
-                            'background': 'white',
-                        }
-                    ),                    
+                            'backgroundColor': '#fff',
+                            'position': 'absolute',
+                            'zIndex': '1000',
+                            'width': '100%',
+                            'borderTop': '0px'
+                        })
+                    ], style={'flex': '1', 'position': 'relative', 'marginBottom': '15px'}),               
                     
-                ], style={'marginBottom': '10px'}),
-
-                html.Div([
+                    
                     html.Label("Start Date", style={'fontWeight': 'normal', 'fontSize': '12px', 'color': '#333'}),
                     dcc.Input(
                         id='start-date-input',
                         type='text',
-                        value=min_date_val.strftime('%Y-%m-%d') if pd.notnull(min_date_val) else '2019-01-01',
+                        value=default_start_date_str,
                         placeholder='YYYY-MM-DD',
                         min='2019-01-01',  # Also set standard HTML attribute
                         max='2030-12-31',
@@ -265,7 +340,7 @@ def create_layout():
                     dcc.Input(
                         id='end-date-input',
                         type='text',
-                        value=max_date_val.strftime('%Y-%m-%d') if pd.notnull(max_date_val) else datetime.now().strftime('%Y-%m-%d'),
+                        value=default_end_date_str,
                         placeholder='YYYY-MM-DD',
                         min='2019-01-01',
                         max='2030-12-31',
@@ -276,7 +351,7 @@ def create_layout():
                     html.Div(
                         id='point-legend-container',
                         children=[],  # Will be populated by callback
-                        style={'maxHeight': '300px', 'overflowY': 'auto', 'marginBottom': '15px'}
+                        style={'overflowY': 'auto', 'marginBottom': '15px'}
                     ),
                 
                     # Hidden store to track selected terminals
@@ -392,7 +467,12 @@ def create_layout():
                         type="circle",
                         children=html.Div(id='lng-imports-table-container')
                     )
-                ], style={'padding': '0 20px'})
+                ], style={'padding': '0 20px'}),
+                
+                # Source info
+                html.P("Source: Energy Intelligence, Transmission System Operators, Entsog, Federal Agencies",
+                       style={'fontSize': '10px', 'color': '#666', 'fontStyle': 'italic', 'paddingLeft': '20px', 'marginTop': '20px'})
+                
             ], style={'marginRight': '240px'})
         ], style={'overflow': 'hidden'})
     ], className='tab-content', style={'backgroundColor': '#ffffff', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'})
@@ -430,6 +510,114 @@ def register_callbacks(dash_app, server):
         Input('start-date-input', 'id'),
         prevent_initial_call='initial_duplicate'
     )
+
+    # Callback to toggle Country dropdown visibility
+    @dash_app.callback(
+        Output('lng-country-dropdown-open', 'data'),
+        Input('lng-country-trigger', 'n_clicks'),
+        State('lng-country-dropdown-open', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_country_dropdown(n_clicks, is_open):
+        return not is_open if n_clicks else is_open
+
+    # Callback to update Country container display based on dropdown state
+    @dash_app.callback(
+        Output('lng-country-container', 'style'),
+        Input('lng-country-dropdown-open', 'data'),
+    )
+    def update_country_container_display(is_open):
+        base_style = {
+            'padding': '5px 10px', 
+            'marginTop': '5px',
+            'border': '1px solid #ccc',
+            'borderRadius': '3px',
+            'maxHeight': '200px',
+            'overflowY': 'auto',
+            'backgroundColor': '#fff',
+            'position': 'absolute',
+            'zIndex': '1000',
+            'width': '150px'
+        }
+        base_style['display'] = 'block' if is_open else 'none'
+        return base_style
+
+    # Callback to toggle Terminal dropdown visibility
+    @dash_app.callback(
+        Output('lng-terminal-dropdown-open', 'data'),
+        Input('lng-terminal-trigger', 'n_clicks'),
+        State('lng-terminal-dropdown-open', 'data'),
+        prevent_initial_call=True
+    )
+    def toggle_terminal_dropdown(n_clicks, is_open):
+        return not is_open if n_clicks else is_open
+
+    # Callback to update Terminal container display based on dropdown state
+    @dash_app.callback(
+        Output('lng-terminal-container', 'style'),
+        Input('lng-terminal-dropdown-open', 'data'),
+    )
+    def update_terminal_container_display(is_open):
+        base_style = {
+            'padding': '5px 10px', 
+            'marginTop': '5px',
+            'border': '1px solid #ccc',
+            'borderRadius': '3px',
+            'maxHeight': '200px',
+            'overflowY': 'auto',
+            'backgroundColor': '#fff',
+            'position': 'absolute',
+            'zIndex': '1000',
+            'width': '150px'
+        }
+        base_style['display'] = 'block' if is_open else 'none'
+        return base_style
+
+    # Callback to update Country label based on selection
+    @dash_app.callback(
+        Output('lng-country-label', 'children'),
+        Input('country-checklist', 'value')
+    )
+    def update_country_label(selected_countries):
+        if not selected_countries:
+            return '(None)'
+        if '(All)' in selected_countries:
+            return '(All)'
+        if len(selected_countries) == 1:
+            return selected_countries[0]
+        return f'({len(selected_countries)} selected)'
+
+    # Callback to update Terminal label based on selection
+    @dash_app.callback(
+        Output('lng-terminal-label', 'children'),
+        Input('terminal-checklist', 'value')
+    )
+    def update_terminal_label(selected_terminals):
+        if not selected_terminals:
+            return '(None)'
+        if '(All)' in selected_terminals:
+            return '(All)'
+        if len(selected_terminals) == 1:
+            return selected_terminals[0]
+        return f'({len(selected_terminals)} selected)'
+
+    # Close Country dropdown when selection changes
+    @dash_app.callback(
+        Output('lng-country-dropdown-open', 'data', allow_duplicate=True),
+        Input('country-checklist', 'value'),
+        prevent_initial_call=True
+    )
+    def close_country_dropdown_on_selection(selected_countries):
+        return False
+
+    # Close Terminal dropdown when selection changes
+    @dash_app.callback(
+        Output('lng-terminal-dropdown-open', 'data', allow_duplicate=True),
+        Input('terminal-checklist', 'value'),
+        prevent_initial_call=True
+    )
+    def close_terminal_dropdown_on_selection(selected_terminals):
+        return False
 
     # Chart Granularity Toggle
     @dash_app.callback(
@@ -796,7 +984,7 @@ def register_callbacks(dash_app, server):
                     'display': 'flex',
                     'alignItems': 'center',
                     'marginBottom': '4px',
-                    'padding': '2px 4px',
+                    'padding': '0px 4px',
                     'borderRadius': '3px',
                     'cursor': 'pointer',
                     'backgroundColor': 'transparent'
