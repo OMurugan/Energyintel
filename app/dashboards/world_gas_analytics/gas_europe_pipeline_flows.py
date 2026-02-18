@@ -853,10 +853,31 @@ def register_callbacks(dash_app, server):
             
             fig = go.Figure()
             
+            # Store data for hover traces and calculate cumulative positions
+            hover_data = []
+            cumulative_y = {}  # Store cumulative y values for stacking
+            
+            # First pass: Add all area traces and calculate cumulative positions
             for origin in all_origins_present:
                 origin_df = df[df['gas_origin'] == origin].sort_values('date').copy()
+                
+                # For DAILY period, filter out rows where flows_bcm is 0
+                if period == 'DAILY':
+                    origin_df = origin_df[origin_df['flows_bcm'] > 0]
+                
                 if not origin_df.empty:
                     base_color = GAS_ORIGIN_COLORS.get(origin, '#ddd')
+                    
+                    # Calculate cumulative y position for this trace
+                    origin_df_with_cumulative = origin_df.copy()
+                    for idx, row in origin_df.iterrows():
+                        date_key = row['date']
+                        if date_key not in cumulative_y:
+                            cumulative_y[date_key] = {}
+                        
+                        # Sum all previous origins' values at this date
+                        prev_sum = sum(cumulative_y[date_key].get(prev_origin, 0) for prev_origin in all_origins_present if all_origins_present.index(prev_origin) < all_origins_present.index(origin))
+                        cumulative_y[date_key][origin] = prev_sum + row['flows_bcm']
                     
                     # Highlighting Logic
                     if selection:
@@ -889,19 +910,46 @@ def register_callbacks(dash_app, server):
                         hoverinfo='skip'
                     ))
                     
-                    # Invisible hover trace to capture hovers throughout the area
+                    # Store for hover traces with cumulative y positions
+                    cumulative_y_values = [cumulative_y[row['date']][origin] for _, row in origin_df.iterrows()]
+                    hover_data.append((origin, origin_df, cumulative_y_values))
+            
+            # Second pass: Add all invisible hover traces on top
+            # We need markers throughout the filled area, not just at the top edge
+            for origin, origin_df, cumulative_y_values in hover_data:
+                # Get the previous cumulative values (bottom of this trace's area)
+                origin_index = all_origins_present.index(origin)
+                if origin_index == 0:
+                    # First trace - bottom is at 0
+                    bottom_y_values = [0] * len(origin_df)
+                else:
+                    # Calculate bottom position (sum of all previous traces)
+                    bottom_y_values = []
+                    for _, row in origin_df.iterrows():
+                        date_key = row['date']
+                        prev_sum = sum(cumulative_y[date_key].get(prev_origin, 0) for prev_origin in all_origins_present[:origin_index])
+                        bottom_y_values.append(prev_sum)
+                
+                # Add hover markers at multiple heights within the filled area
+                # Top edge, middle, and bottom edge
+                for height_fraction in [0.2, 0.5, 0.8]:
+                    interpolated_y = [
+                        bottom + (top - bottom) * height_fraction 
+                        for bottom, top in zip(bottom_y_values, cumulative_y_values)
+                    ]
+                    
                     fig.add_trace(go.Scatter(
                         x=origin_df['date'].values,
-                        y=origin_df['flows_bcm'].values,
+                        y=interpolated_y,
                         name=origin,
                         mode='markers',
-                        marker=dict(size=10, opacity=0),
+                        marker=dict(size=20, opacity=0),
                         showlegend=False,
-                        customdata=list(zip(origin_df['period_of_date'].values, [origin] * len(origin_df))),
+                        customdata=list(zip(origin_df['period_of_date'].values, [origin] * len(origin_df), origin_df['flows_bcm'].values)),
                         hovertemplate=(
                             "Gas Origin: %{customdata[1]}<br>" +
                             "Date: %{customdata[0]}<br>" +
-                            "flows_bcm: %{y:.4f}<extra></extra>"
+                            "flows_bcm: %{customdata[2]:.4f}<extra></extra>"
                         )
                     ))
 
