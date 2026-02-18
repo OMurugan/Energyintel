@@ -149,6 +149,7 @@ def create_layout():
         # Selection stores
         dcc.Store(id='gas-country-chart-period-store', data='MONTH'),
         dcc.Store(id='gas-country-table-period-store', data='MONTH'),
+        dcc.Store(id='gas-country-table-selection-store', data={'selected_column_id': None}),
         
         # Main container with Flexbox for Sidebar and Content
         html.Div([
@@ -282,7 +283,20 @@ def create_layout():
                         type='circle',
                         color=EI_ORANGE,
                         children=html.Div(id='gas-country-table-container', style={'marginTop': '10px'})
-                    )
+                    ),
+
+                    # Footer text
+                    html.Div([
+                        html.P("Source: Energy Intelligence, Transmission System Operators, Federal Agencies", 
+                               style={
+                                   'fontSize': '10px', 
+                                   'color': '#666', 
+                                   'fontStyle': 'italic', 
+                                   'marginTop': '10px', 
+                                   'marginBottom': '0', 
+                                   'fontFamily': 'Inter, sans-serif'
+                               })
+                    ])
                 ], style={'marginTop': '20px'}),
                 
                 # Hidden div for clientside callback anchor
@@ -842,124 +856,123 @@ def register_callbacks(dash_app, server):
         Output('gas-country-table-container', 'children'),
         [Input('gas-country-start-date', 'value'),
          Input('gas-country-end-date', 'value'),
-         Input('gas-country-origin-radio', 'value'),
-         Input('gas-country-dest-checklist', 'value'),
-         Input('gas-country-selected-destination', 'children'),
          Input('gas-country-table-period-store', 'data')]
     )
-    def update_table(start_date, end_date, selected_origin, selected_dests, selected_destination, table_period):
-        if not selected_origin or not selected_dests:
-            return html.Div("Please select filters.", style={'color': '#666', 'fontSize': '12px', 'padding': '20px'})
+    def update_table(start_date, end_date, table_period):
+        # Default all origins as requested
+        selected_origins = ['Algeria', 'Azerbaijan', 'Libya', 'Norway', 'Russia']
+        
+        query_origins = selected_origins.copy()
+        if 'Turkey' not in query_origins:
+            query_origins.append('Turkey')
 
-        # Use the european_gas_trade table which is known to work
+        # Map UI period to SQL granularity
+        time_gran = {
+            'YEAR': 'YEAR',
+            'QUARTER': 'QUARTER',
+            'MONTH': 'MONTH',
+            'DAILY': 'DAY'
+        }.get(table_period, 'MONTH')
+
+        query = f"""
+        SELECT
+            CASE
+                WHEN :time_granularity = 'DAY' THEN tr.date
+                WHEN :time_granularity = 'WEEK' THEN (date_trunc('week', tr.date + interval '1 day') - interval '1 day')::date
+                WHEN :time_granularity = 'MONTH' THEN date_trunc('month', tr.date)::date
+                WHEN :time_granularity = 'QUARTER' THEN date_trunc('quarter', tr.date)::date
+                WHEN :time_granularity = 'YEAR' THEN date_trunc('year', tr.date)::date
+            END AS "Period of Date",
+            'Exporter' AS "Header_Exporter",
+            tr.source_country AS gas_origin,
+            'Importer' AS "Header_Importer",
+            tr.target_country AS target_country,
+            tr.pointlabel AS "Interconnection Point",
+            ROUND(SUM(tr."flow_mcm/d") / 1000.0, 6) AS flows_bcm
+        FROM european_gas_trade tr
+        WHERE tr.source_country = ANY(:origins)
+          AND tr.date BETWEEN :start_date AND :end_date
+        GROUP BY
+            "Period of Date",
+            tr.source_country,
+            tr.target_country,
+            tr.pointlabel
+        ORDER BY "Period of Date" DESC;
+        """
+
         try:
-            query_origins = [selected_origin] if selected_origin != '(All)' else ['Algeria','Azerbaijan','Libya','Norway','Russia']
-
-            query = f"""
-            SELECT
-                tr.date AS date,
-                tr.source_country AS gas_origin,
-                tr.target_country AS target_country,
-                tr.pointlabel AS point_label,
-                tr."flow_mcm/d" / 1000.0 AS flows_bcm
-            FROM european_gas_trade tr
-            WHERE tr.source_country = ANY(:origins)
-              AND tr.date >= :start_date
-              AND tr.date <= :end_date
-            ORDER BY tr.date DESC;
-            """
-
             results = execute_query(query, {
                 'start_date': start_date,
                 'end_date': end_date,
+                'time_granularity': time_gran,
                 'origins': query_origins
             })
             df = pd.DataFrame(results)
-            
             if df.empty:
                 return html.Div("No data available for the selected filters.", style={'color': '#666', 'fontSize': '12px', 'padding': '20px'})
 
             # Convert types
             df['flows_bcm'] = pd.to_numeric(df['flows_bcm'], errors='coerce').fillna(0)
-            df['date'] = pd.to_datetime(df['date'])
+            df['Period of Date'] = pd.to_datetime(df['Period of Date'])
 
-            # Apply destination filter
-            df = df[df['target_country'].isin(selected_dests)]
+            # Mapping for Azerbaijan
+            aze_points = ['Kipi', 'Nea Mesimvria', 'Strandzha 2', 'Malkoclar']
+            mask_aze = (df['gas_origin'] == 'Turkey') & (df['Interconnection Point'].str.contains('|'.join(aze_points), na=False, case=False))
+            df.loc[mask_aze, 'gas_origin'] = 'Azerbaijan'
+            
+            # Filter out Turkey if it's not Azerbaijan
+            df = df[df['gas_origin'] != 'Turkey']
 
-            if df.empty:
-                return html.Div("No data matches filters.", style={'padding': '20px'})
-
-            # Aggregation logic
-            if table_period == 'YEAR':
-                df['agg_date'] = df['date'].dt.to_period('Y').dt.to_timestamp()
-                date_col_label = "Year of Date"
-                date_format = '%Y'
-            elif table_period == 'QUARTER':
-                df['agg_date'] = df['date'].dt.to_period('Q').dt.to_timestamp()
-                date_col_label = "Quarter of Date"
-                date_format = None
-            elif table_period == 'MONTH':
-                df['agg_date'] = df['date'].dt.to_period('M').dt.to_timestamp()
-                date_col_label = "Month of Date"
-                date_format = '%B %Y'
-            else: # DAILY
-                df['agg_date'] = df['date']
-                date_col_label = "Day of Date"
-                date_format = '%B %d, %Y'
-
-            # Aggregate by agg_date, origin, target country, and point
-            df = df.groupby(['agg_date', 'gas_origin', 'target_country', 'point_label'])['flows_bcm'].sum().reset_index()
-
-            # Pivot for multi-level headers (same structure as main file)
+            # Pivot with 5 levels as requested
             pivot_df = df.pivot_table(
-                index='agg_date',
-                columns=['gas_origin', 'target_country', 'point_label'],
+                index='Period of Date',
+                columns=['Header_Exporter', 'gas_origin', 'Header_Importer', 'target_country', 'Interconnection Point'],
                 values='flows_bcm'
             ).reset_index()
             
             # Sort by date descending
             pivot_df = pivot_df.sort_values(pivot_df.columns[0], ascending=False)
 
-            # Sort origins (same order as main file)
+            # Sort origins
             origin_order = ['Algeria', 'Azerbaijan', 'Libya', 'Norway', 'Russia']
             
             def sort_columns_key(col):
-                if col[0] == 'agg_date':
+                if col[0] == 'Period of Date':
                     return (-1, "")
-                origin = col[0]
+                # col is (Header_Exporter, gas_origin, Header_Importer, target_country, Interconnection Point)
+                origin = col[1]
                 order = origin_order.index(origin) if origin in origin_order else 99
-                return (order, str(col[2]))
+                return (order, str(col[4])) # Sort by point label
 
             # Determine the actual column name for the date
             date_col_name = pivot_df.columns[0]
-            
-            # Get hierarchical columns (excluding the date column)
             hier_cols = [c for c in pivot_df.columns if c != date_col_name]
             hier_cols.sort(key=sort_columns_key)
             
-            table_columns = [{"name": ["", "", date_col_label], "id": date_col_label}]
+            # Date column header alignment (empty labels for the top 4 rows)
+            date_header_name = ["", "", "", "", "Period of Date"]
+            table_columns = [{"name": date_header_name, "id": "Period of Date"}]
             for col in hier_cols:
                 table_columns.append({
                     "name": list(col),
                     "id": "_".join(map(str, col))
                 })
 
-            # Prepare data
-            # Convert date to string after sorting but before iteration
-            def format_date(d):
-                if table_period == 'QUARTER':
-                    q = (d.month - 1) // 3 + 1
-                    return f"Q{q} {d.year}"
-                return d.strftime(date_format)
+            # Formatting based on period
+            def format_period_date(dt, p):
+                if pd.isnull(dt): return ""
+                if p == 'YEAR': return dt.strftime('%Y')
+                if p == 'MONTH': return dt.strftime('%B %Y')
+                if p == 'QUARTER': 
+                    q = (dt.month - 1) // 3 + 1
+                    return f"{dt.year} Q{q}"
+                return dt.strftime('%B %d, %Y')
 
-            pivot_df[date_col_label] = pivot_df[date_col_name].apply(format_date)
-            
             table_data = []
             for _, row in pivot_df.iterrows():
-                d_row = {date_col_label: row[date_col_label]}
+                d_row = {"Period of Date": format_period_date(row[date_col_name], table_period)}
                 for col in hier_cols:
                     val = row[col]
-                    # Format as float only if it's numeric
                     if pd.notnull(val):
                         try:
                             d_row["_".join(map(str, col))] = f"{float(val):.4f}"
@@ -968,65 +981,6 @@ def register_callbacks(dash_app, server):
                     else:
                         d_row["_".join(map(str, col))] = ""
                 table_data.append(d_row)
-
-            # Create conditional styling for selected destination
-            style_data_conditional = [
-                {
-                    'if': {'column_id': date_col_label},
-                    'textAlign': 'left',
-                    'fontWeight': 'normal',
-                    'color': '#666',
-                    'minWidth': '180px',
-                    'borderRight': '2px solid #dee2e6'
-                },
-                {
-                    'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f8f9fa'
-                }
-            ]
-            
-            # Add highlighting for selected destination columns
-            if selected_destination:
-                # Find columns that match the selected destination
-                for col in hier_cols:
-                    if col[1] == selected_destination:  # col[1] is the target_country
-                        column_id = "_".join(map(str, col))
-                        style_data_conditional.append({
-                            'if': {'column_id': column_id},
-                            'backgroundColor': '#e3f2fd',
-                            'color': '#1976d2',
-                            'fontWeight': 'bold',
-                            'border': '2px solid #1976d2'
-                        })
-            
-            # Create conditional header styling
-            style_header_conditional = [
-                {
-                    'if': {'header_index': 0}, # This targets the top-most header row (Origin)
-                    'backgroundColor': '#e9ecef',
-                    'color': '#212529',
-                    'fontSize': '12px',
-                    'fontWeight': 'bold'
-                },
-                {
-                    'if': {'header_index': 1}, # This targets the second header row (Interconnection Point)
-                    'backgroundColor': 'white',
-                    'fontSize': '11px',
-                    'color': '#666'
-                }
-            ]
-            
-            # Add header highlighting for selected destination
-            if selected_destination:
-                # Highlight headers for the selected destination
-                for i, col in enumerate(table_columns):
-                    if col["name"][1] == selected_destination:  # Check if this column belongs to selected destination
-                        style_header_conditional.append({
-                            'if': {'column_id': col["id"]},
-                            'backgroundColor': '#1976d2',
-                            'color': 'white',
-                            'fontWeight': 'bold'
-                        })
 
             return dash_table.DataTable(
                 id='gas-country-data-table',
@@ -1044,7 +998,7 @@ def register_callbacks(dash_app, server):
                 },
                 style_header={
                     'backgroundColor': 'white',
-                    'color': EI_DARK_BLUE,
+                    'color': '#1b365d',
                     'fontWeight': 'bold',
                     'textAlign': 'center',
                     'fontSize': '12px',
@@ -1061,8 +1015,45 @@ def register_callbacks(dash_app, server):
                     'color': '#333',
                     'minWidth': '100px'
                 },
-                style_data_conditional=style_data_conditional,
-                style_header_conditional=style_header_conditional,
+                style_data_conditional=[
+                    {
+                        'if': {'column_id': 'Period of Date'},
+                        'textAlign': 'left',
+                        'fontWeight': 'normal',
+                        'color': '#666',
+                        'minWidth': '180px',
+                        'borderRight': '1px solid #dee2e6'
+                    },
+                    {
+                        'if': {'row_index': 'odd'},
+                        'backgroundColor': '#f8f9fa'
+                    },
+                    {
+                        'if': {'state': 'active'},
+                        'backgroundColor': '#fdeedc',
+                        'border': '1px solid #fe5000'
+                    },
+                    {
+                        'if': {'state': 'selected'},
+                        'backgroundColor': '#e1f0ff',
+                        'border': '1px solid #3390ff'
+                    }
+                ],
+                style_header_conditional=[
+                    {
+                        'if': {'header_index': 1}, # Gas Origin row
+                        'backgroundColor': '#e9ecef',
+                        'color': '#212529',
+                        'fontSize': '12px',
+                        'fontWeight': 'bold'
+                    },
+                    {
+                        'if': {'header_index': 4}, # Interconnection Point row
+                        'backgroundColor': 'white',
+                        'fontSize': '11px',
+                        'color': '#666'
+                    }
+                ],
                 fixed_rows={'headers': True},
                 virtualization=True
             )
@@ -1073,7 +1064,7 @@ def register_callbacks(dash_app, server):
             traceback.print_exc()
             return html.Div(f"Error loading table: {str(e)}", style={'color': 'red'})
 
-    # Complete table highlighting functionality - Column, Cell, and Row highlighting
+    # Clientside callback for table highlighting
     dash_app.clientside_callback(
         """
         function(id) {
@@ -1089,181 +1080,187 @@ def register_callbacks(dash_app, server):
                     #${tableId} .dash-spreadsheet-container {
                         cursor: pointer;
                     }
-                    #${tableId} .dash-spreadsheet-container td,
-                    #${tableId} .dash-spreadsheet-container th {
-                        transition: all 0.15s ease;
-                    }
-                    
-                    /* Hover effects for better UX */
-                    #${tableId} .dash-spreadsheet-container td:hover {
-                        background-color: #f0f8ff !important;
-                    }
-                    #${tableId} .dash-spreadsheet-container th:hover {
-                        background-color: #e6f3ff !important;
-                    }
-                    
-                    /* Selected column header styling */
-                    #${tableId} .dash-spreadsheet-container th.column-header-selected {
-                        background-color: #4a90e2 !important;
-                        color: white !important;
-                        font-weight: bold !important;
-                    }
-                    
-                    /* Sidebar UI Refinements */
-                    .custom-legend-filter input[type="checkbox"] {
-                        display: none;
-                    }
-                    .custom-legend-filter label {
-                        cursor: pointer;
+                    #${tableId} .dash-spreadsheet-container td {
                         transition: all 0.2s ease;
                     }
-                    .custom-legend-filter label:hover {
-                        background-color: #f5f5f5;
+                    /* Base selection state: dim normal data cells */
+                    #${tableId} .dash-spreadsheet-container.selection-active td {
+                        color: #ccc !important;
+                        background-color: transparent !important;
                     }
-                    
-                    .custom-date-input {
-                        font-family: 'Inter', sans-serif;
+                    /* Keep Day of Date column clear and undimmed */
+                    #${tableId} .dash-spreadsheet-container.selection-active td[data-dash-column="Period of Date"] {
+                        color: #666 !important;
+                        opacity: 1 !important;
+                    }
+                    /* Highlight for selected column header */
+                    #${tableId} .dash-spreadsheet-container th.column-header-selected {
+                        background-color: #0075A8 !important;
+                        color: white !important;
                     }
                 `;
                 document.head.appendChild(style);
             }
             
+            // 2. Set up click listener on the table
             const setupListener = () => {
                 const tableEl = document.getElementById(tableId);
                 if (!tableEl) return;
+                
                 const container = tableEl.querySelector('.dash-spreadsheet-container');
                 if (!container || container.dataset.highlightEnhanced === 'true') return;
+                
                 container.dataset.highlightEnhanced = 'true';
                 
                 container.addEventListener('click', function(e) {
                     const header = e.target.closest('th[data-dash-column]');
                     const cell = e.target.closest('td[data-dash-column]');
+                    
                     if (!header && !cell) return;
                     
                     const columnId = (header || cell).getAttribute('data-dash-column');
                     const rowIndex = cell ? cell.getAttribute('data-dash-row') : null;
                     
+                    if (columnId === 'Period of Date' && !rowIndex) return;
+                    
+                    const containerRect = container.getBoundingClientRect();
                     const isHeader = !!header;
-                    const isDateColumn = columnId.includes('of Date');
                     
-                    // Determine what type of highlighting to apply
-                    let highlightType = '';
-                    let selectionKey = '';
-                    
-                    if (isHeader && !isDateColumn) {
-                        // Column header click - highlight entire column
-                        highlightType = 'column';
-                        const headerRow = header.closest('tr');
-                        const thead = header.closest('thead');
-                        const headerRows = thead ? Array.from(thead.querySelectorAll('tr')) : [];
-                        const headerIndex = headerRow ? headerRows.indexOf(headerRow) : -1;
-                        selectionKey = columnId + '_header_' + headerIndex;
-                    } else if (isDateColumn && cell) {
-                        // Date cell click - highlight entire row
-                        highlightType = 'row';
-                        selectionKey = 'row_' + rowIndex;
-                    } else if (cell && !isDateColumn) {
-                        // Data cell click - highlight individual cell
-                        highlightType = 'cell';
-                        selectionKey = columnId + '_cell_' + rowIndex;
-                    } else {
-                        return; // Invalid click target
+                    // Find headerRows and headerIndex robustly
+                    let headerRow = null;
+                    let thead = null;
+                    let headerRows = [];
+                    let headerIndex = -1;
+
+                    if (isHeader) {
+                        headerRow = header.closest('tr');
+                        thead = header.closest('thead');
+                        headerRows = thead ? Array.from(thead.querySelectorAll('tr')) : [];
+                        headerIndex = headerRow ? headerRows.indexOf(headerRow) : -1;
+                    } else if (cell) {
+                        // For cell clicks, we still need to know the header context
+                        // Search in both fixed and non-fixed headers
+                        const allTheads = container.querySelectorAll('thead');
+                        allTheads.forEach(t => {
+                            const rows = Array.from(t.querySelectorAll('tr'));
+                            if (rows.length > 0) {
+                                headerRows = rows;
+                                thead = t;
+                            }
+                        });
                     }
                     
-                    // Toggle selection if clicking same element
+                    let targetColumnIds = [columnId];
+                    let highlightRow = rowIndex;
+                    
+                    // Toggle logic
+                    const selectionKey = isHeader ? (columnId + '_' + headerIndex) : (columnId + '_' + rowIndex);
                     if (container.dataset.lastSelection === selectionKey) {
                         container.dataset.lastSelection = '';
+                        container.classList.remove('selection-active');
                         container.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
                         const dynStyle = document.getElementById(dynamicStyleId);
                         if (dynStyle) dynStyle.remove();
                         return;
                     }
-                    
-                    // Clear previous selection
                     container.dataset.lastSelection = selectionKey;
+                    
+                    // Clear existing header highlights
                     container.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
                     
-                    // Generate dynamic styles based on highlight type
-                    let dynamicStyles = '';
-                    
-                    if (highlightType === 'column') {
-                        // COLUMN HIGHLIGHTING
-                        let targetColumnIds = [columnId];
-                        
-                        // Handle multi-column headers
-                        const headerRow = header.closest('tr');
-                        const thead = header.closest('thead');
-                        const headerRows = thead ? Array.from(thead.querySelectorAll('tr')) : [];
+                    // Discover child columns if a parent header is clicked
+                    if (isHeader) {
+                        // Special Handling for Spanning Headers (Parents)
                         const colspan = parseInt(header.getAttribute('colspan') || header.colSpan || '1');
                         
                         if (colspan > 1) {
-                            const bottomRow = headerRows[headerRows.length - 1];
-                            const allBottomHeaders = Array.from(bottomRow.querySelectorAll('th[data-dash-column]'));
-                            let currentIdx = 0;
-                            const bottomHeaderMap = allBottomHeaders.map(h => {
-                                const cs = parseInt(h.getAttribute('colspan') || h.colSpan || '1');
-                                const start = currentIdx;
-                                currentIdx += cs;
-                                return { header: h, start: start, end: currentIdx, colId: h.getAttribute('data-dash-column') };
-                            });
+                            // Robust Discovery: Find the data row that actually contains this column
+                            // This handles fixed_rows (split header/body) and fixed_columns (split left/right)
+                            const parentId = header.getAttribute('data-dash-column');
+                            const allTbodies = Array.from(container.querySelectorAll('tbody'));
                             
-                            let clickedStartIdx = 0;
-                            const rowHeaders = Array.from(headerRow.querySelectorAll('th'));
-                            for (let h of rowHeaders) {
-                                if (h === header) break;
-                                clickedStartIdx += parseInt(h.getAttribute('colspan') || h.colSpan || '1');
-                            }
-                            const clickedEndIdx = clickedStartIdx + colspan;
-                            
-                            targetColumnIds = bottomHeaderMap
-                                .filter(m => m.start >= clickedStartIdx && m.end <= clickedEndIdx && !m.colId.includes('of Date'))
-                                .map(m => m.colId);
-                        }
-                        
-                        header.classList.add('column-header-selected');
-                        
-                        // Highlight all cells in the selected columns
-                        targetColumnIds.forEach(id => {
-                            dynamicStyles += `
-                                #${tableId} .dash-spreadsheet-container td[data-dash-column="${id}"] {
-                                    background-color: #b3d9ff !important;
-                                    color: #1b365d !important;
-                                    font-weight: 500 !important;
+                            let targetRow = null;
+                            let startIdx = -1;
+                            let leafIds = [];
+
+                            // Search for the row containing our start column
+                            for (let tbody of allTbodies) {
+                                const row = tbody.querySelector('tr');
+                                if (!row) continue;
+                                
+                                const cells = Array.from(row.querySelectorAll('td'));
+                                const ids = cells.map(td => td.getAttribute('data-dash-column'));
+                                const idx = ids.indexOf(parentId);
+                                
+                                if (idx !== -1) {
+                                    targetRow = row;
+                                    startIdx = idx;
+                                    leafIds = ids;
+                                    break;
                                 }
-                            `;
-                        });
-                        
-                    } else if (highlightType === 'row') {
-                        // ROW HIGHLIGHTING
-                        dynamicStyles += `
-                            #${tableId} .dash-spreadsheet-container tr:has(td[data-dash-row="${rowIndex}"]) td {
-                                background-color: #b3d9ff !important;
-                                color: #1b365d !important;
-                                font-weight: 500 !important;
                             }
-                            #${tableId} .dash-spreadsheet-container td[data-dash-column$="of Date"][data-dash-row="${rowIndex}"] {
-                                background-color: #b3d9ff !important;
-                                color: #1b365d !important;
-                                font-weight: bold !important;
+                            
+                            if (targetRow && startIdx !== -1) {
+                                const endIdx = Math.min(startIdx + colspan, leafIds.length);
+                                targetColumnIds = leafIds.slice(startIdx, endIdx);
+                            } else {
+                                targetColumnIds = [columnId];
                             }
-                        `;
-                        
-                    } else if (highlightType === 'cell') {
-                        // CELL HIGHLIGHTING
+                        } else if (columnId === 'Period of Date') {
+                            // Don't highlight Period of Date when header clicked
+                            return;
+                        }
+
+                        header.classList.add('column-header-selected');
+                    }
+                    
+                    // 3. Apply Visual Highlights
+                    container.classList.add('selection-active');
+                    
+                    // Generate Dynamic CSS
+                    let dynamicStyles = '';
+                    
+                    // Highlight Column(s)
+                    targetColumnIds.forEach(id => {
                         dynamicStyles += `
-                            #${tableId} .dash-spreadsheet-container td[data-dash-column="${columnId}"][data-dash-row="${rowIndex}"] {
+                            #${tableId} .dash-spreadsheet-container td[data-dash-column="${id}"] {
                                 background-color: #e1f0ff !important;
                                 color: #1b365d !important;
                                 font-weight: 600 !important;
+                            }
+                            /* Keep header label visible if it's the target column */
+                            #${tableId} .dash-spreadsheet-container th[data-dash-column="${id}"] {
+                                transition: background-color 0.2s ease;
+                            }
+                        `;
+                    });
+                    
+                    // 2. Row Highlighting
+                    if (highlightRow !== null) {
+                        dynamicStyles += `
+                            #${tableId} .dash-spreadsheet-container tr:has(td[data-dash-row="${highlightRow}"]) td {
+                                background-color: #e1f0ff !important;
+                                color: #1b365d !important;
+                                font-weight: 600 !important;
+                            }
+                        `;
+                        // 3. Active Cell with intense border and background
+                        dynamicStyles += `
+                            #${tableId} .dash-spreadsheet-container td[data-dash-column="${columnId}"][data-dash-row="${highlightRow}"] {
                                 border: 2px solid #fe5000 !important;
                                 border-radius: 2px;
                                 z-index: 10 !important;
                                 position: relative;
                             }
+                            /* Special highlight for the Period of Date cell in the selected row */
+                            #${tableId} .dash-spreadsheet-container td[data-dash-column="Period of Date"][data-dash-row="${highlightRow}"] {
+                                background-color: #b3d9ff !important;
+                                color: #1b365d !important;
+                                font-weight: bold !important;
+                            }
                         `;
                     }
                     
-                    // Apply the dynamic styles
                     let dynStyle = document.getElementById(dynamicStyleId);
                     if (!dynStyle) {
                         dynStyle = document.createElement('style');
@@ -1274,11 +1271,11 @@ def register_callbacks(dash_app, server):
                 });
             };
             
-            // Setup the listener and keep checking for table updates
             setupListener();
-            if (!window._gasCountryTableInterval) {
-                window._gasCountryTableInterval = setInterval(setupListener, 1000);
+            if (!window._gasFlowsTableInterval_country) {
+                window._gasFlowsTableInterval_country = setInterval(setupListener, 1000);
             }
+            
             return null;
         }
         """,
@@ -1366,38 +1363,58 @@ def register_callbacks(dash_app, server):
         Input("export-gas-country-table-btn", "n_clicks"),
         [State('gas-country-start-date', 'value'),
          State('gas-country-end-date', 'value'),
-         State('gas-country-origin-radio', 'value'),
-         State('gas-country-dest-checklist', 'value')],
+         State('gas-country-table-period-store', 'data')],
         prevent_initial_call=True,
     )
-    def export_table_data(n_clicks, start_date, end_date, selected_origin, selected_dests):
+    def export_table_data(n_clicks, start_date, end_date, period):
         """Export table data to CSV."""
         if n_clicks == 0:
             return no_update
             
         try:
-            if not selected_origin or not selected_dests:
-                return no_update
+            # Default all origins as requested
+            selected_origins = ['Algeria', 'Azerbaijan', 'Libya', 'Norway', 'Russia']
+            
+            query_origins = selected_origins.copy()
+            if 'Turkey' not in query_origins:
+                query_origins.append('Turkey')
 
-            query_origins = [selected_origin] if selected_origin != '(All)' else ['Algeria','Azerbaijan','Libya','Norway','Russia']
+            # Map UI period to SQL granularity
+            time_gran = {
+                'YEAR': 'YEAR',
+                'QUARTER': 'QUARTER',
+                'MONTH': 'MONTH',
+                'DAILY': 'DAY'
+            }.get(period, 'MONTH')
 
             query = f"""
             SELECT
-                tr.date AS date,
+                CASE
+                    WHEN :time_granularity = 'DAY' THEN tr.date
+                    WHEN :time_granularity = 'WEEK' THEN (date_trunc('week', tr.date + interval '1 day') - interval '1 day')::date
+                    WHEN :time_granularity = 'MONTH' THEN date_trunc('month', tr.date)::date
+                    WHEN :time_granularity = 'QUARTER' THEN date_trunc('quarter', tr.date)::date
+                    WHEN :time_granularity = 'YEAR' THEN date_trunc('year', tr.date)::date
+                END AS "Period of Date",
                 tr.source_country AS gas_origin,
                 tr.target_country AS target_country,
-                tr.pointlabel AS point_label,
-                tr."flow_mcm/d" / 1000.0 AS flows_bcm
+                tr.pointlabel AS "Interconnection Point",
+                ROUND(SUM(tr."flow_mcm/d") / 1000.0, 6) AS flows_bcm
             FROM european_gas_trade tr
             WHERE tr.source_country = ANY(:origins)
-              AND tr.date >= :start_date
-              AND tr.date <= :end_date
-            ORDER BY tr.date DESC;
+              AND tr.date BETWEEN :start_date AND :end_date
+            GROUP BY
+                "Period of Date",
+                tr.source_country,
+                tr.target_country,
+                tr.pointlabel
+            ORDER BY "Period of Date" DESC;
             """
 
             results = execute_query(query, {
                 'start_date': start_date,
                 'end_date': end_date,
+                'time_granularity': time_gran,
                 'origins': query_origins
             })
             df = pd.DataFrame(results)
@@ -1405,29 +1422,44 @@ def register_callbacks(dash_app, server):
             if df.empty:
                 return no_update
 
-            # Apply same transformations as table
+            # Convert types
             df['flows_bcm'] = pd.to_numeric(df['flows_bcm'], errors='coerce').fillna(0)
-            df['date'] = pd.to_datetime(df['date'])
+            df['Period of Date'] = pd.to_datetime(df['Period of Date'])
 
-            # Apply filters
-            df = df[df['target_country'].isin(selected_dests)]
+            # Azerbaijan mapping
+            aze_points = ['Kipi', 'Nea Mesimvria', 'Strandzha 2', 'Malkoclar']
+            mask_aze = (df['gas_origin'] == 'Turkey') & (df['Interconnection Point'].str.contains('|'.join(aze_points), na=False, case=False))
+            df.loc[mask_aze, 'gas_origin'] = 'Azerbaijan'
+            
+            # Filter out Turkey if it's not Azerbaijan
+            df = df[df['gas_origin'] != 'Turkey']
 
             # Aggregate
-            df = df.groupby(['date', 'gas_origin', 'target_country', 'point_label'])['flows_bcm'].sum().reset_index()
+            df = df.groupby(['Period of Date', 'gas_origin', 'target_country', 'Interconnection Point'])['flows_bcm'].sum().reset_index()
 
-            # Prepare export data - flatten the hierarchical structure for CSV
-            export_df = df.sort_values('date', ascending=False).copy()
-            export_df['date'] = export_df['date'].dt.strftime('%Y-%m-%d')
+            # Prepare export data
+            export_df = df.sort_values('Period of Date', ascending=False).copy()
+            
+            def format_period_date(dt, p):
+                if pd.isnull(dt): return ""
+                if p == 'YEAR': return dt.strftime('%Y')
+                if p == 'MONTH': return dt.strftime('%B %Y')
+                if p == 'QUARTER': 
+                    q = (dt.month - 1) // 3 + 1
+                    return f"{dt.year} Q{q}"
+                return dt.strftime('%Y-%m-%d')
+
+            export_df['Period of Date'] = export_df['Period of Date'].apply(lambda x: format_period_date(x, period))
             export_df = export_df.rename(columns={
-                'date': 'Date',
+                'Period of Date': 'Date/Period',
                 'gas_origin': 'Gas Origin',
                 'target_country': 'Target Country',
-                'point_label': 'Interconnection Point',
+                'Interconnection Point': 'Interconnection Point',
                 'flows_bcm': 'Flows (BCM)'
             })
             
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"gas_pipeline_flows_country_table_{timestamp}.csv"
+            filename = f"gas_pipeline_flows_country_table_{period}_{timestamp}.csv"
             return dcc.send_data_frame(export_df.to_csv, filename, index=False)
             
         except Exception as e:
