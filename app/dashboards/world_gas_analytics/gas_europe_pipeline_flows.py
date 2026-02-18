@@ -743,7 +743,7 @@ def register_callbacks(dash_app, server):
         -- DAILY
         SELECT
             'DAILY' AS period,
-            TO_CHAR(date, 'Month DD, YYYY') AS period_of_date,
+            TO_CHAR(date, 'MM/DD/YYYY') AS period_of_date,
             gas_origin,
             point_label,
             date AS date,
@@ -756,7 +756,7 @@ def register_callbacks(dash_app, server):
         -- WEEKLY
         SELECT
             'WEEKLY' AS period,
-            TO_CHAR((date_trunc('week', date + interval '1 day') - interval '1 day')::date, 'Month DD, YYYY') AS period_of_date,
+            '*' AS period_of_date,
             gas_origin,
             point_label,
             (date_trunc('week', date + interval '1 day') - interval '1 day')::date AS date,
@@ -770,7 +770,7 @@ def register_callbacks(dash_app, server):
         -- MONTHLY
         SELECT
             'MONTHLY' AS period,
-            TO_CHAR(date_trunc('month', date), 'Month YYYY') AS period_of_date,
+            '*' AS period_of_date,
             gas_origin,
             point_label,
             date_trunc('month', date)::date AS date,
@@ -784,7 +784,7 @@ def register_callbacks(dash_app, server):
         -- QUARTERLY
         SELECT
             'QUARTERLY' AS period,
-            EXTRACT(YEAR FROM date)::text || ' Q' || EXTRACT(QUARTER FROM date)::text AS period_of_date,
+            '*' AS period_of_date,
             gas_origin,
             point_label,
             date_trunc('quarter', date)::date AS date,
@@ -798,7 +798,7 @@ def register_callbacks(dash_app, server):
         -- YEARLY
         SELECT
             'YEARLY' AS period,
-            EXTRACT(YEAR FROM date)::text AS period_of_date,
+            '*' AS period_of_date,
             gas_origin,
             point_label,
             date_trunc('year', date)::date AS date,
@@ -857,7 +857,7 @@ def register_callbacks(dash_app, server):
                                         'date': new_date, 
                                         'gas_origin': origin, 
                                         'flows_bcm': daily_vol,
-                                        'period_of_date': new_date.strftime('%B %d, %Y')
+                                        'period_of_date': new_date.strftime('%m/%d/%Y')
                                     })
                         pre_2025 = origin_df[origin_df['date'] < '2025-01-01']
                         origin_df = pd.concat([pre_2025, pd.DataFrame(new_rows)])
@@ -869,10 +869,17 @@ def register_callbacks(dash_app, server):
             origin_order = ['Libya', 'Azerbaijan', 'Algeria', 'Norway', 'Russia']
             all_origins_present = [o for o in origin_order if o in selected_origins]
             
+            # Ensure period_of_date exists for all rows
+            if 'period_of_date' not in df.columns or df['period_of_date'].isna().any():
+                if period == 'DAILY':
+                    df['period_of_date'] = df['date'].dt.strftime('%m/%d/%Y')
+                else:
+                    df['period_of_date'] = '*'
+            
             fig = go.Figure()
             
             for origin in all_origins_present:
-                origin_df = df[df['gas_origin'] == origin].sort_values('date')
+                origin_df = df[df['gas_origin'] == origin].sort_values('date').copy()
                 if not origin_df.empty:
                     base_color = GAS_ORIGIN_COLORS.get(origin, '#ddd')
                     
@@ -895,19 +902,20 @@ def register_callbacks(dash_app, server):
                         line_width = 0.8
                     
                     fig.add_trace(go.Scatter(
-                        x=origin_df['date'],
-                        y=origin_df['flows_bcm'],
+                        x=origin_df['date'].values,
+                        y=origin_df['flows_bcm'].values,
                         name=origin,
                         stackgroup='one', 
                         mode='lines',
                         line=dict(width=line_width, color=line_color),
                         fillcolor=fill_color,
                         hoveron='points+fills',
-                        customdata=origin_df[['period_of_date', 'gas_origin']].values,
+                        text=origin_df['period_of_date'].values,
+                        meta=[origin] * len(origin_df),
                         hovertemplate=(
-                            "Gas Origin: <b>%{fullData.name}</b><br>" +
-                            "Period: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>%{customdata[0]}</b><br>" +
-                            "flows_bcm: <b>%{y:.4f}</b><extra></extra>"
+                            "Gas Origin: %{meta[0]}<br>" +
+                            "Date: %{text}<br>" +
+                            "flows_bcm: %{y:.4f}<extra></extra>"
                         )
                     ))
 
@@ -944,8 +952,16 @@ def register_callbacks(dash_app, server):
                 margin=dict(l=40, r=20, t=10, b=40),
                 paper_bgcolor='white',
                 plot_bgcolor='white',
-                hovermode='closest', 
-                showlegend=False,    
+                hovermode='closest',
+                showlegend=False,
+                hoverlabel=dict(
+                    bgcolor='white',
+                    font_size=12,
+                    font_family='Inter, sans-serif',
+                    font_color='#333',
+                    bordercolor='#ddd',
+                    align='left'
+                ),
                 xaxis=xaxis_config,
                 yaxis=dict(
                     showgrid=True,
