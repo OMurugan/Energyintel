@@ -34,7 +34,7 @@ def _format_date_for_display(date):
         date = pd.to_datetime(date, errors='coerce')
     if pd.isna(date):
         return ""
-    return date.strftime('%-m/%-d/%Y')  # Remove leading zeros
+    return date.strftime('%Y-%m-%d')  # Standard format for date inputs
 
 def _index_to_date(index, date_list):
     """Convert slider index to date"""
@@ -404,39 +404,50 @@ def create_layout():
         max_date_val = unique_dates[-1]
         date_list = unique_dates
         
-        # Set default range to 2019-2026 (8 years) - ensure we get the full range
-        default_start_date = pd.Timestamp('2019-01-01')
-        default_end_date = pd.Timestamp('2026-12-31')
+        # Set default range to most recent 7 years from max_date_val
+        default_end_date = max_date_val
+        default_start_date = max_date_val - pd.DateOffset(years=7)
         
         # Find indices for default range - be more flexible with date matching
         default_start_index = 0
         default_end_index = len(date_list) - 1
         
-        # Find the closest date to 2019-01-01 or later
+        # Find the closest date to the calculated start date or later
         for i, date in enumerate(date_list):
-            if date.year >= 2019:
+            if date >= default_start_date:
                 default_start_index = i
                 break
         
-        # Find the closest date to 2026-12-31 or earlier
+        # Find the closest date to the calculated end date or earlier
         for i in range(len(date_list) - 1, -1, -1):
-            if date_list[i].year <= 2026:
+            if date_list[i] <= default_end_date:
                 default_end_index = i
                 break
                 
-        # If we couldn't find 2019-2026 range, use full range
+        # If we couldn't find the range, use full range
         if default_start_index >= default_end_index:
             default_start_index = 0
             default_end_index = len(date_list) - 1
+        
+        # Format dates for display
+        min_date_str = _format_date_for_display(min_date_val)
+        max_date_str = _format_date_for_display(max_date_val)
+        default_start_date_str = _format_date_for_display(default_start_date)
+        default_end_date_str = _format_date_for_display(default_end_date)
             
         print(f"Date range: {len(date_list)} dates from {min_date_val} to {max_date_val}")
-        print(f"Default range: indices {default_start_index}-{default_end_index} ({date_list[default_start_index]} to {date_list[default_end_index]})")
+        print(f"Default range (most recent 7 years): indices {default_start_index}-{default_end_index} ({date_list[default_start_index]} to {date_list[default_end_index]})")
     else:
         min_date_val = pd.Timestamp('2018-01-01')
         max_date_val = pd.Timestamp('2025-12-31')
         date_list = []
         default_start_index = 0
         default_end_index = 0
+        # Format dates for display
+        min_date_str = _format_date_for_display(min_date_val)
+        max_date_str = _format_date_for_display(max_date_val)
+        default_start_date_str = _format_date_for_display(max_date_val - pd.DateOffset(years=7))
+        default_end_date_str = _format_date_for_display(max_date_val)
 
     return html.Div([
         # Store components for tracking filter states and granularity
@@ -452,8 +463,9 @@ def create_layout():
         dcc.Download(id="download-demand-chart-csv"),
         dcc.Download(id="download-demand-table-csv"),
         
-        # Clientside callback trigger for hover highlighting
+        # Clientside callback trigger for hover highlighting and date picker enhancement
         html.Div(id='gas-demand-hover-trigger', style={'display': 'none'}),
+        html.Div(id='demand-date-picker-enhancer-anchor', style={'display': 'none'}),
         
         html.Div([
             # Side Filter Panel (on the right)
@@ -472,17 +484,49 @@ def create_layout():
                     }),
                     html.Div([
                         html.Div([
-                            html.Label(
-                                id="demand-date-range-start-label",
-                                children='1/1/2019',  # Default start date
-                                style={'display': 'inline-block', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '12px', 'fontWeight': 'bold'}
-                            ),
-                            html.Label(
-                                id="demand-date-range-end-label",
-                                children='12/31/2026',  # Default end date
-                                style={'float': 'right', 'color': '#1b365d', 'fontSize': '11px', 'fontFamily': 'Arial', 'lineHeight': '28px', 'fontWeight': 'bold'}
-                            ),
-                        ], style={'width': '100%', 'marginBottom': '2px', 'position': 'relative'}),
+                            html.Div([
+                                dcc.Input(
+                                    id='demand-start-date',
+                                    type='text',
+                                    value=default_start_date_str,
+                                    min=min_date_str,
+                                    max=max_date_str,
+                                    placeholder='YYYY-MM-DD',
+                                    style={
+                                        'width': '65px',
+                                        'height': '28px',
+                                        'fontSize': '11px',
+                                        'fontFamily': 'Arial, sans-serif',
+                                        'border': '1px solid #ccc',
+                                        'borderRadius': '4px',
+                                        'padding': '0 2px',
+                                        'color': '#333',
+                                        'cursor': 'pointer'
+                                    }
+                                ),
+                            ], style={'marginRight': '10px'}),
+                            html.Div([
+                                dcc.Input(
+                                    id='demand-end-date',
+                                    type='text',
+                                    value=default_end_date_str,
+                                    min=min_date_str,
+                                    max=max_date_str,
+                                    placeholder='YYYY-MM-DD',
+                                    style={
+                                        'width': '65px',
+                                        'height': '28px',
+                                        'fontSize': '11px',
+                                        'fontFamily': 'Arial, sans-serif',
+                                        'border': '1px solid #ccc',
+                                        'borderRadius': '4px',
+                                        'padding': '0 2px',
+                                        'color': '#333',
+                                        'cursor': 'pointer'
+                                    }
+                                ),
+                            ]),
+                        ], style={'width': 'auto', 'display': 'flex', 'gap': '0px', 'marginBottom': '10px', 'alignItems': 'center'}),
                         html.Div([
                             dcc.RangeSlider(
                                 id="demand-date-range-slider",
@@ -614,7 +658,7 @@ def create_layout():
                                 )
                             )
                         ], style={'position': 'relative'}),
-                    ], style={'width': '50%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '0%'}),
+                    ], style={'width': '49%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '0%'}),
                     
                     # Right Side - Line Chart
                     html.Div([
@@ -729,8 +773,12 @@ def create_layout():
                             id='europe-table-demand'
                         )
                     ),
+                
+                    # Source info
+                    html.P("Source: Energy Intelligence, Transmission System Operators, Federal Agencies, Eurostat, Entso-e",
+                    style={'fontSize': '10px', 'color': '#666', 'fontStyle': 'italic', 'paddingLeft': '0px', 'marginTop': '20px'})
                     
-                ], style={'width': '100%'}),  # table section close
+                ], style={'width': '99%'}),  # table section close
                 
             ], style={'marginRight': '150px', 'padding': '0 10px'})  # main content close
         ])  # outer container close - closes html.Div([ from line 452
@@ -739,6 +787,114 @@ def create_layout():
 
 def register_callbacks(dash_app, server):
     """Register all callbacks for the European Gas Demand dashboard"""
+    
+    # Clientside callback to convert text inputs to date inputs (browser native date picker)
+    # Clientside callback to convert text inputs to date inputs (browser native date picker)
+    dash_app.clientside_callback(
+        """
+        function() {
+            // Inject CSS to hide the calendar icon
+            const styleId = 'demand-date-input-style';
+            if (!document.getElementById(styleId)) {
+                const style = document.createElement('style');
+                style.id = styleId;
+                style.innerHTML = `
+                    #demand-start-date::-webkit-calendar-picker-indicator,
+                    #demand-end-date::-webkit-calendar-picker-indicator {
+                        opacity: 0 !important;
+                        pointer-events: none !important;
+                        width: 0px;
+                        display: block !important;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+
+            setTimeout(function() {
+                const startInput = document.getElementById('demand-start-date');
+                const endInput = document.getElementById('demand-end-date');
+                
+                if (startInput && startInput.type === 'text') {
+                    startInput.type = 'date';
+                    // Add click handler to open calendar
+                    startInput.addEventListener('click', function(e) {
+                        try {
+                            if (typeof this.showPicker === 'function') {
+                                this.showPicker();
+                            }
+                        } catch (error) {
+                            console.log('Error opening picker:', error);
+                        }
+                    });
+                }
+                
+                if (endInput && endInput.type === 'text') {
+                    endInput.type = 'date';
+                    // Add click handler to open calendar
+                    endInput.addEventListener('click', function(e) {
+                        try {
+                            if (typeof this.showPicker === 'function') {
+                                this.showPicker();
+                            }
+                        } catch (error) {
+                            console.log('Error opening picker:', error);
+                        }
+                    });
+                }
+            }, 100);
+            return null;
+        }
+        """,
+        Output('demand-date-picker-enhancer-anchor', 'children', allow_duplicate=True),
+        Input('demand-start-date', 'id'),
+        prevent_initial_call='initial_duplicate'
+    )
+
+    # Sync Date Inputs and Slider
+    @dash_app.callback(
+        [Output('demand-start-date', 'value'),
+         Output('demand-end-date', 'value'),
+         Output('demand-date-range-slider', 'value')],
+        [Input('demand-start-date', 'value'),
+         Input('demand-end-date', 'value'),
+         Input('demand-date-range-slider', 'value')],
+        [State('demand-date-list-store', 'data')]
+    )
+    def sync_date_controls(start_date, end_date, slider_value, date_list_iso):
+        """Bidirectional sync between Date Inputs and RangeSlider"""
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update
+
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        
+        if not date_list_iso:
+            return no_update, no_update, no_update
+
+        date_list = [pd.to_datetime(d) for d in date_list_iso]
+        
+        # If slider moved, update inputs
+        if trigger_id == 'demand-date-range-slider':
+            if not slider_value or len(slider_value) != 2:
+                return no_update, no_update, no_update
+            
+            new_start = _index_to_date(slider_value[0], date_list)
+            new_end = _index_to_date(slider_value[1], date_list)
+            
+            # Format dates for input value (YYYY-MM-DD for type='date')
+            return new_start.strftime('%Y-%m-%d'), new_end.strftime('%Y-%m-%d'), no_update
+
+        # If input changed, update slider
+        if trigger_id == 'demand-start-date' or trigger_id == 'demand-end-date':
+            start_idx = _date_to_index(start_date, date_list)
+            end_idx = _date_to_index(end_date, date_list)
+            
+            if start_idx > end_idx:
+                start_idx, end_idx = end_idx, start_idx
+            
+            return no_update, no_update, [start_idx, end_idx]
+            
+        return no_update, no_update, no_update
     
     # Chart Granularity Toggle
     @dash_app.callback(
@@ -1025,25 +1181,7 @@ def register_callbacks(dash_app, server):
         prevent_initial_call=True
     )
     
-    # Update date labels based on range slider selection
-    @dash_app.callback(
-        [Output('demand-date-range-start-label', 'children'),
-         Output('demand-date-range-end-label', 'children')],
-        [Input('demand-date-range-slider', 'value')],
-        [State('demand-date-list-store', 'data')]
-    )
-    def update_date_labels(slider_range, date_list_iso):
-        """Update date labels based on range slider values."""
-        if not date_list_iso or not slider_range or len(slider_range) != 2:
-            return '1/1/2019', '10/1/2025'
-        
-        # Convert ISO strings back to datetime objects
-        date_list = [pd.to_datetime(d) for d in date_list_iso]
-        
-        start_date = _index_to_date(slider_range[0], date_list)
-        end_date = _index_to_date(slider_range[1], date_list)
-        
-        return _format_date_for_display(start_date), _format_date_for_display(end_date)
+
     
     # Callback to handle "All" checkbox logic for countries
     @dash_app.callback(

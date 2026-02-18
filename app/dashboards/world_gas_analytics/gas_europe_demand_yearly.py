@@ -114,8 +114,6 @@ def create_layout():
         dcc.Store(id='gas-europe-granularity-store', data='year'),
         dcc.Store(id='gas-europe-table-granularity-store', data='month'),
         dcc.Store(id='gas-demand-chart-selection', data=None),
-        dcc.Download(id="gas-demand-europe-download-chart-csv"),
-        dcc.Download(id="gas-demand-europe-download-table-csv"),
         
         # Header
         html.Div([
@@ -149,8 +147,16 @@ def create_layout():
                         ], style=GRAN_BTN_CONTAINER_STYLE),
                     ], style={'display': 'flex', 'padding': '10px 20px', 'backgroundColor': '#f8f9fa', 'alignItems': 'center'}),
 
-                    html.Button("Export to CSV", id="gas-demand-europe-export-chart-csv-btn", 
-                                style={**EXPORT_BTN_STYLE, 'position': 'absolute', 'top': '10px', 'right': '20px'}),
+                    html.Div([
+                        html.Button("Export to CSV", id="gas-demand-europe-export-chart-csv-btn", 
+                                    style=EXPORT_BTN_STYLE),
+                        dcc.Loading(
+                            id="loading-export-chart",
+                            type="circle",
+                            children=dcc.Download(id="gas-demand-europe-download-chart-csv"),
+                            style={'display': 'inline-block', 'marginLeft': '10px'}
+                        )
+                    ], style={'position': 'absolute', 'top': '10px', 'right': '20px', 'display': 'flex', 'alignItems': 'center'}),
 
                     # Chart Area
                     html.Div([
@@ -184,8 +190,16 @@ def create_layout():
                         ], style=GRAN_BTN_CONTAINER_STYLE),
                     ], style={'display': 'flex', 'padding': '10px 0', 'backgroundColor': '#fff', 'alignItems': 'center'}),
                     
-                    html.Button("Export to CSV", id="gas-demand-europe-export-table-csv-btn", 
-                                style={**EXPORT_BTN_STYLE, 'position': 'absolute', 'top': '10px', 'right': '20px'}),
+                    html.Div([
+                        html.Button("Export to CSV", id="gas-demand-europe-export-table-csv-btn", 
+                                    style=EXPORT_BTN_STYLE),
+                        dcc.Loading(
+                            id="loading-export-table",
+                            type="circle",
+                            children=dcc.Download(id="gas-demand-europe-download-table-csv"),
+                            style={'display': 'inline-block', 'marginLeft': '10px'}
+                        )
+                    ], style={'position': 'absolute', 'top': '10px', 'right': '20px', 'display': 'flex', 'alignItems': 'center'}),
                     
                     dcc.Store(id='gas-demand-table-selection-store', data={}),
                     dcc.Store(id='gas-demand-table-highlight-state', data={}),
@@ -230,6 +244,16 @@ def create_layout():
                             },
                             style_as_list_view=False,
                         )
+                    ),
+                    html.Div(
+                        "Source: Energy Intelligence, Transmission System Operators, Federal Agencies, Eurostat, Entso-e",
+                        style={
+                            'fontStyle': 'italic',
+                            'fontSize': '12px',
+                            'color': '#1b365d',
+                            'marginTop': '10px',
+                            'fontFamily': 'Arial, sans-serif'
+                        }
                     )
                 ], style={'padding': '20px', 'overflowX': 'hidden', 'position': 'relative'})
             ], style={'width': '80%', 'display': 'inline-block', 'verticalAlign': 'top'}),
@@ -302,15 +326,15 @@ def create_layout():
                         html.Div([
                             html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': SECTOR_COLORS['Power'], 'display': 'inline-block', 'marginRight': '8px', 'borderRadius': '2px'}),
                             html.Span("Power", style={'fontSize': '12px', 'color': '#555'})
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px'}),
+                        ], id='gas-europe-legend-power', n_clicks=0, style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px', 'cursor': 'pointer'}),
                         html.Div([
                             html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': SECTOR_COLORS['Industrial'], 'display': 'inline-block', 'marginRight': '8px', 'borderRadius': '2px'}),
                             html.Span("Industrial", style={'fontSize': '12px', 'color': '#555'})
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px'}),
+                        ], id='gas-europe-legend-industrial', n_clicks=0, style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px', 'cursor': 'pointer'}),
                         html.Div([
                             html.Div(style={'width': '12px', 'height': '12px', 'backgroundColor': SECTOR_COLORS['Household'], 'display': 'inline-block', 'marginRight': '8px', 'borderRadius': '2px'}),
                             html.Span("Household", style={'fontSize': '12px', 'color': '#555'})
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px'}),
+                        ], id='gas-europe-legend-household', n_clicks=0, style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px', 'cursor': 'pointer'}),
                     ])
                 ], style={'borderTop': '1px solid #e0e0e0', 'paddingTop': '12px'})
 
@@ -473,6 +497,9 @@ def register_callbacks(dash_app, server):
         [Output('gas-demand-chart-selection', 'data'),
          Output('gas-demand-chart', 'clickData')],
         [Input('gas-demand-chart', 'clickData'),
+         Input('gas-europe-legend-power', 'n_clicks'),
+         Input('gas-europe-legend-industrial', 'n_clicks'),
+         Input('gas-europe-legend-household', 'n_clicks'),
          Input('gas-europe-granularity-store', 'data'),
          Input('unit-filter', 'value'),
          Input('sector-filter', 'value'),
@@ -481,7 +508,7 @@ def register_callbacks(dash_app, server):
         State('gas-demand-chart-selection', 'data'),
         prevent_initial_call=True
     )
-    def toggle_chart_selection(click_data, gran, unit, sectors, countries, n_clicks_bg, current_sel):
+    def toggle_chart_selection(click_data, n_power, n_ind, n_house, gran, unit, sectors, countries, n_clicks_bg, current_sel):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update
@@ -490,11 +517,31 @@ def register_callbacks(dash_app, server):
         chart_triggered = any('gas-demand-chart.clickData' in t for t in triggers)
         container_triggered = any('gas-demand-chart-container.n_clicks' in t for t in triggers)
         
+        # Legend Triggers
+        legend_power_triggered = any('gas-europe-legend-power' in t for t in triggers)
+        legend_ind_triggered = any('gas-europe-legend-industrial' in t for t in triggers)
+        legend_house_triggered = any('gas-europe-legend-household' in t for t in triggers)
+        
         # Filter changes -> Reset
         if any(x in triggers[0] for x in ['granularity-store', 'unit-filter', 'sector-filter', 'country-filter']):
              return None, None
 
-        # 1. Chart Click (Bar Interaction)
+        # 1. Legend Clicks
+        if legend_power_triggered or legend_ind_triggered or legend_house_triggered:
+            clicked_sector = None
+            if legend_power_triggered: clicked_sector = 'Power'
+            elif legend_ind_triggered: clicked_sector = 'Industrial'
+            elif legend_house_triggered: clicked_sector = 'Household'
+            
+            new_sel = {'type': 'legend', 'sector': clicked_sector}
+            
+            # Toggle off if same legend clicked
+            if current_sel and current_sel.get('type') == 'legend' and current_sel.get('sector') == clicked_sector:
+                return None, None
+                
+            return new_sel, None
+
+        # 2. Chart Click (Bar Interaction)
         if chart_triggered and click_data:
             point = click_data['points'][0]
             if 'customdata' not in point:
@@ -506,6 +553,7 @@ def register_callbacks(dash_app, server):
             x_pos = point['x']
             
             new_sel = {
+                'type': 'point',
                 'sector': sector,
                 'year': year,
                 'x_pos': x_pos
@@ -517,7 +565,7 @@ def register_callbacks(dash_app, server):
                 
             return new_sel, None
 
-        # 2. Background Click (Container Clicked but not Chart Click)
+        # 3. Background Click (Container Clicked but not Chart Click)
         elif container_triggered and not chart_triggered:
             # If we have a selection, clear it
             if current_sel:
@@ -526,6 +574,58 @@ def register_callbacks(dash_app, server):
             return no_update, no_update
             
         return no_update, no_update
+
+    # Update Legend Highlighting Feedback
+    @dash_app.callback(
+        [Output('gas-europe-legend-power', 'style'),
+         Output('gas-europe-legend-industrial', 'style'),
+         Output('gas-europe-legend-household', 'style')],
+        [Input('gas-demand-chart-selection', 'data')]
+    )
+    def update_legend_highlighting(selection):
+        base_style = {'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px', 'cursor': 'pointer'}
+        
+        # If no selection, or selection is a specific point, show all legends normally
+        if not selection or selection.get('type') != 'legend':
+            return base_style, base_style, base_style
+            
+        selected_sector = selection.get('sector')
+        
+        return (
+            {**base_style, 'opacity': 1.0 if selected_sector == 'Power' else 0.2},
+            {**base_style, 'opacity': 1.0 if selected_sector == 'Industrial' else 0.2},
+            {**base_style, 'opacity': 1.0 if selected_sector == 'Household' else 0.2}
+        )
+
+    # Sync Legend Visibility with Sector Filter
+    @dash_app.callback(
+        [Output('gas-europe-legend-power', 'style', allow_duplicate=True),
+         Output('gas-europe-legend-industrial', 'style', allow_duplicate=True),
+         Output('gas-europe-legend-household', 'style', allow_duplicate=True)],
+        [Input('sector-filter', 'value')],
+        State('gas-demand-chart-selection', 'data'),
+        prevent_initial_call=True
+    )
+    def sync_legend_visibility(selected_sectors, selection):
+        base_style = {'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px', 'cursor': 'pointer'}
+        
+        # We need to preserve the opacity from update_legend_highlighting if possible,
+        # but Dash doesn't easily merge styles from different callbacks.
+        # So we might need to combine them or use a common store / derived state.
+        # Alternatively, let's just use 'display' property.
+        
+        def get_style(sector):
+            style = base_style.copy()
+            if sector not in selected_sectors:
+                style['display'] = 'none'
+            
+            # Re-apply highlighting logic if display is not none
+            if style.get('display') != 'none' and selection and selection.get('type') == 'legend':
+                style['opacity'] = 1.0 if selection.get('sector') == sector else 0.2
+            
+            return style
+
+        return get_style('Power'), get_style('Industrial'), get_style('Household')
 
     @dash_app.callback(
         Output('gas-demand-chart', 'figure'),
@@ -573,7 +673,7 @@ def register_callbacks(dash_app, server):
           AND dc.country_long_name = ANY(:selected_countries)
           AND gd.to_be_deleted = false
           AND EXTRACT(YEAR FROM gd.date) >= 2019
-          AND EXTRACT(YEAR FROM gd.date) < 2025
+          AND EXTRACT(YEAR FROM gd.date) < :current_year
         GROUP BY
             CASE
                 WHEN :granularity = 'year'    THEN DATE_TRUNC('year', gd.date)
@@ -611,7 +711,8 @@ def register_callbacks(dash_app, server):
             'selected_sectors': list(selected_sectors),
             'selected_countries': list(selected_countries),
             'unit': db_unit,
-            'display_unit': unit
+            'display_unit': unit,
+            'current_year': datetime.now().year
         }
         
         try:
@@ -719,25 +820,53 @@ def register_callbacks(dash_app, server):
             
             for _, row in sector_df.iterrows():
                 base_color = SECTOR_COLORS[sector]
-                is_selected = (
-                    selection and 
-                    selection['sector'] == sector and 
-                    selection['x_pos'] == row['x_pos']
-                )
+                
+                # Determine Selection State
+                is_highlighted = False
+                is_dimmed = False
                 
                 if not selection:
-                    # No selection - normal style
-                    colors.append(base_color)
+                    # No selection -> All normal
+                    pass
+                elif selection.get('type') == 'legend':
+                    # Legend Selection: Highlight if sector matches
+                    if selection['sector'] == sector:
+                        is_highlighted = True
+                    else:
+                        is_dimmed = True
+                elif selection.get('type') == 'point':
+                    # Point Selection: Highlight if specific point matches
+                    if (selection['sector'] == sector and 
+                        selection['x_pos'] == row['x_pos']):
+                        is_highlighted = True
+                    else:
+                        is_dimmed = True
+                
+                # Apply Styles
+                if is_dimmed:
+                    colors.append(hex_to_rgba(base_color, 0.2))
                     line_colors.append('rgba(0,0,0,0)')
                     line_widths.append(0)
-                elif is_selected:
-                    # Selected bar - highlighted
+                elif is_highlighted:
+                    # Highlighted (Legend or Point)
+                    # For Legend, we might just want full color without border? 
+                    # User request: "legend hastoget highlighted... bar segment alsoget highlighted"
+                    # Usually "highlight" means full color. 
+                    # If specific point is clicked, we add black border.
+                    # If legend is clicked, we just keep full color (no dimming).
+                    
                     colors.append(base_color)
-                    line_colors.append('black')
-                    line_widths.append(2)
+                    
+                    if selection.get('type') == 'point':
+                         line_colors.append('black')
+                         line_widths.append(2)
+                    else:
+                         # Legend highlight - no border, just undimmed
+                         line_colors.append('rgba(0,0,0,0)')
+                         line_widths.append(0)
                 else:
-                    # Not selected - dimmed
-                    colors.append(hex_to_rgba(base_color, 0.2))
+                    # Default / Normal
+                    colors.append(base_color)
                     line_colors.append('rgba(0,0,0,0)')
                     line_widths.append(0)
 
@@ -973,8 +1102,8 @@ def register_callbacks(dash_app, server):
           AND dc.country_long_name = ANY(:selected_countries)
           AND gd.to_be_deleted = false
           AND EXTRACT(YEAR FROM gd.date) >= 2019
-          AND EXTRACT(YEAR FROM gd.date) < 2025
-        GROUP BY 1, 2, 3, 4, 5, 6
+          AND EXTRACT(YEAR FROM gd.date) < :current_year
+                  GROUP BY 1, 2, 3, 4, 5, 6
         ORDER BY 1, 2, 
                  CASE 
                     WHEN :granularity IN ('month','day') 
@@ -993,7 +1122,8 @@ def register_callbacks(dash_app, server):
             'unit': db_unit,
             'display_unit': unit,
             'selected_sectors': selected_sectors,
-            'selected_countries': selected_countries
+            'selected_countries': selected_countries,
+            'current_year': datetime.now().year
         }
         
         try:
@@ -1016,12 +1146,10 @@ def register_callbacks(dash_app, server):
         Output("gas-demand-europe-download-table-csv", "data"),
         Input("gas-demand-europe-export-table-csv-btn", "n_clicks"),
         [State('unit-filter', 'value'),
-         State('sector-filter', 'value'),
-         State('country-filter', 'value'),
          State('gas-europe-table-granularity-store', 'data')]
     )
-    def export_table_csv(n_clicks, unit, selected_sectors, selected_countries, granularity):
-        if not n_clicks or not selected_sectors or not selected_countries:
+    def export_table_csv(n_clicks, unit, granularity):
+        if not n_clicks:
             return no_update
             
         unit_map = {'Million Cubic Meter': 'Mcm', 'GWh': 'GWh'}
@@ -1041,21 +1169,17 @@ def register_callbacks(dash_app, server):
         JOIN dim_country dc ON gd.country_id = dc.dim_country_id
         WHERE LOWER(dc.region) = 'europe'
           AND gd.unit = :unit
-          AND gd.sector = ANY(:selected_sectors)
-          AND dc.country_long_name = ANY(:selected_countries)
           AND gd.to_be_deleted = false
           AND EXTRACT(YEAR FROM gd.date) >= 2019
-          AND EXTRACT(YEAR FROM gd.date) < 2025
+          AND EXTRACT(YEAR FROM gd.date) < :current_year
         GROUP BY 1, 2, 3, 4, 5, 6, 7
         ORDER BY 3 DESC, 1, 2
         """
-        
         params = {
             'granularity': granularity,
             'unit': db_unit,
             'display_unit': unit,
-            'selected_sectors': selected_sectors,
-            'selected_countries': selected_countries
+            'current_year': datetime.now().year
         }
         
         try:
@@ -1411,13 +1535,9 @@ def register_callbacks(dash_app, server):
          Output('gas-demand-table', 'style_data_conditional'),
          Output('gas-demand-table', 'style_header_conditional')],
         [Input('unit-filter', 'value'),
-         Input('sector-filter', 'value'),
-         Input('country-filter', 'value'),
          Input('gas-europe-table-granularity-store', 'data')]
     )
-    def update_table(unit, selected_sectors, selected_countries, granularity):
-        if not selected_sectors or not selected_countries:
-            return [], [], [], []
+    def update_table(unit, granularity):
 
         unit_map = {'Million Cubic Meter': 'Mcm', 'GWh': 'GWh'}
         db_unit = unit_map.get(unit, 'Mcm')
@@ -1473,11 +1593,8 @@ def register_callbacks(dash_app, server):
         WHERE LOWER(dc.region) = 'europe'
           AND gd.unit = :unit
           AND gd.to_be_deleted = false
-          AND gd.sector = ANY(:selected_sectors)
-          AND dc.country_long_name = ANY(:selected_countries)
           AND EXTRACT(YEAR FROM gd.date) >= 2019
-          AND EXTRACT(YEAR FROM gd.date) < 2025
-
+          AND EXTRACT(YEAR FROM gd.date) < :current_year
         GROUP BY
             gd.country,
             gd.sector,
@@ -1497,8 +1614,7 @@ def register_callbacks(dash_app, server):
             'granularity': granularity, 
             'unit': db_unit, 
             'display_unit': unit,
-            'selected_sectors': selected_sectors,
-            'selected_countries': selected_countries
+            'current_year': datetime.now().year
         }
         
         try:

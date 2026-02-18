@@ -76,7 +76,7 @@ WHERE LOWER(dc.region) IN ('asia', 'oceania')
   AND gd.unit IN ('Mcm', 'GWh')
   AND gd.to_be_deleted = false
   AND gd.date >= DATE '2019-01-01'
-  AND gd.date < DATE '2025-01-01'
+  AND gd.date <= CURRENT_DATE
   {country_filter}
 GROUP BY
     DATE_TRUNC('month', gd.date),
@@ -114,7 +114,7 @@ WHERE LOWER(dc.region) IN ('asia', 'oceania')
   AND gd.unit IN ('Mcm', 'GWh')
   AND gd.to_be_deleted = false
   AND gd.date >= DATE '2019-01-01'
-  AND gd.date < DATE '2025-01-01'
+  AND gd.date <= CURRENT_DATE
   {country_filter}
 GROUP BY
     DATE_TRUNC('month', gd.date),
@@ -397,15 +397,15 @@ def create_layout():
                             })
                         ], style={'display': 'flex', 'alignItems': 'center'})
                     ], style={
-                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
-                        'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px',
+                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#fafbfc', 
+                        'padding': '8px 10px', 'borderRadius': '4px', 'marginBottom': '10px',
                         'position': 'absolute', 'top': '15px', 'left': '60px', 'zIndex': '10'
                     }),
 
                     dcc.Loading(
                         [
                             html.Div(id='loading-trigger-yearly-chart', style={'display': 'none'}),
-                            dcc.Graph(id='asia-gas-yearly-chart', config={'displayModeBar': False})
+                            dcc.Graph(id='asia-gas-yearly-chart', config={'displayModeBar': False}, style={'marginTop': '45px'})
                         ],
                         id="loading-asia-yearly-chart",
                         type="circle"
@@ -468,7 +468,7 @@ def create_layout():
                         })
                     ), style={'marginLeft': 'auto'}) # Push to right
                     ], style={
-                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#f8f9fa', 
+                        'display': 'flex', 'alignItems': 'center', 'backgroundColor': '#fafbfc', 
                         'padding': '5px 10px', 'borderRadius': '4px', 'marginBottom': '10px'
                     }),
 
@@ -904,11 +904,18 @@ def build_yearly_table(df, sector_filter, unit):
                 row_tooltip[col_id] = {'value': tooltip_text, 'type': 'markdown'}
         tooltip_data.append(row_tooltip)
 
+    # Calculate dynamic height based on number of rows
+    row_height = 25
+    header_height = 30
+    num_rows = len(table_data)
+    calculated_height = min(600, max(150, (num_rows * row_height) + header_height + 20))
+    
     return html.Div([
         dash_table.DataTable(
             id='asia-gas-yearly-demand-table',
             data=table_data,
             columns=columns,
+            cell_selectable=False,
             tooltip_data=tooltip_data,
             tooltip_delay=0,
             tooltip_duration=None,
@@ -923,7 +930,7 @@ def build_yearly_table(df, sector_filter, unit):
             fixed_columns={'headers': True, 'data': 2},
             style_table={
                 'minWidth': '100%', 
-                'height': '600px', 
+                'height': f'{calculated_height}px', 
                 'overflowY': 'auto', 
                 'overflowX': 'auto', 
                 'border': '1px solid #ddd'
@@ -956,7 +963,7 @@ def build_yearly_table(df, sector_filter, unit):
             style_data_conditional=[
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f2f2f2'
+                    'backgroundColor': '#fafbfc'
                 },
                 {
                     'if': {'filter_query': '{Sector} eq "Total"'},
@@ -1102,11 +1109,18 @@ def build_quarterly_table(df, sector_filter, unit):
                 row_tooltip[col_id] = {'value': tooltip_text, 'type': 'markdown'}
         tooltip_data.append(row_tooltip)
 
+    # Calculate dynamic height based on number of rows
+    row_height = 25
+    header_height = 50
+    num_rows = len(table_data)
+    calculated_height = min(600, max(150, (num_rows * row_height) + header_height + 20))
+
     return html.Div([
         dash_table.DataTable(
             id='asia-gas-yearly-demand-table',
             data=table_data,
             columns=columns,
+            cell_selectable=False,
             tooltip_data=tooltip_data,
             tooltip_delay=0,
             tooltip_duration=None,
@@ -1122,7 +1136,7 @@ def build_quarterly_table(df, sector_filter, unit):
             fixed_columns={'headers': True, 'data': 2},
             style_table={
                 'minWidth': '100%', 
-                'height': '600px', 
+                'height': f'{calculated_height}px', 
                 'overflowY': 'auto', 
                 'overflowX': 'auto', 
                 'border': '1px solid #ddd'
@@ -1160,7 +1174,7 @@ def build_quarterly_table(df, sector_filter, unit):
             style_data_conditional=[
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f2f2f2'
+                    'backgroundColor': '#fafbfc'
                 },
                 {
                     'if': {'filter_query': '{Sector} eq "Total"'},
@@ -1316,11 +1330,18 @@ def build_monthly_table(df, sector_filter, unit):
                 row_tooltip[col_id] = {'value': tooltip_text, 'type': 'markdown'}
         tooltip_data.append(row_tooltip)
 
+    # Calculate dynamic height based on number of rows
+    row_height = 25
+    header_height = 50
+    num_rows = len(table_data)
+    calculated_height = min(600, max(150, (num_rows * row_height) + header_height + 20))
+
     return html.Div([
         dash_table.DataTable(
             id='asia-gas-yearly-demand-table',
             data=table_data,
             columns=columns,
+            cell_selectable=False,
             tooltip_data=tooltip_data,
             tooltip_delay=0,
             tooltip_duration=None,
@@ -1336,7 +1357,7 @@ def build_monthly_table(df, sector_filter, unit):
             fixed_columns={'headers': True, 'data': 2},
             style_table={
                 'minWidth': '100%', 
-                'height': '600px', 
+                'height': f'{calculated_height}px', 
                 'overflowY': 'auto', 
                 'overflowX': 'auto', 
                 'border': '1px solid #ddd'
@@ -1383,7 +1404,7 @@ def build_monthly_table(df, sector_filter, unit):
             style_data_conditional=[
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f2f2f2'
+                    'backgroundColor': '#fafbfc'
                 },
                 {
                     'if': {'filter_query': '{Sector} eq "Total"'},
@@ -1545,11 +1566,18 @@ def build_daily_table(df, sector_filter, unit):
                 row_tooltip[col_id] = {'value': tooltip_text, 'type': 'markdown'}
         tooltip_data.append(row_tooltip)
 
+    # Calculate dynamic height based on number of rows
+    row_height = 25
+    header_height = 50
+    num_rows = len(table_data)
+    calculated_height = min(600, max(150, (num_rows * row_height) + header_height + 20))
+
     return html.Div([
         dash_table.DataTable(
             id='asia-gas-yearly-demand-table',
             data=table_data,
             columns=columns,
+            cell_selectable=False,
             tooltip_data=tooltip_data,
             tooltip_delay=0,
             tooltip_duration=None,
@@ -1565,7 +1593,7 @@ def build_daily_table(df, sector_filter, unit):
             fixed_columns={'headers': True, 'data': 2},
             style_table={
                 'minWidth': '100%', 
-                'height': '600px', 
+                'height': f'{calculated_height}px', 
                 'overflowY': 'auto', 
                 'overflowX': 'auto', 
                 'border': '1px solid #ddd'
@@ -1617,7 +1645,7 @@ def build_daily_table(df, sector_filter, unit):
             style_data_conditional=[
                 {
                     'if': {'row_index': 'odd'},
-                    'backgroundColor': '#f2f2f2'
+                    'backgroundColor': '#fafbfc'
                 },
                 {
                     'if': {'filter_query': '{Sector} eq "Total"'},
@@ -1966,8 +1994,8 @@ def register_callbacks(dash_app, server):
         """,
         [Output('asia-yearly-date-label-start', 'children'),
          Output('asia-yearly-date-label-end', 'children')],
-        Input('asia-yearly-date-slider', 'value'),
-        State('asia-yearly-date-map', 'data')
+        [Input('asia-yearly-date-slider', 'value')],
+        [State('asia-yearly-date-map', 'data')]
     )
 
     # 3. Clientside Callback for Table Highlighting (Reused exactly)
@@ -2011,7 +2039,8 @@ def register_callbacks(dash_app, server):
                 if (!window.asiaGasYearlyState) {
                     window.asiaGasYearlyState = { 
                         selectedColumnId: null,
-                        selectedRowIndices: null 
+                        selectedRowIndices: null,
+                        selectedCellId: null
                     };
                 }
 
@@ -2043,6 +2072,7 @@ def register_callbacks(dash_app, server):
                         });
 
                         const allCells = spreadsheet.querySelectorAll('td[data-dash-column]');
+                        
                         allCells.forEach(cell => {
                             const cId = cell.getAttribute('data-dash-column');
                             if (cId === 'Country' || cId === 'Sector') return;
@@ -2071,6 +2101,23 @@ def register_callbacks(dash_app, server):
                                     row.classList.add('asia-yearly-row-trip-wire');
                                 }
                             });
+                        });
+                        return;
+                    }
+                    
+                    if (window.asiaGasYearlyState.selectedCellId) {
+                        const [rowIdx, colId] = window.asiaGasYearlyState.selectedCellId.split('_');
+                        const rowIndex = parseInt(rowIdx);
+                        
+                        const tbodies = spreadsheet.querySelectorAll('tbody');
+                        tbodies.forEach(tbody => {
+                            const rows = tbody.querySelectorAll('tr');
+                            if (rows[rowIndex]) {
+                                const targetCell = rows[rowIndex].querySelector(`td[data-dash-column="${colId}"]`);
+                                if (targetCell) {
+                                    targetCell.classList.add('asia-yearly-col-selected');
+                                }
+                            }
                         });
                     }
                 }
@@ -2106,15 +2153,32 @@ def register_callbacks(dash_app, server):
                             if (colId === 'Country' || colId === 'Sector') return;
 
                             const headerContent = header.innerText.trim();
-                            let isYearHeader = /^\d{4}$/.test(headerContent);
+                            
                             let targetIds = [];
-                            if (isYearHeader && columns) {
-                                columns.forEach(c => {
-                                    if (c.id && c.id.startsWith(headerContent + '_')) targetIds.push(c.id);
-                                });
+                            
+                            // Check if header text is a 4-digit year
+                            const isYearHeader = /^\d{4}$/.test(headerContent);
+                            
+                            if (isYearHeader) {
+                                // Check if colId itself is a year (yearly view) or has underscore (monthly/quarterly view)
+                                if (/^\d{4}$/.test(colId)) {
+                                    // Yearly view - colId is just the year like "2026"
+                                    targetIds.push(colId);
+                                } else if (columns) {
+                                    // Monthly/Quarterly view - find all columns starting with year_
+                                    columns.forEach(c => {
+                                        if (c.id && c.id.startsWith(headerContent + '_')) {
+                                            targetIds.push(c.id);
+                                        }
+                                    });
+                                }
                             } else {
+                                // Regular column (not a year header)
                                 targetIds.push(colId);
                             }
+                            
+                            // If no targetIds found, don't proceed
+                            if (targetIds.length === 0) return;
 
                             const selectionKey = targetIds.join(',');
                             
@@ -2135,18 +2199,63 @@ def register_callbacks(dash_app, server):
                              const rows = Array.from(tbody.querySelectorAll('tr'));
                              const idx = rows.indexOf(row);
                              
-                             const start = idx; 
-                             const end = idx; 
+                             // Check if clicked on Country or Sector column
+                             const colId = cell.getAttribute('data-dash-column');
                              
-                             const newKey = `${start}_${end}`;
-                             
-                             if (window.asiaGasYearlyState.selectedRowIndices === newKey) {
-                                  window.asiaGasYearlyState.selectedRowIndices = null;
+                             if (colId === 'Country' || colId === 'Sector') {
+                                 // Row selection for Country/Sector columns
+                                 let start = idx;
+                                 let end = idx;
+                                 
+                                 if (colId === 'Country') {
+                                     // Get the country name from the clicked cell
+                                     const countryName = cell.innerText.trim();
+                                     
+                                     if (countryName) {
+                                         // Find all rows for this country (including sectors and Total)
+                                         start = idx;
+                                         end = idx;
+                                         
+                                         // Look forward to find all rows belonging to this country
+                                         for (let i = idx + 1; i < rows.length; i++) {
+                                             const nextRow = rows[i];
+                                             const nextCountryCell = nextRow.querySelector('td[data-dash-column="Country"]');
+                                             const nextCountryText = nextCountryCell ? nextCountryCell.innerText.trim() : '';
+                                             
+                                             // If next row has no country text (empty), it belongs to current country
+                                             // If it has text, it's a new country, so stop
+                                             if (nextCountryText === '') {
+                                                 end = i;
+                                             } else {
+                                                 break;
+                                             }
+                                         }
+                                     }
+                                 }
+                                 
+                                 const newKey = `${start}_${end}`;
+                                 
+                                 if (window.asiaGasYearlyState.selectedRowIndices === newKey) {
+                                      window.asiaGasYearlyState.selectedRowIndices = null;
+                                 } else {
+                                      window.asiaGasYearlyState.selectedRowIndices = newKey;
+                                      window.asiaGasYearlyState.selectedColumnId = null;
+                                      window.asiaGasYearlyState.selectedCellId = null;
+                                 }
+                                 applyState(spreadsheet, n_data);
                              } else {
-                                  window.asiaGasYearlyState.selectedRowIndices = newKey;
-                                  window.asiaGasYearlyState.selectedColumnId = null;
+                                 // Single cell selection for data columns
+                                 const cellKey = `${idx}_${colId}`;
+                                 
+                                 if (window.asiaGasYearlyState.selectedCellId === cellKey) {
+                                     window.asiaGasYearlyState.selectedCellId = null;
+                                 } else {
+                                     window.asiaGasYearlyState.selectedCellId = cellKey;
+                                     window.asiaGasYearlyState.selectedColumnId = null;
+                                     window.asiaGasYearlyState.selectedRowIndices = null;
+                                 }
+                                 applyState(spreadsheet, n_data);
                              }
-                             applyState(spreadsheet, n_data);
                         }
                     });
                 }
@@ -2157,6 +2266,7 @@ def register_callbacks(dash_app, server):
                     if (window.asiaGasYearlyState.lastColumnStructure !== currentCols) {
                         window.asiaGasYearlyState.selectedColumnId = null;
                         window.asiaGasYearlyState.selectedRowIndices = null;
+                        window.asiaGasYearlyState.selectedCellId = null;
                         window.asiaGasYearlyState.lastColumnStructure = currentCols;
                     }
                 }
@@ -2171,9 +2281,9 @@ def register_callbacks(dash_app, server):
         }
         """,
         Output('asia-yearly-table-highlight-state', 'data'),
-        Input('asia-gas-yearly-demand-table', 'data'),
-        State('asia-gas-yearly-demand-table', 'columns'),
-        State('asia-yearly-table-highlight-state', 'data')
+        [Input('asia-gas-yearly-demand-table', 'data')],
+        [State('asia-gas-yearly-demand-table', 'columns'),
+         State('asia-yearly-table-highlight-state', 'data')]
     )
 
     # 4. Clientside Callback to attach X-Axis Click Listeners
@@ -2225,7 +2335,7 @@ def register_callbacks(dash_app, server):
         }
         """,
         Output('axis-yearly-listener-output', 'children'), # Dedicated output
-        Input('asia-gas-yearly-chart', 'figure')
+        [Input('asia-gas-yearly-chart', 'figure')]
     )
 
     # 5. Export Callbacks
