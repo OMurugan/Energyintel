@@ -309,7 +309,7 @@ def create_layout():
                                         'cursor': 'pointer'
                                     }
                                 ),
-                            ], style={'marginRight': '65px'}),
+                            ]),
                             html.Div([
                                 dcc.Input(
                                     id='low-carbon-end-date',
@@ -331,7 +331,7 @@ def create_layout():
                                     }
                                 ),
                             ]),
-                        ], style={'width': 'auto', 'display': 'flex', 'gap': '0px', 'marginBottom': '10px', 'alignItems': 'center'}),
+                        ], style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '10px', 'alignItems': 'center'}),
                     ], style={'marginBottom': '5px', 'fontFamily': 'Arial, sans-serif', 'overflow': 'hidden'}),
                     dcc.RangeSlider(
                         id='low-carbon-date-filter',
