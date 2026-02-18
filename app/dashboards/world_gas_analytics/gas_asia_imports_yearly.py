@@ -270,10 +270,12 @@ def create_layout():
                         "Source: Energy Intelligence.",
                         style={
                             'fontStyle': 'italic',
-                            'fontSize': '12px',
-                            'color': '#6c757d',
-                            'marginTop': '10px',
-                            'fontFamily': 'Lato, sans-serif'
+                            'fontSize': '14px',
+                            'color': '#9ca3af',
+                            'marginTop': '15px',
+                            'marginBottom': '10px',
+                            'fontFamily': 'Lato, sans-serif',
+                            'fontWeight': '300'
                         }
                     )
                 ], style={'padding': '10px', 'backgroundColor': 'white'})
@@ -1634,6 +1636,12 @@ def register_callbacks(dash_app, server):
                 tooltip_data.append(row_tooltips)
             
             # Construct DataTable
+            # Calculate dynamic height based on number of rows
+            row_height = 28  # Approximate height per row
+            header_height = 75  # Height for headers (multi-level)
+            max_height = 600
+            calculated_height = min(header_height + (len(data) * row_height) + 20, max_height)
+            
             table = dash_table.DataTable(
                 id='asia-imports-table',
                 data=data,
@@ -1646,7 +1654,7 @@ def register_callbacks(dash_app, server):
                 fixed_columns={'headers': True, 'data': 1},
                 style_table={
                     'minWidth': '100%', 
-                    'height': '600px', 
+                    'maxHeight': f'{calculated_height}px',
                     'overflowY': 'auto', 
                     'overflowX': 'auto', 
                     'border': '1px solid #ddd'
@@ -1898,6 +1906,36 @@ def register_callbacks(dash_app, server):
         data_unit = 'Mcm' if unit == 'Bcm' else 'GWh'
         scale = 1000.0 if unit == 'Bcm' else 1.0
         
+        # Determine the year to use (current year if has data, else previous year)
+        year_check_query = f"""
+        SELECT EXTRACT(YEAR FROM tr.date)::int as year, COUNT(*) as record_count
+        FROM glng_gas_trade tr
+        LEFT JOIN dim_country dest_co ON dest_co.dim_country_id = tr.target_country_id
+        WHERE tr.unit = '{data_unit}'
+          AND (LOWER(dest_co.region) IN ('asia', 'oceania') OR dest_co.country_long_name IS NULL)
+          AND EXTRACT(YEAR FROM tr.date) >= EXTRACT(YEAR FROM CURRENT_DATE) - 1
+        GROUP BY EXTRACT(YEAR FROM tr.date)
+        ORDER BY year DESC
+        LIMIT 2
+        """
+        
+        try:
+            year_results = execute_query(year_check_query)
+            current_year = pd.Timestamp.now().year
+            
+            # Check if current year has records
+            map_year = current_year - 1  # Default to previous year
+            for yr in year_results:
+                if yr['year'] == current_year and yr['record_count'] > 0:
+                    map_year = current_year
+                    break
+                elif yr['year'] == current_year - 1:
+                    map_year = current_year - 1
+                    
+        except Exception as e:
+            print(f"Error determining year: {e}")
+            map_year = pd.Timestamp.now().year - 1
+        
         flow_clause = f"AND tr.flow_type = '{flow_type}'" if flow_type != ' ' else ""
         origin_clause = ""
         if origins and "(All)" not in origins:
@@ -1908,12 +1946,12 @@ def register_callbacks(dash_app, server):
         query = f"""
         SELECT 
             tr.source_country as "Origin",
-            '2025' as "Year",
+            '{map_year}' as "Year",
             '{unit}' as "Unit",
             SUM(tr.value / {scale}) as "Total Value"
         FROM glng_gas_trade tr
         LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
-        WHERE EXTRACT(YEAR FROM tr.date) = 2025
+        WHERE EXTRACT(YEAR FROM tr.date) = {map_year}
           AND tr.unit = '{data_unit}'
           AND (LOWER(co.region) IN ('asia', 'oceania') OR co.country_long_name IS NULL)
           {flow_clause}
@@ -2107,10 +2145,42 @@ def _iso_for_country(country):
 
 def update_asia_map(unit, flow_type, dest, origins):
     """Update the Asia imports map with zoom to selected origin country"""
-    title = f"All Imports by Origin ({unit}) - 2025"
     
-    # Build Query for 2025
+    # Determine the year to use (current year if has data, else previous year)
     data_unit = 'Mcm' if unit == 'Bcm' else 'GWh'
+    
+    year_check_query = f"""
+    SELECT EXTRACT(YEAR FROM tr.date)::int as year, COUNT(*) as record_count
+    FROM glng_gas_trade tr
+    LEFT JOIN dim_country dest_co ON dest_co.dim_country_id = tr.target_country_id
+    WHERE tr.unit = '{data_unit}'
+      AND (LOWER(dest_co.region) IN ('asia', 'oceania') OR dest_co.country_long_name IS NULL)
+      AND EXTRACT(YEAR FROM tr.date) >= EXTRACT(YEAR FROM CURRENT_DATE) - 1
+    GROUP BY EXTRACT(YEAR FROM tr.date)
+    ORDER BY year DESC
+    LIMIT 2
+    """
+    
+    try:
+        year_results = execute_query(year_check_query)
+        current_year = pd.Timestamp.now().year
+        
+        # Check if current year has records
+        map_year = current_year - 1  # Default to previous year
+        for yr in year_results:
+            if yr['year'] == current_year and yr['record_count'] > 0:
+                map_year = current_year
+                break
+            elif yr['year'] == current_year - 1:
+                map_year = current_year - 1
+                
+    except Exception as e:
+        print(f"Error determining year: {e}")
+        map_year = pd.Timestamp.now().year - 1
+    
+    title = f"All Imports by Origin ({unit}) - {map_year}"
+    
+    # Build Query for determined year
     scale = 1000.0 if unit == 'Bcm' else 1.0
 
     flow_clause = ""
@@ -2137,7 +2207,7 @@ def update_asia_map(unit, flow_type, dest, origins):
     FROM glng_gas_trade tr
     LEFT JOIN dim_country co ON co.dim_country_id = tr.source_country_id
     LEFT JOIN dim_country dest_co ON dest_co.dim_country_id = tr.target_country_id
-    WHERE EXTRACT(YEAR FROM tr.date) = 2025
+    WHERE EXTRACT(YEAR FROM tr.date) = {map_year}
       AND tr.unit = '{data_unit}'
       AND (LOWER(dest_co.region) IN ('asia', 'oceania') OR dest_co.country_long_name IS NULL)
       {flow_clause}
@@ -2152,7 +2222,7 @@ def update_asia_map(unit, flow_type, dest, origins):
         
         if df.empty:
             from .shared_map_utils import create_empty_map
-            return create_empty_map("No data available for 2025", height=500), title
+            return create_empty_map(f"No data available for {map_year}", height=500), title
 
         # Ensure numeric and rename for convenience
         df['Value'] = df['total_value'].astype(float)
