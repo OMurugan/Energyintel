@@ -397,10 +397,10 @@ def create_layout():
                         children=[
                             html.Div(id='loader-trigger-country', style={'display': 'none'}),
                             html.Div([
-                                dcc.RadioItems(
+                                dcc.Checklist(
                                     id='sector-country-checklist',
                                     options=[{'label': ' (All)', 'value': 'All'}],
-                                    value='All',
+                                    value=['All'],
                                     style={'maxHeight': '280px', 'overflowY': 'auto', 'fontSize': '13px'},
                                     inputStyle={"marginRight": "6px", "marginLeft": "0px"}
                                 )
@@ -783,13 +783,19 @@ def register_callbacks(dash_app, server):
             (df_to_use['Date'] <= date_range_end)
         ].copy()
         
-        # Handle country filtering (radio button returns single value, not list)
-        if not selected_countries or selected_countries == 'All':
+        # Handle country filtering (checkbox returns list)
+        if not selected_countries:
+            # If nothing selected, show nothing
+            df_filtered = df_filtered.iloc[0:0]
+        elif 'All' in selected_countries or (isinstance(selected_countries, str) and selected_countries == 'All'):
             # Show all countries
             pass
         else:
-            # Filter to selected country
-            df_filtered = df_filtered[df_filtered['Country'] == selected_countries]
+            # Filter to selected countries
+             # If it's a single string (legacy/edge case), wrap in list
+            if isinstance(selected_countries, str):
+                selected_countries = [selected_countries]
+            df_filtered = df_filtered[df_filtered['Country'].isin(selected_countries)]
         
         # Create a display label based on granularity
         if granularity == 'year':
@@ -894,8 +900,13 @@ def register_callbacks(dash_app, server):
                         marker_line_colors.append('rgba(0,0,0,0)')
 
                 country_label = highlight_country if highlight_country else "*"
-                if not highlight_country and selected_countries and selected_countries != 'All':
-                    country_label = selected_countries
+                if not highlight_country and selected_countries and 'All' not in selected_countries:
+                    if isinstance(selected_countries, list) and len(selected_countries) == 1:
+                        country_label = selected_countries[0]
+                    elif isinstance(selected_countries, str):
+                         country_label = selected_countries
+                    else:
+                        country_label = "Multiple"
 
                 fig.add_trace(go.Bar(
                     name=sector,
@@ -1006,13 +1017,18 @@ def register_callbacks(dash_app, server):
             (df_table['Date'] <= date_range_end)
         ].copy()
         
-        # Handle country filtering (radio button returns single value, not list)
-        if not selected_countries or selected_countries == 'All':
+        # Handle country filtering (checkbox returns list)
+        if not selected_countries:
+            # If nothing selected, show nothing
+            df_filtered = df_filtered.iloc[0:0]
+        elif 'All' in selected_countries or (isinstance(selected_countries, str) and selected_countries == 'All'):
             # Show all countries
             pass
         else:
-            # Filter to selected country
-            df_filtered = df_filtered[df_filtered['Country'] == selected_countries]
+            # Filter to selected countries
+            if isinstance(selected_countries, str):
+                selected_countries = [selected_countries]
+            df_filtered = df_filtered[df_filtered['Country'].isin(selected_countries)]
             
         if df_filtered.empty:
             return [], [], [], []
@@ -1187,8 +1203,13 @@ def register_callbacks(dash_app, server):
             (df_to_use['Date'] <= date_range_end)
         ].copy()
         
-        if selected_countries and selected_countries != 'All':
-            df_filtered = df_filtered[df_filtered['Country'] == selected_countries]
+        if not selected_countries:
+             df_filtered = df_filtered.iloc[0:0]
+        elif selected_countries and 'All' not in selected_countries:
+             if isinstance(selected_countries, str) and selected_countries != 'All':
+                 df_filtered = df_filtered[df_filtered['Country'] == selected_countries]
+             elif isinstance(selected_countries, list):
+                 df_filtered = df_filtered[df_filtered['Country'].isin(selected_countries)]
             
         # Format for export
         df_export = df_filtered.copy()
@@ -1232,8 +1253,13 @@ def register_callbacks(dash_app, server):
             (df_table['Date'] <= date_range_end)
         ].copy()
         
-        if selected_countries and selected_countries != 'All':
-            df_filtered = df_filtered[df_filtered['Country'] == selected_countries]
+        if not selected_countries:
+             df_filtered = df_filtered.iloc[0:0]
+        elif selected_countries and 'All' not in selected_countries:
+             if isinstance(selected_countries, str) and selected_countries != 'All':
+                 df_filtered = df_filtered[df_filtered['Country'] == selected_countries]
+             elif isinstance(selected_countries, list):
+                 df_filtered = df_filtered[df_filtered['Country'].isin(selected_countries)]
 
         # Determine granularity for column structure logic or just dump raw filtered data
         # For simplicity and utility, exporting the raw filtered data (long format) is usually better for analysis
@@ -1651,3 +1677,81 @@ def register_callbacks(dash_app, server):
         [State('sector-demand-table', 'columns'),
          State('europe-table-highlight-state', 'data')]
     )
+
+
+    # Callback to handle Country Checkbox Logic (Sync 'All' with Individual)
+    @dash_app.callback(
+        [Output('sector-country-checklist', 'value'),
+         Output('country-filter-previous', 'data')],
+        [Input('sector-country-checklist', 'value'),
+         Input('sector-country-checklist', 'options')],
+        State('country-filter-previous', 'data')
+    )
+    def update_country_checklist(selected_values, options, previous_state):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update
+            
+        trigger_id = ctx.triggered[0]['prop_id']
+        
+        all_options_values = [o['value'] for o in options] if options else []
+        
+        # 1. Options Loaded (Initialize to Select All)
+        if 'options' in trigger_id:
+             if not all_options_values:
+                 return [], {'values': []}
+             # Default to selecting everything
+             return all_options_values, {'values': all_options_values}
+             
+        # 2. Value Changed (Interaction)
+        if not selected_values:
+             # Prevent empty selection -> Re-select All
+             return all_options_values, {'values': all_options_values}
+             
+        previous_values = previous_state.get('values', []) if previous_state else []
+        
+        # Stability check
+        if set(selected_values) == set(previous_values):
+             return no_update, no_update
+             
+        current_set = set(selected_values)
+        previous_set = set(previous_values)
+        
+        # Detect "All" toggle
+        can_select_all = 'All' in all_options_values
+        
+        if can_select_all:
+            # If All was just checked
+            if 'All' in current_set and 'All' not in previous_set:
+                 return all_options_values, {'values': all_options_values}
+            
+            # If All was just unchecked
+            if 'All' not in current_set and 'All' in previous_set:
+                 # Check if it was purely All uncheck or if we lost completeness
+                 # If user just unchecked 'All', we deselect all.
+                 # How to distinguish "User unchecked All" vs "User unchecked Austria (so All removed)"?
+                 # If 'All' is missing, and we HAD 'All' before.
+                 # Check if any OTHER items changed.
+                 
+                 # If ONLY 'All' changed (removed), then deselect everything
+                 if len(current_set) == len(previous_set) - 1:
+                      # Only one item removed, and it was All
+                      return [], {'values': []}
+        
+        # Detect Individual Sync
+        specific_options = [v for v in all_options_values if v != 'All']
+        specific_selected = [v for v in selected_values if v != 'All']
+        
+        if len(specific_selected) == len(specific_options):
+             # All specifics selected -> Add 'All'
+             if 'All' not in current_set:
+                  new_values = list(set(selected_values + ['All']))
+                  return new_values, {'values': new_values}
+        else:
+             # Not all specifics selected -> Remove 'All'
+             if 'All' in current_set:
+                  new_values = [v for v in selected_values if v != 'All']
+                  return new_values, {'values': new_values}
+                  
+        return selected_values, {'values': selected_values}
+
