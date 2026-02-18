@@ -550,15 +550,13 @@ def create_layout():
                                    'marginBottom': '0px',
                                    'fontFamily': 'Arial, sans-serif'
                                }),
-                        html.P("Confidentiality by leading oil and gas firms. Financed by value initially demonstrates approval. Reported or estimated values are for companies tracked. For more information see methodology.", 
-                               style={
-                                   'fontSize': '11px',
-                                   'color': '#999',
-                                   'fontStyle': 'italic',
-                                   'marginTop': '5px',
-                                   'marginBottom': '0px',
-                                   'fontFamily': 'Arial, sans-serif'
-                               })
+                        html.P([
+                        "Covers activity by leading oil and gas firms, tracked by date initially announced or approved. Reported or estimated value is net for companies tracked. For more information see methodology. ",
+                            html.A("Go To Low-Carbon Investment Tracker", 
+                               href="https://www.energyintel.com/low-carbon-energy-data#low-carbon-investment-data", 
+                               target="_blank",
+                               style={'fontSize': '10px', 'color': '#006BA4', 'textDecoration': 'underline'})
+                        ], style={'fontSize': '10px', 'color': '#666', 'marginTop': '1px', 'lineHeight': '1.2'}),
                     ], style={'marginTop': '10px'})
                 ], style={'padding': '20px 0 20px 0', 'backgroundColor': '#ffffff', 'fontFamily': 'Arial, sans-serif'})
             ], style={'flex': '1', 'minWidth': '0', 'padding': '0 20px'})
@@ -718,7 +716,7 @@ def create_layout():
                             'boxSizing': 'border-box',
                             'display': 'none', 
                             'padding': '5px 10px', 
-                            'marginTop': '5px',
+                            'marginTop': '-5px',
                             'border': '1px solid #ccc',
                             'borderRadius': '3px',
                             'maxHeight': '200px',
@@ -726,7 +724,8 @@ def create_layout():
                             'backgroundColor': '#fff',
                             'position': 'absolute',
                             'zIndex': '1000',
-                            'width': '150px'
+                            'width': '150px',
+                            'borderTop': '0px'
                         })
                     ], style={'flex': '1', 'position': 'relative'}),
                 ], style={'display': 'flex', 'gap': '10px', 'marginBottom': '15px'}),
@@ -815,7 +814,7 @@ def create_layout():
                         ], id='lc-inv-region-container', style={
                             'display': 'none', 
                             'padding': '5px 10px', 
-                            'marginTop': '5px',
+                            'marginTop': '-5px',
                             'border': '1px solid #ccc',
                             'borderRadius': '3px',
                             'maxHeight': '200px',
@@ -823,7 +822,8 @@ def create_layout():
                             'backgroundColor': '#fff',
                             'position': 'absolute',
                             'zIndex': '1000',
-                             'width': '150px'
+                            'width': '150px',
+                            'borderTop': '0px'
                         })
                     ], style={'flex': '1', 'position': 'relative'}),
                     
@@ -870,7 +870,7 @@ def create_layout():
                         ], id='lc-inv-cat2-container', style={
                             'display': 'none', 
                             'padding': '5px 10px', 
-                            'marginTop': '5px',
+                            'marginTop': '-5px',
                             'border': '1px solid #ccc',
                             'borderRadius': '3px',
                             'maxHeight': '200px',
@@ -878,24 +878,24 @@ def create_layout():
                             'backgroundColor': '#fff',
                             'position': 'absolute',
                             'zIndex': '1000',
-                             'width': '150px'
+                            'width': '150px'
                         })
                     ], style={'flex': '1', 'position': 'relative'}),
                 ], style={'display': 'flex', 'gap': '10px', 'marginBottom': '15px'}),
                 
                 # External Link at bottom of sidebar
-                html.Div([
-                    html.A("Go To Low-Carbon Investment Tracker Data", 
-                           href="https://www.energyintel.com/low-carbon-energy-data#low-carbon-investment-data",
-                           target="_blank",
-                           rel="noopener noreferrer",
-                           style={
-                               'color': '#4A90E2',
-                               'fontSize': '11px',
-                               'textDecoration': 'underline',
-                               'fontFamily': 'Arial, sans-serif'
-                           })
-                ], style={'marginTop': '20px'})
+                # html.Div([
+                #     html.A("Go To Low-Carbon Investment Tracker Data", 
+                #            href="https://www.energyintel.com/low-carbon-energy-data#low-carbon-investment-data",
+                #            target="_blank",
+                #            rel="noopener noreferrer",
+                #            style={
+                #                'color': '#4A90E2',
+                #                'fontSize': '11px',
+                #                'textDecoration': 'underline',
+                #                'fontFamily': 'Arial, sans-serif'
+                #            })
+                # ], style={'marginTop': '20px'})
 
             ], style={
                 'width': '340px', 
@@ -1281,7 +1281,7 @@ def register_callbacks(dash_app, server):
             var base_style = {
                 'boxSizing': 'border-box',
                 'padding': '5px 10px',
-                'marginTop': '0px',
+                'marginTop': '-5px',
                 'border': '1px solid #ccc',
                 'borderTop': '0px',
                 'borderRadius': '3px',
@@ -1323,6 +1323,12 @@ def register_callbacks(dash_app, server):
                 'borderBottomRightRadius': '0',
                 'marginBottom': '0'
             });
+            
+            // Handle null/undefined styles
+            style_status = style_status || closed_style;
+            style_region = style_region || closed_style;
+            style_cat2 = style_cat2 || closed_style;
+            style_status_trigger = style_status_trigger || trigger_base_style;
             
             // If container was clicked (checking for outside clicks)
             if (triggered_id === 'lc-dashboard-container') {
