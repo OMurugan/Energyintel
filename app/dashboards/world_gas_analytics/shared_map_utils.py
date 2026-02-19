@@ -551,7 +551,8 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
                          selected_iso: str = None, other_isos: list = None,
                          countries_df = None, height: int = 520, 
                          zmin: float = None, zmax: float = None,
-                         country_names: list = None) -> go.Figure:
+                         country_names: list = None,
+                         marker_opacity: float = 0.8) -> go.Figure:
     """
     Create a standardized choropleth map with consistent styling and behavior.
     
@@ -568,6 +569,7 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
         zmin: Minimum value for color scale
         zmax: Maximum value for color scale
         country_names: List of country names corresponding to locations (for customdata)
+        marker_opacity: Opacity of the map polygons (default 0.8)
     
     Returns:
         go.Figure: Configured Plotly figure
@@ -621,7 +623,7 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
                 customdata=customdata,  # Use proper country names for click handling
                 marker_line_color=MAP_COUNTRY_BORDER_COLOR,
                 marker_line_width=0.8,
-                marker_opacity=0.8,
+                marker_opacity=marker_opacity,
                 hoverlabel=HOVER_LABEL_STYLE,
                 name="countries"
             )
@@ -642,7 +644,7 @@ def create_choropleth_map(locations: list, z_values: list, colorscale: list,
                 customdata=customdata,  # Use proper country names for click handling
                 marker_line_color=MAP_COUNTRY_BORDER_COLOR,
                 marker_line_width=0.5,
-                marker_opacity=0.8,
+                marker_opacity=marker_opacity,
                 hoverlabel=HOVER_LABEL_STYLE,
                 name="countries"
             )
