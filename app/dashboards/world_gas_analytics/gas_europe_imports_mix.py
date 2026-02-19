@@ -538,6 +538,174 @@ def create_layout():
 
 def register_callbacks(dash_app, server):
     
+    # Clientside callback for table highlighting
+    dash_app.clientside_callback(
+        """
+        function(id) {
+            const tableId = 'gas-imports-mix-table';
+            const baseStyleId = 'gas-imports-table-base-css';
+            const dynamicStyleId = 'gas-imports-table-dynamic-highlight-css';
+            
+            // 1. Inject Base CSS if not present
+            if (!document.getElementById(baseStyleId)) {
+                const style = document.createElement('style');
+                style.id = baseStyleId;
+                style.innerHTML = `
+                    /* Base selection state: dim normal data cells */
+                    #${tableId}.selection-active td[data-col-id^="target_"] {
+                        color: #ccc !important;
+                        background-color: transparent !important;
+                    }
+                    /* Keep Month column clear and undimmed */
+                    #${tableId}.selection-active td[data-col-id="month"] {
+                        color: #666 !important;
+                        opacity: 1 !important;
+                    }
+                    /* Highlight for selected column header */
+                    #${tableId} th.column-header-selected {
+                        background-color: #0075A8 !important;
+                        color: white !important;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+            
+            // 2. Set up click listener on the table
+            const setupListener = () => {
+                const tableEl = document.getElementById(tableId);
+                if (!tableEl) return;
+                
+                if (tableEl.dataset.highlightEnhanced === 'true') return;
+                
+                tableEl.dataset.highlightEnhanced = 'true';
+                
+                tableEl.addEventListener('click', function(e) {
+                    const header = e.target.closest('th[data-col-id]');
+                    const cell = e.target.closest('td[data-col-id]');
+                    
+                    if (!header && !cell) return;
+                    
+                    const colId = (header || cell).getAttribute('data-col-id');
+                    const rowIndex = cell ? cell.getAttribute('data-row-index') : null;
+                    
+                    if (colId === 'month' || colId === 'header_main') {
+                         // Clear selection
+                         tableEl.dataset.lastSelection = '';
+                         tableEl.classList.remove('selection-active');
+                         tableEl.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
+                         const dynStyle = document.getElementById(dynamicStyleId);
+                         if (dynStyle) dynStyle.remove();
+                         return;
+                    }
+                    
+                    // Toggle logic (simple ID based)
+                    const selectionKey = header ? colId : (colId + '_' + rowIndex);
+                    
+                    if (tableEl.dataset.lastSelection === selectionKey) {
+                        tableEl.dataset.lastSelection = '';
+                        tableEl.classList.remove('selection-active');
+                        tableEl.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
+                        const dynStyle = document.getElementById(dynamicStyleId);
+                        if (dynStyle) dynStyle.remove();
+                        return;
+                    }
+                    tableEl.dataset.lastSelection = selectionKey;
+                    
+                    // Clear existing header highlights
+                    tableEl.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
+                    
+                    // Apply highlighting
+                    tableEl.classList.add('selection-active');
+                    
+                    let targetColIds = [];
+                    let highlightRow = rowIndex;
+                    
+                    if (header) {
+                        if (colId.startsWith('origin_')) {
+                            const originName = colId.replace('origin_', '');
+                            // Find all columns starting with target_{originName}_
+                            const allCells = Array.from(tableEl.querySelectorAll(`td[data-col-id^="target_${originName}_"]`));
+                            const allIds = allCells.map(td => td.getAttribute('data-col-id'));
+                            targetColIds = [...new Set(allIds)];
+                            
+                            header.classList.add('column-header-selected');
+                        } else if (colId.startsWith('target_')) {
+                            targetColIds = [colId];
+                            header.classList.add('column-header-selected');
+                        }
+                    } else {
+                        targetColIds = [colId];
+                    }
+                    
+                    // Generate Dynamic CSS
+                    let dynamicStyles = '';
+                    
+                    // 1. Column Highlighting
+                    if (targetColIds.length > 0) {
+                        targetColIds.forEach(id => {
+                            // Escape special chars in ID if needed (though our IDs are simple)
+                            dynamicStyles += `
+                                #${tableId}.selection-active td[data-col-id="${id}"] {
+                                    background-color: #e1f0ff !important;
+                                    color: #1b365d !important;
+                                    font-weight: 600 !important;
+                                }
+                            `;
+                        });
+                    }
+                    
+                    // 2. Row Highlighting (only if cell click)
+                    if (highlightRow !== null) {
+                         dynamicStyles += `
+                            #${tableId}.selection-active tr:has(td[data-row-index="${highlightRow}"]) td {
+                                background-color: #e1f0ff !important;
+                                color: #1b365d !important;
+                                font-weight: 600 !important;
+                            }
+                        `;
+                        // 3. Active Cell with intense border
+                        dynamicStyles += `
+                            #${tableId}.selection-active td[data-col-id="${colId}"][data-row-index="${highlightRow}"] {
+                                border: 2px solid #fe5000 !important;
+                                border-radius: 2px;
+                                z-index: 15 !important;
+                                position: relative;
+                            }
+                            /* Special highlight for the Month cell in the selected row */
+                            #${tableId}.selection-active td[data-col-id="month"][data-row-index="${rowIndex}"] {  /* NOTE: Using rowIndex logic here relies on sibling relationship, but standard CSS :has can handle tr:has(...) td[...] */
+                            }
+                            /* Actually, the row highlighter above covers the month cell too because it's in the tr. 
+                               But we want to make sure the sticky month cell background is updated. */
+                             #${tableId}.selection-active tr:has(td[data-row-index="${highlightRow}"]) td[data-col-id="month"] {
+                                background-color: #b3d9ff !important;
+                                color: #1b365d !important;
+                            }
+                        `;
+                    }
+                    
+                    let dynStyle = document.getElementById(dynamicStyleId);
+                    if (!dynStyle) {
+                        dynStyle = document.createElement('style');
+                        dynStyle.id = dynamicStyleId;
+                        document.head.appendChild(dynStyle);
+                    }
+                    dynStyle.innerHTML = dynamicStyles;
+                });
+            };
+            
+            setupListener();
+            // Re-apply on interval in case table redraws slightly later or DOM changes
+            if (!window._gasImportsTableInterval) {
+                window._gasImportsTableInterval = setInterval(setupListener, 1000);
+            }
+            
+            return null;
+        }
+        """,
+        Output('gas-imports-table-enhancer-anchor', 'children'),
+        Input('gas-imports-table-enhancer-anchor', 'id')
+    )
+
     # Clientside callback to convert text inputs to date inputs (bypasses Dash validation)
     dash_app.clientside_callback(
         """
@@ -1517,7 +1685,7 @@ def register_callbacks(dash_app, server):
         
         # Header Row 1: "Gasflows to Europe" (spans 1), Origins (span dynamic)
         header_row_1 = [
-            html.Th("Gasflows to Europe", rowSpan=2, style={'position': 'sticky', 'left': 0, 'zIndex': 20, 'backgroundColor': HEADER_BG, 'border': BORDER_STYLE, 'padding': '8px', 'width': '120px', 'minWidth': '120px', 'color': TEXT_COLOR, 'fontWeight': 'bold'})
+            html.Th("Gasflows to Europe", rowSpan=2, **{'data-col-id': 'header_main'}, style={'position': 'sticky', 'left': 0, 'zIndex': 20, 'backgroundColor': HEADER_BG, 'border': BORDER_STYLE, 'padding': '8px', 'width': '120px', 'minWidth': '120px', 'color': TEXT_COLOR, 'fontWeight': 'bold'})
         ]
         
         # Header Row 2: Targets
@@ -1530,11 +1698,11 @@ def register_callbacks(dash_app, server):
             if not targets: continue
             
             # Add Origin Header (spans number of targets)
-            header_row_1.append(html.Th(origin, colSpan=len(targets), style={'textAlign': 'center', 'border': BORDER_STYLE, 'padding': '5px', 'backgroundColor': HEADER_BG, 'fontWeight': 'bold', 'color': TEXT_COLOR}))
+            header_row_1.append(html.Th(origin, colSpan=len(targets), **{'data-col-id': f'origin_{origin}'}, style={'textAlign': 'center', 'border': BORDER_STYLE, 'padding': '5px', 'backgroundColor': HEADER_BG, 'fontWeight': 'bold', 'color': TEXT_COLOR, 'cursor': 'pointer'}))
             
             # Add Target Headers
             for target in targets:
-                header_row_2.append(html.Th(target, style={'textAlign': 'center', 'border': BORDER_STYLE, 'padding': '5px', 'backgroundColor': HEADER_BG, 'fontWeight': 'bold', 'color': TEXT_COLOR}))
+                header_row_2.append(html.Th(target, **{'data-col-id': f'target_{origin}_{target}'}, style={'textAlign': 'center', 'border': BORDER_STYLE, 'padding': '5px', 'backgroundColor': HEADER_BG, 'fontWeight': 'bold', 'color': TEXT_COLOR, 'cursor': 'pointer'}))
                 
         thead_rows.append(html.Tr(header_row_1))
         thead_rows.append(html.Tr(header_row_2))
@@ -1548,6 +1716,7 @@ def register_callbacks(dash_app, server):
             
             # Month Cell (Sticky)
             row_cells.append(html.Td(m_name, 
+                                    **{'data-col-id': 'month'},
                                     style={'position': 'sticky', 'left': 0, 'zIndex': 10, 'backgroundColor': STICKY_BG, 'fontWeight': 'bold', 'border': BORDER_STYLE, 'padding': '8px', 'width': '120px', 'minWidth': '120px', 'textAlign': 'left', 'color': TEXT_COLOR}))
             
             # Data Cells
@@ -1559,15 +1728,18 @@ def register_callbacks(dash_app, server):
                 for target in targets:
                     val = row.get((origin, target), 0)
                     row_cells.append(html.Td(f"{val:.3f}" if val != 0 else "0.000", 
-                                            style={'textAlign': 'right', 'border': BORDER_STYLE, 'padding': '5px', 'backgroundColor': bg_color, 'color': TEXT_COLOR}))
+                                            **{'data-col-id': f'target_{origin}_{target}', 'data-row-index': str(i)},
+                                            style={'textAlign': 'right', 'border': BORDER_STYLE, 'padding': '5px', 'backgroundColor': bg_color, 'color': TEXT_COLOR, 'cursor': 'pointer'}))
             
             tbody_rows.append(html.Tr(row_cells))
             
-        return html.Div(
+        return html.Div([
+            html.Div(id='gas-imports-table-enhancer-anchor', style={'display': 'none'}), # Anchor for clientside callback
             html.Table(
                 [html.Thead(thead_rows), html.Tbody(tbody_rows)],
+                id='gas-imports-mix-table',
                 style={'borderCollapse': 'collapse', 'width': '100%', 'fontFamily': 'Lato, sans-serif', 'fontSize': '12px', 'color': TEXT_COLOR}
-            ),
+            )],
             style={'overflowX': 'auto', 'maxWidth': '100%', 'width': '100%', 'maxHeight': '650px', 'border': BORDER_STYLE}
         )
 
