@@ -1736,6 +1736,8 @@ def register_callbacks(dash_app, server):
                         selectedRowIndices: null // String "start_end" or null
                     };
                 }
+                // Update columns to avoid stale closure
+                window.europeGasState.columns = columns;
 
                 // 2. Helper Logic
                 function clearAll(spreadsheet) {
@@ -1827,11 +1829,17 @@ def register_callbacks(dash_app, server):
                             if (colId === 'Country' || colId === 'Sector') return;
 
                             const headerContent = header.innerText.trim();
-                            let isYearHeader = /^\d{4}$/.test(headerContent);
+                            const safeHeader = headerContent.replace(/\D/g, '');
+                            let isYearHeader = /^\d{4}$/.test(safeHeader);
                             let targetIds = [];
-                            if (isYearHeader && columns) {
-                                columns.forEach(c => {
-                                    if (c.id.startsWith(headerContent + '_')) targetIds.push(c.id);
+                            
+                            const currentCols = window.europeGasState.columns || columns;
+
+                            if (isYearHeader && currentCols) {
+                                currentCols.forEach(c => {
+                                    if (c.id && c.id.indexOf(safeHeader) !== -1) {
+                                        targetIds.push(c.id);
+                                    }
                                 });
                             } else {
                                 targetIds.push(colId);
