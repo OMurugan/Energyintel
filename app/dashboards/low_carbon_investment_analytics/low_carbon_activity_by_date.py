@@ -258,7 +258,7 @@ def create_layout():
                             dcc.Graph(
                                 id='lcad-chart',
                                 config={'displayModeBar': False},
-                                style={'height': '105vh'}
+                                style={'height': '70vh'}
                             )
                         ]
                     )
@@ -346,7 +346,7 @@ def create_layout():
 
             ], style=SIDEBAR_STYLE),
         ], style={'display': 'flex', 'flexDirection': 'row', 'width': '100%'})
-    ], style={'backgroundColor': 'white', 'minHeight': '100vh'})
+    ], className='tab-content', style={'backgroundColor': 'white', 'minHeight': '100vh', 'overflowX': 'hidden'})
 
 
 # -----------------------------------------------------------------------------
