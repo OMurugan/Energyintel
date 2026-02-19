@@ -2121,8 +2121,11 @@ def register_callbacks(dash_app, server):
                 if (!window.asiaGasState) {
                     window.asiaGasState = { 
                         selectedColumnId: null,
-                        selectedRowIndices: null 
+                        selectedRowIndices: null,
+                        columns: columns // Initialize
                     };
+                } else {
+                    window.asiaGasState.columns = columns; // Update on every callback execution
                 }
 
                 function clearAll(spreadsheet) {
@@ -2217,10 +2220,30 @@ def register_callbacks(dash_app, server):
 
                             const headerContent = header.innerText.trim();
                             let isYearHeader = /^\d{4}$/.test(headerContent);
+                            let yearToSelect = headerContent;
+
+                            // Robust check: Derived from column ID to see if it matches the header text
+                            // This handles cases where user clicks a Year header that might have invisible chars 
+                            // or where direct text match fails but ID structure confirms it's a Year group column
+                            if (!isYearHeader) {
+                                const parts = colId.split('_');
+                                if (parts.length > 0) {
+                                    const potentialYear = parts[0];
+                                    // Check if potentialYear is 4 digits and if header text contains that year
+                                    if (/^\d{4}$/.test(potentialYear) && headerContent.includes(potentialYear)) {
+                                        isYearHeader = true;
+                                        yearToSelect = potentialYear;
+                                    }
+                                }
+                            }
+
+                            // Use the latest columns from global state specifically for this check
+                            const currentColumns = window.asiaGasState.columns || [];
+                            
                             let targetIds = [];
-                            if (isYearHeader && columns) {
-                                columns.forEach(c => {
-                                    if (c.id && c.id.startsWith(headerContent + '_')) targetIds.push(c.id);
+                            if (isYearHeader && currentColumns.length > 0) {
+                                currentColumns.forEach(c => {
+                                    if (c.id && (c.id.startsWith(yearToSelect + '_') || c.id === yearToSelect)) targetIds.push(c.id);
                                 });
                             } else {
                                 targetIds.push(colId);
@@ -2493,3 +2516,43 @@ def register_callbacks(dash_app, server):
         except Exception as e:
             print(f"Error exporting table data: {e}")
             return no_update
+
+    # 6. Clear Table Highlight on Level Change (Clientside)
+    dash_app.clientside_callback(
+        """
+        function(level) {
+            try {
+                if (window.asiaGasState) {
+                    window.asiaGasState.selectedColumnId = null;
+                    window.asiaGasState.selectedRowIndices = null;
+                    // window.asiaGasState.lastColumnStructure = null; // Optional: Force structure reset if needed
+                }
+                
+                const tableId = 'asia-gas-demand-table';
+                const tableEl = document.getElementById(tableId);
+                if (tableEl) {
+                    const spreadsheet = tableEl.querySelector('.dash-spreadsheet-container');
+                    if (spreadsheet) {
+                         spreadsheet.classList.remove('asia-col-selection-active');
+                         spreadsheet.classList.remove('asia-row-selection-active');
+                         
+                         const selected = spreadsheet.querySelectorAll('.asia-col-selected, .asia-dimmed, .asia-row-highlighted, .asia-row-trip-wire');
+                         selected.forEach(el => {
+                            el.classList.remove('asia-col-selected');
+                            el.classList.remove('asia-dimmed');
+                            el.classList.remove('asia-row-highlighted');
+                            el.classList.remove('asia-row-trip-wire');
+                         });
+                    }
+                }
+            } catch(e) {
+                console.error("Error clearing highlight classes:", e);
+            }
+
+            return null;
+        }
+        """,
+        Output('asia-table-highlight-state', 'data', allow_duplicate=True),
+        Input('table-time-level', 'data'),
+        prevent_initial_call=True
+    )
