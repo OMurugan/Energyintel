@@ -1246,11 +1246,11 @@ def register_callbacks(dash_app, server):
                     },
                     {
                         'if': {'column_id': border_col_ids_first},
-                        'borderLeft': '2px solid #999'
+                        'borderLeft': '2px solid #666'
                     },
                     {
                         'if': {'column_id': border_col_ids_last},
-                        'borderRight': '2px solid #999'
+                        'borderRight': '2px solid #666'
                     },
                     {
                         'if': {'row_index': 'odd'},
@@ -1304,15 +1304,15 @@ def register_callbacks(dash_app, server):
                     },
                     {
                         'if': {'column_id': border_col_ids_first},
-                        'borderLeft': '2px solid #999'
+                        'borderLeft': '2px solid #666'
                     },
                     {
                         'if': {'column_id': border_col_ids_last},
-                        'borderRight': '2px solid #999'
+                        'borderRight': '2px solid #666'
                     },
                     {
                         'if': {'column_id': 'Period of Date'},
-                        'borderRight': '2px solid #999'
+                        'borderRight': '2px solid #666'
                     }
                 ],
                 fixed_rows={'headers': True},
