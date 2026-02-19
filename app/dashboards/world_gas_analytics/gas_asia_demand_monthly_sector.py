@@ -2058,10 +2058,35 @@ def register_callbacks(dash_app, server):
                     .asia-row-selected { background-color: #cfe8ef !important; }
                     .asia-dimmed { opacity: 0.3 !important; }
                     
+                    /* Ensure fixed columns container stays on top */
+                    .dash-spreadsheet-container .dash-fixed-column {
+                        z-index: 2 !important;
+                    }
+                    
+                    .dash-spreadsheet-container .dash-fixed-content {
+                        z-index: 2 !important;
+                    }
+                    
+                    /* Fixed columns should always stay on top with white background */
+                    td[data-dash-column="Country"], 
+                    td[data-dash-column="Sector"] { 
+                        background-color: white !important;
+                    }
+                    
+                    th[data-dash-column="Country"], 
+                    th[data-dash-column="Sector"] { 
+                        background-color: white !important;
+                    }
+                    
+                    /* Override for odd rows */
+                    tr:nth-child(odd) td[data-dash-column="Country"], 
+                    tr:nth-child(odd) td[data-dash-column="Sector"] { 
+                        background-color: #fafbfc !important;
+                    }
+                    
                     .asia-col-selection-active td[data-dash-column="Country"], 
                     .asia-col-selection-active td[data-dash-column="Sector"] { 
                         opacity: 1 !important; 
-                        background-color: transparent !important; 
                     }
                     
                     .asia-row-selection-active tr.asia-row-highlighted td {
@@ -2069,9 +2094,25 @@ def register_callbacks(dash_app, server):
                         background-color: #cfe8ef !important;
                         color: black !important;
                     }
+                    
+                    /* Keep Country and Sector white even when row is highlighted */
+                    .asia-row-selection-active tr.asia-row-highlighted td[data-dash-column="Country"],
+                    .asia-row-selection-active tr.asia-row-highlighted td[data-dash-column="Sector"] {
+                        background-color: white !important;
+                    }
+                    
+                    .asia-row-selection-active tr:nth-child(odd).asia-row-highlighted td[data-dash-column="Country"],
+                    .asia-row-selection-active tr:nth-child(odd).asia-row-highlighted td[data-dash-column="Sector"] {
+                        background-color: #fafbfc !important;
+                    }
 
                     .asia-row-selection-active tr:not(.asia-row-trip-wire) td {
                         opacity: 0.3 !important;
+                    }
+                    
+                    .asia-row-selection-active td[data-dash-column="Country"], 
+                    .asia-row-selection-active td[data-dash-column="Sector"] { 
+                        opacity: 1 !important;
                     }
 
                     th.asia-col-selected { background-color: #cfe8ef !important; }
