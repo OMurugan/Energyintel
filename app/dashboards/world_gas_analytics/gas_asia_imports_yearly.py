@@ -1022,11 +1022,11 @@ def register_callbacks(dash_app, server):
     )
     def update_asia_bar_chart(unit, flow_type, origin, destination, granularity):
         chart_title = f"All Imports by Origin ({unit})"
-        # Default styles (50/50 split)
+        # Keep consistent 50/50 split regardless of granularity
         chart_style = {'width': '50%', 'padding': '10px', 'backgroundColor': 'white'}
         map_style = {'width': '50%', 'padding': '10px', 'backgroundColor': 'white'}
         
-        # Dynamic chart width based on granularity
+        # Dynamic chart width based on granularity - only affects the graph itself, not the container
         if granularity == 'month':
             chart_width = '3000px'  # Wide enough for monthly bars
         elif granularity == 'day':
@@ -1039,11 +1039,6 @@ def register_callbacks(dash_app, server):
         # Unit and Scale
         chart_data_unit = 'Mcm' if unit == 'Bcm' else 'GWh'
         chart_scale = 1000.0 if unit == 'Bcm' else 1.0
-        
-        # Broaden chart for Month/Day views
-        if granularity in ('month', 'day'):
-            chart_style['width'] = '75%'
-            map_style['width'] = '25%'
 
         try:
             # Re-generate clauses using f-strings for maximum compatibility (like table callback)
