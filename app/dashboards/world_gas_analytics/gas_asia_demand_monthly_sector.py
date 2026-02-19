@@ -542,8 +542,8 @@ def create_layout():
                 # Footer
                 html.Div([
                     html.Span("Source: Energy Intelligence.", style={
-                        'fontSize': '11px',
-                        'color': '#999',
+                        'fontSize': '10px',
+                        'color': '#666',
                         'fontStyle': 'italic'
                     })
                 ], style={
