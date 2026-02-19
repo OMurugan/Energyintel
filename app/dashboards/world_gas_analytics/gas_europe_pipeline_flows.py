@@ -23,6 +23,8 @@ GAS_ORIGIN_COLORS = {
     'Libya': '#dadbb1'
 }
 
+GAS_ORIGIN_ORDER = ['Algeria', 'Azerbaijan', 'Libya', 'Norway', 'Russia']
+
 def create_period_selector(prefix):
     """Helper to create independent period selectors for chart or table"""
     return html.Div([
@@ -506,7 +508,7 @@ def register_callbacks(dash_app, server):
             return []
             
         # Maintain order from Fig 2: Russia, Norway, Algeria, Azerbaijan, Libya
-        origin_order = ['Russia', 'Norway', 'Algeria', 'Azerbaijan', 'Libya']
+        origin_order = GAS_ORIGIN_ORDER
         items = []
         for origin in origin_order:
             if origin in selected_origins:
@@ -1115,15 +1117,17 @@ def register_callbacks(dash_app, server):
             pivot_df = pivot_df.sort_values(pivot_df.columns[0], ascending=False)
 
             # Sort origins
-            origin_order = ['Algeria', 'Azerbaijan', 'Libya', 'Norway', 'Russia']
+            origin_order = GAS_ORIGIN_ORDER
             
             def sort_columns_key(col):
                 if col[0] == 'Period of Date':
-                    return (-1, "")
+                    return (-1, "", "", "")
                 # col is (Header_Exporter, gas_origin, Header_Importer, target_country, Interconnection Point)
                 origin = col[1]
+                target = col[3]
+                point = col[4]
                 order = origin_order.index(origin) if origin in origin_order else 99
-                return (order, str(col[4])) # Sort by point label
+                return (order, target, point) # Sort by origin order, then importer name (ascending), then point label
 
             # Determine the actual column name for the date
             date_col_name = pivot_df.columns[0]
@@ -1133,11 +1137,37 @@ def register_callbacks(dash_app, server):
             # Date column header alignment (empty labels for the top 4 rows)
             date_header_name = ["", "", "", "", "Period of Date"]
             table_columns = [{"name": date_header_name, "id": "Period of Date"}]
+            
+            # Prepare unique header labels to prevent excessive merging and show "Exporter"/"Importer" above each group
+            exporter_space_map = {}
+            importer_space_map = {}
+            
             for col in hier_cols:
+                header_exp, origin, header_imp, target, point = col
+                
+                # Assign unique "Exporter" string per gas_origin to repeat title above each origin group
+                if origin not in exporter_space_map:
+                    exporter_space_map[origin] = " " * len(exporter_space_map)
+                unique_exporter = "Exporter" + exporter_space_map[origin]
+                
+                # Assign unique "Importer" string per (origin, target) to repeat title above each target country
+                if (origin, target) not in importer_space_map:
+                    importer_space_map[(origin, target)] = " " * len(importer_space_map)
+                unique_importer = "Importer" + importer_space_map[(origin, target)]
+                
                 table_columns.append({
-                    "name": list(col),
+                    "name": [unique_exporter, origin, unique_importer, target, point],
                     "id": "_".join(map(str, col))
                 })
+
+            # Identify columns that are the last in an Exporter group for boundary borders
+            border_col_ids = []
+            for i in range(len(hier_cols) - 1):
+                if hier_cols[i][1] != hier_cols[i+1][1]:
+                    border_col_ids.append("_".join(map(str, hier_cols[i])))
+            # Also the last column of the table
+            if hier_cols:
+                border_col_ids.append("_".join(map(str, hier_cols[-1])))
 
             # Formatting based on period
             def format_period_date(dt, p):
@@ -1203,7 +1233,11 @@ def register_callbacks(dash_app, server):
                         'fontWeight': 'normal',
                         'color': '#666',
                         'minWidth': '180px',
-                        'borderRight': '1px solid #dee2e6'
+                        'borderRight': '2px solid #ccc' # Thicker border for date column
+                    },
+                    {
+                        'if': {'column_id': border_col_ids},
+                        'borderRight': '2px solid #999' # Darker/thicker group boundary borders
                     },
                     {
                         'if': {'row_index': 'odd'},
@@ -1222,17 +1256,46 @@ def register_callbacks(dash_app, server):
                 ],
                 style_header_conditional=[
                     {
-                        'if': {'header_index': 1}, # Gas Origin row
+                        'if': {'header_index': 0}, # Exporter title row
                         'backgroundColor': '#e9ecef',
+                        'color': EI_DARK_BLUE,
+                        'fontWeight': 'bold',
+                        'fontSize': '11px'
+                    },
+                    {
+                        'if': {'header_index': 1}, # Gas Origin row
+                        'backgroundColor': '#f8f9fa',
                         'color': '#212529',
-                        'fontSize': '12px',
+                        'fontSize': '13px',
                         'fontWeight': 'bold'
+                    },
+                    {
+                        'if': {'header_index': 2}, # Importer title row
+                        'backgroundColor': '#e9ecef',
+                        'color': EI_DARK_BLUE,
+                        'fontWeight': 'bold',
+                        'fontSize': '11px'
+                    },
+                    {
+                        'if': {'header_index': 3}, # Target Country row
+                        'backgroundColor': 'white',
+                        'color': EI_DARK_BLUE,
+                        'fontWeight': 'bold',
+                        'fontSize': '12px'
                     },
                     {
                         'if': {'header_index': 4}, # Interconnection Point row
                         'backgroundColor': 'white',
                         'fontSize': '11px',
                         'color': '#666'
+                    },
+                    {
+                        'if': {'column_id': border_col_ids},
+                        'borderRight': '2px solid #999' # Header group boundary borders
+                    },
+                    {
+                        'if': {'column_id': 'Period of Date'},
+                        'borderRight': '2px solid #ccc'
                     }
                 ],
                 fixed_rows={'headers': True},
@@ -1520,8 +1583,9 @@ def register_callbacks(dash_app, server):
             # Aggregate
             df = df.groupby(['Period of Date', 'gas_origin', 'target_country', 'Interconnection Point'])['flows_bcm'].sum().reset_index()
 
-            # Prepare export data
-            export_df = df.sort_values('Period of Date', ascending=False).copy()
+            # Prepare export data with consistent sorting: Date (desc), Origin, Target, Point
+            export_df = df.sort_values(['Period of Date', 'gas_origin', 'target_country', 'Interconnection Point'], 
+                                     ascending=[False, True, True, True]).copy()
             
             def format_period_date(dt, p):
                 if pd.isnull(dt): return ""
