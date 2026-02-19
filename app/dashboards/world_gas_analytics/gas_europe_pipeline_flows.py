@@ -1160,14 +1160,21 @@ def register_callbacks(dash_app, server):
                     "id": "_".join(map(str, col))
                 })
 
-            # Identify columns that are the last in an Exporter group for boundary borders
-            border_col_ids = []
+            # Identify columns that are the last and first in an Exporter group for boundary borders
+            border_col_ids_last = []
+            border_col_ids_first = []
+            
+            if hier_cols:
+                border_col_ids_first.append("_".join(map(str, hier_cols[0]))) # First group starts (after date column)
+                
             for i in range(len(hier_cols) - 1):
                 if hier_cols[i][1] != hier_cols[i+1][1]:
-                    border_col_ids.append("_".join(map(str, hier_cols[i])))
+                    border_col_ids_last.append("_".join(map(str, hier_cols[i])))
+                    border_col_ids_first.append("_".join(map(str, hier_cols[i+1])))
+                    
             # Also the last column of the table
             if hier_cols:
-                border_col_ids.append("_".join(map(str, hier_cols[-1])))
+                border_col_ids_last.append("_".join(map(str, hier_cols[-1])))
 
             # Formatting based on period
             def format_period_date(dt, p):
@@ -1199,11 +1206,13 @@ def register_callbacks(dash_app, server):
                 data=table_data,
                 merge_duplicate_headers=True,
                 page_action='none',
+                fill_width=True,
                 style_table={
                     'overflowX': 'auto',
                     'overflowY': 'auto',
                     'height': '600px',
                     'width': '100%',
+                    'minWidth': '100%',
                     'border': 'none',
                     'marginTop': '10px'
                 },
@@ -1233,11 +1242,15 @@ def register_callbacks(dash_app, server):
                         'fontWeight': 'normal',
                         'color': '#666',
                         'minWidth': '180px',
-                        'borderRight': '2px solid #ccc' # Thicker border for date column
+                        'borderRight': '2px solid #999' # Thicker border for date column
                     },
                     {
-                        'if': {'column_id': border_col_ids},
-                        'borderRight': '2px solid #999' # Darker/thicker group boundary borders
+                        'if': {'column_id': border_col_ids_first},
+                        'borderLeft': '2px solid #999'
+                    },
+                    {
+                        'if': {'column_id': border_col_ids_last},
+                        'borderRight': '2px solid #999'
                     },
                     {
                         'if': {'row_index': 'odd'},
@@ -1290,15 +1303,20 @@ def register_callbacks(dash_app, server):
                         'color': '#666'
                     },
                     {
-                        'if': {'column_id': border_col_ids},
-                        'borderRight': '2px solid #999' # Header group boundary borders
+                        'if': {'column_id': border_col_ids_first},
+                        'borderLeft': '2px solid #999'
+                    },
+                    {
+                        'if': {'column_id': border_col_ids_last},
+                        'borderRight': '2px solid #999'
                     },
                     {
                         'if': {'column_id': 'Period of Date'},
-                        'borderRight': '2px solid #ccc'
+                        'borderRight': '2px solid #999'
                     }
                 ],
                 fixed_rows={'headers': True},
+                fixed_columns={'headers': True, 'data': 1},
                 virtualization=True
             )
 
