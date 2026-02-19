@@ -276,8 +276,8 @@ def create_layout():
                         "Source: Energy Intelligence.",
                         style={
                             'fontStyle': 'italic',
-                            'fontSize': '14px',
-                            'color': '#9ca3af',
+                            'fontSize': '10px',
+                            'color': '#666',
                             'marginTop': '15px',
                             'marginBottom': '10px',
                             'fontFamily': 'Lato, sans-serif',

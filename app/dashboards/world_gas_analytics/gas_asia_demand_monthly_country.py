@@ -89,13 +89,14 @@ COUNTRY_COLORS = {
 # Professional map color scale matching the live source dashboard
 # Blue-green gradient as seen in the reference screenshot
 MAP_COLOR_SCALE = [
-    (0.0, '#f0f9ff'),  # Very light blue for lowest values
-    (0.2, '#bae6fd'),  # Light blue
-    (0.4, '#7dd3fc'),  # Medium light blue
-    (0.6, '#38bdf8'),  # Medium blue
-    (0.8, '#0ea5e9'),  # Darker blue
-    (1.0, '#0284c7')   # Darkest blue for highest values
+    (0.0, '#A5D6CD'),  # Light Teal (Australia/New Zealand - Reference Image)
+    (0.1, '#94C0C2'),  # Slightly darker blended teal-blue
+    (0.25, '#7FA6B6'), # Mid Blue-Teal mix
+    (0.5, '#6E8DA8'),  # Darker Blue-Teal
+    (0.75, '#5F7598'), # Dark Blue-Grey
+    (1.0, '#506c99')   # Specific User Request (China)
 ]
+
 
 # Granularity Button Styles (from yearly dashboard)
 GRAN_BTN_CONTAINER_STYLE = {
@@ -1444,8 +1445,6 @@ def register_callbacks(dash_app, server):
             other_isos = [all_country_iso_map[country] for country in all_available_countries 
                          if country not in selected_countries and country in all_country_iso_map]
         
-        print(f"DEBUG MAP: Calling create_choropleth_map with selected_country={single_selected_country}, selected_iso={selected_iso}")
-        
         # Create the map using shared utilities
         fig = create_choropleth_map(
             locations=locations,
@@ -1456,10 +1455,11 @@ def register_callbacks(dash_app, server):
             selected_iso=selected_iso,
             other_isos=other_isos,
             countries_df=countries_df,
-            height=700,
+            height=580,  # Match the height of the container
             zmin=0,
             zmax=max_volume,
-            country_names=country_names
+            country_names=country_names,  # Pass country names for proper click handling
+            marker_opacity=1.0  # Use full opacity to ensure exact color match for China (#506c99)
         )
         
         # Add country hover layer for outline highlighting (similar to country profile)
