@@ -1334,6 +1334,7 @@ def register_callbacks(dash_app, server):
                         data_rows.append(d)
 
                     table_output = dash_table.DataTable(
+                        id='lng-imports-data-table',
                         columns=columns,
                         data=data_rows,
                         merge_duplicate_headers=True,
@@ -1538,223 +1539,204 @@ def register_callbacks(dash_app, server):
             print(f"Error exporting table data: {e}")
             return no_update
 
-    # Clientside Callback for Table Column/Row Highlighting
+    # Clientside Callback for Table Column/Row Highlighting (Robust Version)
     dash_app.clientside_callback(
         """
         function(table_children) {
             try {
-                const tableContainerId = 'lng-imports-table-container';
+                const tableId = 'lng-imports-data-table';
+                const baseStyleId = 'lng-imports-table-base-css';
+                const dynamicStyleId = 'lng-imports-table-dynamic-highlight-css';
                 
-                let style = document.getElementById('lng-table-styles');
-                if (!style) {
-                    style = document.createElement('style');
-                    style.id = 'lng-table-styles';
+                // 1. Inject Base CSS if not present
+                if (!document.getElementById(baseStyleId)) {
+                    const style = document.createElement('style');
+                    style.id = baseStyleId;
+                    style.innerHTML = `
+                        #${tableId} .dash-spreadsheet-container {
+                            cursor: pointer;
+                        }
+                        #${tableId} .dash-spreadsheet-container td {
+                            transition: all 0.2s ease;
+                        }
+                        /* Base selection state: dim normal data cells */
+                        #${tableId} .dash-spreadsheet-container.selection-active td {
+                            color: #ccc !important;
+                            background-color: transparent !important;
+                        }
+                        /* Keep Time_Label column clear and undimmed */
+                        #${tableId} .dash-spreadsheet-container.selection-active td[data-dash-column="Time_Label"] {
+                            color: #666 !important;
+                            opacity: 1 !important;
+                        }
+                        /* Highlight for selected column header */
+                        #${tableId} .dash-spreadsheet-container th.column-header-selected {
+                            background-color: #0075A8 !important;
+                            color: white !important;
+                        }
+                    `;
                     document.head.appendChild(style);
                 }
                 
-                style.innerHTML = `
-                    .lng-col-selected { background-color: #cfe8ef !important; }
-                    .lng-row-selected { background-color: #cfe8ef !important; }
-                    .lng-dimmed { opacity: 0.3 !important; }
-                    
-                    .lng-col-selection-active td[data-dash-column="Time_Label"] { 
-                        opacity: 1 !important; 
-                        background-color: transparent !important; 
-                    }
-                    
-                    .lng-row-selection-active tr.lng-row-highlighted td {
-                        opacity: 1 !important;
-                        background-color: #cfe8ef !important;
-                        color: black !important;
-                    }
-
-                    .lng-row-selection-active tr:not(.lng-row-trip-wire) td {
-                        opacity: 0.3 !important;
-                    }
-
-                    th.lng-col-selected { background-color: #cfe8ef !important; }
-                `;
-
-                if (!window.lngTableState) {
-                    window.lngTableState = { 
-                        selectedColumnId: null,
-                        selectedRowIndices: null 
-                    };
-                }
-
-                function clearAll(container) {
-                    const spreadsheet = container.querySelector('.dash-spreadsheet-container');
-                    if (!spreadsheet) return;
-                    
-                    spreadsheet.classList.remove('lng-col-selection-active');
-                    spreadsheet.classList.remove('lng-row-selection-active');
-                    
-                    const selected = spreadsheet.querySelectorAll('.lng-col-selected, .lng-dimmed, .lng-row-highlighted, .lng-row-trip-wire');
-                    selected.forEach(el => {
-                        el.classList.remove('lng-col-selected');
-                        el.classList.remove('lng-dimmed');
-                        el.classList.remove('lng-row-highlighted');
-                        el.classList.remove('lng-row-trip-wire');
-                    });
-                }
-                
-                function applyState(container) {
-                    const spreadsheet = container.querySelector('.dash-spreadsheet-container');
-                    if (!spreadsheet) return;
-                    
-                    clearAll(container);
-
-                    if (window.lngTableState.selectedColumnId) {
-                        const targetIds = window.lngTableState.selectedColumnId.split(',');
-                        if (targetIds.length === 0) return;
-
-                        spreadsheet.classList.add('lng-col-selection-active');
-
-                        targetIds.forEach(id => {
-                            const ths = spreadsheet.querySelectorAll(`th[data-dash-column="${id}"]`);
-                            ths.forEach(th => th.classList.add('lng-col-selected'));
-                        });
-
-                        const allCells = spreadsheet.querySelectorAll('td[data-dash-column]');
-                        allCells.forEach(cell => {
-                            const cId = cell.getAttribute('data-dash-column');
-                            if (cId === 'Time_Label') return;
-
-                            if (targetIds.includes(cId)) {
-                                cell.classList.add('lng-col-selected');
-                            } else {
-                                cell.classList.add('lng-dimmed');
-                            }
-                        });
+                // 2. Set up click listener on the table
+                const setupTable = () => {
+                    const tableEl = document.getElementById(tableId);
+                    if (!tableEl) {
+                        setTimeout(setupTable, 100);
                         return;
                     }
-
-                    if (window.lngTableState.selectedRowIndices) {
-                        const [start, end] = window.lngTableState.selectedRowIndices.split('_').map(Number);
-                        
-                        spreadsheet.classList.add('lng-row-selection-active');
-                        
-                        const tbodies = spreadsheet.querySelectorAll('tbody');
-                        
-                        tbodies.forEach(tbody => {
-                            const rows = tbody.querySelectorAll('tr');
-                            rows.forEach((row, idx) => {
-                                if (idx >= start && idx <= end) {
-                                    row.classList.add('lng-row-highlighted');
-                                    row.classList.add('lng-row-trip-wire');
-                                }
-                            });
-                        });
-                    }
-                }
-
-                function setupTable() {
-                    const container = document.getElementById(tableContainerId);
+                    
+                    const container = tableEl.querySelector('.dash-spreadsheet-container');
                     if (!container) {
                         setTimeout(setupTable, 100);
                         return;
                     }
                     
-                    const spreadsheet = container.querySelector('.dash-spreadsheet-container');
-                    if (!spreadsheet) {
-                        setTimeout(setupTable, 100);
-                        return;
+                    // Reset state if table re-rendered
+                    if (table_children) {
+                         // clear previous internal state if needed, but Dash might handle DOM replacement
                     }
-                    
-                    if (spreadsheet && (window.lngTableState.selectedColumnId || window.lngTableState.selectedRowIndices)) {
-                        applyState(container);
-                    }
-                    
-                    if (spreadsheet.dataset.enhanced === 'true') return;
 
-                    spreadsheet.dataset.enhanced = 'true';
+                    if (container.dataset.highlightEnhanced === 'true') return;
                     
-                    spreadsheet.addEventListener('click', function(e) {
+                    container.dataset.highlightEnhanced = 'true';
+                    
+                    container.addEventListener('click', function(e) {
                         const header = e.target.closest('th[data-dash-column]');
-                        if (header) {
-                            e.stopPropagation();
-                            const colId = header.getAttribute('data-dash-column');
-                            if (colId === 'Time_Label') return;
-
-                            const headerContent = header.innerText.trim();
-                            
-                            // Check if it's a year header (first level in multi-level headers)
-                            let isYearHeader = /^\\d{4}$/.test(headerContent);
-                            let targetIds = [];
-                            
-                            if (isYearHeader) {
-                                // Find all column headers under this year
-                                // Get all headers in the same column group
-                                const allHeaders = spreadsheet.querySelectorAll('th[data-dash-column]');
-                                const yearHeaders = Array.from(allHeaders).filter(h => {
-                                    const text = h.innerText.trim();
-                                    return /^\\d{4}$/.test(text);
-                                });
-                                
-                                // Find the index of clicked year header
-                                const yearIndex = yearHeaders.indexOf(header);
-                                
-                                // Get all data columns (non-Time_Label)
-                                const dataHeaders = Array.from(allHeaders).filter(h => {
-                                    const id = h.getAttribute('data-dash-column');
-                                    return id && id !== 'Time_Label';
-                                });
-                                
-                                // Estimate columns per year (rough heuristic)
-                                const colsPerYear = Math.floor(dataHeaders.length / yearHeaders.length);
-                                const startIdx = yearIndex * colsPerYear;
-                                const endIdx = startIdx + colsPerYear;
-                                
-                                targetIds = dataHeaders.slice(startIdx, endIdx).map(h => h.getAttribute('data-dash-column'));
-                            } else {
-                                targetIds.push(colId);
-                            }
-
-                            const selectionKey = targetIds.join(',');
-                            
-                            if (window.lngTableState.selectedColumnId === selectionKey) {
-                                window.lngTableState.selectedColumnId = null;
-                            } else {
-                                window.lngTableState.selectedColumnId = selectionKey;
-                                window.lngTableState.selectedRowIndices = null; 
-                            }
-                            applyState(container);
+                        const cell = e.target.closest('td[data-dash-column]');
+                        
+                        if (!header && !cell) return;
+                        
+                        const columnId = (header || cell).getAttribute('data-dash-column');
+                        const rowIndex = cell ? cell.getAttribute('data-dash-row') : null;
+                        
+                        if (columnId === 'Time_Label' && !rowIndex) return;
+                        
+                        const isHeader = !!header;
+                        const headerRow = isHeader ? header.closest('tr') : null;
+                        const thead = isHeader ? header.closest('thead') : null;
+                        const headerRows = thead ? Array.from(thead.querySelectorAll('tr')) : [];
+                        const headerIndex = headerRow ? headerRows.indexOf(headerRow) : -1;
+                        
+                        // Toggle logic
+                        const selectionKey = isHeader ? (columnId + '_' + headerIndex) : (columnId + '_' + rowIndex);
+                        if (container.dataset.lastSelection === selectionKey) {
+                            container.dataset.lastSelection = '';
+                            container.classList.remove('selection-active');
+                            container.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
+                            const dynStyle = document.getElementById(dynamicStyleId);
+                            if (dynStyle) dynStyle.remove();
                             return;
                         }
+                        container.dataset.lastSelection = selectionKey;
                         
-                        const cell = e.target.closest('td[data-dash-column]');
-                        if (cell) {
-                             const row = cell.closest('tr');
-                             const tbody = row.closest('tbody');
-                             const rows = Array.from(tbody.querySelectorAll('tr'));
-                             const idx = rows.indexOf(row);
-                             
-                             const start = idx; 
-                             const end = idx; 
-                             
-                             const newKey = `${start}_${end}`;
-                             
-                             if (window.lngTableState.selectedRowIndices === newKey) {
-                                  window.lngTableState.selectedRowIndices = null;
-                             } else {
-                                  window.lngTableState.selectedRowIndices = newKey;
-                                  window.lngTableState.selectedColumnId = null;
-                             }
-                             applyState(container);
+                        // Clear existing header highlights
+                        container.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
+                        
+                        // Apply highlighting
+                        container.classList.add('selection-active');
+                        
+                        let targetColumnIds = [columnId];
+                        let highlightRow = rowIndex;
+                        
+                        // Discovery logic for child columns if a parent header is clicked
+                        if (isHeader) {
+                            const colspan = parseInt(header.getAttribute('colspan') || header.colSpan || '1');
+                            
+                            if (colspan > 1) {
+                                // Robust Discovery: Find the data row that actually contains this column
+                                const parentId = header.getAttribute('data-dash-column');
+                                const allTbodies = Array.from(container.querySelectorAll('tbody'));
+                                
+                                let targetRow = null;
+                                let startIdx = -1;
+                                let leafIds = [];
+    
+                                // Search for the row containing our start column
+                                for (let tbody of allTbodies) {
+                                    const row = tbody.querySelector('tr');
+                                    if (!row) continue;
+                                    
+                                    const cells = Array.from(row.querySelectorAll('td'));
+                                    const ids = cells.map(td => td.getAttribute('data-dash-column'));
+                                    const idx = ids.indexOf(parentId);
+                                    
+                                    if (idx !== -1) {
+                                        targetRow = row;
+                                        startIdx = idx;
+                                        leafIds = ids;
+                                        break;
+                                    }
+                                }
+                                
+                                if (targetRow && startIdx !== -1) {
+                                    const endIdx = Math.min(startIdx + colspan, leafIds.length);
+                                    targetColumnIds = leafIds.slice(startIdx, endIdx);
+                                } else {
+                                    // Fallback if rows not found (e.g. empty table)
+                                    targetColumnIds = [columnId];
+                                }
+                            } else {
+                                // Single column header clicked
+                                header.classList.add('column-header-selected');
+                            }
                         }
+                        
+                        // Generate Dynamic CSS for high contrast highlights
+                        let dynamicStyles = '';
+                        
+                        // 1. Column(s) Highlighting
+                        if (targetColumnIds.length > 0) {
+                            targetColumnIds.forEach(id => {
+                                dynamicStyles += `
+                                    #${tableId} .dash-spreadsheet-container td[data-dash-column="${id}"] {
+                                        background-color: #e1f0ff !important;
+                                        color: #1b365d !important;
+                                        font-weight: 600 !important;
+                                    }
+                                `;
+                            });
+                        }
+                        
+                        // 2. Row Highlighting
+                        if (highlightRow !== null) {
+                            dynamicStyles += `
+                                #${tableId} .dash-spreadsheet-container tr:has(td[data-dash-row="${highlightRow}"]) td {
+                                    background-color: #e1f0ff !important;
+                                    color: #1b365d !important;
+                                    font-weight: 600 !important;
+                                }
+                            `;
+                            // 3. Active Cell with intense border and background
+                            dynamicStyles += `
+                                #${tableId} .dash-spreadsheet-container td[data-dash-column="${columnId}"][data-dash-row="${highlightRow}"] {
+                                    border: 2px solid #fe5000 !important;
+                                    border-radius: 2px;
+                                    z-index: 10 !important;
+                                    position: relative;
+                                }
+                                /* Special highlight for the Time_Label (first) cell in the selected row */
+                                #${tableId} .dash-spreadsheet-container td[data-dash-column="Time_Label"][data-dash-row="${highlightRow}"] {
+                                    background-color: #b3d9ff !important;
+                                    color: #1b365d !important;
+                                    font-weight: bold !important;
+                                }
+                            `;
+                        }
+                        
+                        let dynStyle = document.getElementById(dynamicStyleId);
+                        if (!dynStyle) {
+                            dynStyle = document.createElement('style');
+                            dynStyle.id = dynamicStyleId;
+                            document.head.appendChild(dynStyle);
+                        }
+                        dynStyle.innerHTML = dynamicStyles;
                     });
-                }
+                };
                 
-                // Reset state when table content changes
-                if (table_children) {
-                    // Clear selections on table update
-                    window.lngTableState.selectedColumnId = null;
-                    window.lngTableState.selectedRowIndices = null;
-                }
-                
-                setTimeout(setupTable, 500); 
-                return window.lngTableState.selectedColumnId || ""; 
-
+                setupTable();
+                // Re-apply if necessary (though Dash usually handles it via the callback input)
+                return ""; 
             } catch(e) { 
                 console.error('LNG table highlighting error:', e); 
                 return ""; 
