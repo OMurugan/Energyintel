@@ -14,6 +14,14 @@ EI_ORANGE = "#ff6600"
 EI_DARK_BLUE = "#1b365d"
 EI_LIGHT_BLUE = "#e8f4f8"
 
+# Utility to convert hex to rgba
+def hex_to_rgba(hex_color, opacity=1.0):
+    hex_color = hex_color.lstrip('#')
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    return f'rgba({r}, {g}, {b}, {opacity})'
+
 # Origin colors based on Fig 1 (approximate colors from legend images)
 ORIGIN_COLORS = {
     'Algeria': '#0070c0',
@@ -359,55 +367,27 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register all callbacks for Asian Yearly Imports"""
     
-    # Clientside Callback for Chart Highlighting (Instant Response)
+    # Simplified Clientside Callback for Click Detection (no highlighting - that's server-side now)
     dash_app.clientside_callback(
         """
         function(clickData, currentSelection) {
             try {
                 console.log("=== Asia Chart Click Debug ===");
                 console.log("clickData:", clickData);
-                console.log("currentSelection:", currentSelection);
                 
-                // Find the graph element - it might be wrapped by Dash
-                let graphDiv = null;
-                const allGraphs = document.querySelectorAll('.js-plotly-plot');
-                console.log("Found plotly graphs:", allGraphs.length);
-                
-                // Find the chart graph (first one in the list, map is second)
-                for (let g of allGraphs) {
-                    let parent = g.parentElement;
-                    while (parent) {
-                        if (parent.id === 'loading-asia-imports-chart' || parent.id === 'asia-imports-bar-chart') {
-                            graphDiv = g;
-                            break;
-                        }
-                        parent = parent.parentElement;
-                    }
-                    if (graphDiv && graphDiv.data) break;
-                }
-                
-                if (!graphDiv || !graphDiv.data) {
-                    console.error("Graph div not found");
-                    return window.dash_clientside.no_update;
-                }
-                
-                console.log("Graph found! Data traces:", graphDiv.data.length);
-                
-                // No click data - do nothing
+                // No click data or empty points - reset
                 if (!clickData || !clickData.points || clickData.points.length === 0) {
-                    console.log("No click data - ignoring");
-                    return window.dash_clientside.no_update;
+                    console.log("No click data - resetting");
+                    return null;
                 }
                 
                 const point = clickData.points[0];
                 console.log("Clicked point:", point);
-                console.log("Point customdata:", point.customdata);
-                console.log("Point curveNumber:", point.curveNumber);
-                console.log("Point x:", point.x);
                 
-                if (!point.customdata || point.customdata.length < 4) {
-                    console.log("Invalid customdata - length:", point.customdata ? point.customdata.length : 0);
-                    return window.dash_clientside.no_update;
+                // Check for background/outside clicks
+                if (!point.customdata || !Array.isArray(point.customdata) || point.customdata.length < 4) {
+                    console.log("Background/outside click detected - resetting");
+                    return null;
                 }
                 
                 const clickedDest = point.customdata[0];
@@ -415,101 +395,42 @@ def register_callbacks(dash_app, server):
                 const clickedOrigin = point.customdata[2];
                 const clickedDestPos = point.customdata[3];
                 
-                console.log("Clicked segment:", {
+                // Validate the extracted data
+                if (!clickedDest || !clickedFacet || !clickedOrigin || clickedDestPos === undefined) {
+                    console.log("Invalid segment data - resetting");
+                    return null;
+                }
+                
+                console.log("Valid clicked segment:", {
                     dest: clickedDest,
                     facet: clickedFacet,
                     origin: clickedOrigin,
                     destPos: clickedDestPos
                 });
                 
-                const newSelection = {
-                    destination: clickedDest,
-                    facet: clickedFacet,
-                    origin: clickedOrigin,
-                    dest_pos: clickedDestPos
-                };
-                
-                // Check if clicking same segment - toggle off
+                // Check if clicking same segment - toggle off (reset)
                 if (currentSelection && 
                     currentSelection.destination === clickedDest &&
                     currentSelection.facet === clickedFacet &&
                     currentSelection.origin === clickedOrigin &&
-                    currentSelection.dest_pos === clickedDestPos) {
+                    currentSelection.dest_pos === clickedDestPos &&
+                    currentSelection.type === 'bar_click') {
                     
                     console.log("Same segment clicked - toggling off");
-                    // Reset all traces to full opacity
-                    const update = {
-                        'marker.opacity': graphDiv.data.map(trace => 
-                            Array(trace.x ? trace.x.length : 0).fill(1.0)
-                        )
-                    };
-                    Plotly.restyle(graphDiv, update);
                     return null;
                 }
                 
-                // NEW: Check if clicking same Origin but previously it was a LEGEND selection
-                // If so, we are now selecting a specific segment of that origin, so we should proceed to highlight just that segment.
-                // But if it was already that specific segment, the block above handles the toggle off.
-                
-                // Apply highlighting
-                console.log("Applying highlighting...");
-                const opacityUpdates = [];
-                
-                for (let i = 0; i < graphDiv.data.length; i++) {
-                    const trace = graphDiv.data[i];
-                    const traceName = trace.name || '';
-                    
-                    if (i < 5) {
-                        console.log(`Trace ${i}: ${traceName}, customdata length:`, trace.customdata ? trace.customdata.length : 0);
-                    }
-                    
-                    if (!trace.customdata || trace.customdata.length === 0) {
-                        opacityUpdates.push(Array(trace.x ? trace.x.length : 0).fill(1.0));
-                        continue;
-                    }
-                    
-                    const opacities = [];
-                    
-                    if (traceName === clickedOrigin) {
-                        console.log(`Trace ${i} matches clicked origin: ${clickedOrigin}`);
-                        // This is the selected origin - highlight matching segments
-                        for (let j = 0; j < trace.customdata.length; j++) {
-                            const cd = trace.customdata[j];
-                            if (cd && cd.length >= 4) {
-                                const segDest = cd[0];
-                                const segFacet = cd[1];
-                                const segOrigin = cd[2];
-                                const segDestPos = cd[3];
-                                
-                                const isMatch = (segDest === clickedDest && 
-                                    segFacet === clickedFacet && 
-                                    segOrigin === clickedOrigin && 
-                                    segDestPos === clickedDestPos);
-                                
-                                opacities.push(isMatch ? 1.0 : 0.2);
-                            } else {
-                                opacities.push(0.2);
-                            }
-                        }
-                    } else {
-                        // Different origin - dim all
-                        opacities.push(...Array(trace.customdata.length).fill(0.2));
-                    }
-                    
-                    opacityUpdates.push(opacities);
-                }
-                
-                console.log("Opacity updates prepared:", opacityUpdates.length, "traces");
-                
-                // Apply the opacity updates immediately
-                Plotly.restyle(graphDiv, {'marker.opacity': opacityUpdates});
-                console.log("Highlighting applied successfully");
-                
-                return newSelection;
+                // Return selection data (highlighting will be handled server-side)
+                return {
+                    destination: clickedDest,
+                    facet: clickedFacet,
+                    origin: clickedOrigin,
+                    dest_pos: clickedDestPos,
+                    type: 'bar_click'
+                };
                 
             } catch(e) {
-                console.error("Asia Chart Highlight Error:", e);
-                console.error("Stack:", e.stack);
+                console.error("Asia Chart Click Error:", e);
                 return window.dash_clientside.no_update;
             }
         }
@@ -520,127 +441,50 @@ def register_callbacks(dash_app, server):
         prevent_initial_call=True
     )
     
-    # Clientside callback to re-apply highlighting after chart updates
+    # Additional callback to handle background clicks and reset selection
+    @dash_app.callback(
+        Output('asia-chart-selection-store', 'data', allow_duplicate=True),
+        Input('asia-imports-bar-chart', 'selectedData'),
+        prevent_initial_call=True
+    )
+    def handle_background_click(selectedData):
+        """Reset selection when clicking on chart background"""
+        if selectedData is None or (selectedData and len(selectedData.get('points', [])) == 0):
+            return None
+        return no_update
+
+    # Clientside callback to add pointer cursor CSS
     dash_app.clientside_callback(
         """
-        function(figure, currentSelection) {
-            // Logic to handle re-highlighting based on store state (from Chart Click or Legend Click)
-            
-            if (!currentSelection && !window.asiaChartSelection) {
-                // Also check if we need to reset (if store is null but chart has dimming)
-                // We'll rely on the update logic below to handle null selection = reset
+        function(figure) {
+            // Add CSS for pointer cursor on bars
+            let style = document.getElementById('asia-chart-cursor-style');
+            if (!style) {
+                style = document.createElement('style');
+                style.id = 'asia-chart-cursor-style';
+                document.head.appendChild(style);
             }
             
-            // Allow null selection to proceed (for resetting)
-            
-            try {
-                console.log("=== Re-applying highlighting logic ===");
-                console.log("Current Selection:", currentSelection);
-                
-                // Small delay to ensure DOM is ready
-                setTimeout(function() {
-                    let graphDiv = null;
-                    const allGraphs = document.querySelectorAll('.js-plotly-plot');
-                    
-                    for (let g of allGraphs) {
-                        let parent = g.parentElement;
-                        while (parent) {
-                            if (parent.id === 'loading-asia-imports-chart' || parent.id === 'asia-imports-bar-chart') {
-                                graphDiv = g;
-                                break;
-                            }
-                            parent = parent.parentElement;
-                        }
-                        if (graphDiv && graphDiv.data) break;
-                    }
-                    
-                    if (!graphDiv || !graphDiv.data) {
-                        console.log("Graph not found for re-highlighting");
-                        return;
-                    }
-                    
-                    // IF NO SELECTION: RESET ALL
-                    if (!currentSelection) {
-                         console.log("No selection - resetting opacity");
-                         const resetUpdate = {
-                            'marker.opacity': graphDiv.data.map(trace => 
-                                Array(trace.x ? trace.x.length : 0).fill(1.0)
-                            )
-                        };
-                        Plotly.restyle(graphDiv, resetUpdate);
-                        return;
-                    }
-
-                    const isLegendSelection = (currentSelection.type === 'legend_selection');
-                    const clickedDest = currentSelection.destination;
-                    const clickedFacet = currentSelection.facet;
-                    const clickedOrigin = currentSelection.origin;
-                    const clickedDestPos = currentSelection.dest_pos;
-                    
-                    console.log("Re-applying for:", {clickedOrigin, isLegendSelection});
-                    
-                    const opacityUpdates = [];
-                    
-                    for (let i = 0; i < graphDiv.data.length; i++) {
-                        const trace = graphDiv.data[i];
-                        const traceName = trace.name || '';
-                        
-                        if (!trace.customdata || trace.customdata.length === 0) {
-                            opacityUpdates.push(Array(trace.x ? trace.x.length : 0).fill(1.0));
-                            continue;
-                        }
-                        
-                        const opacities = [];
-                        
-                        if (traceName === clickedOrigin) {
-                            // Match Origin
-                            if (isLegendSelection) {
-                                // Legend Selection: Highlight ALL segments of this origin
-                                opacities.push(...Array(trace.customdata.length).fill(1.0));
-                            } else {
-                                // Specific Segment Selection
-                                for (let j = 0; j < trace.customdata.length; j++) {
-                                    const cd = trace.customdata[j];
-                                    if (cd && cd.length >= 4) {
-                                        const segDest = cd[0];
-                                        const segFacet = cd[1];
-                                        const segOrigin = cd[2];
-                                        const segDestPos = cd[3];
-                                        
-                                        const isMatch = (segDest === clickedDest && 
-                                            segFacet === clickedFacet && 
-                                            segOrigin === clickedOrigin && 
-                                            segDestPos === clickedDestPos);
-                                        
-                                        opacities.push(isMatch ? 1.0 : 0.2);
-                                    } else {
-                                        opacities.push(0.2);
-                                    }
-                                }
-                            }
-                        } else {
-                            // Different origin - dim all
-                            opacities.push(...Array(trace.customdata.length).fill(0.2));
-                        }
-                        
-                        opacityUpdates.push(opacities);
-                    }
-                    
-                    Plotly.restyle(graphDiv, {'marker.opacity': opacityUpdates});
-                    console.log("Re-highlighting complete");
-                }, 100);
-                
-            } catch(e) {
-                console.error("Re-highlight error:", e);
-            }
+            style.innerHTML = `
+                .js-plotly-plot .plotly .bars path {
+                    cursor: pointer !important;
+                }
+                .js-plotly-plot .plotly .trace.bars .point {
+                    cursor: pointer !important;
+                }
+                .js-plotly-plot .plotly .trace path {
+                    cursor: pointer !important;
+                }
+                .js-plotly-plot .plotly .scatterlayer .trace .points path {
+                    cursor: pointer !important;
+                }
+            `;
             
             return window.dash_clientside.no_update;
         }
         """,
         Output('asia-chart-selection-store', 'data', allow_duplicate=True),
-        [Input('asia-imports-bar-chart', 'figure'),
-         Input('asia-chart-selection-store', 'data')],
-        State('asia-chart-selection-store', 'data'),
+        Input('asia-imports-bar-chart', 'figure'),
         prevent_initial_call=True
     )
     
@@ -1018,9 +862,10 @@ def register_callbacks(dash_app, server):
          Input('asia-flow-type-filter', 'value'),
          Input('asia-origin-dropdown', 'value'),
          Input('asia-destination-dropdown', 'value'),
-         Input('asia-chart-granularity-store', 'data')]
+         Input('asia-chart-granularity-store', 'data'),
+         Input('asia-chart-selection-store', 'data')]
     )
-    def update_asia_bar_chart(unit, flow_type, origin, destination, granularity):
+    def update_asia_bar_chart(unit, flow_type, origin, destination, granularity, current_selection):
         chart_title = f"All Imports by Origin ({unit})"
         # Keep consistent 50/50 split regardless of granularity
         chart_style = {'width': '50%', 'padding': '10px', 'backgroundColor': 'white'}
@@ -1105,21 +950,31 @@ def register_callbacks(dash_app, server):
             
             results = execute_query(query)
             df = pd.DataFrame(results)
-            if df.empty: return go.Figure(), chart_title, chart_style, map_style, graph_style
+            if df.empty: 
+                print("Asia chart: No data returned from query")
+                return go.Figure(), chart_title, chart_style, map_style, graph_style
 
             df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
             df = df.dropna(subset=['Value', 'Destination', 'Origin']).copy()
-            if df.empty: return go.Figure(), chart_title, chart_style, map_style, graph_style
+            if df.empty: 
+                print("Asia chart: No valid data after cleaning")
+                return go.Figure(), chart_title, chart_style, map_style, graph_style
+
+            print(f"Asia chart: Processing {len(df)} rows of data")
 
             # 1. Sort Destinations Alphabetically
             top_dest = sorted(df['Destination'].unique().tolist())
             df = df[df['Destination'].isin(top_dest)].copy()
-            if df.empty: return go.Figure(), chart_title, chart_style, map_style, graph_style
+            if df.empty: 
+                print("Asia chart: No data after destination filtering")
+                return go.Figure(), chart_title, chart_style, map_style, graph_style
 
             # 2. Origin grouping
             origin_vols = df.groupby('Origin')['Value'].sum().sort_values(ascending=False)
             top_origins = origin_vols.head(15).index.tolist()
             df['Origin_Plot'] = df['Origin'].apply(lambda x: x if x in top_origins else 'Others')
+
+            print(f"Asia chart: Top origins: {top_origins[:5]}...")  # Show first 5
 
             # 3. Faceting Key (Hierarchical)
             def create_facet_label(row):
@@ -1141,6 +996,8 @@ def register_callbacks(dash_app, server):
 
             chart_df = df.groupby(['Facet_Key'] + time_cols + ['Destination', 'Origin_Plot', 'Unit'], dropna=False)['Value'].sum().reset_index()
 
+            print(f"Asia chart: Chart dataframe has {len(chart_df)} rows")
+
             # Create destination position mapping
             dest_pos_df = pd.DataFrame({'Destination': top_dest, 'dest_pos': range(len(top_dest))})
             chart_df = chart_df.merge(dest_pos_df, on='Destination', how='left')
@@ -1148,7 +1005,7 @@ def register_callbacks(dash_app, server):
             # Spacing
             f_spacing = 0.003 if granularity in ('month', 'day') else 0.012
 
-            # Create Chart with customdata: [Destination, Facet_Key, Origin_Plot, dest_pos]
+            # Create Chart with customdata: [Destination, Facet_Key, Origin_Plot, dest_pos, Year of Date]
             fig = px.bar(
                 chart_df,
                 x='Destination',
@@ -1158,40 +1015,88 @@ def register_callbacks(dash_app, server):
                 facet_col_spacing=f_spacing,
                 color_discrete_map=ORIGIN_COLORS,
                 category_orders={'Destination': top_dest, 'Facet_Key': facet_categories},
-                hover_data=['Year of Date', 'Quarter of Date', 'Month of Date', 'Day of Date', 'Unit', 'Facet_Key', 'dest_pos'],
-                custom_data=['Destination', 'Facet_Key', 'Origin_Plot', 'dest_pos'],
+                custom_data=['Destination', 'Facet_Key', 'Origin_Plot', 'dest_pos', 'Year of Date'],
                 template='plotly_white'
             )
 
-            # Fallback for missing colors (like Fig 1/2)
-            fig.update_traces(marker_line_width=0)
-
+            print(f"Asia chart: Figure created with {len(fig.data)} traces")
+                        
             # Tooltip Fig 3 / 4 style
             def get_hovertemplate(gran):
                 lbl_color = "#888"
                 val_color = "#333"
                 
                 base = f"<span style='color: {lbl_color}'>Origin:</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{fullData.name}}</span><br>"
-                base += f"<span style='color: {lbl_color}'>Destination:</span> &nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{x}}</span><br>"
-                base += f"<span style='color: {lbl_color}'>Year of Date:</span> &nbsp;&nbsp;<span style='color: {val_color}'>%{{customdata[0]}}</span><br>"
-                
-                if gran in ('quarter', 'month', 'day'):
-                    base += f"<span style='color: {lbl_color}'>Quarter:</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{customdata[1]}}</span><br>"
-                if gran in ('month', 'day'):
-                    base += f"<span style='color: {lbl_color}'>Month:</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{customdata[2]}}</span><br>"
-                if gran == 'day':
-                    base += f"<span style='color: {lbl_color}'>Day:</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{customdata[3]}}</span><br>"
-                
-                base += f"<span style='color: {lbl_color}'>Unit:</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{customdata[4]}}</span><br>"
+                base += f"<span style='color: {lbl_color}'>Destination:</span> &nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{customdata[0]}}</span><br>"
+                base += f"<span style='color: {lbl_color}'>Year of Date:</span> &nbsp;&nbsp;<span style='color: {val_color}'>%{{customdata[4]}}</span><br>"
+                base += f"<span style='color: {lbl_color}'>Unit:</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>{unit}</span><br>"
                 base += f"<span style='color: {lbl_color}'>Value:</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color: {val_color}'>%{{y:,.3f}}</span><extra></extra>"
                 return base
 
-            fig.update_traces(hovertemplate=get_hovertemplate(granularity))
+            # Prepare base traces for interactivity and cursor
+            # This MUST come before highlighting logic to prevent overwriting selection styles
+            fig.update_traces(
+                marker_line_width=0,
+                hovertemplate=get_hovertemplate(granularity)
+            )
 
-            # Remove the server-side highlighting logic - now handled by clientside callback
-            # All traces start with full opacity
+            # Apply highlighting based on current selection (server-side like European implementation)
+            if current_selection:
+                for trace in fig.data:
+                    if hasattr(trace, 'customdata') and trace.customdata is not None:
+                        origin_name = trace.name
+                        colors = []
+                        line_colors = []
+                        line_widths = []
+                        
+                        base_color = ORIGIN_COLORS.get(origin_name, '#ccc')
+                        
+                        for cd in trace.customdata:
+                            if cd is not None and len(cd) >= 4:
+                                seg_dest = cd[0]
+                                seg_facet = cd[1] 
+                                seg_origin = cd[2]
+                                seg_dest_pos = cd[3]
+                                
+                                is_highlighted = False
+                                is_dimmed = False
+                                
+                                if current_selection.get('type') == 'legend_selection':
+                                    # Legend selection: highlight all segments of this origin
+                                    if current_selection['origin'] == seg_origin:
+                                        is_highlighted = True
+                                    else:
+                                        is_dimmed = True
+                                elif current_selection.get('type') == 'bar_click':
+                                    # Bar click: highlight only the specific segment
+                                    if (current_selection['destination'] == seg_dest and
+                                        current_selection['facet'] == seg_facet and
+                                        current_selection['origin'] == seg_origin and
+                                        current_selection['dest_pos'] == seg_dest_pos):
+                                        is_highlighted = True
+                                    else:
+                                        is_dimmed = True
+                                
+                                # Apply styles
+                                if is_dimmed:
+                                    colors.append(hex_to_rgba(base_color, 0.15))
+                                else:
+                                    # Selection or legend highlight - original color
+                                    colors.append(base_color)
+                                
+                                line_colors.append('rgba(0,0,0,0)')
+                                line_widths.append(0)
+                            else:
+                                colors.append(base_color)
+                                line_colors.append('rgba(0,0,0,0)')
+                                line_widths.append(0)
+                        # Update trace with highlighting
+                        trace.marker.color = colors
+                        trace.marker.line = dict(color=line_colors, width=line_widths)
+
+            # Configure traces opacity
+            # Set all traces to full opacity initially
             for trace in fig.data:
-                trace.hovertemplate = get_hovertemplate(granularity)
                 trace.marker.opacity = 1.0
 
             # Spacing for triple headers
@@ -1214,7 +1119,10 @@ def register_callbacks(dash_app, server):
                     align="left"
                 ),
                 dragmode='zoom',  # Enable zoom mode (horizontal only due to fixedrange on y)
-                uirevision='asia-chart-constant'  # Maintain UI state across updates
+                uirevision='asia-chart-constant',  # Maintain UI state across updates
+                plot_bgcolor='rgba(0,0,0,0)',  # Transparent plot background to enable background clicks
+                paper_bgcolor='white',
+                clickmode='event+select'  # Enable both click and select events
             )
 
             # Selective Tick Labels (Sparse Labels)
@@ -1761,9 +1669,9 @@ def register_callbacks(dash_app, server):
         # Sort alphabetically
         sorted_origins = sorted(relevant_origins)
         
-        # Determine currently selected origin (if any)
+        # Determine currently selected origin (if any) - ONLY for legend selections, not bar clicks
         selected_origin_name = None
-        if selection and 'origin' in selection:
+        if selection and selection.get('type') == 'legend_selection' and 'origin' in selection:
             selected_origin_name = selection['origin']
 
         items = []
